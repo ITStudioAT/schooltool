@@ -6,7 +6,9 @@ use Closure;
 
 class StudentTimetableV3TimetableFilterService
 {
-    public const MAX_FREE_DAYS = 6;
+    private const MAX_ROBOT_FREE_DAYS = 6;
+
+    public const MAX_FREE_DAYS = 5;
 
     /** @return array{include_saturday: bool, free_days: int|null} */
     public function defaults(): array
@@ -213,8 +215,14 @@ class StudentTimetableV3TimetableFilterService
     {
         $freeDays = data_get($timetable, 'metrics.free_days');
 
-        return is_int($freeDays) && $freeDays >= 0 && $freeDays <= self::MAX_FREE_DAYS
-            ? $freeDays
+        if (! is_int($freeDays) || $freeDays < 0 || $freeDays > self::MAX_ROBOT_FREE_DAYS) {
+            return null;
+        }
+
+        $weekdayFreeDays = $freeDays - ($this->isSaturdayFree($timetable) ? 1 : 0);
+
+        return $weekdayFreeDays >= 0 && $weekdayFreeDays <= self::MAX_FREE_DAYS
+            ? $weekdayFreeDays
             : null;
     }
 }

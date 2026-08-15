@@ -1294,6 +1294,7 @@ describe('TimetableV3', () => {
             timetableVisibleFreeDayOptions: [{ value: 2, count: 8 }],
         })).toBe(true)
         expect(source).toContain('async updateTimetableFilter(filterKey, filterValue)')
+        expect(source).toContain('const MAX_FREE_DAYS = 5')
         expect(source).not.toContain('class="timetable-v3__creation-start-button"')
         expect(source).not.toContain('Los!')
         expect(source).toContain('creationOptions: {')
@@ -1400,6 +1401,12 @@ describe('TimetableV3', () => {
 
         expect(get).toHaveBeenCalledTimes(3)
         expect(saveState).toHaveBeenCalledTimes(2)
+
+        await methods.updateTimetableFilter.call(context, 'free_days', 6)
+
+        expect(get).toHaveBeenCalledTimes(3)
+        expect(saveState).toHaveBeenCalledTimes(2)
+        expect(context.timetableFilters).toEqual({ include_saturday: false, free_days: 2 })
         expect(methods.timetableCalculationPayload.call({
             workspaceId: WORKSPACE_ID,
             planningMode: 'without_student',
@@ -2371,11 +2378,15 @@ describe('TimetableV3', () => {
                 { include_saturday: false, free_days: 3 },
             ],
             [
+                { creationOptions: { filters: { include_saturday: false, free_days: 5 } } },
+                { include_saturday: false, free_days: 5 },
+            ],
+            [
                 { creationOptions: { filters: { include_saturday: true, free_days: null } } },
                 { include_saturday: true, free_days: null },
             ],
             [
-                { creationOptions: { filters: { include_saturday: 'no', free_days: 7 } } },
+                { creationOptions: { filters: { include_saturday: 'no', free_days: 6 } } },
                 { include_saturday: true, free_days: null },
             ],
             [

@@ -222,8 +222,8 @@ it('validates the v3 timetable result planning context', function (string $query
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=0',
         ['filters.free_days'],
     ],
-    'free-day filter does not exceed the six planning days' => [
-        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=7',
+    'free-day filter does not exceed the five weekdays' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=6',
         ['filters.free_days'],
     ],
     'free-day filter must be an integer' => [

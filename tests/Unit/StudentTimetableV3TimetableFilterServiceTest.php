@@ -67,6 +67,27 @@ it('filters by an exact positive number of free days', function () {
     ))->toBe(['two-free-days']);
 });
 
+it('counts only additional Monday to Friday free days when Saturday is free', function () {
+    $service = new StudentTimetableV3TimetableFilterService;
+    $timetables = [
+        timetableFilterFixture('only-saturday-free', true),
+        timetableFilterFixture('saturday-and-one-weekday-free', true, 1),
+        timetableFilterFixture('one-weekday-free', false, 1),
+    ];
+
+    expect(array_column(
+        $service->apply($timetables, ['free_days' => 1]),
+        'key',
+    ))->toBe(['saturday-and-one-weekday-free', 'one-weekday-free'])
+        ->and($service->optionCounts($timetables, [])['free_days'])->toBe([
+            'any' => 3,
+            'maximum' => 1,
+            'values' => [
+                ['value' => 1, 'count' => 2],
+            ],
+        ]);
+});
+
 it('calculates each option count with every other selected filter applied', function () {
     $service = new StudentTimetableV3TimetableFilterService;
     $timetables = [
@@ -94,13 +115,13 @@ it('calculates each option count with every other selected filter applied', func
 });
 
 /** @return array<string, mixed> */
-function timetableFilterFixture(string $key, bool $saturdayFree, int $freeDays = 0): array
+function timetableFilterFixture(string $key, bool $saturdayFree, int $weekdayFreeDays = 0): array
 {
     return [
         'key' => $key,
         'metrics' => [
             'saturday_free_all_appointments' => $saturdayFree,
-            'free_days' => $freeDays,
+            'free_days' => $weekdayFreeDays + ($saturdayFree ? 1 : 0),
         ],
         'slots' => [],
     ];

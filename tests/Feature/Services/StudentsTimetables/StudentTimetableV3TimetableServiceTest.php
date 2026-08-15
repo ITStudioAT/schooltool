@@ -77,7 +77,7 @@ it('filters the persisted timetable set before paging without mutating the aggre
     $expandedTimetables = collect(range(1, 250))
         ->map(function (int $number) use ($baseTimetable): array {
             $saturdayFree = $number % 2 === 1;
-            $freeDays = (($number - 1) % 3) + 1;
+            $weekdayFreeDays = (($number - 1) % 3) + 1;
 
             return [
                 ...$baseTimetable,
@@ -86,7 +86,7 @@ it('filters the persisted timetable set before paging without mutating the aggre
                 'metrics' => [
                     ...($baseTimetable['metrics'] ?? []),
                     'saturday_free_all_appointments' => $saturdayFree,
-                    'free_days' => $freeDays,
+                    'free_days' => $weekdayFreeDays + ($saturdayFree ? 1 : 0),
                 ],
             ];
         })
@@ -706,10 +706,9 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
             'exclude_saturday' => 4,
             'free_days' => [
                 'any' => 4,
-                'maximum' => 4,
+                'maximum' => 3,
                 'values' => [
-                    ['value' => 4, 'count' => 4],
-                    ['value' => 3, 'count' => 0],
+                    ['value' => 3, 'count' => 4],
                     ['value' => 2, 'count' => 0],
                     ['value' => 1, 'count' => 0],
                 ],

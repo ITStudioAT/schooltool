@@ -1897,7 +1897,7 @@ const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
     include_saturday: true,
     free_days: null,
 })
-const MAX_FREE_DAYS = 6
+const MAX_FREE_DAYS = 5
 const MAX_SELECTED_MODULES = 10
 const MAX_SELECTED_MODULE_HOURS = 30
 const SELECTION_STEP = 'selection'
