@@ -45,7 +45,7 @@ class UpdateStudentTimetableV3TimetableRequest extends FormRequest
             'parameters.selected_course_keys' => ['required', 'array', 'min:1', 'max:500'],
             'parameters.selected_course_keys.*' => ['required', 'string', 'distinct', 'max:255'],
             'options' => ['required', 'array:allow_saturday_lessons'],
-            'options.allow_saturday_lessons' => ['required', 'boolean'],
+            'options.allow_saturday_lessons' => ['required', 'boolean:strict', 'accepted'],
         ];
     }
 

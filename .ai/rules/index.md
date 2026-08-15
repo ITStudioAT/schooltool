@@ -4,6 +4,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 
 | Applies to | Rule file |
 | --- | --- |
+| {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,app/Http/Requests/Admin/*StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/admin-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3TimetableService.php,app/Services/StudentsTimetables/RobotTimetableBackendSetupService.php,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3TimetableController.php,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/admin-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Services/StudentsTimetables,resources/js/pages/admin/studentsTimetables/timetableV3}/** | .ai/rules/admin-students-timetables-timetable-v3.md |
 | {app/Http/Controllers/Admin/StudentsTimetables,resources/js/pages/admin/studentsTimetables}/** | .ai/rules/admin-students-timetables.md |

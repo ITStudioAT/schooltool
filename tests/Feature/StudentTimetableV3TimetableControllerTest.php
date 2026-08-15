@@ -22,6 +22,7 @@ it('returns the persisted v3 timetable result for the validated planning context
     ?array $serviceResult,
     int $expectedPage,
     ?string $expectedFingerprint,
+    array $expectedFilters,
 ) {
     [$user, $schoolyear] = v3TimetableControllerUser();
     $service = mock(StudentTimetableV3TimetableService::class);
@@ -33,11 +34,13 @@ it('returns the persisted v3 timetable result for the validated planning context
             array $parameters,
             int $page,
             ?string $fingerprint,
+            array $filters,
         ): bool => $authUser->is($user)
             && (int) $authUser->schoolyear_id === $schoolyear->id
             && $parameters === $expectedParameters
             && $page === $expectedPage
-            && $fingerprint === $expectedFingerprint)
+            && $fingerprint === $expectedFingerprint
+            && $filters === $expectedFilters)
         ->andReturn($serviceResult);
 
     $response = $this->actingAs($user)
@@ -70,6 +73,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         1,
         null,
+        ['include_saturday' => true],
     ],
     'with student, none' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=with_student&student_code=student-100',
@@ -77,6 +81,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         null,
         1,
         null,
+        ['include_saturday' => true],
     ],
     'second page with snapshot fingerprint' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&page=2&fingerprint='.str_repeat('a', 64),
@@ -93,6 +98,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         2,
         str_repeat('a', 64),
+        ['include_saturday' => true],
     ],
     'twentieth page with snapshot fingerprint' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&page=20&fingerprint='.str_repeat('b', 64),
@@ -109,6 +115,26 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         20,
         str_repeat('b', 64),
+        ['include_saturday' => true],
+    ],
+    'without Saturday lessons' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[include_saturday]=0',
+        ['workspace_id' => V3_WORKSPACE_ID, 'planning_mode' => 'without_student', 'student_code' => null],
+        [
+            'fingerprint' => str_repeat('c', 64),
+            'timetables' => [['number' => 1]],
+            'timetables_meta' => [
+                'current_page' => 1,
+                'per_page' => 100,
+                'last_page' => 1,
+                'total' => 1,
+                'unfiltered_total' => 2,
+                'filters' => ['include_saturday' => false],
+            ],
+        ],
+        1,
+        null,
+        ['include_saturday' => false],
     ],
 ]);
 
@@ -165,6 +191,14 @@ it('validates the v3 timetable result planning context', function (string $query
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&page=2',
         ['fingerprint'],
     ],
+    'filters reject unexpected keys' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[unexpected]=1',
+        ['filters'],
+    ],
+    'Saturday filter must be boolean' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[include_saturday]=sometimes',
+        ['filters.include_saturday'],
+    ],
 ]);
 
 it('requires authentication for loading a persisted v3 timetable result', function () {
@@ -183,7 +217,7 @@ it('forbids loading a persisted v3 timetable result without a students timetable
         ->assertForbidden();
 });
 
-it('calculates v3 timetables with server-side weekday constraints', function (bool $allowSaturdayLessons, array $availableWeekdays) {
+it('always calculates v3 timetables including Saturday', function () {
     [$user, $schoolyear] = v3TimetableControllerUser();
     $serviceResult = [
         'id' => 42,
@@ -201,7 +235,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
     $service
         ->shouldReceive('createOrUpdateForUser')
         ->once()
-        ->withArgs(function (User $authUser, array $modules, array $parameters) use ($user, $schoolyear, $availableWeekdays): bool {
+        ->withArgs(function (User $authUser, array $modules, array $parameters) use ($user, $schoolyear): bool {
             return $authUser->is($user)
                 && (int) $authUser->schoolyear_id === $schoolyear->id
                 && $modules === ['additional:D1']
@@ -216,7 +250,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
                         'arts_subject' => 'ME',
                     ],
                     'selected_course_keys' => ['d1-a'],
-                    'constraints' => ['availableWeekdays' => $availableWeekdays],
+                    'constraints' => ['availableWeekdays' => [1, 2, 3, 4, 5, 6]],
                 ];
         })
         ->andReturn($serviceResult);
@@ -236,7 +270,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
                 ],
                 'selected_course_keys' => ['d1-a'],
             ],
-            'options' => ['allow_saturday_lessons' => $allowSaturdayLessons],
+            'options' => ['allow_saturday_lessons' => true],
         ])
         ->assertSuccessful()
         ->assertJsonPath('message', 'Die möglichen Stundenpläne wurden berechnet.')
@@ -245,10 +279,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
         ->assertJsonCount(2, 'data.timetables');
 
     expect($user->refresh()->schoolyear_id)->toBe($schoolyear->id);
-})->with([
-    'Monday to Friday' => [false, [1, 2, 3, 4, 5]],
-    'Monday to Saturday' => [true, [1, 2, 3, 4, 5, 6]],
-]);
+});
 
 it('streams the combination count, five-percent progress, and completed result', function () {
     [$user] = v3TimetableControllerUser();
@@ -268,6 +299,8 @@ it('streams the combination count, five-percent progress, and completed result',
             'per_page' => 100,
             'last_page' => 5,
             'total' => 500,
+            'unfiltered_total' => 500,
+            'filters' => ['include_saturday' => true],
         ],
     ];
     mock(StudentTimetableV3TimetableService::class)
@@ -281,7 +314,7 @@ it('streams the combination count, five-percent progress, and completed result',
         ) use ($user, $serviceResult): array {
             expect($authUser->is($user))->toBeTrue()
                 ->and($modules)->toBe(['additional:D1'])
-                ->and($parameters['constraints']['availableWeekdays'])->toBe([1, 2, 3, 4, 5]);
+                ->and($parameters['constraints']['availableWeekdays'])->toBe([1, 2, 3, 4, 5, 6]);
 
             $progressCallback(0, 0, 'preparing', 0);
             $progressCallback(40, 1420, 'checking', 710);
@@ -332,6 +365,8 @@ it('streams the combination count, five-percent progress, and completed result',
             'per_page' => 100,
             'last_page' => 5,
             'total' => 500,
+            'unfiltered_total' => 500,
+            'filters' => ['include_saturday' => true],
         ]);
 });
 
@@ -406,6 +441,21 @@ it('validates the strict v3 timetable payload and planning mode context', functi
             'options',
             'payload',
         ]);
+});
+
+it('rejects calculation requests that exclude Saturday', function () {
+    [$user] = v3TimetableControllerUser();
+
+    mock(StudentTimetableV3TimetableService::class)
+        ->shouldNotReceive('createOrUpdateForUser');
+
+    $payload = v3TimetableControllerPayload();
+    $payload['options']['allow_saturday_lessons'] = false;
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/timetable-v3/timetable', $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['options.allow_saturday_lessons']);
 });
 
 it('requires authentication for v3 timetable calculation', function () {
@@ -494,6 +544,6 @@ function v3TimetableControllerPayload(): array
             ],
             'selected_course_keys' => ['d1-a'],
         ],
-        'options' => ['allow_saturday_lessons' => false],
+        'options' => ['allow_saturday_lessons' => true],
     ];
 }

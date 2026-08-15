@@ -29,6 +29,8 @@ class StudentTimetableV3TimetableService
 
     public const MAX_TIMETABLE_PAGE = 20;
 
+    public const CALCULATION_WEEKDAYS = [1, 2, 3, 4, 5, 6];
+
     public function __construct(
         private StudentTimetableV3StudentInformationService $studentInformationService,
         private StudentTimetableOverviewService $overviewService,
@@ -36,6 +38,7 @@ class StudentTimetableV3TimetableService
         private StudentTimetableCalculationSettingsService $calculationSettingsService,
         private RobotTimetableBackendSetupService $backendSetupService,
         private StudentTimetableV3TimetableStorage $timetableStorage,
+        private StudentTimetableV3TimetableFilterService $timetableFilterService,
         private StudentTimetableV3SessionScope $sessionScope,
     ) {}
 
@@ -48,6 +51,7 @@ class StudentTimetableV3TimetableService
         array $parameters,
         int $page = 1,
         ?string $expectedFingerprint = null,
+        array $filters = [],
     ): ?array {
         $this->validateResultPage($page);
         $this->validateExpectedFingerprint($expectedFingerprint, $page);
@@ -117,24 +121,37 @@ class StudentTimetableV3TimetableService
             return null;
         }
 
-        $timetablePage = $this->timetableStorage->expandPage(
+        $normalizedFilters = $this->timetableFilterService->normalize($filters);
+        $timetablePage = $this->timetableStorage->expandFilteredPage(
             $storedTimetables,
             $page,
             self::TIMETABLES_PER_PAGE,
+            $this->timetableFilterService->matcher($normalizedFilters),
         );
         $summaryTimetableCount = $summary['timetable_count'] ?? null;
 
         if (
             $timetablePage === null
-            || $timetablePage['total'] > self::MAX_MATERIALIZED_TIMETABLES
+            || $timetablePage['unfiltered_total'] > self::MAX_MATERIALIZED_TIMETABLES
             || ! is_int($summaryTimetableCount)
-            || $summaryTimetableCount !== $timetablePage['total']
-            || $page > max(1, (int) ceil($timetablePage['total'] / self::TIMETABLES_PER_PAGE))
+            || $summaryTimetableCount !== $timetablePage['unfiltered_total']
         ) {
             return null;
         }
 
-        return $this->result($timetable, 'reused', true, $timetablePage, $page);
+        if ($page > max(1, (int) ceil($timetablePage['total'] / self::TIMETABLES_PER_PAGE))) {
+            return null;
+        }
+
+        return $this->result(
+            $timetable,
+            'reused',
+            true,
+            $timetablePage,
+            $page,
+            $normalizedFilters,
+            $timetablePage['unfiltered_total'],
+        );
     }
 
     /**
@@ -693,9 +710,11 @@ class StudentTimetableV3TimetableService
             $this->invalid('constraints', 'Die Zeitvorgaben müssen als Objekt übergeben werden.');
         }
 
-        $availableWeekdays = array_key_exists('availableWeekdays', $constraints)
-            ? $this->integerList($constraints['availableWeekdays'], 1, 7, 'constraints.availableWeekdays')
-            : [1, 2, 3, 4, 5, 6];
+        if (array_key_exists('availableWeekdays', $constraints)) {
+            $this->integerList($constraints['availableWeekdays'], 1, 7, 'constraints.availableWeekdays');
+        }
+
+        $availableWeekdays = self::CALCULATION_WEEKDAYS;
         $availableTimes = array_key_exists('availableTimes', $constraints)
             ? $this->integerList($constraints['availableTimes'], 1, 20, 'constraints.availableTimes')
             : $defaultAvailableTimes;
@@ -1056,6 +1075,7 @@ class StudentTimetableV3TimetableService
 
     /**
      * @param  array{items: list<array<string, mixed>>, total: int}  $timetablePage
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function result(
@@ -1064,8 +1084,12 @@ class StudentTimetableV3TimetableService
         bool $reused,
         array $timetablePage,
         int $page,
+        array $filters = [],
+        ?int $unfilteredTotal = null,
     ): array {
         $parameters = $timetable->parameters ?? [];
+        $normalizedFilters = $this->timetableFilterService->normalize($filters);
+        $unfilteredTotal ??= $timetablePage['total'];
 
         return [
             'id' => (int) $timetable->id,
@@ -1081,7 +1105,12 @@ class StudentTimetableV3TimetableService
             'parameters' => $parameters,
             'summary' => $timetable->summary ?? [],
             'timetables' => $timetablePage['items'],
-            'timetables_meta' => $this->timetablePageMeta($timetablePage['total'], $page),
+            'timetables_meta' => $this->timetablePageMeta(
+                $timetablePage['total'],
+                $unfilteredTotal,
+                $page,
+                $normalizedFilters,
+            ),
             'generated_at' => $timetable->generated_at?->toISOString(),
         ];
     }
@@ -1106,14 +1135,16 @@ class StudentTimetableV3TimetableService
      *     per_page: int,
      *     last_page: int,
      *     total: int,
+     *     unfiltered_total: int,
      *     offset: int,
      *     from: int|null,
      *     to: int|null,
      *     next_page: int|null,
-     *     prev_page: int|null
+     *     prev_page: int|null,
+     *     filters: array{include_saturday: bool}
      * }
      */
-    private function timetablePageMeta(int $total, int $page): array
+    private function timetablePageMeta(int $total, int $unfilteredTotal, int $page, array $filters): array
     {
         $offset = ($page - 1) * self::TIMETABLES_PER_PAGE;
         $lastPage = max(1, (int) ceil($total / self::TIMETABLES_PER_PAGE));
@@ -1124,11 +1155,13 @@ class StudentTimetableV3TimetableService
             'per_page' => self::TIMETABLES_PER_PAGE,
             'last_page' => $lastPage,
             'total' => $total,
+            'unfiltered_total' => $unfilteredTotal,
             'offset' => $offset,
             'from' => $hasItems ? $offset + 1 : null,
             'to' => $hasItems ? min($offset + self::TIMETABLES_PER_PAGE, $total) : null,
             'next_page' => $page < $lastPage ? $page + 1 : null,
             'prev_page' => $page > 1 ? $page - 1 : null,
+            'filters' => $filters,
         ];
     }
 

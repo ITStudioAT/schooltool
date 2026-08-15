@@ -1096,6 +1096,9 @@
                                     <strong>{{ possibleTimetableCountLabel }}</strong>
                                     <span v-if="possibleTimetableCount === 1">mögliche Variante</span>
                                     <span v-else-if="possibleTimetableCount > 1">mögliche Varianten</span>
+                                    <span v-else-if="filteredOutAllTimetables">
+                                        Keine Varianten entsprechen den gewählten Optionen
+                                    </span>
                                     <span v-else>Keine möglichen Varianten gefunden</span>
                                 </div>
                             </div>
@@ -1112,9 +1115,9 @@
                                 role="note">
                                 <v-icon icon="mdi-information-outline" size="23" />
                                 <span>
-                                    Nur <strong>{{ possibleTimetableCountLabel }}</strong> von
-                                    <strong>{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen wurden
-                                    gespeichert und werden angezeigt.
+                                    Insgesamt wurden <strong>{{ unfilteredMaterializedTimetableCountLabel }}</strong> von
+                                    <strong>{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen
+                                    gespeichert. Die Optionen verändern diesen Bestand nicht.
                                 </span>
                             </div>
 
@@ -1177,15 +1180,36 @@
                     <span class="timetable-v3__schedule-mode-copy">
                         <span id="timetable-v3-options-title" class="timetable-v3__schedule-mode-title">Optionen</span>
                         <span class="timetable-v3__schedule-mode-description">
-                            Hier können künftig weitere Einstellungen für die Stundenpläne ausgewählt werden.
+                            Filtern Sie die bereits berechneten Stundenpläne. Der gespeicherte Gesamtbestand bleibt
+                            unverändert.
                         </span>
                     </span>
+                    <div class="timetable-v3__filter-option">
+                        <span class="timetable-v3__filter-option-label">Samstag</span>
+                        <v-btn-toggle
+                            :model-value="timetableFilters.include_saturday"
+                            class="timetable-v3__filter-option-toggle"
+                            color="teal-darken-1"
+                            density="comfortable"
+                            divided
+                            mandatory
+                            variant="outlined"
+                            :disabled="isLoadingState
+                                || isSavingState
+                                || timetableCalculationStatus === 'calculating'
+                                || timetablePageLoading"
+                            aria-label="Stundenpläne nach Samstag filtern"
+                            @update:model-value="updateTimetableFilter('include_saturday', $event)">
+                            <v-btn :value="true" prepend-icon="mdi-calendar-check-outline">Samstag ja</v-btn>
+                            <v-btn :value="false" prepend-icon="mdi-calendar-remove-outline">Samstag nein</v-btn>
+                        </v-btn-toggle>
+                    </div>
                 </section>
 
                 <TimetableV3PossibleTimetables
                     v-if="timetableCalculationStatus === 'success' && possibleTimetableCount > 0"
                     class="timetable-v3__calculation-output"
-                    :allow-saturday-lessons="allowSaturdayLessons"
+                    :allow-saturday-lessons="timetableFilters.include_saturday"
                     :error="timetablePageError"
                     :loading="timetablePageLoading"
                     :loading-direction="timetablePageLoadingDirection"
@@ -1197,7 +1221,7 @@
 
                 <section
                     v-if="timetableCalculationStatus === 'success'
-                        && possibleTimetableCount === 0
+                        && timetablePageMeta.unfilteredTotal === 0
                         && timetableSolutionPlanModuleRemovalScenarios.length"
                     class="timetable-v3__calculation-output timetable-v3__solution-plan"
                     aria-labelledby="timetable-v3-solution-plan-title">
@@ -1325,7 +1349,7 @@
                     color="error"
                     variant="outlined"
                     prepend-icon="mdi-restart"
-                    :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState || timetableCalculationStatus === 'calculating'"
+                    :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState || timetableCalculationStatus === 'calculating' || timetablePageLoading"
                     @click="restartPlanning">
                     Neustart
                 </v-btn>
@@ -1335,7 +1359,7 @@
                     color="primary"
                     variant="outlined"
                     prepend-icon="mdi-arrow-left"
-                    :disabled="isLoadingState || isSavingState || timetableCalculationStatus === 'calculating'"
+                    :disabled="isLoadingState || isSavingState || timetableCalculationStatus === 'calculating' || timetablePageLoading"
                     @click="returnFromTimetableCreationStep">
                     Zurück
                 </v-btn>
@@ -1786,6 +1810,9 @@ const WITHOUT_STUDENT = 'without_student'
 const AUTOMATIC_TIMETABLE = 'automatic'
 const MANUAL_TIMETABLE = 'manual'
 const AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY = true
+const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
+    include_saturday: true,
+})
 const MAX_SELECTED_MODULES = 10
 const MAX_SELECTED_MODULE_HOURS = 30
 const SELECTION_STEP = 'selection'
@@ -1951,6 +1978,27 @@ function planningSelectionValuesMatch(storedValues, currentValues) {
         ))
 }
 
+function normalizedTimetableFilters(filters) {
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : {}
+
+    return {
+        include_saturday: typeof normalizedFilters.include_saturday === 'boolean'
+            ? normalizedFilters.include_saturday
+            : DEFAULT_TIMETABLE_FILTERS.include_saturday,
+    }
+}
+
+function timetableFiltersMatch(firstFilters, secondFilters) {
+    const normalizedFirstFilters = normalizedTimetableFilters(firstFilters)
+    const normalizedSecondFilters = normalizedTimetableFilters(secondFilters)
+
+    return Object.keys(DEFAULT_TIMETABLE_FILTERS).every(
+        filterKey => normalizedFirstFilters[filterKey] === normalizedSecondFilters[filterKey],
+    )
+}
+
 function isTimetableCalculationResult(calculationResult) {
     const calculationSummary = calculationResult?.summary
 
@@ -1977,7 +2025,9 @@ function normalizedTimetablePageMeta(calculationResult) {
     const perPage = Number(meta.per_page)
     const lastPage = Number(meta.last_page)
     const total = Number(meta.total)
+    const unfilteredTotal = Number(meta.unfiltered_total)
     const offset = Number(meta.offset)
+    const filters = meta.filters
     const expectedLastPage = Math.max(1, Math.ceil(total / TIMETABLES_PER_PAGE))
     const expectedItemCount = Math.min(TIMETABLES_PER_PAGE, Math.max(0, total - offset))
     const expectedFrom = expectedItemCount > 0 ? offset + 1 : null
@@ -1988,6 +2038,7 @@ function normalizedTimetablePageMeta(calculationResult) {
         || !Number.isInteger(perPage)
         || !Number.isInteger(lastPage)
         || !Number.isInteger(total)
+        || !Number.isInteger(unfilteredTotal)
         || !Number.isInteger(offset)
         || currentPage < 1
         || perPage !== TIMETABLES_PER_PAGE
@@ -1995,6 +2046,12 @@ function normalizedTimetablePageMeta(calculationResult) {
         || currentPage > lastPage
         || total < 0
         || total > MAX_MATERIALIZED_TIMETABLES
+        || unfilteredTotal < total
+        || unfilteredTotal > MAX_MATERIALIZED_TIMETABLES
+        || !filters
+        || typeof filters !== 'object'
+        || Array.isArray(filters)
+        || typeof filters.include_saturday !== 'boolean'
         || offset !== (currentPage - 1) * perPage
         || timetables.length !== expectedItemCount
         || (meta.from ?? null) !== expectedFrom
@@ -2007,6 +2064,8 @@ function normalizedTimetablePageMeta(calculationResult) {
         offset,
         perPage,
         total,
+        unfilteredTotal,
+        filters: normalizedTimetableFilters(filters),
     }
 }
 
@@ -2230,7 +2289,7 @@ export default {
             maximumSelectedModuleHours: MAX_SELECTED_MODULE_HOURS,
             moduleSelectionLimitMessage: '',
             scheduleCreationMode: null,
-            allowSaturdayLessons: AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY,
+            timetableFilters: { ...DEFAULT_TIMETABLE_FILTERS },
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
             timetableCalculationError: '',
@@ -2485,6 +2544,10 @@ export default {
                 total: Array.isArray(this.timetableCalculationResult?.timetables)
                     ? this.timetableCalculationResult.timetables.length
                     : 0,
+                unfilteredTotal: Array.isArray(this.timetableCalculationResult?.timetables)
+                    ? this.timetableCalculationResult.timetables.length
+                    : 0,
+                filters: normalizedTimetableFilters(this.timetableFilters),
             }
         },
         timetableSolutionPlan() {
@@ -2510,10 +2573,14 @@ export default {
             )
         },
         possibleTimetableCount() {
-            return this.normalizedTimetableCalculationCount(this.timetableCalculationSummary.timetable_count)
+            return this.timetablePageMeta.total
         },
         possibleTimetableCountLabel() {
             return this.possibleTimetableCount.toLocaleString('de-AT')
+        },
+        filteredOutAllTimetables() {
+            return this.timetablePageMeta.total === 0
+                && this.timetablePageMeta.unfilteredTotal > 0
         },
         totalPossibleTimetableCount() {
             const explicitCount = this.normalizedTimetableCalculationCount(
@@ -2531,9 +2598,15 @@ export default {
         totalPossibleTimetableCountLabel() {
             return this.totalPossibleTimetableCount.toLocaleString('de-AT')
         },
+        unfilteredMaterializedTimetableCount() {
+            return this.normalizedTimetableCalculationCount(this.timetableCalculationSummary.timetable_count)
+        },
+        unfilteredMaterializedTimetableCountLabel() {
+            return this.unfilteredMaterializedTimetableCount.toLocaleString('de-AT')
+        },
         timetablesTruncated() {
             return this.timetableCalculationSummary.timetables_truncated === true
-                || this.totalPossibleTimetableCount > this.possibleTimetableCount
+                || this.totalPossibleTimetableCount > this.unfilteredMaterializedTimetableCount
         },
         timetableCalculationCombinationCountLabel() {
             return this.normalizedTimetableCalculationCount(
@@ -2664,7 +2737,7 @@ export default {
             void this.$router.replace(timetableV3RouteLocation(path, planningContext, this.workspaceId))
         },
         returnFromTimetableCreationStep() {
-            if (this.timetableCalculationStatus === 'calculating') return
+            if (this.timetableCalculationStatus === 'calculating' || this.timetablePageLoading) return
 
             const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
 
@@ -2745,7 +2818,7 @@ export default {
                     selected_course_keys: [...(this.selectedCourseKeys || [])],
                 },
                 options: {
-                    allow_saturday_lessons: this.allowSaturdayLessons === true,
+                    allow_saturday_lessons: AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY,
                 },
             }
         },
@@ -2830,9 +2903,7 @@ export default {
                 && Number(persistedSelection.semester) !== currentSemester
             ) return false
 
-            const expectedWeekdays = this.allowSaturdayLessons
-                ? [1, 2, 3, 4, 5, 6]
-                : [1, 2, 3, 4, 5]
+            const expectedWeekdays = [1, 2, 3, 4, 5, 6]
 
             return Array.isArray(parameters.constraints?.availableWeekdays)
                 && parameters.constraints.availableWeekdays.length === expectedWeekdays.length
@@ -2858,6 +2929,7 @@ export default {
                     planning_mode: planningMode,
                     ...(studentCode ? { student_code: studentCode } : {}),
                     page: 1,
+                    filters: normalizedTimetableFilters(this.timetableFilters),
                 },
             })
 
@@ -2891,6 +2963,8 @@ export default {
                     || !timetablePageMeta
                     || timetablePageMeta.currentPage !== 1
                     || timetablePageMeta.offset !== 0
+                    || !timetableFiltersMatch(timetablePageMeta.filters, this.timetableFilters)
+                    || Number(calculationResult.summary?.timetable_count) !== timetablePageMeta.unfilteredTotal
                 ) return
 
                 this.timetableCalculationResult = calculationResult
@@ -2898,6 +2972,136 @@ export default {
                 this.timetableCalculationStatus = 'success'
             } catch {
                 // The draft remains usable when no persisted calculation can be restored.
+            }
+        },
+        async updateTimetableFilter(filterKey, filterValue) {
+            if (
+                !Object.prototype.hasOwnProperty.call(DEFAULT_TIMETABLE_FILTERS, filterKey)
+                || typeof filterValue !== 'boolean'
+                || this.timetableCalculationStatus === 'calculating'
+            ) return
+
+            const previousFilters = normalizedTimetableFilters(this.timetableFilters)
+            const nextFilters = {
+                ...previousFilters,
+                [filterKey]: filterValue,
+            }
+
+            if (timetableFiltersMatch(previousFilters, nextFilters)) return
+
+            this.timetableFilters = nextFilters
+
+            if (
+                this.timetableCalculationStatus !== 'success'
+                || !isTimetableCalculationResult(this.timetableCalculationResult)
+            ) {
+                await this.saveState()
+
+                return
+            }
+
+            const filtersApplied = await this.reloadTimetableResultsForFilters()
+
+            if (!filtersApplied) {
+                if (timetableFiltersMatch(this.timetableFilters, nextFilters)) {
+                    this.timetableFilters = previousFilters
+                    await this.saveState()
+                }
+
+                return
+            }
+
+            await this.saveState()
+        },
+        async reloadTimetableResultsForFilters() {
+            const currentResult = this.timetableCalculationResult
+            const resultId = Number(currentResult?.id)
+            const fingerprint = String(currentResult?.fingerprint || '').trim()
+
+            if (
+                !isTimetableCalculationResult(currentResult)
+                || !Number.isInteger(resultId)
+                || resultId < 1
+                || !/^[a-f0-9]{64}$/.test(fingerprint)
+                || !this.timetableCalculationResultMatchesCurrentDraft(currentResult)
+            ) return false
+
+            const planningMode = this.planningMode
+            const studentCode = planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+            const requestedFilters = normalizedTimetableFilters(this.timetableFilters)
+            const requestId = Number(this.timetablePageRequestId || 0) + 1
+            this.timetablePageRequestId = requestId
+            this.timetablePageLoading = true
+            this.timetablePageLoadingDirection = ''
+            this.timetablePageError = ''
+
+            const url = showTimetableV3Timetable.url({
+                query: {
+                    workspace_id: this.workspaceId,
+                    planning_mode: planningMode,
+                    ...(studentCode ? { student_code: studentCode } : {}),
+                    page: 1,
+                    fingerprint,
+                    filters: requestedFilters,
+                },
+            })
+
+            try {
+                const response = await axios.get(url)
+
+                if (requestId !== this.timetablePageRequestId) return false
+
+                const currentStudentCode = this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+                const activeResult = this.timetableCalculationResult
+                const calculationResult = response.data?.data
+                const nextMeta = normalizedTimetablePageMeta(calculationResult)
+
+                if (
+                    this.currentStep !== TIMETABLE_CREATION_STEP
+                    || this.planningMode !== planningMode
+                    || currentStudentCode !== studentCode
+                    || Number(activeResult?.id) !== resultId
+                    || String(activeResult?.fingerprint || '') !== fingerprint
+                    || !timetableFiltersMatch(this.timetableFilters, requestedFilters)
+                    || !calculationResult
+                    || Number(calculationResult.id) !== resultId
+                    || String(calculationResult.fingerprint || '') !== fingerprint
+                    || !nextMeta
+                    || nextMeta.currentPage !== 1
+                    || nextMeta.offset !== 0
+                    || !timetableFiltersMatch(nextMeta.filters, requestedFilters)
+                    || Number(calculationResult.summary?.timetable_count) !== nextMeta.unfilteredTotal
+                    || !this.timetableCalculationResultMatchesCurrentDraft(calculationResult)
+                ) {
+                    throw new TypeError('The filtered timetable response is inconsistent.')
+                }
+
+                this.timetableCalculationResult = calculationResult
+                this.timetableSelectedIndex = 0
+                this.timetablePageError = ''
+
+                return true
+            } catch (error) {
+                if (requestId !== this.timetablePageRequestId) return false
+
+                if ([401, 403, 419].includes(Number(error?.response?.status || 0))) {
+                    this.timetableCalculationResult = null
+                    this.timetableCalculationStatus = 'error'
+                    this.timetableCalculationError = 'Ihre Berechtigung für dieses Ergebnis ist abgelaufen. Bitte laden Sie die Seite neu.'
+                    this.timetableSelectedIndex = 0
+                    this.timetablePageError = ''
+
+                    return false
+                }
+
+                this.timetablePageError = 'Die Stundenpläne konnten nicht mit den ausgewählten Optionen gefiltert werden. Bitte versuchen Sie es erneut.'
+
+                return false
+            } finally {
+                if (requestId === this.timetablePageRequestId) {
+                    this.timetablePageLoading = false
+                    this.timetablePageLoadingDirection = ''
+                }
             }
         },
         async selectTimetable(targetIndexValue) {
@@ -2911,6 +3115,7 @@ export default {
                 || this.timetablePageLoading
                 || !Number.isInteger(targetIndex)
                 || !currentMeta
+                || !timetableFiltersMatch(currentMeta.filters, this.timetableFilters)
                 || targetIndex < 0
                 || targetIndex >= currentMeta.total
             ) return
@@ -2959,6 +3164,7 @@ export default {
                     ...(studentCode ? { student_code: studentCode } : {}),
                     page: targetPage,
                     fingerprint,
+                    filters: normalizedTimetableFilters(this.timetableFilters),
                 },
             })
 
@@ -3008,7 +3214,8 @@ export default {
                     || nextMeta.total !== currentMeta.total
                     || targetIndex < nextMeta.offset
                     || targetIndex >= nextMeta.offset + calculationResult.timetables.length
-                    || Number(calculationResult.summary?.timetable_count) !== nextMeta.total
+                    || Number(calculationResult.summary?.timetable_count) !== nextMeta.unfilteredTotal
+                    || !timetableFiltersMatch(nextMeta.filters, this.timetableFilters)
                 ) {
                     throw new TypeError('The timetable page response is inconsistent.')
                 }
@@ -3125,12 +3332,37 @@ export default {
 
                 const timetablePageMeta = normalizedTimetablePageMeta(calculationResult)
 
-                if (!timetablePageMeta || timetablePageMeta.currentPage !== 1 || timetablePageMeta.offset !== 0) {
+                if (
+                    !timetablePageMeta
+                    || timetablePageMeta.currentPage !== 1
+                    || timetablePageMeta.offset !== 0
+                    || !timetableFiltersMatch(timetablePageMeta.filters, DEFAULT_TIMETABLE_FILTERS)
+                    || Number(calculationResult.summary?.timetable_count) !== timetablePageMeta.unfilteredTotal
+                ) {
                     throw new TypeError('The timetable calculation response has invalid pagination data.')
                 }
 
                 this.timetableCalculationResult = calculationResult
                 this.timetableSelectedIndex = 0
+
+                if (!timetableFiltersMatch(this.timetableFilters, DEFAULT_TIMETABLE_FILTERS)) {
+                    const filtersApplied = await this.reloadTimetableResultsForFilters()
+
+                    if (requestId !== this.timetableCalculationRequestId) return
+
+                    if (!filtersApplied) {
+                        if (this.timetableCalculationStatus === 'error') return
+
+                        this.timetableFilters = { ...DEFAULT_TIMETABLE_FILTERS }
+                        this.timetableCalculationResult = calculationResult
+                        this.timetableSelectedIndex = 0
+                        this.timetablePageError = 'Die ausgewählten Optionen konnten nicht angewendet werden. Das vollständige Ergebnis wird angezeigt.'
+                        await this.saveState()
+
+                        if (requestId !== this.timetableCalculationRequestId) return
+                    }
+                }
+
                 this.timetableCalculationCombinationCount = normalizedTimetableCalculationCount(
                     calculationResult.summary.timetable_variation_count,
                 )
@@ -3152,7 +3384,6 @@ export default {
                 || this.isSavingState
             ) return
 
-            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
             await this.saveState()
             if (this.stateSaveFailed) return
 
@@ -3233,7 +3464,13 @@ export default {
             }
         },
         restoreCreationOptions() {
-            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
+            const storedCreationOptions = this.storedState?.creationOptions
+            const storedFilters = storedCreationOptions?.filters
+            const storedIncludeSaturday = storedFilters?.include_saturday
+
+            this.timetableFilters = normalizedTimetableFilters({
+                include_saturday: storedIncludeSaturday,
+            })
         },
         async restoreEntrySelection() {
             const entrySelection = this.storedState?.entrySelection
@@ -3283,6 +3520,8 @@ export default {
             void this.loadSelectedStudentSelection()
         },
         async restartPlanning() {
+            if (this.timetablePageLoading) return
+
             const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
 
             this.planningMode = null
@@ -3293,7 +3532,7 @@ export default {
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             this.resetSelectedStudentSelectionDetails()
-            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
+            this.timetableFilters = { ...DEFAULT_TIMETABLE_FILTERS }
             this.resetTimetableCalculation()
             await this.saveState(planningContext)
             await this.$router.replace(timetableV3RouteLocation(
@@ -4024,7 +4263,7 @@ export default {
                     selectedCourseKeys: this.selectedCourseKeys || [],
                 },
                 creationOptions: {
-                    allowSaturdayLessons: this.allowSaturdayLessons,
+                    filters: normalizedTimetableFilters(this.timetableFilters),
                 },
             }
 
@@ -4636,6 +4875,33 @@ button.timetable-v3__student-data-field:focus-visible {
 .timetable-v3__creation-summary-card--options {
     grid-column: 2;
     grid-row: 2;
+}
+
+.timetable-v3__filter-option {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 8px;
+    align-self: end;
+}
+
+.timetable-v3__filter-option-label {
+    color: #115e59;
+    font-size: 0.82rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.timetable-v3__filter-option-toggle {
+    display: flex;
+    width: 100%;
+}
+
+.timetable-v3__filter-option-toggle :deep(.v-btn) {
+    flex: 1 1 0;
+    min-width: 0;
+    font-weight: 800;
+    text-transform: none;
 }
 
 .timetable-v3__creation-summary-card--options:hover,

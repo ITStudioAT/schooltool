@@ -15,6 +15,7 @@ use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableV3SessionScope;
 use App\Services\StudentsTimetables\StudentTimetableV3StudentInformationService;
+use App\Services\StudentsTimetables\StudentTimetableV3TimetableFilterService;
 use App\Services\StudentsTimetables\StudentTimetableV3TimetableService;
 use App\Services\StudentsTimetables\StudentTimetableV3TimetableStorage;
 use App\Services\StudentsTimetables\TimetableDateSlotOverlapService;
@@ -67,6 +68,155 @@ it('returns a persisted v3 timetable without recalculating or mutating it', func
         ->and($freshTimetable?->getRawOriginal('generated_at'))->toBe($storedGeneratedAt)
         ->and($freshTimetable?->getRawOriginal('updated_at'))->toBe($storedUpdatedAt)
         ->and(StudentTimetableV3Timetable::query()->count())->toBe(1);
+});
+
+it('filters the persisted timetable set before paging without mutating the aggregate', function (bool $compactStorage) {
+    [$user, , $studentCode, $information, $courseGroups, $timetable] = v3PersistedReadFixture();
+    $storage = new StudentTimetableV3TimetableStorage;
+    $baseTimetable = $storage->expand($timetable->timetables)[0];
+    $expandedTimetables = collect(range(1, 250))
+        ->map(function (int $number) use ($baseTimetable): array {
+            $saturdayFree = $number % 2 === 1;
+
+            return [
+                ...$baseTimetable,
+                'key' => "filtered-{$number}",
+                'number' => $number,
+                'metrics' => [
+                    ...($baseTimetable['metrics'] ?? []),
+                    'saturday_free_all_appointments' => $saturdayFree,
+                ],
+            ];
+        })
+        ->all();
+    $timetable->update([
+        'summary' => [
+            ...$timetable->summary,
+            'timetable_count' => 250,
+        ],
+        'timetables' => $compactStorage
+            ? $storage->compact($expandedTimetables)
+            : $expandedTimetables,
+    ]);
+    $timetable = $timetable->fresh();
+    $storedSummary = $timetable->getRawOriginal('summary');
+    $storedTimetables = $timetable->getRawOriginal('timetables');
+    $storedFingerprint = $timetable->getRawOriginal('fingerprint');
+    $storedUpdatedAt = $timetable->getRawOriginal('updated_at');
+    $parameters = [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ];
+
+    $filteredResult = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser(
+        $user,
+        $parameters,
+        2,
+        (string) $timetable->fingerprint,
+        ['include_saturday' => false],
+    );
+    $completeResult = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser(
+        $user,
+        $parameters,
+        2,
+        (string) $timetable->fingerprint,
+        ['include_saturday' => true],
+    );
+    $filteredOutOfRangeResult = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser(
+        $user,
+        $parameters,
+        3,
+        (string) $timetable->fingerprint,
+        ['include_saturday' => false],
+    );
+    $freshTimetable = $timetable->fresh();
+
+    expect($filteredResult)
+        ->summary->toEqual($timetable->summary)
+        ->timetables->toHaveCount(25)
+        ->and(array_column($filteredResult['timetables'], 'number'))->toBe(range(201, 249, 2))
+        ->and($filteredResult['timetables_meta'])->toMatchArray([
+            'current_page' => 2,
+            'last_page' => 2,
+            'total' => 125,
+            'unfiltered_total' => 250,
+            'offset' => 100,
+            'from' => 101,
+            'to' => 125,
+            'filters' => ['include_saturday' => false],
+        ])
+        ->and(array_column($completeResult['timetables'], 'number'))->toBe(range(101, 200))
+        ->and($completeResult['timetables_meta'])->toMatchArray([
+            'current_page' => 2,
+            'last_page' => 3,
+            'total' => 250,
+            'unfiltered_total' => 250,
+            'filters' => ['include_saturday' => true],
+        ])
+        ->and($filteredOutOfRangeResult)->toBeNull()
+        ->and($freshTimetable?->getRawOriginal('summary'))->toBe($storedSummary)
+        ->and($freshTimetable?->getRawOriginal('timetables'))->toBe($storedTimetables)
+        ->and($freshTimetable?->getRawOriginal('fingerprint'))->toBe($storedFingerprint)
+        ->and($freshTimetable?->getRawOriginal('updated_at'))->toBe($storedUpdatedAt);
+})->with([
+    'compact storage' => [true],
+    'legacy storage' => [false],
+]);
+
+it('returns an empty first page when no persisted timetable matches the active filters', function () {
+    [$user, , $studentCode, $information, $courseGroups, $timetable] = v3PersistedReadFixture();
+    $storage = new StudentTimetableV3TimetableStorage;
+    $expandedTimetables = collect($storage->expand($timetable->timetables))
+        ->map(fn (array $storedTimetable): array => [
+            ...$storedTimetable,
+            'metrics' => [
+                ...($storedTimetable['metrics'] ?? []),
+                'saturday_free_all_appointments' => false,
+            ],
+        ])
+        ->all();
+    $timetable->update(['timetables' => $storage->compact($expandedTimetables)]);
+    $storedTimetables = $timetable->fresh()->getRawOriginal('timetables');
+
+    $result = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser(
+        $user,
+        ['planning_mode' => 'with_student', 'student_code' => $studentCode],
+        filters: ['include_saturday' => false],
+    );
+
+    expect($result)
+        ->timetables->toBe([])
+        ->timetables_meta->toMatchArray([
+            'current_page' => 1,
+            'last_page' => 1,
+            'total' => 0,
+            'unfiltered_total' => count($expandedTimetables),
+            'from' => null,
+            'to' => null,
+            'filters' => ['include_saturday' => false],
+        ])
+        ->summary->timetable_count->toBe(count($expandedTimetables))
+        ->and($timetable->fresh()->getRawOriginal('timetables'))->toBe($storedTimetables);
 });
 
 it('reads a scoped legacy timetable page without migrating the stored payload', function () {
@@ -463,6 +613,7 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
     $parameters = [
         'planning_mode' => 'without_student',
         'selected_course_keys' => ['m1-b', 'd1-a', 'm1-a', 'd1-b'],
+        'constraints' => ['availableWeekdays' => [1, 2, 3, 4, 5]],
     ];
 
     $created = $service->createOrUpdateForUser($user, $modules, $parameters);
@@ -477,6 +628,9 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
         ->summary->green_timetable_count->toBe(0)
         ->summary->conflict_timetable_count->toBe(0)
         ->timetables->toHaveCount(4)
+        ->timetables_meta->unfiltered_total->toBe(4)
+        ->timetables_meta->filters->toBe(['include_saturday' => true])
+        ->parameters->constraints->availableWeekdays->toBe([1, 2, 3, 4, 5, 6])
         ->and($created['summary'])->not->toHaveKey('solution_plan')
         ->and(array_column($created['timetables'], 'number'))->toBe([1, 2, 3, 4])
         ->and(array_unique(array_column($created['timetables'], 'type')))->toBe(['full_green']);
@@ -1764,6 +1918,7 @@ function v3TimetableService(
             new TimetableDateSlotOverlapService,
         ),
         new StudentTimetableV3TimetableStorage,
+        new StudentTimetableV3TimetableFilterService,
         app(StudentTimetableV3SessionScope::class),
     );
 }
@@ -1821,6 +1976,7 @@ function v3TimetableReadService(
         new StudentTimetableCalculationSettingsService,
         $backendSetupService,
         new StudentTimetableV3TimetableStorage,
+        new StudentTimetableV3TimetableFilterService,
         app(StudentTimetableV3SessionScope::class),
     );
 }

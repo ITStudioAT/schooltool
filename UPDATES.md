@@ -9,6 +9,7 @@
 - Erstellung der Stundenpläne
 - Falsche Schulstufe oder falsche Stundentafel erkennen
 - Bereinigung der Stundenpläne nach User und Sitzung
+- Samstag-Filter
 
 ## 3.45.0 - 3.45.1
 

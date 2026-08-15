@@ -39,6 +39,8 @@ class StudentTimetableV3TimetableController extends Controller
                 'regex:/\A[a-f0-9]{64}\z/',
             ],
             'per_page' => ['prohibited'],
+            'filters' => ['sometimes', 'array:include_saturday'],
+            'filters.include_saturday' => ['sometimes', 'boolean'],
             'student_code' => [
                 Rule::requiredIf(fn (): bool => $request->query('planning_mode') === 'with_student'),
                 Rule::prohibitedIf(fn (): bool => $request->query('planning_mode') === 'without_student'),
@@ -58,6 +60,9 @@ class StudentTimetableV3TimetableController extends Controller
                 ],
                 (int) ($validated['page'] ?? 1),
                 $validated['fingerprint'] ?? null,
+                [
+                    'include_saturday' => (bool) ($validated['filters']['include_saturday'] ?? true),
+                ],
             ),
         ])->header('Cache-Control', 'private, no-store');
     }
@@ -69,11 +74,8 @@ class StudentTimetableV3TimetableController extends Controller
         $authUser = $this->studentsTimetablesUser();
         $validated = $request->validated();
         $parameters = $validated['parameters'];
-        $allowSaturdayLessons = (bool) $validated['options']['allow_saturday_lessons'];
         $parameters['constraints'] = [
-            'availableWeekdays' => $allowSaturdayLessons
-                ? [1, 2, 3, 4, 5, 6]
-                : [1, 2, 3, 4, 5],
+            'availableWeekdays' => StudentTimetableV3TimetableService::CALCULATION_WEEKDAYS,
         ];
 
         if ($request->header('X-Timetable-Progress') === 'stream') {

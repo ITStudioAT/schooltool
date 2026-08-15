@@ -152,6 +152,58 @@ it('expands compact and legacy timetable pages without changing their order', fu
     }
 });
 
+it('filters compact and legacy timetable entries before expanding the requested page', function () {
+    $storage = new StudentTimetableV3TimetableStorage;
+    $lesson = [
+        'key' => 'D1',
+        'courseGroup' => ['weekday' => 1, 'hour' => 1],
+        'conflicts' => [],
+    ];
+    $timetables = collect(range(1, 250))
+        ->map(fn (int $number): array => [
+            'key' => "timetable-{$number}",
+            'number' => $number,
+            'metrics' => ['saturday_free_all_appointments' => $number % 2 === 1],
+            'slots' => ['1-1' => $lesson],
+        ])
+        ->all();
+
+    foreach ([$storage->compact($timetables), $timetables] as $storedTimetables) {
+        $receivedCompactSlot = false;
+        $secondPage = $storage->expandFilteredPage(
+            $storedTimetables,
+            2,
+            100,
+            function (array $timetable) use (&$receivedCompactSlot): bool {
+                $receivedCompactSlot = $receivedCompactSlot
+                    || array_key_exists('lesson_id', $timetable['slots']['1-1'] ?? []);
+
+                return $timetable['metrics']['saturday_free_all_appointments'] === true;
+            },
+        );
+        $emptyPage = $storage->expandFilteredPage(
+            $storedTimetables,
+            1,
+            100,
+            fn (): bool => false,
+        );
+
+        expect($secondPage)
+            ->total->toBe(125)
+            ->unfiltered_total->toBe(250)
+            ->items->toHaveCount(25)
+            ->and(array_column($secondPage['items'], 'number'))->toBe(range(201, 249, 2))
+            ->and($emptyPage)
+            ->total->toBe(0)
+            ->unfiltered_total->toBe(250)
+            ->items->toBe([]);
+
+        if ($storage->isCompact($storedTimetables)) {
+            expect($receivedCompactSlot)->toBeTrue();
+        }
+    }
+});
+
 it('rejects invalid pagination values and corrupt compact data outside the requested page', function () {
     $storage = new StudentTimetableV3TimetableStorage;
     $compact = $storage->compact(collect(range(1, 101))

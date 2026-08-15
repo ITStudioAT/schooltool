@@ -191,11 +191,108 @@ class StudentTimetableV3TimetableStorage
         ];
     }
 
+    /**
+     * @param  array<string, mixed>|list<array<string, mixed>>  $storedTimetables
+     * @param  callable(array<string, mixed>): bool  $matches
+     * @return array{items: list<array<string, mixed>>, total: int, unfiltered_total: int}|null
+     */
+    public function expandFilteredPage(
+        array $storedTimetables,
+        int $page,
+        int $perPage,
+        callable $matches,
+    ): ?array {
+        if ($page < 1 || $perPage < 1 || $page > intdiv(PHP_INT_MAX, $perPage)) {
+            throw new InvalidArgumentException('Timetable pagination values must be positive integers.');
+        }
+
+        $offset = ($page - 1) * $perPage;
+
+        if (array_is_list($storedTimetables)) {
+            if (! $this->isListOfArrays($storedTimetables)) {
+                return null;
+            }
+
+            $filteredPage = $this->filteredPageItems($storedTimetables, $offset, $perPage, $matches);
+
+            return [
+                ...$filteredPage,
+                'unfiltered_total' => count($storedTimetables),
+            ];
+        }
+
+        if (($storedTimetables['storage_version'] ?? null) !== self::STORAGE_VERSION) {
+            return null;
+        }
+
+        $lessons = $storedTimetables['lessons'] ?? null;
+        $compactTimetables = $storedTimetables['timetables'] ?? null;
+
+        if (! is_array($lessons) || ! array_is_list($lessons) || ! $this->isListOfArrays($lessons)) {
+            return null;
+        }
+
+        if (
+            ! is_array($compactTimetables)
+            || ! array_is_list($compactTimetables)
+            || ! $this->compactTimetablesAreValid($compactTimetables, $lessons)
+        ) {
+            return null;
+        }
+
+        $filteredPage = $this->filteredPageItems($compactTimetables, $offset, $perPage, $matches);
+        $pageEnvelope = $storedTimetables;
+        $pageEnvelope['timetables'] = $filteredPage['items'];
+        $expandedTimetables = $this->expand($pageEnvelope);
+
+        if ($expandedTimetables === null) {
+            return null;
+        }
+
+        return [
+            'items' => $expandedTimetables,
+            'total' => $filteredPage['total'],
+            'unfiltered_total' => count($compactTimetables),
+        ];
+    }
+
     /** @param array<string, mixed>|list<array<string, mixed>> $storedTimetables */
     public function isCompact(array $storedTimetables): bool
     {
         return ! array_is_list($storedTimetables)
             && ($storedTimetables['storage_version'] ?? null) === self::STORAGE_VERSION;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $timetables
+     * @param  callable(array<string, mixed>): bool  $matches
+     * @return array{items: list<array<string, mixed>>, total: int}
+     */
+    private function filteredPageItems(
+        array $timetables,
+        int $offset,
+        int $perPage,
+        callable $matches,
+    ): array {
+        $items = [];
+        $total = 0;
+
+        foreach ($timetables as $timetable) {
+            if (! $matches($timetable)) {
+                continue;
+            }
+
+            if ($total >= $offset && count($items) < $perPage) {
+                $items[] = $timetable;
+            }
+
+            $total++;
+        }
+
+        return [
+            'items' => $items,
+            'total' => $total,
+        ];
     }
 
     /**
