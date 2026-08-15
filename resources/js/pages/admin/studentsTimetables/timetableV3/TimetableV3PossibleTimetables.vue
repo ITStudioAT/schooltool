@@ -86,18 +86,23 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="hour in visibleHours" :key="hour">
+                        <tr v-for="hourRow in visibleHourRows" :key="hourRow.hour">
                             <th scope="row" class="timetable-v3-results__period">
-                                <strong>{{ hour }}.</strong>
+                                <strong>{{ hourRow.hour }}.</strong>
+                                <span
+                                    v-if="hourRow.timeRange"
+                                    class="timetable-v3-results__period-time">
+                                    {{ hourRow.timeRange }}
+                                </span>
                             </th>
                             <td
                                 v-for="weekday in visibleWeekdays"
-                                :key="`${weekday.value}-${hour}`">
+                                :key="`${weekday.value}-${hourRow.hour}`">
                                 <div
-                                    v-if="timetableEntriesForCell(weekday.value, hour).length"
+                                    v-if="timetableEntriesForCell(weekday.value, hourRow.hour).length"
                                     class="timetable-v3-results__cell-entries">
                                     <article
-                                        v-for="entry in timetableEntriesForCell(weekday.value, hour)"
+                                        v-for="entry in timetableEntriesForCell(weekday.value, hourRow.hour)"
                                         :key="entry.renderKey"
                                         class="timetable-v3-results__lesson"
                                         :class="{
@@ -300,6 +305,19 @@ export default {
 
             return Array.from({ length: (lastHour - firstHour) + 1 }, (_, index) => firstHour + index)
         },
+        visibleHourRows() {
+            return this.visibleHours.map((hour) => {
+                const timeRanges = this.selectedSlotEntries
+                    .filter(entry => entry.hour === hour)
+                    .map(entry => this.courseGroupTimeRange(entry.slot?.courseGroup))
+                    .filter(Boolean)
+
+                return {
+                    hour,
+                    timeRange: [...new Set(timeRanges)].join(' / '),
+                }
+            })
+        },
     },
 
     methods: {
@@ -359,7 +377,9 @@ export default {
         },
         lessonDateLabel(entry) {
             const recurrenceLabel = String(entry.courseGroup?.recurrence_label || '').trim()
-            const dateRangeLabel = String(entry.dateRangeLabel || '').trim()
+            const dateRangeLabel = entry.courseGroup?.is_full_semester === true
+                ? ''
+                : String(entry.dateRangeLabel || '').trim()
             const dates = Array.isArray(entry.courseGroup?.dates) ? entry.courseGroup.dates : []
             const singleDate = dates.length === 1 ? this.localizedDate(dates[0]) : ''
 
@@ -529,6 +549,7 @@ export default {
     overflow: auto;
     overscroll-behavior-inline: contain;
     background: #fff;
+    border: 1px solid #cbd5e1;
     border-radius: 9px;
     scrollbar-color: rgba(15, 118, 110, 0.55) transparent;
 }
@@ -559,12 +580,16 @@ export default {
     background: #0f766e;
 }
 
+.timetable-v3-results__table thead th:not(:last-child) {
+    border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 .timetable-v3-results__period-heading,
 .timetable-v3-results__period {
     position: sticky;
     left: 0;
     z-index: 1;
-    width: 58px;
+    width: 94px;
 }
 
 .timetable-v3-results__period-heading {
@@ -579,7 +604,17 @@ export default {
 }
 
 .timetable-v3-results__period strong {
+    display: block;
     font-size: 0.9rem;
+}
+
+.timetable-v3-results__period-time {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.2;
+    color: #64748b;
 }
 
 .timetable-v3-results__table td {
@@ -587,6 +622,21 @@ export default {
     padding: 4px;
     vertical-align: top;
     background: inherit;
+}
+
+.timetable-v3-results__table tbody th,
+.timetable-v3-results__table tbody td {
+    border-right: 1px solid #dbe4ea;
+    border-bottom: 1px solid #dbe4ea;
+}
+
+.timetable-v3-results__table tbody tr > :last-child {
+    border-right: 0;
+}
+
+.timetable-v3-results__table tbody tr:last-child th,
+.timetable-v3-results__table tbody tr:last-child td {
+    border-bottom: 0;
 }
 
 .timetable-v3-results__table tbody tr:nth-child(odd) {

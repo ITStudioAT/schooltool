@@ -3695,6 +3695,169 @@ it('resolves a compact generic religion subject to the selected religion module 
         ))->toBeTrue();
 });
 
+it('resolves only the selected authoritative language module when sibling languages share its module number', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $subjects = collect([
+        ['id' => 21, 'code' => 'L2', 'subject' => 'L', 'name' => 'Latein 2'],
+        ['id' => 22, 'code' => 'F2', 'subject' => 'F', 'name' => 'Französisch 2'],
+        ['id' => 23, 'code' => 'S2', 'subject' => 'S', 'name' => 'Spanisch 2'],
+    ])->map(fn (array $subject): array => [
+        'id' => $subject['id'],
+        'semester' => 2,
+        'branch' => 'common',
+        'json_code' => $subject['code'],
+        'json_subject' => 'L/F/S',
+        'name' => $subject['name'],
+        'hours_per_week' => 2,
+        'is_active' => true,
+    ])->all();
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: $subjects,
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'key' => 'f2-a',
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'F2-A',
+                'display_label' => 'F2-A',
+                'title' => 'F2-A',
+                'course' => 'F2',
+                'subject' => 'F',
+                'module_code' => 'F2',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 2,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'L',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['F2'],
+            'selected_modules_are_authoritative' => true,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        requiredCourseGroupsByModule: [
+            'F2' => ['f2-a'],
+        ],
+    );
+    $slotCodes = collect($result['timetables'])
+        ->flatMap(fn (array $timetable): array => collect($timetable['slots'])->pluck('code')->all())
+        ->unique()
+        ->values()
+        ->all();
+
+    expect($result)
+        ->selected_course_count->toBe(1)
+        ->timetable_variation_count->toBe(1)
+        ->timetables->toHaveCount(1)
+        ->and($slotCodes)->toBe(['F2']);
+});
+
+it('resolves authoritative compact religion and ethics modules to different subject rows', function (
+    string $selectedModule,
+    string $courseGroupKey,
+) {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 24,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'R2',
+                'json_subject' => 'R',
+                'name' => 'Religion 2',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 25,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'ET2',
+                'json_subject' => 'ET',
+                'name' => 'Ethik 2',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'key' => $courseGroupKey,
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => "{$selectedModule}-A",
+                'display_label' => "{$selectedModule}-A",
+                'title' => "{$selectedModule}-A",
+                'course' => $selectedModule,
+                'subject' => $selectedModule,
+                'module_code' => $selectedModule,
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 2,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'F',
+                'religion' => $selectedModule === 'ETH2' ? 'Rev' : 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$selectedModule],
+            'selected_modules_are_authoritative' => true,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        requiredCourseGroupsByModule: [
+            $selectedModule => [$courseGroupKey],
+        ],
+    );
+    $slotCodes = collect($result['timetables'][0]['slots'])
+        ->pluck('code')
+        ->unique()
+        ->values()
+        ->all();
+
+    expect($result)
+        ->selected_course_count->toBe(1)
+        ->timetable_variation_count->toBe(1)
+        ->timetables->toHaveCount(1)
+        ->and($slotCodes)->toBe([$selectedModule]);
+})->with([
+    'evangelical religion uses the generic religion row' => ['Rev2', 'rev2-a'],
+    'ethics uses the ethics row' => ['ETH2', 'eth2-a'],
+]);
+
 it('rejects a required raw course group assigned to the wrong selected module', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 

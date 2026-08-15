@@ -5393,7 +5393,7 @@ it('unimports a timetable import run and removes its associated entries', functi
     );
 });
 
-it('returns grouped timetable courses with recurrence and block markers', function () {
+it('returns grouped timetable courses with recurrence, full-semester, and block markers', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -5509,6 +5509,7 @@ it('returns grouped timetable courses with recurrence and block markers', functi
         ->and($math['display_label'])->toBe('MATH1AAB')
         ->and($math['dates'])->toBe(['2026-09-07', '2026-09-14', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19'])
         ->and($math['is_block'])->toBeFalse()
+        ->and($math['is_full_semester'])->toBeTrue()
         ->and($bio['recurrence_type'])->toBe('every_2_weeks')
         ->and($bio['recurrence_label'])->toBe('2-wöchig')
         ->and($geo['recurrence_type'])->toBe('every_3_weeks')
@@ -5516,6 +5517,7 @@ it('returns grouped timetable courses with recurrence and block markers', functi
         ->and($history['recurrence_type'])->toBe('every_4_weeks')
         ->and($history['recurrence_label'])->toBe('4-wöchig')
         ->and($chem['is_block'])->toBeTrue()
+        ->and($chem['is_full_semester'])->toBeFalse()
         ->and($chem['block_label'])->toBe('Block');
 });
 

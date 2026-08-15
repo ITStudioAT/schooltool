@@ -124,3 +124,27 @@ Own the selected timetable as a global zero-based index in TimetableV3.vue. With
 
 ## Start automatic timetable calculation from the module CTA
 With automatic mode and selected modules, “Stundenplan erstellen” must persist the draft, navigate to creation, and start calculation immediately. The creation step always shows the automatic summary beside a status/result card; Saturday is fixed to Ja with no switch or Los action. Progress and the calculation result stay in the status card, while timetable or solution-plan output spans below both cards. Back returns directly to modules; restoring the creation URL remains read-only and must not silently recalculate.
+
+## Place V3 calculation status in the automatic card
+This supersedes the earlier success-card ownership of progress/results. On the creation step, mirror the modules page's selected-Automatic 2fr/1fr card ratio. Keep calculation idle/progress/error/result content in the wider automatic card; keep options and used modules in the narrower right card. Timetable and solution-plan output continues below and spans both cards.
+
+## Show the manual mode card beside V3 creation results
+This supersedes the right-card options/used-modules summary on the creation step. Keep the wider automatic card responsible for selected modules and calculation states/results. Render the narrower right card as a static, non-interactive orange “Manueller Stundenplan” card with the same title and description as the modules step; timetable and solution-plan output remains below both cards.
+
+## Keep the manual timetable transfer CTA inert
+On the creation step, the static manual card explains that the currently selected timetable can later be taken over for individual editing. Show a read-only “Stundenplan übernehmen” button with no click handler, route, or state mutation until the manual editor workflow is implemented.
+
+## Sort selected V3 module summaries by code
+Render “Ausgewählte Module” alphabetically by module code on both the modules and creation routes. Use natural German sorting so numeric codes such as D2 precede D10, and keep persisted selected-module keys and backend catalog order unchanged.
+
+## Use a result heading after V3 calculation
+On the V3 creation route, label the automatic card “Berechnung der Stundenpläne” while work is pending or running. Once calculation succeeds, switch the heading to “Ergebnis der Stundenplanberechnung” so the completed state is described semantically.
+
+## Reserve a creation options card
+On the V3 creation route, keep a static teal “Optionen” card for future timetable settings. Place it below the manual card in the narrow right column while the automatic calculation card spans both right-column card rows; stack all three cards in DOM order on narrow screens. Do not add option controls or click behavior until explicitly requested.
+
+## Show real times in the V3 timetable grid
+In the V3 possible-timetable table, show each visible period number together with the distinct starts_at–ends_at ranges already supplied by that timetable's primary course-group slots. Never hardcode school-hour times or invent a time for an empty intermediate period. Keep subtle outer, row, and column borders so weekdays and periods remain easy to track.
+
+## Right-align the automatic recommendation
+On the V3 modules route, keep the “Empfohlen” badge in the automatic timetable card aligned to the right of its header area. Preserve the title, mode-selection status, and responsive card behavior.

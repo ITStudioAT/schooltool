@@ -951,6 +951,13 @@ describe('TimetableV3', () => {
         expect(source).toContain('class="timetable-v3__schedule-mode-recommendation"')
         expect(source).toContain('mdi-star-four-points')
         expect(source).toContain('Empfohlen')
+        expect(source).toMatch(
+            /\.timetable-v3__schedule-mode-kickers\s*\{[\s\S]*?justify-content:\s*flex-end;/,
+        )
+        expect(automaticCardSource).not.toContain(
+            '<span class="timetable-v3__schedule-mode-label">Automatisch</span>',
+        )
+        expect(manualCardSource).not.toContain('<span class="timetable-v3__schedule-mode-label">Manuell</span>')
         expect(source).toContain('background: linear-gradient(135deg, #fef08a, #facc15)')
         expect(source).toContain(
             'Sie stellen den Stundenplan selbst zusammen und platzieren die Unterrichte manuell.',
@@ -998,12 +1005,13 @@ describe('TimetableV3', () => {
         expect(context.scheduleCreationMode).toBeNull()
     })
 
-    it('starts calculation from the module CTA and renders the creation status cards', async () => {
+    it('starts calculation from the module CTA and renders the automatic, manual, and options cards', async () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
         )
         const methods = (TimetableV3 as any).methods
+        const timetableCalculationHeading = (TimetableV3 as any).computed.timetableCalculationHeading
         const currentStepWatcher = (TimetableV3 as any).watch.currentStep
         const push = vi.fn().mockResolvedValue(undefined)
         const context = {
@@ -1083,9 +1091,15 @@ describe('TimetableV3', () => {
         )
         const creationPageEnd = source.indexOf('\n        </div>\n\n        <v-dialog', creationPageStart)
         const creationPageSource = source.slice(creationPageStart, creationPageEnd)
-        const successCardStart = creationPageSource.indexOf('timetable-v3__creation-success-card')
-        const successCardEnd = creationPageSource.indexOf('</section>', successCardStart)
-        const successCardSource = creationPageSource.slice(successCardStart, successCardEnd)
+        const automaticCardStart = creationPageSource.indexOf('timetable-v3__creation-summary-card--automatic')
+        const automaticCardEnd = creationPageSource.indexOf('</section>', automaticCardStart)
+        const automaticCardSource = creationPageSource.slice(automaticCardStart, automaticCardEnd)
+        const manualCardStart = creationPageSource.indexOf('timetable-v3__schedule-mode-card--manual')
+        const manualCardEnd = creationPageSource.indexOf('</section>', manualCardStart)
+        const manualCardSource = creationPageSource.slice(manualCardStart, manualCardEnd)
+        const optionsCardStart = creationPageSource.indexOf('timetable-v3__schedule-mode-card--options')
+        const optionsCardEnd = creationPageSource.indexOf('</section>', optionsCardStart)
+        const optionsCardSource = creationPageSource.slice(optionsCardStart, optionsCardEnd)
         const timetableOutputPosition = creationPageSource.indexOf('<TimetableV3PossibleTimetables')
 
         expect(creationPageStart).toBeGreaterThan(-1)
@@ -1104,25 +1118,59 @@ describe('TimetableV3', () => {
         expect(creationPageSource).not.toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
         expect(creationPageSource).not.toContain('timetable-v3__module-group-cards')
         expect(creationPageSource).not.toContain('timetable-v3__module-tile')
-        expect(successCardStart).toBeGreaterThan(-1)
-        expect(successCardSource).toContain('Optionen')
-        expect(successCardSource).toContain('Automatisch')
-        expect(successCardSource).toContain("selectedModuleCount === 1 ? 'Modul' : 'Module'")
-        expect(successCardSource).toContain('selectedModuleHoursLabel')
-        expect(successCardSource).toContain("Samstag: {{ allowSaturdayLessons ? 'Ja' : 'Nein' }}")
-        expect(successCardSource).toContain('Verwendete Module')
-        expect(successCardSource).toContain('Berechnung der Stundenpläne')
-        expect(successCardSource).toContain("timetableCalculationStatus === 'calculating'")
-        expect(successCardSource).toContain("timetableCalculationStatus === 'success'")
-        expect(successCardSource).toContain('possibleTimetableCountLabel')
-        expect(successCardSource).toContain('checkedTimetableVariationCountLabel')
-        expect(successCardSource).toContain('conflictingTimetableVariationCountLabel')
-        expect(successCardSource).not.toContain('Samstags Unterricht?')
-        expect(successCardSource).not.toContain('<v-switch')
-        expect(successCardSource).not.toContain('Los!')
-        expect(successCardSource).not.toContain('Manueller Stundenplan')
-        expect(successCardSource).not.toContain('Verfügbare Module und Unterrichte')
-        expect(timetableOutputPosition).toBeGreaterThan(successCardEnd)
+        expect(automaticCardStart).toBeGreaterThan(-1)
+        expect(automaticCardSource).not.toContain('timetable-v3__schedule-mode-label')
+        expect(automaticCardSource).toContain('{{ timetableCalculationHeading }}')
+        expect(timetableCalculationHeading.call({ timetableCalculationStatus: 'calculating' }))
+            .toBe('Berechnung der Stundenpläne')
+        expect(timetableCalculationHeading.call({ timetableCalculationStatus: 'success' }))
+            .toBe('Ergebnis der Stundenplanberechnung')
+        expect(automaticCardSource).toContain("timetableCalculationStatus === 'calculating'")
+        expect(automaticCardSource).toContain("timetableCalculationStatus === 'success'")
+        expect(automaticCardSource).toContain('possibleTimetableCountLabel')
+        expect(automaticCardSource).toContain('checkedTimetableVariationCountLabel')
+        expect(automaticCardSource).toContain('conflictingTimetableVariationCountLabel')
+        expect(manualCardStart).toBeGreaterThan(-1)
+        expect(manualCardSource).toContain('timetable-v3__schedule-mode-card--manual')
+        expect(manualCardSource).toContain('timetable-v3__creation-summary-card--manual')
+        expect(manualCardSource).toContain('mdi-calendar-edit')
+        expect(manualCardSource).not.toContain('timetable-v3__schedule-mode-label')
+        expect(manualCardSource).toContain('Manueller Stundenplan')
+        expect(manualCardSource).toContain(
+            'Sie können jetzt den aktuell ausgewählten Stundenplan übernehmen, um ihn noch weiter',
+        )
+        expect(manualCardSource).toContain('individuell anzupassen.')
+        expect(manualCardSource).toContain('class="timetable-v3__manual-timetable-button"')
+        expect(manualCardSource).toContain('prepend-icon="mdi-calendar-import"')
+        expect(manualCardSource).toContain('readonly')
+        expect(manualCardSource).toContain('Stundenplan übernehmen')
+        expect(manualCardSource).not.toContain('@click')
+        expect(manualCardSource).not.toContain('href=')
+        expect(manualCardSource).not.toContain(':to=')
+        expect(manualCardSource).not.toContain('timetableCalculationStatus')
+        expect(manualCardSource).not.toContain('timetable-v3__schedule-mode-input')
+        expect(optionsCardStart).toBeGreaterThan(manualCardEnd)
+        expect(optionsCardSource).toContain('timetable-v3__schedule-mode-card--options')
+        expect(optionsCardSource).toContain('mdi-tune-variant')
+        expect(optionsCardSource).not.toContain('timetable-v3__schedule-mode-label')
+        expect(optionsCardSource).not.toContain(
+            '<span class="timetable-v3__schedule-mode-label">Einstellungen</span>',
+        )
+        expect(optionsCardSource).toContain('Optionen')
+        expect(optionsCardSource).toContain(
+            'Hier können künftig weitere Einstellungen für die Stundenpläne ausgewählt werden.',
+        )
+        expect(optionsCardSource).not.toContain('@click')
+        expect(optionsCardSource).not.toContain('<v-btn')
+        expect(optionsCardSource).not.toContain('href=')
+        expect(optionsCardSource).not.toContain(':to=')
+        expect(creationPageSource).not.toContain('timetable-v3__creation-success-card')
+        expect(creationPageSource).not.toContain('timetable-v3__calculation-options')
+        expect(creationPageSource).not.toContain('Verwendete Module')
+        expect(creationPageSource).not.toContain('Samstags Unterricht?')
+        expect(creationPageSource).not.toContain('<v-switch')
+        expect(creationPageSource).not.toContain('Los!')
+        expect(timetableOutputPosition).toBeGreaterThan(optionsCardEnd)
         expect(creationPageSource.slice(timetableOutputPosition)).toContain(
             `v-if="timetableCalculationStatus === 'success' && possibleTimetableCount > 0"`,
         )
@@ -1138,7 +1186,10 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('Los!')
         expect(source).toContain('creationOptions: {')
         expect(source).toContain('allowSaturdayLessons: this.allowSaturdayLessons')
-        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(source).toMatch(/\.timetable-v3__schedule-mode-options--automatic-selected\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 2fr\) minmax\(0, 1fr\);/)
+        expect(source).toMatch(/\.timetable-v3__creation-summary-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 2fr\) minmax\(0, 1fr\);/)
+        expect(source).toMatch(/\.timetable-v3__creation-summary-card--automatic\s*\{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1 \/ span 2;/)
+        expect(source).toMatch(/\.timetable-v3__creation-summary-card--options\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*2;/)
         expect(source).toMatch(/\.timetable-v3__creation-summary-card\s*\{[\s\S]*?animation: none;[\s\S]*?transition: none;/)
         expect(source).toMatch(/\.timetable-v3__creation-summary-card:hover,[\s\S]*?transform: none;/)
     })
@@ -1613,45 +1664,19 @@ describe('TimetableV3', () => {
         expect(source).toContain('gespeichert und werden angezeigt.')
     })
 
-    it('shows the exact modules used by the backend calculation', () => {
+    it('keeps backend calculation module details out of the static manual creation card', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
         )
-        const computed = (TimetableV3 as any).computed
-        const modules = computed.timetableCalculationModules.call({
-            timetableCalculationResult: {
-                modules: [
-                    {
-                        selection_key: 'current:D5',
-                        code: 'D5',
-                        name: 'Deutsch 5',
-                    },
-                    {
-                        selection_key: 'current:CH1',
-                        code: 'CH1',
-                        name: 'Chemie 1',
-                    },
-                ],
-            },
-            selectedModules: [
-                {
-                    selection_key: 'current:BU2',
-                    code: 'BU2',
-                    name: 'Biologie 2',
-                },
-            ],
-        })
+        const manualCardStart = source.indexOf('timetable-v3__creation-summary-card--manual')
+        const manualCardEnd = source.indexOf('</section>', manualCardStart)
+        const manualCardSource = source.slice(manualCardStart, manualCardEnd)
 
-        expect(modules).toEqual([
-            { key: 'current:D5', code: 'D5', name: 'Deutsch 5' },
-            { key: 'current:CH1', code: 'CH1', name: 'Chemie 1' },
-        ])
-        expect(source).toContain('Verwendete Module')
-        expect(source).toContain('Für die Berechnung verwendete Module')
-        expect(source).toContain('v-for="module in timetableCalculationModules"')
-        expect(source).toContain('{{ module.code }}')
-        expect(source).toContain('{{ module.name }}')
+        expect(manualCardSource).toContain('Manueller Stundenplan')
+        expect(manualCardSource).not.toContain('Verwendete Module')
+        expect(manualCardSource).not.toContain('timetableCalculationModules')
+        expect(source).not.toContain('timetableCalculationModules()')
     })
 
     it('renders backend-ranked module removal solutions as explicit actions only when they can help', () => {
@@ -2355,6 +2380,40 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="openModuleCoursesDialog(module)"')
         expect(source).toContain('grid-template-columns: repeat(auto-fill, minmax(175px, 1fr))')
         expect(source).not.toContain('unter „Zusätzliche“ angeboten')
+    })
+
+    it('orders selected module summaries alphabetically by module code on both routes', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const selectedModules = (TimetableV3 as any).computed.selectedModules
+        const selectedModuleKeys = [
+            'current:M3',
+            'current:D2',
+            'current:ETH3',
+            'current:CH1',
+            'current:D10',
+        ]
+        const originalSelectedModuleKeys = [...selectedModuleKeys]
+        const moduleSelectionGroups = [{
+            modules: [
+                { selection_key: 'current:D10', code: 'D10' },
+                { selection_key: 'current:M3', code: 'M3' },
+                { selection_key: 'current:CH1', code: 'CH1' },
+                { selection_key: 'current:D2', code: 'D2' },
+                { selection_key: 'current:ETH3', code: 'ETH3' },
+            ],
+        }]
+        const originalModules = [...moduleSelectionGroups[0].modules]
+
+        expect(selectedModules.call({ moduleSelectionGroups, selectedModuleKeys })
+            .map((module: { code: string }) => module.code))
+            .toEqual(['CH1', 'D2', 'D10', 'ETH3', 'M3'])
+        expect(selectedModuleKeys).toEqual(originalSelectedModuleKeys)
+        expect(moduleSelectionGroups[0].modules).toEqual(originalModules)
+        expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(2)
+        expect(source.match(/Ausgewählte Module/g)).toHaveLength(2)
     })
 
     it('opens a persistent course dialog from an individual module tile', async () => {

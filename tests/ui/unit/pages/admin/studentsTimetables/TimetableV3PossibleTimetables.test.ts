@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { shallowMount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import TimetableV3PossibleTimetables from '@/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue'
@@ -160,6 +161,51 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(3)
     })
 
+    it('hides the date range for courses covering the whole semester', () => {
+        const fullSemesterSlot = slotFixture('D1', 1, 1, {
+            courseGroup: {
+                dates: ['2026-09-07', '2026-10-19'],
+                ends_at: '18:35',
+                hour: 1,
+                is_full_semester: true,
+                recurrence_label: '1-wöchig',
+                starts_at: '17:50',
+                weekday: 1,
+            },
+            dateRangeLabel: '7.9.–19.10.',
+        })
+        const blockSlot = slotFixture('CH1', 2, 2, {
+            courseGroup: {
+                dates: ['2026-09-30', '2026-10-07'],
+                ends_at: '18:35',
+                hour: 2,
+                is_full_semester: false,
+                recurrence_label: '1-wöchig',
+                starts_at: '17:50',
+                weekday: 2,
+            },
+            dateRangeLabel: '30.9.–7.10.',
+        })
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                timetables: [timetableFixture({
+                    key: 'date-ranges',
+                    number: 1,
+                    slots: {
+                        '1-1': fullSemesterSlot,
+                        '2-2': blockSlot,
+                    },
+                    type: 'full_green',
+                })],
+            },
+        })
+
+        expect((wrapper.vm as any).lessonDateLabel(fullSemesterSlot)).toBe('1-wöchig')
+        expect((wrapper.vm as any).lessonDateLabel(blockSlot)).toBe('1-wöchig · 30.9.–7.10.')
+        expect(wrapper.text()).not.toContain('7.9.–19.10.')
+        expect(wrapper.text()).toContain('30.9.–7.10.')
+    })
+
     it('shows Saturday and fills missing periods', () => {
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
             props: {
@@ -187,6 +233,53 @@ describe('TimetableV3PossibleTimetables', () => {
         expect((wrapper.vm as any).visibleWeekdays.map((weekday: any) => weekday.shortTitle))
             .toEqual(['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'])
         expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3])
+    })
+
+    it('shows actual backend times beside each period and separates the timetable grid', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue',
+            'utf8',
+        )
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                timetables: [timetableFixture({
+                    key: 'evening',
+                    number: 1,
+                    slots: {
+                        '1-8': slotFixture('D8', 1, 8, {
+                            courseGroup: {
+                                ends_at: '18:35',
+                                hour: 8,
+                                starts_at: '17:50',
+                                weekday: 1,
+                            },
+                        }),
+                        '2-9': slotFixture('M9', 2, 9, {
+                            courseGroup: {
+                                ends_at: '19:25',
+                                hour: 9,
+                                starts_at: '18:40',
+                                weekday: 2,
+                            },
+                        }),
+                    },
+                    type: 'full_green',
+                })],
+            },
+        })
+        const periodCells = wrapper.findAll('.timetable-v3-results__period')
+
+        expect((wrapper.vm as any).visibleHourRows).toEqual([
+            { hour: 8, timeRange: '17:50–18:35' },
+            { hour: 9, timeRange: '18:40–19:25' },
+        ])
+        expect(periodCells[0].text()).toContain('8.')
+        expect(periodCells[0].find('.timetable-v3-results__period-time').text()).toBe('17:50–18:35')
+        expect(periodCells[1].text()).toContain('9.')
+        expect(periodCells[1].find('.timetable-v3-results__period-time').text()).toBe('18:40–19:25')
+        expect(source).toContain('border: 1px solid #cbd5e1;')
+        expect(source).toContain('border-right: 1px solid #dbe4ea;')
+        expect(source).toContain('border-bottom: 1px solid #dbe4ea;')
     })
 
     it('navigates across page boundaries with global positions in both directions', async () => {

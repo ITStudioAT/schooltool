@@ -5002,12 +5002,21 @@ class RobotTimetableBackendSetupService
 
         $selectedCourseBase = $selectedCourseParts[1];
 
-        if ($this->isReligionSubject($subject)) {
-            return in_array($selectedCourseBase, ['R', 'RK', 'REV', 'RIS', 'ROR', 'ET', 'ETH'], true);
+        if (
+            $this->isReligionSubject($subject)
+            && in_array($selectedCourseBase, ['REV', 'RIS', 'ROR'], true)
+        ) {
+            return true;
         }
 
         if ($this->isLanguageSubject($subject)) {
-            return in_array($selectedCourseBase, ['L', 'F', 'S', 'SPA'], true);
+            $languageSubjectCode = $this->languageSubjectCode($subject);
+
+            return in_array($selectedCourseBase, ['L', 'F', 'S', 'SPA'], true)
+                && ($languageSubjectCode === '' || in_array($selectedCourseBase, [
+                    $languageSubjectCode,
+                    $this->defaultTimetableCodeAlias($languageSubjectCode),
+                ], true));
         }
 
         $subjectAliases = collect([

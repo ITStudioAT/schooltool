@@ -627,7 +627,6 @@
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
                             <span class="timetable-v3__schedule-mode-kickers">
-                                <span class="timetable-v3__schedule-mode-label">Automatisch</span>
                                 <span class="timetable-v3__schedule-mode-recommendation">
                                     <v-icon icon="mdi-star-four-points" size="14" />
                                     Empfohlen
@@ -745,7 +744,6 @@
                             <v-icon icon="mdi-calendar-edit" size="30" />
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
-                            <span class="timetable-v3__schedule-mode-label">Manuell</span>
                             <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
                             <span class="timetable-v3__schedule-mode-description">
                                 Sie stellen den Stundenplan selbst zusammen und platzieren die Unterrichte manuell.
@@ -979,15 +977,13 @@
                         timetable-v3__schedule-mode-card--automatic
                         timetable-v3__schedule-mode-card--selected
                         timetable-v3__creation-summary-card
+                        timetable-v3__creation-summary-card--automatic
                     "
-                    aria-label="Ausgewählte Module für den automatischen Stundenplan">
+                    aria-label="Automatischer Stundenplan mit ausgewählten Modulen und Berechnung">
                     <span class="timetable-v3__schedule-mode-icon">
                         <v-icon icon="mdi-calendar-clock" size="30" />
                     </span>
                     <span class="timetable-v3__schedule-mode-copy">
-                        <span class="timetable-v3__schedule-mode-kickers">
-                            <span class="timetable-v3__schedule-mode-label">Automatisch</span>
-                        </span>
                         <span class="timetable-v3__schedule-mode-title">Automatischer Stundenplan</span>
                         <span class="timetable-v3__schedule-mode-description">
                             Sie wählen die Module. Das System erstellt und optimiert daraus den Stundenplan.
@@ -1021,164 +1017,170 @@
                             </v-chip>
                         </div>
                     </div>
-                </section>
 
-                <section
-                    class="
-                        timetable-v3__creation-summary-card
-                        timetable-v3__creation-success-card
-                        timetable-v3__calculation-card
-                    "
-                    aria-labelledby="timetable-v3-calculation-title">
-                    <div class="timetable-v3__calculation-options" aria-label="Gewählte Optionen">
-                        <span class="timetable-v3__calculation-options-label">Optionen</span>
-                        <span class="timetable-v3__calculation-option-chip">
-                            <v-icon icon="mdi-calendar-clock" size="17" />
-                            Automatisch
-                        </span>
-                        <span class="timetable-v3__calculation-option-chip">
-                            <v-icon icon="mdi-bookshelf" size="17" />
-                            {{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
-                            · {{ selectedModuleHoursLabel }} Std.
-                        </span>
-                        <span class="timetable-v3__calculation-option-chip">
-                            <v-icon icon="mdi-calendar-weekend-outline" size="17" />
-                            Samstag: {{ allowSaturdayLessons ? 'Ja' : 'Nein' }}
-                        </span>
+                    <div class="timetable-v3__calculation-content">
+                        <div class="timetable-v3__calculation-heading">
+                            <span class="timetable-v3__calculation-icon">
+                                <v-icon icon="mdi-calendar-search" size="27" />
+                            </span>
+                            <h3 id="timetable-v3-calculation-title">{{ timetableCalculationHeading }}</h3>
+                        </div>
 
                         <div
-                            v-if="timetableCalculationModules.length"
-                            class="timetable-v3__calculation-modules">
-                            <span class="timetable-v3__calculation-modules-label">Verwendete Module</span>
+                            v-if="timetableCalculationStatus === 'idle'"
+                            class="timetable-v3__calculation-state"
+                            aria-live="polite"
+                            role="status">
+                            <v-icon icon="mdi-calendar-clock-outline" color="teal-darken-1" size="34" />
+                            <div>
+                                <strong>Die Berechnung wurde noch nicht gestartet.</strong>
+                                <span>Starten Sie die Berechnung über „Stundenplan erstellen“ in der Modulauswahl.</span>
+                            </div>
+                        </div>
+
+                        <div
+                            v-else-if="timetableCalculationStatus === 'calculating'"
+                            class="timetable-v3__calculation-state timetable-v3__calculation-state--loading"
+                            aria-busy="true"
+                            aria-live="polite"
+                            role="status">
+                            <div class="timetable-v3__calculation-progress-copy">
+                                <strong>{{ timetableCalculationProgressLabel }}</strong>
+                                <span>{{ timetableCalculationProgressPercent }} % Gesamtfortschritt</span>
+                            </div>
                             <div
-                                class="timetable-v3__calculation-module-list"
-                                aria-label="Für die Berechnung verwendete Module"
-                                role="list">
+                                class="timetable-v3__calculation-led-progress"
+                                role="progressbar"
+                                aria-label="Fortschritt der Stundenplanberechnung"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                :aria-valuenow="timetableCalculationProgressPercent">
                                 <span
-                                    v-for="module in timetableCalculationModules"
-                                    :key="module.key"
-                                    class="timetable-v3__calculation-module-chip"
-                                    role="listitem">
-                                    <strong>{{ module.code }}</strong>
-                                    <span v-if="module.name && module.name !== module.code">· {{ module.name }}</span>
+                                    v-for="segment in timetableCalculationProgressSegments"
+                                    :key="segment.percent"
+                                    class="timetable-v3__calculation-led-segment"
+                                    :class="{ 'timetable-v3__calculation-led-segment--active': segment.active }"
+                                    aria-hidden="true" />
+                            </div>
+                        </div>
+
+                        <div
+                            v-else-if="timetableCalculationStatus === 'error'"
+                            class="timetable-v3__calculation-state timetable-v3__calculation-state--error"
+                            role="alert">
+                            <v-icon icon="mdi-alert-circle-outline" color="error" size="34" />
+                            <div>
+                                <strong>Die Berechnung konnte nicht abgeschlossen werden.</strong>
+                                <span>{{ timetableCalculationError }}</span>
+                            </div>
+                            <v-btn
+                                color="teal-darken-1"
+                                prepend-icon="mdi-refresh"
+                                variant="tonal"
+                                @click="calculatePossibleTimetables">
+                                Erneut versuchen
+                            </v-btn>
+                        </div>
+
+                        <div
+                            v-else-if="timetableCalculationStatus === 'success'"
+                            class="timetable-v3__calculation-result"
+                            aria-live="polite"
+                            role="status">
+                            <div class="timetable-v3__calculation-result-count">
+                                <v-icon
+                                    :icon="possibleTimetableCount > 0 ? 'mdi-check-decagram-outline' : 'mdi-calendar-remove-outline'"
+                                    :color="possibleTimetableCount > 0 ? 'success' : 'warning'"
+                                    size="42" />
+                                <div>
+                                    <strong>{{ possibleTimetableCountLabel }}</strong>
+                                    <span v-if="possibleTimetableCount === 1">mögliche Variante</span>
+                                    <span v-else-if="possibleTimetableCount > 1">mögliche Varianten</span>
+                                    <span v-else>Keine möglichen Varianten gefunden</span>
+                                </div>
+                            </div>
+
+                            <p class="timetable-v3__calculation-description">
+                                Die ausgewählten Unterrichtsalternativen wurden miteinander kombiniert und auf reguläre
+                                zeitliche Überschneidungen geprüft. Varianten mit Konflikten wurden ausgeschlossen;
+                                gespeichert wurden nur mögliche Stundenpläne.
+                            </p>
+
+                            <div
+                                v-if="timetablesTruncated"
+                                class="timetable-v3__calculation-truncated-notice"
+                                role="note">
+                                <v-icon icon="mdi-information-outline" size="23" />
+                                <span>
+                                    Nur <strong>{{ possibleTimetableCountLabel }}</strong> von
+                                    <strong>{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen wurden
+                                    gespeichert und werden angezeigt.
+                                </span>
+                            </div>
+
+                            <div class="timetable-v3__calculation-counts" aria-label="Zusammenfassung der Berechnung">
+                                <span>
+                                    <strong>{{ checkedTimetableVariationCountLabel }}</strong>
+                                    Kombinationen geprüft
+                                </span>
+                                <span>
+                                    <strong>{{ conflictingTimetableVariationCountLabel }}</strong>
+                                    Konfliktvarianten ausgeschlossen
                                 </span>
                             </div>
                         </div>
                     </div>
+                </section>
 
-                    <div class="timetable-v3__calculation-content">
-                    <div class="timetable-v3__calculation-heading">
-                        <span class="timetable-v3__calculation-icon">
-                            <v-icon icon="mdi-calendar-search" size="27" />
+                <section
+                    class="
+                        timetable-v3__schedule-mode-card
+                        timetable-v3__schedule-mode-card--manual
+                        timetable-v3__creation-summary-card
+                        timetable-v3__creation-summary-card--manual
+                    "
+                    aria-label="Manueller Stundenplan">
+                    <span class="timetable-v3__schedule-mode-icon">
+                        <v-icon icon="mdi-calendar-edit" size="30" />
+                    </span>
+                    <span class="timetable-v3__schedule-mode-copy">
+                        <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                        <span class="timetable-v3__schedule-mode-description">
+                            Sie können jetzt den aktuell ausgewählten Stundenplan übernehmen, um ihn noch weiter
+                            individuell anzupassen.
                         </span>
-                        <h3 id="timetable-v3-calculation-title">Berechnung der Stundenpläne</h3>
-                    </div>
+                    </span>
+                    <v-btn
+                        class="timetable-v3__manual-timetable-button"
+                        block
+                        color="orange-darken-2"
+                        prepend-icon="mdi-calendar-import"
+                        readonly
+                        size="large"
+                        type="button"
+                        variant="elevated">
+                        Stundenplan übernehmen
+                    </v-btn>
+                </section>
 
-                    <div
-                        v-if="timetableCalculationStatus === 'idle'"
-                        class="timetable-v3__calculation-state"
-                        aria-live="polite"
-                        role="status">
-                        <v-icon icon="mdi-calendar-clock-outline" color="teal-darken-1" size="34" />
-                        <div>
-                            <strong>Die Berechnung wurde noch nicht gestartet.</strong>
-                            <span>Starten Sie die Berechnung über „Stundenplan erstellen“ in der Modulauswahl.</span>
-                        </div>
-                    </div>
-
-                    <div
-                        v-else-if="timetableCalculationStatus === 'calculating'"
-                        class="timetable-v3__calculation-state timetable-v3__calculation-state--loading"
-                        aria-busy="true"
-                        aria-live="polite"
-                        role="status">
-                        <div class="timetable-v3__calculation-progress-copy">
-                            <strong>{{ timetableCalculationProgressLabel }}</strong>
-                            <span>{{ timetableCalculationProgressPercent }} % Gesamtfortschritt</span>
-                        </div>
-                        <div
-                            class="timetable-v3__calculation-led-progress"
-                            role="progressbar"
-                            aria-label="Fortschritt der Stundenplanberechnung"
-                            aria-valuemin="0"
-                            aria-valuemax="100"
-                            :aria-valuenow="timetableCalculationProgressPercent">
-                            <span
-                                v-for="segment in timetableCalculationProgressSegments"
-                                :key="segment.percent"
-                                class="timetable-v3__calculation-led-segment"
-                                :class="{ 'timetable-v3__calculation-led-segment--active': segment.active }"
-                                aria-hidden="true" />
-                        </div>
-                    </div>
-
-                    <div
-                        v-else-if="timetableCalculationStatus === 'error'"
-                        class="timetable-v3__calculation-state timetable-v3__calculation-state--error"
-                        role="alert">
-                        <v-icon icon="mdi-alert-circle-outline" color="error" size="34" />
-                        <div>
-                            <strong>Die Berechnung konnte nicht abgeschlossen werden.</strong>
-                            <span>{{ timetableCalculationError }}</span>
-                        </div>
-                        <v-btn
-                            color="teal-darken-1"
-                            prepend-icon="mdi-refresh"
-                            variant="tonal"
-                            @click="calculatePossibleTimetables">
-                            Erneut versuchen
-                        </v-btn>
-                    </div>
-
-                    <div
-                        v-else-if="timetableCalculationStatus === 'success'"
-                        class="timetable-v3__calculation-result"
-                        aria-live="polite"
-                        role="status">
-                        <div class="timetable-v3__calculation-result-count">
-                            <v-icon
-                                :icon="possibleTimetableCount > 0 ? 'mdi-check-decagram-outline' : 'mdi-calendar-remove-outline'"
-                                :color="possibleTimetableCount > 0 ? 'success' : 'warning'"
-                                size="42" />
-                            <div>
-                                <strong>{{ possibleTimetableCountLabel }}</strong>
-                                <span v-if="possibleTimetableCount === 1">mögliche Variante</span>
-                                <span v-else-if="possibleTimetableCount > 1">mögliche Varianten</span>
-                                <span v-else>Keine möglichen Varianten gefunden</span>
-                            </div>
-                        </div>
-
-                        <p class="timetable-v3__calculation-description">
-                            Die ausgewählten Unterrichtsalternativen wurden miteinander kombiniert und auf reguläre
-                            zeitliche Überschneidungen geprüft. Varianten mit Konflikten wurden ausgeschlossen; gespeichert
-                            wurden nur mögliche Stundenpläne.
-                        </p>
-
-                        <div
-                            v-if="timetablesTruncated"
-                            class="timetable-v3__calculation-truncated-notice"
-                            role="note">
-                            <v-icon icon="mdi-information-outline" size="23" />
-                            <span>
-                                Nur <strong>{{ possibleTimetableCountLabel }}</strong> von
-                                <strong>{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen wurden
-                                gespeichert und werden angezeigt.
-                            </span>
-                        </div>
-
-                        <div class="timetable-v3__calculation-counts" aria-label="Zusammenfassung der Berechnung">
-                            <span>
-                                <strong>{{ checkedTimetableVariationCountLabel }}</strong>
-                                Kombinationen geprüft
-                            </span>
-                            <span>
-                                <strong>{{ conflictingTimetableVariationCountLabel }}</strong>
-                                Konfliktvarianten ausgeschlossen
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </section>
+                <section
+                    class="
+                        timetable-v3__schedule-mode-card
+                        timetable-v3__schedule-mode-card--options
+                        timetable-v3__creation-summary-card
+                        timetable-v3__creation-summary-card--options
+                    "
+                    aria-labelledby="timetable-v3-options-title">
+                    <span class="timetable-v3__schedule-mode-icon">
+                        <v-icon icon="mdi-tune-variant" size="30" />
+                    </span>
+                    <span class="timetable-v3__schedule-mode-copy">
+                        <span id="timetable-v3-options-title" class="timetable-v3__schedule-mode-title">Optionen</span>
+                        <span class="timetable-v3__schedule-mode-description">
+                            Hier können künftig weitere Einstellungen für die Stundenpläne ausgewählt werden.
+                        </span>
+                    </span>
+                </section>
 
                 <TimetableV3PossibleTimetables
                     v-if="timetableCalculationStatus === 'success' && possibleTimetableCount > 0"
@@ -2431,7 +2433,25 @@ export default {
             return this.selectedModules.length
         },
         selectedModules() {
+            const moduleCodeCollator = new Intl.Collator('de-AT', {
+                numeric: true,
+                sensitivity: 'base',
+            })
+
             return selectedModulesForKeys(this.moduleSelectionGroups, this.selectedModuleKeys)
+                .sort((firstModule, secondModule) => {
+                    const codeComparison = moduleCodeCollator.compare(
+                        String(firstModule?.code || ''),
+                        String(secondModule?.code || ''),
+                    )
+
+                    if (codeComparison !== 0) return codeComparison
+
+                    return moduleCodeCollator.compare(
+                        String(firstModule?.selection_key || ''),
+                        String(secondModule?.selection_key || ''),
+                    )
+                })
         },
         selectedModuleHours() {
             return this.selectedModules.reduce((totalHours, module) => {
@@ -2445,6 +2465,11 @@ export default {
                 maximumFractionDigits: 2,
                 minimumFractionDigits: 0,
             })
+        },
+        timetableCalculationHeading() {
+            return this.timetableCalculationStatus === 'success'
+                ? 'Ergebnis der Stundenplanberechnung'
+                : 'Berechnung der Stundenpläne'
         },
         timetableCalculationSummary() {
             const summary = this.timetableCalculationResult?.summary
@@ -2461,24 +2486,6 @@ export default {
                     ? this.timetableCalculationResult.timetables.length
                     : 0,
             }
-        },
-        timetableCalculationModules() {
-            const resultModules = this.timetableCalculationResult?.modules
-            const modules = Array.isArray(resultModules) ? resultModules : this.selectedModules
-
-            return modules
-                .filter(module => module && typeof module === 'object' && !Array.isArray(module))
-                .map((module, index) => {
-                    const code = String(module.code || '').trim()
-                    const selectionKey = String(module.selection_key || '').trim()
-
-                    return {
-                        key: selectionKey || `${code}:${index}`,
-                        code,
-                        name: String(module.name || '').trim(),
-                    }
-                })
-                .filter(module => module.code)
         },
         timetableSolutionPlan() {
             const solutionPlan = this.timetableCalculationSummary.solution_plan
@@ -4533,6 +4540,12 @@ button.timetable-v3__student-data-field:focus-visible {
     --schedule-mode-soft: #fffbeb;
 }
 
+.timetable-v3__schedule-mode-card--options {
+    --schedule-mode-accent: #0f766e;
+    --schedule-mode-accent-rgb: 15, 118, 110;
+    --schedule-mode-soft: #f0fdfa;
+}
+
 .timetable-v3__schedule-mode-card:hover,
 .timetable-v3__schedule-mode-card:focus-within {
     background: #fff;
@@ -4570,7 +4583,7 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__creation-summary-cards {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 16px;
 }
 
@@ -4603,92 +4616,43 @@ button.timetable-v3__student-data-field:focus-visible {
         0 15px 34px rgba(var(--schedule-mode-accent-rgb), 0.22);
 }
 
-.timetable-v3__creation-success-card {
-    min-width: 0;
+.timetable-v3__creation-summary-card--automatic {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.timetable-v3__creation-summary-card--automatic .timetable-v3__calculation-content {
+    grid-column: 1 / -1;
+    min-height: 0;
+    padding: 8px 0 0;
+}
+
+.timetable-v3__creation-summary-card--manual {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-rows: auto 1fr;
+}
+
+.timetable-v3__creation-summary-card--options {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.timetable-v3__creation-summary-card--options:hover,
+.timetable-v3__creation-summary-card--options:focus-within {
+    background: linear-gradient(145deg, var(--schedule-mode-soft), #fff 68%);
+    border-color: rgba(var(--schedule-mode-accent-rgb), 0.3);
+    box-shadow: none;
+}
+
+.timetable-v3__manual-timetable-button {
+    grid-column: 1 / -1;
+    align-self: end;
+    font-weight: 850;
 }
 
 .timetable-v3__calculation-output {
     grid-column: 1 / -1;
-}
-
-.timetable-v3__calculation-card {
-    overflow: hidden;
-    background: linear-gradient(145deg, #f0fdfa, #fff 70%);
-    border: 1px solid rgba(15, 118, 110, 0.28);
-    border-radius: 18px;
-    box-shadow: 0 14px 32px rgba(15, 118, 110, 0.1);
-}
-
-.timetable-v3__calculation-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    padding: 13px 18px;
-    color: #134e4a;
-    background: rgba(204, 251, 241, 0.6);
-    border-bottom: 1px solid rgba(15, 118, 110, 0.18);
-}
-
-.timetable-v3__calculation-options-label {
-    margin-right: 2px;
-    font-size: 0.8rem;
-    font-weight: 850;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.timetable-v3__calculation-option-chip {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    padding: 5px 9px;
-    font-size: 0.82rem;
-    font-weight: 750;
-    background: rgba(255, 255, 255, 0.86);
-    border: 1px solid rgba(15, 118, 110, 0.18);
-    border-radius: 999px;
-}
-
-.timetable-v3__calculation-modules {
-    display: flex;
-    flex: 1 0 100%;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    align-items: center;
-    padding-top: 10px;
-    margin-top: 2px;
-    border-top: 1px solid rgba(15, 118, 110, 0.14);
-}
-
-.timetable-v3__calculation-modules-label {
-    flex: 0 0 auto;
-    font-size: 0.78rem;
-    font-weight: 850;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.timetable-v3__calculation-module-list {
-    display: flex;
-    flex: 1 1 500px;
-    flex-wrap: wrap;
-    gap: 6px;
-    min-width: 0;
-}
-
-.timetable-v3__calculation-module-chip {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-    max-width: 100%;
-    padding: 4px 8px;
-    overflow-wrap: anywhere;
-    font-size: 0.8rem;
-    color: #1e3a5f;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(49, 46, 129, 0.14);
-    border-radius: 7px;
 }
 
 .timetable-v3__calculation-content {
@@ -5123,7 +5087,7 @@ button.timetable-v3__student-data-field:focus-visible {
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
 }
 
 .timetable-v3__schedule-mode-label {
@@ -6488,6 +6452,13 @@ button.timetable-v3__student-data-field:focus-visible {
     .timetable-v3__schedule-mode-options,
     .timetable-v3__creation-summary-cards {
         grid-template-columns: 1fr;
+    }
+
+    .timetable-v3__creation-summary-card--automatic,
+    .timetable-v3__creation-summary-card--manual,
+    .timetable-v3__creation-summary-card--options {
+        grid-column: 1;
+        grid-row: auto;
     }
 
     .timetable-v3__module-workspace {

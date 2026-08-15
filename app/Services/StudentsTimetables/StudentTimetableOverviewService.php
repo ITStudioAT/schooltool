@@ -22,7 +22,7 @@ class StudentTimetableOverviewService
 
     private const CACHE_STALE_SECONDS = 120 * 60;
 
-    private const CACHE_VERSION = 5;
+    private const CACHE_VERSION = 6;
 
     /**
      * @return list<array<string, mixed>>
@@ -277,6 +277,11 @@ class StudentTimetableOverviewService
             $dates,
             $schoolyear,
         );
+        $isFullSemester = $this->isFullSemesterCourse(
+            (int) $firstEntry['semester'],
+            $dates,
+            $schoolyear,
+        );
         $isKompaktunterricht = $entries->contains(
             fn (array $entry): bool => $this->isKompaktunterrichtClass((string) ($entry['class_name'] ?? '')),
         );
@@ -306,6 +311,7 @@ class StudentTimetableOverviewService
             'recurrence_label' => $recurrence['label'],
             'is_block' => $isBlock,
             'block_label' => $isBlock ? 'Block' : null,
+            'is_full_semester' => $isFullSemester,
             'is_kompaktunterricht' => $isKompaktunterricht,
         ];
     }
@@ -380,6 +386,27 @@ class StudentTimetableOverviewService
 
         return $firstDate->greaterThan($semesterFrom->addDays(self::BLOCK_EDGE_TOLERANCE_DAYS))
             || $lastDate->lessThan($semesterUntil->subDays(self::BLOCK_EDGE_TOLERANCE_DAYS));
+    }
+
+    /**
+     * @param  list<string>  $dates
+     */
+    private function isFullSemesterCourse(int $semester, array $dates, Schoolyear $schoolyear): bool
+    {
+        if ($dates === []) {
+            return false;
+        }
+
+        [$semesterFrom, $semesterUntil] = $this->semesterBounds($semester, $schoolyear);
+        if (! $semesterFrom || ! $semesterUntil) {
+            return false;
+        }
+
+        $firstDate = CarbonImmutable::parse($dates[0]);
+        $lastDate = CarbonImmutable::parse($dates[count($dates) - 1]);
+
+        return $firstDate->lessThanOrEqualTo($semesterFrom->addDays(self::BLOCK_EDGE_TOLERANCE_DAYS))
+            && $lastDate->greaterThanOrEqualTo($semesterUntil->subDays(self::BLOCK_EDGE_TOLERANCE_DAYS));
     }
 
     /**
