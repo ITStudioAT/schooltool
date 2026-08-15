@@ -25,6 +25,18 @@ class StudentTimetableV3TimetableService
 
     private const ALGORITHM_VERSION = 8;
 
+    private const PREPARING_STARTED_PROGRESS_PERCENT = 5;
+
+    private const STUDENT_INFORMATION_PROGRESS_PERCENT = 10;
+
+    private const COURSE_SELECTION_PROGRESS_PERCENT = 15;
+
+    private const PREPARATION_COMPLETE_PROGRESS_PERCENT = 20;
+
+    private const BACKEND_CHECKING_PROGRESS_PERCENT = 80;
+
+    private const PROGRESS_STEP_PERCENT = 5;
+
     public const TIMETABLES_PER_PAGE = 100;
 
     public const MAX_TIMETABLE_PAGE = 20;
@@ -139,6 +151,15 @@ class StudentTimetableV3TimetableService
             return null;
         }
 
+        $optionCounts = $this->timetableFilterOptionCountsForStoredTimetables(
+            $storedTimetables,
+            $normalizedFilters,
+        );
+
+        if ($optionCounts === null) {
+            return null;
+        }
+
         if ($page > max(1, (int) ceil($timetablePage['total'] / self::TIMETABLES_PER_PAGE))) {
             return null;
         }
@@ -149,6 +170,7 @@ class StudentTimetableV3TimetableService
             true,
             $timetablePage,
             $page,
+            $optionCounts,
             $normalizedFilters,
             $timetablePage['unfiltered_total'],
         );
@@ -171,11 +193,17 @@ class StudentTimetableV3TimetableService
         }
         $schoolyearId = $this->schoolyearIdForUser($authUser);
         $sessionIdHash = $this->sessionScope->currentHash();
+
+        if ($progressCallback !== null) {
+            $progressCallback(self::PREPARING_STARTED_PROGRESS_PERCENT, 0, 'preparing', 0);
+        }
+
         $generationContext = $this->resolvedGenerationContext(
             $authUser,
             $modules,
             $parameters,
             $schoolyearId,
+            progressCallback: $progressCallback,
         );
 
         return Cache::lock(
@@ -214,9 +242,16 @@ class StudentTimetableV3TimetableService
                         self::TIMETABLES_PER_PAGE,
                     )
                     : null;
+                $optionCounts = is_array($storedTimetables)
+                    ? $this->timetableFilterOptionCountsForStoredTimetables(
+                        $storedTimetables,
+                        $this->timetableFilterService->defaults(),
+                    )
+                    : null;
 
                 if (
                     $timetablePage !== null
+                    && $optionCounts !== null
                     && $timetablePage['total'] <= self::MAX_MATERIALIZED_TIMETABLES
                     && is_int($existingSummaryTimetableCount)
                     && $existingSummaryTimetableCount === $timetablePage['total']
@@ -244,7 +279,14 @@ class StudentTimetableV3TimetableService
 
                     $existingTimetable->update($updates);
 
-                    $result = $this->result($existingTimetable, 'reused', true, $timetablePage, 1);
+                    $result = $this->result(
+                        $existingTimetable,
+                        'reused',
+                        true,
+                        $timetablePage,
+                        1,
+                        $optionCounts,
+                    );
 
                     if ($progressCallback !== null) {
                         $progressCallback(100, $combinationCount, 'complete', $combinationCount);
@@ -263,7 +305,7 @@ class StudentTimetableV3TimetableService
                 requiredCourseGroupsByModule: $generationContext['required_course_groups_by_module'],
                 includeOneCourseRemovalCountsWhenNoPossible: true,
                 calculateNoSaturdayTimetableCount: false,
-                progressCallback: $progressCallback,
+                progressCallback: $this->backendProgressCallback($progressCallback),
             );
             $timetables = is_array($calculation['timetables'] ?? null)
                 ? array_slice(array_values($calculation['timetables']), 0, self::MAX_MATERIALIZED_TIMETABLES)
@@ -332,6 +374,10 @@ class StudentTimetableV3TimetableService
                 false,
                 $this->pageFromExpandedTimetables($timetables, 1),
                 1,
+                $this->timetableFilterOptionCountsForExpandedTimetables(
+                    $timetables,
+                    $this->timetableFilterService->defaults(),
+                ),
             );
             if ($progressCallback !== null) {
                 $progressCallback(
@@ -349,6 +395,7 @@ class StudentTimetableV3TimetableService
     /**
      * @param  list<string|array<string, mixed>>  $modules
      * @param  array<string, mixed>  $parameters
+     * @param  (callable(int, int, string, int): void)|null  $progressCallback
      * @return array<string, mixed>
      */
     private function resolvedGenerationContext(
@@ -357,6 +404,7 @@ class StudentTimetableV3TimetableService
         array $parameters,
         int $schoolyearId,
         bool $seedCompactSubjectPlanIfMissing = true,
+        ?callable $progressCallback = null,
     ): array {
         $moduleInput = $this->normalizedModuleInput($modules);
         $workspaceId = $this->workspaceId($parameters);
@@ -370,6 +418,10 @@ class StudentTimetableV3TimetableService
             $seedCompactSubjectPlanIfMissing,
             includeAllSelectableModules: true,
         );
+
+        if ($progressCallback !== null) {
+            $progressCallback(self::STUDENT_INFORMATION_PROGRESS_PERCENT, 0, 'preparing', 0);
+        }
 
         if ($studentCode !== null && trim((string) ($information['student_code'] ?? '')) !== $studentCode) {
             $this->invalid('student_code', 'Der ausgewählte Studierende ist nicht mehr verfügbar.');
@@ -386,6 +438,11 @@ class StudentTimetableV3TimetableService
             $this->overviewService->courseGroupsForUser($authUser),
         );
         $selectedCourseGroups = $this->selectedCourseGroups($activeCourseGroups, $resolvedCourses['keys']);
+
+        if ($progressCallback !== null) {
+            $progressCallback(self::COURSE_SELECTION_PROGRESS_PERCENT, 0, 'preparing', 0);
+        }
+
         $studyProgram = $this->studyProgram($information);
         $subjectRows = $this->subjectRows($authUser, $schoolyearId, $studyProgram);
         $subjectMappings = $this->subjectMappings($authUser, $schoolyearId);
@@ -431,6 +488,10 @@ class StudentTimetableV3TimetableService
             'course_groups' => $selectedCourseGroups,
         ]);
 
+        if ($progressCallback !== null) {
+            $progressCallback(self::PREPARATION_COMPLETE_PROGRESS_PERCENT, 0, 'preparing', 0);
+        }
+
         return [
             'workspace_id' => $workspaceId,
             'student_code' => $studentCode,
@@ -446,6 +507,53 @@ class StudentTimetableV3TimetableService
             'settings' => $settings,
             'fingerprint' => $fingerprint,
         ];
+    }
+
+    /**
+     * @param  (callable(int, int, string, int): void)|null  $progressCallback
+     * @return (callable(int, int, string, int): void)|null
+     */
+    private function backendProgressCallback(?callable $progressCallback): ?callable
+    {
+        if ($progressCallback === null) {
+            return null;
+        }
+
+        return function (
+            int $progressPercent,
+            int $combinationCount,
+            string $phase,
+            int $checkedCombinationCount,
+        ) use ($progressCallback): void {
+            $mappedProgressPercent = $phase === 'checking'
+                ? $this->checkingProgressPercent($progressPercent)
+                : $progressPercent;
+
+            $progressCallback(
+                $mappedProgressPercent,
+                $combinationCount,
+                $phase,
+                $checkedCombinationCount,
+            );
+        };
+    }
+
+    private function checkingProgressPercent(int $progressPercent): int
+    {
+        $boundedProgressPercent = min(
+            self::BACKEND_CHECKING_PROGRESS_PERCENT,
+            max(0, $progressPercent),
+        );
+        $checkingProgressRange = self::BACKEND_CHECKING_PROGRESS_PERCENT
+            - self::PREPARATION_COMPLETE_PROGRESS_PERCENT;
+        $scaledProgressPercent = self::PREPARATION_COMPLETE_PROGRESS_PERCENT
+            + intdiv(
+                $boundedProgressPercent * $checkingProgressRange,
+                self::BACKEND_CHECKING_PROGRESS_PERCENT,
+            );
+
+        return intdiv($scaledProgressPercent, self::PROGRESS_STEP_PERCENT)
+            * self::PROGRESS_STEP_PERCENT;
     }
 
     /**
@@ -1075,6 +1183,11 @@ class StudentTimetableV3TimetableService
 
     /**
      * @param  array{items: list<array<string, mixed>>, total: int}  $timetablePage
+     * @param  array{
+     *     include_saturday: int,
+     *     exclude_saturday: int,
+     *     free_days: array{any: int, maximum: int, values: list<array{value: int, count: int}>}
+     * }  $optionCounts
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
@@ -1084,6 +1197,7 @@ class StudentTimetableV3TimetableService
         bool $reused,
         array $timetablePage,
         int $page,
+        array $optionCounts,
         array $filters = [],
         ?int $unfilteredTotal = null,
     ): array {
@@ -1109,6 +1223,7 @@ class StudentTimetableV3TimetableService
                 $timetablePage['total'],
                 $unfilteredTotal,
                 $page,
+                $optionCounts,
                 $normalizedFilters,
             ),
             'generated_at' => $timetable->generated_at?->toISOString(),
@@ -1130,6 +1245,50 @@ class StudentTimetableV3TimetableService
     }
 
     /**
+     * @param  array<string, mixed>|list<array<string, mixed>>  $storedTimetables
+     * @param  array<string, mixed>  $filters
+     * @return array{
+     *     include_saturday: int,
+     *     exclude_saturday: int,
+     *     free_days: array{any: int, maximum: int, values: list<array{value: int, count: int}>}
+     * }|null
+     */
+    private function timetableFilterOptionCountsForStoredTimetables(
+        array $storedTimetables,
+        array $filters,
+    ): ?array {
+        $matcherCounts = $this->timetableStorage->countMatches(
+            $storedTimetables,
+            $this->timetableFilterService->optionCountMatchers($filters),
+        );
+
+        if ($matcherCounts === null) {
+            return null;
+        }
+
+        return $this->timetableFilterService->optionCountsFromMatcherCounts(
+            $matcherCounts,
+            $filters,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $timetables
+     * @param  array<string, mixed>  $filters
+     * @return array{
+     *     include_saturday: int,
+     *     exclude_saturday: int,
+     *     free_days: array{any: int, maximum: int, values: list<array{value: int, count: int}>}
+     * }
+     */
+    private function timetableFilterOptionCountsForExpandedTimetables(
+        array $timetables,
+        array $filters,
+    ): array {
+        return $this->timetableFilterService->optionCounts($timetables, $filters);
+    }
+
+    /**
      * @return array{
      *     current_page: int,
      *     per_page: int,
@@ -1141,11 +1300,21 @@ class StudentTimetableV3TimetableService
      *     to: int|null,
      *     next_page: int|null,
      *     prev_page: int|null,
-     *     filters: array{include_saturday: bool}
+     *     option_counts: array{
+     *         include_saturday: int,
+     *         exclude_saturday: int,
+     *         free_days: array{any: int, maximum: int, values: list<array{value: int, count: int}>}
+     *     },
+     *     filters: array{include_saturday: bool, free_days: int|null}
      * }
      */
-    private function timetablePageMeta(int $total, int $unfilteredTotal, int $page, array $filters): array
-    {
+    private function timetablePageMeta(
+        int $total,
+        int $unfilteredTotal,
+        int $page,
+        array $optionCounts,
+        array $filters,
+    ): array {
         $offset = ($page - 1) * self::TIMETABLES_PER_PAGE;
         $lastPage = max(1, (int) ceil($total / self::TIMETABLES_PER_PAGE));
         $hasItems = $total > 0 && $offset < $total;
@@ -1161,6 +1330,7 @@ class StudentTimetableV3TimetableService
             'to' => $hasItems ? min($offset + self::TIMETABLES_PER_PAGE, $total) : null,
             'next_page' => $page < $lastPage ? $page + 1 : null,
             'prev_page' => $page > 1 ? $page - 1 : null,
+            'option_counts' => $optionCounts,
             'filters' => $filters,
         ];
     }

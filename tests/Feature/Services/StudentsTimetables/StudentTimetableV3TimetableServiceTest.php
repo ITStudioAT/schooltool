@@ -77,6 +77,7 @@ it('filters the persisted timetable set before paging without mutating the aggre
     $expandedTimetables = collect(range(1, 250))
         ->map(function (int $number) use ($baseTimetable): array {
             $saturdayFree = $number % 2 === 1;
+            $freeDays = (($number - 1) % 3) + 1;
 
             return [
                 ...$baseTimetable,
@@ -85,6 +86,7 @@ it('filters the persisted timetable set before paging without mutating the aggre
                 'metrics' => [
                     ...($baseTimetable['metrics'] ?? []),
                     'saturday_free_all_appointments' => $saturdayFree,
+                    'free_days' => $freeDays,
                 ],
             ];
         })
@@ -144,6 +146,16 @@ it('filters the persisted timetable set before paging without mutating the aggre
         (string) $timetable->fingerprint,
         ['include_saturday' => false],
     );
+    $facetedResult = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser(
+        $user,
+        $parameters,
+        filters: ['include_saturday' => false, 'free_days' => 2],
+    );
     $freshTimetable = $timetable->fresh();
 
     expect($filteredResult)
@@ -158,7 +170,20 @@ it('filters the persisted timetable set before paging without mutating the aggre
             'offset' => 100,
             'from' => 101,
             'to' => 125,
-            'filters' => ['include_saturday' => false],
+            'option_counts' => [
+                'include_saturday' => 250,
+                'exclude_saturday' => 125,
+                'free_days' => [
+                    'any' => 125,
+                    'maximum' => 3,
+                    'values' => [
+                        ['value' => 3, 'count' => 42],
+                        ['value' => 2, 'count' => 41],
+                        ['value' => 1, 'count' => 42],
+                    ],
+                ],
+            ],
+            'filters' => ['include_saturday' => false, 'free_days' => null],
         ])
         ->and(array_column($completeResult['timetables'], 'number'))->toBe(range(101, 200))
         ->and($completeResult['timetables_meta'])->toMatchArray([
@@ -166,7 +191,39 @@ it('filters the persisted timetable set before paging without mutating the aggre
             'last_page' => 3,
             'total' => 250,
             'unfiltered_total' => 250,
-            'filters' => ['include_saturday' => true],
+            'option_counts' => [
+                'include_saturday' => 250,
+                'exclude_saturday' => 125,
+                'free_days' => [
+                    'any' => 250,
+                    'maximum' => 3,
+                    'values' => [
+                        ['value' => 3, 'count' => 83],
+                        ['value' => 2, 'count' => 83],
+                        ['value' => 1, 'count' => 84],
+                    ],
+                ],
+            ],
+            'filters' => ['include_saturday' => true, 'free_days' => null],
+        ])
+        ->and(array_column($facetedResult['timetables'], 'number'))->toBe(range(5, 245, 6))
+        ->and($facetedResult['timetables_meta'])->toMatchArray([
+            'total' => 41,
+            'unfiltered_total' => 250,
+            'option_counts' => [
+                'include_saturday' => 83,
+                'exclude_saturday' => 41,
+                'free_days' => [
+                    'any' => 125,
+                    'maximum' => 3,
+                    'values' => [
+                        ['value' => 3, 'count' => 42],
+                        ['value' => 2, 'count' => 41],
+                        ['value' => 1, 'count' => 42],
+                    ],
+                ],
+            ],
+            'filters' => ['include_saturday' => false, 'free_days' => 2],
         ])
         ->and($filteredOutOfRangeResult)->toBeNull()
         ->and($freshTimetable?->getRawOriginal('summary'))->toBe($storedSummary)
@@ -213,7 +270,22 @@ it('returns an empty first page when no persisted timetable matches the active f
             'unfiltered_total' => count($expandedTimetables),
             'from' => null,
             'to' => null,
-            'filters' => ['include_saturday' => false],
+            'option_counts' => [
+                'include_saturday' => count($expandedTimetables),
+                'exclude_saturday' => 0,
+                'free_days' => [
+                    'any' => 0,
+                    'maximum' => 5,
+                    'values' => [
+                        ['value' => 5, 'count' => 0],
+                        ['value' => 4, 'count' => 0],
+                        ['value' => 3, 'count' => 0],
+                        ['value' => 2, 'count' => 0],
+                        ['value' => 1, 'count' => 0],
+                    ],
+                ],
+            ],
+            'filters' => ['include_saturday' => false, 'free_days' => null],
         ])
         ->summary->timetable_count->toBe(count($expandedTimetables))
         ->and($timetable->fresh()->getRawOriginal('timetables'))->toBe($storedTimetables);
@@ -629,7 +701,21 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
         ->summary->conflict_timetable_count->toBe(0)
         ->timetables->toHaveCount(4)
         ->timetables_meta->unfiltered_total->toBe(4)
-        ->timetables_meta->filters->toBe(['include_saturday' => true])
+        ->timetables_meta->option_counts->toBe([
+            'include_saturday' => 4,
+            'exclude_saturday' => 4,
+            'free_days' => [
+                'any' => 4,
+                'maximum' => 4,
+                'values' => [
+                    ['value' => 4, 'count' => 4],
+                    ['value' => 3, 'count' => 0],
+                    ['value' => 2, 'count' => 0],
+                    ['value' => 1, 'count' => 0],
+                ],
+            ],
+        ])
+        ->timetables_meta->filters->toBe(['include_saturday' => true, 'free_days' => null])
         ->parameters->constraints->availableWeekdays->toBe([1, 2, 3, 4, 5, 6])
         ->and($created['summary'])->not->toHaveKey('solution_plan')
         ->and(array_column($created['timetables'], 'number'))->toBe([1, 2, 3, 4])
@@ -1478,6 +1564,7 @@ it('persists full green and green timetables while retaining omitted conflict co
         },
     );
     $persistedTimetable = StudentTimetableV3Timetable::query()->sole();
+    $progressPercentages = array_column($progress, 0);
 
     expect($result)
         ->summary->timetable_count->toBe(2)
@@ -1485,9 +1572,10 @@ it('persists full green and green timetables while retaining omitted conflict co
         ->summary->full_green_timetable_count->toBe(1)
         ->summary->green_timetable_count->toBe(1)
         ->summary->conflict_timetable_count->toBe(1)
-        ->and(array_column($progress, 0))->toBe([0, 0, ...range(5, 100, 5)])
+        ->and($progressPercentages)->toBe(collect($progressPercentages)->sort()->values()->all())
+        ->and(array_values(array_unique($progressPercentages)))->toBe(range(0, 100, 5))
         ->and(array_column($progress, 2))->toBe([
-            'preparing',
+            ...array_fill(0, 5, 'preparing'),
             ...array_fill(0, 17, 'checking'),
             'materializing',
             'compacting',

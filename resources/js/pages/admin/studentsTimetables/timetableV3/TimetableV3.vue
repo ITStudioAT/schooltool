@@ -331,7 +331,7 @@
                     color="error"
                     variant="outlined"
                     prepend-icon="mdi-restart"
-                    :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState"
+                    :disabled="!hasPlanningSelectionContext || studentSelectionDetailsLoading || isLoadingState || isSavingState"
                     @click="restartPlanning">
                     Neustart
                 </v-btn>
@@ -340,7 +340,7 @@
                     size="large"
                     color="primary"
                     append-icon="mdi-arrow-right"
-                    :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState"
+                    :disabled="!hasPlanningSelectionContext || studentSelectionDetailsLoading || isLoadingState || isSavingState"
                     @click="continueToNextStep">
                     Weiter
                 </v-btn>
@@ -1103,12 +1103,6 @@
                                 </div>
                             </div>
 
-                            <p class="timetable-v3__calculation-description">
-                                Die ausgewählten Unterrichtsalternativen wurden miteinander kombiniert und auf reguläre
-                                zeitliche Überschneidungen geprüft. Varianten mit Konflikten wurden ausgeschlossen;
-                                gespeichert wurden nur mögliche Stundenpläne.
-                            </p>
-
                             <div
                                 v-if="timetablesTruncated"
                                 class="timetable-v3__calculation-truncated-notice"
@@ -1173,36 +1167,125 @@
                         timetable-v3__creation-summary-card
                         timetable-v3__creation-summary-card--options
                     "
+                    :aria-busy="timetablePageLoading ? 'true' : 'false'"
                     aria-labelledby="timetable-v3-options-title">
                     <span class="timetable-v3__schedule-mode-icon">
                         <v-icon icon="mdi-tune-variant" size="30" />
                     </span>
                     <span class="timetable-v3__schedule-mode-copy">
                         <span id="timetable-v3-options-title" class="timetable-v3__schedule-mode-title">Optionen</span>
-                        <span class="timetable-v3__schedule-mode-description">
-                            Filtern Sie die bereits berechneten Stundenpläne. Der gespeicherte Gesamtbestand bleibt
-                            unverändert.
-                        </span>
                     </span>
-                    <div class="timetable-v3__filter-option">
-                        <span class="timetable-v3__filter-option-label">Samstag</span>
-                        <v-btn-toggle
-                            :model-value="timetableFilters.include_saturday"
-                            class="timetable-v3__filter-option-toggle"
-                            color="teal-darken-1"
-                            density="comfortable"
-                            divided
-                            mandatory
-                            variant="outlined"
-                            :disabled="isLoadingState
-                                || isSavingState
-                                || timetableCalculationStatus === 'calculating'
-                                || timetablePageLoading"
-                            aria-label="Stundenpläne nach Samstag filtern"
-                            @update:model-value="updateTimetableFilter('include_saturday', $event)">
-                            <v-btn :value="true" prepend-icon="mdi-calendar-check-outline">Samstag ja</v-btn>
-                            <v-btn :value="false" prepend-icon="mdi-calendar-remove-outline">Samstag nein</v-btn>
-                        </v-btn-toggle>
+                    <div class="timetable-v3__filter-options">
+                        <div class="timetable-v3__filter-option">
+                            <span id="timetable-v3-saturday-filter-label" class="timetable-v3__filter-option-label">
+                                Samstag
+                            </span>
+                            <v-btn-toggle
+                                :model-value="timetableFilters.include_saturday"
+                                class="timetable-v3__filter-option-toggle"
+                                color="teal-darken-1"
+                                density="comfortable"
+                                divided
+                                mandatory
+                                variant="outlined"
+                                :disabled="isLoadingState
+                                    || isSavingState
+                                    || timetableCalculationStatus === 'calculating'
+                                    || timetablePageLoading"
+                                aria-labelledby="timetable-v3-saturday-filter-label"
+                                @update:model-value="updateTimetableFilter('include_saturday', $event)">
+                                <v-btn
+                                    v-if="timetableCalculationStatus !== 'success'
+                                        || timetablePageMeta.optionCounts.includeSaturday > 0"
+                                    :value="true"
+                                    prepend-icon="mdi-calendar-check-outline">
+                                    <span class="timetable-v3__filter-option-button-content">
+                                        <span>Ja</span>
+                                        <span
+                                            v-if="timetableCalculationStatus === 'success' && !timetablePageLoading"
+                                            class="timetable-v3__filter-option-count">
+                                            {{ timetableFilterOptionCountLabels.includeSaturday }}
+                                        </span>
+                                    </span>
+                                </v-btn>
+                                <v-btn
+                                    v-if="timetableCalculationStatus !== 'success'
+                                        || timetablePageMeta.optionCounts.excludeSaturday > 0"
+                                    :value="false"
+                                    prepend-icon="mdi-calendar-remove-outline">
+                                    <span class="timetable-v3__filter-option-button-content">
+                                        <span>Nein</span>
+                                        <span
+                                            v-if="timetableCalculationStatus === 'success' && !timetablePageLoading"
+                                            class="timetable-v3__filter-option-count">
+                                            {{ timetableFilterOptionCountLabels.excludeSaturday }}
+                                        </span>
+                                    </span>
+                                </v-btn>
+                            </v-btn-toggle>
+                        </div>
+                        <div
+                            v-if="timetableCalculationStatus === 'success'
+                                && timetableHasVisibleFreeDayOptions"
+                            class="timetable-v3__filter-option">
+                            <span id="timetable-v3-free-days-filter-label" class="timetable-v3__filter-option-label">
+                                Freie Tage
+                            </span>
+                            <v-btn-toggle
+                                :model-value="timetableFilters.free_days"
+                                class="
+                                    timetable-v3__filter-option-toggle
+                                    timetable-v3__filter-option-toggle--free-days
+                                "
+                                color="teal-darken-1"
+                                density="comfortable"
+                                mandatory
+                                variant="outlined"
+                                :disabled="isLoadingState || isSavingState || timetablePageLoading"
+                                aria-labelledby="timetable-v3-free-days-filter-label"
+                                @update:model-value="updateTimetableFilter('free_days', $event)">
+                                <v-btn
+                                    v-if="timetableFreeDayOptionCounts.any > 0"
+                                    :value="null"
+                                    :aria-label="timetableFreeDayOptionAriaLabel(null, timetableFreeDayOptionCounts.any)">
+                                    <span class="timetable-v3__filter-option-button-content">
+                                        <span>Egal</span>
+                                        <span
+                                            v-if="!timetablePageLoading"
+                                            class="timetable-v3__filter-option-count">
+                                            {{ timetableVariantCountLabel(timetableFreeDayOptionCounts.any) }}
+                                        </span>
+                                    </span>
+                                </v-btn>
+                                <v-btn
+                                    v-for="option in timetableVisibleFreeDayOptions"
+                                    :key="option.value"
+                                    :value="option.value"
+                                    :aria-label="timetableFreeDayOptionAriaLabel(option.value, option.count)">
+                                    <span class="timetable-v3__filter-option-button-content">
+                                        <span>{{ option.value }}</span>
+                                        <span
+                                            v-if="!timetablePageLoading"
+                                            class="timetable-v3__filter-option-count">
+                                            {{ timetableVariantCountLabel(option.count) }}
+                                        </span>
+                                    </span>
+                                </v-btn>
+                            </v-btn-toggle>
+                        </div>
+                        <div
+                            v-if="timetablePageLoading"
+                            class="timetable-v3__filter-loading"
+                            role="status"
+                            aria-live="polite"
+                            aria-atomic="true">
+                            <v-progress-circular
+                                color="teal-darken-1"
+                                indeterminate
+                                :size="22"
+                                :width="3" />
+                            <span>Stundenpläne werden mit den gewählten Optionen neu geladen …</span>
+                        </div>
                     </div>
                 </section>
 
@@ -1812,7 +1895,9 @@ const MANUAL_TIMETABLE = 'manual'
 const AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY = true
 const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
     include_saturday: true,
+    free_days: null,
 })
+const MAX_FREE_DAYS = 6
 const MAX_SELECTED_MODULES = 10
 const MAX_SELECTED_MODULE_HOURS = 30
 const SELECTION_STEP = 'selection'
@@ -1982,12 +2067,23 @@ function normalizedTimetableFilters(filters) {
     const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
         ? filters
         : {}
+    const freeDays = normalizedFilters.free_days
 
     return {
         include_saturday: typeof normalizedFilters.include_saturday === 'boolean'
             ? normalizedFilters.include_saturday
             : DEFAULT_TIMETABLE_FILTERS.include_saturday,
+        free_days: Number.isInteger(freeDays) && freeDays >= 1 && freeDays <= MAX_FREE_DAYS
+            ? freeDays
+            : DEFAULT_TIMETABLE_FILTERS.free_days,
     }
+}
+
+function timetableVariantCountLabel(value) {
+    const count = Number(value)
+    const normalizedCount = Number.isInteger(count) && count >= 0 ? count : 0
+
+    return `${normalizedCount.toLocaleString('de-AT')} ${normalizedCount === 1 ? 'Variante' : 'Varianten'}`
 }
 
 function timetableFiltersMatch(firstFilters, secondFilters) {
@@ -2027,7 +2123,37 @@ function normalizedTimetablePageMeta(calculationResult) {
     const total = Number(meta.total)
     const unfilteredTotal = Number(meta.unfiltered_total)
     const offset = Number(meta.offset)
+    const optionCounts = meta.option_counts
+    const includeSaturdayOptionCount = Number(optionCounts?.include_saturday)
+    const excludeSaturdayOptionCount = Number(optionCounts?.exclude_saturday)
+    const freeDayOptionCounts = optionCounts?.free_days
+    const anyFreeDayOptionCount = Number(freeDayOptionCounts?.any)
+    const maximumFreeDays = Number(freeDayOptionCounts?.maximum)
+    const freeDayValues = Array.isArray(freeDayOptionCounts?.values)
+        ? freeDayOptionCounts.values.map(option => ({
+            value: Number(option?.value),
+            count: Number(option?.count),
+        }))
+        : []
     const filters = meta.filters
+    const freeDaysFilterIsValid = filters?.free_days === null
+        || (Number.isInteger(filters?.free_days)
+            && filters.free_days >= 1
+            && filters.free_days <= MAX_FREE_DAYS)
+    const expectedFreeDayValues = Number.isInteger(maximumFreeDays) && maximumFreeDays > 0
+        ? Array.from({ length: maximumFreeDays }, (_, index) => maximumFreeDays - index)
+        : []
+    const freeDayValuesAreValid = freeDayValues.length === expectedFreeDayValues.length
+        && freeDayValues.every((option, index) => (
+            Number.isInteger(option.value)
+            && option.value === expectedFreeDayValues[index]
+            && Number.isInteger(option.count)
+            && option.count >= 0
+            && option.count <= anyFreeDayOptionCount
+        ))
+    const selectedFreeDayOptionCount = filters?.free_days === null
+        ? anyFreeDayOptionCount
+        : freeDayValues.find(option => option.value === filters?.free_days)?.count
     const expectedLastPage = Math.max(1, Math.ceil(total / TIMETABLES_PER_PAGE))
     const expectedItemCount = Math.min(TIMETABLES_PER_PAGE, Math.max(0, total - offset))
     const expectedFrom = expectedItemCount > 0 ? offset + 1 : null
@@ -2048,10 +2174,34 @@ function normalizedTimetablePageMeta(calculationResult) {
         || total > MAX_MATERIALIZED_TIMETABLES
         || unfilteredTotal < total
         || unfilteredTotal > MAX_MATERIALIZED_TIMETABLES
+        || !optionCounts
+        || typeof optionCounts !== 'object'
+        || Array.isArray(optionCounts)
+        || !Number.isInteger(includeSaturdayOptionCount)
+        || !Number.isInteger(excludeSaturdayOptionCount)
+        || includeSaturdayOptionCount < 0
+        || includeSaturdayOptionCount > unfilteredTotal
+        || excludeSaturdayOptionCount < 0
+        || excludeSaturdayOptionCount > includeSaturdayOptionCount
+        || !freeDayOptionCounts
+        || typeof freeDayOptionCounts !== 'object'
+        || Array.isArray(freeDayOptionCounts)
+        || !Number.isInteger(anyFreeDayOptionCount)
+        || anyFreeDayOptionCount < 0
+        || anyFreeDayOptionCount > unfilteredTotal
+        || !Number.isInteger(maximumFreeDays)
+        || maximumFreeDays < 0
+        || maximumFreeDays > MAX_FREE_DAYS
+        || !freeDayValuesAreValid
         || !filters
         || typeof filters !== 'object'
         || Array.isArray(filters)
         || typeof filters.include_saturday !== 'boolean'
+        || !freeDaysFilterIsValid
+        || (filters.include_saturday
+            ? total !== includeSaturdayOptionCount
+            : total !== excludeSaturdayOptionCount)
+        || total !== selectedFreeDayOptionCount
         || offset !== (currentPage - 1) * perPage
         || timetables.length !== expectedItemCount
         || (meta.from ?? null) !== expectedFrom
@@ -2065,6 +2215,15 @@ function normalizedTimetablePageMeta(calculationResult) {
         perPage,
         total,
         unfilteredTotal,
+        optionCounts: {
+            includeSaturday: includeSaturdayOptionCount,
+            excludeSaturday: excludeSaturdayOptionCount,
+            freeDays: {
+                any: anyFreeDayOptionCount,
+                maximum: maximumFreeDays,
+                values: freeDayValues,
+            },
+        },
         filters: normalizedTimetableFilters(filters),
     }
 }
@@ -2547,6 +2706,15 @@ export default {
                 unfilteredTotal: Array.isArray(this.timetableCalculationResult?.timetables)
                     ? this.timetableCalculationResult.timetables.length
                     : 0,
+                optionCounts: {
+                    includeSaturday: 0,
+                    excludeSaturday: 0,
+                    freeDays: {
+                        any: 0,
+                        maximum: 0,
+                        values: [],
+                    },
+                },
                 filters: normalizedTimetableFilters(this.timetableFilters),
             }
         },
@@ -2577,6 +2745,24 @@ export default {
         },
         possibleTimetableCountLabel() {
             return this.possibleTimetableCount.toLocaleString('de-AT')
+        },
+        timetableFilterOptionCountLabels() {
+            const { includeSaturday, excludeSaturday } = this.timetablePageMeta.optionCounts
+
+            return {
+                includeSaturday: timetableVariantCountLabel(includeSaturday),
+                excludeSaturday: timetableVariantCountLabel(excludeSaturday),
+            }
+        },
+        timetableFreeDayOptionCounts() {
+            return this.timetablePageMeta.optionCounts.freeDays
+        },
+        timetableVisibleFreeDayOptions() {
+            return this.timetableFreeDayOptionCounts.values.filter(option => option.count > 0)
+        },
+        timetableHasVisibleFreeDayOptions() {
+            return this.timetableFreeDayOptionCounts.any > 0
+                || this.timetableVisibleFreeDayOptions.length > 0
         },
         filteredOutAllTimetables() {
             return this.timetablePageMeta.total === 0
@@ -2709,6 +2895,14 @@ export default {
     },
 
     methods: {
+        timetableVariantCountLabel,
+        timetableFreeDayOptionAriaLabel(freeDays, count) {
+            const freeDaysLabel = freeDays === null
+                ? 'Freie Tage egal'
+                : `${freeDays} ${freeDays === 1 ? 'freier Tag' : 'freie Tage'}`
+
+            return `${freeDaysLabel}, ${timetableVariantCountLabel(count)}`
+        },
         continueToNextStep() {
             if (!this.hasPlanningSelectionContext) return
 
@@ -2975,9 +3169,17 @@ export default {
             }
         },
         async updateTimetableFilter(filterKey, filterValue) {
+            const filterValueIsValid = filterKey === 'include_saturday'
+                ? typeof filterValue === 'boolean'
+                : filterKey === 'free_days'
+                    && (filterValue === null
+                        || (Number.isInteger(filterValue)
+                            && filterValue >= 1
+                            && filterValue <= MAX_FREE_DAYS))
+
             if (
                 !Object.prototype.hasOwnProperty.call(DEFAULT_TIMETABLE_FILTERS, filterKey)
-                || typeof filterValue !== 'boolean'
+                || !filterValueIsValid
                 || this.timetableCalculationStatus === 'calculating'
             ) return
 
@@ -3466,11 +3668,8 @@ export default {
         restoreCreationOptions() {
             const storedCreationOptions = this.storedState?.creationOptions
             const storedFilters = storedCreationOptions?.filters
-            const storedIncludeSaturday = storedFilters?.include_saturday
 
-            this.timetableFilters = normalizedTimetableFilters({
-                include_saturday: storedIncludeSaturday,
-            })
+            this.timetableFilters = normalizedTimetableFilters(storedFilters)
         },
         async restoreEntrySelection() {
             const entrySelection = this.storedState?.entrySelection
@@ -4877,6 +5076,13 @@ button.timetable-v3__student-data-field:focus-visible {
     grid-row: 2;
 }
 
+.timetable-v3__filter-options {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 16px;
+    align-self: end;
+}
+
 .timetable-v3__filter-option {
     display: grid;
     grid-column: 1 / -1;
@@ -4894,14 +5100,68 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__filter-option-toggle {
     display: flex;
+    align-items: stretch;
     width: 100%;
+    height: auto;
+    min-height: 58px;
+}
+
+.timetable-v3__filter-option-toggle--free-days {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
 }
 
 .timetable-v3__filter-option-toggle :deep(.v-btn) {
     flex: 1 1 0;
+    height: auto;
     min-width: 0;
+    min-height: 58px;
+    padding-block: 7px;
     font-weight: 800;
     text-transform: none;
+    white-space: normal;
+}
+
+.timetable-v3__filter-option-toggle--free-days :deep(.v-btn) {
+    border: 1px solid currentColor;
+    border-radius: 8px !important;
+}
+
+.timetable-v3__filter-option-button-content {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    line-height: 1.15;
+    text-align: left;
+}
+
+.timetable-v3__filter-option-count {
+    display: block;
+    min-width: 0;
+    font-size: 0.7rem;
+    font-weight: 750;
+    line-height: 1.2;
+    opacity: 0.82;
+    white-space: nowrap;
+}
+
+.timetable-v3__filter-loading {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 11px;
+    color: #115e59;
+    background: rgba(204, 251, 241, 0.72);
+    border: 1px solid rgba(13, 148, 136, 0.3);
+    border-radius: 10px;
+}
+
+.timetable-v3__filter-loading span {
+    font-size: 0.82rem;
+    font-weight: 750;
+    line-height: 1.35;
 }
 
 .timetable-v3__creation-summary-card--options:hover,
@@ -5059,14 +5319,6 @@ button.timetable-v3__student-data-field:focus-visible {
     color: #334155;
     font-size: 1rem;
     font-weight: 750;
-}
-
-.timetable-v3__calculation-description {
-    max-width: 820px;
-    margin: 0;
-    color: #475569;
-    font-size: 0.94rem;
-    line-height: 1.6;
 }
 
 .timetable-v3__calculation-truncated-notice {

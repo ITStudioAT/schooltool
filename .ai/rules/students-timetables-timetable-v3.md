@@ -148,3 +148,12 @@ In the V3 possible-timetable table, show each visible period number together wit
 
 ## Right-align the automatic recommendation
 On the V3 modules route, keep the “Empfohlen” badge in the automatic timetable card aligned to the right of its header area. Preserve the title, mode-selection status, and responsive card behavior.
+
+## Show timetable reload feedback in the options card
+While a persisted V3 timetable page or option filter is loading, keep the current timetable visible without a centered overlay. Show the indeterminate loading status inside the teal Optionen card and keep filter/navigation actions disabled until the request completes.
+
+## Show the active V3 option result count
+In the V3 Optionen card, show the backend-provided filtered possible-timetable total as a compact badge on the selected option button only. Hide the badge while the filter request is loading so the newly selected option never displays the previous result count.
+
+## Keep Saturday option counters compact and visible
+In the V3 Optionen card, the section already supplies the label “Samstag”, so the toggle buttons must say only “Ja” and “Nein”. Show each backend-provided count before selection as a second line in the form “xxx Variante(n)”, and let the Vuetify button group grow beyond its density height so neither line is clipped. This supersedes the earlier active-option-only count display.

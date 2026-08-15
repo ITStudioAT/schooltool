@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateStudentTimetableV3TimetableRequest;
 use App\Models\User;
 use App\Services\SchoolyearService;
+use App\Services\StudentsTimetables\StudentTimetableV3TimetableFilterService;
 use App\Services\StudentsTimetables\StudentTimetableV3TimetableService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,8 +40,15 @@ class StudentTimetableV3TimetableController extends Controller
                 'regex:/\A[a-f0-9]{64}\z/',
             ],
             'per_page' => ['prohibited'],
-            'filters' => ['sometimes', 'array:include_saturday'],
+            'filters' => ['sometimes', 'array:include_saturday,free_days'],
             'filters.include_saturday' => ['sometimes', 'boolean'],
+            'filters.free_days' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+                'max:'.StudentTimetableV3TimetableFilterService::MAX_FREE_DAYS,
+            ],
             'student_code' => [
                 Rule::requiredIf(fn (): bool => $request->query('planning_mode') === 'with_student'),
                 Rule::prohibitedIf(fn (): bool => $request->query('planning_mode') === 'without_student'),
@@ -62,6 +70,9 @@ class StudentTimetableV3TimetableController extends Controller
                 $validated['fingerprint'] ?? null,
                 [
                     'include_saturday' => (bool) ($validated['filters']['include_saturday'] ?? true),
+                    'free_days' => isset($validated['filters']['free_days'])
+                        ? (int) $validated['filters']['free_days']
+                        : null,
                 ],
             ),
         ])->header('Cache-Control', 'private, no-store');

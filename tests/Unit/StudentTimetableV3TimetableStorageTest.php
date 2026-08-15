@@ -204,6 +204,33 @@ it('filters compact and legacy timetable entries before expanding the requested 
     }
 });
 
+it('counts multiple filters over compact and legacy entries in one scan', function () {
+    $storage = new StudentTimetableV3TimetableStorage;
+    $lesson = [
+        'key' => 'D1',
+        'courseGroup' => ['weekday' => 1, 'hour' => 1],
+        'conflicts' => [],
+    ];
+    $timetables = collect(range(1, 6))
+        ->map(fn (int $number): array => [
+            'key' => "timetable-{$number}",
+            'metrics' => ['free_days' => $number % 3],
+            'slots' => ['1-1' => $lesson],
+        ])
+        ->all();
+    $matchers = [
+        'one' => fn (array $timetable): bool => data_get($timetable, 'metrics.free_days') === 1,
+        'two' => fn (array $timetable): bool => data_get($timetable, 'metrics.free_days') === 2,
+    ];
+
+    foreach ([$storage->compact($timetables), $timetables] as $storedTimetables) {
+        expect($storage->countMatches($storedTimetables, $matchers))->toBe([
+            'one' => 2,
+            'two' => 2,
+        ]);
+    }
+});
+
 it('rejects invalid pagination values and corrupt compact data outside the requested page', function () {
     $storage = new StudentTimetableV3TimetableStorage;
     $compact = $storage->compact(collect(range(1, 101))

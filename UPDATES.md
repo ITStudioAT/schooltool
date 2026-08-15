@@ -10,6 +10,7 @@
 - Falsche Schulstufe oder falsche Stundentafel erkennen
 - Bereinigung der Stundenpläne nach User und Sitzung
 - Samstag-Filter
+- Freie Tage Filter
 
 ## 3.45.0 - 3.45.1
 

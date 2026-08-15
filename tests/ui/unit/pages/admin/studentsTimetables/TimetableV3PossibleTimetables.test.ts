@@ -320,7 +320,7 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).toContain('Stundenplan 100 von 500')
     })
 
-    it('makes loading the next page range visible while navigation stays disabled', () => {
+    it('keeps the current timetable visible while page navigation stays disabled during loading', () => {
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
             props: {
                 error: 'Die nächsten Stundenpläne konnten nicht geladen werden.',
@@ -337,38 +337,10 @@ describe('TimetableV3PossibleTimetables', () => {
 
         expect(wrapper.emitted('navigate')).toBeUndefined()
         expect(wrapper.text()).toContain('Die nächsten Stundenpläne konnten nicht geladen werden.')
-        expect(wrapper.text()).toContain('Stundenpläne 101–200 werden geladen …')
-        expect(wrapper.text()).toContain('Der angezeigte Stundenplan wird gleich ersetzt.')
+        expect(wrapper.text()).toContain('Stundenplan 100 von 500')
         expect(wrapper.attributes('aria-busy')).toBe('true')
-        expect(wrapper.find('.timetable-v3-results__page-loading').attributes()).toMatchObject({
-            'aria-atomic': 'true',
-            'aria-live': 'polite',
-            role: 'status',
-        })
-    })
-
-    it('names the previous and final partial page ranges while loading', async () => {
-        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
-            props: {
-                loading: true,
-                loadingDirection: 'previous',
-                pageOffset: 100,
-                selectedIndex: 100,
-                timetables: rangeTimetables(101, 200),
-                totalCount: 450,
-            },
-        })
-
-        expect(wrapper.text()).toContain('Stundenpläne 1–100 werden geladen …')
-
-        await wrapper.setProps({
-            loadingDirection: 'next',
-            pageOffset: 300,
-            selectedIndex: 399,
-            timetables: rangeTimetables(301, 400),
-        })
-
-        expect(wrapper.text()).toContain('Stundenpläne 401–450 werden geladen …')
+        expect(wrapper.find('.timetable-v3-results__table').exists()).toBe(true)
+        expect(wrapper.find('.timetable-v3-results__page-loading').exists()).toBe(false)
     })
 
     it('selects a replacement page from the controlled global index', async () => {

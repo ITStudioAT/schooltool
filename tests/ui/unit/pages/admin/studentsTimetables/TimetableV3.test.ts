@@ -13,7 +13,17 @@ const timetableCalculationStreamResponse = (events: unknown[], options: { ok?: b
     )).join('\n')),
 })
 
-function timetablePageFixture(total: number, currentPage = 1, unfilteredTotal = total, includeSaturday = true) {
+function timetablePageFixture(
+    total: number,
+    currentPage = 1,
+    unfilteredTotal = total,
+    includeSaturday = true,
+    excludeSaturdayTotal = total,
+    freeDays: number | null = null,
+    freeDayValues: Array<{ value: number, count: number }> = [],
+    includeSaturdayTotal = unfilteredTotal,
+    anyFreeDayTotal = total,
+) {
     const perPage = 100
     const offset = (currentPage - 1) * perPage
     const count = Math.min(perPage, Math.max(0, total - offset))
@@ -39,12 +49,31 @@ function timetablePageFixture(total: number, currentPage = 1, unfilteredTotal = 
             offset,
             from: count > 0 ? offset + 1 : null,
             to: count > 0 ? offset + count : null,
-            filters: { include_saturday: includeSaturday },
+            option_counts: {
+                include_saturday: includeSaturdayTotal,
+                exclude_saturday: excludeSaturdayTotal,
+                free_days: {
+                    any: anyFreeDayTotal,
+                    maximum: freeDayValues[0]?.value ?? 0,
+                    values: freeDayValues,
+                },
+            },
+            filters: { include_saturday: includeSaturday, free_days: freeDays },
         },
     }
 }
 
-function timetableResultFixture(total: number, currentPage = 1, unfilteredTotal = total, includeSaturday = true) {
+function timetableResultFixture(
+    total: number,
+    currentPage = 1,
+    unfilteredTotal = total,
+    includeSaturday = true,
+    excludeSaturdayTotal = total,
+    freeDays: number | null = null,
+    freeDayValues: Array<{ value: number, count: number }> = [],
+    includeSaturdayTotal = unfilteredTotal,
+    anyFreeDayTotal = total,
+) {
     return {
         id: 42,
         fingerprint: 'a'.repeat(64),
@@ -52,7 +81,17 @@ function timetableResultFixture(total: number, currentPage = 1, unfilteredTotal 
             possible_timetable_count: unfilteredTotal + 956,
             timetable_count: unfilteredTotal,
         },
-        ...timetablePageFixture(total, currentPage, unfilteredTotal, includeSaturday),
+        ...timetablePageFixture(
+            total,
+            currentPage,
+            unfilteredTotal,
+            includeSaturday,
+            excludeSaturdayTotal,
+            freeDays,
+            freeDayValues,
+            includeSaturdayTotal,
+            anyFreeDayTotal,
+        ),
     }
 }
 
@@ -61,7 +100,7 @@ function timetablePagingContext(result = timetableResultFixture(500)) {
         currentStep: 'creation',
         planningMode: 'with_student',
         selectedStudentCode: '1001',
-        timetableFilters: { include_saturday: true },
+        timetableFilters: { include_saturday: true, free_days: null },
         timetableCalculationError: '',
         timetableCalculationResult: result,
         timetableCalculationResultMatchesCurrentDraft: vi.fn().mockReturnValue(true),
@@ -77,7 +116,7 @@ function timetablePagingContext(result = timetableResultFixture(500)) {
 
 function timetableCalculationContext(methods: Record<string, (...args: any[]) => unknown>) {
     const context: any = {
-        timetableFilters: { include_saturday: true },
+        timetableFilters: { include_saturday: true, free_days: null },
         currentStep: 'creation',
         planningMode: 'without_student',
         planningSelectionValues: {},
@@ -785,6 +824,9 @@ describe('TimetableV3', () => {
         )
         const hasPlanningSelectionContext = (TimetableV3 as any).computed.hasPlanningSelectionContext
 
+        const restartButtonStart = source.indexOf('class="timetable-v3__restart-button"')
+        const restartButtonEnd = source.indexOf('</v-btn>', restartButtonStart)
+        const restartButtonSource = source.slice(restartButtonStart, restartButtonEnd)
         const continueButtonStart = source.indexOf('class="timetable-v3__selection-continue-button"')
         const continueButtonEnd = source.indexOf('</v-btn>', continueButtonStart)
         const continueButtonSource = source.slice(continueButtonStart, continueButtonEnd)
@@ -795,7 +837,8 @@ describe('TimetableV3', () => {
         expect(hasPlanningSelectionContext.call({ planningMode: 'with_student', selectedStudentCode: '1001' })).toBe(true)
         expect(hasPlanningSelectionContext.call({ planningMode: 'without_student', selectedStudentCode: '' })).toBe(true)
         expect(source).toContain('v-if="hasPlanningSelectionContext"')
-        expect(source).toContain(':disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState"')
+        expect(restartButtonSource).toContain(':disabled="!hasPlanningSelectionContext || studentSelectionDetailsLoading || isLoadingState || isSavingState"')
+        expect(continueButtonSource).toContain(':disabled="!hasPlanningSelectionContext || studentSelectionDetailsLoading || isLoadingState || isSavingState"')
         expect(source).toContain("currentStep === 'selection'")
         expect(source).toContain('@click="continueToNextStep"')
         expect(source).not.toContain('continueToCreationModeStep')
@@ -1014,13 +1057,14 @@ describe('TimetableV3', () => {
             'utf8',
         )
         const methods = (TimetableV3 as any).methods
-        const timetableCalculationHeading = (TimetableV3 as any).computed.timetableCalculationHeading
+        const computed = (TimetableV3 as any).computed
+        const timetableCalculationHeading = computed.timetableCalculationHeading
         const currentStepWatcher = (TimetableV3 as any).watch.currentStep
         const push = vi.fn().mockResolvedValue(undefined)
         const context = {
             scheduleCreationMode: 'automatic',
             selectedModuleCount: 0,
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             workspaceId: WORKSPACE_ID,
             planningMode: 'with_student',
             selectedStudentCode: '1001',
@@ -1160,15 +1204,43 @@ describe('TimetableV3', () => {
             '<span class="timetable-v3__schedule-mode-label">Einstellungen</span>',
         )
         expect(optionsCardSource).toContain('Optionen')
-        expect(optionsCardSource).toContain(
-            'Filtern Sie die bereits berechneten Stundenpläne. Der gespeicherte Gesamtbestand bleibt',
-        )
+        expect(optionsCardSource).not.toContain('Filtern Sie die bereits berechneten Stundenpläne.')
+        expect(optionsCardSource).not.toContain('Der gespeicherte Gesamtbestand bleibt unverändert.')
         expect(optionsCardSource).toContain('<v-btn-toggle')
         expect(optionsCardSource).toContain(':model-value="timetableFilters.include_saturday"')
         expect(optionsCardSource).toContain("@update:model-value=\"updateTimetableFilter('include_saturday', $event)\"")
-        expect(optionsCardSource).toContain('Samstag ja')
-        expect(optionsCardSource).toContain('Samstag nein')
+        expect(optionsCardSource).toContain('<span>Ja</span>')
+        expect(optionsCardSource).toContain('<span>Nein</span>')
+        expect(optionsCardSource).not.toContain('Samstag ja')
+        expect(optionsCardSource).not.toContain('Samstag nein')
+        expect(optionsCardSource).toContain('Freie Tage')
+        expect(optionsCardSource).toContain(':model-value="timetableFilters.free_days"')
+        expect(optionsCardSource).toContain("@update:model-value=\"updateTimetableFilter('free_days', $event)\"")
+        expect(optionsCardSource).toContain('v-for="option in timetableVisibleFreeDayOptions"')
+        expect(optionsCardSource).toContain("timetablePageMeta.optionCounts.includeSaturday > 0")
+        expect(optionsCardSource).toContain("timetablePageMeta.optionCounts.excludeSaturday > 0")
+        expect(optionsCardSource).toContain('v-if="timetableFreeDayOptionCounts.any > 0"')
+        expect(optionsCardSource).toContain('&& timetableHasVisibleFreeDayOptions')
+        expect(optionsCardSource).toContain('<span>Egal</span>')
+        expect(optionsCardSource).toContain('<span>{{ option.value }}</span>')
+        expect(optionsCardSource.match(/class="timetable-v3__filter-option-button-content"/g)).toHaveLength(4)
+        expect(optionsCardSource.match(/class="timetable-v3__filter-option-count"/g)).toHaveLength(4)
+        expect(optionsCardSource).toContain('{{ timetableFilterOptionCountLabels.includeSaturday }}')
+        expect(optionsCardSource).toContain('{{ timetableFilterOptionCountLabels.excludeSaturday }}')
+        expect(optionsCardSource).toContain('{{ timetableVariantCountLabel(timetableFreeDayOptionCounts.any) }}')
+        expect(optionsCardSource).toContain('{{ timetableVariantCountLabel(option.count) }}')
+        expect(source).toMatch(/\.timetable-v3__filter-option-toggle\s*\{[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*58px;/)
+        expect(source).toMatch(/\.timetable-v3__filter-option-count\s*\{[\s\S]*?white-space:\s*nowrap;/)
+        expect(source).toMatch(/\.timetable-v3__filter-option-toggle--free-days\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+        expect(optionsCardSource).not.toContain('&& timetableFilters.include_saturday')
+        expect(optionsCardSource).not.toContain('&& !timetableFilters.include_saturday')
         expect(optionsCardSource).toContain('mandatory')
+        expect(optionsCardSource).toContain(":aria-busy=\"timetablePageLoading ? 'true' : 'false'\"")
+        expect(optionsCardSource).toContain('v-if="timetablePageLoading"')
+        expect(optionsCardSource).toContain('class="timetable-v3__filter-loading"')
+        expect(optionsCardSource).toContain('role="status"')
+        expect(optionsCardSource).toContain('aria-live="polite"')
+        expect(optionsCardSource).toContain('Stundenpläne werden mit den gewählten Optionen neu geladen …')
         expect(optionsCardSource).not.toContain('href=')
         expect(optionsCardSource).not.toContain(':to=')
         expect(creationPageSource).not.toContain('timetable-v3__creation-success-card')
@@ -1187,7 +1259,40 @@ describe('TimetableV3', () => {
         expect(creationPageSource).toContain('@click="returnFromTimetableCreationStep"')
         expect(creationPageSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(creationPageSource).toContain('Zurück')
-        expect(data.timetableFilters).toEqual({ include_saturday: true })
+        expect(data.timetableFilters).toEqual({ include_saturday: true, free_days: null })
+        expect(computed.timetableFilterOptionCountLabels.call({
+            timetablePageMeta: {
+                optionCounts: {
+                    includeSaturday: 250,
+                    excludeSaturday: 1,
+                    freeDays: {
+                        any: 250,
+                        maximum: 3,
+                        values: [],
+                    },
+                },
+            },
+        })).toEqual({
+            includeSaturday: '250 Varianten',
+            excludeSaturday: '1 Variante',
+        })
+        expect(computed.timetableVisibleFreeDayOptions.call({
+            timetableFreeDayOptionCounts: {
+                values: [
+                    { value: 3, count: 0 },
+                    { value: 2, count: 8 },
+                    { value: 1, count: 0 },
+                ],
+            },
+        })).toEqual([{ value: 2, count: 8 }])
+        expect(computed.timetableHasVisibleFreeDayOptions.call({
+            timetableFreeDayOptionCounts: { any: 0 },
+            timetableVisibleFreeDayOptions: [],
+        })).toBe(false)
+        expect(computed.timetableHasVisibleFreeDayOptions.call({
+            timetableFreeDayOptionCounts: { any: 0 },
+            timetableVisibleFreeDayOptions: [{ value: 2, count: 8 }],
+        })).toBe(true)
         expect(source).toContain('async updateTimetableFilter(filterKey, filterValue)')
         expect(source).not.toContain('class="timetable-v3__creation-start-button"')
         expect(source).not.toContain('Los!')
@@ -1203,13 +1308,31 @@ describe('TimetableV3', () => {
 
     it('applies timetable options as read-only filters before paging while calculation stays Saturday-inclusive', async () => {
         const methods = (TimetableV3 as any).methods
-        const initialResult = timetableResultFixture(250)
-        const filteredPageOne = timetableResultFixture(125, 1, 250, false)
-        const filteredPageTwo = timetableResultFixture(125, 2, 250, false)
+        const initialResult = timetableResultFixture(250, 1, 250, true, 125, null, [
+            { value: 3, count: 83 },
+            { value: 2, count: 83 },
+            { value: 1, count: 84 },
+        ])
+        const filteredPageOne = timetableResultFixture(125, 1, 250, false, 125, null, [
+            { value: 3, count: 42 },
+            { value: 2, count: 41 },
+            { value: 1, count: 42 },
+        ])
+        const filteredPageTwo = timetableResultFixture(125, 2, 250, false, 125, null, [
+            { value: 3, count: 42 },
+            { value: 2, count: 41 },
+            { value: 1, count: 42 },
+        ])
+        const twoFreeDaysResult = timetableResultFixture(41, 1, 250, false, 41, 2, [
+            { value: 3, count: 42 },
+            { value: 2, count: 41 },
+            { value: 1, count: 42 },
+        ], 83, 125)
         const saveState = vi.fn().mockResolvedValue(undefined)
         const get = vi.fn()
             .mockResolvedValueOnce({ data: { data: filteredPageOne } })
             .mockResolvedValueOnce({ data: { data: filteredPageTwo } })
+            .mockResolvedValueOnce({ data: { data: twoFreeDaysResult } })
         const fetch = vi.fn()
         vi.stubGlobal('axios', { get })
         vi.stubGlobal('fetch', fetch)
@@ -1227,12 +1350,12 @@ describe('TimetableV3', () => {
             1,
             `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=1&fingerprint=${'a'.repeat(64)}&filters%5Binclude_saturday%5D=0`,
         )
-        expect(context.timetableFilters).toEqual({ include_saturday: false })
+        expect(context.timetableFilters).toEqual({ include_saturday: false, free_days: null })
         expect(context.timetableCalculationResult.timetables_meta).toMatchObject({
             current_page: 1,
             total: 125,
             unfiltered_total: 250,
-            filters: { include_saturday: false },
+            filters: { include_saturday: false, free_days: null },
         })
         expect(context.timetableCalculationResult.summary.timetable_count).toBe(250)
         expect(context.timetableSelectedIndex).toBe(0)
@@ -1248,10 +1371,35 @@ describe('TimetableV3', () => {
         expect(context.timetableCalculationResult.timetables).toHaveLength(25)
         expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-101')
 
-        await methods.updateTimetableFilter.call(context, 'include_saturday', false)
+        await methods.updateTimetableFilter.call(context, 'free_days', 2)
 
-        expect(get).toHaveBeenCalledTimes(2)
-        expect(saveState).toHaveBeenCalledOnce()
+        expect(get).toHaveBeenNthCalledWith(
+            3,
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=1&fingerprint=${'a'.repeat(64)}&filters%5Binclude_saturday%5D=0&filters%5Bfree_days%5D=2`,
+        )
+        expect(context.timetableFilters).toEqual({ include_saturday: false, free_days: 2 })
+        expect(context.timetableCalculationResult.timetables_meta).toMatchObject({
+            current_page: 1,
+            total: 41,
+            option_counts: {
+                include_saturday: 83,
+                exclude_saturday: 41,
+                free_days: {
+                    any: 125,
+                    values: [
+                        { value: 3, count: 42 },
+                        { value: 2, count: 41 },
+                        { value: 1, count: 42 },
+                    ],
+                },
+            },
+        })
+        expect(context.timetableSelectedIndex).toBe(0)
+
+        await methods.updateTimetableFilter.call(context, 'free_days', 2)
+
+        expect(get).toHaveBeenCalledTimes(3)
+        expect(saveState).toHaveBeenCalledTimes(2)
         expect(methods.timetableCalculationPayload.call({
             workspaceId: WORKSPACE_ID,
             planningMode: 'without_student',
@@ -1259,7 +1407,7 @@ describe('TimetableV3', () => {
             selectedCourseKeys: ['d1-a'],
             selectedModuleKeys: ['additional:D1'],
             selectedStudentCode: '',
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: 2 },
         }).options).toEqual({ allow_saturday_lessons: true })
     })
 
@@ -1285,12 +1433,12 @@ describe('TimetableV3', () => {
         const update = methods.updateTimetableFilter.call(context, 'include_saturday', false)
         await vi.waitFor(() => expect(get).toHaveBeenCalledOnce())
 
-        context.timetableFilters = { include_saturday: true }
+        context.timetableFilters = { include_saturday: true, free_days: null }
         context.timetablePageRequestId += 1
         resolveFilterRequest?.({ data: { data: filteredResult } })
         await update
 
-        expect(context.timetableFilters).toEqual({ include_saturday: true })
+        expect(context.timetableFilters).toEqual({ include_saturday: true, free_days: null })
         expect(context.timetableCalculationResult).toBe(initialResult)
         expect(saveState).not.toHaveBeenCalled()
     })
@@ -1357,7 +1505,7 @@ describe('TimetableV3', () => {
                 branch: null,
                 arts_subject: null,
             },
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -1434,7 +1582,7 @@ describe('TimetableV3', () => {
         vi.stubGlobal('axios', { get })
         const context: any = {
             ...timetableCalculationContext(methods),
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             timetablePageError: '',
             timetablePageLoading: false,
             timetablePageLoadingDirection: '',
@@ -1452,7 +1600,7 @@ describe('TimetableV3', () => {
         expect(get).toHaveBeenCalledOnce()
         expect(context.timetableCalculationStatus).toBe('success')
         expect(context.timetableCalculationResult).toEqual(unfilteredResult)
-        expect(context.timetableFilters).toEqual({ include_saturday: true })
+        expect(context.timetableFilters).toEqual({ include_saturday: true, free_days: null })
         expect(context.timetablePageError).toBe(
             'Die ausgewählten Optionen konnten nicht angewendet werden. Das vollständige Ergebnis wird angezeigt.',
         )
@@ -1470,7 +1618,7 @@ describe('TimetableV3', () => {
         vi.stubGlobal('axios', { get })
         const context: any = {
             ...timetableCalculationContext(methods),
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             timetablePageError: '',
             timetablePageLoading: false,
             timetablePageLoadingDirection: '',
@@ -1546,7 +1694,7 @@ describe('TimetableV3', () => {
             planningMode: 'without_student',
             selectedStudentCode: '',
             planningSelectionValues: {},
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -1798,9 +1946,8 @@ describe('TimetableV3', () => {
         expect(source).toContain("timetableCalculationSummary.timetable_count")
         expect(source).toContain('Keine möglichen Varianten gefunden')
         expect(source).toContain('Keine Varianten entsprechen den gewählten Optionen')
-        expect(source).toContain('Die ausgewählten Unterrichtsalternativen wurden miteinander kombiniert')
-        expect(source).toContain('zeitliche Überschneidungen geprüft')
-        expect(source).toContain('Varianten mit Konflikten wurden ausgeschlossen')
+        expect(source).not.toContain('Die ausgewählten Unterrichtsalternativen wurden miteinander kombiniert')
+        expect(source).not.toContain('timetable-v3__calculation-description')
         expect(source).toContain('timetableCalculationSummary.timetable_variation_count')
         expect(source).toContain('timetableCalculationSummary.conflict_timetable_count')
         expect(source).toContain('TimetableV3PossibleTimetables')
@@ -1980,7 +2127,7 @@ describe('TimetableV3', () => {
             planningMode: 'with_student',
             selectedStudentCode: '1001',
             planningSelectionValues: { language: 'F' },
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             moduleSelectionGroups: [{
                 modules: [
                     { selection_key: 'current:CH1', courses: [{ keys: ['ch1-a', 'ch1-b'] }] },
@@ -2058,7 +2205,7 @@ describe('TimetableV3', () => {
             planningMode: 'without_student',
             selectedStudentCode: '',
             planningSelectionValues: {},
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -2092,7 +2239,7 @@ describe('TimetableV3', () => {
             planningMode: 'without_student',
             selectedStudentCode: '',
             planningSelectionValues: {},
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -2150,7 +2297,7 @@ describe('TimetableV3', () => {
             planningMode: 'without_student',
             selectedStudentCode: '',
             planningSelectionValues: {},
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -2190,11 +2337,11 @@ describe('TimetableV3', () => {
                     mode: 'with_student',
                     student: { studentCode: '1001' },
                 },
-                creationOptions: { filters: { include_saturday: false } },
+                creationOptions: { filters: { include_saturday: false, free_days: 2 } },
             },
             planningMode: null,
             selectedStudent: null,
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             resetSelectedStudentSelectionDetails: vi.fn(),
             loadSelectedStudentSelection: vi.fn(async () => {
                 callOrder.push('modules')
@@ -2210,33 +2357,43 @@ describe('TimetableV3', () => {
         methods.restoreCreationOptions.call(context)
         await methods.restoreEntrySelection.call(context)
 
-        expect(context.timetableFilters).toEqual({ include_saturday: false })
+        expect(context.timetableFilters).toEqual({ include_saturday: false, free_days: 2 })
         expect(context.planningMode).toBe('with_student')
         expect(context.selectedStudent).toEqual({ studentCode: '1001' })
         expect(callOrder).toEqual(['modules', 'student', 'mode'])
     })
 
-    it('restores only the new timetable filter state and otherwise defaults to Saturday yes', () => {
+    it('restores valid timetable filters and otherwise uses the complete result', () => {
         const methods = (TimetableV3 as any).methods
         const cases = [
-            [{ creationOptions: { filters: { include_saturday: false } } }, false],
-            [{ creationOptions: { filters: { include_saturday: true } } }, true],
-            [{ creationOptions: { filters: { include_saturday: 'no' } } }, true],
-            [{ creationOptions: { allowSaturdayLessons: false } }, true],
-            [{}, true],
+            [
+                { creationOptions: { filters: { include_saturday: false, free_days: 3 } } },
+                { include_saturday: false, free_days: 3 },
+            ],
+            [
+                { creationOptions: { filters: { include_saturday: true, free_days: null } } },
+                { include_saturday: true, free_days: null },
+            ],
+            [
+                { creationOptions: { filters: { include_saturday: 'no', free_days: 7 } } },
+                { include_saturday: true, free_days: null },
+            ],
+            [
+                { creationOptions: { allowSaturdayLessons: false } },
+                { include_saturday: true, free_days: null },
+            ],
+            [{}, { include_saturday: true, free_days: null }],
         ] as const
 
-        for (const [storedState, expectedIncludeSaturday] of cases) {
+        for (const [storedState, expectedFilters] of cases) {
             const context: any = {
                 storedState,
-                timetableFilters: { include_saturday: false },
+                timetableFilters: { include_saturday: false, free_days: 1 },
             }
 
             methods.restoreCreationOptions.call(context)
 
-            expect(context.timetableFilters).toEqual({
-                include_saturday: expectedIncludeSaturday,
-            })
+            expect(context.timetableFilters).toEqual(expectedFilters)
         }
     })
 
@@ -2297,7 +2454,7 @@ describe('TimetableV3', () => {
                 branch: null,
                 arts_subject: null,
             },
-            timetableFilters: { include_saturday: true },
+            timetableFilters: { include_saturday: true, free_days: null },
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
             timetableCalculationError: '',
@@ -2365,7 +2522,7 @@ describe('TimetableV3', () => {
             selectedModuleKeys: ['additional:D1'],
             selectedCourseKeys: ['d1-a'],
             planningSelectionValues: {},
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
             timetableCalculationError: '',
@@ -3155,7 +3312,7 @@ describe('TimetableV3', () => {
             emailCopyStatus: 'copied',
             studentInfoDialogOpen: true,
             studyInfoDialogOpen: true,
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
             workspaceId: 'workspace-1',
             resetSelectedStudentSelectionDetails: vi.fn(),
             resetTimetableCalculation: vi.fn(),
@@ -3183,7 +3340,7 @@ describe('TimetableV3', () => {
         expect(context.emailCopyStatus).toBe('idle')
         expect(context.studentInfoDialogOpen).toBe(false)
         expect(context.studyInfoDialogOpen).toBe(false)
-        expect(context.timetableFilters).toEqual({ include_saturday: true })
+        expect(context.timetableFilters).toEqual({ include_saturday: true, free_days: null })
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()
         expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
         expect(context.saveState).toHaveBeenCalledOnce()
@@ -3318,7 +3475,7 @@ describe('TimetableV3', () => {
             selectedModuleKeys: ['current:D5'],
             selectedCourseKeys: ['d5-a'],
             scheduleCreationMode: 'automatic',
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: 2 },
         }
 
         await methods.saveState.call(context)
@@ -3357,6 +3514,7 @@ describe('TimetableV3', () => {
                 creationOptions: {
                     filters: {
                         include_saturday: false,
+                        free_days: 2,
                     },
                 },
             },
@@ -3391,7 +3549,7 @@ describe('TimetableV3', () => {
             selectedModuleKeys: [],
             selectedCourseKeys: [],
             scheduleCreationMode: 'automatic',
-            timetableFilters: { include_saturday: false },
+            timetableFilters: { include_saturday: false, free_days: null },
         }
 
         const firstSave = methods.saveState.call(context)

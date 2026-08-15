@@ -256,6 +256,43 @@ class StudentTimetableV3TimetableStorage
         ];
     }
 
+    /**
+     * @param  array<string, mixed>|list<array<string, mixed>>  $storedTimetables
+     * @param  array<string, callable(array<string, mixed>): bool>  $matchers
+     * @return array<string, int>|null
+     */
+    public function countMatches(array $storedTimetables, array $matchers): ?array
+    {
+        if (array_is_list($storedTimetables)) {
+            if (! $this->isListOfArrays($storedTimetables)) {
+                return null;
+            }
+
+            return $this->matchingCounts($storedTimetables, $matchers);
+        }
+
+        if (($storedTimetables['storage_version'] ?? null) !== self::STORAGE_VERSION) {
+            return null;
+        }
+
+        $lessons = $storedTimetables['lessons'] ?? null;
+        $compactTimetables = $storedTimetables['timetables'] ?? null;
+
+        if (! is_array($lessons) || ! array_is_list($lessons) || ! $this->isListOfArrays($lessons)) {
+            return null;
+        }
+
+        if (
+            ! is_array($compactTimetables)
+            || ! array_is_list($compactTimetables)
+            || ! $this->compactTimetablesAreValid($compactTimetables, $lessons)
+        ) {
+            return null;
+        }
+
+        return $this->matchingCounts($compactTimetables, $matchers);
+    }
+
     /** @param array<string, mixed>|list<array<string, mixed>> $storedTimetables */
     public function isCompact(array $storedTimetables): bool
     {
@@ -293,6 +330,26 @@ class StudentTimetableV3TimetableStorage
             'items' => $items,
             'total' => $total,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $timetables
+     * @param  array<string, callable(array<string, mixed>): bool>  $matchers
+     * @return array<string, int>
+     */
+    private function matchingCounts(array $timetables, array $matchers): array
+    {
+        $counts = array_fill_keys(array_keys($matchers), 0);
+
+        foreach ($timetables as $timetable) {
+            foreach ($matchers as $matcherKey => $matcher) {
+                if ($matcher($timetable)) {
+                    $counts[$matcherKey]++;
+                }
+            }
+        }
+
+        return $counts;
     }
 
     /**

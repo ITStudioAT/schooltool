@@ -49,23 +49,6 @@
         </p>
 
         <div v-if="selectedTimetable" class="timetable-v3-results__selected">
-            <div
-                v-if="loading"
-                class="timetable-v3-results__page-loading"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true">
-                <v-progress-circular
-                    color="primary"
-                    indeterminate
-                    :size="48"
-                    :width="5" />
-                <div>
-                    <strong>{{ loadingPageRangeLabel }}</strong>
-                    <span>Der angezeigte Stundenplan wird gleich ersetzt.</span>
-                </div>
-            </div>
-
             <div class="timetable-v3-results__table-scroll" tabindex="0" aria-label="Stundenplantabelle">
                 <table
                     :key="selectedTimetableKey"
@@ -166,7 +149,6 @@ const WEEKDAYS = [
     { value: 5, title: 'Freitag', shortTitle: 'Fr' },
     { value: 6, title: 'Samstag', shortTitle: 'Sa' },
 ]
-const TIMETABLE_PAGE_SIZE = 100
 
 export default {
     name: 'TimetableV3PossibleTimetables',
@@ -254,22 +236,6 @@ export default {
         },
         nextTimetableAvailable() {
             return this.normalizedSelectedIndex < this.normalizedTotalCount - 1
-        },
-        loadingPageRangeLabel() {
-            if (!this.loading || !this.normalizedTotalCount) return 'Stundenpläne werden geladen …'
-
-            let targetPageOffset = this.normalizedPageOffset
-
-            if (this.loadingDirection === 'previous') {
-                targetPageOffset = Math.max(0, targetPageOffset - TIMETABLE_PAGE_SIZE)
-            } else if (this.loadingDirection === 'next') {
-                targetPageOffset += TIMETABLE_PAGE_SIZE
-            }
-
-            const firstPosition = Math.min(targetPageOffset + 1, this.normalizedTotalCount)
-            const lastPosition = Math.min(targetPageOffset + TIMETABLE_PAGE_SIZE, this.normalizedTotalCount)
-
-            return `Stundenpläne ${firstPosition}–${lastPosition} werden geladen …`
         },
         selectedTimetableQualityKey() {
             return this.selectedTimetable?.type === 'green' ? 'occasional' : 'clear'
@@ -508,41 +474,6 @@ export default {
     position: relative;
     display: grid;
     gap: 8px;
-}
-
-.timetable-v3-results__page-loading {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    justify-content: center;
-    min-height: 180px;
-    padding: 24px;
-    color: #134e4a;
-    text-align: left;
-    background: rgba(248, 250, 252, 0.9);
-    border: 2px solid rgba(13, 148, 136, 0.38);
-    border-radius: 12px;
-    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
-    backdrop-filter: blur(3px);
-}
-
-.timetable-v3-results__page-loading strong,
-.timetable-v3-results__page-loading span {
-    display: block;
-}
-
-.timetable-v3-results__page-loading strong {
-    font-size: 1rem;
-    font-weight: 800;
-}
-
-.timetable-v3-results__page-loading span {
-    margin-top: 3px;
-    font-size: 0.82rem;
-    color: #475569;
 }
 
 .timetable-v3-results__table-scroll {
@@ -786,10 +717,6 @@ export default {
         min-width: 650px;
     }
 
-    .timetable-v3-results__page-loading {
-        flex-direction: column;
-        text-align: center;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {

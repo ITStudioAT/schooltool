@@ -73,7 +73,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         1,
         null,
-        ['include_saturday' => true],
+        ['include_saturday' => true, 'free_days' => null],
     ],
     'with student, none' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=with_student&student_code=student-100',
@@ -81,7 +81,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         null,
         1,
         null,
-        ['include_saturday' => true],
+        ['include_saturday' => true, 'free_days' => null],
     ],
     'second page with snapshot fingerprint' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&page=2&fingerprint='.str_repeat('a', 64),
@@ -98,7 +98,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         2,
         str_repeat('a', 64),
-        ['include_saturday' => true],
+        ['include_saturday' => true, 'free_days' => null],
     ],
     'twentieth page with snapshot fingerprint' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&page=20&fingerprint='.str_repeat('b', 64),
@@ -115,7 +115,7 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         20,
         str_repeat('b', 64),
-        ['include_saturday' => true],
+        ['include_saturday' => true, 'free_days' => null],
     ],
     'without Saturday lessons' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[include_saturday]=0',
@@ -134,7 +134,26 @@ it('returns the persisted v3 timetable result for the validated planning context
         ],
         1,
         null,
-        ['include_saturday' => false],
+        ['include_saturday' => false, 'free_days' => null],
+    ],
+    'with exact free-day count' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[include_saturday]=0&filters[free_days]=2',
+        ['workspace_id' => V3_WORKSPACE_ID, 'planning_mode' => 'without_student', 'student_code' => null],
+        [
+            'fingerprint' => str_repeat('d', 64),
+            'timetables' => [['number' => 1]],
+            'timetables_meta' => [
+                'current_page' => 1,
+                'per_page' => 100,
+                'last_page' => 1,
+                'total' => 1,
+                'unfiltered_total' => 4,
+                'filters' => ['include_saturday' => false, 'free_days' => 2],
+            ],
+        ],
+        1,
+        null,
+        ['include_saturday' => false, 'free_days' => 2],
     ],
 ]);
 
@@ -198,6 +217,18 @@ it('validates the v3 timetable result planning context', function (string $query
     'Saturday filter must be boolean' => [
         'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[include_saturday]=sometimes',
         ['filters.include_saturday'],
+    ],
+    'free-day filter starts at one' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=0',
+        ['filters.free_days'],
+    ],
+    'free-day filter does not exceed the six planning days' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=7',
+        ['filters.free_days'],
+    ],
+    'free-day filter must be an integer' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&filters[free_days]=2.5',
+        ['filters.free_days'],
     ],
 ]);
 
