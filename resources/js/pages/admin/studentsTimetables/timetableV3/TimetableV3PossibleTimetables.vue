@@ -19,7 +19,7 @@
             </span>
 
             <nav
-                v-if="normalizedTimetables.length"
+                v-if="navigationVisible && normalizedTimetables.length"
                 class="timetable-v3-results__navigation"
                 aria-label="Stundenplan auswählen">
                 <v-btn
@@ -172,6 +172,10 @@ export default {
             type: String,
             default: '',
             validator: value => ['', 'previous', 'next'].includes(value),
+        },
+        navigationVisible: {
+            type: Boolean,
+            default: true,
         },
         pageOffset: {
             type: Number,

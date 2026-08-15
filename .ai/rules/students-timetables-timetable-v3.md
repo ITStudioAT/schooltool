@@ -157,3 +157,12 @@ In the V3 Optionen card, show the backend-provided filtered possible-timetable t
 
 ## Keep Saturday option counters compact and visible
 In the V3 Optionen card, the section already supplies the label “Samstag”, so the toggle buttons must say only “Ja” and “Nein”. Show each backend-provided count before selection as a second line in the form “xxx Variante(n)”, and let the Vuetify button group grow beyond its density height so neither line is clipped. This supersedes the earlier active-option-only count display.
+
+## Restore the exact timetable on the adoption step
+Stundenplan übernehmen opens `/admin/students-timetables/timetable-v3/adoption` only after a successful calculation. Carry the selected global index, timetable key, and calculation fingerprint in the route; restore the containing persisted page read-only and reject stale identity rather than showing another plan. The adoption page reuses Aktuelle Auswahl, shows Automatischer:Manueller Stundenplan in a 1:2 desktop grid, and renders only the selected timetable without navigation or editing controls.
+
+## Place the adoption timetable below the mode cards
+On the adoption step, the 1:2 Automatischer/Manueller row contains exactly the two mode cards. Render the selected timetable as a separate full-width block below that card row, never inside either card.
+
+## Return from adoption to the calculation result
+The adoption step provides a Zurück button below the selected timetable. Navigate explicitly to the creation subsection with the current planning context so direct loads and reloads return reliably; preserve the in-memory calculation between these two result-bearing steps and disable the action while state or timetable-page loading is active.

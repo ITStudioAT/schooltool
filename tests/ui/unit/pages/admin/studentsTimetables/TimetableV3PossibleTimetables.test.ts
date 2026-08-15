@@ -111,6 +111,22 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.emitted('navigate')).toEqual([[1], [0]])
     })
 
+    it('can show one selected timetable without selection navigation', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                navigationVisible: false,
+                selectedIndex: 137,
+                pageOffset: 100,
+                timetables: rangeTimetables(101, 200),
+                totalCount: 250,
+            },
+        })
+
+        expect(wrapper.text()).toContain('Stundenplan 138 von 250')
+        expect(wrapper.find('.timetable-v3-results__table').exists()).toBe(true)
+        expect(wrapper.find('.timetable-v3-results__navigation').exists()).toBe(false)
+    })
+
     it('renders every primary, same-slot, and allowed overlap Unterricht', () => {
         const slot = slotFixture('D5', 1, 2, {
             isDistanceLearningCourse: true,

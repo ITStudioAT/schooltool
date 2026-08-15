@@ -898,6 +898,7 @@ describe('TimetableV3', () => {
         expect(currentStep.call({ $route: { params: { subsection: 'overview' } } })).toBe('selection')
         expect(currentStep.call({ $route: { params: { subsection: 'modules' } } })).toBe('modules')
         expect(currentStep.call({ $route: { params: { subsection: 'creation' } } })).toBe('creation')
+        expect(currentStep.call({ $route: { params: { subsection: 'adoption' } } })).toBe('adoption')
 
         const nextStepStart = source.indexOf('<div v-else class="timetable-v3__step timetable-v3__next-step">')
         const nextStepEnd = source.indexOf('<v-dialog', nextStepStart)
@@ -1129,14 +1130,21 @@ describe('TimetableV3', () => {
         expect(push).toHaveBeenCalledTimes(3)
 
         context.scheduleCreationMode = 'automatic'
-        currentStepWatcher.call(context, 'modules', 'creation')
+        currentStepWatcher.call(context, 'adoption', 'creation')
+        expect(context.scheduleCreationMode).toBe('automatic')
+        expect(context.resetTimetableCalculation).not.toHaveBeenCalled()
+
+        currentStepWatcher.call(context, 'modules', 'adoption')
         expect(context.scheduleCreationMode).toBe('automatic')
         expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
 
         const creationPageStart = source.indexOf(
-            '<template v-else>\n            <div class="timetable-v3__creation-summary-cards mt-4">',
+            '<template v-else-if="currentStep === \'creation\'">\n            <div class="timetable-v3__creation-summary-cards mt-4">',
         )
-        const creationPageEnd = source.indexOf('\n        </div>\n\n        <v-dialog', creationPageStart)
+        const creationPageEnd = source.indexOf(
+            '\n            <template v-else-if="currentStep === \'adoption\'">',
+            creationPageStart,
+        )
         const creationPageSource = source.slice(creationPageStart, creationPageEnd)
         const automaticCardStart = creationPageSource.indexOf('timetable-v3__creation-summary-card--automatic')
         const automaticCardEnd = creationPageSource.indexOf('</section>', automaticCardStart)
@@ -1189,12 +1197,12 @@ describe('TimetableV3', () => {
         expect(manualCardSource).toContain('individuell anzupassen.')
         expect(manualCardSource).toContain('class="timetable-v3__manual-timetable-button"')
         expect(manualCardSource).toContain('prepend-icon="mdi-calendar-import"')
-        expect(manualCardSource).toContain('readonly')
         expect(manualCardSource).toContain('Stundenplan übernehmen')
-        expect(manualCardSource).not.toContain('@click')
+        expect(manualCardSource).toContain('@click="openTimetableAdoptionPage"')
         expect(manualCardSource).not.toContain('href=')
         expect(manualCardSource).not.toContain(':to=')
-        expect(manualCardSource).not.toContain('timetableCalculationStatus')
+        expect(manualCardSource).toContain(":disabled=\"timetableCalculationStatus !== 'success'")
+        expect(manualCardSource).toContain('|| !selectedTimetableResult"')
         expect(manualCardSource).not.toContain('timetable-v3__schedule-mode-input')
         expect(optionsCardStart).toBeGreaterThan(manualCardEnd)
         expect(optionsCardSource).toContain('timetable-v3__schedule-mode-card--options')
@@ -1256,9 +1264,9 @@ describe('TimetableV3', () => {
         expect(creationPageSource.slice(timetableOutputPosition)).toContain(
             'class="timetable-v3__calculation-output"',
         )
-        expect(creationPageSource).toContain('@click="returnFromTimetableCreationStep"')
-        expect(creationPageSource).toContain('prepend-icon="mdi-arrow-left"')
-        expect(creationPageSource).toContain('Zurück')
+        expect(source).toContain('@click="returnFromTimetableCreationStep"')
+        expect(source).toContain('prepend-icon="mdi-arrow-left"')
+        expect(source).toContain('Zurück')
         expect(data.timetableFilters).toEqual({ include_saturday: true, free_days: null })
         expect(computed.timetableFilterOptionCountLabels.call({
             timetablePageMeta: {
@@ -1305,6 +1313,173 @@ describe('TimetableV3', () => {
         expect(source).toMatch(/\.timetable-v3__creation-summary-card--options\s*\{[\s\S]*?grid-column:\s*2;[\s\S]*?grid-row:\s*2;/)
         expect(source).toMatch(/\.timetable-v3__creation-summary-card\s*\{[\s\S]*?animation: none;[\s\S]*?transition: none;/)
         expect(source).toMatch(/\.timetable-v3__creation-summary-card:hover,[\s\S]*?transform: none;/)
+    })
+
+    it('opens a dedicated adoption route only for the selected successful timetable', () => {
+        const methods = (TimetableV3 as any).methods
+        const push = vi.fn()
+        const timetable = {
+            key: 'full-green-138',
+            slots: { '1-1': { code: 'D1' } },
+            type: 'full_green',
+        }
+        const context: any = {
+            currentStep: 'creation',
+            isSavingState: false,
+            planningMode: 'with_student',
+            selectedStudentCode: '1001',
+            selectedTimetableResult: timetable,
+            timetableCalculationResult: { fingerprint: 'a'.repeat(64) },
+            timetableCalculationStatus: 'success',
+            timetablePageLoading: false,
+            timetableSelectedIndex: 137,
+            workspaceId: WORKSPACE_ID,
+            $router: { push },
+        }
+
+        methods.openTimetableAdoptionPage.call(context)
+
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/adoption',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+                fingerprint: 'a'.repeat(64),
+                timetable_index: '137',
+                timetable_key: 'full-green-138',
+            },
+        })
+
+        for (const blockedState of [
+            { currentStep: 'modules' },
+            { timetableCalculationStatus: 'calculating' },
+            { isSavingState: true },
+            { timetablePageLoading: true },
+            { selectedTimetableResult: null },
+            { timetableCalculationResult: { fingerprint: 'invalid' } },
+        ]) {
+            push.mockClear()
+            methods.openTimetableAdoptionPage.call({ ...context, ...blockedState })
+            expect(push).not.toHaveBeenCalled()
+        }
+    })
+
+    it('shows two one-to-two adoption cards with the selected timetable below them', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const adoptionPageStart = source.indexOf('<template v-else-if="currentStep === \'adoption\'">')
+        const adoptionPageEnd = source.indexOf('\n            </template>', adoptionPageStart)
+        const adoptionPageSource = source.slice(adoptionPageStart, adoptionPageEnd)
+        const automaticCardPosition = adoptionPageSource.indexOf('timetable-v3__adoption-card--automatic')
+        const manualCardPosition = adoptionPageSource.indexOf('timetable-v3__adoption-card--manual')
+        const currentSelectionPosition = source.lastIndexOf('Aktuelle Auswahl', adoptionPageStart)
+
+        expect(adoptionPageStart).toBeGreaterThan(-1)
+        expect(currentSelectionPosition).toBeGreaterThan(source.indexOf('timetable-v3__next-step'))
+        expect(currentSelectionPosition).toBeLessThan(adoptionPageStart)
+        expect(source).toContain('<div v-if="currentStep !== \'adoption\'">')
+        expect(source).toContain("{{ selectedStudentClass || '–' }} · {{ selectedStudentFullName || selectedStudentLabel }}")
+        expect(source).toContain('· {{ selectedStudentReligion }}')
+        expect(source).toContain('{{ selectedStudentEmail }}')
+        expect(automaticCardPosition).toBeGreaterThan(-1)
+        expect(manualCardPosition).toBeGreaterThan(automaticCardPosition)
+        expect(adoptionPageSource).toContain('Automatischer Stundenplan')
+        expect(adoptionPageSource).toContain('Manueller Stundenplan')
+        expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
+        expect(adoptionPageSource).toContain('<TimetableV3PossibleTimetables')
+        expect(adoptionPageSource).toContain(':navigation-visible="false"')
+        expect(adoptionPageSource).toContain(':selected-index="timetableSelectedIndex"')
+        expect(adoptionPageSource).toContain(':timetables="timetableCalculationResult?.timetables || []"')
+        expect(adoptionPageSource).toContain('@click="returnFromTimetableAdoptionStep"')
+        expect(adoptionPageSource).toContain('prepend-icon="mdi-arrow-left"')
+        expect(adoptionPageSource).toContain('Zurück')
+        expect(adoptionPageSource).toMatch(
+            /timetable-v3__adoption-card--automatic[\s\S]*timetable-v3__adoption-card--manual[\s\S]*<\/section>\s*<\/div>\s*<TimetableV3PossibleTimetables/,
+        )
+        expect(adoptionPageSource).not.toContain('@navigate')
+        expect(adoptionPageSource).not.toContain('Optionen')
+        expect(adoptionPageSource).not.toContain('Ausgewählte Module')
+        expect(source).toMatch(/\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 2fr\);/)
+        expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
+    })
+
+    it('returns from adoption to the creation result and blocks navigation while loading', () => {
+        const methods = (TimetableV3 as any).methods
+        const push = vi.fn()
+        const context = {
+            currentStep: 'adoption',
+            isLoadingState: false,
+            isSavingState: false,
+            planningMode: 'with_student',
+            selectedStudentCode: '1001',
+            timetablePageLoading: false,
+            workspaceId: WORKSPACE_ID,
+            $router: { push },
+        }
+
+        methods.returnFromTimetableAdoptionStep.call(context)
+
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/creation',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
+        })
+
+        for (const blockedState of [
+            { currentStep: 'creation' },
+            { isLoadingState: true },
+            { isSavingState: true },
+            { timetablePageLoading: true },
+        ]) {
+            push.mockClear()
+            methods.returnFromTimetableAdoptionStep.call({ ...context, ...blockedState })
+            expect(push).not.toHaveBeenCalled()
+        }
+    })
+
+    it('resolves the exact selected timetable and validates adoption route identity', () => {
+        const computed = (TimetableV3 as any).computed
+        const result = timetableResultFixture(250, 2)
+        const timetablePageMeta = computed.timetablePageMeta.call({
+            timetableCalculationResult: result,
+            timetableFilters: { include_saturday: true, free_days: null },
+        })
+        const selectedTimetable = computed.selectedTimetableResult.call({
+            timetableCalculationResult: result,
+            timetablePageMeta,
+            timetableSelectedIndex: 137,
+        })
+
+        expect(selectedTimetable).toBe(result.timetables[37])
+        expect(selectedTimetable.key).toBe('timetable-138')
+        expect(computed.selectedTimetableResult.call({
+            timetableCalculationResult: result,
+            timetablePageMeta,
+            timetableSelectedIndex: 99,
+        })).toBeNull()
+        expect(computed.timetableAdoptionRouteSelection.call({
+            $route: {
+                query: {
+                    fingerprint: 'a'.repeat(64),
+                    timetable_index: '137',
+                    timetable_key: 'timetable-138',
+                },
+            },
+        })).toEqual({
+            fingerprint: 'a'.repeat(64),
+            index: 137,
+            key: 'timetable-138',
+            page: 2,
+        })
+        expect(computed.timetableAdoptionRouteSelection.call({
+            $route: { query: { fingerprint: 'invalid', timetable_index: '137', timetable_key: 'timetable-138' } },
+        })).toBeNull()
     })
 
     it('applies timetable options as read-only filters before paging while calculation stays Saturday-inclusive', async () => {
@@ -2519,6 +2694,66 @@ describe('TimetableV3', () => {
         context.currentStep = 'modules'
         await methods.restorePersistedTimetableCalculation.call(context)
         expect(get).toHaveBeenCalledTimes(6)
+    })
+
+    it('restores the exact adopted timetable page and rejects stale route identity', async () => {
+        const methods = (TimetableV3 as any).methods
+        const persistedResult = timetableResultFixture(250, 2)
+        const get = vi.fn().mockResolvedValue({ data: { data: persistedResult } })
+        const replace = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('axios', { get })
+        const context: any = {
+            currentStep: 'adoption',
+            hasPlanningSelectionContext: true,
+            planningMode: 'without_student',
+            scheduleCreationMode: 'automatic',
+            selectedCourseKeys: ['d1-a'],
+            selectedModuleKeys: ['additional:D1'],
+            selectedStudentCode: '',
+            studentSelectionDetailsError: false,
+            timetableAdoptionRouteSelection: {
+                fingerprint: 'a'.repeat(64),
+                index: 137,
+                key: 'timetable-138',
+                page: 2,
+            },
+            timetableCalculationError: '',
+            timetableCalculationResult: null,
+            timetableCalculationResultMatchesCurrentDraft: vi.fn().mockReturnValue(true),
+            timetableCalculationStatus: 'idle',
+            timetableFilters: { include_saturday: true, free_days: null },
+            timetablePageRequestId: 0,
+            timetableSelectedIndex: 0,
+            workspaceId: WORKSPACE_ID,
+            replaceInvalidTimetableAdoption: () => methods.replaceInvalidTimetableAdoption.call(context),
+            $router: { replace },
+        }
+
+        await methods.restorePersistedTimetableCalculation.call(context)
+
+        expect(get).toHaveBeenCalledWith(expect.stringContaining(
+            `page=2&fingerprint=${'a'.repeat(64)}`,
+        ))
+        expect(context.timetableCalculationStatus).toBe('success')
+        expect(context.timetableSelectedIndex).toBe(137)
+        expect(context.timetableCalculationResult.timetables[37].key).toBe('timetable-138')
+        expect(replace).not.toHaveBeenCalled()
+
+        context.timetableAdoptionRouteSelection = {
+            ...context.timetableAdoptionRouteSelection,
+            fingerprint: 'b'.repeat(64),
+        }
+        await methods.restorePersistedTimetableCalculation.call(context)
+
+        expect(context.timetableCalculationStatus).toBe('idle')
+        expect(context.timetableCalculationResult).toBeNull()
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/creation',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'without_student',
+            },
+        })
     })
 
     it('keeps a hydrated creation draft idle when no saved result exists or loading it fails', async () => {
