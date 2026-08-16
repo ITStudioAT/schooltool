@@ -37,3 +37,6 @@ Store generated V3 timetables in the existing JSON column as a versioned compact
 
 ## Treat resolved V3 modules as authoritative during generation
 After V3 selection keys and underlying active course-group keys are resolved against the current server catalog, timetable generation must use the exact selected module codes. Do not filter or rewrite those modules from the student's religion, language, branch, or arts choices. Keep strict one-to-one module resolution, active-group completeness, ambiguity, and cross-module integrity checks.
+
+## Resolve unnumbered authoritative V3 modules strictly
+Authoritative V3 module codes may be all-letter unnumbered codes such as LPT. Match an empty numeric suffix only to subject rows whose module number is also empty, then retain active alias/mapping resolution and the exact one-to-one plus required-course-group validation. Bump the V3 algorithm version whenever resolution semantics change.

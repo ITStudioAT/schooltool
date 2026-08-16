@@ -62,7 +62,7 @@ it('returns the persisted v3 timetable result for the validated planning context
             'reused' => true,
             'modules' => [['selection_key' => 'additional:D1']],
             'parameters' => ['planning_mode' => 'without_student'],
-            'summary' => ['algorithm_version' => 8, 'timetable_count' => 0],
+            'summary' => ['algorithm_version' => 9, 'timetable_count' => 0],
             'timetables' => [],
             'timetables_meta' => [
                 'current_page' => 1,

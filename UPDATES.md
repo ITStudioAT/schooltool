@@ -12,6 +12,10 @@
 - Samstag-Filter
 - Freie Tage Filter
 
+### Manueller Stundenplan
+
+- Übernahme der Studienauswahl
+
 ## 3.45.0 - 3.45.1
 
 ### System

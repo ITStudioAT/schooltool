@@ -265,9 +265,12 @@
                 </div>
             </div>
 
-            <section
+            <v-card
                 v-if="hasPlanningSelectionContext"
-                class="timetable-v3__planning-selection mt-6"
+                class="timetable-v3__planning-selection mt-6 mx-auto"
+                tag="section"
+                max-width="960"
+                width="100%"
                 aria-labelledby="timetable-v3-planning-selection-title">
                 <div class="timetable-v3__planning-selection-heading">
                     <span class="timetable-v3__planning-selection-icon">
@@ -322,7 +325,7 @@
                         </div>
                     </fieldset>
                 </div>
-            </section>
+            </v-card>
 
             <div class="timetable-v3__page-actions timetable-v3__page-actions--split">
                 <v-btn
@@ -553,10 +556,16 @@
                 </div>
             </div>
 
-            <template v-if="currentStep === 'modules'">
-                <section
-                    class="timetable-v3__compact-planning-card mt-4"
-                    aria-label="Studienauswahl">
+            <section
+                v-if="currentStep === 'modules' || currentStep === 'adoption'"
+                class="timetable-v3__compact-planning-card mt-4"
+                aria-labelledby="timetable-v3-compact-planning-title">
+                <div class="timetable-v3__compact-planning-heading">
+                    <v-icon icon="mdi-tune-variant" color="primary" size="22" />
+                    <h3 id="timetable-v3-compact-planning-title" class="timetable-v3__compact-planning-title">
+                        Studienauswahl
+                    </h3>
+                </div>
                 <div v-if="studentSelectionDetailsLoading" class="timetable-v3__compact-planning-feedback">
                     <v-progress-circular indeterminate color="primary" size="20" width="3" />
                     <span>Auswahl wird geladen</span>
@@ -575,11 +584,14 @@
                         <span class="timetable-v3__compact-planning-value">{{ item.value }}</span>
                     </div>
                 </div>
-                </section>
+            </section>
 
+            <template v-if="currentStep === 'modules'">
                 <section
                     v-if="!studentSelectionDetailsLoading && !studentSelectionDetailsError"
                     class="timetable-v3__module-workspace mt-4"
+                    :aria-busy="timetablePageLoading ? 'true' : 'false'"
+                    :inert="timetablePageLoading"
                     aria-labelledby="timetable-v3-module-selection-title">
                 <div class="timetable-v3__module-workspace-heading">
                     <div>
@@ -609,7 +621,7 @@
                         'timetable-v3__schedule-mode-options--automatic-selected': scheduleCreationMode === 'automatic',
                         'timetable-v3__schedule-mode-options--manual-selected': scheduleCreationMode === 'manual',
                     }"
-                    role="radiogroup"
+                    role="group"
                     aria-label="Art der Stundenplanerstellung">
                     <label
                         class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--automatic"
@@ -729,17 +741,12 @@
                         </div>
                     </label>
 
-                    <label
+                    <button
                         class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--manual"
-                        :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'manual' }">
-                        <input
-                            class="timetable-v3__schedule-mode-input"
-                            type="radio"
-                            name="timetable-v3-schedule-mode"
-                            value="manual"
-                            :checked="scheduleCreationMode === 'manual'"
-                            :disabled="isSavingState"
-                            @change="chooseScheduleCreationMode('manual')" />
+                        :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'manual' }"
+                        type="button"
+                        :disabled="isLoadingState || isSavingState || timetablePageLoading"
+                        @click="openManualTimetablePage">
                         <span class="timetable-v3__schedule-mode-icon">
                             <v-icon icon="mdi-calendar-edit" size="30" />
                         </span>
@@ -750,10 +757,8 @@
                             </span>
                         </span>
                         <span class="timetable-v3__schedule-mode-status">
-                            <v-icon
-                                :icon="scheduleCreationMode === 'manual' ? 'mdi-check-circle' : 'mdi-circle-outline'"
-                                size="20" />
-                            {{ scheduleCreationMode === 'manual' ? 'Ausgewählt' : 'Manuell wählen' }}
+                            <v-icon icon="mdi-arrow-right-circle-outline" size="20" />
+                            Manuell öffnen
                         </span>
 
                         <div
@@ -771,7 +776,7 @@
                                 Alle Module und Unterrichte stehen zur Verfügung.
                             </div>
                         </div>
-                    </label>
+                    </button>
                 </div>
 
                 <div
@@ -1434,39 +1439,51 @@
                     <section
                         class="
                             timetable-v3__schedule-mode-card
-                            timetable-v3__schedule-mode-card--automatic
-                            timetable-v3__adoption-card
-                            timetable-v3__adoption-card--automatic
-                        "
-                        aria-label="Automatischer Stundenplan">
-                        <span class="timetable-v3__schedule-mode-icon">
-                            <v-icon icon="mdi-calendar-clock" size="30" />
-                        </span>
-                        <span class="timetable-v3__schedule-mode-copy">
-                            <span class="timetable-v3__schedule-mode-title">Automatischer Stundenplan</span>
-                        </span>
-                    </section>
-
-                    <section
-                        class="
-                            timetable-v3__schedule-mode-card
                             timetable-v3__schedule-mode-card--manual
                             timetable-v3__schedule-mode-card--selected
                             timetable-v3__adoption-card
                             timetable-v3__adoption-card--manual
                         "
-                        aria-label="Manueller Stundenplan">
+                        aria-label="Manueller Stundenplan mit ausgewählten Modulen">
                         <span class="timetable-v3__schedule-mode-icon">
                             <v-icon icon="mdi-calendar-edit" size="30" />
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
                             <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
                         </span>
+
+                        <div class="timetable-v3__selected-modules timetable-v3__schedule-mode-selected-modules">
+                            <div class="timetable-v3__selected-modules-heading">
+                                <span class="timetable-v3__selected-modules-heading-label">
+                                    <v-icon icon="mdi-check-circle-outline" size="18" />
+                                    Ausgewählte Module
+                                </span>
+                                <span class="timetable-v3__selected-modules-summary">
+                                    {{ selectedModuleCount }}/{{ maximumSelectedModules }} Module
+                                    · {{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.
+                                </span>
+                            </div>
+                            <div v-if="selectedModules.length" class="timetable-v3__selected-modules-list">
+                                <v-chip
+                                    v-for="module in selectedModules"
+                                    :key="`adoption-${module.selection_key}`"
+                                    class="timetable-v3__selected-module-chip"
+                                    color="primary"
+                                    label
+                                    size="small"
+                                    variant="tonal">
+                                    <strong>{{ module.code }}</strong>
+                                    <span v-if="module.name && module.name !== module.code">
+                                        &nbsp;· {{ module.name }}
+                                    </span>
+                                </v-chip>
+                            </div>
+                        </div>
                     </section>
                 </div>
 
                 <TimetableV3PossibleTimetables
-                    v-if="selectedTimetableResult"
+                    v-if="!isManualTimetableAdoption && selectedTimetableResult"
                     class="timetable-v3__adoption-timetable"
                     :allow-saturday-lessons="timetableFilters.include_saturday"
                     :navigation-visible="false"
@@ -1969,6 +1986,7 @@ const MODULE_SELECTION_STEP = 'modules'
 const TIMETABLE_CREATION_STEP = 'creation'
 const TIMETABLE_ADOPTION_STEP = 'adoption'
 const TIMETABLE_RESULT_STEPS = [TIMETABLE_CREATION_STEP, TIMETABLE_ADOPTION_STEP]
+const TIMETABLE_ADOPTION_RETURN_STEPS = [MODULE_SELECTION_STEP, TIMETABLE_CREATION_STEP]
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TIMETABLE_V3_MODULE_SELECTION_PATH = '/admin/students-timetables/timetable-v3/modules'
 const TIMETABLE_V3_CREATION_PATH = '/admin/students-timetables/timetable-v3/creation'
@@ -2047,6 +2065,36 @@ const timetableV3RouteLocation = (path, planningContext, workspaceId) => {
             ...(planningContext?.student_code ? { student_code: planningContext.student_code } : {}),
         },
     }
+}
+
+const normalizedTimetableAdoptionReturnStep = returnStep => (
+    returnStep === MODULE_SELECTION_STEP ? MODULE_SELECTION_STEP : TIMETABLE_CREATION_STEP
+)
+
+const timetableV3AdoptionReturnPath = returnStep => (
+    normalizedTimetableAdoptionReturnStep(returnStep) === MODULE_SELECTION_STEP
+        ? TIMETABLE_V3_MODULE_SELECTION_PATH
+        : TIMETABLE_V3_CREATION_PATH
+)
+
+const timetableV3AdoptionRouteLocation = (
+    planningContext,
+    workspaceId,
+    fingerprint,
+    timetableIndex,
+    timetableKey,
+) => {
+    const routeLocation = timetableV3RouteLocation(
+        TIMETABLE_V3_ADOPTION_PATH,
+        planningContext,
+        workspaceId,
+    )
+
+    routeLocation.query.fingerprint = fingerprint
+    routeLocation.query.timetable_index = String(timetableIndex)
+    routeLocation.query.timetable_key = timetableKey
+
+    return routeLocation
 }
 
 function normalizedCourseSelectionKeys(course) {
@@ -2515,6 +2563,7 @@ export default {
             maximumSelectedModuleHours: MAX_SELECTED_MODULE_HOURS,
             moduleSelectionLimitMessage: '',
             scheduleCreationMode: null,
+            timetableAdoptionReturnStep: TIMETABLE_CREATION_STEP,
             timetableFilters: { ...DEFAULT_TIMETABLE_FILTERS },
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
@@ -2568,6 +2617,10 @@ export default {
                 key,
                 page: Math.floor(index / TIMETABLES_PER_PAGE) + 1,
             }
+        },
+        isManualTimetableAdoption() {
+            return this.currentStep === TIMETABLE_ADOPTION_STEP
+                && this.timetableAdoptionReturnStep === MODULE_SELECTION_STEP
         },
         normalizedStudentSearch() {
             return String(this.studentSearch || '').trim().toLocaleLowerCase('de-AT')
@@ -3050,6 +3103,39 @@ export default {
                 this.workspaceId,
             ))
         },
+        async openManualTimetablePage() {
+            if (
+                this.currentStep !== MODULE_SELECTION_STEP
+                || this.isLoadingState
+                || this.isSavingState
+                || this.timetablePageLoading
+            ) return
+
+            const planningMode = this.planningMode
+            const studentCode = planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+            const planningContext = normalizedPlanningContext(planningMode, studentCode)
+            const workspaceId = this.workspaceId
+
+            if (!planningContext || !workspaceId) return
+
+            this.timetableAdoptionReturnStep = MODULE_SELECTION_STEP
+            await this.saveState()
+            const savedStudentCode = this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+
+            if (
+                this.stateSaveFailed
+                || this.currentStep !== MODULE_SELECTION_STEP
+                || this.planningMode !== planningMode
+                || savedStudentCode !== studentCode
+                || this.workspaceId !== workspaceId
+            ) return
+
+            await this.$router.push(timetableV3RouteLocation(
+                TIMETABLE_V3_ADOPTION_PATH,
+                planningContext,
+                workspaceId,
+            ))
+        },
         returnFromTimetableAdoptionStep() {
             if (
                 this.currentStep !== TIMETABLE_ADOPTION_STEP
@@ -3061,37 +3147,48 @@ export default {
             const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
 
             void this.$router.push(timetableV3RouteLocation(
-                TIMETABLE_V3_CREATION_PATH,
+                timetableV3AdoptionReturnPath(this.timetableAdoptionReturnStep),
                 planningContext,
                 this.workspaceId,
             ))
         },
-        openTimetableAdoptionPage() {
+        async openTimetableAdoptionPage() {
+            if (
+                !TIMETABLE_ADOPTION_RETURN_STEPS.includes(this.currentStep)
+                || this.timetableCalculationStatus !== 'success'
+                || this.isLoadingState
+                || this.isSavingState
+                || this.timetablePageLoading
+                || !this.selectedTimetableResult
+            ) return
+
+            const returnStep = this.currentStep
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+            if (!planningContext) return
+
+            this.timetableAdoptionReturnStep = returnStep
+            await this.saveState()
+
             const fingerprint = String(this.timetableCalculationResult?.fingerprint || '').trim()
             const timetableKey = String(this.selectedTimetableResult?.key || '').trim()
 
             if (
-                this.currentStep !== TIMETABLE_CREATION_STEP
+                this.stateSaveFailed
+                || this.currentStep !== returnStep
                 || this.timetableCalculationStatus !== 'success'
-                || this.isSavingState
                 || this.timetablePageLoading
                 || !this.selectedTimetableResult
                 || !/^[a-f0-9]{64}$/.test(fingerprint)
                 || !timetableKey
             ) return
 
-            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
-            const routeLocation = timetableV3RouteLocation(
-                TIMETABLE_V3_ADOPTION_PATH,
+            await this.$router.push(timetableV3AdoptionRouteLocation(
                 planningContext,
                 this.workspaceId,
-            )
-
-            routeLocation.query.fingerprint = fingerprint
-            routeLocation.query.timetable_index = String(this.timetableSelectedIndex)
-            routeLocation.query.timetable_key = timetableKey
-
-            void this.$router.push(routeLocation)
+                fingerprint,
+                this.timetableSelectedIndex,
+                timetableKey,
+            ))
         },
         async replaceInvalidTimetableAdoption() {
             if (this.currentStep !== TIMETABLE_ADOPTION_STEP || !this.$router?.replace) return
@@ -3099,7 +3196,7 @@ export default {
             const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
 
             await this.$router.replace(timetableV3RouteLocation(
-                TIMETABLE_V3_CREATION_PATH,
+                timetableV3AdoptionReturnPath(this.timetableAdoptionReturnStep),
                 planningContext,
                 this.workspaceId,
             ))
@@ -3160,7 +3257,6 @@ export default {
             this.timetableCalculationProgressPercent = 0
             this.timetableCalculationProgressPhase = 'preparing'
             this.timetableSelectedIndex = 0
-            this.timetablePageLoading = false
             this.timetablePageLoadingDirection = ''
             this.timetablePageError = ''
         },
@@ -3272,6 +3368,8 @@ export default {
             const resultStep = this.currentStep
             const isAdoptionStep = resultStep === TIMETABLE_ADOPTION_STEP
 
+            if (isAdoptionStep && this.isManualTimetableAdoption) return false
+
             if (
                 !TIMETABLE_RESULT_STEPS.includes(resultStep)
                 || !this.hasPlanningSelectionContext
@@ -3279,14 +3377,14 @@ export default {
                 || this.scheduleCreationMode !== AUTOMATIC_TIMETABLE
                 || this.selectedModuleKeys.length === 0
                 || this.selectedCourseKeys.length === 0
-            ) return
+            ) return false
 
             const adoptionRouteSelection = isAdoptionStep ? this.timetableAdoptionRouteSelection : null
 
             if (isAdoptionStep && !adoptionRouteSelection) {
                 await this.replaceInvalidTimetableAdoption()
 
-                return
+                return false
             }
 
             const planningMode = this.planningMode
@@ -3347,7 +3445,7 @@ export default {
                         ))
                     || !timetableFiltersMatch(timetablePageMeta.filters, this.timetableFilters)
                     || Number(calculationResult.summary?.timetable_count) !== timetablePageMeta.unfilteredTotal
-                ) return
+                ) return false
 
                 this.timetableCalculationResult = calculationResult
                 this.timetableSelectedIndex = adoptionRouteSelection?.index || 0
@@ -3360,6 +3458,8 @@ export default {
                     await this.replaceInvalidTimetableAdoption()
                 }
             }
+
+            return restored
         },
         async updateTimetableFilter(filterKey, filterValue) {
             const filterValueIsValid = filterKey === 'include_saturday'
@@ -3806,6 +3906,7 @@ export default {
 
             if (
                 TIMETABLE_RESULT_STEPS.includes(this.currentStep)
+                && !this.isManualTimetableAdoption
                 && !this.studentSelectionDetailsError
                 && (this.selectedModuleCount === 0 || this.scheduleCreationMode !== AUTOMATIC_TIMETABLE)
             ) {
@@ -3846,6 +3947,7 @@ export default {
                 }))
                 this.storedState = response.data?.data?.state ?? null
                 this.restoreCreationOptions()
+                this.restoreAdoptionReturnStep()
                 await this.restoreEntrySelection()
             } catch {
                 this.stateLoadFailed = true
@@ -3863,6 +3965,11 @@ export default {
             const storedFilters = storedCreationOptions?.filters
 
             this.timetableFilters = normalizedTimetableFilters(storedFilters)
+        },
+        restoreAdoptionReturnStep() {
+            this.timetableAdoptionReturnStep = normalizedTimetableAdoptionReturnStep(
+                this.storedState?.adoptionReturnStep,
+            )
         },
         async restoreEntrySelection() {
             const entrySelection = this.storedState?.entrySelection
@@ -3924,6 +4031,7 @@ export default {
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             this.resetSelectedStudentSelectionDetails()
+            this.timetableAdoptionReturnStep = TIMETABLE_CREATION_STEP
             this.timetableFilters = { ...DEFAULT_TIMETABLE_FILTERS }
             this.resetTimetableCalculation()
             await this.saveState(planningContext)
@@ -4637,6 +4745,7 @@ export default {
                 : {}
             const state = {
                 ...currentState,
+                adoptionReturnStep: normalizedTimetableAdoptionReturnStep(this.timetableAdoptionReturnStep),
                 entrySelection: {
                     mode: this.planningMode,
                     student: this.planningMode === WITH_STUDENT ? this.selectedStudent : null,
@@ -4886,7 +4995,7 @@ button.timetable-v3__student-data-field:focus-visible {
 }
 
 .timetable-v3__planning-selection {
-    padding: 20px;
+    padding: 16px;
     background: rgba(255, 255, 255, 0.84);
     border: 1px solid #dfe3f0;
     border-radius: 18px;
@@ -4895,9 +5004,9 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__planning-selection-heading {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     align-items: center;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
 }
 
 .timetable-v3__planning-selection-icon {
@@ -4926,12 +5035,12 @@ button.timetable-v3__student-data-field:focus-visible {
 .timetable-v3__planning-selection-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+    gap: 10px;
 }
 
 .timetable-v3__planning-selection-group {
     min-width: 0;
-    padding: 15px;
+    padding: 12px;
     background: #fbfcff;
     border: 1px solid #dfe3f0;
     border-radius: 14px;
@@ -4958,8 +5067,8 @@ button.timetable-v3__student-data-field:focus-visible {
     gap: 8px;
     align-items: center;
     justify-content: space-between;
-    min-height: 46px;
-    padding: 10px 13px;
+    min-height: 42px;
+    padding: 8px 11px;
     color: #344054;
     text-align: left;
     cursor: pointer;
@@ -5010,6 +5119,20 @@ button.timetable-v3__student-data-field:focus-visible {
     border: 1px solid #dfe3f0;
     border-radius: 16px;
     box-shadow: 0 8px 22px rgba(30, 36, 51, 0.07);
+}
+
+.timetable-v3__compact-planning-heading {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.timetable-v3__compact-planning-title {
+    margin: 0;
+    color: #1e2433;
+    font-size: 1rem;
+    font-weight: 800;
 }
 
 .timetable-v3__compact-planning-grid {
@@ -5220,7 +5343,7 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__adoption-cards {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: start;
 }
@@ -5238,13 +5361,6 @@ button.timetable-v3__student-data-field:focus-visible {
     outline-offset: 0;
     transform: none;
     transition: none;
-}
-
-.timetable-v3__adoption-card--automatic:hover,
-.timetable-v3__adoption-card--automatic:focus-within {
-    background: linear-gradient(145deg, var(--schedule-mode-soft), #fff 68%);
-    border-color: rgba(var(--schedule-mode-accent-rgb), 0.3);
-    box-shadow: none;
 }
 
 .timetable-v3__adoption-card--manual:hover,
@@ -7217,7 +7333,6 @@ button.timetable-v3__student-data-field:focus-visible {
     .timetable-v3__creation-summary-card--automatic,
     .timetable-v3__creation-summary-card--manual,
     .timetable-v3__creation-summary-card--options,
-    .timetable-v3__adoption-card--automatic,
     .timetable-v3__adoption-card--manual {
         grid-column: 1;
         grid-row: auto;

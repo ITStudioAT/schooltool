@@ -794,6 +794,9 @@ describe('TimetableV3', () => {
         expect(source).toContain('timetable-v3__planning-selection-option--selected')
         expect(source).toContain('v-if="planningSelectionFields.length && !studentSelectionDetailsError"')
         expect(source).toContain(':disabled="studentSelectionDetailsLoading || isSavingState"')
+        expect(source).toMatch(
+            /<v-card[\s\S]*?v-if="hasPlanningSelectionContext"[\s\S]*?class="timetable-v3__planning-selection mt-6 mx-auto"[\s\S]*?tag="section"[\s\S]*?max-width="960"[\s\S]*?width="100%"/,
+        )
         expect(source).not.toContain('<v-select')
         expect(source).toContain('Ethik / Religion')
         expect(source).toContain('Sprache')
@@ -922,7 +925,9 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('v-for="item in compactPlanningSelectionItems"')
         expect(nextStepSource).toContain('{{ item.label }}')
         expect(nextStepSource).toContain('{{ item.value }}')
-        expect(nextStepSource).not.toContain('timetable-v3__compact-planning-title')
+        expect(nextStepSource).toContain("v-if=\"currentStep === 'modules' || currentStep === 'adoption'\"")
+        expect(nextStepSource).toContain('timetable-v3__compact-planning-title')
+        expect(nextStepSource).toContain('Studienauswahl')
         expect(nextStepSource).toContain('Soll der Stundenplan automatisch oder manuell erzeugt werden?')
         expect(nextStepSource).toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
         expect(nextStepSource).toContain('Automatischer Stundenplan')
@@ -961,7 +966,7 @@ describe('TimetableV3', () => {
         const automaticCardEndPosition = source.indexOf('</label>', automaticCardPosition)
         const selectedModulesPosition = source.indexOf('timetable-v3__schedule-mode-selected-modules')
         const manualCardPosition = source.indexOf('timetable-v3__schedule-mode-card--manual')
-        const manualCardEndPosition = source.indexOf('</label>', manualCardPosition)
+        const manualCardEndPosition = source.indexOf('</button>', manualCardPosition)
         const availableModulesPosition = source.indexOf('timetable-v3__schedule-mode-available-modules')
         const automaticCardSource = source.slice(automaticCardPosition, automaticCardEndPosition)
         const manualCardSource = source.slice(manualCardPosition, manualCardEndPosition)
@@ -992,8 +997,14 @@ describe('TimetableV3', () => {
         expect(automaticCardSource).toContain('@click.prevent.stop="openTimetableCreationPage"')
         expect(automaticCardSource).not.toContain('@click="createTimetable"')
         expect(manualCardSource).toContain('v-if="scheduleCreationMode === \'manual\'"')
+        expect(manualCardSource).toContain('@click="openManualTimetablePage"')
+        expect(manualCardSource).not.toContain('@change="chooseScheduleCreationMode(\'manual\')"')
+        expect(manualCardSource).toContain('type="button"')
+        expect(manualCardSource).toContain('Manuell öffnen')
         expect(source).toContain('Verfügbare Module und Unterrichte')
         expect(source).toContain('Alle Module und Unterrichte stehen zur Verfügung.')
+        expect(source).toContain(':aria-busy="timetablePageLoading ? \'true\' : \'false\'"')
+        expect(source).toContain(':inert="timetablePageLoading"')
         expect(source).toContain('Sie wählen die Module. Das System erstellt und optimiert daraus den Stundenplan.')
         expect(source).toContain('class="timetable-v3__schedule-mode-recommendation"')
         expect(source).toContain('mdi-star-four-points')
@@ -1010,12 +1021,12 @@ describe('TimetableV3', () => {
             'Sie stellen den Stundenplan selbst zusammen und platzieren die Unterrichte manuell.',
         )
         expect(source).toContain("scheduleCreationMode === 'automatic' ? 'Ausgewählt' : 'Automatisch wählen'")
-        expect(source).toContain("scheduleCreationMode === 'manual' ? 'Ausgewählt' : 'Manuell wählen'")
-        expect(source).toContain('role="radiogroup"')
+        expect(source).not.toContain("scheduleCreationMode === 'manual' ? 'Ausgewählt' : 'Manuell wählen'")
+        expect(source).toContain('role="group"')
         expect(source).toContain('type="radio"')
         expect(source).toContain('name="timetable-v3-schedule-mode"')
         expect(source).toContain(':checked="scheduleCreationMode === \'automatic\'"')
-        expect(source).toContain(':checked="scheduleCreationMode === \'manual\'"')
+        expect(source).not.toContain(':checked="scheduleCreationMode === \'manual\'"')
         expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
         expect(source).toContain(
             "'timetable-v3__schedule-mode-options--automatic-selected': scheduleCreationMode === 'automatic'",
@@ -1315,9 +1326,9 @@ describe('TimetableV3', () => {
         expect(source).toMatch(/\.timetable-v3__creation-summary-card:hover,[\s\S]*?transform: none;/)
     })
 
-    it('opens a dedicated adoption route only for the selected successful timetable', () => {
+    it('opens a dedicated adoption route only for the selected successful timetable', async () => {
         const methods = (TimetableV3 as any).methods
-        const push = vi.fn()
+        const push = vi.fn().mockResolvedValue(undefined)
         const timetable = {
             key: 'full-green-138',
             slots: { '1-1': { code: 'D1' } },
@@ -1325,10 +1336,14 @@ describe('TimetableV3', () => {
         }
         const context: any = {
             currentStep: 'creation',
+            isLoadingState: false,
             isSavingState: false,
             planningMode: 'with_student',
+            saveState: vi.fn().mockResolvedValue(undefined),
             selectedStudentCode: '1001',
             selectedTimetableResult: timetable,
+            stateSaveFailed: false,
+            timetableAdoptionReturnStep: 'modules',
             timetableCalculationResult: { fingerprint: 'a'.repeat(64) },
             timetableCalculationStatus: 'success',
             timetablePageLoading: false,
@@ -1337,8 +1352,10 @@ describe('TimetableV3', () => {
             $router: { push },
         }
 
-        methods.openTimetableAdoptionPage.call(context)
+        await methods.openTimetableAdoptionPage.call(context)
 
+        expect(context.timetableAdoptionReturnStep).toBe('creation')
+        expect(context.saveState).toHaveBeenCalledOnce()
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/adoption',
             query: {
@@ -1352,20 +1369,164 @@ describe('TimetableV3', () => {
         })
 
         for (const blockedState of [
-            { currentStep: 'modules' },
+            { currentStep: 'adoption' },
             { timetableCalculationStatus: 'calculating' },
+            { isLoadingState: true },
             { isSavingState: true },
             { timetablePageLoading: true },
             { selectedTimetableResult: null },
+            { stateSaveFailed: true },
             { timetableCalculationResult: { fingerprint: 'invalid' } },
         ]) {
             push.mockClear()
-            methods.openTimetableAdoptionPage.call({ ...context, ...blockedState })
+            await methods.openTimetableAdoptionPage.call({ ...context, ...blockedState })
             expect(push).not.toHaveBeenCalled()
         }
     })
 
-    it('shows two one-to-two adoption cards with the selected timetable below them', () => {
+    it('opens a blank manual timetable from modules without restoring an existing timetable', async () => {
+        const methods = (TimetableV3 as any).methods
+        const workspaceId = '88791fb1-29c8-4ae9-9d1b-d5c3f5fdbc8c'
+        const push = vi.fn().mockResolvedValue(undefined)
+        const restorePersistedTimetableCalculation = vi.fn().mockResolvedValue(true)
+        const context: any = {
+            currentStep: 'modules',
+            isLoadingState: false,
+            isSavingState: false,
+            planningMode: 'with_student',
+            restorePersistedTimetableCalculation,
+            saveState: vi.fn().mockResolvedValue(undefined),
+            scheduleCreationMode: 'automatic',
+            selectedStudentCode: '50112620250129',
+            selectedTimetableResult: { key: 'backend-full_green-1' },
+            stateSaveFailed: false,
+            timetableAdoptionReturnStep: 'creation',
+            timetableCalculationResult: { fingerprint: 'a'.repeat(64) },
+            timetableCalculationStatus: 'success',
+            timetablePageLoading: false,
+            timetableSelectedIndex: 0,
+            workspaceId,
+            $router: { push },
+        }
+
+        await methods.openManualTimetablePage.call(context)
+
+        expect(restorePersistedTimetableCalculation).not.toHaveBeenCalled()
+        expect(context.scheduleCreationMode).toBe('automatic')
+        expect(context.timetableAdoptionReturnStep).toBe('modules')
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/adoption',
+            query: {
+                workspace_id: workspaceId,
+                planning_mode: 'with_student',
+                student_code: '50112620250129',
+            },
+        })
+    })
+
+    it('always opens the blank manual page in both planning modes', async () => {
+        const methods = (TimetableV3 as any).methods
+        const push = vi.fn().mockResolvedValue(undefined)
+        const context: any = {
+            currentStep: 'modules',
+            isLoadingState: false,
+            isSavingState: false,
+            planningMode: 'without_student',
+            restorePersistedTimetableCalculation: vi.fn().mockResolvedValue(false),
+            saveState: vi.fn().mockResolvedValue(undefined),
+            scheduleCreationMode: null,
+            selectedStudentCode: '',
+            selectedTimetableResult: null,
+            stateSaveFailed: false,
+            timetableAdoptionReturnStep: 'creation',
+            timetablePageLoading: false,
+            workspaceId: WORKSPACE_ID,
+            $router: { push },
+        }
+
+        await methods.openManualTimetablePage.call(context)
+
+        expect(context.restorePersistedTimetableCalculation).not.toHaveBeenCalled()
+        expect(context.scheduleCreationMode).toBeNull()
+        expect(context.timetableAdoptionReturnStep).toBe('modules')
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/adoption',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'without_student',
+            },
+        })
+
+        push.mockClear()
+        context.saveState.mockClear()
+        context.planningMode = 'with_student'
+        context.selectedStudentCode = '1001'
+
+        await methods.openManualTimetablePage.call(context)
+
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/adoption',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
+        })
+
+        push.mockClear()
+        context.stateSaveFailed = true
+
+        await methods.openManualTimetablePage.call(context)
+
+        expect(push).not.toHaveBeenCalled()
+    })
+
+    it('keeps an intentionally blank manual adoption page valid after reload', async () => {
+        const methods = (TimetableV3 as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const context = {
+            currentStep: 'adoption',
+            hasPlanningSelectionContext: true,
+            isManualTimetableAdoption: true,
+            planningMode: 'without_student',
+            scheduleCreationMode: null,
+            selectedModuleCount: 0,
+            selectedStudentCode: '',
+            studentSelectionDetailsError: false,
+            timetableAdoptionReturnStep: 'modules',
+            workspaceId: WORKSPACE_ID,
+            $router: { replace },
+        }
+
+        await methods.ensureValidCurrentStep.call(context)
+
+        expect(replace).not.toHaveBeenCalled()
+
+        const get = vi.fn()
+        vi.stubGlobal('axios', { get })
+
+        expect(await methods.restorePersistedTimetableCalculation.call(context)).toBe(false)
+        expect(get).not.toHaveBeenCalled()
+        expect(replace).not.toHaveBeenCalled()
+
+        await methods.ensureValidCurrentStep.call({
+            ...context,
+            isManualTimetableAdoption: false,
+        })
+
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/modules',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'without_student',
+            },
+        })
+    })
+
+    it('shows only the manual adoption card with the selected timetable below it', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -1373,8 +1534,9 @@ describe('TimetableV3', () => {
         const adoptionPageStart = source.indexOf('<template v-else-if="currentStep === \'adoption\'">')
         const adoptionPageEnd = source.indexOf('\n            </template>', adoptionPageStart)
         const adoptionPageSource = source.slice(adoptionPageStart, adoptionPageEnd)
-        const automaticCardPosition = adoptionPageSource.indexOf('timetable-v3__adoption-card--automatic')
         const manualCardPosition = adoptionPageSource.indexOf('timetable-v3__adoption-card--manual')
+        const manualCardEnd = adoptionPageSource.indexOf('</section>', manualCardPosition)
+        const manualCardSource = adoptionPageSource.slice(manualCardPosition, manualCardEnd)
         const currentSelectionPosition = source.lastIndexOf('Aktuelle Auswahl', adoptionPageStart)
 
         expect(adoptionPageStart).toBeGreaterThan(-1)
@@ -1384,12 +1546,23 @@ describe('TimetableV3', () => {
         expect(source).toContain("{{ selectedStudentClass || '–' }} · {{ selectedStudentFullName || selectedStudentLabel }}")
         expect(source).toContain('· {{ selectedStudentReligion }}')
         expect(source).toContain('{{ selectedStudentEmail }}')
-        expect(automaticCardPosition).toBeGreaterThan(-1)
-        expect(manualCardPosition).toBeGreaterThan(automaticCardPosition)
-        expect(adoptionPageSource).toContain('Automatischer Stundenplan')
+        expect(source).toContain("v-if=\"currentStep === 'modules' || currentStep === 'adoption'\"")
+        expect(source).toContain('aria-labelledby="timetable-v3-compact-planning-title"')
+        expect(manualCardPosition).toBeGreaterThan(-1)
+        expect(manualCardEnd).toBeGreaterThan(manualCardPosition)
+        expect(adoptionPageSource).not.toContain('timetable-v3__adoption-card--automatic')
+        expect(adoptionPageSource).not.toContain('Automatischer Stundenplan')
         expect(adoptionPageSource).toContain('Manueller Stundenplan')
         expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
+        expect(manualCardSource).toContain('timetable-v3__schedule-mode-selected-modules')
+        expect(manualCardSource).toContain('Ausgewählte Module')
+        expect(manualCardSource).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
+        expect(manualCardSource).toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
+        expect(manualCardSource).toContain('v-for="module in selectedModules"')
+        expect(manualCardSource).not.toContain('closable')
+        expect(manualCardSource).not.toContain('@click:close')
         expect(adoptionPageSource).toContain('<TimetableV3PossibleTimetables')
+        expect(adoptionPageSource).toContain('v-if="!isManualTimetableAdoption && selectedTimetableResult"')
         expect(adoptionPageSource).toContain(':navigation-visible="false"')
         expect(adoptionPageSource).toContain(':selected-index="timetableSelectedIndex"')
         expect(adoptionPageSource).toContain(':timetables="timetableCalculationResult?.timetables || []"')
@@ -1397,16 +1570,16 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(adoptionPageSource).toContain('Zurück')
         expect(adoptionPageSource).toMatch(
-            /timetable-v3__adoption-card--automatic[\s\S]*timetable-v3__adoption-card--manual[\s\S]*<\/section>\s*<\/div>\s*<TimetableV3PossibleTimetables/,
+            /timetable-v3__adoption-card--manual[\s\S]*<\/section>\s*<\/div>\s*<TimetableV3PossibleTimetables/,
         )
         expect(adoptionPageSource).not.toContain('@navigate')
         expect(adoptionPageSource).not.toContain('Optionen')
-        expect(adoptionPageSource).not.toContain('Ausgewählte Module')
-        expect(source).toMatch(/\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 2fr\);/)
+        expect(adoptionPageSource.slice(manualCardEnd)).not.toContain('Ausgewählte Module')
+        expect(source).toMatch(/\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
     })
 
-    it('returns from adoption to the creation result and blocks navigation while loading', () => {
+    it('returns from adoption to the remembered source and blocks navigation while loading', () => {
         const methods = (TimetableV3 as any).methods
         const push = vi.fn()
         const context = {
@@ -1415,6 +1588,7 @@ describe('TimetableV3', () => {
             isSavingState: false,
             planningMode: 'with_student',
             selectedStudentCode: '1001',
+            timetableAdoptionReturnStep: 'modules',
             timetablePageLoading: false,
             workspaceId: WORKSPACE_ID,
             $router: { push },
@@ -1422,6 +1596,20 @@ describe('TimetableV3', () => {
 
         methods.returnFromTimetableAdoptionStep.call(context)
 
+        expect(push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/modules',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
+        })
+
+        push.mockClear()
+        methods.returnFromTimetableAdoptionStep.call({
+            ...context,
+            timetableAdoptionReturnStep: 'creation',
+        })
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/creation',
             query: {
@@ -1480,6 +1668,21 @@ describe('TimetableV3', () => {
         expect(computed.timetableAdoptionRouteSelection.call({
             $route: { query: { fingerprint: 'invalid', timetable_index: '137', timetable_key: 'timetable-138' } },
         })).toBeNull()
+        expect(computed.isManualTimetableAdoption.call({
+            currentStep: 'adoption',
+            timetableAdoptionReturnStep: 'modules',
+            timetableAdoptionRouteSelection: null,
+        })).toBe(true)
+        expect(computed.isManualTimetableAdoption.call({
+            currentStep: 'adoption',
+            timetableAdoptionReturnStep: 'modules',
+            timetableAdoptionRouteSelection: { fingerprint: 'a'.repeat(64) },
+        })).toBe(true)
+        expect(computed.isManualTimetableAdoption.call({
+            currentStep: 'adoption',
+            timetableAdoptionReturnStep: 'creation',
+            timetableAdoptionRouteSelection: { fingerprint: 'a'.repeat(64) },
+        })).toBe(false)
     })
 
     it('applies timetable options as read-only filters before paging while calculation stays Saturday-inclusive', async () => {
@@ -2583,6 +2786,26 @@ describe('TimetableV3', () => {
         }
     })
 
+    it('restores only whitelisted adoption return steps', () => {
+        const methods = (TimetableV3 as any).methods
+
+        for (const [storedReturnStep, expectedReturnStep] of [
+            ['modules', 'modules'],
+            ['creation', 'creation'],
+            ['https://example.com', 'creation'],
+            [null, 'creation'],
+        ]) {
+            const context: any = {
+                storedState: { adoptionReturnStep: storedReturnStep },
+                timetableAdoptionReturnStep: 'modules',
+            }
+
+            methods.restoreAdoptionReturnStep.call(context)
+
+            expect(context.timetableAdoptionReturnStep).toBe(expectedReturnStep)
+        }
+    })
+
     it('restores only a persisted creation result matching the fully hydrated draft', async () => {
         const methods = (TimetableV3 as any).methods
         const solutionPlan = {
@@ -2694,6 +2917,13 @@ describe('TimetableV3', () => {
         context.currentStep = 'modules'
         await methods.restorePersistedTimetableCalculation.call(context)
         expect(get).toHaveBeenCalledTimes(6)
+
+        const restoredFromModules = await methods.restorePersistedTimetableCalculation.call(context)
+
+        expect(get).toHaveBeenCalledTimes(6)
+        expect(restoredFromModules).toBe(false)
+        expect(context.timetableCalculationStatus).toBe('idle')
+        expect(context.timetableCalculationResult).toBeNull()
     })
 
     it('restores the exact adopted timetable page and rejects stale route identity', async () => {
@@ -2845,6 +3075,7 @@ describe('TimetableV3', () => {
             workspaceId: WORKSPACE_ID,
             $route: { query: {} },
             restoreCreationOptions: vi.fn(),
+            restoreAdoptionReturnStep: vi.fn(),
             restoreEntrySelection: vi.fn(async () => {
                 loadingStates.push(context.isLoadingState)
             }),
@@ -2920,6 +3151,7 @@ describe('TimetableV3', () => {
                 },
             },
             restoreCreationOptions: vi.fn(),
+            restoreAdoptionReturnStep: vi.fn(),
             restoreEntrySelection: vi.fn().mockResolvedValue(undefined),
             ensureValidCurrentStep: vi.fn().mockResolvedValue(undefined),
             restorePersistedTimetableCalculation: vi.fn().mockResolvedValue(undefined),
@@ -2988,7 +3220,7 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('unter „Zusätzliche“ angeboten')
     })
 
-    it('orders selected module summaries alphabetically by module code on both routes', () => {
+    it('orders selected module summaries alphabetically by module code on modules, creation, and adoption', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -3018,8 +3250,8 @@ describe('TimetableV3', () => {
             .toEqual(['CH1', 'D2', 'D10', 'ETH3', 'M3'])
         expect(selectedModuleKeys).toEqual(originalSelectedModuleKeys)
         expect(moduleSelectionGroups[0].modules).toEqual(originalModules)
-        expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(2)
-        expect(source.match(/Ausgewählte Module/g)).toHaveLength(2)
+        expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(3)
+        expect(source.match(/Ausgewählte Module/g)).toHaveLength(3)
     })
 
     it('opens a persistent course dialog from an individual module tile', async () => {
@@ -3118,12 +3350,12 @@ describe('TimetableV3', () => {
             'Montag · 10:40–11:30 · 2-wöchig',
         ])
         expect(methods.courseScheduleLabels({
-            display_schedule_labels: ['Montag · 20:25–21:55 · 1-wöchig'],
+            display_schedule_labels: ['Montag · 20:25–21:55 · 17.02.2026'],
             schedule_labels: [
                 'Montag · 20:25–21:10 · 1-wöchig',
                 'Montag · 21:10–21:55 · 1-wöchig',
             ],
-        })).toEqual(['Montag · 20:25–21:55 · 1-wöchig'])
+        })).toEqual(['Montag · 20:25–21:55 · 17.02.2026'])
         methods.closeModuleCoursesDialog.call(context)
         expect(context.moduleCoursesDialogOpen).toBe(false)
         methods.toggleModuleGroup.call(groupContext, groups[0])
@@ -3721,6 +3953,7 @@ describe('TimetableV3', () => {
             selectedModuleKeys: ['current:D5'],
             selectedCourseKeys: ['d5-a'],
             scheduleCreationMode: 'automatic',
+            timetableAdoptionReturnStep: 'modules',
             timetableFilters: { include_saturday: false, free_days: 2 },
         }
 
@@ -3734,6 +3967,7 @@ describe('TimetableV3', () => {
             },
             state: {
                 retained: true,
+                adoptionReturnStep: 'modules',
                 entrySelection: {
                     mode: 'without_student',
                     student: null,

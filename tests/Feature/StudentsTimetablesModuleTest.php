@@ -3141,6 +3141,26 @@ it('returns the shared student overview summary for a selected robot student', f
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
+        [
+            'line_number' => 16,
+            'date' => '2026-10-01',
+            'period' => '10',
+            'starts_at' => '17:50',
+            'ends_at' => '18:35',
+            'teacher' => 'DAT',
+            'room' => 'R404',
+            'class_name' => 'D1-9A-DAT',
+        ],
+        [
+            'line_number' => 17,
+            'date' => '2026-10-01',
+            'period' => '11',
+            'starts_at' => '18:45',
+            'ends_at' => '19:30',
+            'teacher' => 'DAT',
+            'room' => 'R404',
+            'class_name' => 'D1-9A-DAT',
+        ],
     ])->each(fn (array $course): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
@@ -3153,7 +3173,7 @@ it('returns the shared student overview summary for a selected robot student', f
         ...$course,
     ]));
 
-    $d2LineNumber = 16;
+    $d2LineNumber = 18;
     $createD2CourseSeries = function (
         array $dates,
         string $period,
@@ -3420,7 +3440,7 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.code', 'D1')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.name', 'Deutsch 1')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.selected_by_default', true)
-        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses')
+        ->assertJsonCount(4, 'data.module_selection_groups.3.modules.0.courses')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.teacher', 'HUB')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.keys')
@@ -3450,6 +3470,10 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.is_distance_learning', false)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.instruction_label', null)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.3.schedule_labels.0', 'Donnerstag · 17:50–18:35 · 01.10.2026')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.3.schedule_labels.1', 'Donnerstag · 18:45–19:30 · 01.10.2026')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.3.display_schedule_labels.0', 'Donnerstag · 17:50–19:30 · 01.10.2026')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.3.dates_count', 1)
         ->assertJsonPath('data.module_selection_groups.4.key', 'additional')
         ->assertJsonPath('data.module_selection_groups.4.modules.0.code', 'D2')
         ->assertJsonMissing(['code' => 'PH1'])
@@ -4488,7 +4512,7 @@ it('stores timetable v2 state per authenticated user and schoolyear', function (
         ->assertJsonPath('data.state.selection.semester', 5);
 });
 
-it('stores timetable v3 state independently from timetable v2', function () {
+it('stores timetable v3 state without a student independently from timetable v2', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -4503,8 +4527,11 @@ it('stores timetable v3 state independently from timetable v2', function () {
     ]);
 
     $v3State = [
+        'entrySelection' => [
+            'mode' => 'without_student',
+            'student' => null,
+        ],
         'workspace' => [
-            'selectedStudentCode' => '1001',
             'draftModules' => ['D1', 'INF2'],
         ],
     ];
@@ -4513,14 +4540,14 @@ it('stores timetable v3 state independently from timetable v2', function () {
         ->putJson('/api/admin/students-timetables/timetable-v3-state', [
             'context' => [
                 'workspace_id' => V3_STATE_WORKSPACE_ID,
-                'planning_mode' => 'with_student',
-                'student_code' => '1001',
+                'planning_mode' => 'without_student',
+                'student_code' => null,
             ],
             'state' => $v3State,
         ])
         ->assertSuccessful()
         ->assertJsonPath('message', 'V3-Arbeitsstand wurde gespeichert.')
-        ->assertJsonPath('data.state.workspace.selectedStudentCode', '1001');
+        ->assertJsonPath('data.state.entrySelection.mode', 'without_student');
 
     $this->assertDatabaseHas('student_timetable_v3_states', [
         'school_id' => $user->school_id,

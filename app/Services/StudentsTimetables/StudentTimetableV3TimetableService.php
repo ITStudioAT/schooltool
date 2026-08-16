@@ -23,7 +23,7 @@ class StudentTimetableV3TimetableService
 
     private const MAX_PERSISTED_TIMETABLE_BYTES = 8388608;
 
-    private const ALGORITHM_VERSION = 8;
+    private const ALGORITHM_VERSION = 9;
 
     private const PREPARING_STARTED_PROGRESS_PERCENT = 5;
 

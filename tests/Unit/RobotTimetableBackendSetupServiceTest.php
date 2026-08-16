@@ -3770,6 +3770,93 @@ it('resolves only the selected authoritative language module when sibling langua
         ->and($slotCodes)->toBe(['F2']);
 });
 
+it('resolves an unnumbered authoritative module through its active timetable alias', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 24,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'LPT',
+                'json_subject' => 'LPT',
+                'name' => 'Literarisches Praktikum',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [
+            [
+                'json_subject' => 'LPT',
+                'tt_subject' => 'LET',
+                'is_active' => true,
+            ],
+        ],
+        courseGroups: [
+            [
+                'key' => 'lpt-1ck-drei',
+                'weekday' => 2,
+                'hour' => 13,
+                'class_name' => 'LPT-1CK-DREI',
+                'display_label' => 'LPT-1CK-DREI',
+                'title' => 'LPT-1CK-DREI',
+                'course' => 'LET',
+                'subject' => 'LET',
+                'dates' => ['2026-02-17'],
+                'dates_count' => 1,
+            ],
+            [
+                'key' => 'lpt-1r-enns',
+                'weekday' => 3,
+                'hour' => 11,
+                'class_name' => 'LPT-1R-ENNS',
+                'display_label' => 'LPT-1R-ENNS',
+                'title' => 'LPT-1R-ENNS',
+                'course' => 'LET',
+                'subject' => 'LET',
+                'dates' => ['2026-02-18'],
+                'dates_count' => 1,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'L',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['LPT'],
+            'selected_modules_are_authoritative' => true,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        requiredCourseGroupsByModule: [
+            'LPT' => ['lpt-1ck-drei', 'lpt-1r-enns'],
+        ],
+    );
+
+    expect($result)
+        ->selected_course_count->toBe(1)
+        ->timetable_variation_count->toBe(2)
+        ->timetables->toHaveCount(2)
+        ->and(collect($result['timetables'])->every(
+            fn (array $timetable): bool => collect($timetable['slots'])
+                ->contains(fn (array $slot): bool => ($slot['code'] ?? null) === 'LPT'),
+        ))->toBeTrue();
+});
+
 it('resolves authoritative compact religion and ethics modules to different subject rows', function (
     string $selectedModule,
     string $courseGroupKey,

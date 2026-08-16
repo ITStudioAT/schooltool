@@ -371,6 +371,15 @@ class StudentTimetableV3StudentInformationService
                 $regularHours = $this->moduleRegularHours($module) ?? $usualHours;
                 $scheduledHours = $this->courseScheduledWeeklyHours($courseGroups);
                 $isDistanceLearning = $this->courseIsDistanceLearning($courseGroups, $scheduledHours, $regularHours);
+                $dates = $courseGroups
+                    ->flatMap(fn (array $courseGroup): array => is_array($courseGroup['dates'] ?? null)
+                        ? $courseGroup['dates']
+                        : [])
+                    ->map(fn (mixed $date): string => trim((string) $date))
+                    ->filter()
+                    ->unique()
+                    ->sort()
+                    ->values();
 
                 return [
                     'key' => $this->courseKey($course),
@@ -409,9 +418,7 @@ class StudentTimetableV3StudentInformationService
                         ->filter()
                         ->unique()
                         ->implode(', '),
-                    'dates_count' => (int) $courseGroups->max(
-                        fn (array $courseGroup): int => (int) ($courseGroup['dates_count'] ?? 0),
-                    ),
+                    'dates_count' => $dates->count(),
                 ];
             })
             ->values()
@@ -650,12 +657,36 @@ class StudentTimetableV3StudentInformationService
             : '';
         $hour = (int) ($course['hour'] ?? 0);
         $recurrenceLabel = trim((string) ($course['recurrence_label'] ?? ''));
+        $singleDateLabel = $this->courseSingleDateLabel($course);
 
         return collect([
             $weekdayLabel,
             $timeLabel !== '' ? $timeLabel : ($hour > 0 ? "{$hour}. Stunde" : ''),
             $recurrenceLabel,
+            $singleDateLabel,
         ])->filter()->implode(' · ');
+    }
+
+    /** @param array<string, mixed> $course */
+    private function courseSingleDateLabel(array $course): string
+    {
+        $dates = collect(is_array($course['dates'] ?? null) ? $course['dates'] : [])
+            ->map(fn (mixed $date): string => trim((string) $date))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($dates->count() !== 1) {
+            return '';
+        }
+
+        $date = (string) $dates->first();
+
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $matches) !== 1) {
+            return $date;
+        }
+
+        return "{$matches[3]}.{$matches[2]}.{$matches[1]}";
     }
 
     /**

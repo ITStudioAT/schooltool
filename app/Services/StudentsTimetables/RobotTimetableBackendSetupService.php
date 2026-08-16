@@ -4993,7 +4993,7 @@ class RobotTimetableBackendSetupService
         array $subjectMappings,
     ): bool {
         if (preg_match(
-            '/^([A-ZÄÖÜ]+)(\d+)$/u',
+            '/^([A-ZÄÖÜ]+)(\d*)$/u',
             $this->normalizedCourseCode($selectedCourseCode),
             $selectedCourseParts,
         ) !== 1 || $selectedCourseParts[2] !== $this->subjectModuleNumber($subject)) {

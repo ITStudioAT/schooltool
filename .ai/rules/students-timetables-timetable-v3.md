@@ -164,5 +164,26 @@ Stundenplan übernehmen opens `/admin/students-timetables/timetable-v3/adoption`
 ## Place the adoption timetable below the mode cards
 On the adoption step, the 1:2 Automatischer/Manueller row contains exactly the two mode cards. Render the selected timetable as a separate full-width block below that card row, never inside either card.
 
-## Return from adoption to the calculation result
-The adoption step provides a Zurück button below the selected timetable. Navigate explicitly to the creation subsection with the current planning context so direct loads and reloads return reliably; preserve the in-memory calculation between these two result-bearing steps and disable the action while state or timetable-page loading is active.
+## Return from adoption to its remembered source
+The adoption step provides a Zurück button below the selected timetable. Navigate explicitly to the remembered source subsection with the current planning context (`modules` for Manueller Stundenplan, `creation` for Stundenplan übernehmen); legacy or missing origins fall back to creation. Preserve the in-memory calculation between the two result-bearing steps and disable the action while state or timetable-page loading is active.
+
+## Show only the manual card on V3 adoption
+This supersedes the earlier two-card adoption layout. On the V3 adoption step, do not render the “Automatischer Stundenplan” card; render the “Manueller Stundenplan” card full-width and keep the selected timetable as a separate full-width block below it.
+
+## Show selected modules in the V3 adoption card
+On the V3 adoption step, render the read-only “Ausgewählte Module” count, hours, and naturally sorted module chips inside the full-width “Manueller Stundenplan” card. Do not add close controls or selection mutations; keep the selected timetable below the card.
+
+## Open manual timetable from modules and remember its origin
+On the V3 modules step, activating Manueller Stundenplan lazily restores the current persisted timetable page and opens adoption with its validated fingerprint, global index, and key; do not hardcode that identity or persist manual mode as the marker. Persist only a whitelisted adoptionReturnStep (`modules` or `creation`) in the workspace state so Zurück and invalid-adoption fallback return to the actual source after F5; legacy or missing values fall back to creation.
+
+## Manual timetable entry never requires an automatic result
+Manueller Stundenplan must always open from the modules step in both planning modes. Reuse a validated persisted timetable when one exists; otherwise open adoption without timetable identity as an intentional blank manual page, remember modules as the return source, and keep that page valid after F5.
+
+## Open manual planning from modules without a timetable
+This supersedes the earlier rule that reused a persisted timetable from the modules card. Activating Manueller Stundenplan on the modules step must always open adoption without fingerprint, timetable index, or timetable key, must not call the persisted-timetable endpoint, and must never render an in-memory automatic or official timetable there. Only Stundenplan übernehmen from creation may carry an existing timetable into adoption.
+
+## Keep overview study selection compact
+On the V3 overview route, render the editable backend-provided Studienauswahl inside a centered responsive card capped at 960px. Keep the existing clear-on-second-click behavior and loading/error states; compact spacing must not hide or recompute any selection option.
+
+## Show study selection on manual timetable
+On the V3 manual timetable/adoption page, show the backend-provided Studienauswahl in the shared compact read-only card above the manual timetable. Reuse compactPlanningSelectionItems; do not make this page another editable study-selection surface.

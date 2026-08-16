@@ -26,6 +26,7 @@ class UpdateStudentTimetableV3StateRequest extends FormRequest
             'context.student_code' => [
                 Rule::requiredIf(fn (): bool => $this->input('context.planning_mode') === 'with_student'),
                 Rule::prohibitedIf(fn (): bool => $this->input('context.planning_mode') === 'without_student'),
+                'nullable',
                 'string',
                 'max:255',
             ],
