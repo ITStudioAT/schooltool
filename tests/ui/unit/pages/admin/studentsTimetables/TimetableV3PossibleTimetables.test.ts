@@ -127,6 +127,60 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.find('.timetable-v3-results__navigation').exists()).toBe(false)
     })
 
+    it('renders an empty weekday timetable for manual planning', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                allowSaturdayLessons: true,
+                emptyTimetable: true,
+                emptyHourRows: [
+                    { hour: 9, from: '', until: '' },
+                    { hour: 7, from: '14:45:00', until: '15:30:00' },
+                    { hour: 8, from: '15:30', until: '16:15' },
+                ],
+                navigationVisible: false,
+                timetables: [timetableFixture({
+                    key: 'stale-result',
+                    number: 1,
+                    slots: { '1-1': slotFixture('D1', 1, 1) },
+                    type: 'full_green',
+                })],
+            },
+        })
+
+        expect(wrapper.find('.timetable-v3-results__table').exists()).toBe(true)
+        expect(wrapper.find('.timetable-v3-results__unavailable').exists()).toBe(false)
+        expect(wrapper.find('.timetable-v3-results__navigation').exists()).toBe(false)
+        expect(wrapper.find('caption').text()).toBe('Leerer Stundenplan')
+        expect(wrapper.text()).toContain('Stundenplan 1 von 1')
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        expect((wrapper.vm as any).visibleHourRows).toEqual([
+            { hour: 1, timeRange: '' },
+            { hour: 2, timeRange: '' },
+            { hour: 3, timeRange: '' },
+            { hour: 4, timeRange: '' },
+            { hour: 5, timeRange: '' },
+            { hour: 6, timeRange: '' },
+            { hour: 7, timeRange: '14:45–15:30' },
+            { hour: 8, timeRange: '15:30–16:15' },
+            { hour: 9, timeRange: '' },
+        ])
+        expect(wrapper.findAll('tbody tr')).toHaveLength(9)
+        expect(wrapper.findAll('tbody td')).toHaveLength(54)
+        expect(wrapper.findAll('.timetable-v3-results__period-time').map(cell => cell.text()))
+            .toEqual(['14:45–15:30', '15:30–16:15'])
+        expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(0)
+        expect(wrapper.text()).not.toContain('D1')
+    })
+
+    it('falls back to an empty timetable from period 1 through period 10', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: { emptyTimetable: true },
+        })
+
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        expect(wrapper.findAll('tbody tr')).toHaveLength(10)
+    })
+
     it('renders every primary, same-slot, and allowed overlap Unterricht', () => {
         const slot = slotFixture('D5', 1, 2, {
             isDistanceLearningCourse: true,

@@ -3476,9 +3476,21 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.3.dates_count', 1)
         ->assertJsonPath('data.module_selection_groups.4.key', 'additional')
         ->assertJsonPath('data.module_selection_groups.4.modules.0.code', 'D2')
-        ->assertJsonMissing(['code' => 'PH1'])
+        ->assertJsonCount(8, 'data.main_module_selection_groups')
         ->assertJsonMissingPath('data.completed_courses')
         ->assertJsonMissingPath('data.course_sections');
+
+    $studentModuleCodes = collect($v3StudentInformationResponse->json('data.module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->pluck('code');
+    $mainBuGroup = collect($v3StudentInformationResponse->json('data.main_module_selection_groups'))
+        ->firstWhere('key', 'BU');
+
+    expect($studentModuleCodes)->not->toContain('PH1')
+        ->and($mainBuGroup['label'])->toBe('BU Buchhaltung')
+        ->and($mainBuGroup['description'])->toBe('2 Module verfügbar')
+        ->and($mainBuGroup['count'])->toBe(2)
+        ->and(collect($mainBuGroup['modules'])->pluck('code')->all())->toBe(['BU1', 'BU2']);
 
     foreach ($v3StudentInformationResponse->json('data.module_selection_groups') as $moduleSelectionGroup) {
         $moduleCodes = collect($moduleSelectionGroup['modules'])->pluck('code')->all();
@@ -3520,7 +3532,9 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.0.modules.1.code', 'BU2');
 
     expect(collect($withoutStudentResponse->json('data.module_selection_groups'))->pluck('key')->all())
-        ->toBe(['BU', 'D', 'ETH', 'M']);
+        ->toBe(['BU', 'D', 'ETH', 'M'])
+        ->and($withoutStudentResponse->json('data.main_module_selection_groups'))
+        ->toBe($withoutStudentResponse->json('data.module_selection_groups'));
 
     $compactStudentResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
         ->assertSuccessful()

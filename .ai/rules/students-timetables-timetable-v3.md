@@ -193,3 +193,36 @@ On a V3 manual timetable opened from modules, render the backend-provided module
 
 ## Keep limits off the manual timetable card
 This supersedes the earlier adoption selected-module summary rule. The V3 manual timetable card must not show the automatic 10-module/30-hour limit summary or selected-module chips; show the separate read-only module catalog below it instead.
+
+## Keep restart available on the manual timetable
+On the V3 adoption/manual timetable page, show Neustart beside Zurück. Reuse restartPlanning and disable the action while state is loading/saving or the timetable page is loading, so resetting always clears the planning workspace and returns to the overview.
+
+## Number V3 workflow pages by the active branch
+Show `Seite n` at the upper right of the V3 card header. Overview is 1, modules is 2, automatic creation is 3; manual adoption opened from modules is also 3, while adoption reached from automatic creation is 4.
+
+## Use 2A and 2B for the automatic V3 branch
+This supersedes the earlier sequential page-number rule. Show overview as Seite 1 and untouched modules as Seite 2; selecting Automatischer Stundenplan changes modules to Seite 2A, creation is Seite 2B, and the manual/adoption page is Seite 3.
+
+## Label automatic timetable transfer as page 3A
+This refines the V3 page-label rule: direct manual timetable entry from modules is Seite 3. Clicking Stundenplan übernehmen on Seite 2B opens adoption as Seite 3A; distinguish the two with the remembered adoption return step.
+
+## Hide page labels until explicitly assigned
+Only render the upper-right Seite label for explicitly numbered V3 states. Currently those are overview 1, modules 2, automatic modules 2A, creation 2B, and automatic adoption 3A; direct manual adoption and future states remain unnumbered until specified.
+
+## Label other manual timetable entries as page 3B
+Refine the explicit V3 labels: adoption reached through Stundenplan übernehmen is Seite 3A. Every other entry into the Manueller Stundenplan page, identified by the modules return origin, is Seite 3B.
+
+## Render page 3B as an empty timetable
+On manual timetable page 3B, render the existing timetable grid in an explicit empty mode instead of hiding it or showing the missing-result warning. Use ten Monday-to-Friday period rows without invented times or lessons; page 3A continues to render the transferred calculated timetable.
+
+## Use configured school-hour rows on page 3B
+This refines the empty page-3B grid rule: load the existing tenant/schoolyear school-hours endpoint through its Wayfinder action and render those configured hour numbers and from–until ranges. Keep the same normal timetable component/styles, show Monday through Saturday, and use the ten untimed fallback rows only when no configured hours can be loaded.
+
+## Split the student manual catalog heading
+On manual page 3B with planning_mode=with_student, label the existing catalog heading “Studierenden Module” and render a second equally sized read-only “Hauptmodule” heading card beside it. Stack the two heading cards on narrow screens. Without a selected student, keep the single Hauptmodule heading.
+
+## Start the empty page-3B grid at period 6
+The empty manual timetable on page 3B starts at period 6 and continues without gaps through the last configured school hour, preserving configured time ranges. If school hours are unavailable, render ten empty rows covering periods 6–15.
+
+## Start the empty page-3B grid at period 1
+This supersedes the period-6 rule. The empty manual timetable on page 3B starts at period 1 and continues without gaps through the last configured school hour, preserving configured time ranges. If school hours are unavailable, render ten empty rows covering periods 1–10.

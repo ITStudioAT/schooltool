@@ -56,6 +56,17 @@ class StudentTimetableV3StudentInformationService
         $moduleSelectionGroups = $this->moduleSelectionGroups(
             (array) ($selectionSummary['module_selection_groups'] ?? []),
         );
+        $mainModuleSelectionSummary = trim((string) $studentCode) !== '' && ! $includeAllSelectableModules
+            ? $this->studentOverviewService->selectionSummaryForStudentCode(
+                $user,
+                null,
+                studyProgram: $studyProgram,
+                includeAllSelectableModules: true,
+            )
+            : $selectionSummary;
+        $mainModuleSelectionGroups = $this->mainModuleSelectionGroups($this->moduleSelectionGroups(
+            (array) ($mainModuleSelectionSummary['module_selection_groups'] ?? []),
+        ));
 
         return [
             'student_code' => (string) data_get($selectionSummary, 'student.student_code', ''),
@@ -85,6 +96,7 @@ class StudentTimetableV3StudentInformationService
             'module_selection_groups' => trim((string) $studentCode) === ''
                 ? $this->mainModuleSelectionGroups($moduleSelectionGroups)
                 : $moduleSelectionGroups,
+            'main_module_selection_groups' => $mainModuleSelectionGroups,
         ];
     }
 

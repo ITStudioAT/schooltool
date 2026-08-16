@@ -28,3 +28,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Services/StudentsTimetables,resources/js/pages/admin/studentsTimetables}/** | .ai/rules/students-timetables.md |
 | {app/Http/Requests/Admin/UpdateStudentTimetableV3StateRequest.php,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/timetable-v3-feature.md |
 | app/Services/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/timetableV3/** | .ai/rules/timetable-v3.md |
+| {app/Services/StudentsTimetables/StudentTimetableV3StudentInformationService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/unit-pages-admin-students-timetables.md |

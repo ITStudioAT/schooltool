@@ -54,7 +54,9 @@
                     :key="selectedTimetableKey"
                     class="timetable-v3-results__table">
                     <caption class="timetable-v3-results__visually-hidden">
-                        {{ `Stundenplan ${selectedTimetablePosition} von ${normalizedTotalCount}` }}
+                        {{ emptyTimetable
+                            ? 'Leerer Stundenplan'
+                            : `Stundenplan ${selectedTimetablePosition} von ${normalizedTotalCount}` }}
                     </caption>
                     <thead>
                         <tr>
@@ -149,6 +151,12 @@ const WEEKDAYS = [
     { value: 5, title: 'Freitag', shortTitle: 'Fr' },
     { value: 6, title: 'Samstag', shortTitle: 'Sa' },
 ]
+const EMPTY_TIMETABLE_FIRST_HOUR = 1
+const EMPTY_TIMETABLE_HOUR_COUNT = 10
+const EMPTY_TIMETABLE = Object.freeze({
+    key: 'empty-timetable',
+    slots: Object.freeze({}),
+})
 
 export default {
     name: 'TimetableV3PossibleTimetables',
@@ -159,6 +167,14 @@ export default {
         allowSaturdayLessons: {
             type: Boolean,
             default: false,
+        },
+        emptyTimetable: {
+            type: Boolean,
+            default: false,
+        },
+        emptyHourRows: {
+            type: Array,
+            default: () => [],
         },
         error: {
             type: String,
@@ -217,6 +233,8 @@ export default {
             return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : 0
         },
         normalizedTotalCount() {
+            if (this.emptyTimetable) return 1
+
             const totalCount = Number(this.totalCount)
 
             if (Number.isInteger(totalCount) && totalCount > 0) return totalCount
@@ -227,6 +245,8 @@ export default {
             return this.normalizedSelectedIndex - this.normalizedPageOffset
         },
         selectedTimetable() {
+            if (this.emptyTimetable) return EMPTY_TIMETABLE
+
             return this.normalizedTimetables[this.selectedTimetableIndex] || null
         },
         selectedTimetableKey() {
@@ -265,10 +285,48 @@ export default {
 
             return WEEKDAYS.filter(weekday => weekday.value <= 5 || hasSaturday)
         },
+        normalizedEmptyHourRows() {
+            const rowsByHour = new Map()
+
+            this.emptyHourRows.forEach((row) => {
+                const hour = Number(row?.hour)
+
+                if (!Number.isInteger(hour) || hour < 1) return
+
+                const startsAt = String(row?.from || '').trim().slice(0, 5)
+                const endsAt = String(row?.until || '').trim().slice(0, 5)
+
+                rowsByHour.set(hour, {
+                    hour,
+                    timeRange: [startsAt, endsAt].filter(Boolean).join('–'),
+                })
+            })
+
+            return [...rowsByHour.values()].sort((firstRow, secondRow) => firstRow.hour - secondRow.hour)
+        },
         visibleHours() {
             const hours = this.selectedSlotEntries.map(entry => entry.hour)
 
-            if (!hours.length) return []
+            if (!hours.length) {
+                if (!this.emptyTimetable) return []
+                const configuredHours = this.normalizedEmptyHourRows
+                    .map(row => row.hour)
+                    .filter(hour => hour >= EMPTY_TIMETABLE_FIRST_HOUR)
+
+                if (configuredHours.length) {
+                    const lastHour = Math.max(...configuredHours)
+
+                    return Array.from(
+                        { length: (lastHour - EMPTY_TIMETABLE_FIRST_HOUR) + 1 },
+                        (_, index) => EMPTY_TIMETABLE_FIRST_HOUR + index,
+                    )
+                }
+
+                return Array.from(
+                    { length: EMPTY_TIMETABLE_HOUR_COUNT },
+                    (_, index) => EMPTY_TIMETABLE_FIRST_HOUR + index,
+                )
+            }
 
             const firstHour = Math.min(...hours)
             const lastHour = Math.max(...hours)
@@ -276,6 +334,12 @@ export default {
             return Array.from({ length: (lastHour - firstHour) + 1 }, (_, index) => firstHour + index)
         },
         visibleHourRows() {
+            if (this.emptyTimetable) {
+                const emptyRowsByHour = new Map(this.normalizedEmptyHourRows.map(row => [row.hour, row]))
+
+                return this.visibleHours.map(hour => emptyRowsByHour.get(hour) || { hour, timeRange: '' })
+            }
+
             return this.visibleHours.map((hour) => {
                 const timeRanges = this.selectedSlotEntries
                     .filter(entry => entry.hour === hour)

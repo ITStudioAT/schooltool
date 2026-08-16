@@ -6,13 +6,18 @@
         </div>
 
         <div v-else-if="currentStep === 'selection'" class="timetable-v3__step">
-            <div>
+            <div class="timetable-v3__page-header">
                 <div>
                     <div class="text-overline text-primary">Version 3</div>
                     <h2 class="text-h5 font-weight-bold mb-2">Stundenplan erstellen</h2>
                     <p class="text-body-1 text-medium-emphasis mb-0">
                         Wie möchten Sie beginnen?
                     </p>
+                </div>
+                <div
+                    v-if="currentPageLabel"
+                    class="timetable-v3__page-number text-overline text-primary">
+                    Seite {{ currentPageLabel }}
                 </div>
             </div>
 
@@ -351,9 +356,18 @@
         </div>
 
         <div v-else class="timetable-v3__step timetable-v3__next-step">
-            <div v-if="currentStep !== 'adoption'">
-                <div class="text-overline text-primary">Version 3</div>
-                <h2 class="text-h5 font-weight-bold mb-2">Stundenplan erstellen</h2>
+            <div
+                v-if="currentStep !== 'adoption' || currentPageLabel"
+                class="timetable-v3__page-header">
+                <div v-if="currentStep !== 'adoption'">
+                    <div class="text-overline text-primary">Version 3</div>
+                    <h2 class="text-h5 font-weight-bold mb-2">Stundenplan erstellen</h2>
+                </div>
+                <div
+                    v-if="currentPageLabel"
+                    class="timetable-v3__page-number text-overline text-primary">
+                    Seite {{ currentPageLabel }}
+                </div>
             </div>
 
             <div class="timetable-v3__selection-summary mt-6">
@@ -1458,30 +1472,78 @@
                     v-if="isManualTimetableAdoption && !studentSelectionDetailsLoading && !studentSelectionDetailsError"
                     class="timetable-v3__manual-module-catalog mt-4"
                     aria-labelledby="timetable-v3-manual-module-catalog-title">
-                    <div class="timetable-v3__main-module-heading timetable-v3__manual-module-catalog-heading">
-                        <div class="timetable-v3__main-module-heading-icon">
-                            <v-icon icon="mdi-bookshelf" size="21" />
-                        </div>
-                        <div>
-                            <h4 id="timetable-v3-manual-module-catalog-title">
-                                {{ usesMainModuleGroups ? 'Hauptmodule' : 'Module' }}
-                            </h4>
-                            <p>
-                                Alle verfügbaren Module und Unterrichte stehen für den manuellen Stundenplan bereit.
-                            </p>
-                        </div>
+                    <div
+                        class="timetable-v3__manual-module-catalog-headings"
+                        :class="{
+                            'timetable-v3__manual-module-catalog-headings--with-student': planningMode === 'with_student',
+                        }">
+                        <button
+                            type="button"
+                            class="
+                                timetable-v3__main-module-heading
+                                timetable-v3__manual-module-catalog-heading
+                                timetable-v3__manual-module-catalog-heading-button
+                            "
+                            :class="{
+                                'timetable-v3__manual-module-catalog-heading--selected': planningMode !== 'with_student'
+                                    || manualModuleCatalogView === 'student',
+                            }"
+                            :disabled="planningMode !== 'with_student'"
+                            :aria-pressed="planningMode === 'with_student'
+                                ? manualModuleCatalogView === 'student'
+                                : null"
+                            @click="showManualModuleCatalog('student')">
+                            <div class="timetable-v3__main-module-heading-icon">
+                                <v-icon icon="mdi-bookshelf" size="21" />
+                            </div>
+                            <div>
+                                <h4 id="timetable-v3-manual-module-catalog-title">
+                                    {{ planningMode === 'with_student' ? 'Studierenden Module' : 'Hauptmodule' }}
+                                </h4>
+                                <p>
+                                    {{ planningMode === 'with_student'
+                                        ? 'Die mit dem ausgewählten Studierenden verbundenen Module stehen bereit.'
+                                        : 'Alle verfügbaren Module und Unterrichte stehen für den manuellen Stundenplan bereit.' }}
+                                </p>
+                            </div>
+                        </button>
+
+                        <button
+                            v-if="planningMode === 'with_student'"
+                            type="button"
+                            class="
+                                timetable-v3__main-module-heading
+                                timetable-v3__manual-module-catalog-heading
+                                timetable-v3__manual-module-catalog-heading-button
+                            "
+                            :class="{
+                                'timetable-v3__manual-module-catalog-heading--selected': manualModuleCatalogView === 'main',
+                            }"
+                            :aria-pressed="manualModuleCatalogView === 'main'"
+                            aria-label="Hauptmodule"
+                            @click="showManualModuleCatalog('main')">
+                            <div class="timetable-v3__main-module-heading-icon">
+                                <v-icon icon="mdi-bookshelf" size="21" />
+                            </div>
+                            <div>
+                                <h4>Hauptmodule</h4>
+                                <p>
+                                    Alle verfügbaren Module und Unterrichte stehen für den manuellen Stundenplan bereit.
+                                </p>
+                            </div>
+                        </button>
                     </div>
 
                     <div
                         class="timetable-v3__module-group-cards"
-                        :class="{ 'timetable-v3__module-group-cards--main': usesMainModuleGroups }"
-                        :aria-label="usesMainModuleGroups ? 'Hauptmodule' : 'Modularten'"
+                        :class="{ 'timetable-v3__module-group-cards--main': manualModuleCatalogUsesMainGroups }"
+                        :aria-label="manualModuleCatalogUsesMainGroups ? 'Hauptmodule' : 'Studierenden Module'"
                         role="list">
                         <article
-                            v-for="group in moduleSelectionGroups"
-                            :key="`manual-${group.key}`"
+                            v-for="group in manualModuleCatalogGroups"
+                            :key="`manual-${manualModuleCatalogView}-${group.key}`"
                             class="timetable-v3__module-group-card timetable-v3__module-group-card--read-only"
-                            :class="usesMainModuleGroups
+                            :class="manualModuleCatalogUsesMainGroups
                                 ? 'timetable-v3__module-group-card--main'
                                 : `timetable-v3__module-group-card--${group.key}`"
                             role="listitem">
@@ -1495,8 +1557,8 @@
                             </span>
                             <span
                                 class="timetable-v3__module-group-card-title"
-                                :class="{ 'timetable-v3__module-group-card-title--main': usesMainModuleGroups }">
-                                <template v-if="usesMainModuleGroups">
+                                :class="{ 'timetable-v3__module-group-card-title--main': manualModuleCatalogUsesMainGroups }">
+                                <template v-if="manualModuleCatalogUsesMainGroups">
                                     <strong class="timetable-v3__main-module-code">{{ group.code }}</strong>
                                     <span
                                         v-if="group.name && group.name !== group.code"
@@ -1512,16 +1574,28 @@
                 </section>
 
                 <TimetableV3PossibleTimetables
-                    v-if="!isManualTimetableAdoption && selectedTimetableResult"
+                    v-if="isManualTimetableAdoption || selectedTimetableResult"
                     class="timetable-v3__adoption-timetable"
-                    :allow-saturday-lessons="timetableFilters.include_saturday"
+                    :allow-saturday-lessons="isManualTimetableAdoption || timetableFilters.include_saturday"
+                    :empty-hour-rows="schoolHours"
+                    :empty-timetable="isManualTimetableAdoption"
                     :navigation-visible="false"
                     :page-offset="timetablePageMeta.offset"
                     :selected-index="timetableSelectedIndex"
                     :timetables="timetableCalculationResult?.timetables || []"
                     :total-count="timetablePageMeta.total" />
 
-                <div class="timetable-v3__page-actions">
+                <div class="timetable-v3__page-actions timetable-v3__page-actions--split">
+                    <v-btn
+                        class="timetable-v3__restart-button"
+                        size="large"
+                        color="error"
+                        variant="outlined"
+                        prepend-icon="mdi-restart"
+                        :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState || timetablePageLoading"
+                        @click="restartPlanning">
+                        Neustart
+                    </v-btn>
                     <v-btn
                         class="timetable-v3__back-button"
                         size="large"
@@ -1984,7 +2058,10 @@
 
 <script>
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
-import { robotStudents as loadRobotStudents } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
+import {
+    robotStudents as loadRobotStudents,
+    schoolHours as loadStudentTimetableSchoolHours,
+} from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
 import {
     show as loadV3StudentInformation,
     updateSchoolLevel as updateV3StudentSchoolLevel,
@@ -2002,6 +2079,8 @@ const WITH_STUDENT = 'with_student'
 const WITHOUT_STUDENT = 'without_student'
 const AUTOMATIC_TIMETABLE = 'automatic'
 const MANUAL_TIMETABLE = 'manual'
+const MANUAL_STUDENT_MODULE_CATALOG = 'student'
+const MANUAL_MAIN_MODULE_CATALOG = 'main'
 const AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY = true
 const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
     include_saturday: true,
@@ -2014,6 +2093,10 @@ const SELECTION_STEP = 'selection'
 const MODULE_SELECTION_STEP = 'modules'
 const TIMETABLE_CREATION_STEP = 'creation'
 const TIMETABLE_ADOPTION_STEP = 'adoption'
+const TIMETABLE_PAGE_LABELS = Object.freeze({
+    [SELECTION_STEP]: '1',
+    [TIMETABLE_CREATION_STEP]: '2B',
+})
 const TIMETABLE_RESULT_STEPS = [TIMETABLE_CREATION_STEP, TIMETABLE_ADOPTION_STEP]
 const TIMETABLE_ADOPTION_RETURN_STEPS = [MODULE_SELECTION_STEP, TIMETABLE_CREATION_STEP]
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
@@ -2579,6 +2662,9 @@ export default {
             students: [],
             studentOptionsLoading: false,
             studentOptionsError: false,
+            schoolHours: [],
+            schoolHoursLoaded: false,
+            schoolHoursLoading: false,
             studentSelectionDetailsLoading: false,
             studentSelectionDetailsError: false,
             studentSelectionDetailsCode: '',
@@ -2586,6 +2672,8 @@ export default {
             studentSelectionItems: [],
             studentStudyModuleGroups: [],
             moduleSelectionGroups: [],
+            mainModuleSelectionGroups: [],
+            manualModuleCatalogView: MANUAL_STUDENT_MODULE_CATALOG,
             selectedModuleKeys: [],
             selectedCourseKeys: [],
             maximumSelectedModules: MAX_SELECTED_MODULES,
@@ -2626,6 +2714,17 @@ export default {
             if (subsection === TIMETABLE_ADOPTION_STEP) return TIMETABLE_ADOPTION_STEP
 
             return SELECTION_STEP
+        },
+        currentPageLabel() {
+            if (this.currentStep === MODULE_SELECTION_STEP) {
+                return this.scheduleCreationMode === AUTOMATIC_TIMETABLE ? '2A' : '2'
+            }
+
+            if (this.currentStep === TIMETABLE_ADOPTION_STEP) {
+                return this.isManualTimetableAdoption ? '3B' : '3A'
+            }
+
+            return TIMETABLE_PAGE_LABELS[this.currentStep] || ''
         },
         timetableAdoptionRouteSelection() {
             const fingerprint = String(this.$route?.query?.fingerprint || '').trim()
@@ -2688,6 +2787,23 @@ export default {
         },
         usesMainModuleGroups() {
             return this.planningMode === WITHOUT_STUDENT
+        },
+        manualModuleCatalogGroups() {
+            if (
+                this.planningMode === WITH_STUDENT
+                && this.manualModuleCatalogView === MANUAL_MAIN_MODULE_CATALOG
+            ) {
+                return this.mainModuleSelectionGroups
+            }
+
+            return this.moduleSelectionGroups
+        },
+        manualModuleCatalogUsesMainGroups() {
+            return this.planningMode === WITHOUT_STUDENT
+                || (
+                    this.planningMode === WITH_STUDENT
+                    && this.manualModuleCatalogView === MANUAL_MAIN_MODULE_CATALOG
+                )
         },
         selectedStudentClass() {
             return String(this.selectedStudent?.className || this.selectedStudent?.class || '').trim()
@@ -3077,12 +3193,20 @@ export default {
             if (!this.isLoadingState) {
                 void this.ensureValidCurrentStep()
             }
+
+            if (currentStep === TIMETABLE_ADOPTION_STEP && this.isManualTimetableAdoption) {
+                void this.loadSchoolHours()
+            }
         },
     },
 
     async created() {
         await this.initializeWorkspace()
         await this.loadState()
+
+        if (this.isManualTimetableAdoption) {
+            await this.loadSchoolHours()
+        }
     },
 
     methods: {
@@ -4182,6 +4306,22 @@ export default {
                 this.studentOptionsLoading = false
             }
         },
+        async loadSchoolHours() {
+            if (this.schoolHoursLoaded || this.schoolHoursLoading) return
+
+            this.schoolHoursLoading = true
+
+            try {
+                const response = await axios.get(loadStudentTimetableSchoolHours.url())
+
+                this.schoolHours = Array.isArray(response.data?.data) ? response.data.data : []
+            } catch {
+                this.schoolHours = []
+            } finally {
+                this.schoolHoursLoaded = true
+                this.schoolHoursLoading = false
+            }
+        },
         resetSelectedStudentSelectionDetails() {
             this.studentSelectionDetailsLoading = false
             this.studentSelectionDetailsError = false
@@ -4190,6 +4330,8 @@ export default {
             this.studentSelectionItems = []
             this.studentStudyModuleGroups = []
             this.moduleSelectionGroups = []
+            this.mainModuleSelectionGroups = []
+            this.manualModuleCatalogView = MANUAL_STUDENT_MODULE_CATALOG
             this.selectedModuleKeys = []
             this.selectedCourseKeys = []
             this.moduleSelectionLimitMessage = ''
@@ -4241,6 +4383,7 @@ export default {
                 : []
             this.setPlanningSelectionFields(studentInformation.selection_fields, selectionContextCode)
             this.setModuleSelectionGroups(studentInformation.module_selection_groups, selectionContextCode)
+            this.setMainModuleSelectionGroups(studentInformation.main_module_selection_groups)
             this.studentSelectionDetailsCode = selectionContextCode
         },
         async loadSelectedStudentSelection() {
@@ -4403,6 +4546,16 @@ export default {
                 this.activeModuleGroupKey = ''
             }
             this.moduleSelectionResetPending = false
+        },
+        setMainModuleSelectionGroups(moduleGroups) {
+            this.mainModuleSelectionGroups = (Array.isArray(moduleGroups) ? moduleGroups : [])
+                .filter(group => group && typeof group === 'object' && !Array.isArray(group))
+        },
+        showManualModuleCatalog(catalog) {
+            if (this.planningMode !== WITH_STUDENT) return
+            if (![MANUAL_STUDENT_MODULE_CATALOG, MANUAL_MAIN_MODULE_CATALOG].includes(catalog)) return
+
+            this.manualModuleCatalogView = catalog
         },
         selectedModuleCountForGroup(group) {
             const selectedKeys = new Set(this.selectedModuleKeys)
@@ -4846,6 +4999,18 @@ export default {
     flex: 1 1 auto;
     flex-direction: column;
     min-height: 0;
+}
+
+.timetable-v3__page-header {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.timetable-v3__page-number {
+    flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .timetable-v3__initializing {
@@ -6183,6 +6348,42 @@ button.timetable-v3__student-data-field:focus-visible {
     border-radius: 14px;
 }
 
+.timetable-v3__manual-module-catalog-headings {
+    display: grid;
+    gap: 12px;
+}
+
+.timetable-v3__manual-module-catalog-headings--with-student {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.timetable-v3__manual-module-catalog-heading-button {
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    appearance: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.timetable-v3__manual-module-catalog-heading-button:hover:not(:disabled),
+.timetable-v3__manual-module-catalog-heading-button:focus-visible {
+    border-color: #60a5fa;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.14);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.timetable-v3__manual-module-catalog-heading--selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.timetable-v3__manual-module-catalog-heading-button:disabled {
+    cursor: default;
+    opacity: 1;
+}
+
 .timetable-v3__main-module-heading-icon {
     display: inline-flex;
     flex: 0 0 auto;
@@ -7365,6 +7566,10 @@ button.timetable-v3__student-data-field:focus-visible {
     }
 
     .timetable-v3__planning-selection-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .timetable-v3__manual-module-catalog-headings--with-student {
         grid-template-columns: 1fr;
     }
 

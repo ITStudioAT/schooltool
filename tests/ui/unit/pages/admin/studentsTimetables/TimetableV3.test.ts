@@ -538,6 +538,44 @@ describe('TimetableV3', () => {
         expect(context.schoolLevelDialogSaving).toBe(false)
     })
 
+    it('loads configured school-hour time ranges for the empty manual timetable once', async () => {
+        const methods = (TimetableV3 as any).methods
+        const currentStepWatcher = (TimetableV3 as any).watch.currentStep
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    { hour: 7, from: '14:45', until: '15:30' },
+                    { hour: 8, from: '15:30', until: '16:15' },
+                ],
+            },
+        })
+        vi.stubGlobal('axios', { get })
+        const context = {
+            isLoadingState: true,
+            isManualTimetableAdoption: true,
+            schoolHours: [],
+            schoolHoursLoaded: false,
+            schoolHoursLoading: false,
+            loadSchoolHours: vi.fn(),
+        }
+
+        currentStepWatcher.call(context, 'adoption', 'modules')
+
+        expect(context.loadSchoolHours).toHaveBeenCalledOnce()
+
+        await methods.loadSchoolHours.call(context)
+        await methods.loadSchoolHours.call(context)
+
+        expect(get).toHaveBeenCalledOnce()
+        expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/school-hours')
+        expect(context.schoolHours).toEqual([
+            { hour: 7, from: '14:45', until: '15:30' },
+            { hour: 8, from: '15:30', until: '16:15' },
+        ])
+        expect(context.schoolHoursLoaded).toBe(true)
+        expect(context.schoolHoursLoading).toBe(false)
+    })
+
     it('loads and presents the calculated student selections from the shared overview', async () => {
         const methods = (TimetableV3 as any).methods
         const calculationItems = (TimetableV3 as any).computed.selectedStudentCalculationItems
@@ -646,6 +684,19 @@ describe('TimetableV3', () => {
                 }],
             },
         ]
+        const mainModuleSelectionGroups = [
+            {
+                key: 'BU',
+                code: 'BU',
+                name: 'Biologie und Umweltkunde',
+                description: '2 Module verfügbar',
+                count: 2,
+                modules: [
+                    { selection_key: 'additional:BU1', code: 'BU1', name: 'Biologie 1' },
+                    { selection_key: 'additional:BU2', code: 'BU2', name: 'Biologie 2' },
+                ],
+            },
+        ]
         const get = vi.fn().mockResolvedValue({
             data: {
                 data: {
@@ -662,6 +713,7 @@ describe('TimetableV3', () => {
                     selection_fields: selectionFields,
                     module_groups: moduleGroups,
                     module_selection_groups: moduleSelectionGroups,
+                    main_module_selection_groups: mainModuleSelectionGroups,
                 },
             },
         })
@@ -677,6 +729,8 @@ describe('TimetableV3', () => {
             studentSelectionItems: [],
             studentStudyModuleGroups: [],
             moduleSelectionGroups: [],
+            mainModuleSelectionGroups: [],
+            manualModuleCatalogView: 'student',
             selectedModuleKeys: [],
             selectedCourseKeys: [],
             activeModuleGroupKey: '',
@@ -690,6 +744,7 @@ describe('TimetableV3', () => {
             applySelectedStudentInformation: methods.applySelectedStudentInformation,
             setPlanningSelectionFields: methods.setPlanningSelectionFields,
             setModuleSelectionGroups: methods.setModuleSelectionGroups,
+            setMainModuleSelectionGroups: methods.setMainModuleSelectionGroups,
         }
 
         await methods.loadSelectedStudentSelection.call(context)
@@ -701,6 +756,7 @@ describe('TimetableV3', () => {
         expect(context.studentStudyModuleGroups).toEqual(moduleGroups)
         expect(context.studentStudyModuleGroups[1].modules[0].name).toBe('Deutsch 1')
         expect(context.moduleSelectionGroups).toEqual(moduleSelectionGroups)
+        expect(context.mainModuleSelectionGroups).toEqual(mainModuleSelectionGroups)
         expect(context.selectedModuleKeys).toEqual([])
         expect(context.selectedCourseKeys).toEqual([])
         expect(context.activeModuleGroupKey).toBe('')
@@ -857,6 +913,27 @@ describe('TimetableV3', () => {
         expect(continueButtonSource).toContain('Weiter')
         expect(continueButtonSource).toContain('@click="continueToNextStep"')
         expect(source).toContain('timetable-v3__page-actions')
+    })
+
+    it('numbers V3 pages according to the active planning branch', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const currentPageLabel = (TimetableV3 as any).computed.currentPageLabel
+
+        expect(currentPageLabel.call({ currentStep: 'selection', scheduleCreationMode: null })).toBe('1')
+        expect(currentPageLabel.call({ currentStep: 'modules', scheduleCreationMode: null })).toBe('2')
+        expect(currentPageLabel.call({ currentStep: 'modules', scheduleCreationMode: 'automatic' })).toBe('2A')
+        expect(currentPageLabel.call({ currentStep: 'creation', scheduleCreationMode: 'automatic' })).toBe('2B')
+        expect(currentPageLabel.call({ currentStep: 'adoption', isManualTimetableAdoption: true })).toBe('3B')
+        expect(currentPageLabel.call({ currentStep: 'adoption', isManualTimetableAdoption: false })).toBe('3A')
+        expect(currentPageLabel.call({ currentStep: 'unknown', scheduleCreationMode: null })).toBe('')
+        expect(source.match(/class="timetable-v3__page-number text-overline text-primary"/g)).toHaveLength(2)
+        expect(source.match(/v-if="currentPageLabel"/g)).toHaveLength(2)
+        expect(source.match(/Seite \{\{ currentPageLabel \}\}/g)).toHaveLength(2)
+        expect(source).toMatch(/\.timetable-v3__page-header\s*\{[\s\S]*?justify-content:\s*space-between;/)
+        expect(source).toMatch(/\.timetable-v3__page-number\s*\{[\s\S]*?margin-left:\s*auto;/)
     })
 
     it('opens a minimal next page with the complete current selection card and neutral navigation', async () => {
@@ -1526,7 +1603,7 @@ describe('TimetableV3', () => {
         })
     })
 
-    it('shows the manual adoption card, read-only module catalog, and selected timetable in order', () => {
+    it('shows the manual adoption card, read-only module catalog, and timetable in order', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -1571,17 +1648,35 @@ describe('TimetableV3', () => {
         expect(manualModuleCatalogPosition).toBeGreaterThan(manualCardEnd)
         expect(manualModuleCatalogEnd).toBeGreaterThan(manualModuleCatalogPosition)
         expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog')
-        expect(manualModuleCatalogSource).toContain("{{ usesMainModuleGroups ? 'Hauptmodule' : 'Module' }}")
-        expect(manualModuleCatalogSource).toContain('v-for="group in moduleSelectionGroups"')
+        expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog-headings--with-student')
+        expect(manualModuleCatalogSource).toContain(
+            "{{ planningMode === 'with_student' ? 'Studierenden Module' : 'Hauptmodule' }}",
+        )
+        expect(manualModuleCatalogSource).toContain('v-if="planningMode === \'with_student\'"')
+        expect(manualModuleCatalogSource).toContain('<h4>Hauptmodule</h4>')
+        expect(manualModuleCatalogSource).toContain('aria-label="Hauptmodule"')
+        expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'student\')"')
+        expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'main\')"')
+        expect(manualModuleCatalogSource).toContain(':aria-pressed="manualModuleCatalogView === \'main\'"')
+        expect(manualModuleCatalogSource).toContain('v-for="group in manualModuleCatalogGroups"')
+        expect(manualModuleCatalogSource).toContain('manualModuleCatalogUsesMainGroups')
         expect(manualModuleCatalogSource).toContain('{{ selectedModuleCountForGroup(group) }}/{{ group.count }}')
         expect(manualModuleCatalogSource).toContain('timetable-v3__module-group-card--read-only')
-        expect(manualModuleCatalogSource).not.toContain('@click')
-        expect(manualModuleCatalogSource).not.toContain('aria-pressed')
+        expect(manualModuleCatalogSource).not.toContain('@click="toggleModuleGroup(group)"')
         expect(adoptionPageSource).toContain('<TimetableV3PossibleTimetables')
-        expect(adoptionPageSource).toContain('v-if="!isManualTimetableAdoption && selectedTimetableResult"')
+        expect(adoptionPageSource).toContain('v-if="isManualTimetableAdoption || selectedTimetableResult"')
+        expect(adoptionPageSource).toContain(':allow-saturday-lessons="isManualTimetableAdoption || timetableFilters.include_saturday"')
+        expect(adoptionPageSource).toContain(':empty-hour-rows="schoolHours"')
+        expect(adoptionPageSource).toContain(':empty-timetable="isManualTimetableAdoption"')
         expect(adoptionPageSource).toContain(':navigation-visible="false"')
         expect(adoptionPageSource).toContain(':selected-index="timetableSelectedIndex"')
         expect(adoptionPageSource).toContain(':timetables="timetableCalculationResult?.timetables || []"')
+        expect(adoptionPageSource).toContain('class="timetable-v3__page-actions timetable-v3__page-actions--split"')
+        expect(adoptionPageSource).toContain('class="timetable-v3__restart-button"')
+        expect(adoptionPageSource).toContain('prepend-icon="mdi-restart"')
+        expect(adoptionPageSource).toContain(':disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState || timetablePageLoading"')
+        expect(adoptionPageSource).toContain('@click="restartPlanning"')
+        expect(adoptionPageSource).toContain('Neustart')
         expect(adoptionPageSource).toContain('@click="returnFromTimetableAdoptionStep"')
         expect(adoptionPageSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(adoptionPageSource).toContain('Zurück')
@@ -1590,7 +1685,45 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).not.toContain('Optionen')
         expect(adoptionPageSource.slice(manualCardEnd)).not.toContain('Ausgewählte Module')
         expect(source).toMatch(/\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+        expect(source).toMatch(/\.timetable-v3__manual-module-catalog-headings--with-student\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
+        expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__manual-module-catalog-headings--with-student\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
+    })
+
+    it('switches the read-only manual catalog between student and all main modules', () => {
+        const methods = (TimetableV3 as any).methods
+        const computed = (TimetableV3 as any).computed
+        const studentGroups = [{ key: 'current', label: 'Aktuelle' }]
+        const mainGroups = [{ key: 'BU', code: 'BU', name: 'Biologie' }]
+        const context = {
+            planningMode: 'with_student',
+            manualModuleCatalogView: 'student',
+            moduleSelectionGroups: studentGroups,
+            mainModuleSelectionGroups: mainGroups,
+        }
+
+        expect(computed.manualModuleCatalogGroups.call(context)).toBe(studentGroups)
+        expect(computed.manualModuleCatalogUsesMainGroups.call(context)).toBe(false)
+
+        methods.showManualModuleCatalog.call(context, 'main')
+
+        expect(context.manualModuleCatalogView).toBe('main')
+        expect(computed.manualModuleCatalogGroups.call(context)).toBe(mainGroups)
+        expect(computed.manualModuleCatalogUsesMainGroups.call(context)).toBe(true)
+
+        methods.showManualModuleCatalog.call(context, 'unsupported')
+        expect(context.manualModuleCatalogView).toBe('main')
+
+        const withoutStudentContext = {
+            ...context,
+            planningMode: 'without_student',
+            manualModuleCatalogView: 'student',
+        }
+
+        methods.showManualModuleCatalog.call(withoutStudentContext, 'main')
+        expect(withoutStudentContext.manualModuleCatalogView).toBe('student')
+        expect(computed.manualModuleCatalogGroups.call(withoutStudentContext)).toBe(studentGroups)
+        expect(computed.manualModuleCatalogUsesMainGroups.call(withoutStudentContext)).toBe(true)
     })
 
     it('returns from adoption to the remembered source and blocks navigation while loading', () => {
@@ -3821,10 +3954,10 @@ describe('TimetableV3', () => {
         expect(selectionStepSource).not.toContain('class="timetable-v3__back-button"')
         expect(selectionStepSource).not.toContain('prepend-icon="mdi-arrow-left"')
         expect(selectionStepSource).not.toContain('Zurück')
-        expect(source.match(/class="timetable-v3__restart-button"/g)).toHaveLength(3)
-        expect(source.match(/prepend-icon="mdi-restart"/g)).toHaveLength(3)
-        expect(source.match(/@click="restartPlanning"/g)).toHaveLength(3)
-        expect(source.match(/Neustart/g)).toHaveLength(3)
+        expect(source.match(/class="timetable-v3__restart-button"/g)).toHaveLength(4)
+        expect(source.match(/prepend-icon="mdi-restart"/g)).toHaveLength(4)
+        expect(source.match(/@click="restartPlanning"/g)).toHaveLength(4)
+        expect(source.match(/Neustart/g)).toHaveLength(4)
         expect(context.planningMode).toBeNull()
         expect(context.selectedStudent).toBeNull()
         expect(context.studentDialogOpen).toBe(false)
