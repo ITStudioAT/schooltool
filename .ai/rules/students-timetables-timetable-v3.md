@@ -187,3 +187,9 @@ On the V3 overview route, render the editable backend-provided Studienauswahl in
 
 ## Show study selection on manual timetable
 On the V3 manual timetable/adoption page, show the backend-provided Studienauswahl in the shared compact read-only card above the manual timetable. Reuse compactPlanningSelectionItems; do not make this page another editable study-selection surface.
+
+## Show module catalog on blank manual timetable
+On a V3 manual timetable opened from modules, render the backend-provided module groups below the manual card using the same module-group card visuals and counts. Keep this catalog read-only until manual placement behavior exists; it must not trigger automatic selection limits, course mutations, or timetable restoration.
+
+## Keep limits off the manual timetable card
+This supersedes the earlier adoption selected-module summary rule. The V3 manual timetable card must not show the automatic 10-module/30-hour limit summary or selected-module chips; show the separate read-only module catalog below it instead.

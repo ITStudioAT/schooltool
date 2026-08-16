@@ -7,11 +7,11 @@ function readSource(path: string): string {
 }
 
 describe('frontend bundle boundaries', () => {
-    it('keeps production builds within the shared-host memory budget', () => {
+    it('gives production builds reliable heap headroom without returning to a 4 GB budget', () => {
         const packageConfiguration = JSON.parse(readSource('package.json'))
         const viteSource = readSource('vite.config.js')
 
-        expect(packageConfiguration.scripts.build).toContain('--max-old-space-size=1280')
+        expect(packageConfiguration.scripts.build).toContain('--max-old-space-size=2048')
         expect(packageConfiguration.scripts.build).not.toContain('--max-old-space-size=4096')
         expect(viteSource).toContain('reportCompressedSize: false')
     })

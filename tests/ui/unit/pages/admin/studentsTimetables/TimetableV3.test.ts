@@ -1526,7 +1526,7 @@ describe('TimetableV3', () => {
         })
     })
 
-    it('shows only the manual adoption card with the selected timetable below it', () => {
+    it('shows the manual adoption card, read-only module catalog, and selected timetable in order', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -1537,6 +1537,15 @@ describe('TimetableV3', () => {
         const manualCardPosition = adoptionPageSource.indexOf('timetable-v3__adoption-card--manual')
         const manualCardEnd = adoptionPageSource.indexOf('</section>', manualCardPosition)
         const manualCardSource = adoptionPageSource.slice(manualCardPosition, manualCardEnd)
+        const manualModuleCatalogPosition = adoptionPageSource.indexOf(
+            'v-if="isManualTimetableAdoption && !studentSelectionDetailsLoading && !studentSelectionDetailsError"',
+        )
+        const manualModuleCatalogEnd = adoptionPageSource.indexOf('</section>', manualModuleCatalogPosition)
+        const manualModuleCatalogSource = adoptionPageSource.slice(
+            manualModuleCatalogPosition,
+            manualModuleCatalogEnd,
+        )
+        const selectedTimetablePosition = adoptionPageSource.indexOf('<TimetableV3PossibleTimetables')
         const currentSelectionPosition = source.lastIndexOf('Aktuelle Auswahl', adoptionPageStart)
 
         expect(adoptionPageStart).toBeGreaterThan(-1)
@@ -1554,13 +1563,20 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).not.toContain('Automatischer Stundenplan')
         expect(adoptionPageSource).toContain('Manueller Stundenplan')
         expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
-        expect(manualCardSource).toContain('timetable-v3__schedule-mode-selected-modules')
-        expect(manualCardSource).toContain('Ausgewählte Module')
-        expect(manualCardSource).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
-        expect(manualCardSource).toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
-        expect(manualCardSource).toContain('v-for="module in selectedModules"')
-        expect(manualCardSource).not.toContain('closable')
-        expect(manualCardSource).not.toContain('@click:close')
+        expect(manualCardSource).not.toContain('timetable-v3__schedule-mode-selected-modules')
+        expect(manualCardSource).not.toContain('Ausgewählte Module')
+        expect(manualCardSource).not.toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
+        expect(manualCardSource).not.toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
+        expect(manualCardSource).not.toContain('v-for="module in selectedModules"')
+        expect(manualModuleCatalogPosition).toBeGreaterThan(manualCardEnd)
+        expect(manualModuleCatalogEnd).toBeGreaterThan(manualModuleCatalogPosition)
+        expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog')
+        expect(manualModuleCatalogSource).toContain("{{ usesMainModuleGroups ? 'Hauptmodule' : 'Module' }}")
+        expect(manualModuleCatalogSource).toContain('v-for="group in moduleSelectionGroups"')
+        expect(manualModuleCatalogSource).toContain('{{ selectedModuleCountForGroup(group) }}/{{ group.count }}')
+        expect(manualModuleCatalogSource).toContain('timetable-v3__module-group-card--read-only')
+        expect(manualModuleCatalogSource).not.toContain('@click')
+        expect(manualModuleCatalogSource).not.toContain('aria-pressed')
         expect(adoptionPageSource).toContain('<TimetableV3PossibleTimetables')
         expect(adoptionPageSource).toContain('v-if="!isManualTimetableAdoption && selectedTimetableResult"')
         expect(adoptionPageSource).toContain(':navigation-visible="false"')
@@ -1569,9 +1585,7 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).toContain('@click="returnFromTimetableAdoptionStep"')
         expect(adoptionPageSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(adoptionPageSource).toContain('Zurück')
-        expect(adoptionPageSource).toMatch(
-            /timetable-v3__adoption-card--manual[\s\S]*<\/section>\s*<\/div>\s*<TimetableV3PossibleTimetables/,
-        )
+        expect(selectedTimetablePosition).toBeGreaterThan(manualModuleCatalogEnd)
         expect(adoptionPageSource).not.toContain('@navigate')
         expect(adoptionPageSource).not.toContain('Optionen')
         expect(adoptionPageSource.slice(manualCardEnd)).not.toContain('Ausgewählte Module')
@@ -3220,7 +3234,7 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('unter „Zusätzliche“ angeboten')
     })
 
-    it('orders selected module summaries alphabetically by module code on modules, creation, and adoption', () => {
+    it('orders selected module summaries alphabetically by module code on modules and creation', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -3250,8 +3264,8 @@ describe('TimetableV3', () => {
             .toEqual(['CH1', 'D2', 'D10', 'ETH3', 'M3'])
         expect(selectedModuleKeys).toEqual(originalSelectedModuleKeys)
         expect(moduleSelectionGroups[0].modules).toEqual(originalModules)
-        expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(3)
-        expect(source.match(/Ausgewählte Module/g)).toHaveLength(3)
+        expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(2)
+        expect(source.match(/Ausgewählte Module/g)).toHaveLength(2)
     })
 
     it('opens a persistent course dialog from an individual module tile', async () => {

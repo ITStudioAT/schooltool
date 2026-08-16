@@ -1444,43 +1444,72 @@
                             timetable-v3__adoption-card
                             timetable-v3__adoption-card--manual
                         "
-                        aria-label="Manueller Stundenplan mit ausgewählten Modulen">
+                        aria-label="Manueller Stundenplan">
                         <span class="timetable-v3__schedule-mode-icon">
                             <v-icon icon="mdi-calendar-edit" size="30" />
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
                             <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
                         </span>
-
-                        <div class="timetable-v3__selected-modules timetable-v3__schedule-mode-selected-modules">
-                            <div class="timetable-v3__selected-modules-heading">
-                                <span class="timetable-v3__selected-modules-heading-label">
-                                    <v-icon icon="mdi-check-circle-outline" size="18" />
-                                    Ausgewählte Module
-                                </span>
-                                <span class="timetable-v3__selected-modules-summary">
-                                    {{ selectedModuleCount }}/{{ maximumSelectedModules }} Module
-                                    · {{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.
-                                </span>
-                            </div>
-                            <div v-if="selectedModules.length" class="timetable-v3__selected-modules-list">
-                                <v-chip
-                                    v-for="module in selectedModules"
-                                    :key="`adoption-${module.selection_key}`"
-                                    class="timetable-v3__selected-module-chip"
-                                    color="primary"
-                                    label
-                                    size="small"
-                                    variant="tonal">
-                                    <strong>{{ module.code }}</strong>
-                                    <span v-if="module.name && module.name !== module.code">
-                                        &nbsp;· {{ module.name }}
-                                    </span>
-                                </v-chip>
-                            </div>
-                        </div>
                     </section>
                 </div>
+
+                <section
+                    v-if="isManualTimetableAdoption && !studentSelectionDetailsLoading && !studentSelectionDetailsError"
+                    class="timetable-v3__manual-module-catalog mt-4"
+                    aria-labelledby="timetable-v3-manual-module-catalog-title">
+                    <div class="timetable-v3__main-module-heading timetable-v3__manual-module-catalog-heading">
+                        <div class="timetable-v3__main-module-heading-icon">
+                            <v-icon icon="mdi-bookshelf" size="21" />
+                        </div>
+                        <div>
+                            <h4 id="timetable-v3-manual-module-catalog-title">
+                                {{ usesMainModuleGroups ? 'Hauptmodule' : 'Module' }}
+                            </h4>
+                            <p>
+                                Alle verfügbaren Module und Unterrichte stehen für den manuellen Stundenplan bereit.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="timetable-v3__module-group-cards"
+                        :class="{ 'timetable-v3__module-group-cards--main': usesMainModuleGroups }"
+                        :aria-label="usesMainModuleGroups ? 'Hauptmodule' : 'Modularten'"
+                        role="list">
+                        <article
+                            v-for="group in moduleSelectionGroups"
+                            :key="`manual-${group.key}`"
+                            class="timetable-v3__module-group-card timetable-v3__module-group-card--read-only"
+                            :class="usesMainModuleGroups
+                                ? 'timetable-v3__module-group-card--main'
+                                : `timetable-v3__module-group-card--${group.key}`"
+                            role="listitem">
+                            <span class="timetable-v3__module-group-card-topline">
+                                <span class="timetable-v3__module-group-card-icon">
+                                    <v-icon :icon="moduleGroupIcon(group)" size="19" />
+                                </span>
+                                <span class="timetable-v3__module-group-card-count">
+                                    {{ selectedModuleCountForGroup(group) }}/{{ group.count }}
+                                </span>
+                            </span>
+                            <span
+                                class="timetable-v3__module-group-card-title"
+                                :class="{ 'timetable-v3__module-group-card-title--main': usesMainModuleGroups }">
+                                <template v-if="usesMainModuleGroups">
+                                    <strong class="timetable-v3__main-module-code">{{ group.code }}</strong>
+                                    <span
+                                        v-if="group.name && group.name !== group.code"
+                                        class="timetable-v3__main-module-name">
+                                        {{ group.name }}
+                                    </span>
+                                </template>
+                                <template v-else>{{ group.label }}</template>
+                            </span>
+                            <span class="timetable-v3__module-group-card-description">{{ group.description }}</span>
+                        </article>
+                    </div>
+                </section>
 
                 <TimetableV3PossibleTimetables
                     v-if="!isManualTimetableAdoption && selectedTimetableResult"
@@ -6219,6 +6248,21 @@ button.timetable-v3__student-data-field:focus-visible {
     outline: none;
     box-shadow: 0 10px 24px rgba(var(--module-group-accent-rgb), 0.16);
     transform: translateY(-2px);
+}
+
+.timetable-v3__module-group-card--read-only {
+    cursor: default;
+}
+
+.timetable-v3__module-group-card--read-only:hover {
+    background: rgba(255, 255, 255, 0.84);
+    border-color: rgba(203, 213, 225, 0.9);
+    box-shadow: none;
+    transform: none;
+}
+
+.timetable-v3__module-group-card--read-only:hover .timetable-v3__module-group-card-icon {
+    transform: none;
 }
 
 .timetable-v3__module-group-card--active {
