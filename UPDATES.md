@@ -15,6 +15,7 @@
 ### Manueller Stundenplan
 
 - Übernahme der Studienauswahl
+- Modulauswahl optimiert
 
 ## 3.45.0 - 3.45.1
 

@@ -1719,9 +1719,12 @@ class StudentTimetablesStudentOverviewService
         $codes = $applySelectionEligibility
             ? $this->selectedSubjectCodes($row, $selection)
             : $this->allSelectableSubjectCodes($row);
+        $intendedCourseCodes = $this->subjectMatchesSelection($row, $selection)
+            ? $this->selectedSubjectCodes($row, $selection)
+            : [];
 
         return collect($codes)
-            ->map(function (string $courseCode) use ($row): array {
+            ->map(function (string $courseCode) use ($intendedCourseCodes, $row): array {
                 $branch = $row->branch ?: 'common';
                 $hours = $row->hours_per_week !== null ? (float) $row->hours_per_week : null;
 
@@ -1735,6 +1738,7 @@ class StudentTimetablesStudentOverviewService
                     'hours' => $hours,
                     'hours_value' => $this->courseHoursValue($hours),
                     'hours_label' => $this->courseHoursLabel($hours),
+                    'is_intended_for_selection' => in_array($courseCode, $intendedCourseCodes, true),
                     'key' => implode('|', [
                         $row->id,
                         $row->semester,

@@ -6,17 +6,10 @@
         <header class="timetable-v3-results__header">
             <h4 id="timetable-v3-results-title">
                 Stundenplan
-                <span v-if="selectedTimetable" aria-live="polite">
+                <span v-if="selectedTimetable && positionVisible" aria-live="polite">
                     {{ selectedTimetablePosition }} von {{ normalizedTotalCount }}
                 </span>
             </h4>
-
-            <span
-                v-if="selectedTimetableQualityKey === 'occasional'"
-                class="timetable-v3-results__warning">
-                <v-icon icon="mdi-calendar-alert-outline" size="16" />
-                Einzeltermin-Überschneidung
-            </span>
 
             <nav
                 v-if="navigationVisible && normalizedTimetables.length"
@@ -55,8 +48,10 @@
                     class="timetable-v3-results__table">
                     <caption class="timetable-v3-results__visually-hidden">
                         {{ emptyTimetable
-                            ? 'Leerer Stundenplan'
-                            : `Stundenplan ${selectedTimetablePosition} von ${normalizedTotalCount}` }}
+                            ? (selectedSlotEntries.length ? 'Manueller Stundenplan' : 'Leerer Stundenplan')
+                            : (positionVisible
+                                ? `Stundenplan ${selectedTimetablePosition} von ${normalizedTotalCount}`
+                                : 'Stundenplan') }}
                     </caption>
                     <thead>
                         <tr>
@@ -143,6 +138,11 @@
 </template>
 
 <script>
+import {
+    canonicalTimetableCourseLabel,
+    canonicalTimetableModuleName,
+} from './courseLabels'
+
 const WEEKDAYS = [
     { value: 1, title: 'Montag', shortTitle: 'Mo' },
     { value: 2, title: 'Dienstag', shortTitle: 'Di' },
@@ -176,6 +176,10 @@ export default {
             type: Array,
             default: () => [],
         },
+        highlightMultipleEntries: {
+            type: Boolean,
+            default: false,
+        },
         error: {
             type: String,
             default: '',
@@ -189,6 +193,10 @@ export default {
             default: '',
             validator: value => ['', 'previous', 'next'].includes(value),
         },
+        manualTimetable: {
+            type: Object,
+            default: null,
+        },
         navigationVisible: {
             type: Boolean,
             default: true,
@@ -196,6 +204,10 @@ export default {
         pageOffset: {
             type: Number,
             default: 0,
+        },
+        positionVisible: {
+            type: Boolean,
+            default: true,
         },
         selectedIndex: {
             type: Number,
@@ -245,7 +257,19 @@ export default {
             return this.normalizedSelectedIndex - this.normalizedPageOffset
         },
         selectedTimetable() {
-            if (this.emptyTimetable) return EMPTY_TIMETABLE
+            if (this.emptyTimetable) {
+                const manualTimetableSlots = this.manualTimetable?.slots
+
+                if (
+                    manualTimetableSlots
+                    && typeof manualTimetableSlots === 'object'
+                    && !Array.isArray(manualTimetableSlots)
+                ) {
+                    return this.manualTimetable
+                }
+
+                return EMPTY_TIMETABLE
+            }
 
             return this.normalizedTimetables[this.selectedTimetableIndex] || null
         },
@@ -260,9 +284,6 @@ export default {
         },
         nextTimetableAvailable() {
             return this.normalizedSelectedIndex < this.normalizedTotalCount - 1
-        },
-        selectedTimetableQualityKey() {
-            return this.selectedTimetable?.type === 'green' ? 'occasional' : 'clear'
         },
         selectedSlotEntries() {
             return Object.entries(this.selectedTimetable?.slots || {})
@@ -307,26 +328,23 @@ export default {
         visibleHours() {
             const hours = this.selectedSlotEntries.map(entry => entry.hour)
 
-            if (!hours.length) {
-                if (!this.emptyTimetable) return []
+            if (this.emptyTimetable) {
                 const configuredHours = this.normalizedEmptyHourRows
                     .map(row => row.hour)
                     .filter(hour => hour >= EMPTY_TIMETABLE_FIRST_HOUR)
-
-                if (configuredHours.length) {
-                    const lastHour = Math.max(...configuredHours)
-
-                    return Array.from(
-                        { length: (lastHour - EMPTY_TIMETABLE_FIRST_HOUR) + 1 },
-                        (_, index) => EMPTY_TIMETABLE_FIRST_HOUR + index,
-                    )
-                }
+                const finalHour = Math.max(
+                    ...configuredHours,
+                    ...hours,
+                    configuredHours.length || hours.length ? EMPTY_TIMETABLE_FIRST_HOUR : EMPTY_TIMETABLE_HOUR_COUNT,
+                )
 
                 return Array.from(
-                    { length: EMPTY_TIMETABLE_HOUR_COUNT },
+                    { length: (finalHour - EMPTY_TIMETABLE_FIRST_HOUR) + 1 },
                     (_, index) => EMPTY_TIMETABLE_FIRST_HOUR + index,
                 )
             }
+
+            if (!hours.length) return []
 
             const firstHour = Math.min(...hours)
             const lastHour = Math.max(...hours)
@@ -370,8 +388,9 @@ export default {
 
             if (!timetableSlot || typeof timetableSlot !== 'object' || Array.isArray(timetableSlot)) return []
 
+            const sameSlotRelationship = this.highlightMultipleEntries ? 'overlap' : 'same-slot'
             const relatedEntries = [
-                ...this.normalizedRelatedEntries(timetableSlot.sameSlotEntries, 'same-slot'),
+                ...this.normalizedRelatedEntries(timetableSlot.sameSlotEntries, sameSlotRelationship),
                 ...this.normalizedRelatedEntries(timetableSlot.conflicts, 'overlap'),
             ]
 
@@ -390,14 +409,21 @@ export default {
                 ? entry.courseGroup
                 : {}
 
+            const code = canonicalTimetableCourseLabel(
+                entry.code || courseGroup.module_code || courseGroup.subject || '',
+            )
+
             return {
                 ...entry,
-                code: String(entry.code || courseGroup.module_code || courseGroup.subject || '').trim(),
+                code,
                 courseGroup,
-                name: String(entry.name || '').trim(),
+                name: canonicalTimetableModuleName(entry.name, code),
                 relationship,
                 renderKey: `${relationship}:${String(entry.key || courseGroup.key || '')}:${fallbackKey}`,
-                sourceLabel: String(entry.sourceLabel || courseGroup.display_label || courseGroup.class_name || '').trim(),
+                sourceLabel: canonicalTimetableCourseLabel(
+                    entry.sourceLabel || courseGroup.display_label || courseGroup.class_name || '',
+                    code,
+                ),
             }
         },
         courseGroupTimeRange(courseGroup) {
@@ -517,15 +543,6 @@ export default {
 
 .timetable-v3-results__navigation {
     flex-wrap: nowrap;
-}
-
-.timetable-v3-results__warning {
-    display: inline-flex;
-    gap: 5px;
-    align-items: center;
-    font-size: 0.76rem;
-    font-weight: 700;
-    color: #92400e;
 }
 
 .timetable-v3-results__page-error {

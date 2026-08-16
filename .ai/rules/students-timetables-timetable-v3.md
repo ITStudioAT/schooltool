@@ -226,3 +226,75 @@ The empty manual timetable on page 3B starts at period 6 and continues without g
 
 ## Start the empty page-3B grid at period 1
 This supersedes the period-6 rule. The empty manual timetable on page 3B starts at period 1 and continues without gaps through the last configured school hour, preserving configured time ranges. If school hours are unavailable, render ten empty rows covering periods 1–10.
+
+## Drill into the manual V3 module catalog read-only
+On manual timetable page 3B, Hauptmodule/module-type cards may disclose their concrete modules and a module may open its Unterricht details. This drill-down is browse-only: keep separate transient UI state, hide automatic selection actions/checkbox semantics, and never mutate or persist selected module/course keys.
+
+## Place manual courses without automatic selection
+On manual page 3B, clicking a concrete Unterricht toggles all of that course's structured timetable entries in the manual grid. Keep manual course keys transient and separate from automatic selectedModuleKeys/selectedCourseKeys; never run automatic limits or saveState for manual placement. Preserve the configured full hour grid and render additional entries in the same cell through sameSlotEntries.
+
+## Show adoption module summary and catalogs
+On every V3 adoption page, show Studierenden Module/Hauptmodule catalog cards when student details are available. The manual timetable card always contains a read-only Ausgewählte Module summary: page 3A derives it from the transferred automatic module selection, while page 3B derives it from transient manually placed course keys. Keep 3A catalog course details browse-only; manual placement remains limited to page 3B.
+
+## Hide placed manual courses across catalogs
+On manual timetable page 3B, once an Unterricht is placed, hide it from both Studierenden Module and Hauptmodule course dialogs using any overlapping canonical course key. Reject repeat placement at the mutation boundary as well; catalog switching must not make a placed course selectable again.
+
+## Allow manual placement on adoption page 3A
+This supersedes the earlier rule that kept page 3A catalog details browse-only. Studierenden Module and Hauptmodule must allow manual Unterricht placement on both 3A and 3B. On 3A, overlay transient manual entries on the transferred timetable without mutating it, and treat transferred plus manually added course-group keys as already placed so neither catalog permits duplicates.
+
+## Confirm manual course placement explicitly
+Manual Unterricht clicks in the adoption dialog are draft selections only. The footer action is Verplanen and commits them to the manual timetable; Abbrechen clears the draft and closes without changing placed courses. Opening, closing, switching catalogs, or resetting the planning context must clear pending manual course keys.
+
+## Highlight allowed manual timetable overlaps
+Manual placement may keep multiple Unterrichte in the same weekday/hour cell. On adoption pages, preserve and render every entry, mark each multi-entry cell prominently as Mehrfachbelegung, and show a visible status explaining that an overlap is possible and allowed. Do not apply this extra manual-editor warning to ordinary automatic timetable result browsing.
+
+## Hide variant position on manual timetable
+On every V3 adoption/manual timetable page, the timetable heading is exactly Stundenplan and never displays a variant position such as 1 von 15. Keep positions visible in automatic possible-timetable result browsing, where users navigate among variants.
+
+## Remove modules only from the manual timetable draft
+On page 3 adoption, each selected-module chip has a red close action. Removing a module removes all of its course-group keys from the displayed manual timetable, updates the manual module count/hours, and exposes those courses for selection again. Keep this removal transient and isolated: never mutate or persist the automatic selectedModuleKeys/selectedCourseKeys or the generated source timetable.
+
+## Persist manual timetable drafts across reloads
+This supersedes the earlier transient-only manual placement/removal rules. Persist committed manual selected course-group keys and removed course-group keys in the workspace-scoped V3 state, separately from automatic selectedModuleKeys/selectedCourseKeys. For page 3A, bind restoration to the exact generated fingerprint, timetable key, and global index; for page 3B, bind it to the blank-manual source. Revalidate keys against the current module catalog, rebuild slots/overlaps from current structured course data, and never persist pending dialog choices or mutate the generated source timetable.
+
+## Use course-group keys for adoption membership
+Restored automatic timetable entries can carry a Robot lesson identity in entry.key, while module course DTOs reference the canonical course-group identity. For manual-adoption placed-course summaries, duplicate prevention, and removal, resolve entry.courseGroup.key before entry.key across primary, same-slot, and conflict entries.
+
+## Show one canonical module code in V3
+Visible V3 Unterricht labels must use the module/catalog code rather than imported timetable aliases (for example GW2, never GWB2). Apply this to dialogs, manual and automatic/restored timetable entries, same-slot/conflict entries, and accessibility labels; keep legacy aliases only for internal matching and stored identities.
+
+## Use the canonical LPT name
+Every visible V3 module reference with canonical code LPT uses the full name “Lern- und Präsentationstechniken”, even when imported or persisted source data still says LET, LPT, or “Literarisches Praktikum”. Keep those legacy values only for matching and stored identities.
+
+## Call manual overlaps Einzeltermin-Überschneidung
+On manual/adoption timetables, label cells containing multiple or overlapping Unterrichte as „Einzeltermin-Überschneidung“, never „Mehrfachbelegung“. The visible allowed-overlap status uses the same term.
+
+## Reuse automatic overlap styling in manual timetable
+Manual/adoption Einzeltermin-Überschneidungen use the same amber lesson card, left warning border, calendar-alert icon, and marker text as automatic timetable overlaps. Manual overlaps remain allowed; communicate that with `· erlaubt` in the shared warning status instead of introducing a separate red cell frame or multi-occupancy badge.
+
+## Use calm teal for the manual timetable card
+This supersedes the earlier orange-manual-card rule. Across modules, creation, and adoption, the Manueller Stundenplan card uses calm teal (`#0f766e`) with a pale teal-to-white surface (`#f0fdfa`) and light teal border (`#99f6e4`). Keep its related transfer action and module chips teal while remove controls remain red.
+
+## Use white with copper accent for the manual timetable card
+This supersedes the calm-teal manual-card rule. Across modules, creation, and adoption, keep Manueller Stundenplan on a white surface with neutral `#e2e8f0` border and a thin copper `#c2410c` top accent. Selected emphasis, the transfer action, and module chips use copper; remove controls remain red.
+
+## Close module-type panels from the active card only
+This supersedes the orange module-panel X-button rule. Automatic and manual module-type detail panels must not repeat the active type's icon, title, description, or count and must not render a separate close button. Clicking the already active module-type/Hauptmodule card closes its panel; automatic bulk selection actions may remain above the module grid.
+
+## Keep overlap notices inside timetable lessons
+This supersedes the visible manual allowed-overlap status rule. Do not render Einzeltermin-Überschneidung or Einzeltermin-Überschneidung · erlaubt beside the Stundenplan heading. Keep overlap styling, icon, and marker text on the affected Unterricht card inside the timetable grid.
+
+## Mark planned modules in the manual catalog
+In the manual timetable module catalog, show “Bereits verplant!” as the first row of a module card whenever any canonical course key from that module is already present in the displayed timetable. Derive this from adoptionPlacedCourseKeys so transferred and manually added Unterrichte are both covered.
+
+## Mark fully planned manual module types
+In the manual timetable catalog, show the same “Bereits verplant!” badge on a module-type/Hauptmodul card only when the group is non-empty and every contained module is already planned according to adoptionPlacedCourseKeys.
+
+## Focus the selected manual Hauptmodul
+In the manual Hauptmodule catalog, selecting a Hauptmodul hides its sibling Hauptmodul cards and makes the active card span two grid columns while its concrete modules are disclosed. A second click closes it and restores all Hauptmodule cards. Do not apply this focus behavior to the five Studierenden Module status cards.
+
+## Show specific V3 religion module names
+Visible V3 module names must resolve religion codes specifically instead of displaying the generic source name Religion/Ethik: ET/ETH = Ethik, Rev = Religion evangelisch, Ris = Religion Islam, Rk = Religion katholisch, and Ror = Religion orthodox. Keep internal codes and source names unchanged.
+
+## Mark fully unintended manual Hauptmodule
+In the manual Hauptmodule catalog, show the red “Nicht vorgesehen!” badge on a Hauptmodul card only when the group is non-empty and every contained concrete module has backend-provided is_intended_for_selection=false. Do not reproduce Studienauswahl eligibility rules in Vue.

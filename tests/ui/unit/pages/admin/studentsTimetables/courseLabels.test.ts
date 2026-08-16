@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest'
+import {
+    canonicalTimetableCourseLabel,
+    canonicalTimetableModuleName,
+} from '@/pages/admin/studentsTimetables/timetableV3/courseLabels'
+
+describe('canonicalTimetableCourseLabel', () => {
+    it.each([
+        ['GWB2', 'GW2'],
+        ['GPB2 - 2A', 'GS2 - 2A'],
+        ['GSGPB2 - 4B', 'GS2 - 4B'],
+        ['MU2 - 5K', 'ME2 - 5K'],
+        ['MEMU2 - 4B', 'ME2 - 4B'],
+        ['OKON2 - 3R', 'ÖKO2 - 3R'],
+        ['SPA2 - 2F', 'S2 - 2F'],
+        ['LET - 1U', 'LPT - 1U'],
+        ['Rev2 - EIN', 'Rev2 - EIN'],
+    ])('uses the canonical module label for %s', (sourceLabel, expectedLabel) => {
+        expect(canonicalTimetableCourseLabel(sourceLabel)).toBe(expectedLabel)
+    })
+
+    it('uses the explicit module code for an imported alias with the same module number', () => {
+        expect(canonicalTimetableCourseLabel('GWB2-5CK-HOA', 'GW2')).toBe('GW2-5CK-HOA')
+        expect(canonicalTimetableCourseLabel('EIN', 'Rev2')).toBe('EIN')
+    })
+
+    it('uses the canonical LPT name regardless of stale imported names', () => {
+        expect(canonicalTimetableModuleName('Literarisches Praktikum', 'LPT')).toBe(
+            'Lern- und Präsentationstechniken',
+        )
+        expect(canonicalTimetableModuleName('LET', 'LET')).toBe('Lern- und Präsentationstechniken')
+        expect(canonicalTimetableModuleName('Deutsch 2', 'D2')).toBe('Deutsch 2')
+    })
+
+    it.each([
+        ['ET1', 'Ethik'],
+        ['ETH', 'Ethik'],
+        ['Rev2', 'Religion evangelisch'],
+        ['RIS1', 'Religion Islam'],
+        ['Rk3', 'Religion katholisch'],
+        ['Ror2', 'Religion orthodox'],
+    ])('uses the specific religion name for %s', (moduleCode, expectedName) => {
+        expect(canonicalTimetableModuleName('Religion/Ethik', moduleCode)).toBe(expectedName)
+    })
+})

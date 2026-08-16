@@ -282,9 +282,9 @@ describe('TimetableV3', () => {
         expect(studyInfoDialogSource).toContain('v-for="group in studentStudyModuleGroups"')
         expect(studyInfoDialogSource).toContain('v-for="module in group.modules"')
         expect(studyInfoDialogSource).toContain('v-for="(grade, gradeIndex) in module.grades"')
-        expect(studyInfoDialogSource).toContain('{{ module.code }}')
-        expect(studyInfoDialogSource).toContain('{{ module.name }}')
-        expect(studyInfoDialogSource).toContain('v-if="module.name && module.name !== module.code"')
+        expect(studyInfoDialogSource).toContain('{{ moduleDisplayCode(module) }}')
+        expect(studyInfoDialogSource).toContain('{{ moduleDisplayName(module) }}')
+        expect(studyInfoDialogSource).toContain('v-if="moduleDisplayNameVisible(module)"')
         expect(studyInfoDialogSource).toContain('timetable-v3__study-module-name')
         expect(studyInfoDialogSource).toContain('{{ grade.value }}')
         expect(studyInfoDialogSource).toContain('timetable-v3__study-module-grade--${grade.status}')
@@ -1047,6 +1047,9 @@ describe('TimetableV3', () => {
         const availableModulesPosition = source.indexOf('timetable-v3__schedule-mode-available-modules')
         const automaticCardSource = source.slice(automaticCardPosition, automaticCardEndPosition)
         const manualCardSource = source.slice(manualCardPosition, manualCardEndPosition)
+        const manualCardStyleStart = source.indexOf('.timetable-v3__schedule-mode-card--manual {')
+        const manualCardStyleEnd = source.indexOf('\n}', manualCardStyleStart)
+        const manualCardStyleSource = source.slice(manualCardStyleStart, manualCardStyleEnd)
 
         expect(questionPosition).toBeGreaterThan(-1)
         expect(modeCardsPosition).toBeGreaterThan(questionPosition)
@@ -1057,6 +1060,12 @@ describe('TimetableV3', () => {
         expect(selectedModulesPosition).toBeLessThan(automaticCardEndPosition)
         expect(availableModulesPosition).toBeGreaterThan(manualCardPosition)
         expect(availableModulesPosition).toBeLessThan(manualCardEndPosition)
+        expect(manualCardStyleSource).toContain('--schedule-mode-accent: #c2410c;')
+        expect(manualCardStyleSource).toContain('--schedule-mode-accent-rgb: 194, 65, 12;')
+        expect(manualCardStyleSource).toContain('--schedule-mode-soft: #fff;')
+        expect(manualCardStyleSource).toContain('background: #fff;')
+        expect(manualCardStyleSource).toContain('border-color: #e2e8f0;')
+        expect(source).toContain('.timetable-v3__schedule-mode-card--manual::before {\n    height: 4px;')
         expect(automaticCardSource).toContain('v-if="scheduleCreationMode === \'automatic\'"')
         expect(automaticCardSource).toContain('class="timetable-v3__schedule-create-action"')
         expect(automaticCardSource).toContain('class="timetable-v3__deselect-all-modules-button"')
@@ -1088,6 +1097,18 @@ describe('TimetableV3', () => {
         expect(source).toContain('Empfohlen')
         expect(source).toMatch(
             /\.timetable-v3__schedule-mode-kickers\s*\{[\s\S]*?justify-content:\s*flex-end;/,
+        )
+        expect(source).toMatch(
+            /\.timetable-v3__schedule-mode-options \.timetable-v3__schedule-mode-copy\s*\{[\s\S]*?grid-template-rows:\s*27px auto auto;/,
+        )
+        expect(source).toMatch(
+            /\.timetable-v3__schedule-mode-options \.timetable-v3__schedule-mode-kickers\s*\{[\s\S]*?grid-row:\s*1;/,
+        )
+        expect(source).toMatch(
+            /\.timetable-v3__schedule-mode-options \.timetable-v3__schedule-mode-title\s*\{[\s\S]*?grid-row:\s*2;/,
+        )
+        expect(source).toMatch(
+            /\.timetable-v3__schedule-mode-options \.timetable-v3__schedule-mode-description\s*\{[\s\S]*?grid-row:\s*3;/,
         )
         expect(automaticCardSource).not.toContain(
             '<span class="timetable-v3__schedule-mode-label">Automatisch</span>',
@@ -1163,6 +1184,7 @@ describe('TimetableV3', () => {
             saveState: vi.fn().mockResolvedValue(undefined),
             calculatePossibleTimetables: vi.fn().mockResolvedValue(undefined),
             ensureValidCurrentStep: vi.fn(),
+            resetManualModuleCatalogDisclosure: vi.fn(),
             resetTimetableCalculation: vi.fn(),
             $router: { push },
         }
@@ -1225,6 +1247,7 @@ describe('TimetableV3', () => {
         currentStepWatcher.call(context, 'modules', 'adoption')
         expect(context.scheduleCreationMode).toBe('automatic')
         expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
+        expect(context.resetManualModuleCatalogDisclosure).toHaveBeenCalledOnce()
 
         const creationPageStart = source.indexOf(
             '<template v-else-if="currentStep === \'creation\'">\n            <div class="timetable-v3__creation-summary-cards mt-4">',
@@ -1284,6 +1307,7 @@ describe('TimetableV3', () => {
         )
         expect(manualCardSource).toContain('individuell anzupassen.')
         expect(manualCardSource).toContain('class="timetable-v3__manual-timetable-button"')
+        expect(manualCardSource).toContain('color="#c2410c"')
         expect(manualCardSource).toContain('prepend-icon="mdi-calendar-import"')
         expect(manualCardSource).toContain('Stundenplan übernehmen')
         expect(manualCardSource).toContain('@click="openTimetableAdoptionPage"')
@@ -1426,6 +1450,9 @@ describe('TimetableV3', () => {
             timetablePageLoading: false,
             timetableSelectedIndex: 137,
             workspaceId: WORKSPACE_ID,
+            manualSelectedCourseKeys: ['stale-manual-course'],
+            manualPendingCourseKeys: ['stale-pending-course'],
+            adoptionRemovedCourseKeys: ['stale-removed-course'],
             $router: { push },
         }
 
@@ -1433,6 +1460,9 @@ describe('TimetableV3', () => {
 
         expect(context.timetableAdoptionReturnStep).toBe('creation')
         expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.adoptionRemovedCourseKeys).toEqual([])
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/adoption',
             query: {
@@ -1483,6 +1513,9 @@ describe('TimetableV3', () => {
             timetablePageLoading: false,
             timetableSelectedIndex: 0,
             workspaceId,
+            manualSelectedCourseKeys: ['stale-manual-course'],
+            manualPendingCourseKeys: ['stale-pending-course'],
+            adoptionRemovedCourseKeys: ['stale-removed-course'],
             $router: { push },
         }
 
@@ -1492,6 +1525,9 @@ describe('TimetableV3', () => {
         expect(context.scheduleCreationMode).toBe('automatic')
         expect(context.timetableAdoptionReturnStep).toBe('modules')
         expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.adoptionRemovedCourseKeys).toEqual([])
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/adoption',
             query: {
@@ -1519,6 +1555,9 @@ describe('TimetableV3', () => {
             timetableAdoptionReturnStep: 'creation',
             timetablePageLoading: false,
             workspaceId: WORKSPACE_ID,
+            manualSelectedCourseKeys: [],
+            manualPendingCourseKeys: [],
+            adoptionRemovedCourseKeys: [],
             $router: { push },
         }
 
@@ -1603,7 +1642,7 @@ describe('TimetableV3', () => {
         })
     })
 
-    it('shows the manual adoption card, read-only module catalog, and timetable in order', () => {
+    it('shows selected modules and both module catalogs on every adoption page', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -1615,7 +1654,7 @@ describe('TimetableV3', () => {
         const manualCardEnd = adoptionPageSource.indexOf('</section>', manualCardPosition)
         const manualCardSource = adoptionPageSource.slice(manualCardPosition, manualCardEnd)
         const manualModuleCatalogPosition = adoptionPageSource.indexOf(
-            'v-if="isManualTimetableAdoption && !studentSelectionDetailsLoading && !studentSelectionDetailsError"',
+            'v-if="!studentSelectionDetailsLoading && !studentSelectionDetailsError"',
         )
         const manualModuleCatalogEnd = adoptionPageSource.indexOf('</section>', manualModuleCatalogPosition)
         const manualModuleCatalogSource = adoptionPageSource.slice(
@@ -1640,14 +1679,24 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).not.toContain('Automatischer Stundenplan')
         expect(adoptionPageSource).toContain('Manueller Stundenplan')
         expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
-        expect(manualCardSource).not.toContain('timetable-v3__schedule-mode-selected-modules')
-        expect(manualCardSource).not.toContain('Ausgewählte Module')
+        expect(manualCardSource).toContain('timetable-v3__schedule-mode-selected-modules')
+        expect(manualCardSource).toContain('Ausgewählte Module')
+        expect(manualCardSource).toContain('v-for="module in adoptionSelectedModules"')
+        expect(manualCardSource).toContain('Keine Module ausgewählt.')
+        expect(manualCardSource).toContain('{{ adoptionSelectedModuleCount }}')
+        expect(manualCardSource).toContain('v-if="!isManualTimetableAdoption"')
+        expect(manualCardSource).toContain('{{ adoptionSelectedModuleHoursLabel }} Std.')
+        expect(manualCardSource).toContain('class="timetable-v3__selected-module-chip"')
+        expect(manualCardSource).toContain('closable')
+        expect(manualCardSource).toContain('close-icon="mdi-close-circle"')
+        expect(manualCardSource).toContain(':close-label="`${moduleDisplayCode(module)} aus dem manuellen Stundenplan entfernen`"')
+        expect(manualCardSource).toContain('@click:close.stop="removeAdoptionModule(module)"')
         expect(manualCardSource).not.toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
         expect(manualCardSource).not.toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
-        expect(manualCardSource).not.toContain('v-for="module in selectedModules"')
         expect(manualModuleCatalogPosition).toBeGreaterThan(manualCardEnd)
         expect(manualModuleCatalogEnd).toBeGreaterThan(manualModuleCatalogPosition)
         expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog')
+        expect(manualModuleCatalogSource).not.toContain('isManualTimetableAdoption &&')
         expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog-headings--with-student')
         expect(manualModuleCatalogSource).toContain(
             "{{ planningMode === 'with_student' ? 'Studierenden Module' : 'Hauptmodule' }}",
@@ -1658,19 +1707,45 @@ describe('TimetableV3', () => {
         expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'student\')"')
         expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'main\')"')
         expect(manualModuleCatalogSource).toContain(':aria-pressed="manualModuleCatalogView === \'main\'"')
-        expect(manualModuleCatalogSource).toContain('v-for="group in manualModuleCatalogGroups"')
+        expect(manualModuleCatalogSource).toContain('v-for="group in visibleManualModuleCatalogGroups"')
         expect(manualModuleCatalogSource).toContain('manualModuleCatalogUsesMainGroups')
+        expect(manualModuleCatalogSource).toContain('timetable-v3__module-group-card--manual-main-active')
         expect(manualModuleCatalogSource).toContain('{{ selectedModuleCountForGroup(group) }}/{{ group.count }}')
+        expect(manualModuleCatalogSource).toMatch(
+            /v-if="manualModuleGroupAlreadyPlanned\(group\)"[\s\S]*?Bereits verplant!.*?module-group-card-title/s,
+        )
+        expect(manualModuleCatalogSource).toMatch(
+            /manualModuleCatalogUsesMainGroups[\s\S]*?manualModuleGroupNotIntended\(group\)[\s\S]*?Nicht vorgesehen!.*?module-group-card-title/s,
+        )
         expect(manualModuleCatalogSource).toContain('timetable-v3__module-group-card--read-only')
+        expect(manualModuleCatalogSource).toContain(':aria-expanded="manualModuleGroupActive(group)"')
+        expect(manualModuleCatalogSource).toContain('aria-controls="timetable-v3-manual-module-group-panel"')
+        expect(manualModuleCatalogSource).toContain('@click="toggleManualModuleGroup(group)"')
+        expect(manualModuleCatalogSource).toContain('v-if="activeManualModuleSelectionGroup"')
+        expect(manualModuleCatalogSource).toContain('id="timetable-v3-manual-module-group-panel"')
+        expect(manualModuleCatalogSource).toContain('v-for="module in activeManualModuleSelectionGroup.modules"')
+        expect(manualModuleCatalogSource).toContain('@click="openManualModuleCoursesDialog(module)"')
+        expect(manualModuleCatalogSource).toMatch(
+            /v-if="manualModuleAlreadyPlanned\(module\)"[\s\S]*?Bereits verplant![\s\S]*?timetable-v3__module-code/,
+        )
+        expect(manualModuleCatalogSource).toMatch(
+            /module\.is_intended_for_selection === false"[\s\S]*?timetable-v3__module-not-intended[\s\S]*?Nicht vorgesehen!/,
+        )
+        expect(manualModuleCatalogSource).toContain('{{ manualModuleCourseCount(module) }} Unterrichte')
         expect(manualModuleCatalogSource).not.toContain('@click="toggleModuleGroup(group)"')
+        expect(manualModuleCatalogSource).not.toContain('@click="selectAllModulesInGroup')
+        expect(manualModuleCatalogSource).not.toContain('@click="deselectAllModulesInGroup')
         expect(adoptionPageSource).toContain('<TimetableV3PossibleTimetables')
         expect(adoptionPageSource).toContain('v-if="isManualTimetableAdoption || selectedTimetableResult"')
         expect(adoptionPageSource).toContain(':allow-saturday-lessons="isManualTimetableAdoption || timetableFilters.include_saturday"')
         expect(adoptionPageSource).toContain(':empty-hour-rows="schoolHours"')
         expect(adoptionPageSource).toContain(':empty-timetable="isManualTimetableAdoption"')
+        expect(adoptionPageSource).toContain('highlight-multiple-entries')
+        expect(adoptionPageSource).toContain(':manual-timetable="manualTimetable"')
         expect(adoptionPageSource).toContain(':navigation-visible="false"')
+        expect(adoptionPageSource).toContain(':position-visible="false"')
         expect(adoptionPageSource).toContain(':selected-index="timetableSelectedIndex"')
-        expect(adoptionPageSource).toContain(':timetables="timetableCalculationResult?.timetables || []"')
+        expect(adoptionPageSource).toContain(':timetables="adoptionTimetables"')
         expect(adoptionPageSource).toContain('class="timetable-v3__page-actions timetable-v3__page-actions--split"')
         expect(adoptionPageSource).toContain('class="timetable-v3__restart-button"')
         expect(adoptionPageSource).toContain('prepend-icon="mdi-restart"')
@@ -1683,36 +1758,234 @@ describe('TimetableV3', () => {
         expect(selectedTimetablePosition).toBeGreaterThan(manualModuleCatalogEnd)
         expect(adoptionPageSource).not.toContain('@navigate')
         expect(adoptionPageSource).not.toContain('Optionen')
-        expect(adoptionPageSource.slice(manualCardEnd)).not.toContain('Ausgewählte Module')
         expect(source).toMatch(/\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
         expect(source).toMatch(/\.timetable-v3__manual-module-catalog-headings--with-student\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+        expect(source).toMatch(/\.timetable-v3__manual-module-catalog-heading--selected\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, #dbeafe, #e0e7ff\);[\s\S]*?box-shadow:/)
+        expect(source).toMatch(/\.timetable-v3__manual-module-catalog-heading--selected \.timetable-v3__main-module-heading-icon\s*\{[\s\S]*?background:\s*#fff;/)
+        expect(source).toMatch(/\.timetable-v3__manual-module-catalog-heading-button:focus-visible\s*\{[\s\S]*?outline:\s*3px solid #0f172a;/)
+        expect(source).toMatch(
+            /\.timetable-v3__module-group-cards--main \.timetable-v3__module-group-card--manual-main-active\s*\{[\s\S]*?grid-column:\s*span 2;/,
+        )
+        expect(source).toMatch(
+            /\.timetable-v3__module-not-intended\s*\{[\s\S]*?color:\s*#b42318;[\s\S]*?background:\s*#fef2f2;/,
+        )
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__manual-module-catalog-headings--with-student\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
     })
 
-    it('switches the read-only manual catalog between student and all main modules', () => {
+    it('places a manual course once and hides it from both module catalogs', async () => {
         const methods = (TimetableV3 as any).methods
         const computed = (TimetableV3 as any).computed
-        const studentGroups = [{ key: 'current', label: 'Aktuelle' }]
-        const mainGroups = [{ key: 'BU', code: 'BU', name: 'Biologie' }]
-        const context = {
+        const currentStepWatcher = (TimetableV3 as any).watch.currentStep
+        const studentCourse = {
+            key: 'd1-a',
+            keys: ['d1-a', 'd1-b'],
+            title: 'D1 - 1A - HUB',
+            timetable_entries: [
+                {
+                    key: 'd1-a',
+                    weekday: 1,
+                    hour: 10,
+                    module_code: 'D1',
+                    display_label: 'D1 - 1A - HUB',
+                },
+                {
+                    key: 'd1-b',
+                    weekday: 1,
+                    hour: 11,
+                    module_code: 'D1',
+                    display_label: 'D1 - 1A - HUB',
+                },
+            ],
+        }
+        const studentModule = {
+            selection_key: 'current:D1',
+            code: 'D1',
+            name: 'Deutsch 1',
+            courses: [studentCourse],
+        }
+        const studentGroups = [{
+            key: 'current',
+            label: 'Aktuelle',
+            count: 1,
+            modules: [studentModule],
+        }]
+        const mainGroups = [{ key: 'BU', code: 'BU', name: 'Biologie', modules: [studentModule] }]
+        const selectedModuleKeys = ['current:D1']
+        const selectedCourseKeys = ['automatic-course']
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const context: any = {
             planningMode: 'with_student',
             manualModuleCatalogView: 'student',
             moduleSelectionGroups: studentGroups,
             mainModuleSelectionGroups: mainGroups,
+            manualModuleCatalogGroups: studentGroups,
+            activeManualModuleGroupKey: '',
+            moduleCoursesDialogOpen: false,
+            moduleCourseDialogModule: null,
+            moduleCoursesDialogReadOnly: false,
+            selectedModuleKeys,
+            selectedCourseKeys,
+            manualSelectedCourseKeys: [],
+            manualPendingCourseKeys: [],
+            adoptionRemovedCourseKeys: [],
+            adoptionPlacedCourseKeys: [],
+            saveState,
+            isLoadingState: false,
+            isManualTimetableAdoption: true,
+            currentStep: 'adoption',
+            ensureValidCurrentStep: vi.fn(),
+            loadSchoolHours: vi.fn(),
+            resetTimetableCalculation: vi.fn(),
         }
+        context.resetManualModuleCatalogDisclosure = () => (
+            methods.resetManualModuleCatalogDisclosure.call(context)
+        )
+        context.manualModuleCourseSelected = course => methods.manualModuleCourseSelected.call(context, course)
+        context.manualPendingCourseSelected = course => methods.manualPendingCourseSelected.call(context, course)
+        context.toggleManualModuleCourse = course => methods.toggleManualModuleCourse.call(context, course)
+        context.manualModuleAlreadyPlanned = module => methods.manualModuleAlreadyPlanned.call(context, module)
 
         expect(computed.manualModuleCatalogGroups.call(context)).toBe(studentGroups)
         expect(computed.manualModuleCatalogUsesMainGroups.call(context)).toBe(false)
+        expect(computed.visibleManualModuleCatalogGroups.call({
+            activeManualModuleGroupKey: 'current',
+            manualModuleCatalogGroups: studentGroups,
+            manualModuleCatalogUsesMainGroups: false,
+        })).toBe(studentGroups)
+        expect(methods.manualModuleAlreadyPlanned.call(context, studentModule)).toBe(false)
+        expect(methods.manualModuleGroupAlreadyPlanned.call(context, studentGroups[0])).toBe(false)
+        expect(methods.manualModuleGroupNotIntended.call(context, {
+            modules: [
+                { is_intended_for_selection: false },
+                { is_intended_for_selection: false },
+            ],
+        })).toBe(true)
+        expect(methods.manualModuleGroupNotIntended.call(context, {
+            modules: [
+                { is_intended_for_selection: false },
+                { is_intended_for_selection: true },
+            ],
+        })).toBe(false)
+        expect(methods.manualModuleGroupNotIntended.call(context, { modules: [] })).toBe(false)
+
+        methods.toggleManualModuleGroup.call(context, studentGroups[0])
+        expect(methods.manualModuleGroupActive.call(context, studentGroups[0])).toBe(true)
+        expect(computed.activeManualModuleSelectionGroup.call(context)).toBe(studentGroups[0])
+
+        methods.openManualModuleCoursesDialog.call(context, studentModule)
+        expect(context.moduleCoursesDialogOpen).toBe(true)
+        expect(context.moduleCourseDialogModule).toBe(studentModule)
+        expect(context.moduleCoursesDialogReadOnly).toBe(true)
+        expect(computed.moduleCourseDialogCourses.call(context)).toEqual([studentCourse])
+        expect(computed.moduleCoursesDialogInteractive.call(context)).toBe(true)
+        expect(computed.moduleCoursesDialogInteractive.call({
+            currentStep: 'adoption',
+            isManualTimetableAdoption: false,
+            moduleCoursesDialogReadOnly: true,
+        })).toBe(true)
+
+        await methods.toggleDisplayedModuleCourse.call(context, studentCourse)
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        expect(context.manualPendingCourseKeys).toEqual(['d1-a', 'd1-b'])
+        expect(methods.displayedModuleCourseSelected.call(context, studentCourse)).toBe(true)
+        expect(computed.moduleCourseDialogCourses.call(context)).toEqual([studentCourse])
+        context.manualCatalogCourses = computed.manualCatalogCourses.call(context)
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        expect(computed.manualTimetable.call(context).slots).toEqual({})
+
+        methods.cancelManualModuleCoursesDialog.call(context)
+        expect(context.moduleCoursesDialogOpen).toBe(false)
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.manualSelectedCourseKeys).toEqual([])
+
+        methods.openManualModuleCoursesDialog.call(context, studentModule)
+        await methods.toggleDisplayedModuleCourse.call(context, studentCourse)
+        await methods.planManualModuleCourses.call(context)
+        expect(context.moduleCoursesDialogOpen).toBe(false)
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.manualSelectedCourseKeys).toEqual(['d1-a', 'd1-b'])
+        context.adoptionPlacedCourseKeys = ['d1-a', 'd1-b']
+        expect(computed.moduleCourseDialogCourses.call(context)).toEqual([])
+        expect(methods.manualModuleCourseCount.call(context, studentModule)).toBe(0)
+        expect(methods.manualModuleAlreadyPlanned.call(context, studentModule)).toBe(true)
+        expect(methods.manualModuleGroupAlreadyPlanned.call(context, studentGroups[0])).toBe(true)
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        expect(computed.manualTimetable.call(context).slots).toMatchObject({
+            '1-10': { key: 'd1-a', code: 'D1' },
+            '1-11': { key: 'd1-b', code: 'D1' },
+        })
+        await methods.toggleDisplayedModuleCourse.call(context, studentCourse)
+        expect(context.manualSelectedCourseKeys).toEqual(['d1-a', 'd1-b'])
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        expect(computed.manualTimetable.call(context).slots).toMatchObject({
+            '1-10': { key: 'd1-a', code: 'D1' },
+            '1-11': { key: 'd1-b', code: 'D1' },
+        })
+        const manualSelectedModules = computed.manualSelectedModules.call(context)
+        expect(manualSelectedModules).toEqual([studentModule])
+        expect(computed.adoptionSelectedModules.call({
+            isManualTimetableAdoption: true,
+            manualSelectedModules,
+            selectedModules: [],
+            adoptionPlacedCourseKeys: ['d1-a', 'd1-b'],
+        })).toEqual([studentModule])
+        expect(computed.adoptionSelectedModules.call({
+            isManualTimetableAdoption: false,
+            manualSelectedModules: [{ selection_key: 'manual:BU1', code: 'BU1' }],
+            selectedModules: [studentModule],
+            adoptionPlacedCourseKeys: ['d1-a', 'd1-b'],
+        })).toEqual([{ selection_key: 'manual:BU1', code: 'BU1' }, studentModule])
+        expect(computed.adoptionSelectedModuleCount.call({
+            adoptionSelectedModules: [studentModule],
+        })).toBe(1)
+        expect(computed.adoptionSelectedModuleHoursLabel.call({
+            adoptionSelectedModules: [{ hours: 4 }, { hours: 3.5 }],
+        })).toBe('7,5')
+        expect(context.selectedModuleKeys).toBe(selectedModuleKeys)
+        expect(context.selectedCourseKeys).toBe(selectedCourseKeys)
+        expect(saveState).toHaveBeenCalledOnce()
 
         methods.showManualModuleCatalog.call(context, 'main')
 
         expect(context.manualModuleCatalogView).toBe('main')
         expect(computed.manualModuleCatalogGroups.call(context)).toBe(mainGroups)
         expect(computed.manualModuleCatalogUsesMainGroups.call(context)).toBe(true)
+        expect(context.activeManualModuleGroupKey).toBe('')
+        expect(context.moduleCoursesDialogOpen).toBe(false)
+        expect(context.moduleCourseDialogModule).toBeNull()
+        expect(context.moduleCoursesDialogReadOnly).toBe(false)
+        expect(context.selectedModuleKeys).toBe(selectedModuleKeys)
+        expect(context.selectedCourseKeys).toBe(selectedCourseKeys)
+        expect(context.manualSelectedCourseKeys).toEqual(['d1-a', 'd1-b'])
+
+        context.manualModuleCatalogGroups = mainGroups
+        context.manualModuleCatalogUsesMainGroups = true
+        expect(computed.visibleManualModuleCatalogGroups.call(context)).toBe(mainGroups)
+        methods.toggleManualModuleGroup.call(context, mainGroups[0])
+        expect(context.activeManualModuleGroupKey).toBe('BU')
+        expect(computed.visibleManualModuleCatalogGroups.call(context)).toEqual([mainGroups[0]])
+        expect(methods.manualModuleGroupActive.call(context, mainGroups[0])).toBe(true)
+        expect(computed.activeManualModuleSelectionGroup.call(context)).toBe(mainGroups[0])
+        methods.openManualModuleCoursesDialog.call(context, studentModule)
+        expect(computed.moduleCourseDialogCourses.call(context)).toEqual([])
+        expect(methods.manualModuleCourseCount.call(context, studentModule)).toBe(0)
+        methods.closeModuleCoursesDialog.call(context)
+        methods.toggleManualModuleGroup.call(context, mainGroups[0])
+        expect(context.activeManualModuleGroupKey).toBe('')
+        expect(computed.visibleManualModuleCatalogGroups.call(context)).toBe(mainGroups)
+        expect(computed.activeManualModuleSelectionGroup.call(context)).toBeNull()
 
         methods.showManualModuleCatalog.call(context, 'unsupported')
         expect(context.manualModuleCatalogView).toBe('main')
+
+        currentStepWatcher.call(context, 'adoption', 'modules')
+        expect(context.manualModuleCatalogView).toBe('student')
+        expect(context.loadSchoolHours).toHaveBeenCalledOnce()
+        expect(context.selectedModuleKeys).toBe(selectedModuleKeys)
+        expect(context.selectedCourseKeys).toBe(selectedCourseKeys)
+        expect(context.manualSelectedCourseKeys).toEqual(['d1-a', 'd1-b'])
+        expect(saveState).toHaveBeenCalledOnce()
 
         const withoutStudentContext = {
             ...context,
@@ -1724,6 +1997,201 @@ describe('TimetableV3', () => {
         expect(withoutStudentContext.manualModuleCatalogView).toBe('student')
         expect(computed.manualModuleCatalogGroups.call(withoutStudentContext)).toBe(studentGroups)
         expect(computed.manualModuleCatalogUsesMainGroups.call(withoutStudentContext)).toBe(true)
+
+        const selectionResetContext = (TimetableV3 as any).data()
+        selectionResetContext.activeManualModuleGroupKey = 'current'
+        selectionResetContext.moduleCoursesDialogOpen = true
+        selectionResetContext.moduleCourseDialogModule = { selection_key: 'current:D1' }
+        selectionResetContext.moduleCoursesDialogReadOnly = true
+        selectionResetContext.manualSelectedCourseKeys = ['d1-a', 'd1-b']
+        selectionResetContext.manualPendingCourseKeys = ['d2-a']
+        selectionResetContext.adoptionRemovedCourseKeys = ['removed-course']
+
+        methods.resetSelectedStudentSelectionDetails.call(selectionResetContext)
+
+        expect(selectionResetContext.activeManualModuleGroupKey).toBe('')
+        expect(selectionResetContext.moduleCoursesDialogOpen).toBe(false)
+        expect(selectionResetContext.moduleCourseDialogModule).toBeNull()
+        expect(selectionResetContext.moduleCoursesDialogReadOnly).toBe(false)
+        expect(selectionResetContext.manualSelectedCourseKeys).toEqual([])
+        expect(selectionResetContext.manualPendingCourseKeys).toEqual([])
+        expect(selectionResetContext.adoptionRemovedCourseKeys).toEqual([])
+    })
+
+    it('selects a student course on page 3A and overlays it on the transferred timetable', async () => {
+        const methods = (TimetableV3 as any).methods
+        const computed = (TimetableV3 as any).computed
+        const transferredCourse = {
+            key: 'existing-course',
+            keys: ['existing-course'],
+            title: 'Bestehender Unterricht',
+            timetable_entries: [{ key: 'existing-course', weekday: 1, hour: 10 }],
+        }
+        const availableCourse = {
+            key: 'available-course',
+            keys: ['available-course'],
+            title: 'Zusätzlicher Unterricht',
+            timetable_entries: [{
+                key: 'available-course',
+                weekday: 1,
+                hour: 10,
+                module_code: 'D2',
+                display_label: 'D2 - 2A - HUB',
+            }],
+        }
+        const module = {
+            selection_key: 'current:D2',
+            code: 'D2',
+            courses: [transferredCourse, availableCourse],
+        }
+        const transferredTimetable = {
+            key: 'backend-full_green-1',
+            slots: {
+                '1-10': {
+                    key: 'robot-course-d1',
+                    code: 'D1',
+                    name: 'Bestehender Unterricht',
+                    courseGroup: { key: 'existing-course', weekday: 1, hour: 10 },
+                    conflicts: [],
+                    sameSlotEntries: [],
+                },
+            },
+        }
+        const adoptionBaseTimetable = computed.adoptionBaseTimetable.call({
+            selectedTimetableResult: transferredTimetable,
+            adoptionRemovedCourseKeys: [],
+        })
+        const adoptionPlacedCourseKeys = computed.adoptionPlacedCourseKeys.call({
+            isManualTimetableAdoption: false,
+            manualSelectedCourseKeys: [],
+            adoptionBaseTimetable,
+        })
+        const context: any = {
+            currentStep: 'adoption',
+            isManualTimetableAdoption: false,
+            moduleCoursesDialogReadOnly: true,
+            moduleCoursesDialogOpen: true,
+            moduleCourseDialogModule: module,
+            manualSelectedCourseKeys: [],
+            manualPendingCourseKeys: [],
+            adoptionRemovedCourseKeys: [],
+            adoptionPlacedCourseKeys,
+            saveState: vi.fn().mockResolvedValue(undefined),
+        }
+        context.manualModuleCourseSelected = course => methods.manualModuleCourseSelected.call(context, course)
+        context.manualPendingCourseSelected = course => methods.manualPendingCourseSelected.call(context, course)
+        context.toggleManualModuleCourse = course => methods.toggleManualModuleCourse.call(context, course)
+
+        expect(computed.moduleCoursesDialogInteractive.call(context)).toBe(true)
+        expect(computed.moduleCourseDialogCourses.call(context)).toEqual([availableCourse])
+
+        await methods.toggleDisplayedModuleCourse.call(context, availableCourse)
+
+        expect(context.manualPendingCourseKeys).toEqual(['available-course'])
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        methods.cancelManualModuleCoursesDialog.call(context)
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.manualSelectedCourseKeys).toEqual([])
+
+        methods.openManualModuleCoursesDialog.call(context, module)
+        await methods.toggleDisplayedModuleCourse.call(context, availableCourse)
+        await methods.planManualModuleCourses.call(context)
+        expect(context.moduleCoursesDialogOpen).toBe(false)
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.manualSelectedCourseKeys).toEqual(['available-course'])
+        context.manualCatalogCourses = [transferredCourse, availableCourse]
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        context.manualTimetable = computed.manualTimetable.call(context)
+        const adoptionTimetables = computed.adoptionTimetables.call({
+            isManualTimetableAdoption: false,
+            manualTimetable: context.manualTimetable,
+            adoptionBaseTimetable,
+            adoptionRemovedCourseKeys: [],
+            selectedTimetableResult: transferredTimetable,
+            timetableCalculationResult: { timetables: [transferredTimetable] },
+        })
+
+        expect(adoptionTimetables[0].slots['1-10'].key).toBe('robot-course-d1')
+        expect(adoptionTimetables[0].slots['1-10'].sameSlotEntries).toMatchObject([
+            { key: 'available-course', code: 'D2' },
+        ])
+        expect(transferredTimetable.slots['1-10'].sameSlotEntries).toEqual([])
+
+        await methods.removeAdoptionModule.call(context, module)
+
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.adoptionRemovedCourseKeys).toEqual(['existing-course', 'available-course'])
+        expect(context.saveState).toHaveBeenCalledTimes(2)
+
+        const filteredBaseTimetable = computed.adoptionBaseTimetable.call({
+            selectedTimetableResult: transferredTimetable,
+            adoptionRemovedCourseKeys: context.adoptionRemovedCourseKeys,
+        })
+        expect(filteredBaseTimetable.slots).toEqual({})
+        expect(computed.adoptionPlacedCourseKeys.call({
+            isManualTimetableAdoption: false,
+            manualSelectedCourseKeys: context.manualSelectedCourseKeys,
+            adoptionBaseTimetable: filteredBaseTimetable,
+        })).toEqual([])
+        expect(computed.adoptionSelectedModules.call({
+            isManualTimetableAdoption: false,
+            manualSelectedModules: [],
+            selectedModules: [module],
+            adoptionPlacedCourseKeys: [],
+        })).toEqual([])
+        expect(transferredTimetable.slots['1-10'].key).toBe('robot-course-d1')
+    })
+
+    it('derives placed modules from canonical course-group keys after restoring a timetable', () => {
+        const computed = (TimetableV3 as any).computed
+        const selectedModules = [
+            {
+                selection_key: 'current:F2',
+                code: 'F2',
+                courses: [{ key: 'f2-a', keys: ['f2-a'] }],
+            },
+            {
+                selection_key: 'current:GS2',
+                code: 'GS2',
+                courses: [{ key: 'gs2-a', keys: ['gs2-a'] }],
+            },
+            {
+                selection_key: 'current:Rev2',
+                code: 'Rev2',
+                courses: [{ key: 'rev2-a', keys: ['rev2-a'] }],
+            },
+        ]
+        const restoredTimetable = {
+            key: 'backend-full_green-1',
+            slots: {
+                '1-10': {
+                    key: 'robot-course-f2',
+                    courseGroup: { key: 'f2-a', weekday: 1, hour: 10 },
+                    sameSlotEntries: [{
+                        key: 'robot-course-gs2',
+                        courseGroup: { key: 'gs2-a', weekday: 1, hour: 10 },
+                    }],
+                    conflicts: [{
+                        key: 'robot-course-rev2',
+                        courseGroup: { key: 'rev2-a', weekday: 1, hour: 10 },
+                    }],
+                },
+            },
+        }
+        const adoptionPlacedCourseKeys = computed.adoptionPlacedCourseKeys.call({
+            isManualTimetableAdoption: false,
+            manualSelectedCourseKeys: [],
+            adoptionBaseTimetable: restoredTimetable,
+        })
+
+        expect(adoptionPlacedCourseKeys).toEqual(['f2-a', 'gs2-a', 'rev2-a'])
+        expect(computed.adoptionSelectedModules.call({
+            isManualTimetableAdoption: false,
+            manualSelectedModules: [],
+            selectedModules,
+            adoptionPlacedCourseKeys,
+        })).toEqual(selectedModules)
     })
 
     it('returns from adoption to the remembered source and blocks navigation while loading', () => {
@@ -2608,8 +3076,8 @@ describe('TimetableV3', () => {
         expect(source).toContain('&& timetableSolutionPlanModuleRemovalScenarios.length')
         expect(solutionPlanSource).toContain('timetable-v3__calculation-output timetable-v3__solution-plan')
         expect(solutionPlanSource).toContain('Lösungsplan')
-        expect(solutionPlanSource).toContain('scenario.removed_module_code')
-        expect(solutionPlanSource).toContain('scenario.removed_module_name')
+        expect(solutionPlanSource).toContain('solutionModuleDisplayCode(scenario)')
+        expect(solutionPlanSource).toContain('solutionModuleDisplayName(scenario)')
         expect(solutionPlanSource).toContain('scenario.possible_timetable_count')
         expect(solutionPlanSource).toContain("scenario.status === 'calculated'")
         expect(solutionPlanSource).toContain("scenario.status === 'combination_limit_exceeded'")
@@ -2953,6 +3421,138 @@ describe('TimetableV3', () => {
         }
     })
 
+    it('restores added and overlapping manual courses for the exact adoption timetable after reload', () => {
+        const methods = (TimetableV3 as any).methods
+        const computed = (TimetableV3 as any).computed
+        const fingerprint = 'a'.repeat(64)
+        const addedCourse = {
+            key: 'added-a',
+            keys: ['added-a', 'added-b'],
+            title: 'Zusätzlicher Unterricht',
+            timetable_entries: [
+                {
+                    key: 'added-a',
+                    weekday: 1,
+                    hour: 10,
+                    module_code: 'D2',
+                    display_label: 'D2 - 2A - HUB',
+                },
+                {
+                    key: 'added-b',
+                    weekday: 1,
+                    hour: 10,
+                    module_code: 'D2',
+                    display_label: 'D2 - 2B - HUB',
+                },
+            ],
+        }
+        const moduleSelectionGroups = [{
+            key: 'current',
+            modules: [{
+                selection_key: 'current:D2',
+                code: 'D2',
+                courses: [addedCourse],
+            }],
+        }]
+        const transferredTimetable = {
+            key: 'backend-full_green-1',
+            slots: {
+                '1-10': {
+                    key: 'existing-course',
+                    code: 'D1',
+                    name: 'Bestehender Unterricht',
+                    courseGroup: { key: 'existing-course', weekday: 1, hour: 10 },
+                    conflicts: [],
+                    sameSlotEntries: [],
+                },
+            },
+        }
+        const context: any = {
+            currentStep: 'adoption',
+            isManualTimetableAdoption: false,
+            planningMode: 'with_student',
+            selectedStudentCode: '1001',
+            planningSelectionValues: { religion: 'ETH' },
+            timetableAdoptionRouteSelection: {
+                fingerprint,
+                index: 0,
+                key: transferredTimetable.key,
+                page: 1,
+            },
+            storedState: {
+                manualTimetableDraft: {
+                    mode: 'with_student',
+                    studentCode: '1001',
+                    planningValues: { religion: 'ETH' },
+                    source: 'automatic',
+                    fingerprint,
+                    timetableKey: transferredTimetable.key,
+                    timetableIndex: 0,
+                    selectedCourseKeys: ['added-a'],
+                    removedCourseKeys: ['unknown-course'],
+                },
+            },
+            moduleSelectionGroups,
+            mainModuleSelectionGroups: [],
+            manualSelectedCourseKeys: [],
+            manualPendingCourseKeys: ['pending-course'],
+            adoptionRemovedCourseKeys: [],
+        }
+
+        methods.restoreManualTimetableDraft.call(context)
+
+        expect(context.manualSelectedCourseKeys).toEqual(['added-a', 'added-b'])
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.adoptionRemovedCourseKeys).toEqual([])
+
+        context.manualCatalogCourses = computed.manualCatalogCourses.call(context)
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        const manualTimetable = computed.manualTimetable.call(context)
+        const adoptionTimetables = computed.adoptionTimetables.call({
+            isManualTimetableAdoption: false,
+            manualTimetable,
+            adoptionBaseTimetable: transferredTimetable,
+            adoptionRemovedCourseKeys: [],
+            selectedTimetableResult: transferredTimetable,
+            timetableCalculationResult: { timetables: [transferredTimetable] },
+        })
+
+        expect(adoptionTimetables[0].slots['1-10']).toMatchObject({
+            key: 'existing-course',
+            sameSlotEntries: [
+                { key: 'added-a', code: 'D2' },
+                { key: 'added-b', code: 'D2' },
+            ],
+        })
+        expect(transferredTimetable.slots['1-10'].sameSlotEntries).toEqual([])
+
+        context.manualSelectedCourseKeys = ['stale-course']
+        context.storedState.manualTimetableDraft.fingerprint = 'b'.repeat(64)
+        methods.restoreManualTimetableDraft.call(context)
+
+        expect(context.manualSelectedCourseKeys).toEqual([])
+
+        context.isManualTimetableAdoption = true
+        context.timetableAdoptionRouteSelection = null
+        context.storedState.manualTimetableDraft = {
+            ...context.storedState.manualTimetableDraft,
+            source: 'blank',
+            fingerprint: null,
+            timetableKey: null,
+            timetableIndex: null,
+            selectedCourseKeys: ['added-b'],
+        }
+        methods.restoreManualTimetableDraft.call(context)
+
+        expect(context.manualSelectedCourseKeys).toEqual(['added-a', 'added-b'])
+        context.manualCatalogCourses = computed.manualCatalogCourses.call(context)
+        context.manualSelectedCourses = computed.manualSelectedCourses.call(context)
+        expect(computed.manualTimetable.call(context).slots['1-10']).toMatchObject({
+            key: 'added-a',
+            sameSlotEntries: [{ key: 'added-b' }],
+        })
+    })
+
     it('restores only a persisted creation result matching the fully hydrated draft', async () => {
         const methods = (TimetableV3 as any).methods
         const solutionPlan = {
@@ -3226,6 +3826,9 @@ describe('TimetableV3', () => {
             restoreEntrySelection: vi.fn(async () => {
                 loadingStates.push(context.isLoadingState)
             }),
+            restoreManualTimetableDraft: vi.fn(() => {
+                loadingStates.push(context.isLoadingState)
+            }),
             ensureValidCurrentStep: vi.fn(async () => {
                 loadingStates.push(context.isLoadingState)
             }),
@@ -3239,7 +3842,7 @@ describe('TimetableV3', () => {
 
         await methods.loadState.call(context)
 
-        expect(loadingStates).toEqual([true, true, true])
+        expect(loadingStates).toEqual([true, true, true, true])
         expect(context.isLoadingState).toBe(false)
         expect(context.storedState).toEqual({ draft: true })
     })
@@ -3300,6 +3903,7 @@ describe('TimetableV3', () => {
             restoreCreationOptions: vi.fn(),
             restoreAdoptionReturnStep: vi.fn(),
             restoreEntrySelection: vi.fn().mockResolvedValue(undefined),
+            restoreManualTimetableDraft: vi.fn(),
             ensureValidCurrentStep: vi.fn().mockResolvedValue(undefined),
             restorePersistedTimetableCalculation: vi.fn().mockResolvedValue(undefined),
         }
@@ -3351,23 +3955,23 @@ describe('TimetableV3', () => {
         expect(context.selectedModuleKeys).toEqual(['additional:D1'])
         expect(context.selectedCourseKeys).toEqual(['d1-a'])
         expect(methods.moduleGroupIcon(mainModuleGroup)).toBe('mdi-bookshelf')
-        methods.closeModuleGroup.call(context)
+        methods.toggleModuleGroup.call(context, mainModuleGroup)
         expect(context.activeModuleGroupKey).toBe('')
 
         expect(source).toContain('Hauptmodule')
         expect(source).toContain('Wählen Sie zuerst ein Hauptmodul.')
         expect(source).toContain("usesMainModuleGroups ? 'Hauptmodule' : 'Modularten'")
-        expect(source).toContain('{{ group.code }}')
-        expect(source).toContain('{{ group.name }}')
+        expect(source).toContain('{{ moduleDisplayCode(group) }}')
+        expect(source).toContain('{{ moduleDisplayName(group) }}')
         expect(source).toContain("'timetable-v3__module-group-card--main'")
         expect(source).toContain("'timetable-v3__module-group-panel--main'")
-        expect(source).toContain("usesMainModuleGroups ? 'Hauptmodul schließen' : 'Modulart schließen'")
+        expect(source).not.toContain("usesMainModuleGroups ? 'Hauptmodul schließen' : 'Modulart schließen'")
         expect(source).toContain('@click="openModuleCoursesDialog(module)"')
         expect(source).toContain('grid-template-columns: repeat(auto-fill, minmax(175px, 1fr))')
         expect(source).not.toContain('unter „Zusätzliche“ angeboten')
     })
 
-    it('orders selected module summaries alphabetically by module code on modules and creation', () => {
+    it('orders selected module summaries alphabetically by module code across the workflow', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -3398,7 +4002,7 @@ describe('TimetableV3', () => {
         expect(selectedModuleKeys).toEqual(originalSelectedModuleKeys)
         expect(moduleSelectionGroups[0].modules).toEqual(originalModules)
         expect(source.match(/v-for="module in selectedModules"/g)).toHaveLength(2)
-        expect(source.match(/Ausgewählte Module/g)).toHaveLength(2)
+        expect(source.match(/Ausgewählte Module/g)).toHaveLength(3)
     })
 
     it('opens a persistent course dialog from an individual module tile', async () => {
@@ -3473,6 +4077,7 @@ describe('TimetableV3', () => {
 
         expect(context.moduleCoursesDialogOpen).toBe(true)
         expect(context.moduleCourseDialogModule).toBe(groups[1].modules[0])
+        expect(context.moduleCoursesDialogReadOnly).toBe(false)
         await methods.toggleModuleCourse.call(context, groups[1].modules[0].courses[0])
         expect(context.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2'])
         expect(context.selectedModuleKeys).toEqual(['current:M5'])
@@ -3503,19 +4108,72 @@ describe('TimetableV3', () => {
                 'Montag · 21:10–21:55 · 1-wöchig',
             ],
         })).toEqual(['Montag · 20:25–21:55 · 17.02.2026'])
+        const aliasedCourse = {
+            course_title: 'GWB',
+            title: 'GWB2-5CK-HOA',
+        }
+        const aliasContext = {
+            moduleCourseDialogModule: { code: 'GW2' },
+            moduleCourseTitle: course => methods.moduleCourseTitle.call(aliasContext, course),
+        }
+        expect(methods.moduleCourseTitle.call(aliasContext, aliasedCourse)).toBe('GW2-5CK-HOA')
+        expect(methods.moduleCourseSubtitle.call(aliasContext, aliasedCourse)).toBe('')
+        expect(methods.moduleDisplayCode({ code: 'LET' })).toBe('LPT')
+        expect(methods.moduleDisplayName({
+            code: 'LPT',
+            name: 'Literarisches Praktikum',
+        })).toBe('Lern- und Präsentationstechniken')
+        expect((TimetableV3 as any).computed.manualTimetable.call({
+            manualSelectedCourses: [{
+                ...aliasedCourse,
+                timetable_entries: [{
+                    key: 'gwb2-a',
+                    weekday: 1,
+                    hour: 12,
+                    module_code: 'GWB2',
+                    display_label: 'GWB2-5CK-HOA',
+                }],
+            }],
+        }).slots['1-12']).toMatchObject({
+            code: 'GW2',
+            sourceLabel: 'GW2-5CK-HOA',
+        })
         methods.closeModuleCoursesDialog.call(context)
         expect(context.moduleCoursesDialogOpen).toBe(false)
+
+        const manualSaveState = vi.fn().mockResolvedValue(undefined)
+        const manualSelectedModuleKeys = ['current:M5']
+        const manualSelectedCourseKeys = ['m5-a-1', 'm5-a-2']
+        const manualDialogContext = {
+            moduleCoursesDialogOpen: false,
+            moduleCourseDialogModule: null,
+            moduleCoursesDialogReadOnly: false,
+            selectedModuleKeys: manualSelectedModuleKeys,
+            selectedCourseKeys: manualSelectedCourseKeys,
+            saveState: manualSaveState,
+        }
+
+        methods.openManualModuleCoursesDialog.call(manualDialogContext, groups[1].modules[0])
+        expect(manualDialogContext.moduleCoursesDialogOpen).toBe(true)
+        expect(manualDialogContext.moduleCourseDialogModule).toBe(groups[1].modules[0])
+        expect(manualDialogContext.moduleCoursesDialogReadOnly).toBe(true)
+
+        await methods.toggleModuleCourse.call(manualDialogContext, groups[1].modules[0].courses[0])
+        await methods.selectAllModuleCourses.call(manualDialogContext)
+        await methods.deselectAllModuleCourses.call(manualDialogContext)
+
+        expect(manualDialogContext.selectedModuleKeys).toBe(manualSelectedModuleKeys)
+        expect(manualDialogContext.selectedCourseKeys).toBe(manualSelectedCourseKeys)
+        expect(manualSaveState).not.toHaveBeenCalled()
+
         methods.toggleModuleGroup.call(groupContext, groups[0])
         expect(groupContext.activeModuleGroupKey).toBe('finished')
         expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(true)
-        methods.closeModuleGroup.call(groupContext)
-        expect(groupContext.activeModuleGroupKey).toBe('')
-        expect(groupContext.selectedModuleKeys).toEqual(['current:M5'])
-        expect(groupContext.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2'])
-        methods.toggleModuleGroup.call(groupContext, groups[0])
         methods.toggleModuleGroup.call(groupContext, groups[0])
         expect(groupContext.activeModuleGroupKey).toBe('')
         expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(false)
+        expect(groupContext.selectedModuleKeys).toEqual(['current:M5'])
+        expect(groupContext.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2'])
         expect(methods.moduleGroupIcon(groups[0])).toBe('mdi-check-decagram-outline')
         expect(methods.moduleGroupIcon({ key: 'unknown' })).toBe('mdi-view-grid-outline')
         expect(selectedModules.call({
@@ -3547,16 +4205,15 @@ describe('TimetableV3', () => {
         expect(source).toContain('class="timetable-v3__module-group-card"')
         expect(source).toContain('class="timetable-v3__module-group-panel"')
         expect(source).toContain('@click="toggleModuleGroup(group)"')
-        expect(source).toContain('class="timetable-v3__module-group-panel-close"')
-        expect(source).toMatch(/class="timetable-v3__module-group-panel-close"[\s\S]*?color="orange-darken-2"/)
-        expect(source).toContain('<v-icon icon="mdi-close" size="20" />')
-        expect(source).toContain('height="34"')
-        expect(source).toContain('min-width="34"')
-        expect(source).toContain('rounded="sm"')
-        expect(source).toContain('variant="flat"')
-        expect(source).toContain('width="34"')
-        expect(source).toContain(":aria-label=\"usesMainModuleGroups ? 'Hauptmodul schließen' : 'Modulart schließen'\"")
-        expect(source).toContain('@click="closeModuleGroup"')
+        expect(source).toContain(':aria-pressed="moduleGroupActive(group)"')
+        expect(source).not.toContain('timetable-v3__module-group-panel-heading')
+        expect(source).not.toContain('timetable-v3__module-group-panel-title')
+        expect(source).not.toContain('timetable-v3__module-group-panel-close')
+        expect(source).not.toContain('@click="closeModuleGroup"')
+        expect(source).not.toContain('@click="closeManualModuleGroup"')
+        expect(source).not.toContain('closeModuleGroup()')
+        expect(source).not.toContain('closeManualModuleGroup()')
+        expect(source).toContain('class="timetable-v3__module-group-panel-actions"')
         expect(source).toContain('v-if="activeModuleSelectionGroup"')
         expect(source).toMatch(/<transition[\s\S]*?name="timetable-v3-module-panel"[\s\S]*?mode="out-in">/)
         expect(source).toContain(':icon="moduleGroupIcon(group)"')
@@ -3565,14 +4222,21 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="openModuleCoursesDialog(module)"')
         expect(source).toContain('v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable')
         expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
-        expect(source).toContain('role="checkbox"')
-        expect(source).toContain('@click="toggleModuleCourse(course)"')
+        expect(source).toContain(':is="moduleCoursesDialogInteractive ? \'button\' : \'article\'"')
+        expect(source).toContain(':role="moduleCoursesDialogInteractive ? \'checkbox\' : null"')
+        expect(source).toContain(':aria-checked="moduleCoursesDialogInteractive ? displayedModuleCourseSelected(course) : null"')
+        expect(source).toContain('v-if="moduleCoursesDialogInteractive" class="timetable-v3__module-course-check"')
+        expect(source).toContain('@click="moduleCoursesDialogInteractive && toggleDisplayedModuleCourse(course)"')
+        expect(source).toContain('Alle Unterrichte dieses Moduls sind bereits im manuellen Stundenplan.')
         expect(source).toContain('@click="selectAllModuleCourses"')
         expect(source).toContain('@click="deselectAllModuleCourses"')
-        expect(source).toMatch(/@click="closeModuleCoursesDialog">\s*Bestätigen/)
-        expect(source).not.toMatch(/@click="closeModuleCoursesDialog">\s*Schließen/)
+        expect(source).toMatch(/v-if="moduleCoursesDialogReadOnly"[\s\S]*?@click="cancelManualModuleCoursesDialog">\s*Abbrechen/)
+        expect(source).toMatch(/:disabled="!manualPendingCourseKeys.length"[\s\S]*?@click="planManualModuleCourses">\s*Verplanen/)
+        expect(source).toMatch(/<v-btn v-else[\s\S]*?@click="closeModuleCoursesDialog">\s*Bestätigen/)
+        expect(source).toContain('v-if="!moduleCoursesDialogReadOnly"')
+        expect(source).toContain('v-if="!moduleCoursesDialogReadOnly && moduleSelectionLimitMessage"')
         expect(source).toContain('{{ selectedCourseCountForModule(module) }}/{{ moduleCourseCount(module) }} Unterrichte')
-        expect(source).toContain("Unterrichte für {{ moduleCourseDialogModule?.code || 'Modul' }}")
+        expect(source).toContain("Unterrichte für {{ moduleDisplayCode(moduleCourseDialogModule) || 'Modul' }}")
         expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
         expect(source).toContain('Für dieses Modul sind keine Unterrichte im importierten Stundenplan vorhanden.')
         expect(source).not.toContain('Kurse für {{ moduleCourseDialogModule')
@@ -3581,6 +4245,9 @@ describe('TimetableV3', () => {
         expect(source).toContain('Alle auswählen')
         expect(source).toContain('Alle abwählen')
         expect(source).toContain('v-for="scheduleLabel in courseScheduleLabels(course)"')
+        expect(source).toContain('{{ moduleCourseTitle(course) }}')
+        expect(source).toContain('v-if="moduleCourseSubtitle(course)"')
+        expect(source).not.toContain('{{ course.title }}')
         expect(source).not.toContain('course.recurrence_label')
         expect(source).toContain('v-if="course.hours_label"')
         expect(source).toContain('{{ course.hours_label }}')
@@ -3777,7 +4444,7 @@ describe('TimetableV3', () => {
         expect(source).toContain('{{ maximumSelectedModuleHours }} Stunden gleichzeitig.')
         expect(source).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
         expect(source).toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
-        expect(source.match(/v-if="moduleSelectionLimitMessage"/g)).toHaveLength(2)
+        expect(source.match(/v-if="(?:!moduleCoursesDialogReadOnly && )?moduleSelectionLimitMessage"/g)).toHaveLength(2)
     })
 
     it('removes a selected module from the automatic mode summary', async () => {
@@ -3808,7 +4475,7 @@ describe('TimetableV3', () => {
         expect(saveState).toHaveBeenCalledOnce()
         expect(source).toContain('class="timetable-v3__selected-module-chip"')
         expect(source).toContain('close-icon="mdi-close-circle"')
-        expect(source).toContain(':close-label="`${module.code} aus der Auswahl entfernen`"')
+        expect(source).toContain(':close-label="`${moduleDisplayCode(module)} aus der Auswahl entfernen`"')
         expect(source).toContain('@click:close.stop="removeSelectedModule(module)"')
         expect(source).toMatch(/\.timetable-v3__selected-module-chip :deep\(\.v-chip__close\)[\s\S]*?color: #dc2626;/)
     })
@@ -4144,10 +4811,74 @@ describe('TimetableV3', () => {
                         free_days: 2,
                     },
                 },
+                manualTimetableDraft: {
+                    mode: 'without_student',
+                    studentCode: null,
+                    planningValues: {
+                        religion: 'ETH',
+                        language: 'F',
+                    },
+                    source: 'blank',
+                    fingerprint: null,
+                    timetableKey: null,
+                    timetableIndex: null,
+                    selectedCourseKeys: [],
+                    removedCourseKeys: [],
+                },
             },
         })
         expect(context.isSavingState).toBe(false)
         expect(context.stateSaveFailed).toBe(false)
+    })
+
+    it('persists manual additions against the exact automatic timetable identity', async () => {
+        const methods = (TimetableV3 as any).methods
+        const fingerprint = 'c'.repeat(64)
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({
+            data: { data: { state: payload.state } },
+        }))
+        vi.stubGlobal('axios', { put })
+        const context: any = {
+            isSavingState: false,
+            pendingStateSaveCount: 0,
+            stateSaveQueue: null,
+            stateSaveFailed: false,
+            storedState: {},
+            workspaceId: WORKSPACE_ID,
+            planningMode: 'with_student',
+            selectedStudent: { studentCode: '1001' },
+            selectedStudentCode: '1001',
+            planningSelectionValues: { religion: 'ETH' },
+            selectedModuleKeys: ['current:D1'],
+            selectedCourseKeys: ['automatic-course'],
+            scheduleCreationMode: 'automatic',
+            timetableAdoptionReturnStep: 'creation',
+            timetableFilters: { include_saturday: true, free_days: null },
+            timetableAdoptionRouteSelection: {
+                fingerprint,
+                index: 14,
+                key: 'backend-full_green-15',
+            },
+            timetableCalculationResult: { fingerprint },
+            selectedTimetableResult: { key: 'backend-full_green-15' },
+            timetableSelectedIndex: 14,
+            manualSelectedCourseKeys: ['added-a', 'added-b'],
+            adoptionRemovedCourseKeys: ['removed-a'],
+        }
+
+        await methods.saveState.call(context)
+
+        expect(put.mock.calls[0][1].state.manualTimetableDraft).toEqual({
+            mode: 'with_student',
+            studentCode: '1001',
+            planningValues: { religion: 'ETH' },
+            source: 'automatic',
+            fingerprint,
+            timetableKey: 'backend-full_green-15',
+            timetableIndex: 14,
+            selectedCourseKeys: ['added-a', 'added-b'],
+            removedCourseKeys: ['removed-a'],
+        })
     })
 
     it('serializes V3 state writes so an older snapshot cannot overwrite the latest selection', async () => {

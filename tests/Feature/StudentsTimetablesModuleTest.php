@@ -3444,6 +3444,16 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.teacher', 'HUB')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.keys')
+        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.timetable_entries')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.weekday', 1)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.hour', 10)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.starts_at', '17:50')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.ends_at', '18:35')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.recurrence_label', '1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.teacher', 'HUB')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.rooms.0', 'R101')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.module_code', 'D1')
+        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.dates')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.0', 'Montag · 17:50–18:35 · 1-wöchig')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.1', 'Montag · 18:45–19:30 · 1-wöchig')
@@ -3485,12 +3495,27 @@ it('returns the shared student overview summary for a selected robot student', f
         ->pluck('code');
     $mainBuGroup = collect($v3StudentInformationResponse->json('data.main_module_selection_groups'))
         ->firstWhere('key', 'BU');
+    $mainDGroup = collect($v3StudentInformationResponse->json('data.main_module_selection_groups'))
+        ->firstWhere('key', 'D');
+    $mainEthGroup = collect($v3StudentInformationResponse->json('data.main_module_selection_groups'))
+        ->firstWhere('key', 'ETH');
+    $mainRkGroup = collect($v3StudentInformationResponse->json('data.main_module_selection_groups'))
+        ->firstWhere('key', 'RK');
+    $mainD1Course = collect($mainDGroup['modules'])
+        ->firstWhere('code', 'D1')['courses'][0];
 
     expect($studentModuleCodes)->not->toContain('PH1')
         ->and($mainBuGroup['label'])->toBe('BU Buchhaltung')
         ->and($mainBuGroup['description'])->toBe('2 Module verfügbar')
         ->and($mainBuGroup['count'])->toBe(2)
-        ->and(collect($mainBuGroup['modules'])->pluck('code')->all())->toBe(['BU1', 'BU2']);
+        ->and(collect($mainBuGroup['modules'])->pluck('code')->all())->toBe(['BU1', 'BU2'])
+        ->and(collect($mainEthGroup['modules'])->every(
+            fn (array $module): bool => $module['is_intended_for_selection'] === true,
+        ))->toBeTrue()
+        ->and(collect($mainRkGroup['modules'])->every(
+            fn (array $module): bool => $module['is_intended_for_selection'] === false,
+        ))->toBeTrue()
+        ->and(collect($mainD1Course['timetable_entries'])->pluck('hour')->all())->toBe([10, 11, 13]);
 
     foreach ($v3StudentInformationResponse->json('data.module_selection_groups') as $moduleSelectionGroup) {
         $moduleCodes = collect($moduleSelectionGroup['modules'])->pluck('code')->all();
@@ -3505,6 +3530,19 @@ it('returns the shared student overview summary for a selected robot student', f
     $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[language]=F')
         ->assertSuccessful()
         ->assertJsonPath('data.selection_fields.1.selected_value', 'F');
+
+    $catholicSelectionResponse = $this->getJson(
+        '/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[religion]=Rk',
+    )->assertSuccessful();
+    $catholicMainModuleGroups = collect($catholicSelectionResponse->json('data.main_module_selection_groups'))
+        ->keyBy('key');
+
+    expect(collect($catholicMainModuleGroups['ETH']['modules'])->every(
+        fn (array $module): bool => $module['is_intended_for_selection'] === false,
+    ))->toBeTrue()
+        ->and(collect($catholicMainModuleGroups['RK']['modules'])->every(
+            fn (array $module): bool => $module['is_intended_for_selection'] === true,
+        ))->toBeTrue();
 
     $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[religion]=')
         ->assertSuccessful()

@@ -102,7 +102,7 @@ describe('TimetableV3PossibleTimetables', () => {
 
         expect((wrapper.vm as any).selectedTimetable.key).toBe('green-1')
         expect(wrapper.text()).toContain('Stundenplan 2 von 2')
-        expect(wrapper.text()).toContain('Einzeltermin-Überschneidung')
+        expect(wrapper.text()).not.toContain('Einzeltermin-Überschneidung')
 
         ;(wrapper.vm as any).selectNextTimetable()
         expect(wrapper.emitted('navigate')).toEqual([[1]])
@@ -127,17 +127,19 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.find('.timetable-v3-results__navigation').exists()).toBe(false)
     })
 
-    it('renders an empty weekday timetable for manual planning', () => {
+    it('overlays manual courses on the full configured timetable and removes them again', async () => {
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
             props: {
                 allowSaturdayLessons: true,
                 emptyTimetable: true,
+                highlightMultipleEntries: true,
                 emptyHourRows: [
                     { hour: 9, from: '', until: '' },
                     { hour: 7, from: '14:45:00', until: '15:30:00' },
                     { hour: 8, from: '15:30', until: '16:15' },
                 ],
                 navigationVisible: false,
+                positionVisible: false,
                 timetables: [timetableFixture({
                     key: 'stale-result',
                     number: 1,
@@ -150,8 +152,9 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.find('.timetable-v3-results__table').exists()).toBe(true)
         expect(wrapper.find('.timetable-v3-results__unavailable').exists()).toBe(false)
         expect(wrapper.find('.timetable-v3-results__navigation').exists()).toBe(false)
+        expect(wrapper.find('.timetable-v3-results__header h4').text()).toBe('Stundenplan')
+        expect(wrapper.text()).not.toContain('Stundenplan 1 von 1')
         expect(wrapper.find('caption').text()).toBe('Leerer Stundenplan')
-        expect(wrapper.text()).toContain('Stundenplan 1 von 1')
         expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
         expect((wrapper.vm as any).visibleHourRows).toEqual([
             { hour: 1, timeRange: '' },
@@ -170,6 +173,36 @@ describe('TimetableV3PossibleTimetables', () => {
             .toEqual(['14:45–15:30', '15:30–16:15'])
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(0)
         expect(wrapper.text()).not.toContain('D1')
+
+        await wrapper.setProps({
+            manualTimetable: {
+                key: 'manual-timetable',
+                slots: {
+                    '1-10': slotFixture('M1', 1, 10, {
+                        sameSlotEntries: [slotFixture('CH1', 1, 10)],
+                    }),
+                },
+            },
+        })
+
+        expect(wrapper.find('caption').text()).toBe('Manueller Stundenplan')
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        expect(wrapper.findAll('tbody tr')).toHaveLength(10)
+        expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(2)
+        expect(wrapper.findAll('.timetable-v3-results__lesson--overlap')).toHaveLength(1)
+        expect(wrapper.findAll('[icon="mdi-calendar-alert-outline"]')).toHaveLength(1)
+        expect(wrapper.find('[role="status"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Einzeltermin-Überschneidung · erlaubt')
+        expect(wrapper.find('.timetable-v3-results__lesson--overlap').text())
+            .toContain('Einzeltermin-Überschneidung')
+        expect(wrapper.text()).toContain('M1')
+        expect(wrapper.text()).toContain('CH1')
+        expect(wrapper.text()).not.toContain('D1')
+
+        await wrapper.setProps({ manualTimetable: { key: 'manual-timetable', slots: {} } })
+
+        expect(wrapper.find('caption').text()).toBe('Leerer Stundenplan')
+        expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(0)
     })
 
     it('falls back to an empty timetable from period 1 through period 10', () => {
@@ -229,6 +262,40 @@ describe('TimetableV3PossibleTimetables', () => {
             lesson.attributes('aria-label')?.includes('Mag. Test · Raum 101')
         ))).toBe(true)
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(3)
+    })
+
+    it('renders imported course aliases with the canonical module code', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                timetables: [timetableFixture({
+                    key: 'canonical-module-labels',
+                    number: 1,
+                    slots: {
+                        '1-2': slotFixture('GW2', 1, 2, {
+                            sourceLabel: 'GWB2-5CK-HOA',
+                        }),
+                        '2-3': slotFixture('LPT', 2, 3, {
+                            name: 'Literarisches Praktikum',
+                            sourceLabel: 'LET-1U-HER',
+                        }),
+                    },
+                    type: 'full_green',
+                })],
+            },
+        })
+        const entry = (wrapper.vm as any).timetableEntriesForCell(1, 2)[0]
+        const lptEntry = (wrapper.vm as any).timetableEntriesForCell(2, 3)[0]
+
+        expect(entry.code).toBe('GW2')
+        expect(entry.sourceLabel).toBe('GW2-5CK-HOA')
+        expect(wrapper.text()).toContain('GW2')
+        expect(wrapper.text()).not.toContain('GWB2')
+        expect(wrapper.find('.timetable-v3-results__lesson').attributes('aria-label')).not.toContain('GWB2')
+        expect(lptEntry.code).toBe('LPT')
+        expect(lptEntry.name).toBe('Lern- und Präsentationstechniken')
+        expect(lptEntry.sourceLabel).toBe('LPT-1U-HER')
+        expect(wrapper.findAll('.timetable-v3-results__lesson')[1].attributes('aria-label'))
+            .toContain('Lern- und Präsentationstechniken')
     })
 
     it('hides the date range for courses covering the whole semester', () => {

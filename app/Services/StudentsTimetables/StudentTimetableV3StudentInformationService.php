@@ -60,6 +60,8 @@ class StudentTimetableV3StudentInformationService
             ? $this->studentOverviewService->selectionSummaryForStudentCode(
                 $user,
                 null,
+                (array) ($selectionSummary['selection'] ?? []),
+                strictSelectionOverride: true,
                 studyProgram: $studyProgram,
                 includeAllSelectableModules: true,
             )
@@ -284,6 +286,7 @@ class StudentTimetableV3StudentInformationService
                             'grades' => $this->moduleGradeValues($module),
                             'courses' => $this->moduleCourses($module),
                             'selected_by_default' => (bool) ($module['selected_by_default'] ?? false),
+                            'is_intended_for_selection' => (bool) ($module['is_intended_for_selection'] ?? true),
                         ];
                     })
                     ->filter(fn (array $module): bool => $module['selection_key'] !== '' && $module['code'] !== '')
@@ -424,6 +427,10 @@ class StudentTimetableV3StudentInformationService
                     'hours_label' => $this->courseHoursLabel($regularHours),
                     'is_distance_learning' => $isDistanceLearning,
                     'instruction_label' => $isDistanceLearning ? 'Fernunterricht' : null,
+                    'timetable_entries' => $courseGroups
+                        ->map(fn (array $courseGroup): array => $this->courseTimetableEntry($courseGroup))
+                        ->values()
+                        ->all(),
                     'block_label' => $courseGroups
                         ->pluck('block_label')
                         ->map(fn (mixed $label): string => trim((string) $label))
@@ -435,6 +442,51 @@ class StudentTimetableV3StudentInformationService
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return array<string, mixed>
+     */
+    private function courseTimetableEntry(array $courseGroup): array
+    {
+        return [
+            'key' => trim((string) ($courseGroup['key'] ?? '')),
+            'weekday' => (int) ($courseGroup['weekday'] ?? 0),
+            'hour' => (int) ($courseGroup['hour'] ?? 0),
+            'starts_at' => trim((string) ($courseGroup['starts_at'] ?? '')),
+            'ends_at' => trim((string) ($courseGroup['ends_at'] ?? '')),
+            'time_from' => trim((string) ($courseGroup['time_from'] ?? $courseGroup['starts_at'] ?? '')),
+            'time_until' => trim((string) ($courseGroup['time_until'] ?? $courseGroup['ends_at'] ?? '')),
+            'display_label' => trim((string) ($courseGroup['display_label'] ?? '')),
+            'subject' => trim((string) ($courseGroup['subject'] ?? '')),
+            'course' => trim((string) ($courseGroup['course'] ?? '')),
+            'module_code' => trim((string) ($courseGroup['module_code'] ?? '')),
+            'teacher' => trim((string) ($courseGroup['teacher'] ?? '')),
+            'rooms' => collect(is_array($courseGroup['rooms'] ?? null) ? $courseGroup['rooms'] : [])
+                ->map(fn (mixed $room): string => trim((string) $room))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
+            'class_name' => trim((string) ($courseGroup['class_name'] ?? '')),
+            'student_group' => trim((string) ($courseGroup['student_group'] ?? '')),
+            'dates' => collect(is_array($courseGroup['dates'] ?? null) ? $courseGroup['dates'] : [])
+                ->map(fn (mixed $date): string => trim((string) $date))
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values()
+                ->all(),
+            'recurrence_interval' => is_numeric($courseGroup['recurrence_interval'] ?? null)
+                ? (int) $courseGroup['recurrence_interval']
+                : null,
+            'recurrence_label' => trim((string) ($courseGroup['recurrence_label'] ?? '')),
+            'is_block' => ($courseGroup['is_block'] ?? false) === true,
+            'block_label' => trim((string) ($courseGroup['block_label'] ?? '')),
+            'is_full_semester' => ($courseGroup['is_full_semester'] ?? false) === true,
+            'is_kompaktunterricht' => ($courseGroup['is_kompaktunterricht'] ?? false) === true,
+        ];
     }
 
     /**
