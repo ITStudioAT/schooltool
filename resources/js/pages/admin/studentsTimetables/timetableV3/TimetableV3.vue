@@ -3946,19 +3946,27 @@ export default {
 
             return firstStartsAt < secondEndsAt && secondStartsAt < firstEndsAt
         },
+        manualTimetablePdfExactOverlapDatesForEntry(entry, entries) {
+            const entryDates = this.manualTimetablePdfLessonDates(entry)
+            const overlappingDates = new Set()
+
+            entries.forEach((otherEntry) => {
+                if (otherEntry === entry || !this.manualTimetablePdfEntriesOverlapInTime(entry, otherEntry)) return
+
+                const otherDates = new Set(this.manualTimetablePdfLessonDates(otherEntry))
+                entryDates.forEach((date) => {
+                    if (otherDates.has(date)) overlappingDates.add(date)
+                })
+            })
+
+            return [...overlappingDates].sort((firstDate, secondDate) => firstDate.localeCompare(secondDate))
+        },
         manualTimetablePdfExactOverlapDates(entries) {
             const overlappingDates = new Set()
 
-            entries.forEach((entry, entryIndex) => {
-                const entryDates = this.manualTimetablePdfLessonDates(entry)
-
-                entries.slice(entryIndex + 1).forEach((otherEntry) => {
-                    if (!this.manualTimetablePdfEntriesOverlapInTime(entry, otherEntry)) return
-
-                    const otherDates = new Set(this.manualTimetablePdfLessonDates(otherEntry))
-                    entryDates.forEach((date) => {
-                        if (otherDates.has(date)) overlappingDates.add(date)
-                    })
+            entries.forEach((entry) => {
+                this.manualTimetablePdfExactOverlapDatesForEntry(entry, entries).forEach((date) => {
+                    overlappingDates.add(date)
                 })
             })
 
@@ -3995,7 +4003,7 @@ export default {
 
             return numberedCells
         },
-        manualTimetablePdfCourse(entry) {
+        manualTimetablePdfCourse(entry, entries = []) {
             const courseGroup = entry?.courseGroup || {}
             const code = canonicalTimetableCourseLabel(
                 entry?.code || courseGroup.module_code || courseGroup.subject || '',
@@ -4027,6 +4035,9 @@ export default {
                 identifier: identifier || code,
                 details,
                 dates: this.manualTimetablePdfLessonDates(entry).slice(0, 120),
+                overlap_dates: this.manualTimetablePdfExactOverlapDatesForEntry(entry, entries).slice(0, 120),
+                time_from: String(courseGroup.starts_at || courseGroup.time_from || '').trim().slice(0, 5),
+                time_until: String(courseGroup.ends_at || courseGroup.time_until || '').trim().slice(0, 5),
                 is_fu: entry?.isDistanceLearningCourse === true,
                 recurrence_label: recurrenceLabel,
                 recurrence_interval: Number(courseGroup.recurrence_interval || 0) || null,
@@ -4093,7 +4104,7 @@ export default {
                                         status: numberedCell?.hasExactOverlap
                                             ? 'conflict'
                                             : entries.length ? 'filled' : 'empty',
-                                        courses: entries.map(entry => this.manualTimetablePdfCourse(entry)),
+                                        courses: entries.map(entry => this.manualTimetablePdfCourse(entry, entries)),
                                         markers: numberedCell
                                             ? [{
                                                 label: `${numberedCell.hasExactOverlap ? '!' : ''}${numberedCell.number}`,

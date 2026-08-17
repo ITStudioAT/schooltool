@@ -4924,25 +4924,71 @@ it('creates a manual timetable pdf with an information cover and booking reminde
                         'until' => '08:45',
                         'cells' => [
                             [
-                                'status' => 'filled',
+                                'status' => 'conflict',
                                 'courses' => [
                                     [
                                         'label' => 'ENGLISCH 3',
                                         'identifier' => 'E3-2Q-REIS',
                                         'details' => '',
-                                        'dates' => ['2026-02-16'],
+                                        'dates' => ['2026-02-16', '2026-02-23'],
+                                        'overlap_dates' => ['2026-02-23'],
+                                        'time_from' => '08:00',
+                                        'time_until' => '08:45',
                                         'recurrence_label' => '1-wöchig',
                                     ],
                                     [
                                         'label' => 'ENGLISCH 4',
                                         'identifier' => 'E4-2Q-REIS',
                                         'details' => '',
-                                        'dates' => ['2026-02-23'],
+                                        'dates' => ['2026-02-23', '2026-03-02'],
+                                        'overlap_dates' => ['2026-02-23'],
+                                        'time_from' => '08:00',
+                                        'time_until' => '08:45',
                                         'recurrence_label' => '1-wöchig',
                                     ],
                                 ],
                                 'markers' => [[
-                                    'label' => '1',
+                                    'label' => '!1',
+                                    'title' => 'Einzeltermin-Überschneidung',
+                                ]],
+                            ],
+                            [
+                                'status' => 'empty',
+                                'courses' => [],
+                                'markers' => [],
+                            ],
+                        ],
+                    ], [
+                        'hour' => 2,
+                        'from' => '08:45',
+                        'until' => '09:30',
+                        'cells' => [
+                            [
+                                'status' => 'filled',
+                                'courses' => [
+                                    [
+                                        'label' => 'MATHEMATIK 1',
+                                        'identifier' => 'M1-2Q-REIS',
+                                        'details' => '',
+                                        'dates' => ['2026-04-13'],
+                                        'overlap_dates' => [],
+                                        'time_from' => '08:45',
+                                        'time_until' => '09:30',
+                                        'recurrence_label' => '1-wöchig',
+                                    ],
+                                    [
+                                        'label' => 'MATHEMATIK 2',
+                                        'identifier' => 'M2-2Q-REIS',
+                                        'details' => '',
+                                        'dates' => ['2026-04-20'],
+                                        'overlap_dates' => [],
+                                        'time_from' => '08:45',
+                                        'time_until' => '09:30',
+                                        'recurrence_label' => '1-wöchig',
+                                    ],
+                                ],
+                                'markers' => [[
+                                    'label' => '2',
                                     'title' => 'Mehrfachbelegung',
                                 ]],
                             ],
@@ -4963,13 +5009,24 @@ it('creates a manual timetable pdf with an information cover and booking reminde
             ->and($pdf->contains('font-size: 7.00pt;'))->toBeTrue()
             ->and($pdf->contains('font-size: 5.50pt;'))->toBeTrue()
             ->and($pdf->contains('font-size: 5.75pt;'))->toBeTrue()
+            ->and(preg_match('/\.pdf-page--manual-timetable td\.time-cell,\s*\.pdf-page--manual-timetable \.time-range\s*\{\s*font-size: 7\.50pt;/u', $pdf->html))->toBe(1)
             ->and($pdf->contains('--pdf-row-height: 20.00mm;'))->toBeTrue()
             ->and(preg_match('/<div class="courses-grid\s+courses-grid--two-columns\s*">/u', $pdf->html))->toBe(1)
             ->and($pdf->contains('E3-2Q-REIS'))->toBeTrue()
             ->and($pdf->contains('E4-2Q-REIS'))->toBeTrue()
             ->and(preg_match('/<span class="course-label-main">\s*ENGLISCH 3/u', $pdf->html))->toBe(1)
             ->and($pdf->contains('<div class="course-identifier">E3-2Q-REIS</div>'))->toBeTrue()
-            ->and($pdf->contains('title="Mehrfachbelegung">1</span>'))->toBeTrue()
+            ->and($pdf->contains('title="Einzeltermin-Überschneidung">!1</span>'))->toBeTrue()
+            ->and($pdf->contains('<h1 class="courses-title">Nummern- und Terminübersicht</h1>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-reference">!1</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-reference">2</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-identifier">E3-2Q-REIS</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">ENGLISCH 3</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">23.02.2026 · 08:00 - 08:45</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date">16.02.2026 · 08:00 - 08:45</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">16.02.2026 · 08:00 - 08:45</span>'))->toBeFalse()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date">13.04.2026 · 08:45 - 09:30</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">13.04.2026 · 08:45 - 09:30</span>'))->toBeFalse()
             ->and($pdf->contains('17:50–18:35'))->toBeFalse()
             ->and($pdf->contains('1-wöchig'))->toBeFalse();
 

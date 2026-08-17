@@ -13,3 +13,6 @@ When the manual PDF omits the Saturday column, slightly increase timetable body,
 
 ## Avoid duplicate manual PDF timetable heading
 On manual timetable PDF page 2, render the main page title and metadata only. Suppress the semester label so “Stundenplan” is not repeated immediately above the table; keep semester headings for non-manual overview PDFs.
+
+## Enlarge manual PDF hour and time labels
+On manual V3 timetable PDF page 2, render the hour number and its from/until times with a dedicated 7.5pt font. Use 7pt when Saturday is present so all six weekday columns remain readable; keep compact course-detail typography unchanged.

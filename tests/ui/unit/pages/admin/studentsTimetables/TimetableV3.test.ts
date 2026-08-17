@@ -1802,6 +1802,15 @@ describe('TimetableV3', () => {
             name: 'Englisch 3',
         }
         const e4 = courseEntry('e4', 'E4', ['2026-02-23', '2026-03-02'])
+        const e5Course = courseEntry('e5', 'E5', ['2026-02-23'])
+        const e5 = {
+            ...e5Course,
+            courseGroup: {
+                ...e5Course.courseGroup,
+                starts_at: '18:35',
+                ends_at: '19:20',
+            },
+        }
         const m1Course = courseEntry('m1', 'M1', ['2026-04-13'])
         const m1 = {
             ...m1Course,
@@ -1814,7 +1823,7 @@ describe('TimetableV3', () => {
         const context: Record<string, any> = {
             adoptionDisplayedTimetable: {
                 slots: {
-                    '1-1': { ...e3, sameSlotEntries: [e4], conflicts: [] },
+                    '1-1': { ...e3, sameSlotEntries: [e4, e5], conflicts: [] },
                     '1-2': { ...m1, sameSlotEntries: [m2], conflicts: [] },
                 },
             },
@@ -1840,6 +1849,7 @@ describe('TimetableV3', () => {
             'manualTimetablePdfLessonDates',
             'manualTimetablePdfTimeInMinutes',
             'manualTimetablePdfEntriesOverlapInTime',
+            'manualTimetablePdfExactOverlapDatesForEntry',
             'manualTimetablePdfExactOverlapDates',
             'manualTimetablePdfNumberedCells',
             'manualTimetablePdfCourse',
@@ -1881,21 +1891,30 @@ describe('TimetableV3', () => {
             status: 'conflict',
             markers: [{ label: '!1', title: 'Einzeltermin-Überschneidung' }],
         })
-        expect(hours[0].cells[0].courses).toHaveLength(2)
+        expect(hours[0].cells[0].courses).toHaveLength(3)
         expect(hours[0].cells[0].courses[0]).toMatchObject({
             label: 'ENGLISCH 3',
             identifier: 'E3-2Q-REIS',
             details: '',
             recurrence_label: '1-wöchig',
+            overlap_dates: ['2026-02-23'],
+            time_from: '17:50',
+            time_until: '18:35',
         })
         expect(hours[0].cells[0].courses[0].details).not.toContain('17:50')
         expect(hours[0].cells[0].courses[0].details).not.toContain('1-wöchig')
+        expect(hours[0].cells[0].courses[2]).toMatchObject({
+            overlap_dates: [],
+            time_from: '18:35',
+            time_until: '19:20',
+        })
         expect(hours[1].cells[0]).toMatchObject({
             status: 'filled',
             markers: [{ label: '2', title: 'Mehrfachbelegung' }],
         })
         expect(hours[1].cells[0].courses).toHaveLength(2)
         expect(hours[1].cells[0].courses[0].details).toBe('2-wöchig')
+        expect(hours[1].cells[0].courses[0].overlap_dates).toEqual([])
 
         context.adoptionDisplayedTimetable.slots['6-15'] = courseEntry('saturday', 'S1', ['2026-05-09'])
 

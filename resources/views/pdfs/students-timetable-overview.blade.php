@@ -16,6 +16,7 @@
         $manualHeaderFontSize = $hasSaturdayColumn ? 6.5 : 7;
         $manualDetailFontSize = $hasSaturdayColumn ? 5 : 5.5;
         $manualCourseLabelFontSize = $hasSaturdayColumn ? 5.25 : 5.75;
+        $manualTimeFontSize = $hasSaturdayColumn ? 7 : 7.5;
         $semesters = collect($data['semesters'] ?? []);
         $metricSemesters = $printSingleWeeks
             ? $semesters->map(fn (array $semester): array => [
@@ -166,6 +167,7 @@
         }
 
         $allCourseSlots = collect();
+        $manualNumberedGroups = collect();
         foreach ($data['semesters'] ?? [] as $sem) {
             $semLabel = $sem['label'] ?? 'Semester';
             $semRange = $sem['date_range'] ?? '';
@@ -176,7 +178,52 @@
                     $timeRange = ($timeFrom !== '' && $timeUntil !== '') ? "{$timeFrom} – {$timeUntil}" : $timeFrom;
                     foreach ($hr['cells'] ?? [] as $cellIdx => $cl) {
                         $cellStatus = $cl['status'] ?? 'empty';
-                        foreach ($cl['courses'] ?? [] as $crs) {
+                        $cellCourses = collect($cl['courses'] ?? [])->values();
+                        $cellMarkers = collect($cl['markers'] ?? [])
+                            ->filter(fn (array $marker): bool => preg_match('/^!?\d+$/u', trim((string) ($marker['label'] ?? ''))) === 1)
+                            ->values();
+
+                        if ($isManualTimetable && $cellCourses->count() > 1 && $cellMarkers->isNotEmpty()) {
+                            foreach ($cellMarkers as $marker) {
+                                $manualNumberedGroups->push([
+                                    'reference' => trim((string) ($marker['label'] ?? '')),
+                                    'title' => trim((string) ($marker['title'] ?? '')),
+                                    'weekday' => $weekdayLabels[$cellIdx] ?? '',
+                                    'hour' => (int) ($hr['hour'] ?? 0),
+                                    'courses' => $cellCourses->map(function (array $course) use ($timeFrom, $timeUntil): array {
+                                        $courseTimeFrom = trim((string) ($course['time_from'] ?? '')) ?: $timeFrom;
+                                        $courseTimeUntil = trim((string) ($course['time_until'] ?? '')) ?: $timeUntil;
+                                        $time = collect([$courseTimeFrom, $courseTimeUntil])
+                                            ->filter()
+                                            ->implode(' - ');
+                                        $overlapDates = collect($course['overlap_dates'] ?? [])
+                                            ->map(fn ($date): string => trim((string) $date))
+                                            ->filter()
+                                            ->unique()
+                                            ->values();
+
+                                        return [
+                                            'identifier' => trim((string) ($course['identifier'] ?? '')),
+                                            'label' => trim((string) ($course['label'] ?? '')),
+                                            'time' => $time,
+                                            'dates' => collect($course['dates'] ?? [])
+                                                ->map(fn ($date): string => trim((string) $date))
+                                                ->filter()
+                                                ->unique()
+                                                ->sort()
+                                                ->values()
+                                                ->map(fn (string $date): array => [
+                                                    'date' => $date,
+                                                    'is_overlap' => $overlapDates->contains($date),
+                                                ])
+                                                ->all(),
+                                        ];
+                                    })->all(),
+                                ]);
+                            }
+                        }
+
+                        foreach ($cellCourses as $crs) {
                             $crsLabel = trim((string) ($crs['label'] ?? ''));
                             if ($crsLabel === '') {
                                 continue;
@@ -742,6 +789,11 @@
                 return null;
             }
         };
+        $formatManualSummaryDate = function (string $date) use ($parseTimetableDate): string {
+            $parsedDate = $parseTimetableDate($date);
+
+            return $parsedDate?->format('d.m.Y') ?? $date;
+        };
 
         $semesterStartDate = function (array $semester) use ($parseTimetableDate): ?\Carbon\Carbon {
             if (preg_match('/^\s*([0-9]{1,2}\.[0-9]{1,2}\.?(?:[0-9]{2,4})?)/u', (string) ($semester['date_range'] ?? ''), $matches) === 1) {
@@ -1127,7 +1179,6 @@
             line-height: 1;
         }
 
-        .pdf-page--manual-timetable .time-range,
         .pdf-page--manual-timetable .course-identifier,
         .pdf-page--manual-timetable .course-details,
         .pdf-page--manual-timetable .course-fu,
@@ -1135,6 +1186,11 @@
         .pdf-page--manual-timetable .marker {
             font-size: {{ number_format($manualDetailFontSize, 2, '.', '') }}pt;
             line-height: 1;
+        }
+
+        .pdf-page--manual-timetable td.time-cell,
+        .pdf-page--manual-timetable .time-range {
+            font-size: {{ number_format($manualTimeFontSize, 2, '.', '') }}pt;
         }
 
         .pdf-page--manual-timetable .course-label-main {
@@ -1591,6 +1647,115 @@
             color: #64748b;
         }
 
+        .manual-numbered-summary-legend {
+            margin: -1mm 0 4mm;
+            color: #64748b;
+            font-size: 8pt;
+            line-height: 1.4;
+        }
+
+        .manual-numbered-summary-group {
+            margin-bottom: 3mm;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            background: #f8fafc;
+            border: 0.3mm solid #cbd5e1;
+            border-left: 1mm solid #64748b;
+            border-radius: 1.5mm;
+        }
+
+        .manual-numbered-summary-group--overlap {
+            background: #fffbeb;
+            border-color: #fcd34d;
+            border-left-color: #d97706;
+        }
+
+        .manual-numbered-summary-heading {
+            padding: 1.6mm 2mm 1.2mm;
+            color: #334155;
+            font-size: 8pt;
+            font-weight: 700;
+            line-height: 1.3;
+            border-bottom: 0.2mm solid #e2e8f0;
+        }
+
+        .manual-numbered-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .manual-numbered-summary-table td {
+            padding: 1.4mm 2mm;
+            vertical-align: top;
+            font-size: 8pt;
+            line-height: 1.4;
+            border: none;
+            border-bottom: 0.2mm solid #e2e8f0;
+        }
+
+        .manual-numbered-summary-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .manual-numbered-summary-reference-cell {
+            width: 8%;
+        }
+
+        .manual-numbered-summary-course-cell {
+            width: 30%;
+        }
+
+        .manual-numbered-summary-dates-cell {
+            width: 62%;
+        }
+
+        .manual-numbered-summary-reference {
+            display: inline-block;
+            min-width: 7mm;
+            padding: 0.6mm 1mm;
+            color: #334155;
+            background: #ffffff;
+            border: 0.3mm solid #64748b;
+            border-radius: 1mm;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .manual-numbered-summary-group--overlap .manual-numbered-summary-reference {
+            color: #92400e;
+            border-color: #d97706;
+        }
+
+        .manual-numbered-summary-identifier {
+            display: inline-block;
+            margin-right: 1.4mm;
+            color: #1e3a8a;
+            font-weight: 700;
+        }
+
+        .manual-numbered-summary-course-title {
+            color: #0f172a;
+            font-weight: 700;
+        }
+
+        .manual-numbered-summary-date {
+            display: inline-block;
+            margin: 0 2mm 0.5mm 0;
+            color: #334155;
+            white-space: nowrap;
+        }
+
+        .manual-numbered-summary-date--overlap {
+            color: #b42318;
+            font-weight: 700;
+        }
+
+        .manual-numbered-summary-date--missing {
+            color: #64748b;
+            font-style: italic;
+        }
+
         .fu-badge {
             display: inline-block;
             padding: 0.2mm 0.8mm;
@@ -1850,6 +2015,68 @@
         </div>
     </main>
     @endforeach
+
+    @if($isManualTimetable && $manualNumberedGroups->isNotEmpty())
+        <div class="pdf-page-courses manual-numbered-summary-page">
+            <div class="courses-header">
+                <h1 class="courses-title">Nummern- und Terminübersicht</h1>
+                <div class="courses-meta">
+                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['generated_at'] ?? null]) as $meta)
+                        <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
+                    @endforeach
+                </div>
+            </div>
+            <div class="manual-numbered-summary-legend">
+                Rot markierte Termine überschneiden sich mit mindestens einem weiteren Unterricht.
+            </div>
+
+            @foreach($manualNumberedGroups as $numberedGroup)
+                <section class="manual-numbered-summary-group @if(str_starts_with($numberedGroup['reference'], '!')) manual-numbered-summary-group--overlap @endif">
+                    <div class="manual-numbered-summary-heading">
+                        {{ $numberedGroup['title'] ?: 'Mehrfachbelegung' }}
+                        @foreach(array_filter([$numberedGroup['weekday'] ?? null, ! empty($numberedGroup['hour']) ? $numberedGroup['hour'].'. Std.' : null]) as $context)
+                            <span> &middot; {{ $context }}</span>
+                        @endforeach
+                    </div>
+                    <table class="manual-numbered-summary-table">
+                        <tbody>
+                            @foreach($numberedGroup['courses'] as $course)
+                                <tr>
+                                    <td class="manual-numbered-summary-reference-cell">
+                                        <span class="manual-numbered-summary-reference">{{ $numberedGroup['reference'] }}</span>
+                                    </td>
+                                    <td class="manual-numbered-summary-course-cell">
+                                        @if($course['identifier'] !== '')
+                                            <span class="manual-numbered-summary-identifier">{{ $course['identifier'] }}</span>
+                                        @endif
+                                        <span class="manual-numbered-summary-course-title">{{ $course['label'] }}</span>
+                                    </td>
+                                    <td class="manual-numbered-summary-dates-cell">
+                                        @forelse($course['dates'] as $dateItem)
+                                            @php
+                                                $summaryDateTime = collect([
+                                                    $formatManualSummaryDate((string) ($dateItem['date'] ?? '')),
+                                                    $course['time'] ?? '',
+                                                ])->filter()->implode(' · ');
+                                            @endphp
+                                            <span class="manual-numbered-summary-date{{ ! empty($dateItem['is_overlap']) ? ' manual-numbered-summary-date--overlap' : '' }}">{{ $summaryDateTime }}</span>
+                                        @empty
+                                            <span class="manual-numbered-summary-date manual-numbered-summary-date--missing">
+                                                Keine exakten Termine verfügbar
+                                                @if($course['time'] !== '')
+                                                    <span> &middot; {{ $course['time'] }}</span>
+                                                @endif
+                                            </span>
+                                        @endforelse
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </section>
+            @endforeach
+        </div>
+    @endif
 
     @if($printCourseList && $courseDirectory->isNotEmpty())
         <div class="pdf-page-courses">
