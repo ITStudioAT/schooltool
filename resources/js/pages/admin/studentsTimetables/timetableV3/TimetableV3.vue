@@ -1518,7 +1518,7 @@
                             </div>
                             <div>
                                 <h4 id="timetable-v3-manual-module-catalog-title">
-                                    {{ planningMode === 'with_student' ? 'Studierenden Module' : 'Hauptmodule' }}
+                                    {{ planningMode === 'with_student' ? 'Studierenden Module' : 'Alle Module' }}
                                 </h4>
                                 <p>
                                     {{ planningMode === 'with_student'
@@ -1540,13 +1540,13 @@
                                 'timetable-v3__manual-module-catalog-heading--selected': manualModuleCatalogView === 'main',
                             }"
                             :aria-pressed="manualModuleCatalogView === 'main'"
-                            aria-label="Hauptmodule"
+                            aria-label="Alle Module"
                             @click="showManualModuleCatalog('main')">
                             <div class="timetable-v3__main-module-heading-icon">
                                 <v-icon icon="mdi-bookshelf" size="21" />
                             </div>
                             <div>
-                                <h4>Hauptmodule</h4>
+                                <h4>Alle Module</h4>
                                 <p>
                                     Alle verfügbaren Module und Unterrichte stehen für den manuellen Stundenplan bereit.
                                 </p>
@@ -1557,7 +1557,7 @@
                     <div
                         class="timetable-v3__module-group-cards"
                         :class="{ 'timetable-v3__module-group-cards--main': manualModuleCatalogUsesMainGroups }"
-                        :aria-label="manualModuleCatalogUsesMainGroups ? 'Hauptmodule' : 'Studierenden Module'">
+                        :aria-label="manualModuleCatalogUsesMainGroups ? 'Alle Module' : 'Studierenden Module'">
                         <button
                             v-for="group in visibleManualModuleCatalogGroups"
                             :key="`manual-${manualModuleCatalogView}-${group.key}`"
@@ -4039,6 +4039,8 @@ export default {
                 time_from: String(courseGroup.starts_at || courseGroup.time_from || '').trim().slice(0, 5),
                 time_until: String(courseGroup.ends_at || courseGroup.time_until || '').trim().slice(0, 5),
                 is_fu: entry?.isDistanceLearningCourse === true,
+                is_kompaktunterricht: courseGroup.is_kompaktunterricht === true,
+                is_block: courseGroup.is_block === true,
                 recurrence_label: recurrenceLabel,
                 recurrence_interval: Number(courseGroup.recurrence_interval || 0) || null,
             }

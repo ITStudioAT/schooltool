@@ -7,16 +7,96 @@
         $printOptions = $data['print_options'] ?? [];
         $printSingleWeeks = ($printOptions['single_weeks'] ?? false) === true;
         $printCourseList = ($printOptions['course_list'] ?? true) !== false;
-        $printCourseOverview = ($printOptions['course_overview'] ?? true) !== false;
         $isManualTimetable = ! empty($data['manual_cover']);
+        $printSubjectOverview = $isManualTimetable || ($printOptions['course_overview'] ?? true) !== false;
+        $pdfCourseNames = [
+            'BOKS' => 'Bosnisch/Kroatisch/Serbisch',
+            'BU' => 'Biologie',
+            'CH' => 'Chemie',
+            'D' => 'Deutsch',
+            'D_DK' => 'Deutsch',
+            'DAF' => 'Deutsch als Fremdsprache',
+            'E' => 'Englisch',
+            'E_DK' => 'Englisch',
+            'ETH' => 'Ethik',
+            'F' => 'Französisch',
+            'GPB' => 'Geschichte und Politische Bildung',
+            'GUS' => 'Gesundheit und Soziales',
+            'GWB' => 'Geografie und wirtschaftliche Bildung',
+            'INF' => 'Informatik',
+            'KG' => 'Kunst und Gestaltung',
+            'L' => 'Latein',
+            'LET' => 'Lern- und Präsentationstechniken',
+            'LPT' => 'Lern- und Präsentationstechniken',
+            'M' => 'Mathematik',
+            'M_DK' => 'Mathematik',
+            'MU' => 'Musikerziehung',
+            'OKON' => 'Ökonomie und Ökologie',
+            'PH' => 'Physik',
+            'PP' => 'Philosophie/Psychologie',
+            'REV' => 'Religion evangelisch',
+            'RIS' => 'Religion Islam',
+            'RK' => 'Religion katholisch',
+            'ROR' => 'Religion orthodox',
+            'SPA' => 'Spanisch',
+        ];
+        $formatPdfCourseName = function (?string $label, ?string $identifier = null) use ($pdfCourseNames): string {
+            $label = trim((string) $label);
+            if ($label === '') {
+                return '';
+            }
+
+            $normalizedLabel = mb_strtoupper($label);
+            if (isset($pdfCourseNames[$normalizedLabel])) {
+                $courseName = $pdfCourseNames[$normalizedLabel];
+                $identifierPrefix = preg_split('/\s*-\s*/u', trim((string) $identifier), 2)[0] ?? '';
+
+                if (preg_match('/^([\p{L}_]+)\s*(\d+(?:\.\d+)?)$/u', $identifierPrefix, $identifierMatches) === 1) {
+                    $identifierCourseName = $pdfCourseNames[mb_strtoupper($identifierMatches[1])] ?? null;
+                    if ($identifierCourseName !== null && mb_strtoupper($identifierCourseName) === mb_strtoupper($courseName)) {
+                        return mb_strtoupper("{$courseName} {$identifierMatches[2]}");
+                    }
+                }
+
+                return mb_strtoupper($courseName);
+            }
+
+            if (preg_match('/^([\p{L}_]+)\s*(\d+(?:\.\d+)?)$/u', $label, $matches) === 1) {
+                $courseName = $pdfCourseNames[mb_strtoupper($matches[1])] ?? null;
+                if ($courseName !== null) {
+                    return mb_strtoupper("{$courseName} {$matches[2]}");
+                }
+            }
+
+            return $label;
+        };
+        $formatPdfCourseShortName = function (array $course) use ($pdfCourseNames): string {
+            $identifier = trim((string) ($course['identifier'] ?? ''));
+            $label = trim((string) ($course['label'] ?? ''));
+            $normalizedLabel = mb_strtoupper($label);
+
+            if (isset($pdfCourseNames[$normalizedLabel])) {
+                return $normalizedLabel;
+            }
+
+            if (preg_match('/^([\p{L}_]+)\s*\d+(?:\.\d+)?$/u', $label, $matches) === 1
+                && isset($pdfCourseNames[mb_strtoupper($matches[1])])) {
+                return $normalizedLabel;
+            }
+
+            $source = $identifier !== '' ? $identifier : $label;
+            $shortName = preg_split('/\s*-\s*/u', $source, 2)[0] ?? $source;
+
+            return mb_strtoupper(trim($shortName));
+        };
         $weekdayLabels = collect($data['weekdays'] ?? [])->pluck('label')->all();
         $hasSaturdayColumn = collect($weekdayLabels)
             ->contains(fn ($weekdayLabel): bool => mb_strtolower(trim((string) $weekdayLabel)) === 'samstag');
-        $manualBodyFontSize = $hasSaturdayColumn ? 6 : 6.5;
-        $manualHeaderFontSize = $hasSaturdayColumn ? 6.5 : 7;
-        $manualDetailFontSize = $hasSaturdayColumn ? 5 : 5.5;
-        $manualCourseLabelFontSize = $hasSaturdayColumn ? 5.25 : 5.75;
-        $manualTimeFontSize = $hasSaturdayColumn ? 7 : 7.5;
+        $manualBodyFontSize = $hasSaturdayColumn ? 6.5 : 7;
+        $manualHeaderFontSize = $hasSaturdayColumn ? 7 : 7.5;
+        $manualDetailFontSize = $hasSaturdayColumn ? 5.25 : 5.75;
+        $manualCourseLabelFontSize = $hasSaturdayColumn ? 7 : 8;
+        $manualTimeFontSize = $hasSaturdayColumn ? 7.5 : 8;
         $semesters = collect($data['semesters'] ?? []);
         $metricSemesters = $printSingleWeeks
             ? $semesters->map(fn (array $semester): array => [
@@ -34,9 +114,14 @@
             || ! empty($course['isKompaktunterricht'])
             || ! empty($course['isKompaktunterrichtCourse'])
             || preg_match('/\bKompakt(?:unterricht)?\b/iu', (string) ($course['details'] ?? '')) === 1;
-        $courseLearningModeLabel = fn (array $course): string => $isCompactCourse($course)
-            ? 'Kompaktunterricht'
-            : (! empty($course['is_fu']) ? 'Fernunterricht' : '');
+        $isBlockCourse = fn (array $course): bool => ! empty($course['is_block'])
+            || preg_match('/\bBlock(?:unterricht)?\b/iu', (string) ($course['details'] ?? '')) === 1;
+        $courseLearningModeLabel = fn (array $course): string => collect([
+            $isCompactCourse($course)
+                ? 'Kompaktunterricht'
+                : (! empty($course['is_fu']) ? 'Fernunterricht' : null),
+            $isBlockCourse($course) ? 'Block' : null,
+        ])->filter()->unique()->implode(' · ');
         $parseCourseWeekParityDate = function (?string $date): ?\Carbon\Carbon {
             $date = trim((string) $date);
             if ($date === '') {
@@ -190,12 +275,10 @@
                                     'title' => trim((string) ($marker['title'] ?? '')),
                                     'weekday' => $weekdayLabels[$cellIdx] ?? '',
                                     'hour' => (int) ($hr['hour'] ?? 0),
-                                    'courses' => $cellCourses->map(function (array $course) use ($timeFrom, $timeUntil): array {
-                                        $courseTimeFrom = trim((string) ($course['time_from'] ?? '')) ?: $timeFrom;
-                                        $courseTimeUntil = trim((string) ($course['time_until'] ?? '')) ?: $timeUntil;
-                                        $time = collect([$courseTimeFrom, $courseTimeUntil])
-                                            ->filter()
-                                            ->implode(' - ');
+                                    'time' => collect([$timeFrom, $timeUntil])
+                                        ->filter()
+                                        ->implode(' - '),
+                                    'courses' => $cellCourses->map(function (array $course) use ($formatPdfCourseName): array {
                                         $overlapDates = collect($course['overlap_dates'] ?? [])
                                             ->map(fn ($date): string => trim((string) $date))
                                             ->filter()
@@ -204,8 +287,7 @@
 
                                         return [
                                             'identifier' => trim((string) ($course['identifier'] ?? '')),
-                                            'label' => trim((string) ($course['label'] ?? '')),
-                                            'time' => $time,
+                                            'label' => $formatPdfCourseName($course['label'] ?? null, $course['identifier'] ?? null),
                                             'dates' => collect($course['dates'] ?? [])
                                                 ->map(fn ($date): string => trim((string) $date))
                                                 ->filter()
@@ -224,13 +306,14 @@
                         }
 
                         foreach ($cellCourses as $crs) {
-                            $crsLabel = trim((string) ($crs['label'] ?? ''));
+                            $crsLabel = $formatPdfCourseName($crs['label'] ?? null, $crs['identifier'] ?? null);
                             if ($crsLabel === '') {
                                 continue;
                             }
                             $isCompact = $isCompactCourse($crs);
                             $allCourseSlots->push([
                                 'label' => $crsLabel,
+                                'short_label' => $formatPdfCourseShortName($crs),
                                 'details' => trim($courseDetailsWithWeekParity($crs)),
                                 'dates' => array_filter(array_map('trim', (array) ($crs['dates'] ?? []))),
                                 'semester' => $semLabel,
@@ -242,6 +325,7 @@
                                 'status' => $cellStatus,
                                 'is_compact' => $isCompact,
                                 'is_fu' => ! $isCompact && ! empty($crs['is_fu']),
+                                'is_block' => $isBlockCourse($crs),
                                 'recurrence_label' => trim((string) ($crs['recurrence_label'] ?? '')),
                                 'recurrence_interval' => (int) ($crs['recurrence_interval'] ?? 0),
                             ]);
@@ -250,22 +334,6 @@
                 }
             }
         }
-        $slotTimeParts = function (array $slot): array {
-            return array_map(
-                fn (string $time): string => trim($time),
-                array_pad(preg_split('/\s*[–-]\s*/u', (string) ($slot['time'] ?? ''), 2) ?: [], 2, ''),
-            );
-        };
-        $mergeSlotDetails = function (string $leftDetails = '', string $rightDetails = '') use ($detailSeparatorPattern): string {
-            return collect([$leftDetails, $rightDetails])
-                ->flatMap(fn (string $details): array => preg_split($detailSeparatorPattern, $details) ?: [])
-                ->map(fn (string $detail): string => trim($detail))
-                ->filter()
-                ->unique()
-                ->values()
-                ->implode(' · ');
-        };
-
         $slotRecurrenceInterval = function (array $slot) use ($detailSeparatorPattern): int {
             $explicitInterval = (int) ($slot['recurrence_interval'] ?? 0);
             if ($explicitInterval > 1) {
@@ -303,6 +371,7 @@
         };
         $courseDirectoryKey = fn (array $slot): string => implode('|', [
             $slot['label'] ?? '',
+            $slot['short_label'] ?? '',
             $slotRecurrenceSignature($slot),
         ]);
 
@@ -312,89 +381,126 @@
                 $c['weekday'],
                 $c['hour'],
                 $c['label'],
+                $c['short_label'],
                 $slotRecurrenceSignature($c),
             ]))
             ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
             ->values();
+        $subjectOverviewWeekdays = collect([
+            0 => 'Montag',
+            1 => 'Dienstag',
+            2 => 'Mittwoch',
+            3 => 'Donnerstag',
+            4 => 'Freitag',
+            5 => 'Samstag',
+        ]);
+        $compactSubjectOverviewTimes = function ($slots): string {
+            $compactedTimeRanges = [];
 
-        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts, $mergeSlotDetails, $slotRecurrenceSignature) {
-            $mergedSlots = collect();
+            foreach ($slots as $slot) {
+                $timeRange = str_replace('–', '-', trim((string) ($slot['time'] ?? '')));
+                $hour = (int) ($slot['hour'] ?? 0);
+                if ($timeRange === '') {
+                    continue;
+                }
 
-            $slots
-                ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
-                ->groupBy(fn (array $slot): string => implode('|', [
-                    $slot['semester'] ?? '',
-                    $slot['weekday'] ?? '',
-                    $slot['label'] ?? '',
-                    $slot['status'] ?? '',
-                    !empty($slot['is_fu']) ? 'fu' : 'regular',
-                    $slotRecurrenceSignature($slot),
-                ]))
-                ->each(function ($groupedSlots) use ($mergedSlots, $slotTimeParts, $mergeSlotDetails): void {
-                    $currentSlot = null;
-                    $previousHour = null;
-                    $until = '';
+                if (preg_match('/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/u', $timeRange, $matches) !== 1) {
+                    $compactedTimeRanges[] = ['label' => $timeRange];
 
-                    $pushCurrentSlot = function () use (&$currentSlot, &$previousHour, &$until, $mergedSlots): void {
-                        if ($currentSlot === null) {
-                            return;
-                        }
+                    continue;
+                }
 
-                        $startHour = (int) ($currentSlot['hour'] ?? 0);
-                        $endHour = (int) ($previousHour ?? $startHour);
-                        $currentSlot['hour_label'] = $startHour === $endHour
-                            ? "{$startHour}."
-                            : "{$startHour}.-{$endHour}.";
+                $lastIndex = array_key_last($compactedTimeRanges);
+                if ($lastIndex !== null
+                    && isset($compactedTimeRanges[$lastIndex]['last_hour'])
+                    && $compactedTimeRanges[$lastIndex]['last_hour'] + 1 === $hour) {
+                    $compactedTimeRanges[$lastIndex]['until'] = $matches[2];
+                    $compactedTimeRanges[$lastIndex]['last_hour'] = $hour;
+                    $compactedTimeRanges[$lastIndex]['label'] = "{$compactedTimeRanges[$lastIndex]['from']} - {$matches[2]}";
 
-                        [$from] = array_pad(preg_split('/\s*[–-]\s*/u', (string) ($currentSlot['time'] ?? ''), 2) ?: [], 2, '');
-                        $from = trim((string) $from);
-                        $currentSlot['time'] = ($from !== '' && $until !== '')
-                            ? "{$from} – {$until}"
-                            : trim(collect([$from, $until])->filter()->implode(' – '));
+                    continue;
+                }
 
-                        $mergedSlots->push($currentSlot);
-                    };
+                $compactedTimeRanges[] = [
+                    'from' => $matches[1],
+                    'until' => $matches[2],
+                    'last_hour' => $hour,
+                    'label' => "{$matches[1]} - {$matches[2]}",
+                ];
+            }
 
-                    foreach ($groupedSlots->values() as $slot) {
-                        $hour = (int) ($slot['hour'] ?? 0);
-                        [, $slotUntil] = $slotTimeParts($slot);
-
-                        if ($currentSlot === null) {
-                            $currentSlot = $slot;
-                            $previousHour = $hour;
-                            $until = $slotUntil;
-
-                            continue;
-                        }
-
-                        if ($hour === (int) $previousHour + 1) {
-                            $currentSlot['details'] = $mergeSlotDetails(
-                                (string) ($currentSlot['details'] ?? ''),
-                                (string) ($slot['details'] ?? ''),
-                            );
-                            $previousHour = $hour;
-                            $until = $slotUntil !== '' ? $slotUntil : $until;
-
-                            continue;
-                        }
-
-                        $pushCurrentSlot();
-                        $currentSlot = $slot;
-                        $previousHour = $hour;
-                        $until = $slotUntil;
-                    }
-
-                    $pushCurrentSlot();
-                });
-
-            return $mergedSlots
-                ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
-                ->values();
+            return collect($compactedTimeRanges)
+                ->pluck('label')
+                ->unique()
+                ->implode(', ');
         };
-        $courseSemesters = $allCourseSlots->groupBy('semester');
-        $courseOverviewSemesters = $courseSemesters
-            ->map(fn ($slots) => $mergeCourseOverviewSlots($slots))
-            ->filter(fn ($slots): bool => $slots->isNotEmpty());
+        $subjectOverviewHints = function ($slots) use ($courseTwoWeekParitySuffix, $slotRecurrenceInterval): array {
+            $twoWeeklyHints = $slots
+                ->filter(fn (array $slot): bool => $slotRecurrenceInterval($slot) === 2)
+                ->map(function (array $slot) use ($courseTwoWeekParitySuffix): string {
+                    $details = (string) ($slot['details'] ?? '');
+                    $parity = preg_match('/\b2\s*-?\s*w(?:öchig|öching|ochig)?\s+([AB])\b/iu', $details, $matches) === 1
+                        ? mb_strtoupper($matches[1])
+                        : trim($courseTwoWeekParitySuffix((array) ($slot['dates'] ?? [])));
+
+                    return '2-wöchig'.($parity !== '' ? " {$parity}" : '');
+                })
+                ->unique()
+                ->values();
+
+            return collect([
+                $slots->contains(fn (array $slot): bool => ! empty($slot['is_fu'])) ? 'Fernunterricht' : null,
+                ...$twoWeeklyHints->all(),
+                $slots->contains(fn (array $slot): bool => ! empty($slot['is_compact'])) ? 'Kompaktunterricht' : null,
+                $slots->contains(fn (array $slot): bool => ! empty($slot['is_block'])) ? 'Block' : null,
+            ])->filter()->unique()->values()->all();
+        };
+        $subjectOverviewHintDates = function ($slots) use ($parseCourseWeekParityDate, $slotRecurrenceInterval): array {
+            return $slots
+                ->filter(fn (array $slot): bool => $slotRecurrenceInterval($slot) === 2 || ! empty($slot['is_block']))
+                ->flatMap(fn (array $slot): array => (array) ($slot['dates'] ?? []))
+                ->map(fn ($date): ?\Carbon\Carbon => $parseCourseWeekParityDate((string) $date))
+                ->filter()
+                ->unique(fn (\Carbon\Carbon $date): string => $date->toDateString())
+                ->sortBy(fn (\Carbon\Carbon $date): string => $date->toDateString())
+                ->map(fn (\Carbon\Carbon $date): string => $date->format('d.m.'))
+                ->values()
+                ->all();
+        };
+        $subjectOverviewRows = $allCourseSlots
+            ->filter(fn (array $slot): bool => (int) ($slot['hour'] ?? 0) > 0)
+            ->groupBy(fn (array $slot): string => implode('|', [
+                $slot['label'] ?? '',
+                $slot['short_label'] ?? '',
+                $slot['weekday_index'] ?? '',
+            ]))
+            ->map(function ($slots) use ($compactSubjectOverviewTimes, $subjectOverviewHintDates, $subjectOverviewHints, $subjectOverviewWeekdays): array {
+                $slots = $slots
+                    ->sortBy('hour')
+                    ->unique('hour')
+                    ->values();
+                $firstSlot = $slots->first();
+                $weekdayIndex = (int) ($firstSlot['weekday_index'] ?? -1);
+
+                return [
+                    'course_name' => $firstSlot['label'] ?? '',
+                    'short_name' => $firstSlot['short_label'] ?? '',
+                    'weekday' => $subjectOverviewWeekdays->get($weekdayIndex, $firstSlot['weekday'] ?? ''),
+                    'weekday_index' => $weekdayIndex,
+                    'hours' => $slots
+                        ->map(fn (array $slot): string => ((int) ($slot['hour'] ?? 0)).'.')
+                        ->implode(', '),
+                    'times' => $compactSubjectOverviewTimes($slots),
+                    'hints' => $subjectOverviewHints($slots),
+                    'hint_dates' => $subjectOverviewHintDates($slots),
+                ];
+            })
+            ->sortBy(fn (array $row): string => implode('|', [
+                mb_strtolower((string) $row['course_name']),
+                mb_strtolower((string) $row['short_name']),
+                str_pad((string) $row['weekday_index'], 2, '0', STR_PAD_LEFT),
+            ]), SORT_NATURAL)
+            ->values();
         $directorySlotSummary = function ($slots): string {
             return $slots
                 ->groupBy('weekday')
@@ -792,7 +898,7 @@
         $formatManualSummaryDate = function (string $date) use ($parseTimetableDate): string {
             $parsedDate = $parseTimetableDate($date);
 
-            return $parsedDate?->format('d.m.Y') ?? $date;
+            return $parsedDate?->format('d.m.') ?? $date;
         };
 
         $semesterStartDate = function (array $semester) use ($parseTimetableDate): ?\Carbon\Carbon {
@@ -1138,6 +1244,12 @@
             break-before: page;
         }
 
+        .pdf-page--manual-timetable th,
+        .pdf-page--manual-timetable td {
+            text-align: center;
+            vertical-align: middle;
+        }
+
         .pdf-page--manual-timetable td {
             height: {{ number_format($rowHeight, 2, '.', '') }}mm;
             max-height: {{ number_format($rowHeight, 2, '.', '') }}mm;
@@ -1147,7 +1259,7 @@
         }
 
         .pdf-page--manual-timetable .cell-content {
-            height: {{ number_format(max(3.5, $rowHeight - 1.7), 2, '.', '') }}mm;
+            height: auto;
             max-height: {{ number_format(max(3.5, $rowHeight - 1.7), 2, '.', '') }}mm;
             overflow: hidden;
         }
@@ -1157,12 +1269,12 @@
         }
 
         .pdf-page--manual-timetable .title {
-            font-size: 9pt;
+            font-size: 10pt;
         }
 
         .pdf-page--manual-timetable .meta {
             margin-top: 0.2mm;
-            font-size: 7pt;
+            font-size: 7.5pt;
             line-height: 1;
         }
 
@@ -1193,8 +1305,24 @@
             font-size: {{ number_format($manualTimeFontSize, 2, '.', '') }}pt;
         }
 
+        .pdf-page--manual-timetable .course-label {
+            display: block;
+            width: auto;
+        }
+
         .pdf-page--manual-timetable .course-label-main {
+            display: block;
+            overflow: visible;
             font-size: {{ number_format($manualCourseLabelFontSize, 2, '.', '') }}pt;
+            text-overflow: clip;
+            white-space: normal;
+            width: auto;
+        }
+
+        .pdf-page--manual-timetable .course-identifier {
+            display: block;
+            margin: 0.2mm 0 0;
+            width: auto;
         }
 
         .pdf-page--manual-timetable .courses-grid--two-columns {
@@ -1222,6 +1350,45 @@
 
         .pdf-page--manual-timetable .courses-grid--two-columns .course-grid-row + .courses-grid-row .course {
             margin-top: 0.15mm;
+        }
+
+        .pdf-page--manual-timetable .courses-grid-row + .courses-grid-row .course {
+            margin-top: 0.35mm;
+            padding-top: 0.35mm;
+            border-top: 0.15mm solid rgba(100, 116, 139, 0.35);
+        }
+
+        .pdf-page--manual-timetable .courses-grid--stacked .course-information-row {
+            margin-top: 0.1mm;
+        }
+
+        .pdf-page--manual-timetable .course-information-row {
+            margin-top: 0.25mm;
+            overflow: hidden;
+            color: #1d4ed8;
+            font-size: {{ number_format($manualDetailFontSize, 2, '.', '') }}pt;
+            font-weight: 700;
+            line-height: 1.05;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .pdf-page--manual-timetable .course-information-row .course-details,
+        .pdf-page--manual-timetable .course-information-row .course-fu,
+        .pdf-page--manual-timetable .course-information-row .course-detail-line {
+            display: inline;
+            margin: 0;
+            overflow: visible;
+            color: #1d4ed8;
+            font-size: inherit;
+            font-weight: 700;
+            line-height: inherit;
+            text-overflow: clip;
+            white-space: nowrap;
+        }
+
+        .pdf-page--manual-timetable .course-information-row .course-details + .course-fu::before {
+            content: " ";
         }
 
         .pdf-content {
@@ -1647,12 +1814,83 @@
             color: #64748b;
         }
 
-        .manual-numbered-summary-legend {
-            margin: -1mm 0 4mm;
-            color: #64748b;
-            font-size: 8pt;
-            line-height: 1.4;
+        .subject-overview-page .header {
+            margin-bottom: 3mm;
         }
+
+        .subject-overview-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            color: #0f172a;
+            font-size: 8pt;
+            line-height: 1.3;
+        }
+
+        .subject-overview-table th {
+            padding: 1.2mm 1.5mm;
+            background: #dbeafe;
+            color: #1e3a8a;
+            font-size: 7.5pt;
+            font-weight: 700;
+            text-align: left;
+            border: none;
+            border-bottom: 0.4mm solid #93c5fd;
+        }
+
+        .subject-overview-table td {
+            padding: 1.2mm 1.5mm;
+            background: #ffffff;
+            border: none;
+            border-bottom: 0.2mm solid #e2e8f0;
+            vertical-align: middle;
+        }
+
+        .subject-overview-table tr:nth-child(even) td {
+            background: #f8fafc;
+        }
+
+        .subject-overview-course-name {
+            color: #172554;
+            font-weight: 700;
+        }
+
+        .subject-overview-short-name,
+        .subject-overview-hours {
+            color: #1e3a8a;
+            font-weight: 700;
+        }
+
+        .subject-overview-day,
+        .subject-overview-times {
+            color: #475569;
+        }
+
+        .subject-overview-hints {
+            color: #1d4ed8;
+            font-weight: 700;
+        }
+
+        .subject-overview-hint {
+            display: block;
+            white-space: nowrap;
+        }
+
+        .subject-overview-hint-dates {
+            display: block;
+            margin-top: 0.5mm;
+            color: #475569;
+            font-size: 7pt;
+            font-weight: 400;
+            line-height: 1.2;
+        }
+
+        .subject-overview-table .col-subject-name { width: 23%; }
+        .subject-overview-table .col-subject-short-name { width: 11%; }
+        .subject-overview-table .col-subject-day { width: 12%; }
+        .subject-overview-table .col-subject-hours { width: 12%; }
+        .subject-overview-table .col-subject-times { width: 20%; }
+        .subject-overview-table .col-subject-hints { width: 22%; }
 
         .manual-numbered-summary-group {
             margin-bottom: 3mm;
@@ -1732,11 +1970,16 @@
             margin-right: 1.4mm;
             color: #1e3a8a;
             font-weight: 700;
+            line-height: 1.4;
+            vertical-align: middle;
         }
 
         .manual-numbered-summary-course-title {
+            display: inline-block;
             color: #0f172a;
             font-weight: 700;
+            line-height: 1.4;
+            vertical-align: middle;
         }
 
         .manual-numbered-summary-date {
@@ -1940,26 +2183,36 @@
                                                         @php
                                                             $courses = $cellCourses;
                                                             $hasDenseCourses = $courses->count() > 1;
+                                                            $usesTwoColumnCourses = $hasDenseCourses && ! $isManualTimetable;
+                                                            $usesStackedCourses = $hasDenseCourses && $isManualTimetable;
                                                             $shownCourses = $courses;
                                                         @endphp
 
-                                                        <div class="courses-grid @if($hasDenseCourses) courses-grid--two-columns @endif">
-                                                            @foreach($shownCourses->chunk($hasDenseCourses ? 2 : 1) as $courseRow)
+                                                        <div @class([
+                                                            'courses-grid',
+                                                            'courses-grid--two-columns' => $usesTwoColumnCourses,
+                                                            'courses-grid--stacked' => $usesStackedCourses,
+                                                        ])>
+                                                            @foreach($shownCourses->chunk($usesTwoColumnCourses ? 2 : 1) as $courseRow)
                                                                 <div class="courses-grid-row">
                                                                     @foreach($courseRow as $course)
                                                                         <div class="course-grid-item">
-                                                                            <div class="course @if($hasDenseCourses) course--compact @endif">
+                                                                            <div class="course @if($usesTwoColumnCourses) course--compact @endif">
                                                                                 @php
-                                                                                    $titleLabel = $isManualTimetable
-                                                                                        ? trim((string) ($course['label'] ?? ''))
-                                                                                        : $courseTitleLabel($course);
+                                                                                    $titleLabel = $formatPdfCourseName(
+                                                                                        $isManualTimetable
+                                                                                            ? ($course['label'] ?? null)
+                                                                                            : $courseTitleLabel($course),
+                                                                                        $course['identifier'] ?? null
+                                                                                    );
                                                                                     $courseDetails = $courseDetailsForRendering($course);
+                                                                                    $isCompactCourseForRendering = $isCompactCourse($course);
                                                                                     $learningModeLabel = $courseLearningModeLabel($course);
                                                                                     $titleContext = $isManualTimetable ? '' : $courseTitleContext($course);
                                                                                     $courseIdentifier = $isManualTimetable
                                                                                         ? trim((string) ($course['identifier'] ?? ''))
                                                                                         : '';
-                                                                                    if ($learningModeLabel === 'Kompaktunterricht') {
+                                                                                    if ($isCompactCourseForRendering) {
                                                                                         $titleContext = $stripCompactMarkerText($titleContext);
                                                                                     }
                                                                                 @endphp
@@ -1977,11 +2230,15 @@
                                                                                 @if($courseIdentifier !== '')
                                                                                     <div class="course-identifier">{{ $courseIdentifier }}</div>
                                                                                 @endif
-                                                                                @if($courseDetails !== '')
-                                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, $timetablePage['is_additional'], $learningModeLabel === 'Kompaktunterricht') !!}</div>
-                                                                                @endif
-                                                                                @if($learningModeLabel !== '')
-                                                                                    <div class="course-fu">{{ $learningModeLabel }}</div>
+                                                                                @if($courseDetails !== '' || $learningModeLabel !== '')
+                                                                                    <div class="course-information-row">
+                                                                                        @if($courseDetails !== '')
+                                                                                            <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, $timetablePage['is_additional'], $isCompactCourseForRendering) !!}</div>
+                                                                                        @endif
+                                                                                        @if($learningModeLabel !== '')
+                                                                                            <div class="course-fu">{{ $learningModeLabel }}</div>
+                                                                                        @endif
+                                                                                    </div>
                                                                                 @endif
                                                                             </div>
                                                                         </div>
@@ -2018,26 +2275,29 @@
 
     @if($isManualTimetable && $manualNumberedGroups->isNotEmpty())
         <div class="pdf-page-courses manual-numbered-summary-page">
-            <div class="courses-header">
-                <h1 class="courses-title">Nummern- und Terminübersicht</h1>
-                <div class="courses-meta">
-                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['generated_at'] ?? null]) as $meta)
+            <div class="header">
+                <h1 class="title">Überschneidungen</h1>
+                <div class="meta">
+                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['subtitle'] ?? null, $data['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
             </div>
-            <div class="manual-numbered-summary-legend">
-                Rot markierte Termine überschneiden sich mit mindestens einem weiteren Unterricht.
-            </div>
 
             @foreach($manualNumberedGroups as $numberedGroup)
+                @php
+                    $manualSummaryHeadingContext = collect([
+                        $numberedGroup['title'] ?: 'Mehrfachbelegung',
+                        $numberedGroup['weekday'] ?? null,
+                        ! empty($numberedGroup['hour']) ? $numberedGroup['hour'].'. Std.' : null,
+                    ])->filter()->implode(' · ');
+                    $manualSummaryHeading = collect([
+                        $manualSummaryHeadingContext,
+                        $numberedGroup['time'] ?? null,
+                    ])->filter()->implode(' ');
+                @endphp
                 <section class="manual-numbered-summary-group @if(str_starts_with($numberedGroup['reference'], '!')) manual-numbered-summary-group--overlap @endif">
-                    <div class="manual-numbered-summary-heading">
-                        {{ $numberedGroup['title'] ?: 'Mehrfachbelegung' }}
-                        @foreach(array_filter([$numberedGroup['weekday'] ?? null, ! empty($numberedGroup['hour']) ? $numberedGroup['hour'].'. Std.' : null]) as $context)
-                            <span> &middot; {{ $context }}</span>
-                        @endforeach
-                    </div>
+                    <div class="manual-numbered-summary-heading">{{ $manualSummaryHeading }}:</div>
                     <table class="manual-numbered-summary-table">
                         <tbody>
                             @foreach($numberedGroup['courses'] as $course)
@@ -2053,19 +2313,10 @@
                                     </td>
                                     <td class="manual-numbered-summary-dates-cell">
                                         @forelse($course['dates'] as $dateItem)
-                                            @php
-                                                $summaryDateTime = collect([
-                                                    $formatManualSummaryDate((string) ($dateItem['date'] ?? '')),
-                                                    $course['time'] ?? '',
-                                                ])->filter()->implode(' · ');
-                                            @endphp
-                                            <span class="manual-numbered-summary-date{{ ! empty($dateItem['is_overlap']) ? ' manual-numbered-summary-date--overlap' : '' }}">{{ $summaryDateTime }}</span>
+                                            <span class="manual-numbered-summary-date{{ ! empty($dateItem['is_overlap']) ? ' manual-numbered-summary-date--overlap' : '' }}">{{ $formatManualSummaryDate((string) ($dateItem['date'] ?? '')) }}</span>
                                         @empty
                                             <span class="manual-numbered-summary-date manual-numbered-summary-date--missing">
                                                 Keine exakten Termine verfügbar
-                                                @if($course['time'] !== '')
-                                                    <span> &middot; {{ $course['time'] }}</span>
-                                                @endif
                                             </span>
                                         @endforelse
                                     </td>
@@ -2132,56 +2383,49 @@
         </div>
     @endif
 
-    @if($printCourseOverview && $courseOverviewSemesters->isNotEmpty())
-        <div class="pdf-page-courses">
-            <div class="courses-header">
-                <h1 class="courses-title">Kursübersicht</h1>
-                <div class="courses-meta">
+    @if($printSubjectOverview && $subjectOverviewRows->isNotEmpty())
+        <div class="pdf-page-courses subject-overview-page">
+            <div class="header">
+                <h1 class="title">Fächerübersicht</h1>
+                <div class="meta">
                     @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
             </div>
-
-            @foreach($courseOverviewSemesters as $semesterLabel => $slots)
-                <div class="courses-semester-title">
-                    {{ $semesterLabel }}
-                    @if($slots->first()['semester_range'] ?? '')
-                        <span>({{ $slots->first()['semester_range'] }})</span>
-                    @endif
-                </div>
-                <table class="courses-table">
-                    <thead>
+            <table class="subject-overview-table">
+                <thead>
+                    <tr>
+                        <th class="col-subject-name">Fachname</th>
+                        <th class="col-subject-short-name">Kurzname</th>
+                        <th class="col-subject-day">Tag</th>
+                        <th class="col-subject-hours">Stunde(n)</th>
+                        <th class="col-subject-times">Zeit(en)</th>
+                        <th class="col-subject-hints">Hinweise</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($subjectOverviewRows as $subjectOverviewRow)
                         <tr>
-                            <th class="col-weekday">Tag</th>
-                            <th class="col-hour">Std.</th>
-                            <th class="col-time">Zeit</th>
-                            <th class="col-label">Kurs</th>
-                            <th class="col-hints">Hinweise</th>
-                            <th class="col-details">Details</th>
+                            <td class="subject-overview-course-name">{{ $subjectOverviewRow['course_name'] }}</td>
+                            <td class="subject-overview-short-name">{{ $subjectOverviewRow['short_name'] }}</td>
+                            <td class="subject-overview-day">{{ $subjectOverviewRow['weekday'] }}</td>
+                            <td class="subject-overview-hours">{{ $subjectOverviewRow['hours'] }}</td>
+                            <td class="subject-overview-times">{{ $subjectOverviewRow['times'] }}</td>
+                            <td class="subject-overview-hints">
+                                @forelse($subjectOverviewRow['hints'] as $hint)
+                                    <span class="subject-overview-hint">{{ $hint }}</span>
+                                @empty
+                                    -
+                                @endforelse
+                                @if($subjectOverviewRow['hint_dates'] !== [])
+                                    <span class="subject-overview-hint-dates">{{ implode(', ', $subjectOverviewRow['hint_dates']) }}</span>
+                                @endif
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($slots as $slot)
-                            @php
-                                $slotHints = $courseDirectoryHintsByKey->get($courseDirectoryKey($slot), []);
-                            @endphp
-                            <tr>
-                                <td class="cell-weekday">{{ $slot['weekday'] }}</td>
-                                <td class="cell-hour">{{ $slot['hour_label'] ?? (($slot['hour'] ?? '') . '.') }}</td>
-                                <td class="cell-time">{{ $slot['time'] }}</td>
-                                <td class="cell-label">{{ $slot['label'] }}</td>
-                                <td class="cell-hints">
-                                    @foreach($slotHints as $hint)
-                                        <span class="course-hint">{{ $hint }}</span>
-                                    @endforeach
-                                </td>
-                                <td class="cell-details">{!! $formatDetailsHtml($slot['details'], false, true) !!}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            @endforeach
+                    @endforeach
+                </tbody>
+            </table>
         </div>
     @endif
 </body>

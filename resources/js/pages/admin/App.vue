@@ -16,6 +16,14 @@
             :title="config?.selected_school?.long_name || ''" />
 
         <v-main class="bg-background" v-if="config">
+            <v-progress-linear
+                :active="is_loading > 0"
+                absolute
+                color="primary"
+                height="3"
+                indeterminate
+                location="top"
+                aria-label="Seite wird geladen" />
             <admin-import-completion-listener
                 v-if="config.is_auth && config.user?.id"
                 :key="config.user.id"
@@ -27,9 +35,6 @@
                 @stop="stopImpersonationAndReturn" />
             <router-view></router-view>
             <its-notification />
-            <v-overlay :model-value="is_loading > 0" class="align-center justify-center" opacity="0.1">
-                <LoadingAnimation />
-            </v-overlay>
         </v-main>
 
         <v-footer app>
@@ -46,7 +51,6 @@ import AdminImportCompletionListener from '@/pages/admin/components/AdminImportC
 import AdminImpersonationAlert from '@/pages/admin/components/AdminImpersonationAlert.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
-import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -61,7 +65,6 @@ export default {
         AdminImpersonationAlert,
         AdminNavigationDrawer,
         ItsNotification,
-        LoadingAnimation,
     },
 
     data() {

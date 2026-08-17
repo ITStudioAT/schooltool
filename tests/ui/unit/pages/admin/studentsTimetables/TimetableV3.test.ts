@@ -1706,11 +1706,11 @@ describe('TimetableV3', () => {
         expect(manualModuleCatalogSource).not.toContain('isManualTimetableAdoption &&')
         expect(manualModuleCatalogSource).toContain('timetable-v3__manual-module-catalog-headings--with-student')
         expect(manualModuleCatalogSource).toContain(
-            "{{ planningMode === 'with_student' ? 'Studierenden Module' : 'Hauptmodule' }}",
+            "{{ planningMode === 'with_student' ? 'Studierenden Module' : 'Alle Module' }}",
         )
         expect(manualModuleCatalogSource).toContain('v-if="planningMode === \'with_student\'"')
-        expect(manualModuleCatalogSource).toContain('<h4>Hauptmodule</h4>')
-        expect(manualModuleCatalogSource).toContain('aria-label="Hauptmodule"')
+        expect(manualModuleCatalogSource).toContain('<h4>Alle Module</h4>')
+        expect(manualModuleCatalogSource).toContain('aria-label="Alle Module"')
         expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'student\')"')
         expect(manualModuleCatalogSource).toContain('@click="showManualModuleCatalog(\'main\')"')
         expect(manualModuleCatalogSource).toContain(':aria-pressed="manualModuleCatalogView === \'main\'"')
@@ -1800,6 +1800,7 @@ describe('TimetableV3', () => {
         const e3 = {
             ...courseEntry('e3', 'E3', ['2026-02-16', '2026-02-23']),
             name: 'Englisch 3',
+            isDistanceLearningCourse: true,
         }
         const e4 = courseEntry('e4', 'E4', ['2026-02-23', '2026-03-02'])
         const e5Course = courseEntry('e5', 'E5', ['2026-02-23'])
@@ -1817,9 +1818,17 @@ describe('TimetableV3', () => {
             courseGroup: {
                 ...m1Course.courseGroup,
                 recurrence_label: '2-wöchig',
+                is_kompaktunterricht: true,
             },
         }
-        const m2 = courseEntry('m2', 'M2', ['2026-04-20'])
+        const m2Course = courseEntry('m2', 'M2', ['2026-04-20'])
+        const m2 = {
+            ...m2Course,
+            courseGroup: {
+                ...m2Course.courseGroup,
+                is_block: true,
+            },
+        }
         const context: Record<string, any> = {
             adoptionDisplayedTimetable: {
                 slots: {
@@ -1896,6 +1905,9 @@ describe('TimetableV3', () => {
             label: 'ENGLISCH 3',
             identifier: 'E3-2Q-REIS',
             details: '',
+            is_fu: true,
+            is_kompaktunterricht: false,
+            is_block: false,
             recurrence_label: '1-wöchig',
             overlap_dates: ['2026-02-23'],
             time_from: '17:50',
@@ -1913,6 +1925,16 @@ describe('TimetableV3', () => {
             markers: [{ label: '2', title: 'Mehrfachbelegung' }],
         })
         expect(hours[1].cells[0].courses).toHaveLength(2)
+        expect(hours[1].cells[0].courses[0]).toMatchObject({
+            is_fu: false,
+            is_kompaktunterricht: true,
+            is_block: false,
+        })
+        expect(hours[1].cells[0].courses[1]).toMatchObject({
+            is_fu: false,
+            is_kompaktunterricht: false,
+            is_block: true,
+        })
         expect(hours[1].cells[0].courses[0].details).toBe('2-wöchig')
         expect(hours[1].cells[0].courses[0].overlap_dates).toEqual([])
 

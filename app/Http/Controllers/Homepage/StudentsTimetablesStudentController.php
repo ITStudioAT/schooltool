@@ -311,6 +311,8 @@ class StudentsTimetablesStudentController extends Controller
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates') => ['nullable', 'array', 'max:120'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*') => ['string', 'max:20'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_fu') => ['nullable', 'boolean'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_kompaktunterricht') => ['nullable', 'boolean'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_block') => ['nullable', 'boolean'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.recurrence_label') => ['nullable', 'string', 'max:80'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.recurrence_interval') => ['nullable', 'integer', 'min:1', 'max:12'],
             $key('semesters.*.weeks.*.hours.*.cells.*.markers') => ['array', 'max:10'],

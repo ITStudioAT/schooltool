@@ -11,3 +11,6 @@ The manual timetable PDF payload includes only hour rows containing at least one
 
 ## Match the manual PDF and back button sizes
 Use Vuetify size=large for the manual timetable PDF action so it matches the Zurück navigation button. Keep the button's outlined copper treatment and loading/disabled behavior unchanged.
+
+## Call the adoption main catalog Alle Module
+On V3 adoption/manual timetable pages, label the main-module catalog selector and its accessibility labels “Alle Module”. Keep internal main-module keys and backend structures unchanged.

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminApp from '@/pages/admin/App.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
@@ -24,6 +25,16 @@ describe('Admin app startup', () => {
         globalThis.axios = {
             get: vi.fn(),
         } as never
+    })
+
+    it('uses a non-blocking top progress bar for global loading', () => {
+        const source = readFileSync('resources/js/pages/admin/App.vue', 'utf8')
+
+        expect(source).toContain('<v-progress-linear')
+        expect(source).toContain(':active="is_loading > 0"')
+        expect(source).toContain('location="top"')
+        expect(source).not.toContain('<v-overlay')
+        expect(source).not.toContain('<LoadingAnimation')
     })
 
     it('loads admin config without an eager csrf-cookie request', async () => {

@@ -4799,6 +4799,26 @@ it('creates a timetable overview pdf from posted timetable data', function () {
         ->assertSuccessful();
 
     Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        foreach ([
+            'subject overview styles' => $pdf->contains('.subject-overview-table'),
+            'subject overview title' => $pdf->contains('<h1 class="title">Fächerübersicht</h1>'),
+            'course-name heading' => $pdf->contains('<th class="col-subject-name">Fachname</th>'),
+            'short-name heading' => $pdf->contains('<th class="col-subject-short-name">Kurzname</th>'),
+            'day heading' => $pdf->contains('<th class="col-subject-day">Tag</th>'),
+            'hours heading' => $pdf->contains('<th class="col-subject-hours">Stunde(n)</th>'),
+            'times heading' => $pdf->contains('<th class="col-subject-times">Zeit(en)</th>'),
+            'course name' => $pdf->contains('<td class="subject-overview-course-name">M2 - 2S - ALT</td>'),
+            'course short name' => $pdf->contains('<td class="subject-overview-short-name">M2</td>'),
+            'course weekday' => $pdf->contains('<td class="subject-overview-day">Montag</td>'),
+            'course hours' => $pdf->contains('<td class="subject-overview-hours">1., 2.</td>'),
+            'course times' => $pdf->contains('<td class="subject-overview-times">08:00 - 09:35</td>'),
+            'weekly plan removed' => ! $pdf->contains('Wochenplan'),
+            'compact hints still available' => substr_count($pdf->html, '<span class="course-hint">Kompaktkurs</span>') >= 2,
+            'subject overview is alphabetical' => strpos($pdf->html, '<td class="subject-overview-course-name">M2 - 2S - ALT</td>') < strpos($pdf->html, '<td class="subject-overview-course-name">PP2 - 2S - MAI</td>'),
+        ] as $message => $condition) {
+            expect($condition, $message)->toBeTrue();
+        }
+
         return $pdf->viewName === 'pdfs.students-timetable-overview'
             && $pdf->downloadName === 'stundenplan.pdf'
             && $pdf->isDownload()
@@ -4819,9 +4839,7 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('page-break-inside: auto;')
             && $pdf->contains('display: table-header-group;')
             && $pdf->contains('font-size: 8pt;')
-            && $pdf->contains('.courses-table .cell-weekday')
-            && $pdf->contains('.courses-table .col-hints { width: 14%; }')
-            && $pdf->contains('.courses-table .col-details { width: 34%; }')
+            && $pdf->contains('.subject-overview-table')
             && $pdf->contains('.courses-table .col-directory-label { width: 14%; }')
             && $pdf->contains('.courses-table .col-directory-hints { width: 12%; }')
             && $pdf->contains('.courses-table .col-directory-slots { width: 54%; }')
@@ -4832,8 +4850,8 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('Mo 1.-2.')
             && $pdf->contains('Mo 1.-2. 08:00 - 09:35')
             && $pdf->contains('<td class="cell-label">PP2 - 2S - MAI</td>')
-            && $pdf->contains('<td class="cell-hour">1.-2.</td>')
-            && $pdf->contains('<td class="cell-time">08:00 – 09:35</td>')
+            && $pdf->contains('<h1 class="title">Fächerübersicht</h1>')
+            && ! $pdf->contains('Wochenplan')
             && $pdf->contains('<span class="recurrence-detail">1-wöchig</span>')
             && $pdf->contains("08:00<br>\n                                                        08:45")
             && $pdf->contains('<div class="course-details"><span class="course-detail-line">dense-grid-detail</span></div>')
@@ -4850,8 +4868,6 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('GWB1-1RU-RAI')
             && $pdf->contains('20.02.-10.7.')
             && ! $pdf->contains('3RU-KOW 20.02.-10.7. (Kompakt)')
-            && $pdf->contains('<span class="course-detail-line">21.02.-25.04.</span>')
-            && $pdf->contains('<span class="course-detail-line">20.02.-10.7.</span>')
             && ! $pdf->contains('<span class="course-detail-line">21.02.-25.04. (Kompakt)</span>')
             && ! $pdf->contains('<span class="course-detail-line">20.02.-10.7. (Kompakt)</span>')
             && ! $pdf->contains('CH1-3RU-KOW 20.02.-10.7. (Kompakt)')
@@ -4866,9 +4882,7 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('content: " · ";')
             && $pdf->contains('<span class="course-hint">Kompaktkurs</span>')
             && $pdf->contains('<span class="course-hint">1-wöchentlich</span>')
-            && $pdf->contains('<th class="col-hints">Hinweise</th>')
             && substr_count($pdf->html, '<span class="course-hint">Kompaktkurs</span>') >= 2
-            && ! str_contains(substr($pdf->html, strrpos($pdf->html, '<div class="pdf-page-courses">') ?: 0), '<span class="recurrence-detail">')
             && $pdf->contains('margin-left: 1.4mm;')
             && ! $pdf->contains('Einzeltermine')
             && $pdf->contains('background: #f8fafc;')
@@ -4903,6 +4917,11 @@ it('creates a manual timetable pdf with an information cover and booking reminde
             'schoolyear' => '2025/26',
             'student' => '2Q · Reis Erika',
             'generated_at' => '17.08.2026, 10:30',
+            'print_options' => [
+                'single_weeks' => false,
+                'course_list' => false,
+                'course_overview' => false,
+            ],
             'study_selections' => [
                 ['label' => 'Ethik / Religion', 'value' => 'Ethik'],
                 ['label' => 'Sprache', 'value' => 'Französisch'],
@@ -4937,9 +4956,9 @@ it('creates a manual timetable pdf with an information cover and booking reminde
                                         'recurrence_label' => '1-wöchig',
                                     ],
                                     [
-                                        'label' => 'ENGLISCH 4',
-                                        'identifier' => 'E4-2Q-REIS',
-                                        'details' => '',
+                                        'label' => 'CH',
+                                        'identifier' => 'CH1-4A-KOW',
+                                        'details' => 'Laborunterricht',
                                         'dates' => ['2026-02-23', '2026-03-02'],
                                         'overlap_dates' => ['2026-02-23'],
                                         'time_from' => '08:00',
@@ -4967,23 +4986,36 @@ it('creates a manual timetable pdf with an information cover and booking reminde
                                 'status' => 'filled',
                                 'courses' => [
                                     [
-                                        'label' => 'MATHEMATIK 1',
-                                        'identifier' => 'M1-2Q-REIS',
-                                        'details' => '',
-                                        'dates' => ['2026-04-13'],
+                                        'label' => 'BOKS',
+                                        'identifier' => 'BOKS2-2Q-REIS',
+                                        'details' => '2-wöchig B',
+                                        'dates' => ['2026-04-13', '2026-05-11'],
                                         'overlap_dates' => [],
                                         'time_from' => '08:45',
                                         'time_until' => '09:30',
-                                        'recurrence_label' => '1-wöchig',
+                                        'is_fu' => true,
+                                        'recurrence_label' => '2-wöchig',
                                     ],
                                     [
-                                        'label' => 'MATHEMATIK 2',
-                                        'identifier' => 'M2-2Q-REIS',
+                                        'label' => 'GuS',
+                                        'identifier' => 'GUS-2Q-REIS',
                                         'details' => '',
                                         'dates' => ['2026-04-20'],
                                         'overlap_dates' => [],
                                         'time_from' => '08:45',
                                         'time_until' => '09:30',
+                                        'is_kompaktunterricht' => true,
+                                        'recurrence_label' => '1-wöchig',
+                                    ],
+                                    [
+                                        'label' => 'REV',
+                                        'identifier' => 'REV2-5CK-HOA',
+                                        'details' => '',
+                                        'dates' => ['2026-04-27', '2026-05-25'],
+                                        'overlap_dates' => [],
+                                        'time_from' => '08:45',
+                                        'time_until' => '09:30',
+                                        'is_block' => true,
                                         'recurrence_label' => '1-wöchig',
                                     ],
                                 ],
@@ -5005,28 +5037,79 @@ it('creates a manual timetable pdf with an information cover and booking reminde
         ->assertSuccessful();
 
     Pdf::assertRespondedWithPdf(function ($pdf): bool {
-        expect($pdf->contains('font-size: 6.50pt;'))->toBeTrue()
-            ->and($pdf->contains('font-size: 7.00pt;'))->toBeTrue()
-            ->and($pdf->contains('font-size: 5.50pt;'))->toBeTrue()
+        expect($pdf->contains('font-size: 7.00pt;'))->toBeTrue()
+            ->and($pdf->contains('font-size: 7.50pt;'))->toBeTrue()
             ->and($pdf->contains('font-size: 5.75pt;'))->toBeTrue()
-            ->and(preg_match('/\.pdf-page--manual-timetable td\.time-cell,\s*\.pdf-page--manual-timetable \.time-range\s*\{\s*font-size: 7\.50pt;/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.pdf-page--manual-timetable th,\s*\.pdf-page--manual-timetable td\s*\{\s*text-align: center;\s*vertical-align: middle;/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.pdf-page--manual-timetable \.cell-content\s*\{\s*height: auto;\s*max-height:/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.pdf-page--manual-timetable \.course-label-main\s*\{\s*display: block;\s*overflow: visible;\s*font-size: 8\.00pt;\s*text-overflow: clip;\s*white-space: normal;/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.pdf-page--manual-timetable \.course-identifier\s*\{\s*display: block;\s*margin: 0\.2mm 0 0;/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.pdf-page--manual-timetable td\.time-cell,\s*\.pdf-page--manual-timetable \.time-range\s*\{\s*font-size: 8\.00pt;/u', $pdf->html))->toBe(1)
             ->and($pdf->contains('--pdf-row-height: 20.00mm;'))->toBeTrue()
-            ->and(preg_match('/<div class="courses-grid\s+courses-grid--two-columns\s*">/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/<div class="courses-grid\s+courses-grid--two-columns\s*">/u', $pdf->html))->toBe(0)
+            ->and(substr_count($pdf->html, 'class="courses-grid courses-grid--stacked"'))->toBe(2)
+            ->and(substr_count($pdf->html, '<div class="courses-grid-row">') >= 4)->toBeTrue()
             ->and($pdf->contains('E3-2Q-REIS'))->toBeTrue()
-            ->and($pdf->contains('E4-2Q-REIS'))->toBeTrue()
+            ->and($pdf->contains('CH1-4A-KOW'))->toBeTrue()
             ->and(preg_match('/<span class="course-label-main">\s*ENGLISCH 3/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/<div class="course-label">\s*<span class="course-label-main">\s*ENGLISCH 3.*?<\/span>\s*<\/div>\s*<div class="course-identifier">E3-2Q-REIS<\/div>/su', $pdf->html))->toBe(1)
+            ->and(preg_match('/<span class="course-label-main">\s*CHEMIE 1/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/<span class="course-label-main">\s*BOSNISCH\/KROATISCH\/SERBISCH 2/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/<span class="course-label-main">\s*GESUNDHEIT UND SOZIALES/u', $pdf->html))->toBe(1)
+            ->and(preg_match('/<span class="course-label-main">\s*RELIGION EVANGELISCH 2/u', $pdf->html))->toBe(1)
             ->and($pdf->contains('<div class="course-identifier">E3-2Q-REIS</div>'))->toBeTrue()
             ->and($pdf->contains('title="Einzeltermin-Überschneidung">!1</span>'))->toBeTrue()
-            ->and($pdf->contains('<h1 class="courses-title">Nummern- und Terminübersicht</h1>'))->toBeTrue()
+            ->and(preg_match('/<div class="pdf-page-courses manual-numbered-summary-page">\s*<div class="header">\s*<h1 class="title">Überschneidungen<\/h1>/u', $pdf->html))->toBe(1)
+            ->and($pdf->contains('<h1 class="courses-title">Nummern- und Terminübersicht</h1>'))->toBeFalse()
+            ->and($pdf->contains('Rot markierte Termine überschneiden sich mit mindestens einem weiteren Unterricht.'))->toBeFalse()
+            ->and($pdf->contains('.manual-numbered-summary-legend'))->toBeFalse()
             ->and($pdf->contains('<span class="manual-numbered-summary-reference">!1</span>'))->toBeTrue()
             ->and($pdf->contains('<span class="manual-numbered-summary-reference">2</span>'))->toBeTrue()
             ->and($pdf->contains('<span class="manual-numbered-summary-identifier">E3-2Q-REIS</span>'))->toBeTrue()
             ->and($pdf->contains('<span class="manual-numbered-summary-course-title">ENGLISCH 3</span>'))->toBeTrue()
-            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">23.02.2026 · 08:00 - 08:45</span>'))->toBeTrue()
-            ->and($pdf->contains('<span class="manual-numbered-summary-date">16.02.2026 · 08:00 - 08:45</span>'))->toBeTrue()
-            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">16.02.2026 · 08:00 - 08:45</span>'))->toBeFalse()
-            ->and($pdf->contains('<span class="manual-numbered-summary-date">13.04.2026 · 08:45 - 09:30</span>'))->toBeTrue()
-            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">13.04.2026 · 08:45 - 09:30</span>'))->toBeFalse()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">CHEMIE 1</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">CH</span>'))->toBeFalse()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">BOSNISCH/KROATISCH/SERBISCH 2</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">GESUNDHEIT UND SOZIALES</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-course-title">RELIGION EVANGELISCH 2</span>'))->toBeTrue()
+            ->and($pdf->contains('<h1 class="title">Fächerübersicht</h1>'))->toBeTrue()
+            ->and($pdf->contains('Wochenplan'))->toBeFalse()
+            ->and($pdf->contains('<th class="col-subject-name">Fachname</th>'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-short-name">Kurzname</th>'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-day">Tag</th>'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-hours">Stunde(n)</th>'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-times">Zeit(en)</th>'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-hints">Hinweise</th>'))->toBeTrue()
+            ->and($pdf->contains('.subject-overview-table .col-subject-name { width: 23%; }'))->toBeTrue()
+            ->and($pdf->contains('.subject-overview-table .col-subject-hints { width: 22%; }'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-course-name">CHEMIE 1</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-short-name">CH</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-course-name">RELIGION EVANGELISCH 2</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-short-name">REV</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-day">Montag</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-hours">1.</td>'))->toBeTrue()
+            ->and($pdf->contains('<td class="subject-overview-times">08:00 - 08:45</td>'))->toBeTrue()
+            ->and(preg_match('/<td class="subject-overview-course-name">BOSNISCH\/KROATISCH\/SERBISCH 2<\/td>.*?<td class="subject-overview-hints">\s*<span class="subject-overview-hint">Fernunterricht<\/span>\s*<span class="subject-overview-hint">2-wöchig B<\/span>\s*<span class="subject-overview-hint-dates">13.04., 11.05.<\/span>\s*<\/td>/su', $pdf->html))->toBe(1)
+            ->and(preg_match('/<td class="subject-overview-course-name">GESUNDHEIT UND SOZIALES<\/td>.*?<td class="subject-overview-hints">\s*<span class="subject-overview-hint">Kompaktunterricht<\/span>\s*<\/td>/su', $pdf->html))->toBe(1)
+            ->and(preg_match('/<td class="subject-overview-course-name">RELIGION EVANGELISCH 2<\/td>.*?<td class="subject-overview-hints">\s*<span class="subject-overview-hint">Block<\/span>\s*<span class="subject-overview-hint-dates">27.04., 25.05.<\/span>\s*<\/td>/su', $pdf->html))->toBe(1)
+            ->and($pdf->contains('<span class="subject-overview-hint-dates">13.04., 11.05.</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="subject-overview-hint-dates">27.04., 25.05.</span>'))->toBeTrue()
+            ->and(substr_count($pdf->html, 'class="subject-overview-hint-dates"'))->toBe(2)
+            ->and($pdf->contains('<h1 class="courses-title">Kursliste</h1>'))->toBeFalse()
+            ->and(preg_match('/<div class="course-information-row">\s*<div class="course-details"><span class="course-detail-line"><span class="recurrence-detail">2-wöchig B<\/span><\/span><\/div>\s*<div class="course-fu">Fernunterricht<\/div>\s*<\/div>/u', $pdf->html))->toBe(1)
+            ->and($pdf->contains('<div class="course-fu">Kompaktunterricht</div>'))->toBeTrue()
+            ->and($pdf->contains('<div class="course-fu">Block</div>'))->toBeTrue()
+            ->and(preg_match('/\.pdf-page--manual-timetable \.course-information-row \.course-details,\s*\.pdf-page--manual-timetable \.course-information-row \.course-fu,\s*\.pdf-page--manual-timetable \.course-information-row \.course-detail-line\s*\{[^}]*display: inline;/su', $pdf->html))->toBe(1)
+            ->and($pdf->contains('<div class="manual-numbered-summary-heading">Einzeltermin-Überschneidung · Montag · 1. Std. 08:00 - 08:45:</div>'))->toBeTrue()
+            ->and($pdf->contains('<div class="manual-numbered-summary-heading">Mehrfachbelegung · Montag · 2. Std. 08:45 - 09:30:</div>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">23.02.</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date">16.02.</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">16.02.</span>'))->toBeFalse()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date">13.04.</span>'))->toBeTrue()
+            ->and($pdf->contains('<span class="manual-numbered-summary-date manual-numbered-summary-date--overlap">13.04.</span>'))->toBeFalse()
+            ->and($pdf->contains('23.02.2026'))->toBeFalse()
+            ->and(preg_match('/\.manual-numbered-summary-identifier\s*\{[^}]*vertical-align: middle;/su', $pdf->html))->toBe(1)
+            ->and(preg_match('/\.manual-numbered-summary-course-title\s*\{[^}]*vertical-align: middle;/su', $pdf->html))->toBe(1)
             ->and($pdf->contains('17:50–18:35'))->toBeFalse()
             ->and($pdf->contains('1-wöchig'))->toBeFalse();
 
@@ -5053,6 +5136,94 @@ it('creates a manual timetable pdf with an information cover and booking reminde
             && $pdf->contains('2Q · Reis Erika')
             && $pdf->contains('page-break-after: always;')
             && $pdf->contains('size: A4 landscape;');
+    });
+});
+
+it('lists a Saturday course in the manual pdf subject overview', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+    $emptyCell = [
+        'status' => 'empty',
+        'courses' => [],
+        'markers' => [],
+    ];
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'manual_cover' => true,
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '2Q · Reis Erika',
+            'print_options' => [
+                'single_weeks' => false,
+                'course_list' => false,
+                'course_overview' => false,
+            ],
+            'weekdays' => collect(['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'])
+                ->map(fn (string $weekday): array => ['label' => $weekday])
+                ->all(),
+            'semesters' => [[
+                'label' => 'Stundenplan',
+                'date_range' => '',
+                'weeks' => [[
+                    'label' => '',
+                    'hours' => [[
+                        'hour' => 14,
+                        'from' => '20:25',
+                        'until' => '21:10',
+                        'cells' => [
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            [
+                                'status' => 'filled',
+                                'courses' => [[
+                                    'label' => 'BU',
+                                    'identifier' => 'BU2-2Q-REIS',
+                                    'details' => 'Samstagspraktikum',
+                                ]],
+                                'markers' => [],
+                            ],
+                        ],
+                    ], [
+                        'hour' => 15,
+                        'from' => '21:10',
+                        'until' => '21:55',
+                        'cells' => [
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            $emptyCell,
+                            [
+                                'status' => 'filled',
+                                'courses' => [[
+                                    'label' => 'BU',
+                                    'identifier' => 'BU2-2Q-REIS',
+                                    'details' => 'Samstagspraktikum',
+                                ]],
+                                'markers' => [],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ]],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        return $pdf->contains('<h1 class="title">Fächerübersicht</h1>')
+            && ! $pdf->contains('Wochenplan')
+            && $pdf->contains('<td class="subject-overview-course-name">BIOLOGIE 2</td>')
+            && $pdf->contains('<td class="subject-overview-short-name">BU</td>')
+            && $pdf->contains('<td class="subject-overview-day">Samstag</td>')
+            && $pdf->contains('<td class="subject-overview-hours">14., 15.</td>')
+            && $pdf->contains('<td class="subject-overview-times">20:25 - 21:55</td>')
+            && ! $pdf->contains('20:25 - 21:10, 21:10 - 21:55')
+            && preg_match('/\.pdf-page--manual-timetable \.course-label-main\s*\{[^}]*font-size: 7\.00pt;/u', $pdf->html) === 1;
     });
 });
 
@@ -5534,7 +5705,8 @@ it('respects timetable overview pdf print options', function () {
             && $pdf->contains('Woche A')
             && $pdf->contains('Woche B')
             && ! $pdf->contains('<h1 class="courses-title">Kursliste</h1>')
-            && ! $pdf->contains('<h1 class="courses-title">Kursübersicht</h1>');
+            && ! $pdf->contains('<h1 class="title">Fächerübersicht</h1>')
+            && ! $pdf->contains('Wochenplan');
     });
 });
 
