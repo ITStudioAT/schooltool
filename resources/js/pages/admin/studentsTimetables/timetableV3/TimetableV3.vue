@@ -1424,7 +1424,21 @@
                             <v-icon icon="mdi-calendar-edit" size="30" />
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
-                            <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                            <span class="timetable-v3__adoption-heading">
+                                <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                <v-btn
+                                    class="timetable-v3__adoption-pdf-button"
+                                    color="#c2410c"
+                                    :disabled="pdfExporting || timetablePageLoading || isLoadingState"
+                                    :loading="pdfExporting"
+                                    prepend-icon="mdi-file-pdf-box"
+                                    size="large"
+                                    type="button"
+                                    variant="outlined"
+                                    @click="downloadManualTimetablePdf">
+                                    PDF
+                                </v-btn>
+                            </span>
                         </span>
                         <div
                             class="
@@ -1675,6 +1689,7 @@
                     :navigation-visible="false"
                     :page-offset="timetablePageMeta.offset"
                     :position-visible="false"
+                    show-all-hours
                     :selected-index="timetableSelectedIndex"
                     :timetables="adoptionTimetables"
                     :total-count="timetablePageMeta.total" />
@@ -1810,12 +1825,19 @@
                                     {{ moduleCourseSubtitle(course) }}
                                 </span>
                                 <span class="timetable-v3__module-course-meta">
-                                    <span
-                                        v-for="scheduleLabel in courseScheduleLabels(course)"
-                                        :key="scheduleLabel"
-                                        class="timetable-v3__module-course-schedule">
-                                        {{ scheduleLabel }}
-                                    </span>
+                                    <template
+                                        v-for="scheduleRow in courseScheduleRows(course)"
+                                        :key="scheduleRow.key">
+                                        <span class="timetable-v3__module-course-schedule">
+                                            {{ scheduleRow.label }}
+                                        </span>
+                                        <span
+                                            v-for="overlapLabel in courseScheduleRowOverlapLabels(course, scheduleRow)"
+                                            :key="`${scheduleRow.key}:${overlapLabel}`"
+                                            class="timetable-v3__module-course-overlap">
+                                            ({{ overlapLabel }})
+                                        </span>
+                                    </template>
                                     <span v-if="course.hours_label" class="timetable-v3__module-course-hours">
                                         <v-icon icon="mdi-clock-outline" size="12" />
                                         {{ course.hours_label }}
@@ -2179,15 +2201,18 @@
 </template>
 
 <script>
+import { mapWritableState } from 'pinia'
 import {
     canonicalTimetableCourseLabel,
     canonicalTimetableModuleName,
 } from './courseLabels'
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import {
+    overviewPdf as downloadStudentTimetableOverviewPdf,
     robotStudents as loadRobotStudents,
     schoolHours as loadStudentTimetableSchoolHours,
 } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import {
     show as loadV3StudentInformation,
     updateSchoolLevel as updateV3StudentSchoolLevel,
@@ -2210,6 +2235,14 @@ const MANUAL_MAIN_MODULE_CATALOG = 'main'
 const BLANK_MANUAL_TIMETABLE_DRAFT = 'blank'
 const AUTOMATIC_MANUAL_TIMETABLE_DRAFT = 'automatic'
 const AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY = true
+const MANUAL_TIMETABLE_PDF_WEEKDAYS = Object.freeze([
+    { label: 'Montag', value: 1 },
+    { label: 'Dienstag', value: 2 },
+    { label: 'Mittwoch', value: 3 },
+    { label: 'Donnerstag', value: 4 },
+    { label: 'Freitag', value: 5 },
+    { label: 'Samstag', value: 6 },
+])
 const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
     include_saturday: true,
     free_days: null,
@@ -2408,6 +2441,96 @@ function normalizedCourseScheduleLabels(course) {
     return [...new Set(scheduleLabels
         .map(scheduleLabel => String(scheduleLabel || '').trim())
         .filter(Boolean))]
+}
+
+function normalizedCourseScheduleRows(course) {
+    const displayScheduleRows = Array.isArray(course?.display_schedule_rows)
+        ? course.display_schedule_rows
+        : []
+    const normalizedRows = displayScheduleRows
+        .map((scheduleRow, index) => {
+            const label = String(scheduleRow?.label || '').trim()
+            const entryKeys = [...new Set((Array.isArray(scheduleRow?.entry_keys) ? scheduleRow.entry_keys : [])
+                .map(entryKey => String(entryKey || '').trim())
+                .filter(Boolean))]
+
+            if (!label) return null
+
+            return {
+                entryKeys,
+                key: `${label}:${entryKeys.join('|') || index}`,
+                label,
+            }
+        })
+        .filter(Boolean)
+
+    if (normalizedRows.length) return normalizedRows
+
+    const fallbackEntryKeys = normalizedCourseTimetableEntries(course)
+        .map(entry => String(entry.key || '').trim())
+        .filter(Boolean)
+
+    return normalizedCourseScheduleLabels(course).map((label, index) => ({
+        entryKeys: fallbackEntryKeys,
+        key: `${label}:${index}`,
+        label,
+    }))
+}
+
+function timetableEntryTimeInMinutes(value) {
+    const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/u)
+    if (!match) return null
+
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 23 || minutes > 59) return null
+
+    return (hours * 60) + minutes
+}
+
+function timetableEntryDates(entry) {
+    return [...new Set((Array.isArray(entry?.dates) ? entry.dates : [])
+        .map(date => String(date || '').trim())
+        .filter(Boolean))]
+}
+
+function timetableEntriesOverlap(firstEntry, secondEntry) {
+    const firstEntryKey = String(firstEntry?.key || '').trim()
+    const secondEntryKey = String(secondEntry?.key || '').trim()
+    if (firstEntryKey && firstEntryKey === secondEntryKey) return false
+
+    const firstDates = timetableEntryDates(firstEntry)
+    const secondDates = new Set(timetableEntryDates(secondEntry))
+    const datesOverlap = firstDates.length && secondDates.size
+        ? firstDates.some(date => secondDates.has(date))
+        : Number(firstEntry?.weekday) === Number(secondEntry?.weekday)
+    if (!datesOverlap) return false
+
+    const firstStartsAt = timetableEntryTimeInMinutes(firstEntry?.starts_at || firstEntry?.time_from)
+    const firstEndsAt = timetableEntryTimeInMinutes(firstEntry?.ends_at || firstEntry?.time_until)
+    const secondStartsAt = timetableEntryTimeInMinutes(secondEntry?.starts_at || secondEntry?.time_from)
+    const secondEndsAt = timetableEntryTimeInMinutes(secondEntry?.ends_at || secondEntry?.time_until)
+
+    if (
+        firstStartsAt !== null
+        && firstEndsAt !== null
+        && secondStartsAt !== null
+        && secondEndsAt !== null
+        && firstEndsAt > firstStartsAt
+        && secondEndsAt > secondStartsAt
+    ) {
+        return firstStartsAt < secondEndsAt && secondStartsAt < firstEndsAt
+    }
+
+    return Number(firstEntry?.hour) === Number(secondEntry?.hour)
+}
+
+function timetableCourseOverlapLabel(course, entry) {
+    return canonicalTimetableCourseLabel(
+        entry?.display_label || course?.title || course?.course_title || '',
+        entry?.module_code || entry?.subject || '',
+    )
 }
 
 function normalizedCourseTimetableEntries(course) {
@@ -3109,10 +3232,18 @@ export default {
             planningSelectionFields: [],
             planningSelectionValues: {},
             emailCopyStatus: 'idle',
+            pdfExporting: false,
         }
     },
 
     computed: {
+        ...mapWritableState(useAdminStore, ['config']),
+        selectedSchoolyear() {
+            return this.config?.selected_schoolyear || {}
+        },
+        schoolyearName() {
+            return this.selectedSchoolyear?.name || ''
+        },
         currentStep() {
             const subsection = this.$route?.params?.subsection
 
@@ -3296,6 +3427,11 @@ export default {
         },
         adoptionBaseTimetable() {
             return timetableWithoutCourseKeys(this.selectedTimetableResult, this.adoptionRemovedCourseKeys)
+        },
+        adoptionDisplayedTimetable() {
+            if (this.isManualTimetableAdoption) return this.manualTimetable
+
+            return timetableWithManualCourses(this.adoptionBaseTimetable, this.manualTimetable)
         },
         adoptionPlacedCourseKeys() {
             const transferredCourseKeys = this.isManualTimetableAdoption
@@ -3719,7 +3855,7 @@ export default {
                 void this.ensureValidCurrentStep()
             }
 
-            if (currentStep === TIMETABLE_ADOPTION_STEP && this.isManualTimetableAdoption) {
+            if (currentStep === TIMETABLE_ADOPTION_STEP) {
                 this.manualModuleCatalogView = MANUAL_STUDENT_MODULE_CATALOG
                 void this.loadSchoolHours()
             }
@@ -3734,13 +3870,297 @@ export default {
         await this.initializeWorkspace()
         await this.loadState()
 
-        if (this.isManualTimetableAdoption) {
+        if (this.currentStep === TIMETABLE_ADOPTION_STEP) {
             await this.loadSchoolHours()
         }
     },
 
     methods: {
         timetableVariantCountLabel,
+        manualTimetablePdfHours(timetable) {
+            const bookedHours = new Set()
+
+            MANUAL_TIMETABLE_PDF_WEEKDAYS.forEach((weekday) => {
+                for (let hour = 1; hour <= 20; hour += 1) {
+                    if (this.manualTimetablePdfEntriesForCell(timetable, weekday.value, hour).length) {
+                        bookedHours.add(hour)
+                    }
+                }
+            })
+
+            return [...bookedHours].sort((firstHour, secondHour) => firstHour - secondHour)
+        },
+        manualTimetablePdfEntriesForCell(timetable, weekday, hour) {
+            const slot = timetable?.slots?.[`${weekday}-${hour}`]
+            if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return []
+
+            const entries = [
+                slot,
+                ...(Array.isArray(slot.sameSlotEntries) ? slot.sameSlotEntries : []),
+                ...(Array.isArray(slot.conflicts) ? slot.conflicts : []),
+            ]
+            const seenEntryKeys = new Set()
+
+            return entries.filter((entry, index) => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+
+                const entryKey = String(entry.courseGroup?.key || entry.key || `entry-${index}`).trim()
+                if (seenEntryKeys.has(entryKey)) return false
+
+                seenEntryKeys.add(entryKey)
+
+                return true
+            })
+        },
+        manualTimetablePdfLessonDates(entry) {
+            return [...new Set((Array.isArray(entry?.courseGroup?.dates) ? entry.courseGroup.dates : [])
+                .map(date => String(date || '').trim())
+                .filter(Boolean))]
+                .sort((firstDate, secondDate) => firstDate.localeCompare(secondDate))
+        },
+        manualTimetablePdfTimeInMinutes(value) {
+            const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/u)
+            if (!match) return null
+
+            const hours = Number(match[1])
+            const minutes = Number(match[2])
+            if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 23 || minutes > 59) return null
+
+            return (hours * 60) + minutes
+        },
+        manualTimetablePdfEntriesOverlapInTime(firstEntry, secondEntry) {
+            const firstStartsAt = this.manualTimetablePdfTimeInMinutes(
+                firstEntry?.courseGroup?.starts_at || firstEntry?.courseGroup?.time_from,
+            )
+            const firstEndsAt = this.manualTimetablePdfTimeInMinutes(
+                firstEntry?.courseGroup?.ends_at || firstEntry?.courseGroup?.time_until,
+            )
+            const secondStartsAt = this.manualTimetablePdfTimeInMinutes(
+                secondEntry?.courseGroup?.starts_at || secondEntry?.courseGroup?.time_from,
+            )
+            const secondEndsAt = this.manualTimetablePdfTimeInMinutes(
+                secondEntry?.courseGroup?.ends_at || secondEntry?.courseGroup?.time_until,
+            )
+
+            if ([firstStartsAt, firstEndsAt, secondStartsAt, secondEndsAt].includes(null)) return true
+
+            return firstStartsAt < secondEndsAt && secondStartsAt < firstEndsAt
+        },
+        manualTimetablePdfExactOverlapDates(entries) {
+            const overlappingDates = new Set()
+
+            entries.forEach((entry, entryIndex) => {
+                const entryDates = this.manualTimetablePdfLessonDates(entry)
+
+                entries.slice(entryIndex + 1).forEach((otherEntry) => {
+                    if (!this.manualTimetablePdfEntriesOverlapInTime(entry, otherEntry)) return
+
+                    const otherDates = new Set(this.manualTimetablePdfLessonDates(otherEntry))
+                    entryDates.forEach((date) => {
+                        if (otherDates.has(date)) overlappingDates.add(date)
+                    })
+                })
+            })
+
+            return [...overlappingDates].sort((firstDate, secondDate) => firstDate.localeCompare(secondDate))
+        },
+        manualTimetablePdfNumberedCells(timetable, hours) {
+            const numberedCells = {}
+            let cellNumber = 0
+
+            hours.forEach((hour) => {
+                MANUAL_TIMETABLE_PDF_WEEKDAYS.forEach((weekday) => {
+                    const slotKey = `${weekday.value}-${hour}`
+                    const entries = this.manualTimetablePdfEntriesForCell(timetable, weekday.value, hour)
+                    if (entries.length <= 1) return
+
+                    const exactOverlapDates = this.manualTimetablePdfExactOverlapDates(entries)
+                    const hasExactOverlap = exactOverlapDates.length > 0
+                    let label = 'Mehrfachbelegung'
+
+                    if (hasExactOverlap) {
+                        label = exactOverlapDates.length === 1
+                            ? 'Einzeltermin-Überschneidung'
+                            : 'Überschneidungen'
+                    }
+
+                    cellNumber += 1
+                    numberedCells[slotKey] = {
+                        hasExactOverlap,
+                        label,
+                        number: cellNumber,
+                    }
+                })
+            })
+
+            return numberedCells
+        },
+        manualTimetablePdfCourse(entry) {
+            const courseGroup = entry?.courseGroup || {}
+            const code = canonicalTimetableCourseLabel(
+                entry?.code || courseGroup.module_code || courseGroup.subject || '',
+            )
+            const sourceLabel = canonicalTimetableCourseLabel(
+                entry?.sourceLabel || courseGroup.display_label || courseGroup.class_name || '',
+                code,
+            )
+            const compactSourceLabel = sourceLabel
+                .replace(/\s*[-–—]\s*/gu, '-')
+                .replace(/\s+/gu, '-')
+                .replace(/^-+|-+$/gu, '')
+            const sourceContext = code
+                && compactSourceLabel.toLocaleLowerCase('de-AT').startsWith(code.toLocaleLowerCase('de-AT'))
+                ? compactSourceLabel.slice(code.length).replace(/^-+/u, '')
+                : compactSourceLabel
+            const identifier = [code, sourceContext].filter(Boolean).join('-')
+            const title = canonicalTimetableModuleName(
+                entry?.name || courseGroup.course_title || courseGroup.title || code || 'Unterricht',
+                code,
+            ).toLocaleUpperCase('de-AT')
+            const recurrenceLabel = String(courseGroup.recurrence_label || '').trim().slice(0, 80)
+            const details = recurrenceLabel.toLocaleLowerCase('de-AT') === '1-wöchig'
+                ? ''
+                : recurrenceLabel
+
+            return {
+                label: title || identifier || code || 'UNTERRICHT',
+                identifier: identifier || code,
+                details,
+                dates: this.manualTimetablePdfLessonDates(entry).slice(0, 120),
+                is_fu: entry?.isDistanceLearningCourse === true,
+                recurrence_label: recurrenceLabel,
+                recurrence_interval: Number(courseGroup.recurrence_interval || 0) || null,
+            }
+        },
+        manualTimetablePdfPayload() {
+            const timetable = this.adoptionDisplayedTimetable || { slots: {} }
+            const hours = this.manualTimetablePdfHours(timetable)
+            const weekdays = MANUAL_TIMETABLE_PDF_WEEKDAYS.filter(weekday => weekday.value !== 6
+                || hours.some(hour => this.manualTimetablePdfEntriesForCell(timetable, weekday.value, hour).length))
+            const configuredHoursByNumber = new Map(
+                (Array.isArray(this.schoolHours) ? this.schoolHours : [])
+                    .map(row => [Number(row?.hour), row]),
+            )
+            const numberedCells = this.manualTimetablePdfNumberedCells(timetable, hours)
+            const student = this.planningMode === WITH_STUDENT
+                ? [this.selectedStudentClass, this.selectedStudentFullName || this.selectedStudentLabel]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'Ohne Studierendenbezug'
+
+            return {
+                manual_cover: true,
+                title: 'Stundenplan',
+                subtitle: `${this.adoptionSelectedModuleCount} ${this.adoptionSelectedModuleCount === 1 ? 'Modul' : 'Module'}`,
+                student,
+                schoolyear: this.schoolyearName,
+                generated_at: new Intl.DateTimeFormat('de-AT', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                }).format(new Date()),
+                study_selections: this.compactPlanningSelectionItems.map(item => ({
+                    label: String(item?.label || '').trim().slice(0, 80),
+                    value: String(item?.value || '–').trim().slice(0, 120) || '–',
+                })).filter(item => item.label),
+                print_options: {
+                    single_weeks: false,
+                    course_list: false,
+                    course_overview: false,
+                },
+                weekdays: weekdays.map(weekday => ({ label: weekday.label })),
+                semesters: [{
+                    label: 'Stundenplan',
+                    date_range: '',
+                    weeks: [{
+                        label: '',
+                        hours: hours.map((hour) => {
+                            const configuredHour = configuredHoursByNumber.get(hour) || {}
+
+                            return {
+                                hour,
+                                from: String(configuredHour.from || '').trim().slice(0, 5),
+                                until: String(configuredHour.until || '').trim().slice(0, 5),
+                                cells: weekdays.map((weekday) => {
+                                    const slotKey = `${weekday.value}-${hour}`
+                                    const entries = this.manualTimetablePdfEntriesForCell(
+                                        timetable,
+                                        weekday.value,
+                                        hour,
+                                    )
+                                    const numberedCell = numberedCells[slotKey]
+
+                                    return {
+                                        status: numberedCell?.hasExactOverlap
+                                            ? 'conflict'
+                                            : entries.length ? 'filled' : 'empty',
+                                        courses: entries.map(entry => this.manualTimetablePdfCourse(entry)),
+                                        markers: numberedCell
+                                            ? [{
+                                                label: `${numberedCell.hasExactOverlap ? '!' : ''}${numberedCell.number}`,
+                                                title: numberedCell.label,
+                                            }]
+                                            : [],
+                                    }
+                                }),
+                            }
+                        }),
+                    }],
+                }],
+            }
+        },
+        async downloadManualTimetablePdf() {
+            if (this.pdfExporting) return
+
+            this.pdfExporting = true
+
+            try {
+                const response = await axios.post(
+                    downloadStudentTimetableOverviewPdf.url(),
+                    this.manualTimetablePdfPayload(),
+                    { responseType: 'blob' },
+                )
+                const blob = response.data instanceof Blob
+                    ? response.data
+                    : new Blob([response.data], { type: 'application/pdf' })
+                const filename = this.fileNameFromContentDisposition(response?.headers?.['content-disposition'])
+                    || 'manueller-stundenplan.pdf'
+
+                this.downloadBlob(blob, filename)
+            } catch (error) {
+                console.error(error)
+                window.alert?.('Das PDF konnte nicht erstellt werden.')
+            } finally {
+                this.pdfExporting = false
+            }
+        },
+        downloadBlob(blob, filename) {
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+
+            link.href = objectUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
+        },
+        fileNameFromContentDisposition(headerValue) {
+            const normalizedHeader = String(headerValue || '').trim()
+            if (!normalizedHeader) return ''
+
+            const utf8Match = normalizedHeader.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).replace(/["']/g, '').trim()
+                } catch {
+                    return utf8Match[1].replace(/["']/g, '').trim()
+                }
+            }
+
+            const plainMatch = normalizedHeader.match(/filename\s*=\s*"?(?<file>[^";]+)"?/i)
+
+            return plainMatch?.groups?.file?.trim() || ''
+        },
         timetableFreeDayOptionAriaLabel(freeDays, count) {
             const freeDaysLabel = freeDays === null
                 ? 'Freie Tage egal'
@@ -5265,6 +5685,35 @@ export default {
         courseScheduleLabels(course) {
             return normalizedCourseScheduleLabels(course)
         },
+        courseScheduleRows(course) {
+            return normalizedCourseScheduleRows(course)
+        },
+        courseScheduleRowOverlapLabels(course, scheduleRow) {
+            const activeCourseKeys = this.moduleCoursesDialogReadOnly
+                ? [
+                    ...(Array.isArray(this.adoptionPlacedCourseKeys) ? this.adoptionPlacedCourseKeys : []),
+                    ...(Array.isArray(this.manualPendingCourseKeys) ? this.manualPendingCourseKeys : []),
+                ]
+                : (Array.isArray(this.selectedCourseKeys) ? this.selectedCourseKeys : [])
+            if (!activeCourseKeys.length) return []
+
+            const scheduleEntryKeys = new Set(Array.isArray(scheduleRow?.entryKeys) ? scheduleRow.entryKeys : [])
+            const scheduleEntries = normalizedCourseTimetableEntries(course)
+                .filter(entry => !scheduleEntryKeys.size || scheduleEntryKeys.has(String(entry.key || '').trim()))
+            if (!scheduleEntries.length) return []
+
+            const currentCourseKeys = new Set(normalizedCourseSelectionKeys(course))
+
+            return [...new Set((Array.isArray(this.manualCatalogCourses) ? this.manualCatalogCourses : [])
+                .filter(otherCourse => courseUsesSelectedKey(otherCourse, activeCourseKeys))
+                .filter(otherCourse => !normalizedCourseSelectionKeys(otherCourse)
+                    .some(courseKey => currentCourseKeys.has(courseKey)))
+                .flatMap(otherCourse => normalizedCourseTimetableEntries(otherCourse)
+                    .filter(otherEntry => scheduleEntries
+                        .some(scheduleEntry => timetableEntriesOverlap(scheduleEntry, otherEntry)))
+                    .map(otherEntry => timetableCourseOverlapLabel(otherCourse, otherEntry)))
+                .filter(Boolean))]
+        },
         moduleDisplayCode(module) {
             return canonicalTimetableCourseLabel(module?.code)
         },
@@ -6346,6 +6795,20 @@ button.timetable-v3__student-data-field:focus-visible {
     cursor: default;
     animation: none;
     transition: none;
+}
+
+.timetable-v3__adoption-heading {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+}
+
+.timetable-v3__adoption-pdf-button {
+    flex: 0 0 auto;
+    font-weight: 800;
+    letter-spacing: 0.04em;
 }
 
 .timetable-v3__adoption-card:hover,
@@ -7794,6 +8257,12 @@ button.timetable-v3__student-data-field:focus-visible {
     flex-basis: 100%;
 }
 
+.timetable-v3__module-course-overlap {
+    flex-basis: 100%;
+    color: #b42318;
+    font-weight: 400;
+}
+
 .timetable-v3__module-course-hours,
 .timetable-v3__module-course-instruction {
     display: inline-flex;
@@ -8382,6 +8851,10 @@ button.timetable-v3__student-data-field:focus-visible {
     .timetable-v3__adoption-card--manual {
         grid-column: 1;
         grid-row: auto;
+    }
+
+    .timetable-v3__adoption-heading {
+        flex-wrap: wrap;
     }
 
     .timetable-v3__module-workspace {

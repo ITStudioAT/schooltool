@@ -16,6 +16,7 @@
 
 - Übernahme der Studienauswahl
 - Modulauswahl optimiert
+- PDF
 
 ## 3.45.0 - 3.45.1
 

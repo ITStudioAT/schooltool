@@ -89,14 +89,19 @@
                                             'timetable-v3-results__lesson--overlap': entry.relationship === 'overlap',
                                             'timetable-v3-results__lesson--same-slot': entry.relationship === 'same-slot',
                                         }"
-                                        :aria-label="lessonAriaLabel(entry)">
+                                        :aria-label="lessonAriaLabel(entry, weekday.value, hourRow.hour)">
                                         <div class="timetable-v3-results__lesson-heading">
                                             <strong>{{ entry.code || 'Unterricht' }}</strong>
-                                            <v-icon
+                                            <span
                                                 v-if="entry.relationship === 'overlap'"
-                                                icon="mdi-calendar-alert-outline"
-                                                size="17"
-                                                aria-label="Einzeltermin-Überschneidung" />
+                                                class="timetable-v3-results__lesson-conflict-reference"
+                                                :aria-label="`${conflictLabelForCell(weekday.value, hourRow.hour)} ${conflictNumberForCell(weekday.value, hourRow.hour)}`">
+                                                <v-icon
+                                                    icon="mdi-calendar-alert-outline"
+                                                    size="17"
+                                                    aria-hidden="true" />
+                                                <strong>{{ conflictNumberForCell(weekday.value, hourRow.hour) }}</strong>
+                                            </span>
                                         </div>
                                         <span
                                             v-if="lessonSourceLabel(entry)"
@@ -109,9 +114,9 @@
                                             {{ lessonPrimaryDetailsLabel(entry) }}
                                         </span>
                                         <span
-                                            v-if="lessonSpecialDetailsLabel(entry)"
+                                            v-if="lessonSpecialDetailsLabel(entry, weekday.value, hourRow.hour)"
                                             class="timetable-v3-results__lesson-special">
-                                            {{ lessonSpecialDetailsLabel(entry) }}
+                                            {{ lessonSpecialDetailsLabel(entry, weekday.value, hourRow.hour) }}
                                         </span>
                                     </article>
                                 </div>
@@ -120,6 +125,40 @@
                     </tbody>
                 </table>
             </div>
+
+            <section
+                v-if="selectedConflictGroups.length"
+                class="timetable-v3-results__conflict-summary"
+                aria-label="Überschneidungsdetails">
+                <h5>Überschneidungen</h5>
+                <div
+                    v-for="conflictGroup in selectedConflictGroups"
+                    :key="conflictGroup.slotKey"
+                    class="timetable-v3-results__conflict-group">
+                    <p
+                        v-for="course in conflictGroup.courses"
+                        :key="course.key"
+                        class="timetable-v3-results__conflict-course">
+                        <span class="timetable-v3-results__conflict-counter">!{{ conflictGroup.number }}</span>
+                        <strong>{{ course.label }}:</strong>
+                        <template v-if="course.dates.length">
+                            <template v-for="(date, dateIndex) in course.dates" :key="date.value">
+                                <span
+                                    class="timetable-v3-results__conflict-date"
+                                    :class="{
+                                        'timetable-v3-results__conflict-date--overlap': date.isOverlapping,
+                                    }"
+                                    :aria-label="date.isOverlapping
+                                        ? `${date.label}, Überschneidung`
+                                        : date.label">
+                                    {{ date.label }}
+                                </span><span v-if="dateIndex < course.dates.length - 1">, </span>
+                            </template>
+                        </template>
+                        <span v-else>Keine Termine vorhanden</span>
+                    </p>
+                </div>
+            </section>
 
             <p class="timetable-v3-results__hint">
                 <v-icon icon="mdi-gesture-swipe-horizontal" size="18" aria-hidden="true" />
@@ -152,7 +191,7 @@ const WEEKDAYS = [
     { value: 6, title: 'Samstag', shortTitle: 'Sa' },
 ]
 const EMPTY_TIMETABLE_FIRST_HOUR = 1
-const EMPTY_TIMETABLE_HOUR_COUNT = 10
+const EMPTY_TIMETABLE_LAST_HOUR = 15
 const EMPTY_TIMETABLE = Object.freeze({
     key: 'empty-timetable',
     slots: Object.freeze({}),
@@ -208,6 +247,10 @@ export default {
         positionVisible: {
             type: Boolean,
             default: true,
+        },
+        showAllHours: {
+            type: Boolean,
+            default: false,
         },
         selectedIndex: {
             type: Number,
@@ -328,14 +371,14 @@ export default {
         visibleHours() {
             const hours = this.selectedSlotEntries.map(entry => entry.hour)
 
-            if (this.emptyTimetable) {
+            if (this.showAllHours || this.emptyTimetable) {
                 const configuredHours = this.normalizedEmptyHourRows
                     .map(row => row.hour)
                     .filter(hour => hour >= EMPTY_TIMETABLE_FIRST_HOUR)
                 const finalHour = Math.max(
                     ...configuredHours,
                     ...hours,
-                    configuredHours.length || hours.length ? EMPTY_TIMETABLE_FIRST_HOUR : EMPTY_TIMETABLE_HOUR_COUNT,
+                    EMPTY_TIMETABLE_LAST_HOUR,
                 )
 
                 return Array.from(
@@ -352,13 +395,12 @@ export default {
             return Array.from({ length: (lastHour - firstHour) + 1 }, (_, index) => firstHour + index)
         },
         visibleHourRows() {
-            if (this.emptyTimetable) {
-                const emptyRowsByHour = new Map(this.normalizedEmptyHourRows.map(row => [row.hour, row]))
-
-                return this.visibleHours.map(hour => emptyRowsByHour.get(hour) || { hour, timeRange: '' })
-            }
+            const configuredRowsByHour = new Map(this.normalizedEmptyHourRows.map(row => [row.hour, row]))
 
             return this.visibleHours.map((hour) => {
+                const configuredRow = configuredRowsByHour.get(hour)
+                if (configuredRow?.timeRange) return configuredRow
+
                 const timeRanges = this.selectedSlotEntries
                     .filter(entry => entry.hour === hour)
                     .map(entry => this.courseGroupTimeRange(entry.slot?.courseGroup))
@@ -369,6 +411,56 @@ export default {
                     timeRange: [...new Set(timeRanges)].join(' / '),
                 }
             })
+        },
+        selectedConflictGroups() {
+            return this.selectedSlotEntries
+                .map(({ hour, slotKey, weekday }) => {
+                    const entries = this.timetableEntriesForCell(weekday, hour)
+                    const overlapEntries = entries.filter(entry => entry.relationship === 'overlap')
+                    if (!overlapEntries.length) return null
+
+                    const exactOverlapEntries = entries.filter((entry, entryIndex) => entries
+                        .some((otherEntry, otherEntryIndex) => (
+                            entryIndex !== otherEntryIndex
+                            && this.lessonEntriesShareDateAndTime(entry, otherEntry)
+                        )))
+                    const summaryEntries = exactOverlapEntries.length
+                        ? exactOverlapEntries
+                        : [entries[0], ...overlapEntries].filter(Boolean)
+
+                    const courses = this.conflictSummaryCourses(summaryEntries)
+                    const overlappingDates = new Set(courses.flatMap(course => course.dates
+                        .filter(date => date.isOverlapping)
+                        .map(date => date.value)))
+
+                    return {
+                        courses,
+                        hour,
+                        label: overlappingDates.size === 1
+                            ? 'Einzeltermin-Überschneidung'
+                            : 'Überschneidungen',
+                        slotKey,
+                        weekday,
+                    }
+                })
+                .filter(Boolean)
+                .sort((firstGroup, secondGroup) => (
+                    firstGroup.weekday - secondGroup.weekday
+                    || firstGroup.hour - secondGroup.hour
+                    || firstGroup.slotKey.localeCompare(secondGroup.slotKey)
+                ))
+                .map((conflictGroup, index) => ({
+                    ...conflictGroup,
+                    number: index + 1,
+                }))
+        },
+        selectedConflictNumberBySlot() {
+            return Object.fromEntries(this.selectedConflictGroups
+                .map(conflictGroup => [conflictGroup.slotKey, conflictGroup.number]))
+        },
+        selectedConflictLabelBySlot() {
+            return Object.fromEntries(this.selectedConflictGroups
+                .map(conflictGroup => [conflictGroup.slotKey, conflictGroup.label]))
         },
     },
 
@@ -388,13 +480,29 @@ export default {
 
             if (!timetableSlot || typeof timetableSlot !== 'object' || Array.isArray(timetableSlot)) return []
 
-            const sameSlotRelationship = this.highlightMultipleEntries ? 'overlap' : 'same-slot'
-            const relatedEntries = [
-                ...this.normalizedRelatedEntries(timetableSlot.sameSlotEntries, sameSlotRelationship),
-                ...this.normalizedRelatedEntries(timetableSlot.conflicts, 'overlap'),
-            ]
+            const primaryEntry = this.normalizedTimetableEntry(
+                timetableSlot,
+                'primary',
+                `${weekday}-${hour}-primary`,
+            )
+            const normalizedSameSlotEntries = this.normalizedRelatedEntries(
+                timetableSlot.sameSlotEntries,
+                'same-slot',
+            )
+            const conflictEntries = this.normalizedRelatedEntries(timetableSlot.conflicts, 'overlap')
+            const comparableEntries = [primaryEntry, ...normalizedSameSlotEntries, ...conflictEntries].filter(Boolean)
+            const sameSlotEntries = normalizedSameSlotEntries.map(entry => ({
+                ...entry,
+                relationship: this.highlightMultipleEntries
+                    && comparableEntries.some(otherEntry => (
+                        otherEntry.renderKey !== entry.renderKey
+                        && this.lessonEntriesShareDateAndTime(entry, otherEntry)
+                    ))
+                    ? 'overlap'
+                    : 'same-slot',
+            }))
 
-            return [this.normalizedTimetableEntry(timetableSlot, 'primary', `${weekday}-${hour}-primary`), ...relatedEntries]
+            return [primaryEntry, ...sameSlotEntries, ...conflictEntries]
                 .filter(Boolean)
         },
         normalizedRelatedEntries(entries, relationship) {
@@ -425,6 +533,104 @@ export default {
                     code,
                 ),
             }
+        },
+        conflictNumberForCell(weekday, hour) {
+            return this.selectedConflictNumberBySlot[`${weekday}-${hour}`] || ''
+        },
+        conflictLabelForCell(weekday, hour) {
+            return this.selectedConflictLabelBySlot[`${weekday}-${hour}`] || 'Überschneidungen'
+        },
+        conflictSummaryCourses(entries) {
+            const uniqueEntriesByKey = new Map()
+
+            entries.forEach((entry, index) => {
+                const entryKey = String(
+                    entry.courseGroup?.key
+                    || entry.key
+                    || entry.renderKey
+                    || `course-${index}`,
+                )
+
+                if (!uniqueEntriesByKey.has(entryKey)) uniqueEntriesByKey.set(entryKey, entry)
+            })
+
+            const uniqueEntries = [...uniqueEntriesByKey.entries()]
+
+            return uniqueEntries.map(([entryKey, entry]) => {
+                const dates = this.normalizedLessonDates(entry)
+                const otherDateSets = uniqueEntries
+                    .filter(([otherEntryKey, otherEntry]) => (
+                        otherEntryKey !== entryKey
+                        && this.lessonEntriesOverlapInTime(entry, otherEntry)
+                    ))
+                    .map(([, otherEntry]) => new Set(this.normalizedLessonDates(otherEntry)))
+
+                return {
+                    dates: dates.map(date => ({
+                        isOverlapping: otherDateSets.some(otherDates => otherDates.has(date)),
+                        label: this.localizedDate(date),
+                        value: date,
+                    })),
+                    key: entryKey,
+                    label: this.conflictSummaryCourseLabel(entry),
+                }
+            })
+        },
+        conflictSummaryCourseLabel(entry) {
+            return [...new Set([
+                String(entry.code || '').trim(),
+                this.lessonSourceLabel(entry),
+            ].filter(Boolean))].join(' ')
+        },
+        normalizedLessonDates(entry) {
+            return [...new Set((Array.isArray(entry.courseGroup?.dates) ? entry.courseGroup.dates : [])
+                .map(date => String(date || '').trim())
+                .filter(Boolean))]
+                .sort((firstDate, secondDate) => firstDate.localeCompare(secondDate))
+        },
+        lessonEntriesShareDateAndTime(firstEntry, secondEntry) {
+            const firstDates = this.normalizedLessonDates(firstEntry)
+            const secondDates = new Set(this.normalizedLessonDates(secondEntry))
+            if (!firstDates.length || !secondDates.size) return false
+
+            return this.lessonEntriesOverlapInTime(firstEntry, secondEntry)
+                && firstDates.some(date => secondDates.has(date))
+        },
+        lessonEntriesOverlapInTime(firstEntry, secondEntry) {
+            const firstStartsAt = this.lessonTimeInMinutes(
+                firstEntry.courseGroup?.starts_at || firstEntry.courseGroup?.time_from,
+            )
+            const firstEndsAt = this.lessonTimeInMinutes(
+                firstEntry.courseGroup?.ends_at || firstEntry.courseGroup?.time_until,
+            )
+            const secondStartsAt = this.lessonTimeInMinutes(
+                secondEntry.courseGroup?.starts_at || secondEntry.courseGroup?.time_from,
+            )
+            const secondEndsAt = this.lessonTimeInMinutes(
+                secondEntry.courseGroup?.ends_at || secondEntry.courseGroup?.time_until,
+            )
+
+            if (
+                firstStartsAt === null
+                || firstEndsAt === null
+                || secondStartsAt === null
+                || secondEndsAt === null
+            ) {
+                return true
+            }
+
+            return firstStartsAt < secondEndsAt && secondStartsAt < firstEndsAt
+        },
+        lessonTimeInMinutes(value) {
+            const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/u)
+            if (!match) return null
+
+            const hours = Number(match[1])
+            const minutes = Number(match[2])
+
+            if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 23 || minutes > 59) return null
+
+            return (hours * 60) + minutes
         },
         courseGroupTimeRange(courseGroup) {
             const startsAt = String(courseGroup?.starts_at || courseGroup?.time_from || '').trim()
@@ -481,9 +687,9 @@ export default {
 
             return new Intl.DateTimeFormat('de-AT').format(new Date(Date.UTC(year, month - 1, day)))
         },
-        lessonMarkers(entry) {
+        lessonMarkers(entry, weekday, hour) {
             return [
-                entry.relationship === 'overlap' ? 'Einzeltermin-Überschneidung' : '',
+                entry.relationship === 'overlap' ? this.conflictLabelForCell(weekday, hour) : '',
                 entry.isDistanceLearningCourse === true ? 'Fernunterricht' : '',
                 entry.courseGroup?.is_kompaktunterricht === true ? 'Kompaktunterricht' : '',
                 entry.courseGroup?.is_block === true
@@ -491,10 +697,10 @@ export default {
                     : '',
             ].filter(Boolean)
         },
-        lessonSpecialDetailsLabel(entry) {
-            return this.lessonMarkers(entry).join(' · ')
+        lessonSpecialDetailsLabel(entry, weekday, hour) {
+            return this.lessonMarkers(entry, weekday, hour).join(' · ')
         },
-        lessonAriaLabel(entry) {
+        lessonAriaLabel(entry, weekday, hour) {
             return [
                 entry.code,
                 entry.name,
@@ -502,7 +708,7 @@ export default {
                 this.lessonScheduleLabel(entry),
                 this.lessonDateLabel(entry),
                 this.lessonPeopleAndRoomsLabel(entry),
-                ...this.lessonMarkers(entry),
+                ...this.lessonMarkers(entry, weekday, hour),
             ].filter(Boolean).join(', ')
         },
     },
@@ -702,6 +908,20 @@ export default {
     line-height: 1.15;
 }
 
+.timetable-v3-results__lesson-conflict-reference {
+    display: inline-flex;
+    gap: 2px;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    margin-left: auto;
+    text-align: right;
+}
+
+.timetable-v3-results__lesson-conflict-reference strong {
+    font-size: 0.72rem;
+}
+
 .timetable-v3-results__lesson-heading span,
 .timetable-v3-results__lesson-source,
 .timetable-v3-results__lesson-detail,
@@ -727,6 +947,64 @@ export default {
 .timetable-v3-results__lesson-special {
     font-weight: 700;
     color: #92400e;
+}
+
+.timetable-v3-results__conflict-summary {
+    display: grid;
+    gap: 7px;
+    padding: 11px 12px;
+    color: #334155;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+}
+
+.timetable-v3-results__conflict-summary h5 {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #78350f;
+}
+
+.timetable-v3-results__conflict-group {
+    display: grid;
+    gap: 3px;
+    padding: 8px 9px;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-left: 3px solid #f59e0b;
+    border-radius: 6px;
+}
+
+.timetable-v3-results__conflict-course {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.timetable-v3-results__conflict-course > strong {
+    margin-right: 4px;
+}
+
+.timetable-v3-results__conflict-counter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    min-height: 22px;
+    margin-right: 5px;
+    padding: 0 5px;
+    font-weight: 800;
+    color: #92400e;
+    background: #fff7ed;
+    border: 1px solid #d97706;
+    border-radius: 5px;
+}
+
+.timetable-v3-results__conflict-date--overlap {
+    font-weight: 650;
+    color: #b42318;
 }
 
 .timetable-v3-results__hint {

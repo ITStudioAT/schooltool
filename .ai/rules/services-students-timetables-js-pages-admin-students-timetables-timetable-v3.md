@@ -23,3 +23,6 @@ Append the exact dd.mm.yyyy date to each V3 Unterricht schedule line when that u
 
 ## Mark manual Hauptmodule outside Studienauswahl
 For the manual Hauptmodule catalog, calculate selection intention in the backend from the current religion, language, branch, and arts subject. Return is_intended_for_selection on each concrete module and show a red “Nicht vorgesehen!” badge only when it is false; Vue must not duplicate the eligibility rules.
+
+## Show course conflicts below dialog schedule rows
+V3 Unterricht dialogs keep backend-compacted schedule rows mapped to their underlying course-group keys. If a row overlaps an already selected or manually planned Unterricht on an actual date and time, render each conflicting canonical course label in parentheses on its own red, normal-weight line below that row.

@@ -538,7 +538,7 @@ describe('TimetableV3', () => {
         expect(context.schoolLevelDialogSaving).toBe(false)
     })
 
-    it('loads configured school-hour time ranges for the empty manual timetable once', async () => {
+    it('loads configured school-hour time ranges for every manual timetable once', async () => {
         const methods = (TimetableV3 as any).methods
         const currentStepWatcher = (TimetableV3 as any).watch.currentStep
         const get = vi.fn().mockResolvedValue({
@@ -1184,6 +1184,7 @@ describe('TimetableV3', () => {
             saveState: vi.fn().mockResolvedValue(undefined),
             calculatePossibleTimetables: vi.fn().mockResolvedValue(undefined),
             ensureValidCurrentStep: vi.fn(),
+            loadSchoolHours: vi.fn(),
             resetManualModuleCatalogDisclosure: vi.fn(),
             resetTimetableCalculation: vi.fn(),
             $router: { push },
@@ -1242,6 +1243,7 @@ describe('TimetableV3', () => {
         context.scheduleCreationMode = 'automatic'
         currentStepWatcher.call(context, 'adoption', 'creation')
         expect(context.scheduleCreationMode).toBe('automatic')
+        expect(context.loadSchoolHours).toHaveBeenCalledOnce()
         expect(context.resetTimetableCalculation).not.toHaveBeenCalled()
 
         currentStepWatcher.call(context, 'modules', 'adoption')
@@ -1678,6 +1680,11 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).not.toContain('timetable-v3__adoption-card--automatic')
         expect(adoptionPageSource).not.toContain('Automatischer Stundenplan')
         expect(adoptionPageSource).toContain('Manueller Stundenplan')
+        expect(manualCardSource).toContain('timetable-v3__adoption-pdf-button')
+        expect(manualCardSource).toContain('prepend-icon="mdi-file-pdf-box"')
+        expect(manualCardSource).toContain('size="large"')
+        expect(manualCardSource).toContain('@click="downloadManualTimetablePdf"')
+        expect(source).toContain('downloadStudentTimetableOverviewPdf.url()')
         expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
         expect(manualCardSource).toContain('timetable-v3__schedule-mode-selected-modules')
         expect(manualCardSource).toContain('Ausgewählte Module')
@@ -1744,6 +1751,7 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).toContain(':manual-timetable="manualTimetable"')
         expect(adoptionPageSource).toContain(':navigation-visible="false"')
         expect(adoptionPageSource).toContain(':position-visible="false"')
+        expect(adoptionPageSource).toContain('show-all-hours')
         expect(adoptionPageSource).toContain(':selected-index="timetableSelectedIndex"')
         expect(adoptionPageSource).toContain(':timetables="adoptionTimetables"')
         expect(adoptionPageSource).toContain('class="timetable-v3__page-actions timetable-v3__page-actions--split"')
@@ -1771,6 +1779,143 @@ describe('TimetableV3', () => {
         )
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__adoption-cards\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
         expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__manual-module-catalog-headings--with-student\s*\{[\s\S]*?grid-template-columns:\s*1fr;/)
+    })
+
+    it('builds the manual A4 PDF payload with all hours and exact overlap markers', () => {
+        const methods = (TimetableV3 as any).methods
+        const courseEntry = (key: string, code: string, dates: string[]) => ({
+            key,
+            code,
+            name: code,
+            sourceLabel: `${code} 2Q-REIS`,
+            courseGroup: {
+                key,
+                dates,
+                starts_at: '17:50',
+                ends_at: '18:35',
+                recurrence_label: '1-wöchig',
+            },
+            isDistanceLearningCourse: false,
+        })
+        const e3 = {
+            ...courseEntry('e3', 'E3', ['2026-02-16', '2026-02-23']),
+            name: 'Englisch 3',
+        }
+        const e4 = courseEntry('e4', 'E4', ['2026-02-23', '2026-03-02'])
+        const m1Course = courseEntry('m1', 'M1', ['2026-04-13'])
+        const m1 = {
+            ...m1Course,
+            courseGroup: {
+                ...m1Course.courseGroup,
+                recurrence_label: '2-wöchig',
+            },
+        }
+        const m2 = courseEntry('m2', 'M2', ['2026-04-20'])
+        const context: Record<string, any> = {
+            adoptionDisplayedTimetable: {
+                slots: {
+                    '1-1': { ...e3, sameSlotEntries: [e4], conflicts: [] },
+                    '1-2': { ...m1, sameSlotEntries: [m2], conflicts: [] },
+                },
+            },
+            schoolHours: [
+                { hour: 1, from: '17:50', until: '18:35' },
+                { hour: 3, from: '19:25', until: '20:10' },
+            ],
+            planningMode: 'with_student',
+            selectedStudentClass: '2Q',
+            selectedStudentFullName: 'Reis Erika',
+            selectedStudentLabel: 'Reis Erika',
+            adoptionSelectedModuleCount: 4,
+            schoolyearName: '2025/26',
+            compactPlanningSelectionItems: [
+                { key: 'religion', label: 'Ethik / Religion', value: 'Ethik' },
+                { key: 'language', label: 'Sprache', value: 'Französisch' },
+            ],
+        }
+
+        ;[
+            'manualTimetablePdfHours',
+            'manualTimetablePdfEntriesForCell',
+            'manualTimetablePdfLessonDates',
+            'manualTimetablePdfTimeInMinutes',
+            'manualTimetablePdfEntriesOverlapInTime',
+            'manualTimetablePdfExactOverlapDates',
+            'manualTimetablePdfNumberedCells',
+            'manualTimetablePdfCourse',
+        ].forEach((methodName) => {
+            context[methodName] = methods[methodName].bind(context)
+        })
+
+        const payload = methods.manualTimetablePdfPayload.call(context)
+        const hours = payload.semesters[0].weeks[0].hours
+
+        expect(payload).toMatchObject({
+            manual_cover: true,
+            title: 'Stundenplan',
+            subtitle: '4 Module',
+            student: '2Q · Reis Erika',
+            schoolyear: '2025/26',
+            study_selections: [
+                { label: 'Ethik / Religion', value: 'Ethik' },
+                { label: 'Sprache', value: 'Französisch' },
+            ],
+            print_options: {
+                single_weeks: false,
+                course_list: false,
+                course_overview: false,
+            },
+        })
+        expect(payload.weekdays.map(weekday => weekday.label)).toEqual([
+            'Montag',
+            'Dienstag',
+            'Mittwoch',
+            'Donnerstag',
+            'Freitag',
+        ])
+        expect(hours.map(hour => hour.hour)).toEqual([1, 2])
+        expect(payload.semesters[0].label).toBe('Stundenplan')
+        expect(JSON.stringify(payload)).not.toContain('Manueller')
+        expect(hours[0]).toMatchObject({ hour: 1, from: '17:50', until: '18:35' })
+        expect(hours[0].cells[0]).toMatchObject({
+            status: 'conflict',
+            markers: [{ label: '!1', title: 'Einzeltermin-Überschneidung' }],
+        })
+        expect(hours[0].cells[0].courses).toHaveLength(2)
+        expect(hours[0].cells[0].courses[0]).toMatchObject({
+            label: 'ENGLISCH 3',
+            identifier: 'E3-2Q-REIS',
+            details: '',
+            recurrence_label: '1-wöchig',
+        })
+        expect(hours[0].cells[0].courses[0].details).not.toContain('17:50')
+        expect(hours[0].cells[0].courses[0].details).not.toContain('1-wöchig')
+        expect(hours[1].cells[0]).toMatchObject({
+            status: 'filled',
+            markers: [{ label: '2', title: 'Mehrfachbelegung' }],
+        })
+        expect(hours[1].cells[0].courses).toHaveLength(2)
+        expect(hours[1].cells[0].courses[0].details).toBe('2-wöchig')
+
+        context.adoptionDisplayedTimetable.slots['6-15'] = courseEntry('saturday', 'S1', ['2026-05-09'])
+
+        const saturdayPayload = methods.manualTimetablePdfPayload.call(context)
+        const saturdayHours = saturdayPayload.semesters[0].weeks[0].hours
+
+        expect(saturdayPayload.weekdays.map(weekday => weekday.label)).toEqual([
+            'Montag',
+            'Dienstag',
+            'Mittwoch',
+            'Donnerstag',
+            'Freitag',
+            'Samstag',
+        ])
+        expect(saturdayHours.map(hour => hour.hour)).toEqual([1, 2, 15])
+        expect(saturdayHours[2].cells).toHaveLength(6)
+        expect(saturdayHours[2].cells[5]).toMatchObject({
+            status: 'filled',
+            markers: [],
+        })
     })
 
     it('places a manual course once and hides it from both module catalogs', async () => {
@@ -4244,7 +4389,11 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('keine Kurse im importierten Stundenplan')
         expect(source).toContain('Alle auswählen')
         expect(source).toContain('Alle abwählen')
-        expect(source).toContain('v-for="scheduleLabel in courseScheduleLabels(course)"')
+        expect(source).toContain('v-for="scheduleRow in courseScheduleRows(course)"')
+        expect(source).toContain('v-for="overlapLabel in courseScheduleRowOverlapLabels(course, scheduleRow)"')
+        expect(source).toContain('class="timetable-v3__module-course-overlap"')
+        expect(source).toContain('({{ overlapLabel }})')
+        expect(source).toMatch(/\.timetable-v3__module-course-overlap\s*\{[\s\S]*?color:\s*#b42318;[\s\S]*?font-weight:\s*400;/)
         expect(source).toContain('{{ moduleCourseTitle(course) }}')
         expect(source).toContain('v-if="moduleCourseSubtitle(course)"')
         expect(source).not.toContain('{{ course.title }}')
@@ -4266,6 +4415,94 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('mdi-chevron-up')
         expect(source).not.toContain('toggleModuleGroupCollapse')
         expect(source).not.toContain('@click="openModuleGroup(group)"')
+    })
+
+    it('shows the overlapping course below only the affected dialog schedule line', () => {
+        const methods = (TimetableV3 as any).methods
+        const candidateCourse = {
+            key: 'd1-a',
+            keys: ['d1-a', 'd1-b'],
+            display_schedule_rows: [
+                {
+                    label: 'Montag · 17:50–18:35 · 1-wöchig',
+                    entry_keys: ['d1-a'],
+                },
+                {
+                    label: 'Dienstag · 17:50–18:35 · 1-wöchig',
+                    entry_keys: ['d1-b'],
+                },
+            ],
+            timetable_entries: [
+                {
+                    key: 'd1-a',
+                    weekday: 1,
+                    hour: 10,
+                    starts_at: '17:50',
+                    ends_at: '18:35',
+                    dates: ['2026-09-07', '2026-09-14'],
+                    module_code: 'D1',
+                    display_label: 'D1 5RU-HUB',
+                },
+                {
+                    key: 'd1-b',
+                    weekday: 2,
+                    hour: 10,
+                    starts_at: '17:50',
+                    ends_at: '18:35',
+                    dates: ['2026-09-08'],
+                    module_code: 'D1',
+                    display_label: 'D1 5RU-HUB',
+                },
+            ],
+        }
+        const overlappingCourse = {
+            key: 'eth3-a',
+            keys: ['eth3-a'],
+            title: 'ETH3 5RU-HER',
+            timetable_entries: [
+                {
+                    key: 'eth3-a',
+                    weekday: 1,
+                    hour: 10,
+                    starts_at: '18:00',
+                    ends_at: '18:30',
+                    dates: ['2026-09-14'],
+                    module_code: 'ETH3',
+                    display_label: 'ETH3 5RU-HER',
+                },
+            ],
+        }
+        const differentDateCourse = {
+            key: 'm1-a',
+            keys: ['m1-a'],
+            title: 'M1 5RU-MAY',
+            timetable_entries: [
+                {
+                    key: 'm1-a',
+                    weekday: 1,
+                    hour: 10,
+                    starts_at: '17:50',
+                    ends_at: '18:35',
+                    dates: ['2026-09-21'],
+                    module_code: 'M1',
+                    display_label: 'M1 5RU-MAY',
+                },
+            ],
+        }
+        const context = {
+            moduleCoursesDialogReadOnly: true,
+            adoptionPlacedCourseKeys: ['eth3-a', 'm1-a'],
+            manualPendingCourseKeys: [],
+            selectedCourseKeys: [],
+            manualCatalogCourses: [candidateCourse, overlappingCourse, differentDateCourse],
+        }
+        const scheduleRows = methods.courseScheduleRows(candidateCourse)
+
+        expect(scheduleRows).toHaveLength(2)
+        expect(methods.courseScheduleRowOverlapLabels.call(context, candidateCourse, scheduleRows[0]))
+            .toEqual(['ETH3 5RU-HER'])
+        expect(methods.courseScheduleRowOverlapLabels.call(context, candidateCourse, scheduleRows[1]))
+            .toEqual([])
     })
 
     it('selects and deselects every module in the open module type', async () => {

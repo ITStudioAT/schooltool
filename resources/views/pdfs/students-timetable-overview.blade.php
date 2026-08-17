@@ -8,6 +8,14 @@
         $printSingleWeeks = ($printOptions['single_weeks'] ?? false) === true;
         $printCourseList = ($printOptions['course_list'] ?? true) !== false;
         $printCourseOverview = ($printOptions['course_overview'] ?? true) !== false;
+        $isManualTimetable = ! empty($data['manual_cover']);
+        $weekdayLabels = collect($data['weekdays'] ?? [])->pluck('label')->all();
+        $hasSaturdayColumn = collect($weekdayLabels)
+            ->contains(fn ($weekdayLabel): bool => mb_strtolower(trim((string) $weekdayLabel)) === 'samstag');
+        $manualBodyFontSize = $hasSaturdayColumn ? 6 : 6.5;
+        $manualHeaderFontSize = $hasSaturdayColumn ? 6.5 : 7;
+        $manualDetailFontSize = $hasSaturdayColumn ? 5 : 5.5;
+        $manualCourseLabelFontSize = $hasSaturdayColumn ? 5.25 : 5.75;
         $semesters = collect($data['semesters'] ?? []);
         $metricSemesters = $printSingleWeeks
             ? $semesters->map(fn (array $semester): array => [
@@ -141,7 +149,9 @@
         $headerHeight = 9;
         $availableRowHeight = max(24, $pageHeight - $headerHeight - $labelHeight);
         $baseRowHeight = max(5.2, min(10.5, $availableRowHeight / $hourRowCount));
-        $rowHeight = $baseRowHeight;
+        $rowHeight = $isManualTimetable && $hourRowCount < 15
+            ? max($baseRowHeight, min(20, $availableRowHeight / $hourRowCount))
+            : $baseRowHeight;
         $naturalHeight = $headerHeight + $labelHeight + ($hourRowCount * $rowHeight);
         $scale = max(0.45, min(1, $pageHeight / $naturalHeight));
         $contentWidth = 100 / $scale;
@@ -155,7 +165,6 @@
             $detailFontSize = max(5.5, $bodyFontSize - 1.2);
         }
 
-        $weekdayLabels = collect($data['weekdays'] ?? [])->pluck('label')->all();
         $allCourseSlots = collect();
         foreach ($data['semesters'] ?? [] as $sem) {
             $semLabel = $sem['label'] ?? 'Semester';
@@ -932,6 +941,137 @@
             line-height: 1.18;
         }
 
+        .pdf-cover-page {
+            box-sizing: border-box;
+            width: 257mm;
+            padding: 11mm 14mm;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            page-break-after: always;
+            break-after: page;
+            background: linear-gradient(145deg, #fff7ed 0%, #ffffff 58%, #f8fafc 100%);
+            border-top: 3mm solid #c2410c;
+        }
+
+        .pdf-cover-kicker {
+            margin-bottom: 4mm;
+            color: #c2410c;
+            font-size: 10pt;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .pdf-cover-title {
+            margin: 0 0 10mm;
+            color: #0f172a;
+            font-size: 28pt;
+            line-height: 1.08;
+        }
+
+        .pdf-cover-information {
+            width: 100%;
+            margin: 0 0 7mm;
+            border-spacing: 3mm;
+            table-layout: fixed;
+        }
+
+        .pdf-cover-information-item {
+            padding: 4mm 5mm;
+            vertical-align: top;
+            background: rgba(255, 255, 255, 0.88);
+            border: 0.35mm solid #e2e8f0;
+            border-radius: 2mm;
+        }
+
+        .pdf-cover-information-label {
+            display: block;
+            margin-bottom: 1.4mm;
+            color: #64748b;
+            font-size: 8pt;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .pdf-cover-information-value {
+            color: #1e293b;
+            font-size: 12pt;
+            font-weight: 700;
+        }
+
+        .pdf-cover-study-selection {
+            margin: 0 0 6mm;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .pdf-cover-study-selection-title {
+            margin: 0 0 2mm;
+            color: #1e3a8a;
+            font-size: 12pt;
+        }
+
+        .pdf-cover-study-selection-table {
+            width: 100%;
+            border-spacing: 2mm;
+            table-layout: fixed;
+        }
+
+        .pdf-cover-study-selection-item {
+            padding: 2.5mm 4mm;
+            vertical-align: top;
+            background: #eff6ff;
+            border: 0.35mm solid #bfdbfe;
+            border-radius: 2mm;
+        }
+
+        .pdf-cover-study-selection-label {
+            display: block;
+            margin-bottom: 1mm;
+            color: #1d4ed8;
+            font-size: 7.5pt;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .pdf-cover-study-selection-value {
+            color: #1e293b;
+            font-size: 10pt;
+            font-weight: 700;
+        }
+
+        .pdf-cover-disclaimer {
+            padding: 5mm 6mm;
+            color: #78350f;
+            background: #fffbeb;
+            border: 0.5mm solid #f59e0b;
+            border-radius: 2.5mm;
+            font-size: 10.5pt;
+            line-height: 1.45;
+        }
+
+        .pdf-cover-disclaimer strong {
+            display: block;
+            margin-bottom: 1.5mm;
+            font-size: 12pt;
+        }
+
+        .pdf-cover-reminder {
+            margin-top: 7mm;
+            padding: 5mm;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            color: #ffffff;
+            background: #c2410c;
+            border-radius: 2.5mm;
+            font-size: 20pt;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            text-align: center;
+        }
+
         .pdf-page {
             position: relative;
             width: 257mm;
@@ -944,6 +1084,88 @@
         .pdf-page--additional {
             page-break-before: always;
             break-before: page;
+        }
+
+        .pdf-page--manual-timetable td {
+            height: {{ number_format($rowHeight, 2, '.', '') }}mm;
+            max-height: {{ number_format($rowHeight, 2, '.', '') }}mm;
+            padding: 0.25mm 0.4mm 0.45mm;
+            font-size: {{ number_format($manualBodyFontSize, 2, '.', '') }}pt;
+            line-height: 1;
+        }
+
+        .pdf-page--manual-timetable .cell-content {
+            height: {{ number_format(max(3.5, $rowHeight - 1.7), 2, '.', '') }}mm;
+            max-height: {{ number_format(max(3.5, $rowHeight - 1.7), 2, '.', '') }}mm;
+            overflow: hidden;
+        }
+
+        .pdf-page--manual-timetable .header {
+            margin-bottom: 0.8mm;
+        }
+
+        .pdf-page--manual-timetable .title {
+            font-size: 9pt;
+        }
+
+        .pdf-page--manual-timetable .meta {
+            margin-top: 0.2mm;
+            font-size: 7pt;
+            line-height: 1;
+        }
+
+        .pdf-page--manual-timetable .semester-title {
+            margin-bottom: 0.2mm;
+            font-size: 6pt;
+            line-height: 1;
+        }
+
+        .pdf-page--manual-timetable th {
+            height: 2.8mm;
+            padding: 0.25mm 0.4mm;
+            font-size: {{ number_format($manualHeaderFontSize, 2, '.', '') }}pt;
+            line-height: 1;
+        }
+
+        .pdf-page--manual-timetable .time-range,
+        .pdf-page--manual-timetable .course-identifier,
+        .pdf-page--manual-timetable .course-details,
+        .pdf-page--manual-timetable .course-fu,
+        .pdf-page--manual-timetable .course-more,
+        .pdf-page--manual-timetable .marker {
+            font-size: {{ number_format($manualDetailFontSize, 2, '.', '') }}pt;
+            line-height: 1;
+        }
+
+        .pdf-page--manual-timetable .course-label-main {
+            font-size: {{ number_format($manualCourseLabelFontSize, 2, '.', '') }}pt;
+        }
+
+        .pdf-page--manual-timetable .courses-grid--two-columns {
+            display: table;
+            table-layout: fixed;
+            width: 100%;
+        }
+
+        .pdf-page--manual-timetable .courses-grid--two-columns .courses-grid-row {
+            display: table-row;
+        }
+
+        .pdf-page--manual-timetable .courses-grid--two-columns .course-grid-item {
+            display: table-cell;
+            padding-right: 0.5mm;
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .pdf-page--manual-timetable .courses-grid--two-columns .course-grid-item + .course-grid-item {
+            border-left: 0.15mm solid rgba(100, 116, 139, 0.35);
+            padding-left: 0.5mm;
+            padding-right: 0;
+        }
+
+        .pdf-page--manual-timetable .courses-grid--two-columns .course-grid-row + .courses-grid-row .course {
+            margin-top: 0.15mm;
         }
 
         .pdf-content {
@@ -1130,6 +1352,17 @@
             line-height: 1.0;
             word-break: normal;
             overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .course-identifier {
+            margin-top: 0.2mm;
+            overflow: hidden;
+            color: #334155;
+            font-size: var(--pdf-detail-font-size);
+            font-weight: 700;
+            line-height: 1.1;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -1406,10 +1639,77 @@
         --pdf-semester-columns: {{ $semesterCount > 1 ? 2 : 1 }};
     "
 >
+    @if(! empty($data['manual_cover']))
+        <main class="pdf-cover-page">
+            <div class="pdf-cover-kicker">Stundenplanung</div>
+            <h1 class="pdf-cover-title">Allgemeine Informationen</h1>
+
+            <table class="pdf-cover-information">
+                <tbody>
+                    <tr>
+                        <td class="pdf-cover-information-item">
+                            <span class="pdf-cover-information-label">Studierende/r</span>
+                            <span class="pdf-cover-information-value">{{ $data['student'] ?? 'Ohne Studierendenbezug' }}</span>
+                        </td>
+                        <td class="pdf-cover-information-item">
+                            <span class="pdf-cover-information-label">Schuljahr</span>
+                            <span class="pdf-cover-information-value">{{ $data['schoolyear'] ?? '–' }}</span>
+                        </td>
+                        <td class="pdf-cover-information-item">
+                            <span class="pdf-cover-information-label">Erstellt am</span>
+                            <span class="pdf-cover-information-value">{{ $data['generated_at'] ?? '–' }}</span>
+                        </td>
+                        @if(! empty($data['subtitle']))
+                            <td class="pdf-cover-information-item">
+                                <span class="pdf-cover-information-label">Umfang</span>
+                                <span class="pdf-cover-information-value">{{ $data['subtitle'] }}</span>
+                            </td>
+                        @endif
+                    </tr>
+                </tbody>
+            </table>
+
+            @if(! empty($data['study_selections']))
+                <section class="pdf-cover-study-selection">
+                    <h2 class="pdf-cover-study-selection-title">Studienauswahl</h2>
+                    <table class="pdf-cover-study-selection-table">
+                        <tbody>
+                            @foreach(collect($data['study_selections'])->chunk(2) as $selectionRow)
+                                <tr>
+                                    @foreach($selectionRow as $selection)
+                                        <td class="pdf-cover-study-selection-item">
+                                            <span class="pdf-cover-study-selection-label">{{ $selection['label'] }}</span>
+                                            <span class="pdf-cover-study-selection-value">{{ $selection['value'] }}</span>
+                                        </td>
+                                    @endforeach
+                                    @if($selectionRow->count() === 1)
+                                        <td></td>
+                                    @endif
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </section>
+            @endif
+
+            <div class="pdf-cover-disclaimer">
+                <strong>Wichtiger Hinweis</strong>
+                Es wird keine Gewähr für die Richtigkeit, Vollständigkeit oder Überschneidungsfreiheit übernommen.
+                Maßgeblich sind die offiziell gebuchten Lehrveranstaltungen und die veröffentlichten Termine.
+            </div>
+
+            <div class="pdf-cover-reminder">Buchen nicht vergessen!</div>
+        </main>
+    @endif
+
     @foreach($timetablePages as $timetablePage)
         @php
             $pageData = $timetablePage['data'];
             $pageClass = $timetablePage['is_additional'] ? 'pdf-page pdf-page--additional' : 'pdf-page';
+
+            if (! empty($data['manual_cover'])) {
+                $pageClass .= ' pdf-page--manual-timetable';
+            }
         @endphp
     <main class="{{ $pageClass }}">
         <div class="pdf-content">
@@ -1425,12 +1725,14 @@
             <div class="semesters">
                 @foreach($pageData['semesters'] ?? [] as $semester)
                     <section class="semester">
-                        <div class="semester-title">
-                            {{ $semester['label'] ?? 'Semester' }}
-                            @if(! empty($semester['date_range']))
-                                <span>({{ $semester['date_range'] }})</span>
-                            @endif
-                        </div>
+                        @unless($isManualTimetable)
+                            <div class="semester-title">
+                                {{ $semester['label'] ?? 'Semester' }}
+                                @if(! empty($semester['date_range']))
+                                    <span>({{ $semester['date_range'] }})</span>
+                                @endif
+                            </div>
+                        @endunless
 
                         @foreach($semester['weeks'] ?? [] as $week)
                             @if(! empty($week['label']))
@@ -1476,36 +1778,55 @@
                                                             $shownCourses = $courses;
                                                         @endphp
 
-                                                        @foreach($shownCourses as $course)
-                                                            <div class="course @if($hasDenseCourses) course--compact @endif">
-                                                                @php
-                                                                    $titleLabel = $courseTitleLabel($course);
-                                                                    $courseDetails = $courseDetailsForRendering($course);
-                                                                    $learningModeLabel = $courseLearningModeLabel($course);
-                                                                    $titleContext = $courseTitleContext($course);
-                                                                    if ($learningModeLabel === 'Kompaktunterricht') {
-                                                                        $titleContext = $stripCompactMarkerText($titleContext);
-                                                                    }
-                                                                @endphp
-                                                                <div class="course-label">
-                                                                    <span class="course-label-main">
-                                                                        {{ $titleLabel }}
-                                                                        @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
-                                                                            <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
-                                                                        @endif
-                                                                    </span>
-                                                                    @if($titleContext !== '')
-                                                                        <span class="course-label-context">{{ $titleContext }}</span>
+                                                        <div class="courses-grid @if($hasDenseCourses) courses-grid--two-columns @endif">
+                                                            @foreach($shownCourses->chunk($hasDenseCourses ? 2 : 1) as $courseRow)
+                                                                <div class="courses-grid-row">
+                                                                    @foreach($courseRow as $course)
+                                                                        <div class="course-grid-item">
+                                                                            <div class="course @if($hasDenseCourses) course--compact @endif">
+                                                                                @php
+                                                                                    $titleLabel = $isManualTimetable
+                                                                                        ? trim((string) ($course['label'] ?? ''))
+                                                                                        : $courseTitleLabel($course);
+                                                                                    $courseDetails = $courseDetailsForRendering($course);
+                                                                                    $learningModeLabel = $courseLearningModeLabel($course);
+                                                                                    $titleContext = $isManualTimetable ? '' : $courseTitleContext($course);
+                                                                                    $courseIdentifier = $isManualTimetable
+                                                                                        ? trim((string) ($course['identifier'] ?? ''))
+                                                                                        : '';
+                                                                                    if ($learningModeLabel === 'Kompaktunterricht') {
+                                                                                        $titleContext = $stripCompactMarkerText($titleContext);
+                                                                                    }
+                                                                                @endphp
+                                                                                <div class="course-label">
+                                                                                    <span class="course-label-main">
+                                                                                        {{ $titleLabel }}
+                                                                                        @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
+                                                                                            <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
+                                                                                        @endif
+                                                                                    </span>
+                                                                                    @if($titleContext !== '')
+                                                                                        <span class="course-label-context">{{ $titleContext }}</span>
+                                                                                    @endif
+                                                                                </div>
+                                                                                @if($courseIdentifier !== '')
+                                                                                    <div class="course-identifier">{{ $courseIdentifier }}</div>
+                                                                                @endif
+                                                                                @if($courseDetails !== '')
+                                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, $timetablePage['is_additional'], $learningModeLabel === 'Kompaktunterricht') !!}</div>
+                                                                                @endif
+                                                                                @if($learningModeLabel !== '')
+                                                                                    <div class="course-fu">{{ $learningModeLabel }}</div>
+                                                                                @endif
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                    @if($hasDenseCourses && $courseRow->count() === 1)
+                                                                        <div class="course-grid-item"></div>
                                                                     @endif
                                                                 </div>
-                                                                @if($courseDetails !== '')
-                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, $timetablePage['is_additional'], $learningModeLabel === 'Kompaktunterricht') !!}</div>
-                                                                @endif
-                                                                @if($learningModeLabel !== '')
-                                                                    <div class="course-fu">{{ $learningModeLabel }}</div>
-                                                                @endif
-                                                            </div>
-                                                        @endforeach
+                                                            @endforeach
+                                                        </div>
 
                                                         @if($cellMarkers->isNotEmpty())
                                                             <div class="markers">

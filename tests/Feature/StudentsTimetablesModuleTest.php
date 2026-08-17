@@ -3461,6 +3461,11 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.0', 'Montag · 17:50–19:30 · 1-wöchig')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.1', 'Montag · 20:25–21:10 · 1-wöchig')
+        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_rows')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_rows.0.label', 'Montag · 17:50–19:30 · 1-wöchig')
+        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_rows.0.entry_keys')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_rows.1.label', 'Montag · 20:25–21:10 · 1-wöchig')
+        ->assertJsonCount(1, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_rows.1.entry_keys')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.hours', 2)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.scheduled_hours', 3)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.usual_hours', 2)
@@ -4882,6 +4887,115 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && ! $pdf->contains('LET - 1U - HER')
             && $pdf->contains('20.02.')
             && $pdf->contains('1C · PABINGER Elena');
+    });
+});
+
+it('creates a manual timetable pdf with an information cover and booking reminder', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'manual_cover' => true,
+            'title' => 'Stundenplan',
+            'subtitle' => '2 Module',
+            'schoolyear' => '2025/26',
+            'student' => '2Q · Reis Erika',
+            'generated_at' => '17.08.2026, 10:30',
+            'study_selections' => [
+                ['label' => 'Ethik / Religion', 'value' => 'Ethik'],
+                ['label' => 'Sprache', 'value' => 'Französisch'],
+                ['label' => 'Zweig', 'value' => 'Naturwissenschaften'],
+                ['label' => 'ME / BE', 'value' => 'Bildnerische Erziehung'],
+            ],
+            'weekdays' => [
+                ['label' => 'Montag'],
+                ['label' => 'Dienstag'],
+            ],
+            'semesters' => [[
+                'label' => 'Stundenplan',
+                'date_range' => '',
+                'weeks' => [[
+                    'label' => '',
+                    'hours' => [[
+                        'hour' => 1,
+                        'from' => '08:00',
+                        'until' => '08:45',
+                        'cells' => [
+                            [
+                                'status' => 'filled',
+                                'courses' => [
+                                    [
+                                        'label' => 'ENGLISCH 3',
+                                        'identifier' => 'E3-2Q-REIS',
+                                        'details' => '',
+                                        'dates' => ['2026-02-16'],
+                                        'recurrence_label' => '1-wöchig',
+                                    ],
+                                    [
+                                        'label' => 'ENGLISCH 4',
+                                        'identifier' => 'E4-2Q-REIS',
+                                        'details' => '',
+                                        'dates' => ['2026-02-23'],
+                                        'recurrence_label' => '1-wöchig',
+                                    ],
+                                ],
+                                'markers' => [[
+                                    'label' => '1',
+                                    'title' => 'Mehrfachbelegung',
+                                ]],
+                            ],
+                            [
+                                'status' => 'empty',
+                                'courses' => [],
+                                'markers' => [],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ]],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        expect($pdf->contains('font-size: 6.50pt;'))->toBeTrue()
+            ->and($pdf->contains('font-size: 7.00pt;'))->toBeTrue()
+            ->and($pdf->contains('font-size: 5.50pt;'))->toBeTrue()
+            ->and($pdf->contains('font-size: 5.75pt;'))->toBeTrue()
+            ->and($pdf->contains('--pdf-row-height: 20.00mm;'))->toBeTrue()
+            ->and(preg_match('/<div class="courses-grid\s+courses-grid--two-columns\s*">/u', $pdf->html))->toBe(1)
+            ->and($pdf->contains('E3-2Q-REIS'))->toBeTrue()
+            ->and($pdf->contains('E4-2Q-REIS'))->toBeTrue()
+            ->and(preg_match('/<span class="course-label-main">\s*ENGLISCH 3/u', $pdf->html))->toBe(1)
+            ->and($pdf->contains('<div class="course-identifier">E3-2Q-REIS</div>'))->toBeTrue()
+            ->and($pdf->contains('title="Mehrfachbelegung">1</span>'))->toBeTrue()
+            ->and($pdf->contains('17:50–18:35'))->toBeFalse()
+            ->and($pdf->contains('1-wöchig'))->toBeFalse();
+
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && $pdf->downloadName === 'stundenplan.pdf'
+            && $pdf->isDownload()
+            && $pdf->contains('class="pdf-cover-page"')
+            && $pdf->contains('<div class="pdf-cover-kicker">Stundenplanung</div>')
+            && $pdf->contains('Allgemeine Informationen')
+            && $pdf->contains('Studienauswahl')
+            && $pdf->contains('Ethik / Religion')
+            && $pdf->contains('Französisch')
+            && $pdf->contains('Naturwissenschaften')
+            && $pdf->contains('Bildnerische Erziehung')
+            && $pdf->contains('keine Gewähr für die Richtigkeit')
+            && ! $pdf->contains('Dieser Stundenplan wurde manuell zusammengestellt.')
+            && ! $pdf->contains('<span class="pdf-cover-information-label">Stundenplan</span>')
+            && $pdf->contains('Buchen nicht vergessen!')
+            && $pdf->contains('<table class="pdf-cover-information">')
+            && $pdf->contains('page-break-inside: avoid;')
+            && $pdf->contains('pdf-page--manual-timetable')
+            && ! $pdf->contains('<div class="semester-title">')
+            && ! $pdf->contains('Manueller')
+            && $pdf->contains('2Q · Reis Erika')
+            && $pdf->contains('page-break-after: always;')
+            && $pdf->contains('size: A4 landscape;');
     });
 });
 

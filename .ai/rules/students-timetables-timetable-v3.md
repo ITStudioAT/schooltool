@@ -1,6 +1,7 @@
 ---
 paths:
   - 'resources/js/pages/admin/studentsTimetables/timetableV3/**'
+  - resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue
 ---
 
 # Students Timetables Timetable V3
@@ -298,3 +299,21 @@ Visible V3 module names must resolve religion codes specifically instead of disp
 
 ## Mark fully unintended manual Hauptmodule
 In the manual Hauptmodule catalog, show the red “Nicht vorgesehen!” badge on a Hauptmodul card only when the group is non-empty and every contained concrete module has backend-provided is_intended_for_selection=false. Do not reproduce Studienauswahl eligibility rules in Vue.
+
+## Show the complete manual timetable day
+On every V3 manual/adoption timetable, render at least periods 1–15 and preserve configured school-hour from–until ranges for each row. Automatic possible-timetable browsing may continue to use its occupied-hour range.
+
+## Number and explain timetable overlaps
+Number visible V3 overlap markers in weekday/hour order starting at 1. Below the timetable, repeat that reference on one line per involved Unterricht and list every exact course date; color a date red only when another involved Unterricht occurs on that date with an overlapping time interval.
+
+## Right-align only in-cell overlap references
+Right-align the numbered calendar-alert reference inside each affected Unterricht card. Keep the !n references in the Überschneidungen summary below the timetable left-aligned.
+
+## Warn only for exact manual overlaps
+This supersedes the rule that every multi-entry manual cell is an Einzeltermin-Überschneidung. Keep same weekday/hour courses visible together, but show overlap styling, marker, counter, and summary only when their exact date sets intersect and their time intervals overlap; disjoint date series stay normal.
+
+## Visually group overlap summary entries
+In the Überschneidungen summary below the timetable, keep each numbered overlap as its own bordered amber group. Render the left-aligned !n references as bordered badges so all course lines belonging to one overlap are visibly connected; do not change the right-aligned references inside timetable lessons.
+
+## Name overlaps by exact date count
+This supersedes the rule that every manual overlap is called Einzeltermin-Überschneidung. Use “Einzeltermin-Überschneidung” only when a numbered conflict group has exactly one distinct exact date with an overlapping time interval. Use “Überschneidungen” for multiple overlapping dates and whenever no single exact overlap date can be established; apply the same label to visible lesson markers and aria labels.

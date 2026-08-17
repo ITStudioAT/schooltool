@@ -23,7 +23,7 @@ function timetableFixture({
         number,
         slots,
         statusMessage: type === 'green'
-            ? 'Grüner Stundenplan mit Einzeltermin-Überschneidung'
+            ? 'Grüner Stundenplan mit Überschneidungen'
             : 'Voller grüner Stundenplan',
         type,
     }
@@ -155,7 +155,7 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.find('.timetable-v3-results__header h4').text()).toBe('Stundenplan')
         expect(wrapper.text()).not.toContain('Stundenplan 1 von 1')
         expect(wrapper.find('caption').text()).toBe('Leerer Stundenplan')
-        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
         expect((wrapper.vm as any).visibleHourRows).toEqual([
             { hour: 1, timeRange: '' },
             { hour: 2, timeRange: '' },
@@ -166,9 +166,15 @@ describe('TimetableV3PossibleTimetables', () => {
             { hour: 7, timeRange: '14:45–15:30' },
             { hour: 8, timeRange: '15:30–16:15' },
             { hour: 9, timeRange: '' },
+            { hour: 10, timeRange: '' },
+            { hour: 11, timeRange: '' },
+            { hour: 12, timeRange: '' },
+            { hour: 13, timeRange: '' },
+            { hour: 14, timeRange: '' },
+            { hour: 15, timeRange: '' },
         ])
-        expect(wrapper.findAll('tbody tr')).toHaveLength(9)
-        expect(wrapper.findAll('tbody td')).toHaveLength(54)
+        expect(wrapper.findAll('tbody tr')).toHaveLength(15)
+        expect(wrapper.findAll('tbody td')).toHaveLength(90)
         expect(wrapper.findAll('.timetable-v3-results__period-time').map(cell => cell.text()))
             .toEqual(['14:45–15:30', '15:30–16:15'])
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(0)
@@ -186,15 +192,15 @@ describe('TimetableV3PossibleTimetables', () => {
         })
 
         expect(wrapper.find('caption').text()).toBe('Manueller Stundenplan')
-        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-        expect(wrapper.findAll('tbody tr')).toHaveLength(10)
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        expect(wrapper.findAll('tbody tr')).toHaveLength(15)
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(2)
         expect(wrapper.findAll('.timetable-v3-results__lesson--overlap')).toHaveLength(1)
         expect(wrapper.findAll('[icon="mdi-calendar-alert-outline"]')).toHaveLength(1)
         expect(wrapper.find('[role="status"]').exists()).toBe(false)
         expect(wrapper.text()).not.toContain('Einzeltermin-Überschneidung · erlaubt')
         expect(wrapper.find('.timetable-v3-results__lesson--overlap').text())
-            .toContain('Einzeltermin-Überschneidung')
+            .toContain('Überschneidungen')
         expect(wrapper.text()).toContain('M1')
         expect(wrapper.text()).toContain('CH1')
         expect(wrapper.text()).not.toContain('D1')
@@ -205,13 +211,100 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(0)
     })
 
-    it('falls back to an empty timetable from period 1 through period 10', () => {
+    it('falls back to an empty timetable from period 1 through period 15', () => {
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
             props: { emptyTimetable: true },
         })
 
-        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-        expect(wrapper.findAll('tbody tr')).toHaveLength(10)
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        expect(wrapper.findAll('tbody tr')).toHaveLength(15)
+    })
+
+    it('keeps same-cell courses without shared exact dates free of overlap warnings', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                highlightMultipleEntries: true,
+                timetables: [timetableFixture({
+                    key: 'disjoint-course-dates',
+                    number: 1,
+                    slots: {
+                        '1-11': slotFixture('E3', 1, 11, {
+                            courseGroup: {
+                                dates: [
+                                    '2026-02-16',
+                                    '2026-02-23',
+                                    '2026-03-02',
+                                    '2026-03-09',
+                                    '2026-03-16',
+                                    '2026-03-23',
+                                    '2026-04-13',
+                                    '2026-04-20',
+                                ],
+                                ends_at: '18:35',
+                                hour: 11,
+                                starts_at: '17:50',
+                                weekday: 1,
+                            },
+                            sameSlotEntries: [slotFixture('E4', 1, 11, {
+                                courseGroup: {
+                                    dates: [
+                                        '2026-04-27',
+                                        '2026-05-04',
+                                        '2026-05-11',
+                                        '2026-05-18',
+                                        '2026-06-01',
+                                        '2026-06-08',
+                                        '2026-06-15',
+                                        '2026-06-22',
+                                        '2026-06-29',
+                                        '2026-07-06',
+                                    ],
+                                    ends_at: '18:35',
+                                    hour: 11,
+                                    starts_at: '17:50',
+                                    weekday: 1,
+                                },
+                                sourceLabel: 'E4 2Q-REIS',
+                            })],
+                            sourceLabel: 'E3 2Q-REIS',
+                        }),
+                    },
+                    type: 'full_green',
+                })],
+            },
+        })
+
+        expect((wrapper.vm as any).timetableEntriesForCell(1, 11).map((entry: any) => entry.relationship))
+            .toEqual(['primary', 'same-slot'])
+        expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(2)
+        expect(wrapper.findAll('.timetable-v3-results__lesson--overlap')).toHaveLength(0)
+        expect(wrapper.findAll('.timetable-v3-results__lesson-conflict-reference')).toHaveLength(0)
+        expect(wrapper.find('.timetable-v3-results__conflict-summary').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Einzeltermin-Überschneidung')
+    })
+
+    it('shows periods 1 through 15 with configured time ranges in the manual editor', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                emptyHourRows: [
+                    { hour: 1, from: '08:00:00', until: '08:50:00' },
+                    { hour: 15, from: '21:15:00', until: '22:00:00' },
+                ],
+                showAllHours: true,
+                timetables: [timetableFixture({
+                    key: 'manual-editor',
+                    number: 1,
+                    slots: { '1-10': slotFixture('M1', 1, 10) },
+                    type: 'full_green',
+                })],
+            },
+        })
+
+        expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        expect((wrapper.vm as any).visibleHourRows[0]).toEqual({ hour: 1, timeRange: '08:00–08:50' })
+        expect((wrapper.vm as any).visibleHourRows[9]).toEqual({ hour: 10, timeRange: '17:50–18:35' })
+        expect((wrapper.vm as any).visibleHourRows[14]).toEqual({ hour: 15, timeRange: '21:15–22:00' })
+        expect(wrapper.findAll('tbody tr')).toHaveLength(15)
     })
 
     it('renders every primary, same-slot, and allowed overlap Unterricht', () => {
@@ -253,7 +346,7 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).toContain('D5')
         expect(wrapper.text()).toContain('CH1')
         expect(wrapper.text()).toContain('BU2')
-        expect(wrapper.text()).toContain('Einzeltermin-Überschneidung')
+        expect(wrapper.text()).toContain('Überschneidungen')
         expect(wrapper.text()).toContain('Fernunterricht')
         expect(wrapper.text()).toContain('17:50–18:35')
         expect(wrapper.text()).toContain('1-wöchig')
@@ -262,6 +355,90 @@ describe('TimetableV3PossibleTimetables', () => {
             lesson.attributes('aria-label')?.includes('Mag. Test · Raum 101')
         ))).toBe(true)
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(3)
+    })
+
+    it('numbers timetable conflicts and lists every course date below the timetable', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue',
+            'utf8',
+        )
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                timetables: [timetableFixture({
+                    key: 'numbered-conflicts',
+                    number: 1,
+                    slots: {
+                        '1-11': slotFixture('E3', 1, 11, {
+                            courseGroup: {
+                                dates: ['2026-02-16', '2026-02-23', '2026-03-02'],
+                                ends_at: '18:35',
+                                hour: 11,
+                                starts_at: '17:50',
+                                weekday: 1,
+                            },
+                            conflicts: [slotFixture('E4', 1, 11, {
+                                courseGroup: {
+                                    dates: ['2026-02-23', '2026-04-27'],
+                                    ends_at: '18:35',
+                                    hour: 11,
+                                    starts_at: '17:50',
+                                    weekday: 1,
+                                },
+                                sourceLabel: 'E4 2Q-REIS',
+                            })],
+                            sourceLabel: 'E3 2Q-REIS',
+                        }),
+                        '2-12': slotFixture('D3', 2, 12, {
+                            courseGroup: {
+                                dates: ['2026-05-05', '2026-05-12'],
+                                ends_at: '19:30',
+                                hour: 12,
+                                starts_at: '18:45',
+                                weekday: 2,
+                            },
+                            conflicts: [slotFixture('M3', 2, 12, {
+                                courseGroup: {
+                                    dates: ['2026-05-05', '2026-05-12'],
+                                    ends_at: '19:30',
+                                    hour: 12,
+                                    starts_at: '18:45',
+                                    weekday: 2,
+                                },
+                                sourceLabel: 'M3 3A-MAY',
+                            })],
+                            sourceLabel: 'D3 3A-HUB',
+                        }),
+                    },
+                    type: 'green',
+                })],
+            },
+        })
+        const conflictReferences = wrapper.findAll('.timetable-v3-results__lesson-conflict-reference')
+        const summaryCourses = wrapper.findAll('.timetable-v3-results__conflict-course')
+
+        expect(conflictReferences.map(reference => reference.text())).toEqual(['1', '2'])
+        expect(conflictReferences.map(reference => reference.attributes('aria-label'))).toEqual([
+            'Einzeltermin-Überschneidung 1',
+            'Überschneidungen 2',
+        ])
+        expect(wrapper.findAll('.timetable-v3-results__conflict-group')).toHaveLength(2)
+        expect(summaryCourses).toHaveLength(4)
+        expect(summaryCourses.map(course => course.find('.timetable-v3-results__conflict-counter').text()))
+            .toEqual(['!1', '!1', '!2', '!2'])
+        expect(summaryCourses[0].text()).toContain('E3 2Q-REIS:16.2.2026, 23.2.2026, 2.3.2026')
+        expect(summaryCourses[1].text()).toContain('E4 2Q-REIS:23.2.2026, 27.4.2026')
+        expect(wrapper.findAll('.timetable-v3-results__conflict-date--overlap').map(date => date.text()))
+            .toEqual(['23.2.2026', '23.2.2026', '5.5.2026', '12.5.2026', '5.5.2026', '12.5.2026'])
+        expect(wrapper.findAll('.timetable-v3-results__lesson-special').map(label => label.text()))
+            .toEqual(['Einzeltermin-Überschneidung', 'Überschneidungen'])
+        expect((wrapper.vm as any).lessonEntriesOverlapInTime(
+            { courseGroup: { starts_at: '17:50', ends_at: '18:35' } },
+            { courseGroup: { starts_at: '18:35', ends_at: '19:20' } },
+        )).toBe(false)
+        expect(source).toMatch(/\.timetable-v3-results__lesson-conflict-reference\s*\{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?margin-left:\s*auto;[\s\S]*?text-align:\s*right;/u)
+        expect(source).toMatch(/\.timetable-v3-results__conflict-group\s*\{[\s\S]*?background:\s*#fffbeb;[\s\S]*?border:\s*1px solid #fcd34d;[\s\S]*?border-left:\s*3px solid #f59e0b;/u)
+        expect(source).toMatch(/\.timetable-v3-results__conflict-counter\s*\{[\s\S]*?border:\s*1px solid #d97706;[\s\S]*?border-radius:\s*5px;/u)
+        expect(source).toMatch(/\.timetable-v3-results__conflict-date--overlap\s*\{[\s\S]*?color:\s*#b42318;/u)
     })
 
     it('renders imported course aliases with the canonical module code', () => {

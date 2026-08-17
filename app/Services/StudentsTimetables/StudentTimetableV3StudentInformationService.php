@@ -381,7 +381,7 @@ class StudentTimetableV3StudentInformationService
                     ->unique()
                     ->values()
                     ->all();
-                $displayScheduleLabels = $this->courseDisplayScheduleLabels($courseGroups);
+                $displayScheduleRows = $this->courseDisplayScheduleRows($courseGroups);
                 $usualHours = $this->moduleHours($module);
                 $regularHours = $this->moduleRegularHours($module) ?? $usualHours;
                 $scheduledHours = $this->courseScheduledWeeklyHours($courseGroups);
@@ -420,7 +420,8 @@ class StudentTimetableV3StudentInformationService
                         ->implode(', '),
                     'schedule_label' => $scheduleLabels[0] ?? '',
                     'schedule_labels' => $scheduleLabels,
-                    'display_schedule_labels' => $displayScheduleLabels,
+                    'display_schedule_labels' => collect($displayScheduleRows)->pluck('label')->all(),
+                    'display_schedule_rows' => $displayScheduleRows,
                     'scheduled_hours' => $scheduledHours,
                     'usual_hours' => $usualHours,
                     'regular_hours' => $regularHours,
@@ -491,9 +492,9 @@ class StudentTimetableV3StudentInformationService
 
     /**
      * @param  Collection<int, array<string, mixed>>  $courseGroups
-     * @return list<string>
+     * @return list<array{label: string, entry_keys: list<string>}>
      */
-    private function courseDisplayScheduleLabels(Collection $courseGroups): array
+    private function courseDisplayScheduleRows(Collection $courseGroups): array
     {
         $scheduleRanges = [];
 
@@ -509,18 +510,36 @@ class StudentTimetableV3StudentInformationService
                 && $this->courseGroupsHaveContinuousSchedule($scheduleRanges[$lastRangeIndex], $courseGroup)) {
                 $scheduleRanges[$lastRangeIndex]['time_until'] = trim((string) ($courseGroup['time_until'] ?? $courseGroup['ends_at'] ?? ''));
                 $scheduleRanges[$lastRangeIndex]['display_range_until_hour'] = $this->courseGroupDisplayRangeUntilHour($courseGroup);
+                $scheduleRanges[$lastRangeIndex]['display_entry_keys'][] = $this->courseKey($courseGroup);
 
                 continue;
             }
 
+            $courseGroup['display_entry_keys'] = [$this->courseKey($courseGroup)];
             $scheduleRanges[] = $courseGroup;
         }
 
         return collect($scheduleRanges)
             ->sortBy(fn (array $courseGroup): string => $this->courseGroupScheduleSortValue($courseGroup))
-            ->map(fn (array $courseGroup): string => $this->courseScheduleLabel($courseGroup))
-            ->filter()
-            ->unique()
+            ->map(fn (array $courseGroup): array => [
+                'label' => $this->courseScheduleLabel($courseGroup),
+                'entry_keys' => collect($courseGroup['display_entry_keys'] ?? [])
+                    ->map(fn (mixed $entryKey): string => trim((string) $entryKey))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all(),
+            ])
+            ->filter(fn (array $scheduleRow): bool => $scheduleRow['label'] !== '')
+            ->groupBy('label')
+            ->map(fn (Collection $scheduleRows, string $label): array => [
+                'label' => $label,
+                'entry_keys' => $scheduleRows
+                    ->flatMap(fn (array $scheduleRow): array => $scheduleRow['entry_keys'])
+                    ->unique()
+                    ->values()
+                    ->all(),
+            ])
             ->values()
             ->all();
     }
