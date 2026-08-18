@@ -86,14 +86,18 @@
                                         :key="entry.renderKey"
                                         class="timetable-v3-results__lesson"
                                         :class="{
-                                            'timetable-v3-results__lesson--overlap': entry.relationship === 'overlap',
+                                            'timetable-v3-results__lesson--overlap': lessonHasConflictMarker(
+                                                entry,
+                                                weekday.value,
+                                                hourRow.hour,
+                                            ),
                                             'timetable-v3-results__lesson--same-slot': entry.relationship === 'same-slot',
                                         }"
                                         :aria-label="lessonAriaLabel(entry, weekday.value, hourRow.hour)">
                                         <div class="timetable-v3-results__lesson-heading">
                                             <strong>{{ entry.code || 'Unterricht' }}</strong>
                                             <span
-                                                v-if="entry.relationship === 'overlap'"
+                                                v-if="lessonHasConflictMarker(entry, weekday.value, hourRow.hour)"
                                                 class="timetable-v3-results__lesson-conflict-reference"
                                                 :aria-label="`${conflictLabelForCell(weekday.value, hourRow.hour)} ${conflictNumberForCell(weekday.value, hourRow.hour)}`">
                                                 <v-icon
@@ -568,7 +572,7 @@ export default {
                 return {
                     dates: dates.map(date => ({
                         isOverlapping: otherDateSets.some(otherDates => otherDates.has(date)),
-                        label: this.localizedDate(date),
+                        label: this.localizedShortDate(date),
                         value: date,
                     })),
                     key: entryKey,
@@ -687,15 +691,45 @@ export default {
 
             return new Intl.DateTimeFormat('de-AT').format(new Date(Date.UTC(year, month - 1, day)))
         },
+        localizedShortDate(value) {
+            const [year, month, day] = String(value || '').split('-').map(Number)
+
+            if (!year || !month || !day) return String(value || '').trim()
+
+            return new Intl.DateTimeFormat('de-AT', {
+                day: '2-digit',
+                month: '2-digit',
+            }).format(new Date(Date.UTC(year, month - 1, day)))
+        },
         lessonMarkers(entry, weekday, hour) {
+            const hasSingleDate = this.normalizedLessonDates(entry).length === 1
+
             return [
-                entry.relationship === 'overlap' ? this.conflictLabelForCell(weekday, hour) : '',
+                this.lessonHasConflictMarker(entry, weekday, hour)
+                    ? this.conflictLabelForCell(weekday, hour)
+                    : '',
                 entry.isDistanceLearningCourse === true ? 'Fernunterricht' : '',
-                entry.courseGroup?.is_kompaktunterricht === true ? 'Kompaktunterricht' : '',
-                entry.courseGroup?.is_block === true
+                !hasSingleDate && entry.courseGroup?.is_kompaktunterricht === true ? 'Kompaktunterricht' : '',
+                !hasSingleDate && entry.courseGroup?.is_block === true
                     ? String(entry.courseGroup?.block_label || 'Blockunterricht').trim()
                     : '',
             ].filter(Boolean)
+        },
+        lessonHasConflictMarker(entry, weekday, hour) {
+            const entries = this.timetableEntriesForCell(weekday, hour)
+            const exactOverlapEntries = entries.filter((candidateEntry, candidateIndex) => entries
+                .some((otherEntry, otherEntryIndex) => (
+                    candidateIndex !== otherEntryIndex
+                    && this.lessonEntriesShareDateAndTime(candidateEntry, otherEntry)
+                )))
+            const singleDateEntries = exactOverlapEntries
+                .filter(candidateEntry => this.normalizedLessonDates(candidateEntry).length === 1)
+
+            if (singleDateEntries.length === 1) {
+                return singleDateEntries[0].renderKey === entry.renderKey
+            }
+
+            return entry.relationship === 'overlap'
         },
         lessonSpecialDetailsLabel(entry, weekday, hour) {
             return this.lessonMarkers(entry, weekday, hour).join(' · ')

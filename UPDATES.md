@@ -1,6 +1,8 @@
 # UPDATES
 
-## 3.46.0 !!!
+## 3.46.0
+
+Major Update
 
 ### Timetable V3
 

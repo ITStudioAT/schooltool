@@ -425,10 +425,10 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(summaryCourses).toHaveLength(4)
         expect(summaryCourses.map(course => course.find('.timetable-v3-results__conflict-counter').text()))
             .toEqual(['!1', '!1', '!2', '!2'])
-        expect(summaryCourses[0].text()).toContain('E3 2Q-REIS:16.2.2026, 23.2.2026, 2.3.2026')
-        expect(summaryCourses[1].text()).toContain('E4 2Q-REIS:23.2.2026, 27.4.2026')
+        expect(summaryCourses[0].text()).toContain('E3 2Q-REIS:16.02., 23.02., 02.03.')
+        expect(summaryCourses[1].text()).toContain('E4 2Q-REIS:23.02., 27.04.')
         expect(wrapper.findAll('.timetable-v3-results__conflict-date--overlap').map(date => date.text()))
-            .toEqual(['23.2.2026', '23.2.2026', '5.5.2026', '12.5.2026', '5.5.2026', '12.5.2026'])
+            .toEqual(['23.02.', '23.02.', '05.05.', '12.05.', '05.05.', '12.05.'])
         expect(wrapper.findAll('.timetable-v3-results__lesson-special').map(label => label.text()))
             .toEqual(['Einzeltermin-Überschneidung', 'Überschneidungen'])
         expect((wrapper.vm as any).lessonEntriesOverlapInTime(
@@ -439,6 +439,58 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(source).toMatch(/\.timetable-v3-results__conflict-group\s*\{[\s\S]*?background:\s*#fffbeb;[\s\S]*?border:\s*1px solid #fcd34d;[\s\S]*?border-left:\s*3px solid #f59e0b;/u)
         expect(source).toMatch(/\.timetable-v3-results__conflict-counter\s*\{[\s\S]*?border:\s*1px solid #d97706;[\s\S]*?border-radius:\s*5px;/u)
         expect(source).toMatch(/\.timetable-v3-results__conflict-date--overlap\s*\{[\s\S]*?color:\s*#b42318;/u)
+    })
+
+    it('moves a one-date overlap warning to that course and hides its compact block markers', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                timetables: [timetableFixture({
+                    key: 'one-date-compact-overlap',
+                    number: 1,
+                    slots: {
+                        '3-13': slotFixture('LPT', 3, 13, {
+                            courseGroup: {
+                                block_label: 'Block',
+                                dates: ['2026-02-18'],
+                                ends_at: '21:10',
+                                hour: 13,
+                                is_block: true,
+                                is_kompaktunterricht: true,
+                                recurrence_label: '',
+                                starts_at: '20:25',
+                                weekday: 3,
+                            },
+                            conflicts: [slotFixture('M1', 3, 13, {
+                                courseGroup: {
+                                    dates: ['2026-02-18', '2026-02-25', '2026-03-04'],
+                                    ends_at: '21:10',
+                                    hour: 13,
+                                    recurrence_label: '1-wöchig',
+                                    starts_at: '20:25',
+                                    weekday: 3,
+                                },
+                                sourceLabel: 'M1 1C-MAY',
+                            })],
+                            sourceLabel: 'LPT 1R-ENNS',
+                        }),
+                    },
+                    type: 'green',
+                })],
+            },
+        })
+        const lessons = wrapper.findAll('.timetable-v3-results__lesson')
+
+        expect(lessons).toHaveLength(2)
+        expect(lessons[0].text()).toContain('LPT')
+        expect(lessons[0].text()).toContain('Einzeltermin-Überschneidung')
+        expect(lessons[0].text()).not.toContain('Kompaktunterricht')
+        expect(lessons[0].text()).not.toContain('Block')
+        expect(lessons[0].classes()).toContain('timetable-v3-results__lesson--overlap')
+        expect(lessons[0].find('.timetable-v3-results__lesson-conflict-reference').exists()).toBe(true)
+        expect(lessons[1].text()).toContain('M1')
+        expect(lessons[1].text()).not.toContain('Einzeltermin-Überschneidung')
+        expect(lessons[1].classes()).not.toContain('timetable-v3-results__lesson--overlap')
+        expect(lessons[1].find('.timetable-v3-results__lesson-conflict-reference').exists()).toBe(false)
     })
 
     it('renders imported course aliases with the canonical module code', () => {

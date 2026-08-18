@@ -2,6 +2,7 @@
 paths:
   - 'resources/js/pages/admin/studentsTimetables/timetableV3/**'
   - resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue
+  - resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue
 ---
 
 # Students Timetables Timetable V3
@@ -317,3 +318,9 @@ In the Überschneidungen summary below the timetable, keep each numbered overlap
 
 ## Name overlaps by exact date count
 This supersedes the rule that every manual overlap is called Einzeltermin-Überschneidung. Use “Einzeltermin-Überschneidung” only when a numbered conflict group has exactly one distinct exact date with an overlapping time interval. Use “Überschneidungen” for multiple overlapping dates and whenever no single exact overlap date can be established; apply the same label to visible lesson markers and aria labels.
+
+## Put one-date overlap warning on the one-off course
+When an exact overlap has exactly one course with one date, place the overlap card styling, icon, counter, and label on that one-date course instead of the technical conflicts entry. Hide Kompaktunterricht and block markers on one-date courses.
+
+## Publish the current V3 adoption timetable
+On the V3 adoption page, show the publish/save action only when a student is selected. Label it with the student's last name and publish the current adoptionDisplayedTimetable through the generated publishStudentTimetable Wayfinder action; keep the PDF button beside it.

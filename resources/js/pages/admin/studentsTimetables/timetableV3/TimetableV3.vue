@@ -1426,19 +1426,46 @@
                         <span class="timetable-v3__schedule-mode-copy">
                             <span class="timetable-v3__adoption-heading">
                                 <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
-                                <v-btn
-                                    class="timetable-v3__adoption-pdf-button"
-                                    color="#c2410c"
-                                    :disabled="pdfExporting || timetablePageLoading || isLoadingState"
-                                    :loading="pdfExporting"
-                                    prepend-icon="mdi-file-pdf-box"
-                                    size="large"
-                                    type="button"
-                                    variant="outlined"
-                                    @click="downloadManualTimetablePdf">
-                                    PDF
-                                </v-btn>
+                                <span class="timetable-v3__adoption-actions">
+                                    <v-btn
+                                        class="timetable-v3__adoption-pdf-button"
+                                        color="#c2410c"
+                                        :disabled="pdfExporting || timetablePageLoading || isLoadingState"
+                                        :loading="pdfExporting"
+                                        prepend-icon="mdi-file-pdf-box"
+                                        size="large"
+                                        type="button"
+                                        variant="outlined"
+                                        @click="downloadManualTimetablePdf">
+                                        PDF
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="publishedStudentTimetableSaveVisible"
+                                        class="timetable-v3__adoption-save-button"
+                                        color="success"
+                                        :disabled="publishedTimetableSaving || timetablePageLoading || isLoadingState"
+                                        :loading="publishedTimetableSaving"
+                                        prepend-icon="mdi-content-save-outline"
+                                        size="large"
+                                        type="button"
+                                        variant="flat"
+                                        :title="`Stundenplan für ${selectedStudentLastName} speichern`"
+                                        :aria-label="`Stundenplan für ${selectedStudentLastName} speichern`"
+                                        @click="savePublishedStudentTimetable">
+                                        Speichern für {{ selectedStudentLastName }}
+                                    </v-btn>
+                                </span>
                             </span>
+                            <v-alert
+                                v-if="publishedTimetableReport.message"
+                                class="timetable-v3__published-timetable-report"
+                                :type="publishedTimetableReport.type"
+                                variant="tonal"
+                                closable
+                                density="compact"
+                                @click:close="clearPublishedTimetableReport">
+                                {{ publishedTimetableReport.message }}
+                            </v-alert>
                         </span>
                         <div
                             class="
@@ -2209,6 +2236,7 @@ import {
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import {
     overviewPdf as downloadStudentTimetableOverviewPdf,
+    publishStudentTimetable,
     robotStudents as loadRobotStudents,
     schoolHours as loadStudentTimetableSchoolHours,
 } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
@@ -3233,6 +3261,11 @@ export default {
             planningSelectionValues: {},
             emailCopyStatus: 'idle',
             pdfExporting: false,
+            publishedTimetableSaving: false,
+            publishedTimetableReport: {
+                type: 'success',
+                message: '',
+            },
         }
     },
 
@@ -3466,6 +3499,19 @@ export default {
                 .map(value => String(value || '').trim())
                 .filter(Boolean)
                 .join(' ')
+        },
+        selectedStudentLastName() {
+            return String(
+                this.selectedStudent?.lastName || this.selectedStudent?.last_name || '',
+            ).trim()
+        },
+        publishedStudentTimetableSaveVisible() {
+            return Boolean(
+                this.planningMode === WITH_STUDENT
+                && this.selectedStudent
+                && this.selectedStudentCode
+                && this.selectedStudentLastName,
+            )
         },
         selectedStudentReligion() {
             return String(this.selectedStudent?.religion || '').trim()
@@ -4144,6 +4190,48 @@ export default {
                 window.alert?.('Das PDF konnte nicht erstellt werden.')
             } finally {
                 this.pdfExporting = false
+            }
+        },
+        async savePublishedStudentTimetable() {
+            if (this.publishedTimetableSaving || !this.publishedStudentTimetableSaveVisible) return
+
+            this.publishedTimetableSaving = true
+            this.clearPublishedTimetableReport()
+
+            try {
+                const response = await axios.post(
+                    publishStudentTimetable.url(),
+                    {
+                        student_code: this.selectedStudentCode,
+                        student_label: this.selectedStudentFullName || this.selectedStudentLabel,
+                        timetable: this.manualTimetablePdfPayload(),
+                        state: {
+                            ...(this.storedState && typeof this.storedState === 'object'
+                                ? this.storedState
+                                : {}),
+                            source: 'timetable-v3',
+                            timetableV3Step: TIMETABLE_ADOPTION_STEP,
+                        },
+                    },
+                )
+
+                this.publishedTimetableReport = {
+                    type: 'success',
+                    message: response?.data?.message || 'Stundenplan wurde gespeichert.',
+                }
+            } catch (error) {
+                this.publishedTimetableReport = {
+                    type: 'error',
+                    message: error?.response?.data?.message || 'Stundenplan konnte nicht gespeichert werden.',
+                }
+            } finally {
+                this.publishedTimetableSaving = false
+            }
+        },
+        clearPublishedTimetableReport() {
+            this.publishedTimetableReport = {
+                type: 'success',
+                message: '',
             }
         },
         downloadBlob(blob, filename) {
@@ -6818,10 +6906,23 @@ button.timetable-v3__student-data-field:focus-visible {
     min-width: 0;
 }
 
+.timetable-v3__adoption-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
 .timetable-v3__adoption-pdf-button {
     flex: 0 0 auto;
     font-weight: 800;
     letter-spacing: 0.04em;
+}
+
+.timetable-v3__adoption-save-button {
+    flex: 0 0 auto;
+    font-weight: 800;
 }
 
 .timetable-v3__adoption-card:hover,

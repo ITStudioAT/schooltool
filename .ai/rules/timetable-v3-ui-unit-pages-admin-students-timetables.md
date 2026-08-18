@@ -2,6 +2,7 @@
 paths:
   - 'resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/ui/unit/pages/admin/studentsTimetables/**'
   - 'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue,tests/ui/unit/pages/admin/studentsTimetables/TimetableV3.test.ts'
+  - 'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue,tests/ui/unit/pages/admin/studentsTimetables/TimetableV3PossibleTimetables.test.ts'
 ---
 
 # Timetable V3 Ui Unit Pages Admin Students Timetables
@@ -14,3 +15,6 @@ Use Vuetify size=large for the manual timetable PDF action so it matches the Zur
 
 ## Call the adoption main catalog Alle Module
 On V3 adoption/manual timetable pages, label the main-module catalog selector and its accessibility labels “Alle Module”. Keep internal main-module keys and backend structures unchanged.
+
+## Use short dates in the V3 overlap summary
+Render dates in the Überschneidungen list as zero-padded dd.mm. without a year, for example 24.02. Keep full localized dates in timetable lesson cards unchanged.

@@ -251,13 +251,14 @@ class StudentsTimetablesStudentController extends Controller
 
     public function overviewPdf(Request $request)
     {
-        if (! $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $validated = $request->validate($this->timetableOverviewPayloadRules());
 
         $validated = $this->normalizeTimetableOverviewPdfLabels($validated);
+        $validated['school_name'] = trim((string) ($authUser->selectedSchool?->long_name ?: $authUser->selectedSchool?->short_name));
 
         return pdf()
             ->view('pdfs.students-timetable-overview', ['data' => $validated])

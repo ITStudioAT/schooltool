@@ -1685,6 +1685,11 @@ describe('TimetableV3', () => {
         expect(manualCardSource).toContain('size="large"')
         expect(manualCardSource).toContain('@click="downloadManualTimetablePdf"')
         expect(source).toContain('downloadStudentTimetableOverviewPdf.url()')
+        expect(manualCardSource).toContain('v-if="publishedStudentTimetableSaveVisible"')
+        expect(manualCardSource).toContain('prepend-icon="mdi-content-save-outline"')
+        expect(manualCardSource).toContain('Speichern für {{ selectedStudentLastName }}')
+        expect(manualCardSource).toContain('@click="savePublishedStudentTimetable"')
+        expect(source).toContain('publishStudentTimetable.url()')
         expect(adoptionPageSource).toContain('timetable-v3__schedule-mode-card--selected')
         expect(manualCardSource).toContain('timetable-v3__schedule-mode-selected-modules')
         expect(manualCardSource).toContain('Ausgewählte Module')
@@ -1957,6 +1962,75 @@ describe('TimetableV3', () => {
             status: 'filled',
             markers: [],
         })
+    })
+
+    it('shows the save action only for a selected student and publishes the displayed timetable', async () => {
+        const computed = (TimetableV3 as any).computed
+        const methods = (TimetableV3 as any).methods
+        const selectedStudent = {
+            studentCode: '1001',
+            lastName: 'Muster',
+            firstName: 'Mia',
+        }
+        const visibilityContext = {
+            planningMode: 'with_student',
+            selectedStudent,
+            selectedStudentCode: '1001',
+            selectedStudentLastName: 'Muster',
+        }
+
+        expect(computed.selectedStudentLastName.call({ selectedStudent })).toBe('Muster')
+        expect(computed.publishedStudentTimetableSaveVisible.call(visibilityContext)).toBe(true)
+        expect(computed.publishedStudentTimetableSaveVisible.call({
+            ...visibilityContext,
+            planningMode: 'without_student',
+            selectedStudent: null,
+            selectedStudentCode: '',
+            selectedStudentLastName: '',
+        })).toBe(false)
+
+        const previousAxios = globalThis.axios
+        const post = vi.fn().mockResolvedValue({
+            data: { message: 'Stundenplan für Muster Mia wurde gespeichert.' },
+        })
+        globalThis.axios = { post } as typeof globalThis.axios
+        const timetable = { title: 'Stundenplan', semesters: [{ label: 'Stundenplan' }] }
+        const context = {
+            publishedTimetableSaving: false,
+            publishedStudentTimetableSaveVisible: true,
+            selectedStudentCode: '1001',
+            selectedStudentFullName: 'Muster Mia',
+            selectedStudentLabel: '5A · Muster Mia',
+            storedState: { retained: true },
+            manualTimetablePdfPayload: vi.fn().mockReturnValue(timetable),
+            clearPublishedTimetableReport: vi.fn(),
+            publishedTimetableReport: { type: 'success', message: '' },
+        }
+
+        try {
+            await methods.savePublishedStudentTimetable.call(context)
+
+            expect(post).toHaveBeenCalledWith(
+                '/api/admin/students-timetables/overview/student-timetable',
+                {
+                    student_code: '1001',
+                    student_label: 'Muster Mia',
+                    timetable,
+                    state: {
+                        retained: true,
+                        source: 'timetable-v3',
+                        timetableV3Step: 'adoption',
+                    },
+                },
+            )
+            expect(context.publishedTimetableReport).toEqual({
+                type: 'success',
+                message: 'Stundenplan für Muster Mia wurde gespeichert.',
+            })
+            expect(context.publishedTimetableSaving).toBe(false)
+        } finally {
+            globalThis.axios = previousAxios
+        }
     })
 
     it('places a manual course once and hides it from both module catalogs', async () => {

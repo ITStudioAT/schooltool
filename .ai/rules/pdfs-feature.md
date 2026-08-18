@@ -46,3 +46,18 @@ When a known abbreviated subject label has no number but the identifier prefix h
 
 ## Center all manual PDF timetable cells
 On manual timetable PDF page 2, center every header and body cell horizontally and vertically, including the Std. column and all weekday course cells. Keep the inner cell content height automatic with its existing max-height so vertical-align: middle can center single and stacked course content.
+
+## Fill the manual PDF timetable page height
+This supersedes the 20mm sparse-row cap. On manual timetable PDF page 2, divide all available timetable height across every rendered booked hour row, including when 15 rows are present, so the table always fills the usable page height.
+
+## Keep full-height manual timetable rows on one PDF page
+DOMPDF adds table-cell padding and collapsed-border space outside the declared cell height. When distributing the usable height across manual timetable rows, reserve 0.9mm per row for that outer overhead. Verify the 15-row case renders all rows on timetable page 2 without a continuation page.
+
+## Prefer numeric PDF subject short labels
+In the Fächerübersicht Kurzname column, a known subject code followed by a number uses only its numeric source label (D1 becomes 1). Keep plain abbreviations such as CH and REV unchanged and continue using an identifier prefix only as a fallback.
+
+## Emphasize in-cell PDF overlap counters
+Render the timetable-cell !N/N marker as a prominent 9pt badge with extra padding, a visible border, and centered bold text. Keep this enlargement scoped to manual timetable cells; the overlap-summary reference badge retains its separate styling.
+
+## Use full identifiers in the PDF subject overview
+This supersedes the source-abbreviation and numeric-short-label rules for Fächerübersicht. In the Kurzname column, show the complete uppercase course identifier whenever present (for example D1-1C-HER); use the existing short-label derivation only when the identifier is empty.

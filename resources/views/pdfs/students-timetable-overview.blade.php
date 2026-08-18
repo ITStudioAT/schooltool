@@ -75,13 +75,21 @@
             $label = trim((string) ($course['label'] ?? ''));
             $normalizedLabel = mb_strtoupper($label);
 
+            if ($identifier !== '') {
+                return mb_strtoupper($identifier);
+            }
+
+            if (preg_match('/^\d+(?:\.\d+)?$/u', $label) === 1) {
+                return $normalizedLabel;
+            }
+
             if (isset($pdfCourseNames[$normalizedLabel])) {
                 return $normalizedLabel;
             }
 
             if (preg_match('/^([\p{L}_]+)\s*\d+(?:\.\d+)?$/u', $label, $matches) === 1
                 && isset($pdfCourseNames[mb_strtoupper($matches[1])])) {
-                return $normalizedLabel;
+                return preg_replace('/^[\p{L}_]+\s*/u', '', $normalizedLabel) ?: $normalizedLabel;
             }
 
             $source = $identifier !== '' ? $identifier : $label;
@@ -235,8 +243,9 @@
         $headerHeight = 9;
         $availableRowHeight = max(24, $pageHeight - $headerHeight - $labelHeight);
         $baseRowHeight = max(5.2, min(10.5, $availableRowHeight / $hourRowCount));
-        $rowHeight = $isManualTimetable && $hourRowCount < 15
-            ? max($baseRowHeight, min(20, $availableRowHeight / $hourRowCount))
+        $manualRowOuterOverhead = 0.9;
+        $rowHeight = $isManualTimetable
+            ? ($availableRowHeight / $hourRowCount) - $manualRowOuterOverhead
             : $baseRowHeight;
         $naturalHeight = $headerHeight + $labelHeight + ($hourRowCount * $rowHeight);
         $scale = max(0.45, min(1, $pageHeight / $naturalHeight));
@@ -1248,6 +1257,7 @@
         .pdf-page--manual-timetable td {
             text-align: center;
             vertical-align: middle;
+            box-sizing: border-box;
         }
 
         .pdf-page--manual-timetable td {
@@ -1298,6 +1308,17 @@
         .pdf-page--manual-timetable .marker {
             font-size: {{ number_format($manualDetailFontSize, 2, '.', '') }}pt;
             line-height: 1;
+        }
+
+        .pdf-page--manual-timetable .marker {
+            min-width: 4.5mm;
+            padding: 0.45mm 0.8mm;
+            border: 0.25mm solid #6366f1;
+            border-radius: 1.4mm;
+            font-size: 9pt;
+            font-weight: 800;
+            line-height: 1;
+            text-align: center;
         }
 
         .pdf-page--manual-timetable td.time-cell,
@@ -2054,6 +2075,14 @@
 
             <table class="pdf-cover-information">
                 <tbody>
+                    @if(! empty($data['school_name']))
+                        <tr>
+                            <td class="pdf-cover-information-item" colspan="{{ ! empty($data['subtitle']) ? 4 : 3 }}">
+                                <span class="pdf-cover-information-label">Schule</span>
+                                <span class="pdf-cover-information-value">{{ $data['school_name'] }}</span>
+                            </td>
+                        </tr>
+                    @endif
                     <tr>
                         <td class="pdf-cover-information-item">
                             <span class="pdf-cover-information-label">Studierende/r</span>
@@ -2124,7 +2153,7 @@
             <div class="header">
                 <h1 class="title">{{ $pageData['title'] ?? 'Stundenplan' }}</h1>
                 <div class="meta">
-                    @foreach(array_filter([$pageData['schoolyear'] ?? null, $pageData['student'] ?? null, $pageData['subtitle'] ?? null, $pageData['generated_at'] ?? null]) as $meta)
+                    @foreach(array_filter([$pageData['school_name'] ?? null, $pageData['schoolyear'] ?? null, $pageData['student'] ?? null, $pageData['subtitle'] ?? null, $pageData['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
@@ -2278,7 +2307,7 @@
             <div class="header">
                 <h1 class="title">Überschneidungen</h1>
                 <div class="meta">
-                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['subtitle'] ?? null, $data['generated_at'] ?? null]) as $meta)
+                    @foreach(array_filter([$data['school_name'] ?? null, $data['schoolyear'] ?? null, $data['student'] ?? null, $data['subtitle'] ?? null, $data['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
@@ -2334,7 +2363,7 @@
             <div class="courses-header">
                 <h1 class="courses-title">Kursliste</h1>
                 <div class="courses-meta">
-                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $courseDirectory->count() . ' ' . ($courseDirectory->count() === 1 ? 'Kurs' : 'Kurse'), $data['generated_at'] ?? null]) as $meta)
+                    @foreach(array_filter([$data['school_name'] ?? null, $data['schoolyear'] ?? null, $data['student'] ?? null, $courseDirectory->count() . ' ' . ($courseDirectory->count() === 1 ? 'Kurs' : 'Kurse'), $data['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
@@ -2388,7 +2417,7 @@
             <div class="header">
                 <h1 class="title">Fächerübersicht</h1>
                 <div class="meta">
-                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['generated_at'] ?? null]) as $meta)
+                    @foreach(array_filter([$data['school_name'] ?? null, $data['schoolyear'] ?? null, $data['student'] ?? null, $data['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>

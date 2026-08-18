@@ -551,11 +551,12 @@ class StudentsTimetablesController extends Controller
 
     public function overviewPdf(Request $request): Responsable
     {
-        $this->studentsTimetablesUser();
+        $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate($this->timetableOverviewPayloadRules());
 
         $validated = $this->normalizeTimetableOverviewPdfLabels($validated);
+        $validated['school_name'] = trim((string) ($authUser->selectedSchool?->long_name ?: $authUser->selectedSchool?->short_name));
 
         return pdf()
             ->view('pdfs.students-timetable-overview', ['data' => $validated])
