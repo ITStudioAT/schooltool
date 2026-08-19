@@ -15,11 +15,13 @@ use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
+use App\Services\StudentsTimetables\StudentTimetableV3StudentInformationService;
 use App\Services\StudentsTimetablesStudentService;
 use App\Services\UserService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
@@ -132,6 +134,8 @@ class StudentsTimetablesStudentController extends Controller
         ]);
 
         $data = $validated;
+        unset($data['password']);
+
         $user = $this->validatedLoginUser($service, $validated['email'], (int) $validated['school_id']);
 
         if (! $service->passwordIsValid($user, $validated['password'])) {
@@ -164,21 +168,34 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
-    public function overview(Request $request, StudentTimetablesStudentOverviewService $overviewService)
-    {
-        if (! Auth::check() || ! Auth::user()->hasRole(StudentsTimetablesStudentService::ROLE_NAME)) {
+    public function overview(
+        Request $request,
+        StudentTimetablesStudentOverviewService $overviewService,
+        StudentTimetableV3StudentInformationService $studentInformationService,
+    ) {
+        $user = Auth::user();
+
+        if (! $user || ! $user->hasRole(StudentsTimetablesStudentService::ROLE_NAME)) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $validated = $request->validate($this->studentOverviewSelectionRules());
 
         return response()->json([
-            'data' => $overviewService->summaryForUser(Auth::user(), $validated['selection'] ?? []),
+            'data' => $this->studentOverviewSummary(
+                $user,
+                $overviewService,
+                $studentInformationService,
+                $validated['selection'] ?? [],
+            ),
         ]);
     }
 
-    public function updateProfileSelection(Request $request, StudentTimetablesStudentOverviewService $overviewService): JsonResponse
-    {
+    public function updateProfileSelection(
+        Request $request,
+        StudentTimetablesStudentOverviewService $overviewService,
+        StudentTimetableV3StudentInformationService $studentInformationService,
+    ): JsonResponse {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -188,12 +205,14 @@ class StudentsTimetablesStudentController extends Controller
 
         return response()->json([
             'message' => 'Auswahl wurde gespeichert.',
-            'data' => $overviewService->summaryForUser($authUser),
+            'data' => $this->studentOverviewSummary($authUser, $overviewService, $studentInformationService),
         ]);
     }
 
-    public function restoreProfileSelection(StudentTimetablesStudentOverviewService $overviewService): JsonResponse
-    {
+    public function restoreProfileSelection(
+        StudentTimetablesStudentOverviewService $overviewService,
+        StudentTimetableV3StudentInformationService $studentInformationService,
+    ): JsonResponse {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -202,7 +221,7 @@ class StudentsTimetablesStudentController extends Controller
 
         return response()->json([
             'message' => 'Auswahl wurde wiederhergestellt.',
-            'data' => $overviewService->summaryForUser($authUser),
+            'data' => $this->studentOverviewSummary($authUser, $overviewService, $studentInformationService),
         ]);
     }
 
@@ -755,6 +774,42 @@ class StudentsTimetablesStudentController extends Controller
         }
 
         return $result;
+    }
+
+    /** @return array<string, mixed> */
+    private function studentOverviewSummary(
+        User $user,
+        StudentTimetablesStudentOverviewService $overviewService,
+        StudentTimetableV3StudentInformationService $studentInformationService,
+        array $selectionOverride = [],
+    ): array {
+        $summary = $overviewService->summaryForUser($user, $selectionOverride);
+        $studentCode = trim((string) data_get($summary, 'student.student_code', ''));
+        $studentInformation = $studentCode === ''
+            ? null
+            : $studentInformationService->informationForStudent(
+                $user,
+                $studentCode,
+                (array) ($summary['selection'] ?? []),
+                seedCompactSubjectPlanIfMissing: false,
+            );
+
+        $summary['student_information'] = $studentInformation === null
+            ? null
+            : Arr::only($studentInformation, [
+                'study_program',
+                'subject_plan',
+                'religion',
+                'instruction_type',
+                'semester',
+                'items',
+                'selection_fields',
+                'module_groups',
+                'module_selection_groups',
+                'main_module_selection_groups',
+            ]);
+
+        return $summary;
     }
 
     private function isQueueWorking(): bool

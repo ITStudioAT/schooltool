@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { adoptPublishedTimetable as storeStudentPersonalTimetable } from '@/actions/App/Http/Controllers/Homepage/StudentsTimetablesStudentController'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 
@@ -159,7 +160,7 @@ export const useStudentTimetablesUserStore = defineStore('StudentTimetablesUserS
 
             try {
                 const response = await axios.post(
-                    '/api/homepage/students-timetables/my-timetable',
+                    storeStudentPersonalTimetable.url(),
                     timetablePayload || {},
                 )
                 this.overview = response.data?.data ?? null
@@ -176,6 +177,29 @@ export const useStudentTimetablesUserStore = defineStore('StudentTimetablesUserS
                 return false
             } finally {
                 homepageStore.is_loading--
+            }
+        },
+
+        async savePersonalTimetable(timetablePayload) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios.post(
+                    storeStudentPersonalTimetable.url(),
+                    timetablePayload,
+                )
+                this.overview = response.data?.data ?? null
+                notification.notify({
+                    message: 'Mein Stundenplan wurde gespeichert.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+
+                return true
+            } catch (error) {
+                this.notifyError(notification, error)
+
+                return false
             }
         },
 

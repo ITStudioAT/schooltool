@@ -101,6 +101,8 @@ use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
 use App\Http\Controllers\Homepage\RestaurantBookingController;
 use App\Http\Controllers\Homepage\StudentsTimetablesStudentController;
+use App\Http\Controllers\Homepage\StudentTimetableV3StateController as HomepageStudentTimetableV3StateController;
+use App\Http\Controllers\Homepage\StudentTimetableV3TimetableController as HomepageStudentTimetableV3TimetableController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
@@ -184,6 +186,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
     Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
     Route::post('/homepage/students-timetables/automatic-timetable-availability', [StudentsTimetablesStudentController::class, 'automaticTimetableAvailability'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::get('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::put('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'update'])
+        ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:60,1']);
+    Route::get('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::put('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'update'])
+        ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:10,1']);
     Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
 
     /***** ADMIN ROUTES *****/

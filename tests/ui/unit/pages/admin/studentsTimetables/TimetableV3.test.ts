@@ -1002,7 +1002,9 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('v-for="item in compactPlanningSelectionItems"')
         expect(nextStepSource).toContain('{{ item.label }}')
         expect(nextStepSource).toContain('{{ item.value }}')
-        expect(nextStepSource).toContain("v-if=\"currentStep === 'modules' || currentStep === 'adoption'\"")
+        expect(nextStepSource).toContain(
+            "v-if=\"currentStep === 'modules' || currentStep === 'creation' || currentStep === 'adoption'\"",
+        )
         expect(nextStepSource).toContain('timetable-v3__compact-planning-title')
         expect(nextStepSource).toContain('Studienauswahl')
         expect(nextStepSource).toContain('Soll der Stundenplan automatisch oder manuell erzeugt werden?')
@@ -1673,7 +1675,9 @@ describe('TimetableV3', () => {
         expect(source).toContain("{{ selectedStudentClass || '–' }} · {{ selectedStudentFullName || selectedStudentLabel }}")
         expect(source).toContain('· {{ selectedStudentReligion }}')
         expect(source).toContain('{{ selectedStudentEmail }}')
-        expect(source).toContain("v-if=\"currentStep === 'modules' || currentStep === 'adoption'\"")
+        expect(source).toContain(
+            "v-if=\"currentStep === 'modules' || currentStep === 'creation' || currentStep === 'adoption'\"",
+        )
         expect(source).toContain('aria-labelledby="timetable-v3-compact-planning-title"')
         expect(manualCardPosition).toBeGreaterThan(-1)
         expect(manualCardEnd).toBeGreaterThan(manualCardPosition)

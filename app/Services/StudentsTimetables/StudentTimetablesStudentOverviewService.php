@@ -299,7 +299,7 @@ class StudentTimetablesStudentOverviewService
 
         if (
             $completedReligionSelection !== null
-            && $this->nonEmptyString($selectionOverride['religion'] ?? null) === null
+            && ! array_key_exists('religion', $selectionOverride)
         ) {
             $selection['religion'] = $completedReligionSelection;
         }
@@ -517,11 +517,18 @@ class StudentTimetablesStudentOverviewService
 
         return [
             'semester' => $this->integerOrNull($selectionOverride['semester'] ?? null) ?? $selection['semester'],
-            'religion' => $this->nonEmptyString($selectionOverride['religion'] ?? null) ?? $selection['religion'],
-            'language' => $this->nonEmptyString($selectionOverride['language'] ?? null) ?? $selection['language'],
-            'branch' => $this->nonEmptyString($selectionOverride['branch'] ?? null) ?? $selection['branch'],
-            'arts_subject' => $this->nonEmptyString($selectionOverride['arts_subject'] ?? $selectionOverride['artsSubject'] ?? null)
-                ?? $selection['arts_subject'],
+            'religion' => array_key_exists('religion', $selectionOverride)
+                ? $this->nonEmptyString($selectionOverride['religion'])
+                : $selection['religion'],
+            'language' => array_key_exists('language', $selectionOverride)
+                ? $this->nonEmptyString($selectionOverride['language'])
+                : $selection['language'],
+            'branch' => array_key_exists('branch', $selectionOverride)
+                ? $this->nonEmptyString($selectionOverride['branch'])
+                : $selection['branch'],
+            'arts_subject' => array_key_exists('arts_subject', $selectionOverride) || array_key_exists('artsSubject', $selectionOverride)
+                ? $this->nonEmptyString($selectionOverride['arts_subject'] ?? $selectionOverride['artsSubject'])
+                : $selection['arts_subject'],
         ];
     }
 
@@ -543,7 +550,7 @@ class StudentTimetablesStudentOverviewService
 
     /**
      * @param  array<string, mixed>  $selection
-     * @return array<string, string>
+     * @return array<string, ?string>
      */
     private function normalizedSelectionOverride(array $selection): array
     {
@@ -554,10 +561,18 @@ class StudentTimetablesStudentOverviewService
             'arts_subject' => $this->artsSubjectOptions(),
         ])
             ->mapWithKeys(function (array $options, string $key) use ($selection): array {
+                $selectionKey = $key === 'arts_subject' && array_key_exists('artsSubject', $selection)
+                    ? 'artsSubject'
+                    : $key;
+
+                if (! array_key_exists($selectionKey, $selection)) {
+                    return [];
+                }
+
                 $value = $this->nonEmptyString($selection[$key] ?? ($key === 'arts_subject' ? $selection['artsSubject'] ?? null : null));
 
                 if (! $value) {
-                    return [];
+                    return [$key => null];
                 }
 
                 $validValues = collect($options)
@@ -573,7 +588,7 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, ?string>
      */
     private function profileSelectionForUserAndSchoolyear(User $user, int $schoolyearId): array
     {

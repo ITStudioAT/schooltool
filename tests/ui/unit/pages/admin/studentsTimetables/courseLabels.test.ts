@@ -33,13 +33,19 @@ describe('canonicalTimetableCourseLabel', () => {
     })
 
     it.each([
-        ['ET1', 'Ethik'],
+        ['ET1', 'Ethik 1'],
         ['ETH', 'Ethik'],
-        ['Rev2', 'Religion evangelisch'],
-        ['RIS1', 'Religion Islam'],
-        ['Rk3', 'Religion katholisch'],
-        ['Ror2', 'Religion orthodox'],
+        ['Rev2', 'Religion evangelisch 2'],
+        ['RIS1', 'Religion Islam 1'],
+        ['Rk3', 'Religion katholisch 3'],
+        ['Ror2', 'Religion orthodox 2'],
     ])('uses the specific religion name for %s', (moduleCode, expectedName) => {
         expect(canonicalTimetableModuleName('Religion/Ethik', moduleCode)).toBe(expectedName)
+    })
+
+    it('preserves the module number on other canonical names', () => {
+        expect(canonicalTimetableModuleName('Literarisches Praktikum', 'LPT2')).toBe(
+            'Lern- und Präsentationstechniken 2',
+        )
     })
 })

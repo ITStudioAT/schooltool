@@ -63,10 +63,13 @@ export function canonicalTimetableCourseLabel(value, moduleCode = '') {
 
 export function canonicalTimetableModuleName(value, moduleCode = '') {
     const canonicalModuleCode = canonicalTimetableCourseLabel(moduleCode)
-    const moduleBase = canonicalModuleCode.replace(/\d+$/u, '').toLocaleUpperCase('de-AT')
+    const moduleParts = canonicalCourseCodeParts(canonicalModuleCode)
+    const moduleBase = String(moduleParts?.code || '').replace(/\d+$/u, '').toLocaleUpperCase('de-AT')
 
     if (CANONICAL_MODULE_DISPLAY_NAMES[moduleBase]) {
-        return CANONICAL_MODULE_DISPLAY_NAMES[moduleBase]
+        const moduleNumber = moduleParts?.moduleNumber || ''
+
+        return `${CANONICAL_MODULE_DISPLAY_NAMES[moduleBase]}${moduleNumber ? ` ${moduleNumber}` : ''}`
     }
 
     return String(value || '').trim()

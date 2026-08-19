@@ -16,7 +16,11 @@
                 </v-alert>
                 <router-view />
                 <ItsNotification />
-                <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
+                <v-overlay
+                    :model-value="globalLoadingOverlayVisible"
+                    class="align-center justify-center"
+                    contained
+                    opacity="0.1">
                     <LoadingAnimation />
                 </v-overlay>
             </v-main>
@@ -55,6 +59,11 @@ export default {
     },
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading', 'impersonation']),
+        globalLoadingOverlayVisible() {
+            const routePath = String(this.$route?.path || '')
+
+            return this.is_loading > 0 && !routePath.startsWith('/students-timetables')
+        },
         isImpersonating() {
             return !!this.impersonation?.is_impersonating
         },

@@ -324,3 +324,6 @@ When an exact overlap has exactly one course with one date, place the overlap ca
 
 ## Publish the current V3 adoption timetable
 On the V3 adoption page, show the publish/save action only when a student is selected. Label it with the student's last name and publish the current adoptionDisplayedTimetable through the generated publishStudentTimetable Wayfinder action; keep the PDF button beside it.
+
+## Show read-only Studienauswahl on creation
+The shared compact read-only Studienauswahl card appears directly below Aktuelle Auswahl on modules, automatic creation, and adoption. Reuse compactPlanningSelectionItems plus existing loading/error states; do not add editing or duplicate selection calculations.

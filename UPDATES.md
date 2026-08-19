@@ -1,8 +1,12 @@
 # UPDATES
 
-## 3.46.0
+## 3.46.1 !!!
 
-Major Update
+### Students
+
+- Adaptierung der Studierenden-Ansicht
+
+## 3.46.0
 
 ### Timetable V3
 

@@ -14,8 +14,10 @@ use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\StudentTimetableV3State;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
+use App\Services\StudentsTimetables\StudentTimetableV3TimetableService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -121,9 +123,184 @@ it('logs in an existing students timetables user with a password', function () {
     ])
         ->assertSuccessful()
         ->assertJsonPath('status', 'login_ok')
-        ->assertJsonPath('user.id', $user->id);
+        ->assertJsonPath('user.id', $user->id)
+        ->assertJsonMissingPath('password');
 
     $this->assertAuthenticatedAs($user);
+});
+
+it('logs in a students timetables user with any active super admin password from the same school', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => Hash::make('student-secret'),
+        'import116_id' => $import116->id,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]);
+
+    $firstSuperAdmin = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => 'first-super-admin@example.test',
+        'password' => Hash::make('first-admin-secret'),
+        'is_active' => true,
+    ]);
+    $firstSuperAdmin->assignRole('super_admin');
+
+    $secondSuperAdmin = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => 'second-super-admin@example.test',
+        'password' => Hash::make('second-admin-secret'),
+        'is_active' => true,
+    ]);
+    $secondSuperAdmin->assignRole('super_admin');
+
+    $this->postJson('/api/homepage/students-timetables/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => 'second-admin-secret',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('status', 'login_ok')
+        ->assertJsonPath('user.id', $user->id)
+        ->assertJsonMissingPath('password');
+
+    $this->assertAuthenticatedAs($user);
+});
+
+it('rejects a super admin password from another school', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => Hash::make('student-secret'),
+        'import116_id' => $import116->id,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]);
+
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+    $otherSchoolSuperAdmin = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'email' => 'other-school-super-admin@example.test',
+        'password' => Hash::make('other-school-secret'),
+        'is_active' => true,
+    ]);
+    $otherSchoolSuperAdmin->assignRole('super_admin');
+
+    $this->postJson('/api/homepage/students-timetables/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => 'other-school-secret',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('status', 'password_not_valid')
+        ->assertJsonMissingPath('password');
+
+    $this->assertGuest();
+});
+
+it('rejects a same school password without the super admin role', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => Hash::make('student-secret'),
+        'import116_id' => $import116->id,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    Role::firstOrCreate([
+        'name' => 'studentstimetables_admin',
+        'guard_name' => 'web',
+    ]);
+
+    $timetablesAdmin = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => 'timetables-admin@example.test',
+        'password' => Hash::make('timetables-admin-secret'),
+        'is_active' => true,
+    ]);
+    $timetablesAdmin->assignRole('studentstimetables_admin');
+
+    $this->postJson('/api/homepage/students-timetables/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => 'timetables-admin-secret',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('status', 'password_not_valid')
+        ->assertJsonMissingPath('password');
+
+    $this->assertGuest();
+});
+
+it('rejects an inactive super admin password from the same school', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => Hash::make('student-secret'),
+        'import116_id' => $import116->id,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]);
+
+    $inactiveSuperAdmin = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => 'inactive-super-admin@example.test',
+        'password' => Hash::make('inactive-admin-secret'),
+        'is_active' => false,
+    ]);
+    $inactiveSuperAdmin->assignRole('super_admin');
+
+    $this->postJson('/api/homepage/students-timetables/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'password' => 'inactive-admin-secret',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('status', 'password_not_valid')
+        ->assertJsonMissingPath('password');
+
+    $this->assertGuest();
 });
 
 it('denies an email that is not registered in import116', function () {
@@ -263,6 +440,18 @@ it('returns the student timetable overview summary for the authenticated import1
         'raw_data' => [],
     ]);
 
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => $import116->student_code,
+        'student' => 'Mustermann Max',
+        'subject' => 'OLD1',
+        'grade' => 'B',
+        'raw_data' => [],
+    ]);
+
     StudentTimetableSubjectRow::query()->create([
         'school_id' => $school->id,
         'schoolyear_id' => $schoolyear->id,
@@ -311,7 +500,36 @@ it('returns the student timetable overview summary for the authenticated import1
         'sort_order' => 4,
     ]);
 
-    $this->actingAs($user)
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-08',
+        'semester' => 1,
+        'period' => '11',
+        'subject' => 'D1',
+        'course' => 'D1',
+        'teacher' => 'MUE',
+        'room' => '101',
+        'class_name' => 'D1 - 4A - MUE',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-09',
+        'semester' => 1,
+        'period' => '12',
+        'subject' => 'OLD1',
+        'course' => 'OLD1',
+        'module_code' => 'OLD1',
+        'teacher' => 'ALT',
+        'room' => '102',
+        'class_name' => 'OLD1 - 4A - ALT',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful()
         ->assertJsonPath('data.selection.semester', 1)
@@ -322,6 +540,18 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.selection_items.1.label', 'Ethik / Religion')
         ->assertJsonPath('data.selection_items.1.value', 'ETH - Ethik')
         ->assertJsonPath('data.selection_items.1.meta', 'Religion: Rk')
+        ->assertJsonPath('data.student_information.instruction_type', 'Normalunterricht')
+        ->assertJsonPath('data.student_information.semester', 1)
+        ->assertJsonPath('data.student_information.items.0.label', 'Ethik / Religion')
+        ->assertJsonPath('data.student_information.items.0.value', 'ETH - Ethik')
+        ->assertJsonPath('data.student_information.selection_fields.0.key', 'religion')
+        ->assertJsonPath('data.student_information.selection_fields.0.selected_value', 'ETH')
+        ->assertJsonPath('data.student_information.selection_fields.0.options.0.value', 'ETH')
+        ->assertJsonPath('data.student_information.module_groups.0.label', 'Befreite Module')
+        ->assertJsonPath('data.student_information.module_groups.1.label', 'Bestandene Module')
+        ->assertJsonPath('data.student_information.module_groups.1.modules.0.code', 'ETH1')
+        ->assertJsonPath('data.student_information.module_groups.1.modules.0.grades.0.value', '2')
+        ->assertJsonPath('data.student_information.module_groups.2.label', 'Nicht bestandene Module')
         ->assertJsonPath('data.selection.language', null)
         ->assertJsonPath('data.selection.arts_subject', null)
         ->assertJsonPath('data.course_sections.0.key', 'completed')
@@ -335,6 +565,20 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.missing_courses', [])
         ->assertJsonPath('data.proposed_courses.0.code', 'D1')
         ->assertJsonPath('data.additional_courses.0.code', 'D2');
+
+    $selectableModules = collect($response->json('data.student_information.module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'] ?? []);
+    $selectableDeutschModule = $selectableModules->firstWhere('code', 'D1');
+    $allModules = collect($response->json('data.student_information.main_module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'] ?? []);
+
+    expect($selectableDeutschModule)->not->toBeNull()
+        ->and(data_get($selectableDeutschModule, 'courses.0.title'))->toBeString()->not->toBeEmpty()
+        ->and(data_get($selectableDeutschModule, 'courses.0.teacher'))->toBe('MUE')
+        ->and($allModules->firstWhere('code', 'D1'))->not->toBeNull()
+        ->and($allModules->firstWhere('code', 'OLD1'))->not->toBeNull()
+        ->and(data_get($allModules->firstWhere('code', 'OLD1'), 'status_label'))->toBe('Befreit')
+        ->and(data_get($allModules->firstWhere('code', 'OLD1'), 'courses.0.teacher'))->toBe('ALT');
 
     $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/overview?'.http_build_query([
@@ -367,7 +611,9 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertSuccessful()
         ->assertJsonPath('data.selection.religion', 'Rk')
         ->assertJsonPath('data.selection_override.religion', 'Rk')
-        ->assertJsonPath('data.selection_items.4.value', 'BE - Bildnerische Erziehung');
+        ->assertJsonPath('data.selection_items.4.value', 'BE - Bildnerische Erziehung')
+        ->assertJsonPath('data.student_information.items.0.value', 'Rk - Religion katholisch')
+        ->assertJsonPath('data.student_information.selection_fields.3.selected_value', 'BE');
 
     expect(StudentTimetableProfileSelection::query()->first()?->selection)->toMatchArray([
         'religion' => 'Rk',
@@ -376,6 +622,10 @@ it('returns the student timetable overview summary for the authenticated import1
         'arts_subject' => 'BE',
     ]);
 
+    expect($import116->refresh())
+        ->religion->toBe('Rk')
+        ->school_level->toBe('09_1');
+
     $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful()
@@ -383,10 +633,28 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.selection_override.language', 'S');
 
     $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/profile-selection', [
+            'selection' => [
+                'religion' => null,
+                'language' => 'S',
+                'branch' => 'gymnasial',
+                'arts_subject' => 'BE',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', null)
+        ->assertJsonPath('data.selection_override.religion', null)
+        ->assertJsonPath('data.student_information.selection_fields.0.selected_value', null);
+
+    expect(StudentTimetableProfileSelection::query()->first()?->selection)
+        ->toHaveKey('religion', null);
+
+    $this->actingAs($user)
         ->deleteJson('/api/homepage/students-timetables/profile-selection')
         ->assertSuccessful()
         ->assertJsonPath('data.selection.religion', 'ETH')
-        ->assertJsonPath('data.selection_override', []);
+        ->assertJsonPath('data.selection_override', [])
+        ->assertJsonPath('data.student_information.items.0.value', 'ETH - Ethik');
 
     expect(StudentTimetableProfileSelection::query()->count())->toBe(0);
 });
@@ -1019,6 +1287,27 @@ it('lets the authenticated student save a generated timetable as their personal 
     ]);
     $user->assignRole('studentstimetables_user');
 
+    $teacher = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
+    $publishedTimetable = StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'published_by_user_id' => $teacher->id,
+        'student_code' => $import116->student_code,
+        'student_label' => 'Mustermann Max',
+        'timetable' => [
+            'title' => 'Lehrer-Stundenplan',
+            'weekdays' => [['label' => 'Mo']],
+            'semesters' => [],
+        ],
+        'state' => [
+            'source' => 'teacher-published',
+        ],
+        'published_at' => now(),
+    ]);
+
     $timetable = [
         'title' => 'Stundenplan',
         'weekdays' => [['label' => 'Mo']],
@@ -1074,6 +1363,11 @@ it('lets the authenticated student save a generated timetable as their personal 
     expect($personalTimetable->student_code)->toBe($import116->student_code)
         ->and($personalTimetable->timetable['semesters'][0]['label'])->toBe('Übernommener Stundenplan')
         ->and($personalTimetable->state['source'])->toBe('automatic-timetable');
+
+    $publishedTimetable->refresh();
+
+    expect($publishedTimetable->timetable['title'])->toBe('Lehrer-Stundenplan')
+        ->and($publishedTimetable->state['source'])->toBe('teacher-published');
 });
 
 it('flags fully conflicting additional courses for the authenticated student', function () {
@@ -1254,6 +1548,245 @@ it('does not flag additional courses as fully conflicting when only an occasiona
         ->assertSuccessful()
         ->assertJsonPath('data.selected_timetable.type', 'full_green')
         ->assertJsonPath('data.conflicting_additional_course_keys', []);
+});
+
+it('calculates V3 timetable results for the authenticated student context', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $workspaceId = fake()->uuid();
+    $result = [
+        'id' => 42,
+        'fingerprint' => str_repeat('a', 64),
+        'summary' => [
+            'timetable_count' => 1,
+            'timetable_variation_count' => 3,
+        ],
+        'timetables' => [['key' => 'student-plan-1', 'slots' => []]],
+        'timetables_meta' => [
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => 100,
+            'total' => 1,
+            'unfiltered_total' => 1,
+            'offset' => 0,
+        ],
+    ];
+    $timetableService = Mockery::mock(StudentTimetableV3TimetableService::class);
+    $timetableService
+        ->shouldReceive('createOrUpdateForUser')
+        ->once()
+        ->withArgs(function (User $authenticatedUser, array $modules, array $parameters) use ($user, $import116, $workspaceId): bool {
+            expect($authenticatedUser->is($user))->toBeTrue()
+                ->and($modules)->toBe(['module-D1'])
+                ->and($parameters['workspace_id'])->toBe($workspaceId)
+                ->and($parameters['planning_mode'])->toBe('with_student')
+                ->and($parameters['student_code'])->toBe($import116->student_code)
+                ->and($parameters['selection'])->toBeArray()
+                ->and($parameters['selected_course_keys'])->toBe(['course-D1'])
+                ->and($parameters['constraints']['availableWeekdays'])
+                ->toBe(StudentTimetableV3TimetableService::CALCULATION_WEEKDAYS);
+
+            return true;
+        })
+        ->andReturn($result);
+    $this->app->instance(StudentTimetableV3TimetableService::class, $timetableService);
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/timetable-v3/timetable', [
+            'workspace_id' => $workspaceId,
+            'modules' => ['module-D1'],
+            'selected_course_keys' => ['course-D1'],
+        ])
+        ->assertSuccessful()
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.fingerprint', str_repeat('a', 64))
+        ->assertJsonPath('data.timetables.0.key', 'student-plan-1');
+});
+
+it('rejects client supplied V3 student planning context', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/timetable-v3/timetable', [
+            'workspace_id' => fake()->uuid(),
+            'modules' => ['module-D1'],
+            'selected_course_keys' => ['course-D1'],
+            'student_code' => 'another-student',
+            'planning_mode' => 'without_student',
+            'selection' => ['religion' => 'Rk'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('payload');
+});
+
+it('loads paged V3 timetable results only through the authenticated student context', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $workspaceId = fake()->uuid();
+    $fingerprint = str_repeat('b', 64);
+    $timetableService = Mockery::mock(StudentTimetableV3TimetableService::class);
+    $timetableService
+        ->shouldReceive('resultForUser')
+        ->once()
+        ->withArgs(function (
+            User $authenticatedUser,
+            array $context,
+            int $page,
+            ?string $requestedFingerprint,
+            array $filters,
+        ) use ($user, $import116, $workspaceId, $fingerprint): bool {
+            expect($authenticatedUser->is($user))->toBeTrue()
+                ->and($context)->toBe([
+                    'workspace_id' => $workspaceId,
+                    'planning_mode' => 'with_student',
+                    'student_code' => $import116->student_code,
+                ])
+                ->and($page)->toBe(2)
+                ->and($requestedFingerprint)->toBe($fingerprint)
+                ->and($filters)->toBe([
+                    'include_saturday' => false,
+                    'free_days' => 2,
+                ]);
+
+            return true;
+        })
+        ->andReturn([
+            'id' => 42,
+            'fingerprint' => $fingerprint,
+            'summary' => ['timetable_count' => 101],
+            'timetables' => [['key' => 'student-plan-101', 'slots' => []]],
+        ]);
+    $this->app->instance(StudentTimetableV3TimetableService::class, $timetableService);
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/timetable-v3/timetable?'.http_build_query([
+            'workspace_id' => $workspaceId,
+            'page' => 2,
+            'fingerprint' => $fingerprint,
+            'filters' => [
+                'include_saturday' => false,
+                'free_days' => 2,
+            ],
+        ]))
+        ->assertSuccessful()
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.timetables.0.key', 'student-plan-101');
+});
+
+it('persists and restores the manual V3 draft in the authenticated student workspace', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $workspaceId = fake()->uuid();
+    $fingerprint = str_repeat('c', 64);
+    $manualTimetableDraft = [
+        'source' => 'automatic',
+        'fingerprint' => $fingerprint,
+        'timetable_key' => 'student-plan-17',
+        'timetable_index' => 16,
+        'selected_course_keys' => ['course-Rev2'],
+        'removed_course_keys' => ['course-D1'],
+    ];
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/timetable-v3/state', [
+            'workspace_id' => $workspaceId,
+            'manual_timetable_draft' => $manualTimetableDraft,
+        ])
+        ->assertSuccessful()
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('message', 'Manueller Entwurf wurde gespeichert.')
+        ->assertJsonPath('data.manual_timetable_draft.fingerprint', $fingerprint)
+        ->assertJsonPath('data.manual_timetable_draft.timetableKey', 'student-plan-17')
+        ->assertJsonPath('data.manual_timetable_draft.selectedCourseKeys.0', 'course-Rev2')
+        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys.0', 'course-D1');
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/timetable-v3/state?'.http_build_query([
+            'workspace_id' => $workspaceId,
+        ]))
+        ->assertSuccessful()
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.manual_timetable_draft.fingerprint', $fingerprint)
+        ->assertJsonPath('data.manual_timetable_draft.timetableKey', 'student-plan-17')
+        ->assertJsonPath('data.manual_timetable_draft.timetableIndex', 16)
+        ->assertJsonPath('data.manual_timetable_draft.selectedCourseKeys.0', 'course-Rev2')
+        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys.0', 'course-D1');
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/timetable-v3/state?'.http_build_query([
+            'workspace_id' => fake()->uuid(),
+        ]))
+        ->assertSuccessful()
+        ->assertJsonPath('data.manual_timetable_draft', null);
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/timetable-v3/state', [
+            'workspace_id' => $workspaceId,
+            'manual_timetable_draft' => $manualTimetableDraft,
+            'student_code' => 'another-student',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('payload');
+
+    $storedState = StudentTimetableV3State::query()->firstOrFail();
+
+    expect($storedState->user_id)->toBe($user->id)
+        ->and($storedState->school_id)->toBe($school->id)
+        ->and($storedState->schoolyear_id)->toBe($schoolyear->id);
+});
+
+it('rejects manual V3 draft persistence without the student timetable role', function () {
+    [$school, $schoolyear] = studentsTimetablesStudentLoginSetup();
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/timetable-v3/state', [
+            'workspace_id' => fake()->uuid(),
+            'manual_timetable_draft' => [
+                'source' => 'automatic',
+                'fingerprint' => str_repeat('f', 64),
+                'timetable_key' => 'student-plan-1',
+                'timetable_index' => 0,
+                'selected_course_keys' => [],
+                'removed_course_keys' => [],
+            ],
+        ])
+        ->assertForbidden();
 });
 
 function studentsTimetablesStudentLoginSetup(): array

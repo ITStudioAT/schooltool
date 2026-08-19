@@ -66,9 +66,13 @@ class StudentTimetableV3StudentInformationService
                 includeAllSelectableModules: true,
             )
             : $selectionSummary;
-        $mainModuleSelectionGroups = $this->mainModuleSelectionGroups($this->moduleSelectionGroups(
+        $mainModuleCatalogGroups = $this->moduleSelectionGroups(
             (array) ($mainModuleSelectionSummary['module_selection_groups'] ?? []),
-        ));
+        );
+        $mainModuleSelectionGroups = $this->mainModuleSelectionGroups([
+            ...$mainModuleCatalogGroups,
+            ...(trim((string) $studentCode) !== '' ? $moduleSelectionGroups : []),
+        ]);
 
         return [
             'student_code' => (string) data_get($selectionSummary, 'student.student_code', ''),
@@ -315,7 +319,7 @@ class StudentTimetableV3StudentInformationService
         return collect($groups)
             ->flatMap(fn (array $group): array => (array) ($group['modules'] ?? []))
             ->filter(fn (array $module): bool => $this->mainModuleCode((string) ($module['code'] ?? '')) !== '')
-            ->unique(fn (array $module): string => (string) ($module['selection_key'] ?? ''))
+            ->unique(fn (array $module): string => $this->moduleCatalogIdentity($module))
             ->groupBy(fn (array $module): string => $this->mainModuleCode((string) ($module['code'] ?? '')))
             ->map(function (Collection $modules, string $mainModuleCode): array {
                 $sortedModules = $modules
@@ -343,6 +347,17 @@ class StudentTimetableV3StudentInformationService
             ))
             ->values()
             ->all();
+    }
+
+    /** @param array<string, mixed> $module */
+    private function moduleCatalogIdentity(array $module): string
+    {
+        $moduleCode = Str::of((string) ($module['code'] ?? ''))
+            ->trim()
+            ->upper()
+            ->toString();
+
+        return $moduleCode !== '' ? $moduleCode : (string) ($module['selection_key'] ?? '');
     }
 
     private function mainModuleCode(string $moduleCode): string

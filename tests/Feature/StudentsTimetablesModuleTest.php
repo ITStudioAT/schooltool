@@ -2933,6 +2933,127 @@ it('limits v3 selectable modules to the next two levels per subject', function (
         ->and($selectableModuleCodes('mathematics-one-completed'))->toBe(['M2', 'M3']);
 });
 
+it('keeps student status modules outside the current subject plan in the admin all modules catalog', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4A',
+        'school_level' => '09_1',
+        'student_code' => 'all-modules-student',
+        'last_name' => 'Module',
+        'first_name' => 'Alle',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch 1',
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'total_rows' => 2,
+        'imported_rows' => 2,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => 'all-modules-student',
+        'subject' => 'OLD1',
+        'grade' => 'B',
+        'note' => 'B',
+        'raw_data' => [
+            'modulid' => 'old1-exempt',
+        ],
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 3,
+        'student_code' => 'all-modules-student',
+        'subject' => 'OLD2',
+        'grade' => '5',
+        'note' => '5',
+        'raw_data' => [
+            'modulid' => 'old2-failed',
+        ],
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2026-09-15',
+        'semester' => 1,
+        'period' => '12',
+        'subject' => 'OLD1',
+        'course' => 'OLD1',
+        'module_code' => 'OLD1',
+        'teacher' => 'ALT',
+        'room' => 'R102',
+        'class_name' => 'OLD1-4A-ALT',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2026-09-16',
+        'semester' => 2,
+        'period' => '13',
+        'subject' => 'OLD2',
+        'course' => 'OLD2',
+        'module_code' => 'OLD2',
+        'teacher' => 'NEU',
+        'room' => 'R103',
+        'class_name' => 'OLD2-4A-NEU',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=all-modules-student')
+        ->assertSuccessful();
+    $allModules = collect($response->json('data.main_module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'] ?? []);
+    $completedModule = $allModules->firstWhere('code', 'OLD1');
+    $failedModule = $allModules->firstWhere('code', 'OLD2');
+
+    expect($completedModule)->not->toBeNull()
+        ->and($completedModule['status_label'])->toBe('Befreit')
+        ->and(data_get($completedModule, 'courses.0.teacher'))->toBe('ALT')
+        ->and($failedModule)->not->toBeNull()
+        ->and($failedModule['status_label'])->toBe('Negativ')
+        ->and(data_get($failedModule, 'courses.0.teacher'))->toBe('NEU');
+});
+
 it('returns the shared student overview summary for a selected robot student', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([

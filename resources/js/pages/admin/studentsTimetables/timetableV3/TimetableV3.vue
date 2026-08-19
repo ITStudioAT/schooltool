@@ -571,7 +571,7 @@
             </div>
 
             <section
-                v-if="currentStep === 'modules' || currentStep === 'adoption'"
+                v-if="currentStep === 'modules' || currentStep === 'creation' || currentStep === 'adoption'"
                 class="timetable-v3__compact-planning-card mt-4"
                 aria-labelledby="timetable-v3-compact-planning-title">
                 <div class="timetable-v3__compact-planning-heading">
