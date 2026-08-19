@@ -506,9 +506,11 @@ class AdminController extends Controller
 
         $data = $adminService->checkLogin($validated['data']);
 
-        $data = $adminService->check2Fa($data);
+        if ($data['step'] !== 'LOGIN_SUCCESS') {
+            $data = $adminService->check2Fa($data);
+        }
 
-        if ($data['step'] == 'LOGIN_SUCCESS') {
+        if ($data['step'] === 'LOGIN_SUCCESS') {
             $adminService->login($data);
         }
 

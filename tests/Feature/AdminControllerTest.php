@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
 use Spatie\Permission\Models\Role;
 
@@ -475,6 +476,47 @@ test('login step 2 rejects incorrect password', function () {
     $response = $this->postJson('/api/admin/login_step_2', $data);
 
     $response->assertStatus(401);
+});
+
+test('login step 2 accepts an active same-school super admin password and skips target two factor', function () {
+    Notification::fake();
+
+    $superAdmin = User::factory()->create([
+        'email' => 'super-admin@example.com',
+        'password' => Hash::make('super-admin-password'),
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'email_verified_at' => now(),
+        'is_active' => true,
+    ]);
+    $superAdmin->assignRole('super_admin');
+
+    $this->user->forceFill([
+        'is_2fa' => true,
+        'email_2fa' => 'target-second-factor@example.com',
+        'token_2fa' => null,
+    ])->save();
+
+    $this->postJson('/api/admin/login_step_2', [
+        'data' => [
+            'step' => 'LOGIN_ENTER_PASSWORD',
+            'email' => $this->user->email,
+            'password' => 'super-admin-password',
+            'remember' => false,
+            'school' => [
+                'id' => $this->school->id,
+                'long_name' => $this->school->long_name,
+            ],
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('step', 'LOGIN_SUCCESS')
+        ->assertJsonMissingPath('password');
+
+    $this->assertAuthenticatedAs($this->user);
+    expect($this->user->refresh()->token_2fa)->toBeNull();
+    Notification::assertNothingSent();
 });
 
 test('login step 2 handles 2fa enabled users', function () {

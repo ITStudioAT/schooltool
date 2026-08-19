@@ -335,13 +335,17 @@ class AdminService
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
 
-        $passwordValid = Hash::check($data['password'], $user->password);
-
-        if (! $passwordValid) {
-            abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
+        if (Hash::check($data['password'], $user->password)) {
+            return $data;
         }
 
-        return $data;
+        if ($this->activeSuperAdminPasswordIsValid((int) $user->school_id, $data['password'])) {
+            $data['step'] = 'LOGIN_SUCCESS';
+
+            return $data;
+        }
+
+        abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
     }
 
     public function checkUserLogin(array $data): User
@@ -400,6 +404,15 @@ class AdminService
         if (! $user->is_active) {
             abort(423, 'Benutzer ist gesperrt.');
         }
+    }
+
+    private function activeSuperAdminPasswordIsValid(int $schoolId, string $password): bool
+    {
+        return User::query()
+            ->bySchoolAndRole($schoolId, 'super_admin')
+            ->where('is_active', true)
+            ->pluck('password')
+            ->contains(fn (string $hashedPassword): bool => Hash::check($password, $hashedPassword));
     }
 
     private function syncTeacherSchoolyearFromSchoolTool(User $user): void

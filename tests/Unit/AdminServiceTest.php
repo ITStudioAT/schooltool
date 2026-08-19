@@ -911,6 +911,65 @@ describe('checkLogin', function () {
         $this->service->checkLogin($data);
     })->throws(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
 
+    it('rejects an inactive same-school super admin password', function () {
+        $school = School::factory()->create();
+        $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $superAdminRole = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('target-password'),
+            'confirmed_at' => now(),
+            'is_active' => true,
+        ]);
+        $user->assignRole($adminRole);
+
+        $superAdmin = User::factory()->create([
+            'school_id' => $school->id,
+            'password' => Hash::make('inactive-super-admin-password'),
+            'confirmed_at' => now(),
+            'is_active' => false,
+        ]);
+        $superAdmin->assignRole($superAdminRole);
+
+        $this->service->checkLogin([
+            'email' => $user->email,
+            'school' => ['id' => $school->id],
+            'password' => 'inactive-super-admin-password',
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ]);
+    })->throws(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
+
+    it('rejects a super admin password from another school', function () {
+        $school = School::factory()->create();
+        $otherSchool = School::factory()->create();
+        $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $superAdminRole = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('target-password'),
+            'confirmed_at' => now(),
+            'is_active' => true,
+        ]);
+        $user->assignRole($adminRole);
+
+        $superAdmin = User::factory()->create([
+            'school_id' => $otherSchool->id,
+            'password' => Hash::make('other-school-super-admin-password'),
+            'confirmed_at' => now(),
+            'is_active' => true,
+        ]);
+        $superAdmin->assignRole($superAdminRole);
+
+        $this->service->checkLogin([
+            'email' => $user->email,
+            'school' => ['id' => $school->id],
+            'password' => 'other-school-super-admin-password',
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ]);
+    })->throws(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
+
     it('accepts admin role for login', function () {
         $school = School::factory()->create();
         $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
