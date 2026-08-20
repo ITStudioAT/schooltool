@@ -102,24 +102,13 @@ start_horizon_directly() {
 
         while IFS= read -r process_id; do
             if [[ "$process_id" =~ ^[1-9][0-9]*$ ]]; then
+                health_check_arguments+=("--exclude-master-pid=${process_id}")
                 kill -TERM "$process_id" 2>/dev/null || true
             fi
         done <<< "$existing_process_ids"
 
-        if ! wait_for_previous_horizon_to_exit "$existing_process_ids"; then
-            return 1
-        fi
-
         if wait_for_queue_runtime "$existing_process_ids"; then
             return
-        fi
-
-        existing_process_ids="$(horizon_master_process_ids)"
-
-        if [ -n "$existing_process_ids" ]; then
-            echo "The process monitor started Horizon, but it is still unhealthy: ${existing_process_ids//$'\n'/, }." >&2
-
-            return 1
         fi
     fi
 
@@ -154,37 +143,6 @@ start_horizon_directly() {
 
 horizon_master_process_ids() {
     pgrep -f '[a]rtisan horizon$' || true
-}
-
-wait_for_previous_horizon_to_exit() {
-    local previous_process_ids="$1"
-
-    if [ -z "$previous_process_ids" ]; then
-        return
-    fi
-
-    echo "Waiting for the previous Horizon master to exit..."
-
-    for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
-        local still_running=false
-
-        while IFS= read -r process_id; do
-            if [ -n "$process_id" ] && kill -0 "$process_id" 2>/dev/null; then
-                still_running=true
-                break
-            fi
-        done <<< "$previous_process_ids"
-
-        if [ "$still_running" = false ]; then
-            return
-        fi
-
-        sleep 1
-    done
-
-    echo "The previous Horizon master did not exit within ${horizon_restart_timeout} seconds." >&2
-
-    return 1
 }
 
 wait_for_queue_runtime() {
