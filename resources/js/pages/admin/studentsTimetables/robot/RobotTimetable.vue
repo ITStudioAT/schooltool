@@ -6297,7 +6297,6 @@ export default {
             return [sourceLabel, code].filter(Boolean).join(' / ')
         },
         generatedSlotDetails(slot) {
-            const courseGroup = slot?.courseGroup || {}
             const alternativeLabels = this.generatedSlotAlternativeLabels(slot)
 
             if (alternativeLabels.length > 1) {
@@ -6306,14 +6305,9 @@ export default {
 
             const label = this.generatedSlotShowsDateRange(slot)
                 ? ''
-                : String(slot?.sourceLabel || this.courseGroupOptionLabel(courseGroup) || '').trim()
-            const teacher = String(courseGroup?.teacher || '').trim()
-            const rooms = this.courseGroupRoomsLabel(courseGroup)
+                : String(slot?.sourceLabel || this.courseGroupOptionLabel(slot?.courseGroup) || '').trim()
 
-            return [label, teacher, rooms]
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
-                .join(' · ')
+            return label
         },
         generatedSlotAlternativeLabels(slot) {
             return Array.isArray(slot?.alternativeLabels)
@@ -6938,12 +6932,6 @@ export default {
 
             return `${label} (${weekMarker})`
         },
-        courseGroupDetailMetaEntries(courseGroup) {
-            return [
-                String(courseGroup?.teacher || '').trim(),
-                this.courseGroupRoomsLabel(courseGroup),
-            ].filter(Boolean)
-        },
         courseGroupDetailSortValue(courseGroup) {
             return [
                 this.courseGroupDates(courseGroup)[0] || '',
@@ -6970,7 +6958,6 @@ export default {
 
             return [
                 scheduleEntry.label,
-                ...this.courseGroupDetailMetaEntries(courseGroup),
             ]
                 .filter(Boolean)
                 .filter((value, index, values) => values.indexOf(value) === index)
@@ -7035,20 +7022,10 @@ export default {
             return schoolHours.find(schoolHour => Number(schoolHour?.hour) === Number(courseGroup?.hour)) || null
         },
         courseGroupStartTime(courseGroup) {
-            return this.formatTimeValue(this.courseGroupSchoolHour(courseGroup)?.from)
+            return this.formatTimeValue(courseGroup?.starts_at || this.courseGroupSchoolHour(courseGroup)?.from)
         },
         courseGroupEndTime(courseGroup) {
-            return this.formatTimeValue(this.courseGroupSchoolHour(courseGroup)?.until)
-        },
-        courseGroupRoomsLabel(courseGroup) {
-            if (Array.isArray(courseGroup?.rooms)) {
-                return courseGroup.rooms
-                    .map(room => String(room || '').trim())
-                    .filter(Boolean)
-                    .join(', ')
-            }
-
-            return String(courseGroup?.room || courseGroup?.rooms || '').trim()
+            return this.formatTimeValue(courseGroup?.ends_at || this.courseGroupSchoolHour(courseGroup)?.until)
         },
         estimatedCourseVariationCount(courses) {
             return (Array.isArray(courses) ? courses : [])
@@ -9408,13 +9385,6 @@ export default {
                 courseGroup?.hour,
                 this.courseGroupDates(courseGroup).join('|'),
             ].filter(Boolean).join('|')
-            const details = [
-                String(courseGroup?.teacher || '').trim(),
-                this.courseGroupRoomsLabel(courseGroup),
-            ]
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
-                .join(' · ')
             const conflictLabel = existingSlot
                 ? `überschneidet sich mit ${this.courseProblemLabel(existingSlot)}`
                 : ''
@@ -9434,7 +9404,7 @@ export default {
                 hour: Number(courseGroup?.hour),
                 timeFrom: this.courseGroupStartTime(courseGroup),
                 timeUntil: this.courseGroupEndTime(courseGroup),
-                details,
+                details: '',
                 conflictLabel,
                 sortValue: [
                     this.courseGroupDates(courseGroup)[0] || '',

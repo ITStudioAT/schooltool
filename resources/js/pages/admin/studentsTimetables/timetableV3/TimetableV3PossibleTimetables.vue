@@ -672,18 +672,6 @@ export default {
         lessonPrimaryDetailsLabel(entry) {
             return [this.lessonScheduleLabel(entry), this.lessonDateLabel(entry)].filter(Boolean).join(' · ')
         },
-        lessonPeopleAndRoomsLabel(entry) {
-            const teacher = String(entry.courseGroup?.teacher || '').trim()
-            const roomValues = Array.isArray(entry.courseGroup?.rooms)
-                ? entry.courseGroup.rooms
-                : [entry.courseGroup?.room]
-            const rooms = roomValues
-                .map(room => typeof room === 'object' ? room?.name || room?.code : room)
-                .map(room => String(room || '').trim())
-                .filter(Boolean)
-
-            return [teacher, rooms.length ? `Raum ${rooms.join(', ')}` : ''].filter(Boolean).join(' · ')
-        },
         localizedDate(value) {
             const [year, month, day] = String(value || '').split('-').map(Number)
 
@@ -741,7 +729,6 @@ export default {
                 entry.sourceLabel,
                 this.lessonScheduleLabel(entry),
                 this.lessonDateLabel(entry),
-                this.lessonPeopleAndRoomsLabel(entry),
                 ...this.lessonMarkers(entry, weekday, hour),
             ].filter(Boolean).join(', ')
         },

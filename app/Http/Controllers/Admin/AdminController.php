@@ -24,6 +24,7 @@ use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
@@ -105,6 +106,7 @@ class AdminController extends Controller
         if ($user) {
             $lastImport116At = $user->selectedSchool?->schoolTool?->import_166_at;
         }
+        $schoolwideActiveSchoolyear = $this->schoolwideActiveSchoolyear($user);
 
         $menu = $user ? $navigationService->dashboardMenu() : [];
         $capabilities = $navigationService->routeCapabilities($user, $menu);
@@ -122,6 +124,7 @@ class AdminController extends Controller
             'user' => $user ? new UserWithRoleResource($user) : null,
             'selected_school' => $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
             'selected_schoolyear' => $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
+            'schoolwide_active_schoolyear' => $schoolwideActiveSchoolyear ? new SchoolyearResource($schoolwideActiveSchoolyear) : null,
             'selected_register' => $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister->loadCount([
                 'bookings',
                 'dates',
@@ -164,6 +167,20 @@ class AdminController extends Controller
         }
 
         return $data;
+    }
+
+    private function schoolwideActiveSchoolyear(?User $user): ?Schoolyear
+    {
+        $schoolId = $user?->selectedSchool?->id;
+        $schoolyearId = $user?->selectedSchool?->schoolTool?->active_schoolyear_id;
+
+        if (! $schoolId || ! $schoolyearId) {
+            return null;
+        }
+
+        return Schoolyear::query()
+            ->where('school_id', $schoolId)
+            ->find($schoolyearId);
     }
 
     /**

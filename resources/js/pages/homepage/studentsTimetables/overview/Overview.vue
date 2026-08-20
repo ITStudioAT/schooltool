@@ -215,9 +215,6 @@
                                     title="Fernunterricht">
                                     Fernunterricht
                                 </v-chip>
-                                <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                    {{ course.roomsLabel }}
-                                </v-chip>
                             </div>
                         </div>
                         <v-alert v-else type="info" variant="tonal" density="compact">
@@ -771,9 +768,6 @@
                                                 </v-chip>
                                                 <v-chip v-if="course.isDisabled" size="x-small" color="error" variant="tonal">
                                                     Blockiert
-                                                </v-chip>
-                                                <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                                    {{ course.roomsLabel }}
                                                 </v-chip>
                                             </div>
                                         </div>
@@ -2253,7 +2247,6 @@ export default {
                 courseGroups: [courseGroup],
                 scheduleLabel,
                 recurrenceLabel: this.manualCourseGroupWeekMarker(courseGroup).replace(/[()]/gu, '').trim(),
-                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : []).filter(Boolean).join(', '),
                 distanceLearning: this.automaticOfferedCourseIsDistanceLearning([courseGroup], selectedCourse),
             }
         },
@@ -2281,7 +2274,6 @@ export default {
                     courseGroups,
                     scheduleLabel: this.automaticMergedLabelList(existingCourseItem.scheduleLabel, courseItem.scheduleLabel),
                     recurrenceLabel: this.automaticMergedLabelList(existingCourseItem.recurrenceLabel, courseItem.recurrenceLabel),
-                    roomsLabel: this.automaticMergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
                     distanceLearning: this.automaticOfferedCourseIsDistanceLearning(courseGroups, selectedCourse),
                 })
             })
@@ -2305,17 +2297,13 @@ export default {
                 .join(', ')
         },
         automaticOfferedCourseName(courseGroup, code) {
-            return [
-                code,
-                courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
-                courseGroup?.teacher,
-            ]
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
-                .join(' - ')
-                || courseGroup?.display_label
+            return String(
+                courseGroup?.display_label
+                || courseGroup?.class_name
+                || code
                 || courseGroup?.title
-                || 'Ohne Bezeichnung'
+                || 'Ohne Bezeichnung',
+            ).trim()
         },
         automaticOfferedCourseGroupSelectionLabel(courseGroup) {
             return String(
@@ -2896,7 +2884,6 @@ export default {
                                 scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
                                 offeredScheduleLabel: this.studentCoursePickerEntryOfferedScheduleLabel(entry),
                                 recurrenceLabel: this.studentCoursePickerEntryRecurrenceLabel(entry),
-                                roomsLabel: this.studentCoursePickerEntryRoomsLabel(entry),
                             }))
                             .sort((leftEntry, rightEntry) => this.compareStudentCoursePickerEntryOfferItems(leftEntry, rightEntry)),
                     }
@@ -3019,12 +3006,14 @@ export default {
         studentCoursePickerCourseGroupTimeRangeParts(courseGroup) {
             return {
                 from: this.formatTimeValue(
-                    courseGroup?.time_from
+                    courseGroup?.starts_at
+                    || courseGroup?.time_from
                     || courseGroup?.from
                     || this.configuredSchoolHour(courseGroup?.hour)?.from,
                 ),
                 until: this.formatTimeValue(
-                    courseGroup?.time_until
+                    courseGroup?.ends_at
+                    || courseGroup?.time_until
                     || courseGroup?.until
                     || this.configuredSchoolHour(courseGroup?.hour)?.until,
                 ),
@@ -3232,13 +3221,6 @@ export default {
 
             return this.studentCoursePickerFrequencyLabel(courseGroups)
         },
-        studentCoursePickerEntryRoomsLabel(entry) {
-            return [...new Set((Array.isArray(entry?.courseGroups) ? entry.courseGroups : [])
-                .flatMap(courseGroup => Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
-                .map(room => String(room || '').trim())
-                .filter(Boolean))]
-                .join(', ')
-        },
         studentCoursePickerCourseGroupDateRangeLabel(courseGroup) {
             const dates = Array.isArray(courseGroup?.dates)
                 ? [...courseGroup.dates].filter(Boolean).sort()
@@ -3276,7 +3258,7 @@ export default {
                 .map(courseGroup => ({
                     semester: Number(courseGroup?.semester || entry?.semester || 0),
                     slot: (Number(courseGroup?.weekday || 0) * 10000)
-                        + (this.studentCoursePickerTimeLabelToMinutes(courseGroup?.time_from) ?? (Number(courseGroup?.hour || 0) * 100)),
+                        + (this.studentCoursePickerTimeLabelToMinutes(courseGroup?.starts_at || courseGroup?.time_from) ?? (Number(courseGroup?.hour || 0) * 100)),
                 }))
                 .sort((leftSlot, rightSlot) => {
                     if (leftSlot.semester !== rightSlot.semester) {
@@ -3307,8 +3289,8 @@ export default {
             courseGroups.forEach((courseGroup) => {
                 const weekday = Number(courseGroup?.weekday || 0)
                 const weekdayLabel = this.manualCourseGroupWeekdayLabel(courseGroup)
-                const from = String(courseGroup?.time_from || '')
-                const until = String(courseGroup?.time_until || '')
+                const from = String(courseGroup?.starts_at || courseGroup?.time_from || '')
+                const until = String(courseGroup?.ends_at || courseGroup?.time_until || '')
 
                 if (!weekdayLabel && !from && !until) {
                     return
@@ -4145,9 +4127,11 @@ export default {
         manualCourseGroupKey(courseGroup) {
             return String(courseGroup?.key || [
                 courseGroup?.course || courseGroup?.subject || courseGroup?.title || '',
+                courseGroup?.class_name || '',
                 courseGroup?.weekday || '',
                 courseGroup?.hour || '',
-                courseGroup?.teacher || '',
+                courseGroup?.starts_at || '',
+                courseGroup?.ends_at || '',
             ].join('|'))
         },
         manualCourseGroupLabel(courseGroup) {
@@ -4178,8 +4162,8 @@ export default {
         },
         manualCourseGroupTimeRange(courseGroup) {
             return [
-                courseGroup?.time_from,
-                courseGroup?.time_until,
+                courseGroup?.starts_at || courseGroup?.time_from,
+                courseGroup?.ends_at || courseGroup?.time_until,
             ]
                 .filter(Boolean)
                 .join(' - ')
@@ -4432,12 +4416,9 @@ export default {
             return ''
         },
         manualCourseGroupDetails(courseGroup) {
-            const rooms = Array.isArray(courseGroup?.rooms) ? courseGroup.rooms.join(', ') : ''
-
             return [
                 courseGroup?.display_label,
-                courseGroup?.teacher,
-                rooms,
+                courseGroup?.class_name,
             ]
                 .filter(Boolean)
                 .join(' · ')
@@ -4461,14 +4442,16 @@ export default {
         },
         manualTimetableHourTimeFrom(courseGroup, hour = null) {
             return this.formatTimeValue(
-                courseGroup?.time_from
+                courseGroup?.starts_at
+                || courseGroup?.time_from
                 || courseGroup?.from
                 || this.configuredSchoolHour(hour ?? courseGroup?.hour)?.from,
             )
         },
         manualTimetableHourTimeUntil(courseGroup, hour = null) {
             return this.formatTimeValue(
-                courseGroup?.time_until
+                courseGroup?.ends_at
+                || courseGroup?.time_until
                 || courseGroup?.until
                 || this.configuredSchoolHour(hour ?? courseGroup?.hour)?.until,
             )

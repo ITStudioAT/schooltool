@@ -175,9 +175,7 @@ it('returns timetable v2 selection bootstrap data in one response', function () 
         'period' => '1',
         'subject' => 'D',
         'course' => 'D1',
-        'teacher' => 'AB',
-        'class_name' => '4S',
-        'student_group' => '4S',
+        'class_name' => 'D1-4S-AB',
         'is_active' => true,
     ]);
 

@@ -194,9 +194,6 @@
                                                 <span v-if="offer.scheduleLabel" class="students-timetable-v2-selected-offers-card__schedule">
                                                     {{ offer.scheduleLabel }}
                                                 </span>
-                                                <span v-if="offer.roomsLabel" class="students-timetable-v2-selected-offers-card__rooms">
-                                                    {{ offer.roomsLabel }}
-                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -336,9 +333,6 @@
                                                 :title="offeredCourseInstructionLabel(course)">
                                                 {{ offeredCourseInstructionLabel(course) }}
                                             </v-chip>
-                                            <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                                {{ course.roomsLabel }}
-                                            </v-chip>
                                         </div>
                                     </div>
                                     <v-alert v-else type="info" variant="tonal" density="compact">
@@ -395,9 +389,6 @@
                                     variant="tonal"
                                     :title="course.instructionLabel">
                                     {{ course.instructionLabel }}
-                                </v-chip>
-                                <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                    {{ course.roomsLabel }}
                                 </v-chip>
                             </div>
                         </div>
@@ -1011,9 +1002,6 @@
                                             variant="tonal"
                                             :title="course.instructionLabel">
                                             {{ course.instructionLabel }}
-                                        </v-chip>
-                                        <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                            {{ course.roomsLabel }}
                                         </v-chip>
                                         <div
                                             v-if="course.conflictItems.length"
@@ -4161,11 +4149,9 @@ export default {
                 slot?.code,
                 slot?.class_name,
                 slot?.display_label,
-                slot?.student_group,
                 slot?.title,
                 slot?.courseGroup?.class_name,
                 slot?.courseGroup?.display_label,
-                slot?.courseGroup?.student_group,
                 slot?.courseGroup?.title,
             ]
                 .map((label) => this.normalizedCourseCode(label))
@@ -8444,7 +8430,6 @@ export default {
                 courseItemsByIdentity.set(identityKey, {
                     ...existingCourseItem,
                     isKompaktunterricht: existingCourseItem.isKompaktunterricht === true || courseItem.isKompaktunterricht === true,
-                    roomsLabel: this.mergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
                     recurrenceLabel: this.mergedLabelList(existingCourseItem.recurrenceLabel, courseItem.recurrenceLabel),
                     scheduleSlots: this.mergedScheduleSlots(existingCourseItem.scheduleSlots, courseItem.scheduleSlots),
                 })
@@ -8531,7 +8516,6 @@ export default {
                 instructionLabel,
                 instructionType: instructionLabel === 'Kompaktunterricht' ? 'compact' : 'distance-learning',
                 label,
-                roomsLabel: String(offeredCourse?.roomsLabel || '').trim(),
                 scheduleLabel: String(offeredCourse?.scheduleLabel || '').trim(),
                 selected,
                 selectionKey,
@@ -8670,7 +8654,6 @@ export default {
                 course?.code,
                 course?.class_name,
                 course?.display_label,
-                course?.student_group,
                 course?.title,
             ].some((label) => this.courseLabelLooksLikeRKompaktunterricht(label)))
         },
@@ -8915,9 +8898,10 @@ export default {
                     courseGroup?.semester,
                     courseGroup?.weekday,
                     courseGroup?.hour,
-                    courseGroup?.title,
-                    courseGroup?.display_label,
-                    courseGroup?.teacher,
+                    courseGroup?.starts_at,
+                    courseGroup?.ends_at,
+                    courseGroup?.module_code || courseGroup?.course || courseGroup?.subject,
+                    courseGroup?.class_name,
                 ].join('|'),
                 code,
                 courseGroup: this.clonedTimetableV2Value(courseGroup),
@@ -8933,24 +8917,18 @@ export default {
                 }),
                 recurrenceLabel,
                 isKompaktunterricht,
-                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
-                    .filter(Boolean)
-                    .join(', '),
             }
         },
         offeredCourseGroupLabel(courseGroup, code, displayCode = code) {
-            const teacher = this.cleanedOfferedCourseTeacherSegment(courseGroup?.teacher, code)
             const group = this.cleanedOfferedCourseGroupSegment(
-                courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
+                courseGroup?.class_name || courseGroup?.display_label,
                 code,
-                teacher,
             )
             const fallbackLabel = this.courseDisplayLabel(courseGroup?.display_label || courseGroup?.title || courseGroup?.course || courseGroup?.subject)
 
             return this.uniqueValues([
                 displayCode,
                 group,
-                teacher,
             ].filter(Boolean)).join(' - ') || fallbackLabel || 'Ohne Bezeichnung'
         },
         courseGroupOptionLabel(courseGroup) {
@@ -9068,13 +9046,12 @@ export default {
 
             return date
         },
-        cleanedOfferedCourseGroupSegment(value, code, teacher) {
+        cleanedOfferedCourseGroupSegment(value, code) {
             let segment = String(value || '').trim()
 
             segment = this.stripLabelSegment(segment, code)
             segment = this.stripLabelSegment(segment, String(code || '').replace(/\s+/gu, ''))
             segment = this.stripLabelSegment(segment, this.courseCodeModuleParts(code).base)
-            segment = this.stripLabelSegment(segment, teacher)
 
             return segment
                 .replace(/\s*-\s*/gu, ' - ')

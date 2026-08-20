@@ -96,7 +96,7 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
         $studyProgram = $this->studyProgram($request);
 
         if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium) {
@@ -1141,6 +1141,19 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser->schoolyear_id = (int) $schoolyearId;
+
+        return $authUser;
+    }
+
+    private function scopeSettingsSchoolyear(User $authUser, Request $request): User
+    {
+        if ($request->string('schoolyear_scope')->toString() !== 'personal') {
+            return $this->scopeToSchoolImportSchoolyear($authUser);
+        }
+
+        if (! $authUser->schoolyear_id) {
+            abort(422, 'Kein persönliches Schuljahr gefunden.');
+        }
 
         return $authUser;
     }

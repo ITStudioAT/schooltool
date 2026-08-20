@@ -146,7 +146,7 @@ const defaultForm = (data = null, rows = []) => {
         return values
     }, {})
 
-    form.students_timetables_admin_version = data?.students_timetables_admin_version === 'v3' ? 'v3' : 'v2'
+    form.students_timetables_admin_version = data?.students_timetables_admin_version === 'v2' ? 'v2' : 'v3'
 
     return form
 }
@@ -269,7 +269,7 @@ export default {
         },
 
         setStudentsTimetablesAdminVersion(value) {
-            this.form.students_timetables_admin_version = value === 'v3' ? 'v3' : 'v2'
+            this.form.students_timetables_admin_version = value === 'v2' ? 'v2' : 'v3'
             void this.save()
         },
 

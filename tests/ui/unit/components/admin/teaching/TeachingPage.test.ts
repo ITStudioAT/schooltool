@@ -145,7 +145,6 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual([
             'overview',
             'search',
-            'schoolyear',
             'settings',
             'curricula',
         ])
@@ -174,7 +173,6 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual([
             'overview',
             'search',
-            'schoolyear',
             'settings',
             'curricula',
             'datensicherung',

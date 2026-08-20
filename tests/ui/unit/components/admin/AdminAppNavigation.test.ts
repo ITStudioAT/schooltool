@@ -36,6 +36,14 @@ describe('Admin app navigation', () => {
         ).toBe(true)
     })
 
+    it('allows super admins and admins to manage the schoolwide schoolyear', () => {
+        const canManageSchoolwideSchoolyear = (AdminApp as any).computed.canManageSchoolwideSchoolyear
+
+        expect(canManageSchoolwideSchoolyear.call({ config: { roles: ['super_admin'] } })).toBe(true)
+        expect(canManageSchoolwideSchoolyear.call({ config: { roles: ['admin'] } })).toBe(true)
+        expect(canManageSchoolwideSchoolyear.call({ config: { roles: ['teacher'] } })).toBe(false)
+    })
+
     it('keeps the restaurant dashboard item active on restaurant subpages', () => {
         const item = {
             title: 'Restaurant',

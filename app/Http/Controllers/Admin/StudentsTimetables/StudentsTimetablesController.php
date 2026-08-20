@@ -450,7 +450,6 @@ class StudentsTimetablesController extends Controller
             'offers.*.entries.*.dateLabel' => ['nullable', 'string', 'max:50'],
             'offers.*.entries.*.dateValue' => ['nullable', 'date_format:Y-m-d'],
             'offers.*.entries.*.active' => ['sometimes', 'boolean'],
-            'offers.*.entries.*.roomsLabel' => ['nullable', 'string', 'max:255'],
             'offers.*.entries.*.scheduleLabel' => ['nullable', 'string', 'max:255'],
             'offers.*.entries.*.timeFrom' => ['nullable', 'date_format:H:i'],
             'offers.*.entries.*.timeUntil' => ['nullable', 'date_format:H:i'],

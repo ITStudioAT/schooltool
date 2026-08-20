@@ -13,6 +13,9 @@
             v-model="show_navigation_drawer"
             :is-visible="isAdminShellVisible"
             :selected-school-logo-src="selectedSchoolLogoSrc"
+            :schoolwide-active-schoolyear="config?.schoolwide_active_schoolyear"
+            :selected-schoolyear="config?.selected_schoolyear"
+            :can-manage-schoolwide-schoolyear="canManageSchoolwideSchoolyear"
             :title="config?.selected_school?.long_name || ''" />
 
         <v-main class="bg-background" v-if="config">
@@ -80,6 +83,11 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'is_struktur_modus', 'load_config']),
         selectedSchoolLogoSrc() {
             return resolveSelectedSchoolLogoSrc(this.config?.selected_school?.logo)
+        },
+        canManageSchoolwideSchoolyear() {
+            const roles = this.config?.roles || []
+
+            return roles.includes('super_admin') || roles.includes('admin')
         },
         isMenuInteractionDisabled() {
             return this.is_navigation_locked || this.isRouteNavigationPending || this.is_struktur_modus

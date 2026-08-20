@@ -619,8 +619,8 @@ describe('Students timetable overview', () => {
             course: 'MATH',
             title: 'MATH',
             display_label: 'MATH - 4A - KOW',
-            subject: '20:25',
-            teacher: '21:10',
+            starts_at: '20:25',
+            ends_at: '21:10',
             recurrence_interval: 1,
         }
         const mathRelatedCourseGroup = {
@@ -631,8 +631,8 @@ describe('Students timetable overview', () => {
             course: 'MATH',
             title: 'MATH',
             display_label: 'MATH - 4A - KOW',
-            subject: '10:40',
-            teacher: '11:25',
+            starts_at: '10:40',
+            ends_at: '11:25',
             recurrence_interval: 1,
         }
         const bioCourseGroup = {
@@ -643,8 +643,8 @@ describe('Students timetable overview', () => {
             course: 'BIO',
             title: 'BIO',
             display_label: 'BIO - 4A - KOW',
-            subject: '20:50',
-            teacher: '21:30',
+            starts_at: '20:50',
+            ends_at: '21:30',
             recurrence_interval: 1,
         }
         const ctx = {
@@ -735,16 +735,16 @@ describe('Students timetable overview', () => {
             course: 'GW1',
             title: 'GW1',
             display_label: 'GWB1-1C-HÖF',
-            subject: '17:50',
-            teacher: '18:35',
+            starts_at: '17:50',
+            ends_at: '18:35',
             recurrence_interval: 1,
         }
         const duplicatedGwCourseGroup = {
             ...gwCourseGroup,
             key: 'gw1-overlap-copy',
             hour: 12,
-            subject: '18:30',
-            teacher: '19:15',
+            starts_at: '18:30',
+            ends_at: '19:15',
         }
         const lptCourseGroup = {
             key: 'lpt-direct',
@@ -754,8 +754,8 @@ describe('Students timetable overview', () => {
             course: 'LPT',
             title: 'LPT',
             display_label: 'LPT-1CK-DREI',
-            subject: '17:55',
-            teacher: '18:20',
+            starts_at: '17:55',
+            ends_at: '18:20',
             recurrence_interval: 1,
         }
         const ctx = {
@@ -798,8 +798,8 @@ describe('Students timetable overview', () => {
             course: 'M5',
             title: 'M5',
             display_label: 'M5 - 4A - KOW',
-            subject: '20:25',
-            teacher: '21:10',
+            starts_at: '20:25',
+            ends_at: '21:10',
             recurrence_interval: 1,
         }
         const bioCourseGroup = {
@@ -810,8 +810,8 @@ describe('Students timetable overview', () => {
             course: 'BU2',
             title: 'BU2',
             display_label: 'BU2 - 4A - KOW',
-            subject: '20:50',
-            teacher: '21:30',
+            starts_at: '20:50',
+            ends_at: '21:30',
             recurrence_interval: 1,
         }
         const ctx = {
@@ -933,8 +933,8 @@ describe('Students timetable overview', () => {
             course: 'D1',
             title: 'D1',
             display_label: 'D1 - 1C - GOS',
-            subject: '14:45',
-            teacher: '21:10',
+            starts_at: '14:45',
+            ends_at: '21:10',
             recurrence_interval: 1,
         }
         const singleAppointmentGroup = {
@@ -946,8 +946,8 @@ describe('Students timetable overview', () => {
             course: 'LPT',
             title: 'LPT',
             display_label: 'LPT - 1U - HER',
-            subject: '14:45',
-            teacher: '21:10',
+            starts_at: '14:45',
+            ends_at: '21:10',
             recurrence_interval: null,
             dates_count: 1,
             date: '2026-02-20',
@@ -1068,7 +1068,7 @@ describe('Students timetable overview', () => {
             ['19:30', '20:15'],
             ['20:25', '21:10'],
         ]
-        const singleDateCourseGroups = lessonTimes.map(([subject, teacher], index) => ({
+        const singleDateCourseGroups = lessonTimes.map(([startsAt, endsAt], index) => ({
             key: `lpt-${index + 7}`,
             semester: 1,
             weekday: 5,
@@ -1076,8 +1076,8 @@ describe('Students timetable overview', () => {
             course: 'LPT',
             title: 'LPT',
             display_label: 'LPT - 1U - HER',
-            subject,
-            teacher,
+            starts_at: startsAt,
+            ends_at: endsAt,
             recurrence_interval: null,
             date: '2026-02-20',
         }))
@@ -1127,7 +1127,7 @@ describe('Students timetable overview', () => {
                 ...singleDateCourseGroups[0],
                 key: 'lpt-7|lpt-8|lpt-9|lpt-10|lpt-11|lpt-12|lpt-13|lpt-14',
                 end_hour: 14,
-                teacher: '21:10',
+                ends_at: '21:10',
             },
             sortValue: '2026-02-20|05|07|LPT - 1U - HER',
         }])
@@ -1143,8 +1143,8 @@ describe('Students timetable overview', () => {
             course: 'D2',
             title: 'D2',
             display_label: 'D2 - 1U - HER',
-            subject: '17:05',
-            teacher: '17:50',
+            starts_at: '17:05',
+            ends_at: '17:50',
             recurrence_interval: 2,
             recurrence_label: '2-wöchig',
             dates: ['2026-02-21', '2026-03-07', '2026-04-18'],
@@ -1157,8 +1157,8 @@ describe('Students timetable overview', () => {
             course: 'E2',
             title: 'E2',
             display_label: 'E2 - 1U - NIE',
-            subject: '17:05',
-            teacher: '17:50',
+            starts_at: '17:05',
+            ends_at: '17:50',
             recurrence_interval: 2,
             recurrence_label: '2-wöchig',
             dates: ['2026-05-09', '2026-05-23', '2026-07-04'],
@@ -1491,13 +1491,13 @@ describe('Students timetable overview', () => {
             courseGroups: [
                 {
                     weekday: 5,
-                    subject: '20:25',
-                    teacher: '21:10',
+                    starts_at: '20:25',
+                    ends_at: '21:10',
                 },
                 {
                     weekday: 5,
-                    subject: '21:20',
-                    teacher: '21:55',
+                    starts_at: '21:20',
+                    ends_at: '21:55',
                 },
             ],
         })).toBe('Fr 20:25 - 21:55')
@@ -1506,13 +1506,13 @@ describe('Students timetable overview', () => {
             courseGroups: [
                 {
                     weekday: 5,
-                    subject: '14:45',
-                    teacher: '16:15',
+                    starts_at: '14:45',
+                    ends_at: '16:15',
                 },
                 {
                     weekday: 5,
-                    subject: '18:45',
-                    teacher: '20:15',
+                    starts_at: '18:45',
+                    ends_at: '20:15',
                 },
             ],
         })).toBe('Fr 14:45 - 16:15, Fr 18:45 - 20:15')
@@ -1528,7 +1528,7 @@ describe('Students timetable overview', () => {
                     course: '',
                     title: '16:15',
                     display_label: '16:15',
-                    subject: '17:05',
+                    starts_at: '17:05',
                 },
                 {
                     semester: 1,
@@ -1544,7 +1544,7 @@ describe('Students timetable overview', () => {
                     course: 'GWB',
                     title: 'GWB',
                     display_label: 'GWB - 1A - DEF',
-                    subject: '17:05',
+                    starts_at: '17:05',
                 },
             ],
             weekdays: [
@@ -2374,8 +2374,8 @@ describe('Students timetable overview', () => {
             selectedCourseGroup: {
                 dates: ['2026-09-07'],
                 hour: 9,
-                subject: '16:15',
-                teacher: '17:05',
+                starts_at: '16:15',
+                ends_at: '17:05',
             },
             configuredSchoolHours: [
                 {
@@ -2425,7 +2425,6 @@ describe('Students timetable overview', () => {
         expect(methods.courseGroupTimeRangeLabel.call(ctx, {
             hour: 2,
             subject: 'GWB',
-            teacher: 'ABC',
         })).toBe('08:50 - 09:40')
     })
 
@@ -3261,8 +3260,8 @@ describe('Students timetable overview', () => {
             course: 'D5',
             title: 'D5',
             display_label: 'D5 - 3R - SHAM',
-            subject: '20:25',
-            teacher: '21:55',
+            starts_at: '20:25',
+            ends_at: '21:55',
             recurrence_interval: 2,
             dates: ['2026-02-24', '2026-03-10'],
         }
@@ -3274,8 +3273,8 @@ describe('Students timetable overview', () => {
             course: 'E5',
             title: 'E5',
             display_label: 'E5 - 3R - HÖF',
-            subject: '19:30',
-            teacher: '21:10',
+            starts_at: '19:30',
+            ends_at: '21:10',
             recurrence_interval: 2,
             dates: ['2026-02-17', '2026-03-03'],
         }

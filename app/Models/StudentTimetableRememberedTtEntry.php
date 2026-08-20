@@ -20,7 +20,6 @@ class StudentTimetableRememberedTtEntry extends Model
         'entry_date_label',
         'entry_date',
         'entry_schedule_label',
-        'entry_rooms_label',
         'entry_time_from',
         'entry_time_until',
         'is_active',

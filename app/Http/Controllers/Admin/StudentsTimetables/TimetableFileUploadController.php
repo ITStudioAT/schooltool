@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
-use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\TimetableImportService;
@@ -23,7 +22,7 @@ class TimetableFileUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         $this->ensureTxt();
         $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
@@ -41,7 +40,7 @@ class TimetableFileUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         $this->ensureTxt();
         $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
@@ -75,19 +74,11 @@ class TimetableFileUploadController extends Controller
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
 
-    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    private function ensurePersonalSchoolyear(User $authUser): void
     {
-        $schoolyearId = SchoolTool::query()
-            ->where('school_id', $authUser->school_id)
-            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
-
-        if (! $schoolyearId) {
-            abort(422, 'Kein aktives Schuljahr gefunden.');
+        if (! $authUser->schoolyear_id) {
+            abort(422, 'Kein persönliches Schuljahr ausgewählt.');
         }
-
-        $authUser->schoolyear_id = (int) $schoolyearId;
-
-        return $authUser;
     }
 
     private function ensureTxt(): void

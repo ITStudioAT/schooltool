@@ -551,13 +551,6 @@ export default {
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {
-                    key: 'schoolyear',
-                    label: 'Schuljahr',
-                    meta: this.selectedSchoolyearLabel,
-                    icon: 'mdi-calendar-month-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
-                },
-                {
                     key: 'settings',
                     label: 'Einstellungen',
                     meta: 'Schemas & Einträge',

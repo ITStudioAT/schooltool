@@ -10,6 +10,7 @@ use App\Models\TimetableImport;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class TimetableImportService
 {
@@ -130,6 +131,16 @@ class TimetableImportService
             return $import->refresh();
         }
 
+        $analysis = $this->analyzeFile($filePath);
+        if ($this->importableTimetableRows($analysis) === 0) {
+            $this->markFailed(
+                $import,
+                'Die TXT-Datei enthält keine gültigen Stundenplan-Einträge. Bestehende Daten wurden nicht verändert.',
+            );
+
+            return $import->refresh();
+        }
+
         $this->markRunning($import, $totalLines);
 
         $sections = [];
@@ -212,6 +223,8 @@ class TimetableImportService
 
     public function queueUnimport(TimetableImport $import): TimetableImport
     {
+        $this->assertRemainingImportsCanBeReplayed($import);
+
         $import->update([
             'import_status' => 'deleting',
             'progress_current' => 0,
@@ -245,6 +258,8 @@ class TimetableImportService
             ->orderBy('id')
             ->get();
 
+        $this->assertImportsCanBeReplayed($remainingImports);
+
         DB::transaction(function () use ($import, $remainingImports, $schoolId, $schoolyearId): void {
             StudentTimetableEntry::where('school_id', $schoolId)
                 ->where('schoolyear_id', $schoolyearId)
@@ -253,7 +268,14 @@ class TimetableImportService
             $import->delete();
 
             $remainingImports->each(function (TimetableImport $remainingImport): void {
-                $this->processImport($remainingImport);
+                $replayedImport = $this->processImport($remainingImport);
+
+                if ($replayedImport->import_status !== 'completed') {
+                    throw new RuntimeException(
+                        $replayedImport->import_error
+                            ?: "Der verbleibende Import {$replayedImport->original_filename} konnte nicht wiederhergestellt werden.",
+                    );
+                }
             });
         });
 
@@ -344,7 +366,6 @@ class TimetableImportService
         int $lineNumber,
     ): array {
         $date = $this->normalizeDate($parts[2] ?? null);
-        $usesUntisTimeColumns = $this->usesUntisTimeColumns($parts);
         $className = $this->nullableColumn($parts[7] ?? null);
 
         $row = [
@@ -356,15 +377,12 @@ class TimetableImportService
             'semester' => $date ? $this->semesterForDate($date, $schoolyear->sem_2_start) : null,
             'source_identifier' => $this->nullableColumn($parts[1] ?? null),
             'period' => $this->nullableColumn($parts[3] ?? null),
-            'starts_at' => $usesUntisTimeColumns ? $this->nullableColumn($parts[4] ?? null) : null,
-            'ends_at' => $usesUntisTimeColumns ? $this->nullableColumn($parts[5] ?? null) : null,
-            'subject' => $usesUntisTimeColumns ? $this->nullableColumn($parts[8] ?? null) : $this->nullableColumn($parts[4] ?? null),
-            'teacher' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[5] ?? null),
-            'room' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[6] ?? null),
+            'starts_at' => $this->nullableColumn($parts[4] ?? null),
+            'ends_at' => $this->nullableColumn($parts[5] ?? null),
+            'subject' => $this->nullableColumn($parts[8] ?? null),
             'class_name' => $className,
             'course' => $this->nullableColumn($parts[8] ?? null),
             'module_code' => $this->moduleCodeFromClassName($className),
-            'student_group' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[9] ?? null),
             'is_active' => true,
             'raw_columns' => $parts,
             'raw_line' => $line,
@@ -404,12 +422,9 @@ class TimetableImportService
                     'starts_at' => $row['starts_at'],
                     'ends_at' => $row['ends_at'],
                     'subject' => $row['subject'],
-                    'teacher' => $row['teacher'],
-                    'room' => $row['room'],
                     'class_name' => $row['class_name'],
                     'course' => $row['course'],
                     'module_code' => $row['module_code'],
-                    'student_group' => $row['student_group'],
                     'is_active' => $row['is_active'],
                     'identity_hash' => $row['identity_hash'],
                     'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
@@ -429,12 +444,9 @@ class TimetableImportService
                 'starts_at',
                 'ends_at',
                 'subject',
-                'teacher',
-                'room',
                 'class_name',
                 'course',
                 'module_code',
-                'student_group',
                 'is_active',
                 'raw_columns',
                 'raw_line',
@@ -457,7 +469,6 @@ class TimetableImportService
             'period' => $row['period'] ?? self::IDENTITY_NULL_VALUE,
             'class_name' => $row['class_name'] ?? self::IDENTITY_NULL_VALUE,
             'course' => $row['course'] ?? self::IDENTITY_NULL_VALUE,
-            'student_group' => $row['student_group'] ?? self::IDENTITY_NULL_VALUE,
         ]));
     }
 
@@ -479,7 +490,7 @@ class TimetableImportService
     /**
      * @param  list<string>  $parts
      */
-    private function usesUntisTimeColumns(array $parts): bool
+    private function hasUntisTimeColumns(array $parts): bool
     {
         return $this->isTimeColumn($parts[4] ?? null)
             && $this->isTimeColumn($parts[5] ?? null);
@@ -517,7 +528,53 @@ class TimetableImportService
     private function isImportableTimetableRecord(array $parts): bool
     {
         return trim($parts[1] ?? '') !== '0'
+            && $this->normalizeDate($parts[2] ?? null) !== null
+            && $this->hasUntisTimeColumns($parts)
             && $this->timetableCourseName($parts) !== '';
+    }
+
+    /**
+     * @param  array{sections: array<string, int>, total_lines: int, tt_courses: int, tt_skipped_invalid: int, tt_first_date: ?string, tt_last_date: ?string}  $analysis
+     */
+    private function importableTimetableRows(array $analysis): int
+    {
+        return max(0, (int) ($analysis['sections']['TT'] ?? 0) - $analysis['tt_skipped_invalid']);
+    }
+
+    private function assertRemainingImportsCanBeReplayed(TimetableImport $import): void
+    {
+        $remainingImports = TimetableImport::query()
+            ->where('school_id', $import->school_id)
+            ->where('schoolyear_id', $import->schoolyear_id)
+            ->whereKeyNot($import->id)
+            ->orderBy('imported_at')
+            ->orderBy('id')
+            ->get();
+
+        $this->assertImportsCanBeReplayed($remainingImports);
+    }
+
+    /**
+     * @param  iterable<int, TimetableImport>  $imports
+     */
+    private function assertImportsCanBeReplayed(iterable $imports): void
+    {
+        foreach ($imports as $import) {
+            if (in_array($import->import_status, ['pending', 'running', 'deleting'], true)) {
+                throw ValidationException::withMessages([
+                    'imports' => "Der Import {$import->original_filename} wird gerade verarbeitet. Es wurde nichts gelöscht.",
+                ]);
+            }
+
+            $filePath = storage_path($import->file_path);
+            $analysis = $this->analyzeFile($filePath);
+
+            if (! is_file($filePath) || $this->importableTimetableRows($analysis) === 0) {
+                throw ValidationException::withMessages([
+                    'imports' => "Der verbleibende Import {$import->original_filename} kann nicht wiederhergestellt werden: Die Quelldatei fehlt, ist unlesbar oder enthält keine gültigen Stundenplan-Einträge. Es wurde nichts gelöscht.",
+                ]);
+            }
+        }
     }
 
     /**

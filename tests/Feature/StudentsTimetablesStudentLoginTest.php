@@ -508,8 +508,6 @@ it('returns the student timetable overview summary for the authenticated import1
         'period' => '11',
         'subject' => 'D1',
         'course' => 'D1',
-        'teacher' => 'MUE',
-        'room' => '101',
         'class_name' => 'D1 - 4A - MUE',
         'is_active' => true,
     ]);
@@ -523,8 +521,6 @@ it('returns the student timetable overview summary for the authenticated import1
         'subject' => 'OLD1',
         'course' => 'OLD1',
         'module_code' => 'OLD1',
-        'teacher' => 'ALT',
-        'room' => '102',
         'class_name' => 'OLD1 - 4A - ALT',
         'is_active' => true,
     ]);
@@ -574,11 +570,11 @@ it('returns the student timetable overview summary for the authenticated import1
 
     expect($selectableDeutschModule)->not->toBeNull()
         ->and(data_get($selectableDeutschModule, 'courses.0.title'))->toBeString()->not->toBeEmpty()
-        ->and(data_get($selectableDeutschModule, 'courses.0.teacher'))->toBe('MUE')
+        ->and(data_get($selectableDeutschModule, 'courses.0'))->not->toHaveKey('teacher')
         ->and($allModules->firstWhere('code', 'D1'))->not->toBeNull()
         ->and($allModules->firstWhere('code', 'OLD1'))->not->toBeNull()
         ->and(data_get($allModules->firstWhere('code', 'OLD1'), 'status_label'))->toBe('Befreit')
-        ->and(data_get($allModules->firstWhere('code', 'OLD1'), 'courses.0.teacher'))->toBe('ALT');
+        ->and(data_get($allModules->firstWhere('code', 'OLD1'), 'courses.0'))->not->toHaveKey('teacher');
 
     $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/overview?'.http_build_query([
@@ -994,8 +990,6 @@ it('creates the first automatic timetable for the authenticated student', functi
         'period' => '11',
         'subject' => 'D1',
         'course' => 'D1',
-        'teacher' => 'MUE',
-        'room' => '101',
         'class_name' => 'D1 - 4A - MUE',
         'is_active' => true,
     ]);
@@ -1008,8 +1002,6 @@ it('creates the first automatic timetable for the authenticated student', functi
         'period' => '12',
         'subject' => 'D2',
         'course' => 'D2',
-        'teacher' => 'MUE',
-        'room' => '102',
         'class_name' => 'D2 - 4A - MUE',
         'is_active' => true,
     ]);
@@ -1099,7 +1091,7 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->assertJsonPath('data.selected_timetable.type', 'full_green')
         ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
         ->assertJsonPath('data.selected_timetable.slots.1-12.code', 'D2')
-        ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
+        ->assertJsonMissingPath('data.selected_timetable.slots.1-11.courseGroup.teacher');
 
     $this->actingAs($user)
         ->postJson('/api/homepage/students-timetables/automatic-timetable', [
@@ -1172,8 +1164,6 @@ it('returns a published timetable for the authenticated student overview', funct
         'period' => '11',
         'subject' => 'D1',
         'course' => 'D1',
-        'teacher' => 'MUE',
-        'room' => '101',
         'class_name' => 'D1 - 4A - MUE',
         'is_active' => true,
     ]);
@@ -1421,8 +1411,6 @@ it('flags fully conflicting additional courses for the authenticated student', f
             'period' => '11',
             'subject' => $courseCode,
             'course' => $courseCode,
-            'teacher' => 'MUE',
-            'room' => '101',
             'class_name' => "{$courseCode} - 4A - MUE",
             'is_active' => true,
         ]);
@@ -1490,8 +1478,6 @@ it('does not flag additional courses as fully conflicting when only an occasiona
         'period' => '11',
         'subject' => 'D1',
         'course' => 'D1',
-        'teacher' => 'MUE',
-        'room' => '101',
         'class_name' => 'D1 - 4A - MUE',
         'is_active' => true,
     ]);
@@ -1504,8 +1490,6 @@ it('does not flag additional courses as fully conflicting when only an occasiona
         'period' => '14',
         'subject' => 'LPT',
         'course' => 'LPT',
-        'teacher' => 'HER',
-        'room' => '101',
         'class_name' => 'LPT - 4A - HER',
         'is_active' => true,
     ]);
@@ -1519,8 +1503,6 @@ it('does not flag additional courses as fully conflicting when only an occasiona
             'period' => '14',
             'subject' => 'INF2',
             'course' => 'INF2',
-            'teacher' => 'MAY',
-            'room' => '101',
             'class_name' => 'INF2 - 4A - MAY',
             'is_active' => true,
         ]);

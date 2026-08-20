@@ -155,9 +155,13 @@ describe('Students timetable timetable page', () => {
             'utf8',
         )
         const routeSource = readFileSync('resources/routes/admin.js', 'utf8')
+        const fileUploadSource = readFileSync('resources/js/pages/components/FileUpload.vue', 'utf8')
 
         expect(componentSource).toContain('v-if="subAction === \'imports\' && !activeImportPage"')
         expect(componentSource).toContain('Importe')
+        expect(componentSource).toContain('<span>Importe:</span>')
+        expect(componentSource).toContain('{{ personalImportSchoolyearLabel }}')
+        expect(componentSource).toContain('class="text-h6 font-weight-bold text-primary"')
         expect(componentSource).toContain('importButtons()')
         expect(componentSource).toContain("label: 'Stundenplan'")
         expect(componentSource).toContain("label: 'Anrechnungen'")
@@ -218,6 +222,20 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('st-import-file-info-note')
         expect(componentSource).toContain('st-import-history-card')
         expect(componentSource).toContain('Importverlauf')
+        expect(componentSource).toContain("import { downloadSource as downloadTimetableImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/TimetableImportController'")
+        expect(componentSource).toContain("import { downloadSource as downloadRecognitionImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/RecognitionCsvUploadController'")
+        expect(componentSource).toContain("import { downloadSource as downloadImport116Source } from '@/actions/App/Http/Controllers/Admin/Teaching/Import116Controller'")
+        expect(componentSource).toContain(':href="timetableSourceDownloadUrl(importItem)"')
+        expect(componentSource).toContain(':href="recognitionSourceDownloadUrl(importItem)"')
+        expect(componentSource).toContain(':href="import116SourceDownloadUrl(run)"')
+        expect(componentSource).toContain('mdi-download-outline')
+        expect(componentSource).toContain('Quelldatei nicht mehr verfügbar')
+        expect(componentSource.indexOf('@click.stop="openDeleteDialog(importItem)"'))
+            .toBeLessThan(componentSource.indexOf(':href="timetableSourceDownloadUrl(importItem)"'))
+        expect(componentSource.indexOf('@click.stop="openRecognitionDeleteDialog(importItem)"'))
+            .toBeLessThan(componentSource.indexOf(':href="recognitionSourceDownloadUrl(importItem)"'))
+        expect(componentSource.indexOf('@click.stop="import116OpenDeleteDialog(run)"'))
+            .toBeLessThan(componentSource.indexOf(':href="import116SourceDownloadUrl(run)"'))
         expect(componentSource).toContain("const shouldLoadFullTimetableImports = this.activeImportPage === 'stundenplan'")
         expect(componentSource).toContain("const shouldLoadFullRecognitionImports = this.activeImportPage === 'anrechnungen'")
         expect(componentSource).toContain('per_page: shouldLoadFullTimetableImports ? 100 : 1')
@@ -452,7 +470,13 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('importItem?.imported_rows')
         expect(componentSource).toContain("if (this.activeImportPage === 'anrechnungen') return true")
         expect(componentSource).toContain("if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei'")
-        expect(componentSource).toContain("this.uploadError = 'Die CSV-Datei konnte nicht gespeichert werden.'")
+        expect(componentSource).toContain("this.uploadError = serverMessage || 'Die CSV-Datei konnte nicht gespeichert werden.'")
+        expect(componentSource).toContain('Vor der Übernahme wird geprüft, ob die Datei gültige Schülerdaten enthält.')
+        expect(componentSource).toContain('Vor dem Löschen prüft das System alle verbleibenden Quelldateien.')
+        expect(componentSource).toContain('@click.stop="import116OpenDeleteDialog(run)"')
+        expect(componentSource).toContain('Die aktiven Schülerdaten bleiben unverändert.')
+        expect(fileUploadSource).toContain('onerror: onServerError')
+        expect(fileUploadSource).toContain("this.$emit('error', message)")
         expect(componentSource).toContain(':allowMultiple="activeImportUploadAllowsMultiple"')
         expect(componentSource).toContain("return this.activeImportPage === 'anrechnungen'")
         expect(componentSource).not.toContain('Anrechnungen-Konfiguration')
@@ -489,6 +513,73 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('Änderungen werden im Hintergrund gespeichert.')
         expect(componentSource).toContain('queueSingleDateAppointmentActivationSave()')
         expect(routeSource).toContain('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
+    })
+
+    it('shows the personal target schoolyear for all import types', () => {
+        const computed = (Timetable as any).computed
+
+        expect(computed.personalImportSchoolyearLabel.call({
+            config: {
+                schoolwide_active_schoolyear: { id: 12, concerns: '2026/27' },
+                selected_schoolyear: { id: 11, concerns: '2025/26' },
+            },
+        })).toBe('2025/26')
+    })
+
+    it('shows a failed Sokrates import as an error without updating the last import time', async () => {
+        const methods = (Timetable as any).methods
+        const loadRuns = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            import116Importing: true,
+            import116LastImportAt: null,
+            import116RunActionMessage: 'Alter Erfolg',
+            import116RunActionError: '',
+            import116LoadRuns: loadRuns,
+        }
+
+        await methods.handleImport116Finished.call(ctx, {
+            detail: {
+                status: 422,
+                message: 'Die Datei enthält keine gültigen Schülerdaten.',
+                data: { created: 0, updated: 0, deleted: 0 },
+            },
+        })
+
+        expect(ctx.import116Importing).toBe(false)
+        expect(ctx.import116LastImportAt).toBeNull()
+        expect(ctx.import116RunActionMessage).toBe('')
+        expect(ctx.import116RunActionError).toBe('Die Datei enthält keine gültigen Schülerdaten.')
+        expect(loadRuns).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the timetable delete dialog open when the server rejects rebuilding', async () => {
+        const methods = (Timetable as any).methods
+        const globalScope = globalThis as any
+        const originalAxios = globalScope.axios
+        globalScope.axios = {
+            delete: vi.fn().mockRejectedValue({
+                response: { data: { message: 'Die verbleibende Quelldatei fehlt. Es wurde nichts gelöscht.' } },
+            }),
+        }
+        const ctx: any = {
+            deleteTargetImport: { id: 17 },
+            deleteDialog: true,
+            deleting: false,
+            deleteError: '',
+            loadImportButtonInfo: vi.fn(),
+        }
+
+        try {
+            await methods.deleteImport.call(ctx)
+        } finally {
+            globalScope.axios = originalAxios
+        }
+
+        expect(ctx.deleteDialog).toBe(true)
+        expect(ctx.deleteTargetImport).toEqual({ id: 17 })
+        expect(ctx.deleteError).toBe('Die verbleibende Quelldatei fehlt. Es wurde nichts gelöscht.')
+        expect(ctx.deleting).toBe(false)
+        expect(ctx.loadImportButtonInfo).not.toHaveBeenCalled()
     })
 
     it('formats import button metadata', () => {
@@ -600,16 +691,18 @@ describe('Students timetable timetable page', () => {
                 date: '2026-02-17',
                 period: '14',
                 starts_at: '20:25',
+                ends_at: '21:10',
                 subject: 'LPT',
-                teacher: 'AB',
+                course: 'LPT',
                 entry_ids: [1],
             },
             {
                 date: '2026-02-18',
                 period: '10',
                 starts_at: '17:05',
+                ends_at: '17:50',
                 subject: 'LPT',
-                teacher: 'AB',
+                course: 'LPT',
                 entry_ids: [2],
             },
         ]

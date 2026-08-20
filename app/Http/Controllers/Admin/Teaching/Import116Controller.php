@@ -7,9 +7,11 @@ use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Models\Import116;
 use App\Models\Import116Run;
 use App\Models\Import116RunChange;
+use App\Support\PrivateImportSourceFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class Import116Controller extends Controller
 {
@@ -133,6 +135,32 @@ class Import116Controller extends Controller
             'run' => $this->serializeRun($import116_run, true),
             'changes' => $grouped,
         ]);
+    }
+
+    public function downloadSource(Request $request, Import116Run $import116_run): BinaryFileResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'studentstimetables_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->ensureRunTrackingTables();
+        $this->assertRunInCurrentSchoolyear($import116_run, (int) $authUser->school_id, $authUser->schoolyear_id);
+
+        $sourcePath = $this->import116SourcePath($import116_run);
+        if ($sourcePath === null) {
+            abort(404, 'Die importierte Quelldatei ist nicht mehr verfügbar.');
+        }
+
+        $extension = strtolower((string) pathinfo($sourcePath, PATHINFO_EXTENSION));
+        $contentType = $extension === 'xls'
+            ? 'application/vnd.ms-excel'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        return response()->download(
+            $sourcePath,
+            PrivateImportSourceFile::downloadName($this->displayImportSourceName($import116_run->source_path), '116', $extension),
+            ['Content-Type' => $contentType],
+        );
     }
 
     public function resetRuns(Request $request)
@@ -283,6 +311,7 @@ class Import116Controller extends Controller
             'finished_at' => optional($run->finished_at)->toISOString(),
             'undone_at' => optional($run->undone_at)->toISOString(),
             'source_name' => $this->displayImportSourceName($run->source_path),
+            'source_available' => $this->import116SourcePath($run) !== null,
             'counts' => [
                 'inserted' => (int) ($counts['inserted'] ?? 0),
                 'updated' => (int) ($counts['updated'] ?? 0),
@@ -317,7 +346,17 @@ class Import116Controller extends Controller
         $normalized = str_replace('\\', '/', trim($value));
         $basename = basename($normalized);
 
-        return $basename !== '' ? $basename : $normalized;
+        $displayName = preg_replace('/^[0-9A-Z]{26}--/', '', $basename);
+
+        return $displayName !== '' ? $displayName : $normalized;
+    }
+
+    private function import116SourcePath(Import116Run $run): ?string
+    {
+        return PrivateImportSourceFile::resolve(
+            $run->source_path,
+            "app/private/{$run->school_id}/import116-sources/{$run->schoolyear_id}",
+        );
     }
 
     private function serializeRunChange(Import116RunChange $change): array

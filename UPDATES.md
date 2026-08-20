@@ -1,5 +1,22 @@
 # UPDATES
 
+## 3.46.2 !!!
+
+### System
+
+- Schuljahr klar getrennt: Schulweit und persönlich
+
+### Importe
+
+- Importe aufgrund persönlichem Schuljahr
+- Sicherheits-Check ausgebaut gegen falsche Daten
+- Source-Daten sind wieder downloadbar
+- Bereinigung Untis-TT-Schema, Entfernung der drei Legacy-Felder
+
+### TT-Einträge
+
+- Anzeige aufgrund des persönlichem Schuljahres
+
 ## 3.46.1
 
 ### Students

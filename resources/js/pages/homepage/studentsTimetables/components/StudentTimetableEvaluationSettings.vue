@@ -539,9 +539,6 @@
                                 title="Fernunterricht">
                                 Fernunterricht
                             </v-chip>
-                            <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
-                                {{ course.roomsLabel }}
-                            </v-chip>
                         </div>
                     </div>
                     <v-alert v-else type="info" variant="tonal" density="compact">
@@ -2562,7 +2559,14 @@ export default {
             return matchingCourseGroups.filter((courseGroup) => {
                 const groupKey = String(
                     courseGroup?.key
-                    || `${courseGroup?.course || courseGroup?.subject || courseGroup?.title || ''}|${courseGroup?.weekday || ''}|${courseGroup?.hour || ''}|${courseGroup?.teacher || ''}`,
+                    || [
+                        courseGroup?.module_code || courseGroup?.course || courseGroup?.subject || courseGroup?.title || '',
+                        courseGroup?.class_name || '',
+                        courseGroup?.weekday || '',
+                        courseGroup?.hour || '',
+                        courseGroup?.starts_at || '',
+                        courseGroup?.ends_at || '',
+                    ].join('|'),
                 )
 
                 if (knownGroupKeys.has(groupKey)) {
@@ -2641,7 +2645,6 @@ export default {
                 courseGroups: [courseGroup],
                 scheduleLabel: this.resultMoreCourseGroupScheduleLabel(courseGroup),
                 recurrenceLabel: this.resultMoreCourseGroupWeekMarker(courseGroup).replace(/[()]/gu, '').trim(),
-                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : []).filter(Boolean).join(', '),
                 distanceLearning: this.resultMoreOfferedCourseIsDistanceLearning([courseGroup], selectedCourse),
             }
         },
@@ -2669,7 +2672,6 @@ export default {
                     courseGroups,
                     scheduleLabel: this.resultMoreMergedLabelList(existingCourseItem.scheduleLabel, courseItem.scheduleLabel),
                     recurrenceLabel: this.resultMoreMergedLabelList(existingCourseItem.recurrenceLabel, courseItem.recurrenceLabel),
-                    roomsLabel: this.resultMoreMergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
                     distanceLearning: this.resultMoreOfferedCourseIsDistanceLearning(courseGroups, selectedCourse),
                 })
             })
@@ -2693,17 +2695,13 @@ export default {
                 .join(', ')
         },
         resultMoreOfferedCourseName(courseGroup, code) {
-            return [
-                code,
-                courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
-                courseGroup?.teacher,
-            ]
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
-                .join(' - ')
-                || courseGroup?.display_label
+            return String(
+                courseGroup?.display_label
+                || courseGroup?.class_name
+                || code
                 || courseGroup?.title
-                || 'Ohne Bezeichnung'
+                || 'Ohne Bezeichnung',
+            ).trim()
         },
         resultMoreOfferedCourseGroupSelectionLabel(courseGroup) {
             return String(
@@ -2761,9 +2759,11 @@ export default {
         resultMoreCourseGroupKey(courseGroup) {
             return String(courseGroup?.key || [
                 courseGroup?.course || courseGroup?.subject || courseGroup?.title || '',
+                courseGroup?.class_name || '',
                 courseGroup?.weekday || '',
                 courseGroup?.hour || '',
-                courseGroup?.teacher || '',
+                courseGroup?.starts_at || '',
+                courseGroup?.ends_at || '',
             ].join('|'))
         },
         resultMoreCourseGroupScheduleLabel(courseGroup) {
@@ -2783,12 +2783,14 @@ export default {
         },
         resultMoreCourseGroupTimeRange(courseGroup) {
             const from = this.formatTimeValue(
-                courseGroup?.time_from
+                courseGroup?.starts_at
+                || courseGroup?.time_from
                 || courseGroup?.from
                 || this.generatedTimetableConfiguredSchoolHour(courseGroup?.hour)?.from,
             )
             const until = this.formatTimeValue(
-                courseGroup?.time_until
+                courseGroup?.ends_at
+                || courseGroup?.time_until
                 || courseGroup?.until
                 || this.generatedTimetableConfiguredSchoolHour(courseGroup?.hour)?.until,
             )
@@ -3665,7 +3667,8 @@ export default {
 
         generatedTimetableHourTimeFrom(courseGroup, hour = null) {
             return this.formatTimeValue(
-                courseGroup?.time_from
+                courseGroup?.starts_at
+                || courseGroup?.time_from
                 || courseGroup?.from
                 || courseGroup?.timeFrom
                 || this.generatedTimetableConfiguredSchoolHour(hour ?? courseGroup?.hour)?.from,
@@ -3674,7 +3677,8 @@ export default {
 
         generatedTimetableHourTimeUntil(courseGroup, hour = null) {
             return this.formatTimeValue(
-                courseGroup?.time_until
+                courseGroup?.ends_at
+                || courseGroup?.time_until
                 || courseGroup?.until
                 || courseGroup?.timeUntil
                 || this.generatedTimetableConfiguredSchoolHour(hour ?? courseGroup?.hour)?.until,
@@ -4561,15 +4565,7 @@ export default {
         generatedSlotDetails(slot) {
             const courseGroup = slot?.courseGroup || {}
             const label = String(slot?.sourceLabel || courseGroup?.title || '').trim()
-            const teacher = String(courseGroup?.teacher || '').trim()
-            const rooms = Array.isArray(courseGroup?.rooms)
-                ? courseGroup.rooms.join(', ')
-                : String(courseGroup?.room || '').trim()
-
-            return [label, teacher, rooms]
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
-                .join(' · ')
+            return label
         },
 
         moveToStep(step, emitChange = true) {

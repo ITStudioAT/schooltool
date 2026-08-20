@@ -2,6 +2,7 @@
 
 use App\Enums\StudentTimetableStudyProgram;
 use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
+use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\Import116;
 use App\Models\Licence;
@@ -603,8 +604,6 @@ it('ignores inactive remembered tt entry dates in backend timetable calculations
         'subject' => $entry['subject'],
         'course' => $entry['course'],
         'class_name' => $entry['class_name'],
-        'teacher' => null,
-        'room' => null,
         'is_active' => true,
     ]));
 
@@ -742,8 +741,6 @@ it('does not block crossed out dates inside regular course ranges', function () 
         'subject' => $entry['subject'],
         'course' => $entry['course'],
         'class_name' => $entry['class_name'],
-        'teacher' => null,
-        'room' => null,
         'is_active' => true,
     ]));
 
@@ -1841,12 +1838,68 @@ it('returns the canonical LPT subject name in subjects overview settings', funct
         ->value('name'))->toBe('Lern- und Präsentationstechniken');
 });
 
-it('stores filtered recognition csv uploads for the selected school', function () {
+it('stores timetable uploads for the personal schoolyear when the schoolwide schoolyear differs', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $personalSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'sem_2_start' => '2026-02-16',
+    ]);
+    $schoolwideSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'sem_2_start' => '2027-02-15',
+    ]);
+    $user->forceFill(['schoolyear_id' => $personalSchoolyear->id])->save();
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
+
+    File::deleteDirectory(storage_path("app/private/{$user->school_id}/timetable-imports"));
+    Queue::fake([ProcessTimetableImportJob::class]);
+
+    $content = "TT\t82\t20260217\t11\t17:50\t18:35\t6A\tPH2-6A-ALT\tPH\t\t\t\t1\t\t156100";
+    $uploadId = $this->actingAs($user)
+        ->withHeader('Upload-Name', 'stundenplan.txt')
+        ->post('/api/admin/students-timetables/upload')
+        ->assertSuccessful()
+        ->getContent();
+
+    $this->actingAs($user)
+        ->call('PATCH', "/api/admin/students-timetables/upload?patch={$uploadId}", [], [], [], [
+            'HTTP_UPLOAD_NAME' => 'stundenplan.txt',
+            'HTTP_UPLOAD_LENGTH' => strlen($content),
+        ], $content)
+        ->assertSuccessful();
+
+    $import = TimetableImport::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $personalSchoolyear->id)
+        ->firstOrFail();
+
+    expect(TimetableImport::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolwideSchoolyear->id)
+        ->exists())->toBeFalse();
+
+    Queue::assertPushed(
+        ProcessTimetableImportJob::class,
+        fn (ProcessTimetableImportJob $job): bool => $job->timetableImportId === $import->id,
+    );
+});
+
+it('stores filtered recognition csv uploads for the personal schoolyear', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
     ]);
+    $schoolwideSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
 
     File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
     Queue::fake([ProcessRecognitionCsvImportJob::class]);
@@ -2060,6 +2113,77 @@ it('stores filtered recognition csv uploads for the selected school', function (
             ->where('student_timetable_recognition_import_id', $import->id)
             ->exists())->toBeFalse()
         ->and(File::exists($storedPath))->toBeFalse();
+});
+
+it('rejects recognition csv files without importable rows and keeps existing data', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $directory = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}");
+    File::ensureDirectoryExists($directory);
+
+    $existingImport = StudentTimetableRecognitionImport::create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'bestehend.csv',
+        'stored_filename' => 'bestehend.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/bestehend.csv",
+        'file_size' => 1,
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now()->subMinute(),
+    ]);
+    StudentTimetableRecognitionRow::create([
+        'student_timetable_recognition_import_id' => $existingImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 1,
+        'student_code' => '100',
+        'student' => 'Max Muster',
+        'subject' => 'Deutsch',
+        'note' => '1',
+        'identity_hash' => hash('sha256', 'existing-recognition-row'),
+        'raw_data' => ['note' => '1'],
+    ]);
+
+    $csv = implode("\n", [
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
+        'Ohne Wert;200;Mathematik;;0;0/0;',
+    ]);
+    $filename = 'ungueltig.csv';
+    $absolutePath = "{$directory}/{$filename}";
+    File::put($absolutePath, $csv);
+
+    $invalidImport = StudentTimetableRecognitionImport::create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => $filename,
+        'stored_filename' => $filename,
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/{$filename}",
+        'file_size' => strlen($csv),
+        'total_rows' => 0,
+        'imported_rows' => 0,
+        'skipped_rows' => 0,
+        'import_status' => 'pending',
+        'imported_at' => now(),
+    ]);
+
+    app(RecognitionImportService::class)->processImport($invalidImport);
+
+    expect($invalidImport->fresh()?->import_status)->toBe('failed')
+        ->and($invalidImport->fresh()?->import_message)->toContain('keine gültigen Anrechnungsdaten')
+        ->and(File::get($absolutePath))->toBe($csv)
+        ->and(StudentTimetableRecognitionRow::where('student_timetable_recognition_import_id', $existingImport->id)->count())->toBe(1)
+        ->and(StudentTimetableRecognitionRow::where('student_timetable_recognition_import_id', $invalidImport->id)->count())->toBe(0);
+
+    File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
 });
 
 it('counts recognition students from collapsed scientific notation exports by student names', function () {
@@ -2504,6 +2628,104 @@ it('rejects invalid subject overview json uploads', function () {
     $storedDirectory = storage_path("app/private/{$user->school_id}/student-timetable-subjects/{$schoolyear->id}");
 
     expect(File::glob("{$storedDirectory}/*.json"))->toBe([]);
+});
+
+it('returns all TT entries overview sources for the personal schoolyear', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $personalSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-15',
+        'until' => '2027-07-01',
+    ]);
+    $schoolwideSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2027-09-01',
+        'sem_2_start' => '2028-02-14',
+        'until' => '2028-07-01',
+    ]);
+
+    $user->forceFill(['schoolyear_id' => $personalSchoolyear->id])->save();
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
+
+    foreach ([
+        [$personalSchoolyear, 'PERS1', 'Persönlicher Eintrag'],
+        [$schoolwideSchoolyear, 'GLOB1', 'Globaler Eintrag'],
+    ] as [$schoolyear, $code, $name]) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'semester' => 1,
+            'branch' => null,
+            'json_code' => $code,
+            'json_subject' => $code,
+            'name' => $name,
+            'hours_per_week' => 1,
+            'is_active' => true,
+            'sort_order' => 0,
+            'source' => 'manual',
+        ]);
+    }
+
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $personalSchoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:45:00',
+    ]);
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolwideSchoolyear->id,
+        'hour' => 9,
+        'from' => '16:00:00',
+        'until' => '16:45:00',
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $personalSchoolyear->id,
+        'date' => '2026-09-07',
+        'semester' => 1,
+        'period' => '1',
+        'subject' => 'PERS',
+        'course' => 'PERS1',
+        'class_name' => 'PERS1-A',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolwideSchoolyear->id,
+        'date' => '2027-09-06',
+        'semester' => 1,
+        'period' => '9',
+        'subject' => 'GLOB',
+        'course' => 'GLOB1',
+        'class_name' => 'GLOB1-A',
+    ]);
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $personalSchoolyear->id);
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolwideSchoolyear->id);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings?schoolyear_scope=personal')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data.subjects')
+        ->assertJsonPath('data.subjects.0.json_code', 'PERS1');
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.course', 'PERS1');
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/school-hours')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.hour', 1);
 });
 
 it('returns school hours for the selected schoolyear', function () {
@@ -3015,8 +3237,6 @@ it('keeps student status modules outside the current subject plan in the admin a
         'subject' => 'OLD1',
         'course' => 'OLD1',
         'module_code' => 'OLD1',
-        'teacher' => 'ALT',
-        'room' => 'R102',
         'class_name' => 'OLD1-4A-ALT',
         'is_active' => true,
     ]);
@@ -3030,8 +3250,6 @@ it('keeps student status modules outside the current subject plan in the admin a
         'subject' => 'OLD2',
         'course' => 'OLD2',
         'module_code' => 'OLD2',
-        'teacher' => 'NEU',
-        'room' => 'R103',
         'class_name' => 'OLD2-4A-NEU',
         'is_active' => true,
     ]);
@@ -3048,10 +3266,10 @@ it('keeps student status modules outside the current subject plan in the admin a
 
     expect($completedModule)->not->toBeNull()
         ->and($completedModule['status_label'])->toBe('Befreit')
-        ->and(data_get($completedModule, 'courses.0.teacher'))->toBe('ALT')
+        ->and(data_get($completedModule, 'courses.0'))->not->toHaveKey('teacher')
         ->and($failedModule)->not->toBeNull()
         ->and($failedModule['status_label'])->toBe('Negativ')
-        ->and(data_get($failedModule, 'courses.0.teacher'))->toBe('NEU');
+        ->and(data_get($failedModule, 'courses.0'))->not->toHaveKey('teacher');
 });
 
 it('returns the shared student overview summary for a selected robot student', function () {
@@ -3118,8 +3336,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '10',
             'starts_at' => '17:50',
             'ends_at' => '18:35',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3128,8 +3344,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '11',
             'starts_at' => '18:45',
             'ends_at' => '19:30',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3138,8 +3352,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '5',
             'starts_at' => '11:45',
             'ends_at' => '12:35',
-            'teacher' => 'KOL',
-            'room' => 'R202',
             'class_name' => 'D1-1B-KOL',
         ],
         [
@@ -3148,8 +3360,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '10',
             'starts_at' => '17:50',
             'ends_at' => '18:35',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3158,8 +3368,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '10',
             'starts_at' => '17:50',
             'ends_at' => '18:35',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3168,8 +3376,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '11',
             'starts_at' => '18:45',
             'ends_at' => '19:30',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3178,8 +3384,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '11',
             'starts_at' => '18:45',
             'ends_at' => '19:30',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3188,8 +3392,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '5',
             'starts_at' => '11:45',
             'ends_at' => '12:35',
-            'teacher' => 'KOL',
-            'room' => 'R202',
             'class_name' => 'D1-1B-KOL',
         ],
         [
@@ -3198,8 +3400,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '5',
             'starts_at' => '11:45',
             'ends_at' => '12:35',
-            'teacher' => 'KOL',
-            'room' => 'R202',
             'class_name' => 'D1-1B-KOL',
         ],
         [
@@ -3208,8 +3408,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '6',
             'starts_at' => '12:35',
             'ends_at' => '13:25',
-            'teacher' => 'SCH',
-            'room' => 'R303',
             'class_name' => 'D1-3R-SCH',
         ],
         [
@@ -3218,8 +3416,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '6',
             'starts_at' => '12:35',
             'ends_at' => '13:25',
-            'teacher' => 'SCH',
-            'room' => 'R303',
             'class_name' => 'D1-3R-SCH',
         ],
         [
@@ -3228,8 +3424,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '6',
             'starts_at' => '12:35',
             'ends_at' => '13:25',
-            'teacher' => 'SCH',
-            'room' => 'R303',
             'class_name' => 'D1-3R-SCH',
         ],
         [
@@ -3238,8 +3432,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '13',
             'starts_at' => '20:25',
             'ends_at' => '21:10',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3248,8 +3440,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '13',
             'starts_at' => '20:25',
             'ends_at' => '21:10',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3258,8 +3448,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '13',
             'starts_at' => '20:25',
             'ends_at' => '21:10',
-            'teacher' => 'HUB',
-            'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
         ],
         [
@@ -3268,8 +3456,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '10',
             'starts_at' => '17:50',
             'ends_at' => '18:35',
-            'teacher' => 'DAT',
-            'room' => 'R404',
             'class_name' => 'D1-9A-DAT',
         ],
         [
@@ -3278,8 +3464,6 @@ it('returns the shared student overview summary for a selected robot student', f
             'period' => '11',
             'starts_at' => '18:45',
             'ends_at' => '19:30',
-            'teacher' => 'DAT',
-            'room' => 'R404',
             'class_name' => 'D1-9A-DAT',
         ],
     ])->each(fn (array $course): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
@@ -3290,7 +3474,6 @@ it('returns the shared student overview summary for a selected robot student', f
         'subject' => 'D',
         'course' => 'D',
         'module_code' => 'D1',
-        'student_group' => null,
         ...$course,
     ]));
 
@@ -3321,11 +3504,9 @@ it('returns the shared student overview summary for a selected robot student', f
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
                 'subject' => 'D',
-                'teacher' => 'ENNS',
                 'class_name' => 'D2-2A-ENNS',
                 'course' => 'D',
                 'module_code' => 'D2',
-                'student_group' => null,
             ]);
         });
     };
@@ -3338,7 +3519,6 @@ it('returns the shared student overview summary for a selected robot student', f
     $bu2LineNumber = $d2LineNumber;
     $createBu2CourseSeries = function (
         string $className,
-        string $teacher,
         array $dates,
         string $period,
         string $startsAt,
@@ -3350,7 +3530,6 @@ it('returns the shared student overview summary for a selected robot student', f
             $timetableImport,
             &$bu2LineNumber,
             $className,
-            $teacher,
             $period,
             $startsAt,
             $endsAt,
@@ -3366,11 +3545,9 @@ it('returns the shared student overview summary for a selected robot student', f
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
                 'subject' => 'BU',
-                'teacher' => $teacher,
                 'class_name' => $className,
                 'course' => 'BU',
                 'module_code' => 'BU2',
-                'student_group' => null,
             ]);
         });
     };
@@ -3379,14 +3556,14 @@ it('returns the shared student overview summary for a selected robot student', f
     $weeklyWednesdays = ['2026-09-16', '2026-09-23', '2026-09-30'];
     $weeklyFridays = ['2026-09-18', '2026-09-25', '2026-10-02'];
 
-    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyTuesdays, '10', '17:50', '18:35');
-    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyTuesdays, '11', '18:45', '19:30');
-    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyWednesdays, '13', '20:25', '21:10');
-    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyWednesdays, '14', '21:10', '21:55');
-    $createBu2CourseSeries('BU2-4F-KOW', 'KOW', $weeklyTuesdays, '10', '17:50', '18:35');
-    $createBu2CourseSeries('BU2-4F-KOW', 'KOW', $weeklyTuesdays, '11', '18:45', '19:30');
-    $createBu2CourseSeries('BU2-2Q-HER', 'HER', $weeklyFridays, '13', '20:25', '21:10');
-    $createBu2CourseSeries('BU2-2Q-HER', 'HER', $weeklyFridays, '14', '21:10', '21:55');
+    $createBu2CourseSeries('BU2-4A-KOW', $weeklyTuesdays, '10', '17:50', '18:35');
+    $createBu2CourseSeries('BU2-4A-KOW', $weeklyTuesdays, '11', '18:45', '19:30');
+    $createBu2CourseSeries('BU2-4A-KOW', $weeklyWednesdays, '13', '20:25', '21:10');
+    $createBu2CourseSeries('BU2-4A-KOW', $weeklyWednesdays, '14', '21:10', '21:55');
+    $createBu2CourseSeries('BU2-4F-KOW', $weeklyTuesdays, '10', '17:50', '18:35');
+    $createBu2CourseSeries('BU2-4F-KOW', $weeklyTuesdays, '11', '18:45', '19:30');
+    $createBu2CourseSeries('BU2-2Q-HER', $weeklyFridays, '13', '20:25', '21:10');
+    $createBu2CourseSeries('BU2-2Q-HER', $weeklyFridays, '14', '21:10', '21:55');
 
     StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
 
@@ -3562,8 +3739,8 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.name', 'Deutsch 1')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.selected_by_default', true)
         ->assertJsonCount(4, 'data.module_selection_groups.3.modules.0.courses')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.teacher', 'HUB')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.0.teacher')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.keys')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.timetable_entries')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.weekday', 1)
@@ -3571,8 +3748,8 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.starts_at', '17:50')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.ends_at', '18:35')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.recurrence_label', '1-wöchig')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.teacher', 'HUB')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.rooms.0', 'R101')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.teacher')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.rooms')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.module_code', 'D1')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.timetable_entries.0.dates')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
@@ -3593,14 +3770,14 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.is_distance_learning', false)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.instruction_label', null)
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.teacher', 'KOL')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.1.teacher')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.schedule_labels.0', 'Dienstag · 11:45–12:35 · 1-wöchig')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.scheduled_hours', 1)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.usual_hours', 2)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.is_distance_learning', true)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.instruction_label', 'Fernunterricht')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.teacher', 'SCH')
+        ->assertJsonMissingPath('data.module_selection_groups.3.modules.0.courses.2.teacher')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.scheduled_hours', 1)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.usual_hours', 2)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.hours_label', '2 Std.')
@@ -4227,8 +4404,6 @@ it('returns the requested timetable import history for the selected schoolyear',
         'starts_at' => '08:00',
         'ends_at' => '08:45',
         'subject' => 'PH',
-        'teacher' => 'AB',
-        'room' => '101',
         'class_name' => 'PH2-6A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4240,8 +4415,6 @@ it('returns the requested timetable import history for the selected schoolyear',
         'starts_at' => '08:50',
         'ends_at' => '09:35',
         'subject' => 'PH',
-        'teacher' => 'AB',
-        'room' => '101',
         'class_name' => 'PH2-6A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4251,7 +4424,6 @@ it('returns the requested timetable import history for the selected schoolyear',
         'date' => '2026-07-11',
         'period' => '1',
         'subject' => 'M',
-        'teacher' => 'CD',
         'class_name' => 'M2-2A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4261,7 +4433,6 @@ it('returns the requested timetable import history for the selected schoolyear',
         'date' => '2026-07-04',
         'period' => '1',
         'subject' => 'M',
-        'teacher' => 'CD',
         'class_name' => 'M2-2A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4317,29 +4488,35 @@ it('returns the requested timetable import history for the selected schoolyear',
         ->assertJsonPath('main_dataset', null);
 });
 
-it('returns timetable import history for the school active schoolyear independent of the user selection', function () {
+it('returns timetable import history for the personal schoolyear independent of the schoolwide selection', function () {
     $importingUser = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
-    $schoolyear = Schoolyear::factory()->create([
+    $schoolwideSchoolyear = Schoolyear::factory()->create([
         'school_id' => $importingUser->school_id,
     ]);
-    $otherSchoolyear = Schoolyear::factory()->create([
+    $personalSchoolyear = Schoolyear::factory()->create([
         'school_id' => $importingUser->school_id,
     ]);
 
     SchoolTool::query()
         ->where('school_id', $importingUser->school_id)
-        ->update(['active_schoolyear_id' => $schoolyear->id]);
+        ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
 
     $import = TimetableImport::factory()->create([
         'school_id' => $importingUser->school_id,
-        'schoolyear_id' => $schoolyear->id,
+        'schoolyear_id' => $personalSchoolyear->id,
+        'user_id' => $importingUser->id,
+        'original_filename' => 'personal-stundenplan.txt',
+    ]);
+    TimetableImport::factory()->create([
+        'school_id' => $importingUser->school_id,
+        'schoolyear_id' => $schoolwideSchoolyear->id,
         'user_id' => $importingUser->id,
         'original_filename' => 'school-wide-stundenplan.txt',
     ]);
 
     $viewer = User::factory()->create([
         'school_id' => $importingUser->school_id,
-        'schoolyear_id' => $otherSchoolyear->id,
+        'schoolyear_id' => $personalSchoolyear->id,
     ]);
     $viewer->assignRole('studentstimetables_admin');
 
@@ -4348,7 +4525,7 @@ it('returns timetable import history for the school active schoolyear independen
         ->assertSuccessful()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $import->id)
-        ->assertJsonPath('data.0.original_filename', 'school-wide-stundenplan.txt');
+        ->assertJsonPath('data.0.original_filename', 'personal-stundenplan.txt');
 });
 
 it('saves active states for single-date timetable appointments', function () {
@@ -4373,7 +4550,6 @@ it('saves active states for single-date timetable appointments', function () {
         'starts_at' => '20:25',
         'ends_at' => '21:10',
         'subject' => 'LPT',
-        'teacher' => 'AB',
         'class_name' => 'LPT-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4386,7 +4562,6 @@ it('saves active states for single-date timetable appointments', function () {
         'starts_at' => '17:05',
         'ends_at' => '17:50',
         'subject' => 'LPT',
-        'teacher' => 'AB',
         'class_name' => 'LPT-ALT',
     ]);
 
@@ -4437,8 +4612,6 @@ it('saves selected timetable overview courses in the database', function () {
         'period' => '11',
         'course' => 'ETH',
         'subject' => 'ETH',
-        'teacher' => null,
-        'room' => null,
         'class_name' => 'ETH1-1CK-PLÖ',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -4449,8 +4622,6 @@ it('saves selected timetable overview courses in the database', function () {
         'period' => '7',
         'course' => 'ETH',
         'subject' => 'ETH',
-        'teacher' => null,
-        'room' => null,
         'class_name' => 'ETH1-1RU-PLÖC',
     ]);
 
@@ -4524,7 +4695,6 @@ it('stores remembered tt entry module date status in the database', function () 
                         'dateLabel' => '17.02.2026',
                         'dateValue' => '2026-02-17',
                         'active' => false,
-                        'roomsLabel' => '101',
                         'scheduleLabel' => 'Di. 12. 18:45-19:30',
                         'timeFrom' => '18:45',
                         'timeUntil' => '19:30',
@@ -4534,7 +4704,6 @@ it('stores remembered tt entry module date status in the database', function () 
                         'dateLabel' => '24.02.2026',
                         'dateValue' => '2026-02-24',
                         'active' => true,
-                        'roomsLabel' => '101',
                         'scheduleLabel' => 'Di. 12. 18:45-19:30',
                         'timeFrom' => '18:45',
                         'timeUntil' => '19:30',
@@ -4567,7 +4736,8 @@ it('stores remembered tt entry module date status in the database', function () 
         ->assertSuccessful()
         ->assertJsonPath('data.offers.0.entries.0.active', false)
         ->assertJsonPath('data.offers.0.entries.0.timeFrom', '18:45')
-        ->assertJsonPath('data.offers.0.entries.0.timeUntil', '19:30');
+        ->assertJsonPath('data.offers.0.entries.0.timeUntil', '19:30')
+        ->assertJsonMissingPath('data.offers.0.entries.0.roomsLabel');
 
     $this->actingAs($user)
         ->putJson('/api/admin/students-timetables/tt-entry-remembered-offers', [
@@ -5975,9 +6145,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
             'period' => '1',
             'course' => 'MATH',
             'subject' => 'Mathematik',
-            'teacher' => 'AB',
-            'room' => '101',
-            'class_name' => '1A',
+            'class_name' => 'MATH1-1A-AB',
         ]);
     }
 
@@ -5990,9 +6158,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
             'period' => '2',
             'course' => 'BIO',
             'subject' => 'Biologie',
-            'teacher' => 'CD',
-            'room' => '202',
-            'class_name' => '1A',
+            'class_name' => 'BIO1-1A-CD',
         ]);
     }
 
@@ -6005,9 +6171,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
             'period' => '3',
             'course' => 'CHEM',
             'subject' => 'Chemie',
-            'teacher' => 'EF',
-            'room' => '303',
-            'class_name' => '1A',
+            'class_name' => 'CHEM1-1A-EF',
         ]);
     }
 
@@ -6020,9 +6184,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
             'period' => '4',
             'course' => 'GEO',
             'subject' => 'Geografie',
-            'teacher' => 'GH',
-            'room' => '404',
-            'class_name' => '1A',
+            'class_name' => 'GEO1-1A-GH',
         ]);
     }
 
@@ -6035,9 +6197,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
             'period' => '5',
             'course' => 'HIST',
             'subject' => 'Geschichte',
-            'teacher' => 'IJ',
-            'room' => '505',
-            'class_name' => '1A',
+            'class_name' => 'HIST1-1A-IJ',
         ]);
     }
 
@@ -6049,9 +6209,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
         'period' => '6',
         'course' => 'SprStd',
         'subject' => 'SprStd',
-        'teacher' => 'KL',
-        'room' => '606',
-        'class_name' => '1A',
+        'class_name' => 'SPRSTD1-1A-KL',
     ]);
 
     $response = $this->actingAs($user)
@@ -6069,7 +6227,7 @@ it('returns grouped timetable courses with recurrence, full-semester, and block 
         ->and($groups->firstWhere('title', 'SprStd'))->toBeNull()
         ->and($math['recurrence_type'])->toBe('weekly')
         ->and($math['recurrence_label'])->toBe('1-wöchig')
-        ->and($math['display_label'])->toBe('MATH1AAB')
+        ->and($math['display_label'])->toBe('MATH1 - 1A - AB')
         ->and($math['dates'])->toBe(['2026-09-07', '2026-09-14', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19'])
         ->and($math['is_block'])->toBeFalse()
         ->and($math['is_full_semester'])->toBeTrue()
@@ -6103,9 +6261,7 @@ it('does not duplicate the course prefix in timetable display labels', function 
         'course' => 'ETH',
         'module_code' => 'ETH3',
         'subject' => 'ETH',
-        'teacher' => 'RU-HER',
-        'room' => '14:305R~5U',
-        'class_name' => 'ETH3-5',
+        'class_name' => 'ETH3-5RU-HER',
     ]);
 
     $groups = collect($this->actingAs($user)
@@ -6144,10 +6300,7 @@ it('uses the mapped subject name for timetable display labels', function () {
         'period' => '1',
         'course' => 'LET',
         'subject' => 'LET',
-        'teacher' => null,
-        'room' => null,
         'class_name' => 'LPT-1CK-DREI',
-        'student_group' => null,
     ]);
 
     $groups = collect($this->actingAs($user)
@@ -6160,7 +6313,7 @@ it('uses the mapped subject name for timetable display labels', function () {
         ->and($groups->firstWhere('title', 'LET'))->toBeNull();
 });
 
-it('removes embedded end times from timetable display labels', function () {
+it('builds timetable display labels from canonical class names', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -6178,9 +6331,7 @@ it('removes embedded end times from timetable display labels', function () {
         'period' => '1',
         'course' => 'GPB',
         'subject' => 'GPB',
-        'teacher' => 'S-DREI15:302S',
-        'room' => null,
-        'class_name' => 'GPB2-2',
+        'class_name' => 'GPB2-2S-DREI',
     ]);
 
     $groups = collect($this->actingAs($user)
@@ -6192,7 +6343,7 @@ it('removes embedded end times from timetable display labels', function () {
         ->toBe('GPB2 - 2S - DREI');
 });
 
-it('removes end times from fully concatenated timetable labels', function () {
+it('formats canonical timetable class names consistently', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -6210,9 +6361,7 @@ it('removes end times from fully concatenated timetable labels', function () {
         'period' => '1',
         'course' => 'ETH',
         'subject' => 'ETH',
-        'teacher' => null,
-        'room' => null,
-        'class_name' => 'ETH4-5RU-HER15:305R~5U',
+        'class_name' => 'ETH4-5RU-HER',
     ]);
 
     $groups = collect($this->actingAs($user)
@@ -6248,8 +6397,6 @@ it('marks compact timetable course groups from class tokens', function () {
             'course' => 'M',
             'module_code' => 'M4',
             'subject' => 'M',
-            'teacher' => null,
-            'room' => null,
             'class_name' => $entry['class_name'],
         ]);
     }

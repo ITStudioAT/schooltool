@@ -145,6 +145,11 @@ describe('ModuleStatusesCard', () => {
 
         expect(context.form.students_timetables_admin_version).toBe('v3')
         expect(save).toHaveBeenCalledOnce()
+
+        methods.setStudentsTimetablesAdminVersion.call(context, undefined)
+
+        expect(context.form.students_timetables_admin_version).toBe('v3')
+        expect(save).toHaveBeenCalledTimes(2)
     })
 
     it('forces user visibility off when admin visibility is disabled', () => {

@@ -93,7 +93,7 @@ class SchoolToolController extends Controller
 
     public function setActiveSchoolyear(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

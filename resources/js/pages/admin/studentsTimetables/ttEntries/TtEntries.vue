@@ -1,8 +1,8 @@
 <template>
-    <section v-if="rememberedOffers.length" class="tt-entries-card__remembered" aria-live="polite">
+    <section class="tt-entries-card__remembered" aria-live="polite">
         <div class="tt-entries-card__remembered-heading">
-            <strong>Gemerkte Module</strong>
-            <div class="tt-entries-card__remembered-heading-actions">
+            <strong>Gemerkte Einträge</strong>
+            <div v-if="rememberedOffers.length" class="tt-entries-card__remembered-heading-actions">
                 <v-btn
                     color="primary"
                     density="compact"
@@ -25,7 +25,7 @@
             </div>
         </div>
 
-        <div class="tt-entries-card__remembered-list">
+        <div v-if="rememberedOffers.length" class="tt-entries-card__remembered-list">
             <article
                 v-for="offer in rememberedOffers"
                 :key="offer.key"
@@ -44,6 +44,10 @@
                 </div>
             </article>
         </div>
+
+        <p v-else class="tt-entries-card__remembered-empty">
+            Noch keine Einträge gemerkt.
+        </p>
     </section>
 
     <v-card
@@ -51,7 +55,7 @@
         rounded="lg"
         class="tt-entries-card__remembered-details">
         <v-card-title class="tt-entries-card__remembered-details-title">
-            <span>Gemerkte Module</span>
+            <span>Gemerkte Einträge</span>
             <v-btn
                 icon="mdi-close"
                 color="secondary"
@@ -86,9 +90,6 @@
                         @click="toggleRememberedOfferEntry(offer.key, entry.key)">
                         <span class="tt-entries-card__remembered-detail-date">{{ entry.dateLabel || '-' }}</span>
                         <span class="tt-entries-card__remembered-detail-time">{{ entry.scheduleLabel || '-' }}</span>
-                        <span v-if="entry.roomsLabel" class="tt-entries-card__remembered-detail-room">
-                            {{ entry.roomsLabel }}
-                        </span>
                     </button>
                 </div>
             </article>
@@ -97,7 +98,10 @@
 
     <v-card rounded="lg" class="tt-entries-card">
         <v-card-title class="tt-entries-card__title">
-            <span>TT-Einträge</span>
+            <span>TT-Einträge:</span>
+            <span class="text-h6 font-weight-bold text-primary">
+                {{ personalSchoolyearLabel }}
+            </span>
             <v-chip v-if="selectedMetaCourse" size="small" color="primary" variant="tonal">
                 {{ selectedMetaCourse.label }}
             </v-chip>
@@ -117,18 +121,46 @@
             <template v-else>
                 <div v-if="metaCourseItems.length" class="tt-entries-card__layout">
                     <section class="tt-entries-card__meta-list" aria-label="Meta-Kurse">
-                        <button
-                            v-for="course in metaCourseItems"
-                            :key="course.key"
-                            type="button"
-                            class="tt-entries-card__meta-course"
-                            :class="{ 'tt-entries-card__meta-course--active': selectedMetaCourseKey === course.key }"
-                            :aria-pressed="selectedMetaCourseKey === course.key ? 'true' : 'false'"
-                            @click="selectMetaCourse(course.key)">
-                            <span class="tt-entries-card__meta-code">{{ course.label }}</span>
-                            <span class="tt-entries-card__meta-name">{{ course.name }}</span>
-                            <span class="tt-entries-card__meta-count">{{ course.countLabel }}</span>
-                        </button>
+                        <template v-for="course in metaCourseItems" :key="course.key">
+                            <button
+                                type="button"
+                                class="tt-entries-card__meta-course"
+                                :class="{ 'tt-entries-card__meta-course--active': selectedMetaCourseKey === course.key }"
+                                :aria-expanded="selectedMetaCourseKey === course.key ? 'true' : 'false'"
+                                :aria-pressed="selectedMetaCourseKey === course.key ? 'true' : 'false'"
+                                @click="selectMetaCourse(course.key)">
+                                <span class="tt-entries-card__meta-code">{{ course.label }}</span>
+                                <span class="tt-entries-card__meta-name">{{ course.name }}</span>
+                                <span class="tt-entries-card__meta-count">{{ course.countLabel }}</span>
+                            </button>
+
+                            <v-expand-transition>
+                                <div
+                                    v-if="selectedMetaCourseKey === course.key"
+                                    class="tt-entries-card__sub-items"
+                                    role="group"
+                                    :aria-label="`${course.label} Untereinträge`">
+                                    <button
+                                        v-for="subject in selectedMetaCourseRows"
+                                        :key="subjectRowKey(subject)"
+                                        type="button"
+                                        class="tt-entries-card__row"
+                                        :class="{
+                                            'tt-entries-card__row--active': selectedSubjectRowKey === subjectRowKey(subject),
+                                        }"
+                                        :aria-pressed="selectedSubjectRowKey === subjectRowKey(subject) ? 'true' : 'false'"
+                                        @click="selectSubjectRow(subject)">
+                                        <span class="tt-entries-card__row-code">
+                                            {{ subject.json_code || subject.json_subject }}
+                                        </span>
+                                        <span class="tt-entries-card__row-name">{{ subject.name || '-' }}</span>
+                                        <span class="tt-entries-card__row-meta">
+                                            {{ subjectRowMeta(subject) }}
+                                        </span>
+                                    </button>
+                                </div>
+                            </v-expand-transition>
+                        </template>
                     </section>
 
                     <section class="tt-entries-card__details" aria-live="polite">
@@ -137,26 +169,7 @@
                             <span>{{ selectedMetaCourse.name }}</span>
                         </div>
 
-                        <div v-if="selectedMetaCourseRows.length" class="tt-entries-card__rows">
-                            <button
-                                v-for="subject in selectedMetaCourseRows"
-                                :key="subjectRowKey(subject)"
-                                type="button"
-                                class="tt-entries-card__row"
-                                :class="{ 'tt-entries-card__row--active': selectedSubjectRowKey === subjectRowKey(subject) }"
-                                :aria-pressed="selectedSubjectRowKey === subjectRowKey(subject) ? 'true' : 'false'"
-                                @click="selectSubjectRow(subject)">
-                                <span class="tt-entries-card__row-code">
-                                    {{ subject.json_code || subject.json_subject }}
-                                </span>
-                                <span class="tt-entries-card__row-name">{{ subject.name || '-' }}</span>
-                                <span class="tt-entries-card__row-meta">
-                                    {{ subjectRowMeta(subject) }}
-                                </span>
-                            </button>
-                        </div>
-
-                        <v-alert v-else type="info" variant="tonal" density="compact">
+                        <v-alert v-if="!selectedMetaCourseRows.length" type="info" variant="tonal" density="compact">
                             Kein Meta-Kurs ausgewählt.
                         </v-alert>
 
@@ -177,9 +190,6 @@
                                     @click="selectOffer(offer.key)">
                                     <span class="tt-entries-card__offer-name">{{ offer.name }}</span>
                                     <span class="tt-entries-card__offer-schedule">{{ offer.scheduleLabel || '-' }}</span>
-                                    <span v-if="offer.roomsLabel" class="tt-entries-card__offer-rooms">
-                                        {{ offer.roomsLabel }}
-                                    </span>
                                 </button>
                             </div>
 
@@ -216,9 +226,6 @@
                                         @click="toggleSelectedSubjectOfferEntry(entry)">
                                         <span class="tt-entries-card__entry-title">{{ entry.dateLabel || '-' }}</span>
                                         <span class="tt-entries-card__entry-meta">{{ entryMetaLabel(entry) }}</span>
-                                        <span v-if="entry.roomsLabel" class="tt-entries-card__entry-rooms">
-                                            {{ entry.roomsLabel }}
-                                        </span>
                                     </button>
                                 </div>
                             </section>
@@ -236,6 +243,9 @@
 </template>
 
 <script>
+import { mapWritableState } from 'pinia'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+
 const TIMETABLE_COURSE_SUBJECT_LABELS = {
     REV: { code: 'Rev', name: 'Evangelische Religion' },
     RK: { code: 'Rk', name: 'Katholische Religion' },
@@ -286,6 +296,12 @@ export default {
         }
     },
     computed: {
+        ...mapWritableState(useAdminStore, ['config']),
+        personalSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || 'nicht festgelegt'
+        },
         activeSubjectRows() {
             return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
                 .filter((subject) => subject?.is_active !== false)
@@ -389,6 +405,10 @@ export default {
         },
     },
     watch: {
+        'config.selected_schoolyear.id'() {
+            this.loadRememberedOffers()
+            this.loadSubjectRows()
+        },
         metaCourseItems() {
             this.ensureSelectedMetaCourse()
         },
@@ -507,7 +527,6 @@ export default {
                     dateLabel: entry?.dateLabel || '',
                     dateValue: entry?.dateValue || '',
                     active: true,
-                    roomsLabel: entry?.roomsLabel || '',
                     scheduleLabel: entry?.scheduleLabel || '',
                     timeFrom: entry?.timeFrom || '',
                     timeUntil: entry?.timeUntil || '',
@@ -653,7 +672,9 @@ export default {
 
             try {
                 const [settingsResponse, courseGroupsResponse, schoolHoursResponse] = await Promise.all([
-                    axios.get('/api/admin/students-timetables/subjects-overview-settings'),
+                    axios.get('/api/admin/students-timetables/subjects-overview-settings', {
+                        params: { schoolyear_scope: 'personal' },
+                    }),
                     axios.get('/api/admin/students-timetables/course-groups'),
                     axios.get('/api/admin/students-timetables/school-hours'),
                 ])
@@ -856,7 +877,6 @@ export default {
                 courseItemsByIdentity.set(identityKey, {
                     ...existingCourseItem,
                     entries: this.mergedEntryItems(existingCourseItem.entries, courseItem.entries),
-                    roomsLabel: this.mergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
                     scheduleSlots: this.mergedScheduleSlots(existingCourseItem.scheduleSlots, courseItem.scheduleSlots),
                 })
             })
@@ -958,15 +978,13 @@ export default {
                     courseGroup?.semester,
                     courseGroup?.weekday,
                     courseGroup?.hour,
-                    courseGroup?.title,
-                    courseGroup?.display_label,
-                    courseGroup?.teacher,
+                    courseGroup?.starts_at,
+                    courseGroup?.ends_at,
+                    courseGroup?.module_code || courseGroup?.course || courseGroup?.subject,
+                    courseGroup?.class_name,
                 ].join('|'),
                 code,
                 name: this.offeredCourseGroupLabel(courseGroup, code),
-                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
-                    .filter(Boolean)
-                    .join(', '),
                 entries: [this.ttEntryItemForCourseGroup(courseGroup, scheduleSlots)],
                 scheduleLabel: this.compactScheduleSlotsLabel(scheduleSlots),
                 scheduleSlots,
@@ -976,18 +994,15 @@ export default {
             }
         },
         offeredCourseGroupLabel(courseGroup, code) {
-            const teacher = this.cleanedOfferedCourseTeacherSegment(courseGroup?.teacher, code)
             const group = this.cleanedOfferedCourseGroupSegment(
-                courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
+                courseGroup?.class_name || courseGroup?.display_label,
                 code,
-                teacher,
             )
             const fallbackLabel = this.courseDisplayLabel(courseGroup?.display_label || courseGroup?.title || courseGroup?.course || courseGroup?.subject)
 
             return this.uniqueValues([
                 code,
                 group,
-                teacher,
             ].filter(Boolean)).join(' - ') || fallbackLabel || 'Ohne Bezeichnung'
         },
         ttEntryItemForCourseGroup(courseGroup, scheduleSlots = null) {
@@ -999,8 +1014,10 @@ export default {
                     courseGroup?.semester,
                     courseGroup?.weekday,
                     courseGroup?.hour,
-                    courseGroup?.display_label,
-                    courseGroup?.teacher,
+                    courseGroup?.starts_at,
+                    courseGroup?.ends_at,
+                    courseGroup?.module_code || courseGroup?.course || courseGroup?.subject,
+                    courseGroup?.class_name,
                 ].join('|'),
                 displayLabel: courseGroup?.display_label
                     || courseGroup?.title
@@ -1012,9 +1029,6 @@ export default {
                 firstDate: courseGroup?.first_date || null,
                 lastDate: courseGroup?.last_date || null,
                 recurrenceLabel: courseGroup?.recurrence_label || '',
-                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
-                    .filter(Boolean)
-                    .join(', '),
                 semester: Number(courseGroup?.semester || 0) || null,
                 weekday: Number(courseGroup?.weekday || 0) || null,
                 hour: Number(courseGroup?.hour || 0) || null,
@@ -1111,7 +1125,6 @@ export default {
                 && firstEntry.timeUntil === secondEntry.timeFrom
                 && (firstEntry.displayLabel || '') === (secondEntry.displayLabel || '')
                 && (firstEntry.recurrenceLabel || '') === (secondEntry.recurrenceLabel || '')
-                && this.mergedLabelList(firstEntry.roomsLabel, secondEntry.roomsLabel) === (firstEntry.roomsLabel || '')
         },
         compactedEntryItem(firstEntry, secondEntry) {
             const hour = Number(firstEntry.hour || 0)
@@ -1184,12 +1197,11 @@ export default {
 
             return segment.trim()
         },
-        cleanedOfferedCourseGroupSegment(value, code, teacher) {
+        cleanedOfferedCourseGroupSegment(value, code) {
             let segment = String(value || '').trim()
 
             segment = this.stripLabelSegment(segment, code)
             segment = this.stripLabelSegment(segment, String(code || '').replace(/\s+/gu, ''))
-            segment = this.stripLabelSegment(segment, teacher)
 
             return segment
                 .replace(/\s*-\s*/gu, ' - ')
@@ -1559,10 +1571,14 @@ export default {
 }
 
 .tt-entries-card__meta-list,
-.tt-entries-card__rows {
+.tt-entries-card__sub-items {
     display: grid;
     align-content: start;
     gap: 6px;
+}
+
+.tt-entries-card__sub-items {
+    padding-left: 24px;
 }
 
 .tt-entries-card__meta-course {
@@ -1694,7 +1710,7 @@ export default {
 
 .tt-entries-card__offer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -1731,8 +1747,7 @@ export default {
     white-space: nowrap;
 }
 
-.tt-entries-card__offer-schedule,
-.tt-entries-card__offer-rooms {
+.tt-entries-card__offer-schedule {
     color: #475569;
     font-size: 0.72rem;
     font-weight: 800;
@@ -1768,7 +1783,7 @@ export default {
 
 .tt-entries-card__entry {
     display: grid;
-    grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     border: 1px solid rgba(148, 163, 184, 0.18);
@@ -1801,8 +1816,7 @@ export default {
     white-space: nowrap;
 }
 
-.tt-entries-card__entry-meta,
-.tt-entries-card__entry-rooms {
+.tt-entries-card__entry-meta {
     color: #475569;
     font-size: 0.72rem;
     font-weight: 800;
@@ -1839,6 +1853,13 @@ export default {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.tt-entries-card__remembered-empty {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
 .tt-entries-card__remembered-offer {
@@ -1922,7 +1943,7 @@ export default {
 
 .tt-entries-card__remembered-detail-entry {
     display: grid;
-    grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     border: 0;
@@ -1942,8 +1963,7 @@ export default {
 }
 
 .tt-entries-card__remembered-detail-entry--overlapping .tt-entries-card__remembered-detail-date,
-.tt-entries-card__remembered-detail-entry--overlapping .tt-entries-card__remembered-detail-time,
-.tt-entries-card__remembered-detail-entry--overlapping .tt-entries-card__remembered-detail-room {
+.tt-entries-card__remembered-detail-entry--overlapping .tt-entries-card__remembered-detail-time {
     color: #b91c1c;
 }
 
@@ -1963,8 +1983,7 @@ export default {
 }
 
 .tt-entries-card__remembered-detail-date,
-.tt-entries-card__remembered-detail-time,
-.tt-entries-card__remembered-detail-room {
+.tt-entries-card__remembered-detail-time {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1977,8 +1996,7 @@ export default {
     font-weight: 900;
 }
 
-.tt-entries-card__remembered-detail-time,
-.tt-entries-card__remembered-detail-room {
+.tt-entries-card__remembered-detail-time {
     color: #475569;
     font-size: 0.72rem;
     font-weight: 800;

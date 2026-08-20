@@ -3,17 +3,18 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
-use App\Models\SchoolTool;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
+use App\Support\PrivateImportSourceFile;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class TimetableImportController extends Controller
 {
@@ -27,7 +28,7 @@ class TimetableImportController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         if ($request->boolean('summary')) {
             $import = TimetableImport::query()
@@ -66,6 +67,10 @@ class TimetableImportController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage);
 
+        $imports->getCollection()->each(function (TimetableImport $import): void {
+            $import->setAttribute('source_available', $this->timetableImportSourcePath($import) !== null);
+        });
+
         return response()->json([
             ...$imports->toArray(),
             'main_dataset' => $this->mainDatasetMetadata(
@@ -82,7 +87,7 @@ class TimetableImportController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(403, 'Kein Zugriff auf diesen Import.');
@@ -99,7 +104,7 @@ class TimetableImportController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(403, 'Kein Zugriff auf diesen Import.');
@@ -117,13 +122,37 @@ class TimetableImportController extends Controller
         ], 202);
     }
 
+    public function downloadSource(TimetableImport $timetableImport): BinaryFileResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $this->ensurePersonalSchoolyear($authUser);
+
+        if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(404, 'Import nicht gefunden.');
+        }
+
+        $sourcePath = $this->timetableImportSourcePath($timetableImport);
+        if ($sourcePath === null) {
+            abort(404, 'Die importierte Quelldatei ist nicht mehr verfügbar.');
+        }
+
+        return response()->download(
+            $sourcePath,
+            PrivateImportSourceFile::downloadName($timetableImport->original_filename, 'stundenplan', 'txt'),
+            ['Content-Type' => 'text/plain; charset=UTF-8'],
+        );
+    }
+
     public function updateSingleDateAppointments(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         $validated = $request->validate([
             'appointments' => ['array'],
@@ -243,10 +272,7 @@ class TimetableImportController extends Controller
      *         starts_at: ?string,
      *         ends_at: ?string,
      *         subject: ?string,
-     *         teacher: ?string,
-     *         room: ?string,
      *         course: ?string,
-     *         student_group: ?string,
      *         active: bool,
      *         entry_ids: list<int>
      *     }>
@@ -267,11 +293,8 @@ class TimetableImportController extends Controller
                 'starts_at',
                 'ends_at',
                 'subject',
-                'teacher',
-                'room',
                 'class_name',
                 'course',
-                'student_group',
                 'is_active',
             ])
             ->groupBy(fn (StudentTimetableEntry $entry): string => $this->singleDateGroupKey($entry))
@@ -313,8 +336,8 @@ class TimetableImportController extends Controller
             mb_strtolower((string) $entry->class_name),
             mb_strtolower((string) $entry->course),
             mb_strtolower((string) $entry->subject),
-            mb_strtolower((string) $entry->teacher),
-            mb_strtolower((string) $entry->student_group),
+            '',
+            '',
         ]);
     }
 
@@ -351,10 +374,7 @@ class TimetableImportController extends Controller
                     'starts_at' => $this->shortTime($firstEntry->starts_at),
                     'ends_at' => $this->shortTime($firstEntry->ends_at),
                     'subject' => $firstEntry->subject,
-                    'teacher' => $firstEntry->teacher,
-                    'room' => $firstEntry->room,
                     'course' => $firstEntry->course,
-                    'student_group' => $firstEntry->student_group,
                     'active' => $entries
                         ->filter(fn (StudentTimetableEntry $entry): bool => $entry->date?->toDateString() === $date)
                         ->every(fn (StudentTimetableEntry $entry): bool => (bool) $entry->is_active),
@@ -383,19 +403,19 @@ class TimetableImportController extends Controller
             ->all();
     }
 
-    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    private function ensurePersonalSchoolyear(User $authUser): void
     {
-        $schoolyearId = SchoolTool::query()
-            ->where('school_id', $authUser->school_id)
-            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
-
-        if (! $schoolyearId) {
-            abort(422, 'Kein aktives Schuljahr gefunden.');
+        if (! $authUser->schoolyear_id) {
+            abort(422, 'Kein persönliches Schuljahr ausgewählt.');
         }
+    }
 
-        $authUser->schoolyear_id = (int) $schoolyearId;
-
-        return $authUser;
+    private function timetableImportSourcePath(TimetableImport $import): ?string
+    {
+        return PrivateImportSourceFile::resolve(
+            $import->file_path,
+            "app/private/{$import->school_id}/timetable-imports/{$import->schoolyear_id}",
+        );
     }
 
     private function typicalWeeklyHours($entries): ?int

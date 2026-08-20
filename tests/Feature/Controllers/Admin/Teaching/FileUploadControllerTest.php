@@ -19,6 +19,7 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
@@ -144,6 +145,7 @@ afterEach(function () {
     // Clean up any created directories - suppress errors as files may be locked
     $schoolDir = storage_path("app/private/{$this->school->id}");
     if (is_dir($schoolDir)) {
+        File::deleteDirectory($schoolDir.'/import116-sources');
         $excelDir = $schoolDir.'/excel';
         if (is_dir($excelDir)) {
             foreach (glob("$excelDir/*.*") as $file) {
@@ -356,6 +358,13 @@ describe('import 116 job dispatch', function () {
     test('dispatches Import116Job when 116 upload completes', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $schoolwideSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        SchoolTool::query()
+            ->where('school_id', $this->school->id)
+            ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
+
         // Initiate upload
         $initResponse = $this->post('/api/admin/teaching_upload/116');
         $uploadId = $initResponse->getContent();
@@ -377,8 +386,15 @@ describe('import 116 job dispatch', function () {
 
         $response->assertOk();
 
-        Queue::assertPushed(Import116Job::class, function ($job) {
-            return $job->user->id === $this->admin->id;
+        Queue::assertPushed(Import116Job::class, function (Import116Job $job) use ($content) {
+            return $job->user->id === $this->admin->id
+                && $job->schoolyearId === $this->schoolyear->id
+                && str_starts_with(
+                    $job->path,
+                    "app/private/{$this->school->id}/import116-sources/{$this->schoolyear->id}/",
+                )
+                && is_file(storage_path($job->path))
+                && file_get_contents(storage_path($job->path)) === $content;
         });
     });
 

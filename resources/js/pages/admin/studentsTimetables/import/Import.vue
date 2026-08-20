@@ -879,8 +879,9 @@ export default {
                 appointment?.date || '',
                 appointment?.period || '',
                 appointment?.starts_at || '',
+                appointment?.ends_at || '',
                 appointment?.subject || '',
-                appointment?.teacher || '',
+                appointment?.course || '',
             ].join('|')
         },
         singleDateAppointmentTimeLabel(appointment) {

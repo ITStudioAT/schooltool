@@ -8,34 +8,7 @@
                 primary-color="#1e2433"
                 secondary-color="#1e2433"
                 :active-section="activeSection"
-                :chips="headerChips">
-                <template #chips>
-                    <v-menu :disabled="automaticTimetableRouteActive">
-                        <template #activator="{ props }">
-                            <v-chip
-                                v-bind="props"
-                                size="small"
-                                variant="flat"
-                                prepend-icon="mdi-calendar-month-outline"
-                                append-icon="mdi-menu-down"
-                                class="students-timetables-hero__schoolyear"
-                                :disabled="automaticTimetableRouteActive"
-                                :style="{ cursor: automaticTimetableRouteActive ? 'default' : 'pointer' }">
-                                {{ selectedSchoolyearLabel }}
-                            </v-chip>
-                        </template>
-                        <v-list density="compact" max-height="300">
-                            <v-list-item
-                                v-for="sy in schoolyears"
-                                :key="sy.id"
-                                :active="sy.id === config?.selected_schoolyear?.id"
-                                @click="switchSchoolyear(sy.id)">
-                                <v-list-item-title>{{ sy.name }}</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-menu>
-                </template>
-            </AdminSectionHero>
+                :chips="headerChips" />
 
             <v-sheet v-if="!automaticTimetableRouteActive" class="st-nav">
                 <div class="st-nav__buttons">
@@ -44,7 +17,10 @@
                         :key="item.key"
                         variant="text"
                         class="st-nav__button"
-                        :class="activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
+                        :class="[
+                            activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle',
+                            { 'st-nav__button--legacy': item.key === 'timetable-v2' },
+                        ]"
                         @click="handleNavigation(item.key)">
                         <span class="st-nav__button-copy">
                             <span class="st-nav__button-title">{{ item.label }}</span>
@@ -84,7 +60,6 @@
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
@@ -113,20 +88,14 @@ export default {
     },
     data() {
         return {
-            main_action: 'timetable-v2',
+            main_action: 'timetable-v3',
         }
     },
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
-        selectedSchoolyearLabel() {
-            return this.config?.selected_schoolyear?.name || 'Kein Schuljahr gewählt'
-        },
         automaticTimetableRouteActive() {
             return this.$route.path === AUTOMATIC_TIMETABLE_OVERVIEW_PATH
                 || this.$route.path.startsWith(`${AUTOMATIC_TIMETABLE_OVERVIEW_PATH}/`)
-        },
-        schoolyears() {
-            return this.schoolyearStore?.schoolyears || []
         },
         headerChips() {
             const chips = []
@@ -143,13 +112,6 @@ export default {
         },
         allNavigationItems() {
             return [
-                {
-                    key: 'timetable-v2',
-                    label: 'Stundenplan v2',
-                    meta: 'Stabil',
-                    icon: 'mdi-calendar-edit-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
-                },
                 {
                     key: 'timetable-v3',
                     label: 'Stundenplan v3',
@@ -178,6 +140,13 @@ export default {
                     icon: 'mdi-book-open-page-variant-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
+                {
+                    key: 'timetable-v2',
+                    label: 'Stundenplan v2',
+                    meta: 'Stabil',
+                    icon: 'mdi-calendar-edit-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
             ]
         },
         activeNavigationKey() {
@@ -195,7 +164,7 @@ export default {
             return Array.isArray(this.config?.roles) ? this.config.roles : []
         },
         activeTimetableVersion() {
-            return this.config?.students_timetables?.admin_version === 'v3' ? 'v3' : 'v2'
+            return this.config?.students_timetables?.admin_version === 'v2' ? 'v2' : 'v3'
         },
         activeTimetableKey() {
             return `timetable-${this.activeTimetableVersion}`
@@ -250,8 +219,6 @@ export default {
         },
     },
     created() {
-        this.schoolyearStore = useSchoolyearStore()
-        this.schoolyearStore.index()
         const section = this.$route.params.section
         if (this.redirectMissingSection()) {
             return
@@ -358,11 +325,6 @@ export default {
 
             this.$router.push({ path })
         },
-        async switchSchoolyear(id) {
-            await this.schoolyearStore.setActiveSchoolyear(id)
-            const adminStore = useAdminStore()
-            await adminStore.loadConfig()
-        },
     },
 }
 </script>
@@ -424,17 +386,10 @@ export default {
     box-shadow: none !important;
 }
 
-.students-timetables-hero :deep(.v-chip:not(.students-timetables-hero__schoolyear)) {
+.students-timetables-hero :deep(.v-chip) {
     background: rgba(255, 255, 255, 0.08) !important;
     color: #c7cdda !important;
     box-shadow: none !important;
-}
-
-.students-timetables-hero__schoolyear {
-    background: var(--schedule-accent) !important;
-    color: #ffffff !important;
-    font-weight: 700;
-    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.32);
 }
 
 .st-nav {
@@ -491,6 +446,10 @@ export default {
     box-shadow: none !important;
 }
 
+.st-nav__button--legacy {
+    margin-left: auto;
+}
+
 .st-nav__button-copy {
     display: inline-flex;
     flex-direction: column;
@@ -539,6 +498,10 @@ export default {
         flex: 1 1 auto;
         min-height: 38px !important;
         padding: 0 12px;
+    }
+
+    .st-nav__button--legacy {
+        margin-left: 0;
     }
 
     .st-nav__settings-button {

@@ -55,21 +55,41 @@ function buildContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TT entries overview', () => {
-    it('renders remembered offers above the TT entries card', () => {
+    it('shows and loads the personal schoolyear', () => {
+        const component = TtEntries as any
+        const context = buildContext({
+            config: {
+                selected_schoolyear: {
+                    concerns: '2026/27',
+                },
+            },
+        })
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/ttEntries/TtEntries.vue', 'utf8')
-        const rememberedSectionIndex = source.indexOf('<section v-if="rememberedOffers.length"')
+
+        expect(component.computed.personalSchoolyearLabel.call(context)).toBe('2026/27')
+        expect(source).toContain('<span>TT-Einträge:</span>')
+        expect(source).toContain('class="text-h6 font-weight-bold text-primary"')
+        expect(source).toContain("params: { schoolyear_scope: 'personal' }")
+        expect(source).toContain("'config.selected_schoolyear.id'()")
+    })
+
+    it('always renders remembered entries above the TT entries card', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/ttEntries/TtEntries.vue', 'utf8')
+        const rememberedSectionIndex = source.indexOf('<section class="tt-entries-card__remembered"')
         const cardIndex = source.indexOf('<v-card rounded="lg" class="tt-entries-card">')
 
         expect(rememberedSectionIndex).toBeGreaterThan(-1)
         expect(cardIndex).toBeGreaterThan(-1)
         expect(rememberedSectionIndex).toBeLessThan(cardIndex)
-        expect(source.match(/<section v-if="rememberedOffers\.length"/gu)).toHaveLength(1)
+        expect(source).not.toContain('<section v-if="rememberedOffers.length"')
         expect(source).not.toContain('tt-entries-card__remembered-entry-list')
         expect(source).toContain('flex-wrap: wrap;')
         expect(source).toContain('rememberedOffersDetailsVisible')
         expect(source).toContain('Anzeigen')
         expect(source).toContain('/api/admin/students-timetables/tt-entry-remembered-offers')
-        expect(source).toContain('Gemerkte Module')
+        expect(source).toContain('Gemerkte Einträge')
+        expect(source).toContain('Noch keine Einträge gemerkt.')
+        expect(source).not.toContain('Gemerkte Module')
         expect(source).not.toContain('Gemerkte Angebote')
         expect(source).toContain('tt-entries-card__remembered-details')
         expect(source).toContain('tt-entries-card__remembered-detail-list')
@@ -101,9 +121,7 @@ describe('TT entries overview', () => {
                     course: 'D1',
                     subject: 'D',
                     display_label: 'D1 - 1A - MAY',
-                    class_name: 'D1 - 1A',
-                    teacher: 'MAY',
-                    rooms: ['101'],
+                    class_name: 'D1 - 1A - MAY',
                     dates: ['2026-02-17'],
                     recurrence_label: '1-wöchig',
                 },
@@ -115,9 +133,7 @@ describe('TT entries overview', () => {
                     course: 'D1',
                     subject: 'D',
                     display_label: 'D1 - 1A - MAY',
-                    class_name: 'D1 - 1A',
-                    teacher: 'MAY',
-                    rooms: ['101'],
+                    class_name: 'D1 - 1A - MAY',
                     dates: ['2026-02-17'],
                     recurrence_label: '1-wöchig',
                 },
@@ -129,9 +145,7 @@ describe('TT entries overview', () => {
                     course: 'D1',
                     subject: 'D',
                     display_label: 'D1 - 1B - KOW',
-                    class_name: 'D1 - 1B',
-                    teacher: 'KOW',
-                    rooms: ['103'],
+                    class_name: 'D1 - 1B - KOW',
                     dates: ['2026-09-10'],
                 },
             ],
@@ -170,7 +184,6 @@ describe('TT entries overview', () => {
                 dateLabel: '17.02.2026',
                 dateValue: '2026-02-17',
                 active: true,
-                roomsLabel: '101',
                 scheduleLabel: 'Di. 12.-13. 18:45-20:15',
                 timeFrom: '18:45',
                 timeUntil: '20:15',
@@ -222,9 +235,7 @@ describe('TT entries overview', () => {
                     course: 'D1',
                     subject: 'D',
                     display_label: 'D1 - 1A - MAY',
-                    class_name: 'D1 - 1A',
-                    teacher: 'MAY',
-                    rooms: ['101'],
+                    class_name: 'D1 - 1A - MAY',
                     dates: ['2026-02-17'],
                 },
             ],

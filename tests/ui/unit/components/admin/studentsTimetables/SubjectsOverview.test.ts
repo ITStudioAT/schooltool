@@ -209,14 +209,36 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain("RobotTimetable v-if=\"main_action === 'robot'\"")
         expect(componentSource).toContain("SubjectsOverview v-if=\"main_action === 'subjects-overview'\"")
         expect(componentSource).not.toContain("Overview v-if=\"main_action === 'overview'\"")
-        expect(componentSource.indexOf("key: 'timetable-v2'"))
-            .toBeLessThan(componentSource.indexOf("key: 'timetable-v3'"))
+        expect(componentSource).not.toContain('students-timetables-hero__schoolyear')
+        expect(componentSource).not.toContain('useSchoolyearStore')
+        expect(componentSource).not.toContain('switchSchoolyear')
         expect(componentSource.indexOf("key: 'timetable-v3'"))
             .toBeLessThan(componentSource.indexOf("key: 'tt-entries'"))
         expect(componentSource.indexOf("key: 'tt-entries'"))
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
+        expect(componentSource.indexOf("key: 'subjects-overview'"))
+            .toBeLessThan(componentSource.indexOf("key: 'timetable-v2'"))
+        expect(componentSource).toContain("{ 'st-nav__button--legacy': item.key === 'timetable-v2' }")
+        expect(componentSource).toMatch(/\.st-nav__button--legacy\s*\{[\s\S]*?margin-left:\s*auto;/)
+    })
+
+    it('uses timetable v3 when no school-specific default is configured', () => {
+        const computed = (StudentsTimetables as any).computed
+        const data = (StudentsTimetables as any).data()
+        const ctx: any = {
+            config: {
+                students_timetables: {},
+            },
+        }
+
+        expect(data.main_action).toBe('timetable-v3')
+        expect(computed.activeTimetableVersion.call(ctx)).toBe('v3')
+
+        ctx.config.students_timetables.admin_version = 'v2'
+
+        expect(computed.activeTimetableVersion.call(ctx)).toBe('v2')
     })
 
     it('keeps all automatic timetable steps in the focused automatic shell route', () => {
@@ -399,12 +421,11 @@ describe('Students timetable subjects overview', () => {
                     title: 'M1-3R-SCHM',
                     display_label: 'M1 - 3R - SCHM',
                     class_name: 'M1-3R-SCHM',
-                    student_group: '3R',
-                    teacher: 'SCHM',
                     semester: 1,
                     weekday: 2,
                     hour: 3,
-                    rooms: ['101'],
+                    starts_at: '09:50',
+                    ends_at: '10:40',
                 },
             ],
             subjectMappings: [
@@ -514,6 +535,12 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('<v-card rounded="lg" class="tt-entries-card">')
         expect(componentSource).toContain('v-for="course in metaCourseItems"')
         expect(componentSource).toContain('@click="selectMetaCourse(course.key)"')
+        expect(componentSource).toContain('v-if="selectedMetaCourseKey === course.key"')
+        expect(componentSource).toContain('class="tt-entries-card__sub-items"')
+        expect(componentSource).toContain('<v-expand-transition>')
+        expect(componentSource.indexOf('class="tt-entries-card__meta-course"'))
+            .toBeLessThan(componentSource.indexOf('class="tt-entries-card__sub-items"'))
+        expect(componentSource).toMatch(/\.tt-entries-card__sub-items\s*\{[\s\S]*?padding-left:\s*24px;/)
         expect(componentSource).toContain('v-for="offer in selectedSubjectOffers"')
         expect(componentSource).toContain('this.ttSubjectForSubject(subject)')
         expect(ctx.metaCourseItems.map(course => course.key)).toEqual(['INF', 'M', 'OEKO'])
@@ -525,12 +552,10 @@ describe('Students timetable subjects overview', () => {
         expect(computed.selectedMetaCourseRows.call(ctx).map(subject => subject.json_code)).toEqual(['M1', 'M2'])
         expect(computed.selectedSubjectOffers.call(ctx).map(offer => ({
             name: offer.name,
-            roomsLabel: offer.roomsLabel,
             scheduleLabel: offer.scheduleLabel,
         }))).toEqual([
             {
                 name: 'M1 - 3R - SCHM',
-                roomsLabel: '101',
                 scheduleLabel: 'Di 3. 09:50-10:40',
             },
         ])
@@ -1006,7 +1031,7 @@ describe('Students timetable subjects overview', () => {
                     display_label: 'D1 - GOS',
                     course: 'D',
                     subject: 'D',
-                    student_group: 'GOS',
+                    class_name: 'D1-1C-GOS',
                 },
             ],
             offeredCourseSelectionOverrides: {},
@@ -1692,12 +1717,9 @@ describe('Students timetable subjects overview', () => {
                     course: 'D',
                     subject: 'D',
                     module_code: '',
-                    teacher: 'KRO',
-                    class_name: '',
-                    student_group: 'Grp1',
+                    class_name: 'D1-Grp1-KRO',
                     recurrence_interval: 2,
                     recurrence_label: 'wöchentlich',
-                    rooms: ['101'],
                 },
                 {
                     key: 'd1-grp-2',
@@ -1709,14 +1731,11 @@ describe('Students timetable subjects overview', () => {
                     course: 'D',
                     subject: 'D',
                     module_code: '',
-                    teacher: 'KRO',
-                    class_name: '',
-                    student_group: 'Grp2',
+                    class_name: 'D1-Grp2-KRO',
                     block_label: 'Block',
                     is_block: true,
                     first_date: '2026-03-12',
                     last_date: '2026-05-16',
-                    rooms: ['102'],
                 },
                 {
                     key: 'd1-grp-1-second-slot',
@@ -1728,11 +1747,8 @@ describe('Students timetable subjects overview', () => {
                     course: 'D',
                     subject: 'D',
                     module_code: '',
-                    teacher: 'KRO',
-                    class_name: '',
-                    student_group: 'Grp1',
+                    class_name: 'D1-Grp1-KRO',
                     recurrence_label: 'wöchentlich',
-                    rooms: ['104'],
                 },
                 {
                     key: 'd1-grp-1-third-slot',
@@ -1744,11 +1760,8 @@ describe('Students timetable subjects overview', () => {
                     course: 'D',
                     subject: 'D',
                     module_code: '',
-                    teacher: 'KRO',
-                    class_name: '',
-                    student_group: 'Grp1',
+                    class_name: 'D1-Grp1-KRO',
                     recurrence_label: 'wöchentlich',
-                    rooms: ['105'],
                 },
                 {
                     key: 'd10-grp-1',
@@ -1760,11 +1773,8 @@ describe('Students timetable subjects overview', () => {
                     course: 'D',
                     subject: 'D',
                     module_code: '',
-                    teacher: 'KRO',
-                    class_name: '',
-                    student_group: 'Grp1',
+                    class_name: 'D10-Grp1-KRO',
                     recurrence_label: 'wöchentlich',
-                    rooms: ['103'],
                 },
             ],
         }
@@ -1825,7 +1835,6 @@ describe('Students timetable subjects overview', () => {
             selectionKey: course.selectionKey,
             scheduleLabel: course.scheduleLabel,
             recurrenceLabel: course.recurrenceLabel,
-            roomsLabel: course.roomsLabel,
             distanceLearning: course.distanceLearning,
         }))).toEqual([
             {
@@ -1834,7 +1843,6 @@ describe('Students timetable subjects overview', () => {
                 selectionKey: expect.any(String),
                 scheduleLabel: 'Mo 2. 2-wöchig 08:50-09:40, Mo 4.-5. 2-wöchig 10:50-12:30',
                 recurrenceLabel: '2-wöchig',
-                roomsLabel: '101, 104, 105',
                 distanceLearning: false,
             },
             {
@@ -1843,7 +1851,6 @@ describe('Students timetable subjects overview', () => {
                 selectionKey: expect.any(String),
                 scheduleLabel: 'Mo 3. 09:45-10:35',
                 recurrenceLabel: '',
-                roomsLabel: '102',
                 distanceLearning: true,
             },
         ])
@@ -1911,14 +1918,12 @@ describe('Students timetable subjects overview', () => {
         expect(methods.offeredCourseGroupLabel.call(ctx, {
             title: 'INF',
             display_label: 'INF - 1 - Grp1 - KROINF',
-            teacher: 'KROINF',
-            student_group: '1 - Grp1',
+            class_name: 'INF - 1 - Grp1 - KRO',
         }, 'INF')).toBe('INF - 1 - Grp1 - KRO')
         expect(methods.offeredCourseGroupLabel.call(ctx, {
             title: 'D',
             display_label: 'D - 1 - 1C - GOSD',
-            teacher: '',
-            student_group: '1 - 1C - GOSD',
+            class_name: 'D - 1 - 1C - GOS',
         }, 'D')).toBe('D - 1 - 1C - GOS')
         expect(methods.offeredCourseCodeVisible.call(ctx, {
             code: 'D',

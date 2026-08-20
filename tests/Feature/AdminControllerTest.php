@@ -87,6 +87,7 @@ test('config returns json response with app configuration', function () {
             'user',
             'selected_school',
             'selected_schoolyear',
+            'schoolwide_active_schoolyear',
             'selected_register',
             'menu',
             'capabilities',
@@ -118,6 +119,42 @@ test('config returns user data when authenticated', function () {
         ->assertJsonStructure([
             'user' => ['id', 'email', 'first_name', 'last_name'],
         ]);
+});
+
+test('authenticated config returns the schoolwide active schoolyear separately from the selected schoolyear', function () {
+    $schoolwideActiveSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'name' => 'Schuljahr 2026/27',
+        'concerns' => '2026/27',
+    ]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $schoolwideActiveSchoolyear->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonPath('selected_schoolyear.id', $this->schoolyear->id)
+        ->assertJsonPath('schoolwide_active_schoolyear.id', $schoolwideActiveSchoolyear->id)
+        ->assertJsonPath('schoolwide_active_schoolyear.name', 'Schuljahr 2026/27')
+        ->assertJsonPath('schoolwide_active_schoolyear.concerns', '2026/27');
+});
+
+test('authenticated config does not expose a schoolwide schoolyear from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonPath('schoolwide_active_schoolyear', null);
 });
 
 test('authenticated config excludes environment versions by default', function () {

@@ -69,6 +69,20 @@ class RecognitionImportService
         $replacementActivated = false;
         try {
             $filterResult = $this->prepareFilteredCsv($storedPath, $temporaryPath);
+            if ($filterResult['importable_rows'] === 0) {
+                $import->update([
+                    'total_rows' => $filterResult['total_rows'],
+                    'imported_rows' => 0,
+                    'skipped_rows' => $filterResult['total_rows'],
+                ]);
+                $this->markFailed(
+                    $import,
+                    'Die CSV-Datei enthält keine gültigen Anrechnungsdaten. Bestehende Daten wurden nicht verändert.',
+                );
+
+                return $import->refresh();
+            }
+
             $this->activateFilteredCsv($storedPath, $temporaryPath, $backupPath);
             $replacementActivated = true;
 
@@ -145,7 +159,7 @@ class RecognitionImportService
             });
     }
 
-    /** @return array{total_rows: int} */
+    /** @return array{total_rows: int, importable_rows: int} */
     private function prepareFilteredCsv(string $path, string $temporaryPath): array
     {
         $input = fopen($path, 'rb');
@@ -162,11 +176,12 @@ class RecognitionImportService
         }
 
         $totalRows = 0;
+        $importableRows = 0;
 
         try {
             $headerLine = fgets($input);
             if ($headerLine === false) {
-                return ['total_rows' => 0];
+                return ['total_rows' => 0, 'importable_rows' => 0];
             }
 
             $headerLine = preg_replace('/^\xEF\xBB\xBF/u', '', $headerLine) ?? $headerLine;
@@ -189,6 +204,7 @@ class RecognitionImportService
                 $record = $this->recordFromRow($headers, $row);
 
                 if ($this->recognitionRecordShouldBeImported($record)) {
+                    $importableRows++;
                     fputcsv($output, $row, $delimiter, '"', '');
                 }
             }
@@ -197,7 +213,10 @@ class RecognitionImportService
             fclose($output);
         }
 
-        return ['total_rows' => $totalRows];
+        return [
+            'total_rows' => $totalRows,
+            'importable_rows' => $importableRows,
+        ];
     }
 
     private function persistOriginalCsv(string $path, StudentTimetableRecognitionImport $import): int

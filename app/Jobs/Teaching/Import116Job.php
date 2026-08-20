@@ -111,6 +111,20 @@ class Import116Job implements ShouldQueue
             );
             $report['counts']['processed_rows'] = $stagingCounts['processed_rows'];
             $report['counts']['seen_students'] = $stagingCounts['seen_students'];
+
+            if ($stagingCounts['seen_students'] === 0) {
+                $message = 'Import 116 fehlgeschlagen: Die Datei enthält keine gültigen Schülerdaten. Bestehende Daten wurden nicht verändert.';
+                $this->markRunFailed($run, $message);
+                broadcast(new Import116FinishedEvent(
+                    422,
+                    $this->user->id,
+                    $message,
+                    ['run_id' => $run?->id, 'counts' => $report['counts']],
+                ));
+
+                return;
+            }
+
             $initialReportCounts = $report['counts'];
 
             DB::transaction(function () use ($stagingTable, $schoolId, $schoolyearId, $run, $now, $initialReportCounts, &$report): void {
@@ -253,20 +267,24 @@ class Import116Job implements ShouldQueue
         }
 
         $studentCode = $mapped['student_code'] ?? null;
-        if (! $studentCode) {
+        $class = $mapped['class'] ?? null;
+        $lastName = $mapped['last_name'] ?? null;
+        $firstName = $mapped['first_name'] ?? null;
+
+        if (! $studentCode || ! $class || ! $lastName || ! $firstName) {
             return null;
         }
 
         $data = [
             'school_id' => $schoolId,
             'schoolyear_id' => $schoolyearId,
-            'class' => $mapped['class'] ?? '',
+            'class' => $class,
             'school_level' => $mapped['school_level'] ?? null,
             'attendance_year' => $mapped['attendance_year'] ?? null,
             'religion' => $mapped['religion'] ?? null,
             'student_code' => $studentCode,
-            'last_name' => $mapped['last_name'] ?? '',
-            'first_name' => $mapped['first_name'] ?? '',
+            'last_name' => $lastName,
+            'first_name' => $firstName,
             'sex' => $mapped['sex'] ?? null,
             'birth_date' => $this->parseDate($mapped['birth_date'] ?? null),
             'import_date' => $now->toDateTimeString(),
@@ -617,7 +635,7 @@ class Import116Job implements ShouldQueue
                 'school_id' => $schoolId,
                 'schoolyear_id' => $schoolyearId,
                 'user_id' => $this->user->id ?? null,
-                'source_path' => $this->normalizedSourceName(),
+                'source_path' => $this->normalizedSourcePath(),
                 'status' => 'running',
                 'started_at' => now(),
             ]);
@@ -638,11 +656,9 @@ class Import116Job implements ShouldQueue
         $run->save();
     }
 
-    private function normalizedSourceName(): ?string
+    private function normalizedSourcePath(): ?string
     {
-        $value = is_string($this->originalFilename) && trim($this->originalFilename) !== ''
-            ? trim($this->originalFilename)
-            : (is_string($this->path) ? trim($this->path) : '');
+        $value = trim($this->path);
 
         if ($value === '') {
             return null;
@@ -650,7 +666,7 @@ class Import116Job implements ShouldQueue
 
         $value = str_replace('\\', '/', $value);
 
-        return basename($value);
+        return $value;
     }
 
     /**

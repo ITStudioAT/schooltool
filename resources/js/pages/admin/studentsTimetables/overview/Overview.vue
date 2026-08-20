@@ -4406,7 +4406,7 @@ export default {
                     rightCourseGroup?.key,
                 ].filter(Boolean).join('|'),
                 end_hour: this.singleDateOverviewEndHour(rightCourseGroup),
-                teacher: rightTimeRange.until || leftCourseGroup?.teacher,
+                ends_at: rightTimeRange.until || leftCourseGroup?.ends_at,
             }
         },
         singleDateOverviewEndHour(courseGroup) {
@@ -6319,12 +6319,8 @@ export default {
             }
         },
         importedCourseGroupTimeRange(courseGroup) {
-            const from = this.isTimeOnlyValue(courseGroup?.subject)
-                ? this.formatTimeValue(courseGroup.subject)
-                : ''
-            const until = this.isTimeOnlyValue(courseGroup?.teacher)
-                ? this.formatTimeValue(courseGroup.teacher)
-                : ''
+            const from = this.formatTimeValue(courseGroup?.starts_at)
+            const until = this.formatTimeValue(courseGroup?.ends_at)
 
             return { from, until }
         },

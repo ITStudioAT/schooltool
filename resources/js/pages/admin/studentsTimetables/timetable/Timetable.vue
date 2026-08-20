@@ -3,9 +3,13 @@
 
     <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
-            <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
+            <v-card-title class="d-flex flex-wrap align-center ga-2 pt-4 px-4">
                 <v-icon color="primary" size="22">mdi-import</v-icon>
-                Importe
+                <span>Importe:</span>
+                <span
+                    class="text-h6 font-weight-bold text-primary">
+                    {{ personalImportSchoolyearLabel }}
+                </span>
             </v-card-title>
             <v-card-text class="px-4 pb-4">
                 <div class="st-import-buttons">
@@ -53,6 +57,7 @@
                         <div class="text-decoration-underline">Folgende Datei ist zu importieren:</div>
                         <div>Sokrates Bund ➜ Auswertungen ➜ Dynamische Suche ➜ Name der Abfrage: 116 ➜</div>
                         <div>Alle auswählen > Ausführen ➜ Exportieren (XLSX)</div>
+                        <div class="mt-2">Vor der Übernahme wird geprüft, ob die Datei gültige Schülerdaten enthält. Ohne gültige Datensätze bleibt der bestehende Datenbestand unverändert.</div>
                     </v-alert>
 
                     <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
@@ -78,7 +83,7 @@
                             <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
                         </div>
                     </v-alert>
-                    <v-alert v-if="import116UploadHasError" type="error" variant="tonal" class="mt-2">Upload fehlgeschlagen.</v-alert>
+                    <v-alert v-if="import116UploadHasError" type="error" variant="tonal" class="mt-2">{{ import116UploadErrorMessage }}</v-alert>
                     <v-btn v-if="import116UploadFinished || import116UploadHasError" color="warning" variant="flat" class="mt-2" @click="import116ResetUpload">Neu hochladen</v-btn>
 
                     <v-divider class="my-4" />
@@ -169,14 +174,27 @@
                                     <v-btn size="small" variant="text" @click.stop="import116ToggleRunDetails(run.id)">
                                         {{ import116ExpandedRunIds[run.id] ? 'Details ausblenden' : 'Details anzeigen' }}
                                     </v-btn>
-                                    <v-btn
-                                        size="small"
-                                        color="error"
-                                        variant="text"
-                                        :loading="import116DeletingImportId === run.id"
-                                        @click.stop="import116DeleteImport(run)">
-                                        Import löschen
-                                    </v-btn>
+                                    <div class="d-flex flex-column align-start ga-1">
+                                        <v-btn
+                                            size="small"
+                                            color="error"
+                                            variant="text"
+                                            :loading="import116DeletingImportId === run.id"
+                                            @click.stop="import116OpenDeleteDialog(run)">
+                                            Import löschen
+                                        </v-btn>
+                                        <v-btn
+                                            :href="import116SourceDownloadUrl(run)"
+                                            prepend-icon="mdi-download-outline"
+                                            size="small"
+                                            color="primary"
+                                            variant="text"
+                                            :disabled="!run.source_available"
+                                            :title="run.source_available ? 'Importierte Quelldatei herunterladen' : 'Quelldatei nicht mehr verfügbar'"
+                                            @click.stop>
+                                            Herunterladen
+                                        </v-btn>
+                                    </div>
                                 </div>
 
                                 <v-progress-linear v-if="import116LoadingRunId === run.id" indeterminate class="mt-2" />
@@ -751,16 +769,29 @@
                                     <v-chip size="x-small" :color="recognitionStatusColor(importItem)" variant="tonal">
                                         {{ recognitionStatusText(importItem) }}
                                     </v-chip>
-                                    <v-btn
-                                        prepend-icon="mdi-delete-outline"
-                                        size="small"
-                                        variant="text"
-                                        color="error"
-                                        class="st-import-history-delete-button"
-                                        :disabled="recognitionImportIsProcessing(importItem)"
-                                        @click.stop="openRecognitionDeleteDialog(importItem)">
-                                        Löschen
-                                    </v-btn>
+                                    <div class="d-flex flex-column align-end ga-1 flex-shrink-0">
+                                        <v-btn
+                                            prepend-icon="mdi-delete-outline"
+                                            size="small"
+                                            variant="text"
+                                            color="error"
+                                            class="st-import-history-delete-button"
+                                            :disabled="recognitionImportIsProcessing(importItem)"
+                                            @click.stop="openRecognitionDeleteDialog(importItem)">
+                                            Löschen
+                                        </v-btn>
+                                        <v-btn
+                                            :href="recognitionSourceDownloadUrl(importItem)"
+                                            prepend-icon="mdi-download-outline"
+                                            size="small"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="!importItem.source_available"
+                                            :title="importItem.source_available ? 'Importierte Quelldatei herunterladen' : 'Quelldatei nicht mehr verfügbar'"
+                                            @click.stop>
+                                            Herunterladen
+                                        </v-btn>
+                                    </div>
                                 </div>
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
@@ -871,16 +902,29 @@
                                     <v-chip size="x-small" :color="statusColor(importItem)" variant="tonal">
                                         {{ statusText(importItem) }}
                                     </v-chip>
-                                    <v-btn
-                                        prepend-icon="mdi-database-remove-outline"
-                                        size="small"
-                                        variant="text"
-                                        color="error"
-                                        class="st-import-history-delete-button"
-                                        :disabled="importIsProcessing(importItem)"
-                                        @click.stop="openDeleteDialog(importItem)">
-                                        Löschen
-                                    </v-btn>
+                                    <div class="d-flex flex-column align-end ga-1 flex-shrink-0">
+                                        <v-btn
+                                            prepend-icon="mdi-database-remove-outline"
+                                            size="small"
+                                            variant="text"
+                                            color="error"
+                                            class="st-import-history-delete-button"
+                                            :disabled="importIsProcessing(importItem)"
+                                            @click.stop="openDeleteDialog(importItem)">
+                                            Löschen
+                                        </v-btn>
+                                        <v-btn
+                                            :href="timetableSourceDownloadUrl(importItem)"
+                                            prepend-icon="mdi-download-outline"
+                                            size="small"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="!importItem.source_available"
+                                            :title="importItem.source_available ? 'Importierte Quelldatei herunterladen' : 'Quelldatei nicht mehr verfügbar'"
+                                            @click.stop>
+                                            Herunterladen
+                                        </v-btn>
+                                    </div>
                                 </div>
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
@@ -1029,6 +1073,11 @@
                         Schuljahr ändern
                     </a>
                 </v-alert>
+                <v-alert type="info" variant="tonal" class="mb-3">
+                    Die Datei wird vor jeder Datenänderung vollständig geprüft. Enthält sie keine gültigen
+                    {{ activeImportPage === 'anrechnungen' ? 'Anrechnungsdaten' : 'Stundenplan-Einträge' }},
+                    wird der Import abgebrochen und der bestehende Datenbestand bleibt unverändert.
+                </v-alert>
                 <v-alert v-if="uploadError" type="error" variant="tonal" class="mb-3">
                     {{ uploadError }}
                 </v-alert>
@@ -1105,6 +1154,12 @@
                     gelöscht werden? Dabei werden die diesem Importlauf zugeordneten Stundenplan-Einträge aus
                     <strong>student_timetable_entries</strong>
                     entfernt und der aktive Stundenplan wird aus den übrigen Importläufen neu aufgebaut.
+                    <v-alert v-if="deleteError" type="error" variant="tonal" density="compact" class="mt-3">
+                        {{ deleteError }}
+                    </v-alert>
+                    <div class="text-caption mt-3">
+                        Vor dem Löschen prüft das System alle verbleibenden Quelldateien. Ist eine Datei nicht wiederherstellbar, wird nichts gelöscht.
+                    </div>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
@@ -1125,11 +1180,34 @@
                     <strong>{{ recognitionDeleteTargetImport?.original_filename }}</strong>
                     gelöscht werden? Dabei werden die importierten Anrechnungs-Zeilen und die gespeicherte CSV-Datei entfernt.
                     Danach kann diese Datei erneut importiert werden.
+                    <v-alert v-if="recognitionDeleteError" type="error" variant="tonal" density="compact" class="mt-3">
+                        {{ recognitionDeleteError }}
+                    </v-alert>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
                     <v-btn variant="text" :disabled="deletingRecognitionImport" @click="closeRecognitionDeleteDialog">Abbrechen</v-btn>
                     <v-btn color="error" variant="flat" :loading="deletingRecognitionImport" @click="deleteRecognitionImport">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="import116DeleteDialog" max-width="440" persistent>
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-delete-alert-outline" color="error" />
+                    Sokrates-Import löschen
+                </v-card-title>
+                <v-card-text>
+                    Soll das Protokoll von Import <strong>#{{ import116DeleteTargetRun?.id }}</strong> gelöscht werden?
+                    Die aktiven Schülerdaten bleiben unverändert. Gelöscht werden nur das Importprotokoll und die zugehörigen Rücksetzdaten.
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="Boolean(import116DeletingImportId)" @click="import116CloseDeleteDialog">Abbrechen</v-btn>
+                    <v-btn color="error" variant="flat" :loading="Boolean(import116DeletingImportId)" @click="import116DeleteImport">
                         Löschen
                     </v-btn>
                 </v-card-actions>
@@ -1144,6 +1222,9 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { downloadSource as downloadRecognitionImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/RecognitionCsvUploadController'
+import { downloadSource as downloadTimetableImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/TimetableImportController'
+import { downloadSource as downloadImport116Source } from '@/actions/App/Http/Controllers/Admin/Teaching/Import116Controller'
 
 const FileUpload = defineAsyncComponent(() => import('@/pages/components/FileUpload.vue'))
 const LoadingAnimation = defineAsyncComponent(() => import('@/pages/components/LoadingAnimation.vue'))
@@ -1183,9 +1264,11 @@ export default {
             deleteTargetImport: null,
             deleteDialog: false,
             deleting: false,
+            deleteError: '',
             recognitionDeleteTargetImport: null,
             recognitionDeleteDialog: false,
             deletingRecognitionImport: false,
+            recognitionDeleteError: '',
             pollingInterval: null,
             savingSingleDateActivation: false,
             singleDateActivationSaveQueued: false,
@@ -1202,6 +1285,7 @@ export default {
             uploadError: '',
             import116UploadFinished: false,
             import116UploadHasError: false,
+            import116UploadErrorMessage: 'Upload fehlgeschlagen.',
             import116RefreshFilePond: false,
             import116Importing: false,
             import116OnImportFinished: null,
@@ -1215,6 +1299,8 @@ export default {
             import116LoadingRunId: null,
             import116ResettingRuns: false,
             import116DeletingImportId: null,
+            import116DeleteTargetRun: null,
+            import116DeleteDialog: false,
             import116SelectedRestoreTargetId: null,
             import116RunTrackingError: '',
             import116RunActionMessage: '',
@@ -1231,6 +1317,11 @@ export default {
         },
         canManageTimetableImports() {
             return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
+        },
+        personalImportSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || 'nicht festgelegt'
         },
         import116LastImportDisplay() {
             const value = this.import116LastImportAt || this.config?.teaching?.last_import_116_at
@@ -1512,15 +1603,7 @@ export default {
     },
     mounted() {
         this.syncRouteStateFromParams()
-        this.import116OnImportFinished = async (event) => {
-            this.import116Importing = false
-            this.import116LastImportAt = new Date().toISOString()
-            const payload = event?.detail?.data || {}
-            if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
-                this.import116RunActionMessage = `Import abgeschlossen: +${payload.created ?? 0} / ~${payload.updated ?? 0} / -${payload.deleted ?? 0}`
-            }
-            await this.import116LoadRuns()
-        }
+        this.import116OnImportFinished = this.handleImport116Finished
         window.addEventListener('import116-finished', this.import116OnImportFinished)
     },
     unmounted() {
@@ -1531,6 +1614,40 @@ export default {
         }
     },
     methods: {
+        timetableSourceDownloadUrl(importItem) {
+            return importItem?.source_available
+                ? downloadTimetableImportSource.url(importItem.id)
+                : undefined
+        },
+        recognitionSourceDownloadUrl(importItem) {
+            return importItem?.source_available
+                ? downloadRecognitionImportSource.url(importItem.id)
+                : undefined
+        },
+        import116SourceDownloadUrl(run) {
+            return run?.source_available
+                ? downloadImport116Source.url(run.id)
+                : undefined
+        },
+        async handleImport116Finished(event) {
+            this.import116Importing = false
+
+            if (Number(event?.detail?.status) !== 200) {
+                this.import116RunActionMessage = ''
+                this.import116RunActionError = event?.detail?.message || 'Import 116 konnte nicht durchgeführt werden.'
+                await this.import116LoadRuns()
+
+                return
+            }
+
+            this.import116RunActionError = ''
+            this.import116LastImportAt = new Date().toISOString()
+            const payload = event?.detail?.data || {}
+            if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+                this.import116RunActionMessage = `Import abgeschlossen: +${payload.created ?? 0} / ~${payload.updated ?? 0} / -${payload.deleted ?? 0}`
+            }
+            await this.import116LoadRuns()
+        },
         normalizedSubAction(subsection) {
             const allowed = this.canManageTimetableImports
                 ? ['overview', 'imports']
@@ -1653,16 +1770,17 @@ export default {
             this.loadImportButtonInfo()
             this.schedulePolling()
         },
-        onUploadError() {
+        onUploadError(message) {
+            const serverMessage = typeof message === 'string' && message.trim() !== '' ? message : ''
             if (this.activeImportPage === 'anrechnungen') {
                 this.uploadedFilename = ''
-                this.uploadError = 'Die CSV-Datei konnte nicht gespeichert werden.'
+                this.uploadError = serverMessage || 'Die CSV-Datei konnte nicht gespeichert werden.'
                 this.refreshFilePond++
 
                 return
             }
 
-            this.uploadError = 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
+            this.uploadError = serverMessage || 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
         },
         openSchoolyearEdit() {
             const schoolyear = this.config?.selected_schoolyear
@@ -1742,11 +1860,13 @@ export default {
         },
         openDeleteDialog(importItem) {
             this.deleteTargetImport = importItem
+            this.deleteError = ''
             this.deleteDialog = true
         },
         closeDeleteDialog() {
             this.deleteDialog = false
             this.deleteTargetImport = null
+            this.deleteError = ''
         },
         async deleteImport() {
             if (!this.deleteTargetImport) return
@@ -1757,17 +1877,21 @@ export default {
                 this.deleteTargetImport = null
                 this.deleteDialog = false
                 await this.loadImportButtonInfo()
+            } catch (error) {
+                this.deleteError = error?.response?.data?.message || 'Der Import konnte nicht gelöscht werden.'
             } finally {
                 this.deleting = false
             }
         },
         openRecognitionDeleteDialog(importItem) {
             this.recognitionDeleteTargetImport = importItem
+            this.recognitionDeleteError = ''
             this.recognitionDeleteDialog = true
         },
         closeRecognitionDeleteDialog() {
             this.recognitionDeleteDialog = false
             this.recognitionDeleteTargetImport = null
+            this.recognitionDeleteError = ''
         },
         async deleteRecognitionImport() {
             if (!this.recognitionDeleteTargetImport) return
@@ -1778,6 +1902,8 @@ export default {
                 this.recognitionDeleteTargetImport = null
                 this.recognitionDeleteDialog = false
                 await this.loadImportButtonInfo()
+            } catch (error) {
+                this.recognitionDeleteError = error?.response?.data?.message || 'Der Anrechnungs-Import konnte nicht gelöscht werden.'
             } finally {
                 this.deletingRecognitionImport = false
             }
@@ -2113,8 +2239,9 @@ export default {
                 appointment?.date || '',
                 appointment?.period || '',
                 appointment?.starts_at || '',
+                appointment?.ends_at || '',
                 appointment?.subject || '',
-                appointment?.teacher || '',
+                appointment?.course || '',
             ].join('|')
         },
         singleDateAppointmentTimeLabel(appointment) {
@@ -2248,7 +2375,19 @@ export default {
                 this.import116ResettingRuns = false
             }
         },
-        async import116DeleteImport(run) {
+        import116OpenDeleteDialog(run) {
+            this.import116DeleteTargetRun = run
+            this.import116DeleteDialog = true
+            this.import116RunActionError = ''
+        },
+        import116CloseDeleteDialog() {
+            if (this.import116DeletingImportId) return
+
+            this.import116DeleteTargetRun = null
+            this.import116DeleteDialog = false
+        },
+        async import116DeleteImport() {
+            const run = this.import116DeleteTargetRun
             const id = Number(run?.id || 0)
             if (!id) return
 
@@ -2269,6 +2408,8 @@ export default {
                 this.import116ExpandedChangeGroups = Object.fromEntries(
                     Object.entries(this.import116ExpandedChangeGroups).filter(([key]) => !key.startsWith(`${id}:`))
                 )
+                this.import116DeleteTargetRun = null
+                this.import116DeleteDialog = false
                 await this.import116LoadRuns()
             } catch (error) {
                 this.import116RunActionError = error?.response?.data?.message || 'Import konnte nicht gelöscht werden.'
@@ -2291,6 +2432,7 @@ export default {
         import116OnUploadStart() {
             this.import116UploadFinished = false
             this.import116UploadHasError = false
+            this.import116UploadErrorMessage = 'Upload fehlgeschlagen.'
             this.import116RunActionMessage = ''
             this.import116RunActionError = ''
             this.import116Importing = true
@@ -2298,14 +2440,18 @@ export default {
         import116FileUploadFinished() {
             this.import116UploadFinished = true
         },
-        import116UploadError() {
+        import116UploadError(message) {
             this.import116UploadHasError = true
+            this.import116UploadErrorMessage = typeof message === 'string' && message.trim() !== ''
+                ? message
+                : 'Upload fehlgeschlagen.'
             this.import116RefreshFilePond = !this.import116RefreshFilePond
             this.import116Importing = false
         },
         import116ResetUpload() {
             this.import116UploadFinished = false
             this.import116UploadHasError = false
+            this.import116UploadErrorMessage = 'Upload fehlgeschlagen.'
             this.import116RefreshFilePond = !this.import116RefreshFilePond
             this.import116Importing = false
         },

@@ -313,6 +313,8 @@ describe('import record handling', function () {
             'first_name' => 'Max',
             'email' => 'max.mustermann@student.test',
         ]);
+
+        expect(Import116Run::query()->latest('id')->value('source_path'))->toBe($relativePath);
     });
 
     test('reuses a student account from the previous school year', function () {
@@ -936,27 +938,45 @@ describe('exists_date clearing', function () {
             ->and($removeRecord->exists_date)->toBeNull();
     });
 
-    test('all records cleared when no codes in import', function () {
+    test('keeps existing records when the import contains no valid student codes', function () {
         $record1 = Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'KEEP-001',
             'exists_date' => now(),
             'import_user_id' => $this->admin->id,
         ]);
 
         $record2 = Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'KEEP-002',
             'exists_date' => now(),
             'import_user_id' => $this->admin->id,
         ]);
 
-        // Simulate empty import
-        Import116::where('school_id', $this->school->id)->update(['exists_date' => null]);
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A',
+            'Schülerkennzahl' => '',
+            'Familienname' => 'Ohne Kennzahl',
+            'Vorname' => 'Ungültig',
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
 
         $record1->refresh();
         $record2->refresh();
 
-        expect($record1->exists_date)->toBeNull()
-            ->and($record2->exists_date)->toBeNull();
+        expect($record1->exists_date)->not->toBeNull()
+            ->and($record2->exists_date)->not->toBeNull()
+            ->and(Import116Run::query()->latest('id')->value('status'))->toBe('failed')
+            ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('keine gültigen Schülerdaten');
+
+        Event::assertDispatched(Import116FinishedEvent::class, fn (Import116FinishedEvent $event): bool => $event->status === 422
+            && str_contains($event->message, 'Bestehende Daten wurden nicht verändert'));
     });
 
     test('only affects records from the same school', function () {

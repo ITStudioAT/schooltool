@@ -22,7 +22,7 @@ class StudentTimetableOverviewService
 
     private const CACHE_STALE_SECONDS = 120 * 60;
 
-    private const CACHE_VERSION = 6;
+    private const CACHE_VERSION = 7;
 
     /**
      * @return list<array<string, mixed>>
@@ -163,11 +163,8 @@ class StudentTimetableOverviewService
                 'ends_at',
                 'subject',
                 'module_code',
-                'teacher',
-                'room',
                 'class_name',
                 'course',
-                'student_group',
             ])
             ->map(fn (object $entry): ?array => $this->entryPayload($entry))
             ->filter()
@@ -232,11 +229,8 @@ class StudentTimetableOverviewService
             'ends_at' => $this->cleanText($entry->ends_at),
             'subject' => $this->cleanText($entry->subject),
             'module_code' => $this->cleanText($entry->module_code),
-            'teacher' => $this->cleanText($entry->teacher),
-            'room' => $this->cleanText($entry->room),
             'class_name' => $this->cleanText($entry->class_name),
             'course' => $this->cleanText($entry->course),
-            'student_group' => $this->cleanText($entry->student_group),
         ];
     }
 
@@ -251,9 +245,9 @@ class StudentTimetableOverviewService
             $entry['hour'],
             mb_strtolower((string) $entry['course']),
             mb_strtolower((string) $entry['subject']),
-            mb_strtolower((string) $entry['teacher']),
+            '',
             mb_strtolower((string) $entry['class_name']),
-            mb_strtolower((string) $entry['student_group']),
+            '',
         ]);
     }
 
@@ -294,14 +288,11 @@ class StudentTimetableOverviewService
             'starts_at' => $firstEntry['starts_at'],
             'ends_at' => $firstEntry['ends_at'],
             'title' => $this->courseTitle($firstEntry, $subjectMappings),
-            'display_label' => $this->displayLabel($firstEntry, $entries, $subjectMappings),
+            'display_label' => $this->displayLabel($firstEntry, $subjectMappings),
             'subject' => $firstEntry['subject'],
             'course' => $firstEntry['course'],
             'module_code' => $firstEntry['module_code'],
-            'teacher' => $firstEntry['teacher'],
-            'rooms' => $entries->pluck('room')->filter()->unique()->values()->all(),
             'class_name' => $firstEntry['class_name'],
-            'student_group' => $firstEntry['student_group'],
             'first_date' => $dates[0] ?? null,
             'last_date' => $dates[count($dates) - 1] ?? null,
             'dates' => $dates,
@@ -444,28 +435,15 @@ class StudentTimetableOverviewService
 
     /**
      * @param  array<string, mixed>  $entry
-     * @param  Collection<int, array<string, mixed>>  $entries
      */
-    private function displayLabel(array $entry, Collection $entries, array $subjectMappings): string
+    private function displayLabel(array $entry, array $subjectMappings): string
     {
-        $rooms = $entries
-            ->pluck('room')
-            ->filter()
-            ->map(fn (string $room): string => $this->withoutTimeFragments($room))
-            ->filter()
-            ->unique()
-            ->values()
-            ->implode(',');
-
         $primary = $this->mappedDisplayCourseCode(
             (string) ($entry['course'] ?: $entry['subject']),
             $subjectMappings,
         );
         $details = collect([
             $entry['class_name'],
-            $entry['student_group'],
-            $entry['teacher'],
-            $rooms,
         ])
             ->filter()
             ->map(fn (string $segment): string => $this->withoutTimeFragments($segment));
@@ -474,12 +452,7 @@ class StudentTimetableOverviewService
             $details->prepend($primary);
         }
 
-        $label = $this->withoutTimeFragments($details->implode(''));
-        $label = $rooms !== ''
-            ? $this->stripTrailingRoom($label, $rooms)
-            : $this->stripRoomSuffix($label);
-
-        return $this->formatDisplayLabel($label);
+        return $this->formatDisplayLabel($this->withoutTimeFragments($details->implode('')));
     }
 
     private function mappedDisplayCourseCode(string $value, array $subjectMappings): string
@@ -534,22 +507,6 @@ class StudentTimetableOverviewService
         $cleaned = preg_replace('/\d{1,2}:\d{2}/', '', $value);
 
         return trim($cleaned ?: '');
-    }
-
-    private function stripTrailingRoom(string $value, string $rooms): string
-    {
-        return Str::endsWith($value, $rooms)
-            ? Str::beforeLast($value, $rooms)
-            : $value;
-    }
-
-    private function stripRoomSuffix(string $value): string
-    {
-        if (preg_match('/(\d+[A-Za-zÄÖÜäöüß]+(?:~\d+[A-Za-zÄÖÜäöüß]+)*|\d+)$/u', $value, $match)) {
-            return Str::beforeLast($value, $match[1]);
-        }
-
-        return $value;
     }
 
     private function formatDisplayLabel(string $value): string

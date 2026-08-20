@@ -421,18 +421,6 @@ class StudentTimetableV3StudentInformationService
                         ->all(),
                     'title' => $this->courseTitle($course),
                     'course_title' => trim((string) ($course['title'] ?? '')),
-                    'teacher' => $courseGroups
-                        ->pluck('teacher')
-                        ->map(fn (mixed $teacher): string => trim((string) $teacher))
-                        ->filter()
-                        ->unique()
-                        ->implode(', '),
-                    'rooms_label' => $courseGroups
-                        ->flatMap(fn (array $courseGroup): array => $courseGroup['rooms'] ?? [])
-                        ->map(fn (mixed $room): string => trim((string) $room))
-                        ->filter()
-                        ->unique()
-                        ->implode(', '),
                     'schedule_label' => $scheduleLabels[0] ?? '',
                     'schedule_labels' => $scheduleLabels,
                     'display_schedule_labels' => collect($displayScheduleRows)->pluck('label')->all(),
@@ -478,15 +466,7 @@ class StudentTimetableV3StudentInformationService
             'subject' => trim((string) ($courseGroup['subject'] ?? '')),
             'course' => trim((string) ($courseGroup['course'] ?? '')),
             'module_code' => trim((string) ($courseGroup['module_code'] ?? '')),
-            'teacher' => trim((string) ($courseGroup['teacher'] ?? '')),
-            'rooms' => collect(is_array($courseGroup['rooms'] ?? null) ? $courseGroup['rooms'] : [])
-                ->map(fn (mixed $room): string => trim((string) $room))
-                ->filter()
-                ->unique()
-                ->values()
-                ->all(),
             'class_name' => trim((string) ($courseGroup['class_name'] ?? '')),
-            'student_group' => trim((string) ($courseGroup['student_group'] ?? '')),
             'dates' => collect(is_array($courseGroup['dates'] ?? null) ? $courseGroup['dates'] : [])
                 ->map(fn (mixed $date): string => trim((string) $date))
                 ->filter()

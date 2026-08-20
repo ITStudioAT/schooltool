@@ -1875,8 +1875,6 @@
                                         <v-icon icon="mdi-laptop" size="12" />
                                         {{ course.instruction_label }}
                                     </span>
-                                    <span v-if="course.teacher">{{ course.teacher }}</span>
-                                    <span v-if="course.rooms_label">Raum {{ course.rooms_label }}</span>
                                     <span v-if="course.block_label">{{ course.block_label }}</span>
                                     <span v-if="course.dates_count">
                                         {{ course.dates_count }} {{ course.dates_count === 1 ? 'Termin' : 'Termine' }}

@@ -167,7 +167,7 @@ class SchoolTool extends Model
     {
         return in_array($version, self::STUDENTS_TIMETABLES_ADMIN_VERSIONS, true)
             ? $version
-            : self::STUDENTS_TIMETABLES_ADMIN_VERSION_V2;
+            : self::STUDENTS_TIMETABLES_ADMIN_VERSION_V3;
     }
 
     protected function restaurantUserInformationIntroHtml(): Attribute

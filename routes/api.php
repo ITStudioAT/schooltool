@@ -260,10 +260,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->middleware('throttle:uploads');
         Route::patch('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'uploadNext'])
             ->middleware('throttle:uploads');
+        Route::get('/admin/students-timetables/recognitions-csv/{recognitionImport}/download', [RecognitionCsvUploadController::class, 'downloadSource'])
+            ->whereNumber('recognitionImport');
         Route::delete('/admin/students-timetables/recognitions-csv/{recognitionImport}', [RecognitionCsvUploadController::class, 'destroy'])
             ->whereNumber('recognitionImport');
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
         Route::put('/admin/students-timetables/imports/single-date-appointments', [TimetableImportController::class, 'updateSingleDateAppointments']);
+        Route::get('/admin/students-timetables/imports/{timetableImport}/download', [TimetableImportController::class, 'downloadSource'])
+            ->whereNumber('timetableImport');
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);
 
@@ -274,6 +278,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->middleware('throttle:uploads')
             ->whereIn('slug', ['116']);
         Route::get('/admin/students-timetables/import116/runs', [Import116Controller::class, 'runs']);
+        Route::get('/admin/students-timetables/import116/runs/{import116_run}/download', [Import116Controller::class, 'downloadSource'])
+            ->whereNumber('import116_run');
         Route::get('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
         Route::post('/admin/students-timetables/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);

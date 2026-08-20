@@ -117,8 +117,6 @@ describe('Student timetable evaluation settings', () => {
                             key: 'generated-group',
                             weekday: 1,
                             hour: 1,
-                            teacher: 'MAY',
-                            room: '101',
                         },
                         isDistanceLearningCourse: true,
                     },
@@ -146,7 +144,7 @@ describe('Student timetable evaluation settings', () => {
         expect(emittedEvents[0].payload.timetable.weekdays).toEqual([{ label: 'Mo' }])
         expect(emittedEvents[0].payload.timetable.semesters[0].weeks[0].hours[0].cells[0].courses[0]).toMatchObject({
             label: 'D1',
-            details: 'D1-1A-MAY · MAY · 101',
+            details: 'D1-1A-MAY',
             is_fu: true,
         })
         expect(emittedEvents[0].payload.state).toMatchObject({
@@ -216,7 +214,6 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('course.offeredScheduleLabel')
         expect(source).toContain('course.recurrenceLabel')
         expect(source).toContain('v-if="course.distanceLearning"')
-        expect(source).toContain('course.roomsLabel')
         expect(source).toContain('Angebotene Kurse')
         expect(source).toContain('Weitere Kurse')
         expect(source).toContain('savedTimetableCourseChips()')
@@ -1203,10 +1200,8 @@ describe('Student timetable evaluation settings', () => {
             display_label: 'D1 - 4A - MUE',
             weekday: 1,
             hour: 11,
-            time_from: '16:10',
-            time_until: '16:55',
-            teacher: 'MUE',
-            rooms: ['101'],
+            starts_at: '16:10',
+            ends_at: '16:55',
         }
         const course = {
             key: 'course-1',
@@ -1255,7 +1250,7 @@ describe('Student timetable evaluation settings', () => {
             },
         ])
         expect(methods.manualGroupsForCell.call(ctx, 1, 11)).toEqual([courseGroup])
-        expect(methods.manualCourseGroupDetails(courseGroup)).toBe('D1 - 4A - MUE · MUE · 101')
+        expect(methods.manualCourseGroupDetails(courseGroup)).toBe('D1 - 4A - MUE')
     })
 
     it('builds the personal timetable course selection chips from the saved timetable courses', () => {
@@ -3153,8 +3148,8 @@ describe('Student timetable evaluation settings', () => {
                                 name: 'Deutsch',
                                 hours: 4,
                                 course_groups: [
-                                    { key: 'd1-1', course: 'D1', weekday: 1, hour: 1, teacher: 'AAA', recurrence_interval: 1 },
-                                    { key: 'd1-2', course: 'D1', weekday: 1, hour: 2, teacher: 'AAA', recurrence_interval: 1 },
+                                    { key: 'd1-1', course: 'D1', weekday: 1, hour: 1, recurrence_interval: 1 },
+                                    { key: 'd1-2', course: 'D1', weekday: 1, hour: 2, recurrence_interval: 1 },
                                 ],
                             },
                             {
@@ -3222,7 +3217,7 @@ describe('Student timetable evaluation settings', () => {
         expect(computed.selectedAutomaticReviewOfferedCourseItems.call(ctx)).toEqual([
             expect.objectContaining({
                 code: 'D1',
-                name: 'D1 - AAA',
+                name: 'D1',
                 distanceLearning: true,
             }),
         ])
@@ -3680,8 +3675,8 @@ describe('Student timetable evaluation settings', () => {
             code: 'E2',
             hours: 2,
             course_groups: [
-                { class_name: 'E2-A', course: 'E2', hour: 5, teacher: 'AAA', time_from: '10:00:00', time_until: '10:50:00', weekday: 1 },
-                { class_name: 'E2-B', course: 'E2', hour: 6, teacher: 'BBB', time_from: '11:00:00', time_until: '11:50:00', weekday: 2 },
+                { class_name: 'E2-A', course: 'E2', ends_at: '10:50:00', hour: 5, starts_at: '10:00:00', weekday: 1 },
+                { class_name: 'E2-B', course: 'E2', ends_at: '11:50:00', hour: 6, starts_at: '11:00:00', weekday: 2 },
             ],
         }
         const createAutomaticTimetable = vi.fn(async () => undefined)
@@ -3776,7 +3771,7 @@ describe('Student timetable evaluation settings', () => {
         expect(ctx.selectedResultMoreCourseKey).toBe('additional:E2')
         expect(ctx.resultDraftAdditionalCourseKeys).toEqual(['additional:E2'])
         expect(ctx.resultMoreOfferedCourseSelectionOverrides).toEqual({
-            'additional:E2::E2|1|5|AAA': false,
+            'additional:E2::E2|E2-A|1|5|10:00:00|10:50:00': false,
         })
         expect(ctx.selectedAdditionalCourseKeys).toEqual([])
         expect(ctx.resultAdditionalCoursesChanged).toBe(true)

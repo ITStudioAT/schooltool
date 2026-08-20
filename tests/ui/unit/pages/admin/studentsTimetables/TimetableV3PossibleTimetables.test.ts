@@ -38,9 +38,7 @@ function slotFixture(code: string, weekday: number, hour: number, overrides = {}
             ends_at: '18:35',
             hour,
             recurrence_label: '1-wöchig',
-            rooms: ['101'],
             starts_at: '17:50',
-            teacher: 'Mag. Test',
             weekday,
         },
         dateRangeLabel: '17.8.–24.8.',
@@ -350,9 +348,8 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).toContain('Fernunterricht')
         expect(wrapper.text()).toContain('17:50–18:35')
         expect(wrapper.text()).toContain('1-wöchig')
-        expect(wrapper.text()).not.toContain('Mag. Test · Raum 101')
         expect(wrapper.findAll('.timetable-v3-results__lesson').some(lesson => (
-            lesson.attributes('aria-label')?.includes('Mag. Test · Raum 101')
+            lesson.attributes('aria-label')?.includes('17:50–18:35')
         ))).toBe(true)
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(3)
     })

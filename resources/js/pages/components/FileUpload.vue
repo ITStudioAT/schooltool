@@ -27,6 +27,7 @@
                 method: 'POST',
                 timeout: 60000,
                 headers: { 'X-CSRF-TOKEN': csfr },
+                onerror: onServerError,
             },
             patch: {
                 url: path + '?patch=',
@@ -34,6 +35,7 @@
                 timeout: 60000,
                 headers: { 'X-CSRF-TOKEN': csfr },
                 onload: onPatchLoad,
+                onerror: onServerError,
             },
             revert: null,
             restore: null,
@@ -70,7 +72,7 @@ const FilePond = vueFilePond(FilePondPluginFileValidateType, FilePondPluginImage
 
 export default {
     props: ['path', 'shortLabel', 'refreshFilePond', 'fileLabel', 'allowedFileTypes', 'allowMultiple'],
-    emits: [, 'fileUploadFinished', 'error', 'uploadStart'],
+    emits: ['fileUploadFinished', 'error', 'uploadStart'],
 
     components: { FilePond },
 
@@ -90,6 +92,7 @@ export default {
             upload_files: [],
             csfr: null,
             finalName: null,
+            lastServerError: '',
         }
     },
 
@@ -130,11 +133,39 @@ export default {
         },
 
         onProcessFile(error, file) {
-            if (error) return this.goError()
+            if (error) return this.goError(error)
             this.$emit('fileUploadFinished', { id: file.serverId, name: this.finalName })
         },
-        goError() {
-            this.$emit('error')
+        onServerError(response) {
+            this.lastServerError = this.serverErrorMessage(response)
+
+            return this.lastServerError || response
+        },
+        serverErrorMessage(error) {
+            const response = error?.response?.data
+                ?? error?.response?.body
+                ?? error?.body
+                ?? error?.responseText
+                ?? error
+
+            if (response && typeof response === 'object') {
+                return typeof response.message === 'string' ? response.message : ''
+            }
+
+            if (typeof response !== 'string' || response.trim() === '') return ''
+
+            try {
+                const parsed = JSON.parse(response)
+
+                return typeof parsed?.message === 'string' ? parsed.message : response
+            } catch {
+                return response
+            }
+        },
+        goError(error) {
+            const message = this.lastServerError || this.serverErrorMessage(error)
+            this.lastServerError = ''
+            this.$emit('error', message)
         },
 
         uploadFinished(response) {

@@ -3179,8 +3179,6 @@ describe('Students timetable robot page', () => {
                     subject: 'D',
                     weekday: 1,
                     hour: 12,
-                    teacher: 'DREI',
-                    room: '101',
                     dates_count: 18,
                 },
                 {
@@ -3190,8 +3188,6 @@ describe('Students timetable robot page', () => {
                     subject: 'D',
                     weekday: 1,
                     hour: 11,
-                    teacher: 'DREI',
-                    room: '101',
                     dates_count: 18,
                 },
                 {
@@ -3201,8 +3197,6 @@ describe('Students timetable robot page', () => {
                     subject: 'D',
                     weekday: 2,
                     hour: 14,
-                    teacher: 'DREI',
-                    room: '101',
                     dates_count: 18,
                 },
                 {
@@ -3212,8 +3206,6 @@ describe('Students timetable robot page', () => {
                     subject: 'D',
                     weekday: 2,
                     hour: 15,
-                    teacher: 'DREI',
-                    room: '101',
                     dates_count: 18,
                 },
                 {
@@ -7846,7 +7838,7 @@ describe('Students timetable robot page', () => {
         )).toBe(true)
     })
 
-    it('shows imported TT details as a normal second line for generated slots', () => {
+    it('shows the canonical imported TT label as a normal second line for generated slots', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
@@ -7854,11 +7846,7 @@ describe('Students timetable robot page', () => {
 
         expect(methods.generatedSlotDetails.call(ctx, {
             sourceLabel: 'INF1-Grp1-KRO',
-            courseGroup: {
-                teacher: 'KRO',
-                rooms: ['EDV1', 'EDV2'],
-            },
-        })).toBe('INF1-Grp1-KRO · KRO · EDV1, EDV2')
+        })).toBe('INF1-Grp1-KRO')
     })
 
     it('keeps future courses available so prerequisites can make later modules bookable', () => {

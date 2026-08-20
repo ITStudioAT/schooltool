@@ -799,3 +799,29 @@ test('set active schoolyear rejects a schoolyear from another school', function 
 
     expect($this->schoolTool->fresh()->active_schoolyear_id)->toBeNull();
 });
+
+test('super admin can set the active schoolyear for their school', function () {
+    $superAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $superAdmin->assignRole('super_admin');
+
+    $this->actingAs($superAdmin)
+        ->postJson('/api/admin/school_tools/set_active_schoolyear', [
+            'schoolyear_id' => $this->schoolyear->id,
+        ])
+        ->assertSuccessful();
+
+    expect($this->schoolTool->fresh()->active_schoolyear_id)->toBe($this->schoolyear->id);
+});
+
+test('regular user cannot set the active schoolyear', function () {
+    $this->actingAs($this->regularUser)
+        ->postJson('/api/admin/school_tools/set_active_schoolyear', [
+            'schoolyear_id' => $this->schoolyear->id,
+        ])
+        ->assertForbidden();
+
+    expect($this->schoolTool->fresh()->active_schoolyear_id)->toBeNull();
+});

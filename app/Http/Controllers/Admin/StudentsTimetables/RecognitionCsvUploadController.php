@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
-use App\Models\SchoolTool;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\RecognitionImportService;
+use App\Support\PrivateImportSourceFile;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +17,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RecognitionCsvUploadController extends Controller
 {
@@ -28,7 +29,7 @@ class RecognitionCsvUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         if ($request->boolean('summary')) {
             $import = StudentTimetableRecognitionImport::query()
@@ -96,7 +97,7 @@ class RecognitionCsvUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         $this->ensureCsv();
 
@@ -132,7 +133,7 @@ class RecognitionCsvUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $this->ensurePersonalSchoolyear($authUser);
 
         if ($recognitionImport->school_id !== $authUser->school_id || $recognitionImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(404);
@@ -152,6 +153,30 @@ class RecognitionCsvUploadController extends Controller
         return response()->json([
             'deleted' => true,
         ]);
+    }
+
+    public function downloadSource(StudentTimetableRecognitionImport $recognitionImport): BinaryFileResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $this->ensurePersonalSchoolyear($authUser);
+
+        if ($recognitionImport->school_id !== $authUser->school_id || $recognitionImport->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(404, 'Import nicht gefunden.');
+        }
+
+        $sourcePath = $this->recognitionImportSourcePath($recognitionImport);
+        if ($sourcePath === null) {
+            abort(404, 'Die importierte Quelldatei ist nicht mehr verfügbar.');
+        }
+
+        return response()->download(
+            $sourcePath,
+            PrivateImportSourceFile::downloadName($recognitionImport->original_filename, 'anrechnungen', 'csv'),
+            ['Content-Type' => 'text/csv; charset=UTF-8'],
+        );
     }
 
     private function ensureCsv(): void
@@ -176,19 +201,11 @@ class RecognitionCsvUploadController extends Controller
         return "{$baseName}_{$timestamp}";
     }
 
-    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    private function ensurePersonalSchoolyear(User $authUser): void
     {
-        $schoolyearId = SchoolTool::query()
-            ->where('school_id', $authUser->school_id)
-            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
-
-        if (! $schoolyearId) {
-            abort(422, 'Kein aktives Schuljahr gefunden.');
+        if (! $authUser->schoolyear_id) {
+            abort(422, 'Kein persönliches Schuljahr ausgewählt.');
         }
-
-        $authUser->schoolyear_id = (int) $schoolyearId;
-
-        return $authUser;
     }
 
     private function recognitionImportPayload(StudentTimetableRecognitionImport $import): array
@@ -217,6 +234,7 @@ class RecognitionCsvUploadController extends Controller
             'subject_grade_counts' => $summary['subject_grade_counts'],
             'import_status' => $import->import_status,
             'import_message' => $import->import_message,
+            'source_available' => $this->recognitionImportSourcePath($import) !== null,
         ];
     }
 
@@ -236,7 +254,16 @@ class RecognitionCsvUploadController extends Controller
             'skipped_rows' => $import->skipped_rows,
             'import_status' => $import->import_status,
             'import_message' => $import->import_message,
+            'source_available' => $this->recognitionImportSourcePath($import) !== null,
         ];
+    }
+
+    private function recognitionImportSourcePath(StudentTimetableRecognitionImport $import): ?string
+    {
+        return PrivateImportSourceFile::resolve(
+            $import->file_path,
+            "app/private/{$import->school_id}/recognition-imports/{$import->schoolyear_id}",
+        );
     }
 
     private function recognitionDatasetMetadata(int $schoolId, int $schoolyearId): array
