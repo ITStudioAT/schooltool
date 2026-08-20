@@ -28,7 +28,7 @@
 
 ### Student
 
-- Neustart und Zurück-Button auf manueler Seite
+- Neustart und Zurück-Button auf manueller Seite
 - Öffnen des selbst gespeicherten Stundenplans
 - Öffnen des vom Lehrer gespeicherten Stundenplans
 

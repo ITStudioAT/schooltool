@@ -85,7 +85,16 @@ verify_queue_runtime() {
 }
 
 start_horizon_directly() {
+    local excluded_process_ids="${1:-}"
+    local health_check_arguments=()
     local existing_process_ids
+
+    while IFS= read -r process_id; do
+        if [[ "$process_id" =~ ^[1-9][0-9]*$ ]]; then
+            health_check_arguments+=("--exclude-master-pid=${process_id}")
+        fi
+    done <<< "$excluded_process_ids"
+
     existing_process_ids="$(horizon_master_process_ids)"
 
     if [ -n "$existing_process_ids" ]; then
@@ -101,7 +110,7 @@ start_horizon_directly() {
             return 1
         fi
 
-        if wait_for_queue_runtime; then
+        if wait_for_queue_runtime "$existing_process_ids"; then
             return
         fi
 
@@ -114,7 +123,7 @@ start_horizon_directly() {
         fi
     fi
 
-    if php artisan queue:health-check >/dev/null 2>&1; then
+    if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
         return
     fi
 
@@ -124,7 +133,7 @@ start_horizon_directly() {
     local horizon_process_id=$!
 
     for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
-        if php artisan queue:health-check >/dev/null 2>&1; then
+        if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
             echo "Horizon started successfully with process ${horizon_process_id}."
 
             return
@@ -137,7 +146,7 @@ start_horizon_directly() {
         sleep 1
     done
 
-    php artisan queue:health-check || true
+    php artisan queue:health-check "${health_check_arguments[@]}" || true
     echo "Horizon could not be started. Check storage/logs/horizon.log." >&2
 
     return 1
@@ -207,11 +216,13 @@ wait_for_queue_runtime() {
 }
 
 ensure_queue_runtime() {
-    if wait_for_queue_runtime; then
+    local excluded_process_ids="${1:-}"
+
+    if wait_for_queue_runtime "$excluded_process_ids"; then
         return
     fi
 
-    start_horizon_directly
+    start_horizon_directly "$excluded_process_ids"
 }
 
 prepare_frontend_artifact() {
@@ -505,7 +516,7 @@ php artisan optimize
 
 previous_horizon_process_ids="$(horizon_master_process_ids)"
 php artisan horizon:terminate
-wait_for_queue_runtime "$previous_horizon_process_ids"
+ensure_queue_runtime "$previous_horizon_process_ids"
 
 php artisan up
 maintenance_mode_enabled=false
