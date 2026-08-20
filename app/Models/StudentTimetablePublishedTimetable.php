@@ -13,6 +13,7 @@ class StudentTimetablePublishedTimetable extends Model
         'published_by_user_id',
         'student_code',
         'student_label',
+        'name',
         'timetable',
         'state',
         'published_at',

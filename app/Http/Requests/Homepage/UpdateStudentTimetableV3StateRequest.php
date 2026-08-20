@@ -37,9 +37,9 @@ class UpdateStudentTimetableV3StateRequest extends FormRequest
             ],
             'manual_timetable_draft.timetable_key' => ['required', 'string', 'max:255'],
             'manual_timetable_draft.timetable_index' => ['required', 'integer', 'min:0', 'max:1999'],
-            'manual_timetable_draft.selected_course_keys' => ['required', 'array', 'max:500'],
+            'manual_timetable_draft.selected_course_keys' => ['present', 'array', 'max:500'],
             'manual_timetable_draft.selected_course_keys.*' => ['required', 'string', 'distinct', 'max:255'],
-            'manual_timetable_draft.removed_course_keys' => ['required', 'array', 'max:500'],
+            'manual_timetable_draft.removed_course_keys' => ['present', 'array', 'max:500'],
             'manual_timetable_draft.removed_course_keys.*' => ['required', 'string', 'distinct', 'max:255'],
         ];
     }

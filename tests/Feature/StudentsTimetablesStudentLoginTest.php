@@ -1180,6 +1180,7 @@ it('returns a published timetable for the authenticated student overview', funct
         'published_by_user_id' => $user->id,
         'student_code' => $import116->student_code,
         'student_label' => 'Mustermann Max',
+        'name' => '26ABC',
         'timetable' => [
             'title' => 'Stundenplan',
             'weekdays' => [['label' => 'Mo']],
@@ -1197,6 +1198,7 @@ it('returns a published timetable for the authenticated student overview', funct
         ->assertSuccessful()
         ->assertJsonPath('data.published_timetable.student_code', $import116->student_code)
         ->assertJsonPath('data.published_timetable.student_label', 'Mustermann Max')
+        ->assertJsonPath('data.published_timetable.name', '26ABC')
         ->assertJsonPath('data.published_timetable.timetable.title', 'Stundenplan')
         ->assertJsonPath('data.published_timetable.state.manualPanelOpen', true)
         ->assertJsonPath('data.published_timetable.active_course_group_keys.0', $courseGroupKey);
@@ -1698,7 +1700,7 @@ it('persists and restores the manual V3 draft in the authenticated student works
         'timetable_key' => 'student-plan-17',
         'timetable_index' => 16,
         'selected_course_keys' => ['course-Rev2'],
-        'removed_course_keys' => ['course-D1'],
+        'removed_course_keys' => [],
     ];
 
     $this->actingAs($user)
@@ -1712,7 +1714,7 @@ it('persists and restores the manual V3 draft in the authenticated student works
         ->assertJsonPath('data.manual_timetable_draft.fingerprint', $fingerprint)
         ->assertJsonPath('data.manual_timetable_draft.timetableKey', 'student-plan-17')
         ->assertJsonPath('data.manual_timetable_draft.selectedCourseKeys.0', 'course-Rev2')
-        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys.0', 'course-D1');
+        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys', []);
 
     $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/timetable-v3/state?'.http_build_query([
@@ -1724,7 +1726,7 @@ it('persists and restores the manual V3 draft in the authenticated student works
         ->assertJsonPath('data.manual_timetable_draft.timetableKey', 'student-plan-17')
         ->assertJsonPath('data.manual_timetable_draft.timetableIndex', 16)
         ->assertJsonPath('data.manual_timetable_draft.selectedCourseKeys.0', 'course-Rev2')
-        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys.0', 'course-D1');
+        ->assertJsonPath('data.manual_timetable_draft.removedCourseKeys', []);
 
     $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/timetable-v3/state?'.http_build_query([

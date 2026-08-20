@@ -557,6 +557,7 @@ describe('TimetableV3', () => {
             schoolHoursLoaded: false,
             schoolHoursLoading: false,
             loadSchoolHours: vi.fn(),
+            loadPublishedStudentTimetableName: vi.fn(),
         }
 
         currentStepWatcher.call(context, 'adoption', 'modules')
@@ -1187,6 +1188,7 @@ describe('TimetableV3', () => {
             calculatePossibleTimetables: vi.fn().mockResolvedValue(undefined),
             ensureValidCurrentStep: vi.fn(),
             loadSchoolHours: vi.fn(),
+            loadPublishedStudentTimetableName: vi.fn(),
             resetManualModuleCatalogDisclosure: vi.fn(),
             resetTimetableCalculation: vi.fn(),
             $router: { push },
@@ -1684,6 +1686,12 @@ describe('TimetableV3', () => {
         expect(adoptionPageSource).not.toContain('timetable-v3__adoption-card--automatic')
         expect(adoptionPageSource).not.toContain('Automatischer Stundenplan')
         expect(adoptionPageSource).toContain('Manueller Stundenplan')
+        expect(manualCardSource).toContain('class="timetable-v3__adoption-title"')
+        expect(manualCardSource).toContain('v-if="publishedTimetableName"')
+        expect(manualCardSource).toContain('{{ publishedTimetableName }}')
+        expect(manualCardSource).toMatch(
+            /Manueller Stundenplan[\s\S]*?v-if="publishedTimetableName"[\s\S]*?\{\{ publishedTimetableName \}\}/s,
+        )
         expect(manualCardSource).toContain('timetable-v3__adoption-pdf-button')
         expect(manualCardSource).toContain('prepend-icon="mdi-file-pdf-box"')
         expect(manualCardSource).toContain('size="large"')
@@ -1995,12 +2003,16 @@ describe('TimetableV3', () => {
 
         const previousAxios = globalThis.axios
         const post = vi.fn().mockResolvedValue({
-            data: { message: 'Stundenplan für Muster Mia wurde gespeichert.' },
+            data: {
+                message: 'Stundenplan für Muster Mia wurde gespeichert.',
+                data: { name: '26XYZ' },
+            },
         })
         globalThis.axios = { post } as typeof globalThis.axios
         const timetable = { title: 'Stundenplan', semesters: [{ label: 'Stundenplan' }] }
         const context = {
             publishedTimetableSaving: false,
+            publishedTimetableName: '',
             publishedStudentTimetableSaveVisible: true,
             selectedStudentCode: '1001',
             selectedStudentFullName: 'Muster Mia',
@@ -2018,7 +2030,6 @@ describe('TimetableV3', () => {
                 '/api/admin/students-timetables/overview/student-timetable',
                 {
                     student_code: '1001',
-                    student_label: 'Muster Mia',
                     timetable,
                     state: {
                         retained: true,
@@ -2027,11 +2038,37 @@ describe('TimetableV3', () => {
                     },
                 },
             )
+            expect(context.publishedTimetableName).toBe('26XYZ')
             expect(context.publishedTimetableReport).toEqual({
                 type: 'success',
                 message: 'Stundenplan für Muster Mia wurde gespeichert.',
             })
             expect(context.publishedTimetableSaving).toBe(false)
+        } finally {
+            globalThis.axios = previousAxios
+        }
+    })
+
+    it('loads an existing published timetable name for the selected student', async () => {
+        const methods = (TimetableV3 as any).methods
+        const previousAxios = globalThis.axios
+        const get = vi.fn().mockResolvedValue({
+            data: { data: { name: '26ABC' } },
+        })
+        globalThis.axios = { get } as typeof globalThis.axios
+        const context = {
+            publishedStudentTimetableSaveVisible: true,
+            publishedTimetableName: '',
+            selectedStudentCode: '1001',
+        }
+
+        try {
+            await methods.loadPublishedStudentTimetableName.call(context)
+
+            expect(get).toHaveBeenCalledWith(
+                '/api/admin/students-timetables/overview/student-timetable?student_code=1001',
+            )
+            expect(context.publishedTimetableName).toBe('26ABC')
         } finally {
             globalThis.axios = previousAxios
         }
@@ -2100,6 +2137,7 @@ describe('TimetableV3', () => {
             currentStep: 'adoption',
             ensureValidCurrentStep: vi.fn(),
             loadSchoolHours: vi.fn(),
+            loadPublishedStudentTimetableName: vi.fn(),
             resetTimetableCalculation: vi.fn(),
         }
         context.resetManualModuleCatalogDisclosure = () => (

@@ -1425,7 +1425,18 @@
                         </span>
                         <span class="timetable-v3__schedule-mode-copy">
                             <span class="timetable-v3__adoption-heading">
-                                <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                <span class="timetable-v3__adoption-title">
+                                    <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                    <v-chip
+                                        v-if="publishedTimetableName"
+                                        class="timetable-v3__published-timetable-name"
+                                        color="#c2410c"
+                                        label
+                                        size="small"
+                                        variant="tonal">
+                                        {{ publishedTimetableName }}
+                                    </v-chip>
+                                </span>
                                 <span class="timetable-v3__adoption-actions">
                                     <v-btn
                                         class="timetable-v3__adoption-pdf-button"
@@ -2234,6 +2245,7 @@ import {
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import {
     overviewPdf as downloadStudentTimetableOverviewPdf,
+    publishedStudentTimetable as loadPublishedStudentTimetable,
     publishStudentTimetable,
     robotStudents as loadRobotStudents,
     schoolHours as loadStudentTimetableSchoolHours,
@@ -3260,6 +3272,7 @@ export default {
             emailCopyStatus: 'idle',
             pdfExporting: false,
             publishedTimetableSaving: false,
+            publishedTimetableName: '',
             publishedTimetableReport: {
                 type: 'success',
                 message: '',
@@ -3902,6 +3915,7 @@ export default {
             if (currentStep === TIMETABLE_ADOPTION_STEP) {
                 this.manualModuleCatalogView = MANUAL_STUDENT_MODULE_CATALOG
                 void this.loadSchoolHours()
+                void this.loadPublishedStudentTimetableName()
             }
 
             if (previousStep === TIMETABLE_ADOPTION_STEP && currentStep !== TIMETABLE_ADOPTION_STEP) {
@@ -3915,7 +3929,10 @@ export default {
         await this.loadState()
 
         if (this.currentStep === TIMETABLE_ADOPTION_STEP) {
-            await this.loadSchoolHours()
+            await Promise.all([
+                this.loadSchoolHours(),
+                this.loadPublishedStudentTimetableName(),
+            ])
         }
     },
 
@@ -4201,7 +4218,6 @@ export default {
                     publishStudentTimetable.url(),
                     {
                         student_code: this.selectedStudentCode,
-                        student_label: this.selectedStudentFullName || this.selectedStudentLabel,
                         timetable: this.manualTimetablePdfPayload(),
                         state: {
                             ...(this.storedState && typeof this.storedState === 'object'
@@ -4213,6 +4229,7 @@ export default {
                     },
                 )
 
+                this.publishedTimetableName = String(response?.data?.data?.name || '').trim()
                 this.publishedTimetableReport = {
                     type: 'success',
                     message: response?.data?.message || 'Stundenplan wurde gespeichert.',
@@ -4224,6 +4241,28 @@ export default {
                 }
             } finally {
                 this.publishedTimetableSaving = false
+            }
+        },
+        async loadPublishedStudentTimetableName() {
+            const studentCode = String(this.selectedStudentCode || '').trim()
+
+            if (!this.publishedStudentTimetableSaveVisible || !studentCode) {
+                this.publishedTimetableName = ''
+                return
+            }
+
+            try {
+                const response = await axios.get(loadPublishedStudentTimetable.url({
+                    query: { student_code: studentCode },
+                }))
+
+                if (studentCode !== String(this.selectedStudentCode || '').trim()) return
+
+                this.publishedTimetableName = String(response?.data?.data?.name || '').trim()
+            } catch {
+                if (studentCode === String(this.selectedStudentCode || '').trim()) {
+                    this.publishedTimetableName = ''
+                }
             }
         },
         clearPublishedTimetableReport() {
@@ -5251,6 +5290,7 @@ export default {
             if (entrySelection?.mode === WITHOUT_STUDENT) {
                 this.planningMode = WITHOUT_STUDENT
                 this.selectedStudent = null
+                this.publishedTimetableName = ''
                 this.resetSelectedStudentSelectionDetails()
                 await this.loadSelectedStudentSelection()
                 this.restoreCreationScheduleMode()
@@ -5274,6 +5314,7 @@ export default {
         async chooseWithoutStudent() {
             this.planningMode = WITHOUT_STUDENT
             this.selectedStudent = null
+            this.publishedTimetableName = ''
             this.resetSelectedStudentSelectionDetails()
             this.emailCopyStatus = 'idle'
             this.studentInfoDialogOpen = false
@@ -5289,6 +5330,7 @@ export default {
 
             this.planningMode = null
             this.selectedStudent = null
+            this.publishedTimetableName = ''
             this.studentDialogOpen = false
             this.studentSearch = ''
             this.emailCopyStatus = 'idle'
@@ -6199,6 +6241,7 @@ export default {
         },
         async selectStudent(student) {
             this.planningMode = WITH_STUDENT
+            this.publishedTimetableName = ''
             this.emailCopyStatus = 'idle'
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
@@ -6902,6 +6945,20 @@ button.timetable-v3__student-data-field:focus-visible {
     align-items: center;
     justify-content: space-between;
     min-width: 0;
+}
+
+.timetable-v3__adoption-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+
+.timetable-v3__published-timetable-name {
+    flex: 0 0 auto;
+    font-weight: 850;
+    letter-spacing: 0.08em;
 }
 
 .timetable-v3__adoption-actions {

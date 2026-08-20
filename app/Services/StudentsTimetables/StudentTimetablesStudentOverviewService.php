@@ -438,6 +438,7 @@ class StudentTimetablesStudentOverviewService
             'id' => (int) $publishedTimetable->id,
             'student_code' => (string) $publishedTimetable->student_code,
             'student_label' => $publishedTimetable->student_label,
+            'name' => $publishedTimetable->name,
             'timetable' => is_array($publishedTimetable->timetable) ? $publishedTimetable->timetable : [],
             'state' => $state,
             'active_course_group_keys' => $this->publishedTimetableCourseGroupKeys($state),

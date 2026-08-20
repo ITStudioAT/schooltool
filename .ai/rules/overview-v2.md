@@ -82,3 +82,21 @@ On the student V2 adoption page, selected-module chips are closable. Removing on
 
 ## Show exact manual-dialog overlaps in red
 In the student V2 manual timetable Unterricht dialog, map compact schedule rows to their entry keys. Under only the affected row, show each overlapping already placed or pending Unterricht label in parentheses using red #b42318 normal-weight text. Require intersecting concrete dates and overlapping time intervals; fall back to weekday/hour only when exact data is unavailable.
+
+## Keep Neustart and Zurück on student adoption
+On /students-timetables/create/adoption, show the same large outlined footer actions as the other creation steps: red Neustart on the left and primary Zurück on the right. Neustart clears transient planning state and returns to /students-timetables/overview; Zurück restores /students-timetables/create/results with workspace and fingerprint.
+
+## Limit red dialog overlaps to the visible timetable
+In the student manual Unterricht dialog, calculate red overlap labels only from canonical course-group keys in the currently displayed base timetable plus committed and pending manual additions. Published V3 selection metadata may restore module summaries and duplicate prevention, but must never create red overlap labels for courses absent from the opened timetable.
+
+## Compare saved overlap entries directly
+Saved personal and teacher timetables may contain synthetic entry keys that do not exist in the current catalog. For red Unterricht-dialog overlaps, compare the candidate's concrete date/time entries directly with the serialized visible timetable entries and use their stored display labels; use catalog keys only for committed or pending manual additions. This supersedes relying on visible-base course keys for saved overlap detection.
+
+## Keep the local loader through page initialization
+OverviewV2 must render its own local Stundenplan loader from the first render until authentication, overview loading, saved/generated timetable restoration, and committed manual-draft restoration have finished. Hide the page content until that initialization completes; keep the homepage-wide loader disabled for student timetable routes.
+
+## Restore saved-source manual additions after reload
+Personal or teacher-published adoption URLs have no calculation workspace query. Derive a stable student draft workspace UUID from the saved V3 manual-draft fingerprint and source marker, reuse its fingerprint/key/index for the existing scoped state endpoint, and restore the committed manual draft after initializing the exact saved base. Keep the local loader visible until restoration finishes.
+
+## Use the shared three-dot initial loader
+OverviewV2 keeps its page content hidden during initial loading and renders the existing shared LoadingAnimation dots locally. Do not replace it with a circular loader or re-enable the homepage-wide overlay for student timetable routes.

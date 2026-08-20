@@ -12,16 +12,23 @@ use App\Models\StudentTimetableSubjectRow;
 use App\Models\StudentTimetableV2State;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+afterEach(function () {
+    Str::createRandomStringsNormally();
+});
+
 it('publishes a manual timetable for exactly one selected student', function () {
     [$user, $student] = createPublishedTimetableAdminUser();
+    fakePublishedTimetableNameSuffixes(['xyz']);
 
     $payload = [
         'student_code' => $student->student_code,
-        'student_label' => 'SCHROLL Lukas',
+        'student_label' => 'Gefälschter Name',
+        'name' => '99ZZZ',
         'timetable' => publishedTimetablePayload('LET1'),
         'state' => [
             'activeCourseGroupFilterKeys' => ['d-1'],
@@ -34,7 +41,8 @@ it('publishes a manual timetable for exactly one selected student', function () 
         ->assertSuccessful()
         ->assertJsonPath('message', 'Stundenplan für SCHROLL Lukas wurde gespeichert.')
         ->assertJsonPath('data.student_code', $student->student_code)
-        ->assertJsonPath('data.student_label', 'SCHROLL Lukas');
+        ->assertJsonPath('data.student_label', 'SCHROLL Lukas')
+        ->assertJsonPath('data.name', '26XYZ');
 
     $publishedTimetable = StudentTimetablePublishedTimetable::query()->firstOrFail();
 
@@ -43,6 +51,8 @@ it('publishes a manual timetable for exactly one selected student', function () 
         ->and($publishedTimetable->published_by_user_id)->toBe($user->id)
         ->and($publishedTimetable->student_code)->toBe($student->student_code)
         ->and($publishedTimetable->student_label)->toBe('SCHROLL Lukas')
+        ->and($publishedTimetable->name)->toBe('26XYZ')
+        ->and($publishedTimetable->name)->toMatch('/^26[A-Z]{3}$/')
         ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['label'])
         ->toBe('LPT1')
         ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['is_fu'])
@@ -57,6 +67,7 @@ it('publishes a manual timetable for exactly one selected student', function () 
 
 it('replaces an existing published timetable for the same student', function () {
     [$user, $student] = createPublishedTimetableAdminUser();
+    fakePublishedTimetableNameSuffixes(['abc', 'def']);
 
     foreach (['D1', 'D2'] as $courseLabel) {
         $this->actingAs($user)
@@ -75,7 +86,8 @@ it('replaces an existing published timetable for the same student', function () 
 
     $publishedTimetable = StudentTimetablePublishedTimetable::query()->firstOrFail();
 
-    expect($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['label'])
+    expect($publishedTimetable->name)->toBe('26ABC')
+        ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['label'])
         ->toBe('D2')
         ->and($publishedTimetable->state['activeCourseGroupFilterKeys'])
         ->toBe(['d2']);
@@ -115,6 +127,7 @@ it('returns a published timetable state for the selected admin student', functio
         'published_by_user_id' => $user->id,
         'student_code' => $student->student_code,
         'student_label' => 'SCHROLL Lukas',
+        'name' => '26GET',
         'timetable' => publishedTimetablePayload('D1'),
         'state' => [
             'activeCourseGroupFilterKeys' => ['d-1'],
@@ -129,9 +142,82 @@ it('returns a published timetable state for the selected admin student', functio
         ->assertSuccessful()
         ->assertJsonPath('data.student_code', $student->student_code)
         ->assertJsonPath('data.student_label', 'SCHROLL Lukas')
+        ->assertJsonPath('data.name', '26GET')
         ->assertJsonPath('data.state.activeCourseGroupFilterKeys.0', 'd-1')
         ->assertJsonPath('data.state.manualPanelOpen', true)
         ->assertJsonPath('data.timetable.semesters.0.weeks.0.hours.0.cells.0.courses.0.label', 'D1');
+});
+
+it('keeps published timetable names unique within a school and retries collisions', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+        'name' => 'Schuljahr 2026/27',
+        'from' => '2026-09-07',
+    ]);
+    $otherUser = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'published_by_user_id' => $otherUser->id,
+        'student_code' => 'other-school-student',
+        'student_label' => 'Andere Schule',
+        'name' => '26AAA',
+        'timetable' => publishedTimetablePayload('D1'),
+        'published_at' => now(),
+    ]);
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'published_by_user_id' => $user->id,
+        'student_code' => 'existing-student',
+        'student_label' => 'Bestehender Schüler',
+        'name' => '26AAA',
+        'timetable' => publishedTimetablePayload('D1'),
+        'published_at' => now(),
+    ]);
+
+    fakePublishedTimetableNameSuffixes(['aaa', 'aab']);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable' => publishedTimetablePayload('D2'),
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.name', '26AAB');
+
+    expect(StudentTimetablePublishedTimetable::query()
+        ->where('school_id', $user->school_id)
+        ->where('name', '26AAA')
+        ->count())->toBe(1)
+        ->and(StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $otherSchool->id)
+            ->where('name', '26AAA')
+            ->count())->toBe(1);
+});
+
+it('uses the schoolyear label when no start date is available', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    Schoolyear::query()->whereKey($user->schoolyear_id)->update([
+        'name' => 'Schuljahr 26/27',
+        'from' => null,
+    ]);
+    fakePublishedTimetableNameSuffixes(['def']);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable' => publishedTimetablePayload('D1'),
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.name', '26DEF');
 });
 
 it('returns timetable v2 selection bootstrap data in one response', function () {
@@ -208,6 +294,8 @@ function createPublishedTimetableAdminUser(): array
     $school = School::factory()->create();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $school->id,
+        'name' => 'Schuljahr 2026/27',
+        'from' => '2026-09-07',
     ]);
 
     SchoolTool::factory()->create([
@@ -300,4 +388,18 @@ function publishedTimetablePayload(string $courseLabel): array
             ],
         ],
     ];
+}
+
+/**
+ * @param  list<string>  $suffixes
+ */
+function fakePublishedTimetableNameSuffixes(array $suffixes): void
+{
+    Str::createRandomStringsUsing(function (int $length) use (&$suffixes): string {
+        if ($length === 6) {
+            return array_shift($suffixes) ?? 'zzz';
+        }
+
+        return str_repeat('x', $length);
+    });
 }

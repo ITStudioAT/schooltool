@@ -8,14 +8,25 @@
 
 ### Importe
 
-- Importe aufgrund persönlichem Schuljahr
+- Importe aufgrund persönlichem Schuljahres
 - Sicherheits-Check ausgebaut gegen falsche Daten
-- Source-Daten sind wieder downloadbar
+- Source-Dateien sind downloadbar
 - Bereinigung Untis-TT-Schema, Entfernung der drei Legacy-Felder
 
 ### TT-Einträge
 
 - Anzeige aufgrund des persönlichem Schuljahres
+
+### Manueller Stundenplan
+
+- Speichern für Student: Eindeutiger Name (jjxxx, x=A-Z)
+- Nummer vergeben: für Admin und Student sichtbar
+
+### Student
+
+- Neustart und Zurück-Button auf manueler Seite
+- Öffnen des selbst gespeicherten Stundenplans
+- Öffnen des vom Lehrer gespeicherten Stundenplans
 
 ## 3.46.1
 

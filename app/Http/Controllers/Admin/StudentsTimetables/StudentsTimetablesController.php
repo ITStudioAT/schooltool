@@ -18,6 +18,7 @@ use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableCompletedCourseHistoryService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
+use App\Services\StudentsTimetables\StudentTimetablePublishedTimetableService;
 use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableV2StateService;
@@ -260,6 +261,7 @@ class StudentsTimetablesController extends Controller
                 'id' => $publishedTimetable->id,
                 'student_code' => $publishedTimetable->student_code,
                 'student_label' => $publishedTimetable->student_label,
+                'name' => $publishedTimetable->name,
                 'timetable' => is_array($publishedTimetable->timetable) ? $publishedTimetable->timetable : [],
                 'state' => is_array($publishedTimetable->state) ? $publishedTimetable->state : [],
                 'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
@@ -495,13 +497,14 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
-    public function publishStudentTimetable(Request $request): JsonResponse
-    {
+    public function publishStudentTimetable(
+        Request $request,
+        StudentTimetablePublishedTimetableService $publishedTimetableService,
+    ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate([
             'student_code' => ['required', 'string', 'max:255'],
-            'student_label' => ['nullable', 'string', 'max:255'],
             'state' => ['nullable', 'array'],
             'timetable' => ['required', 'array'],
             ...$this->timetableOverviewPayloadRules('timetable'),
@@ -519,30 +522,20 @@ class StudentsTimetablesController extends Controller
         }
 
         $timetable = $this->normalizeTimetableOverviewPdfLabels($validated['timetable']);
-        $studentLabel = trim((string) ($validated['student_label'] ?? ''))
-            ?: trim("{$student->last_name} {$student->first_name}");
-
-        $publishedTimetable = StudentTimetablePublishedTimetable::query()->updateOrCreate(
-            [
-                'school_id' => $authUser->school_id,
-                'schoolyear_id' => $authUser->schoolyear_id,
-                'student_code' => (string) $student->student_code,
-            ],
-            [
-                'published_by_user_id' => $authUser->id,
-                'student_label' => $studentLabel,
-                'timetable' => $timetable,
-                'state' => $validated['state'] ?? null,
-                'published_at' => now(),
-            ],
+        $publishedTimetable = $publishedTimetableService->publish(
+            $authUser,
+            $student,
+            $timetable,
+            $validated['state'] ?? null,
         );
 
         return response()->json([
-            'message' => "Stundenplan für {$studentLabel} wurde gespeichert.",
+            'message' => "Stundenplan für {$publishedTimetable->student_label} wurde gespeichert.",
             'data' => [
                 'id' => $publishedTimetable->id,
                 'student_code' => $publishedTimetable->student_code,
                 'student_label' => $publishedTimetable->student_label,
+                'name' => $publishedTimetable->name,
                 'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
             ],
         ]);

@@ -3,9 +3,18 @@
         <div class="bg-shape bg-shape-1"></div>
         <div class="bg-shape bg-shape-2"></div>
 
-        <StudentTimetablesNavigationDrawer v-model="showDrawer" current-route="overview" />
+        <div
+            v-if="pageLoading"
+            class="overview-v2-page-loader"
+            aria-live="polite">
+            <LoadingAnimation class="overview-v2-page-loader__dots" />
+            <span>Stundenplan wird geladen …</span>
+        </div>
 
-        <section class="hero overview-v2-hero">
+        <template v-else>
+            <StudentTimetablesNavigationDrawer v-model="showDrawer" current-route="overview" />
+
+            <section class="hero overview-v2-hero">
             <div class="overview-v2-panel">
                 <nav class="overview-v2-navigation" aria-label="Seitennavigation">
                     <span class="overview-v2-wordmark">Schülerstundenpläne</span>
@@ -872,7 +881,14 @@
                             </span>
                             <span class="timetable-v3__schedule-mode-copy">
                                 <span class="timetable-v3__adoption-heading">
-                                    <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                    <span class="timetable-v3__adoption-title-copy">
+                                        <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                        <span
+                                            v-if="personalTimetableAdoptionSavedAtLabel"
+                                            class="timetable-v3__adoption-saved-at">
+                                            Zuletzt gespeichert: {{ personalTimetableAdoptionSavedAtLabel }} Uhr
+                                        </span>
+                                    </span>
                                     <span class="timetable-v3__adoption-actions">
                                         <v-btn
                                             class="timetable-v3__adoption-save-button"
@@ -1082,6 +1098,29 @@
                         :selected-index="0"
                         :timetables="[adoptionDisplayedTimetable]"
                         :total-count="1" />
+
+                    <div class="overview-v2-creation-mode-actions overview-v2-creation-mode-actions--split">
+                        <v-btn
+                            class="overview-v2-creation-mode-restart"
+                            size="large"
+                            color="error"
+                            variant="outlined"
+                            prepend-icon="mdi-restart"
+                            :disabled="timetableCalculationStatus === 'calculating' || timetablePageLoading"
+                            @click="restartStudentTimetablePlanning">
+                            Neustart
+                        </v-btn>
+                        <v-btn
+                            class="overview-v2-creation-mode-back"
+                            size="large"
+                            color="primary"
+                            variant="outlined"
+                            prepend-icon="mdi-arrow-left"
+                            :disabled="timetableCalculationStatus === 'calculating'"
+                            @click="goBackToTimetableResults">
+                            Zurück
+                        </v-btn>
+                    </div>
                 </div>
 
                 <div v-else class="overview-v2-introduction">
@@ -1296,7 +1335,9 @@
                                 :class="`overview-v2-timetable-start-card--${option.key}`"
                                 :disabled="!option.available"
                                 :aria-label="option.available
-                                    ? `${option.title}: ${option.actionLabel}`
+                                    ? `${option.title}${option.timetableName
+                                        ? `, Nummer ${option.timetableName}`
+                                        : ''}: ${option.actionLabel}`
                                     : `${option.title}: nicht verfügbar`"
                                 @click="startTimetableFrom(option.key)">
                                 <span class="overview-v2-timetable-start-icon">
@@ -1320,9 +1361,9 @@
                     </section>
                 </div>
             </div>
-        </section>
+            </section>
 
-        <v-dialog v-model="studentSelectionDialogOpen" max-width="460" persistent>
+            <v-dialog v-model="studentSelectionDialogOpen" max-width="460" persistent>
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-tune-variant" color="primary" />
@@ -1371,9 +1412,9 @@
                     </v-btn>
                 </v-card-actions>
             </v-card>
-        </v-dialog>
+            </v-dialog>
 
-        <v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>
+            <v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>
             <v-card rounded="lg" class="overview-v2-module-courses-dialog">
                 <v-card-title class="overview-v2-module-courses-dialog-title d-flex align-center ga-3 pa-5 pb-2">
                     <span class="overview-v2-module-courses-dialog-icon">
@@ -1509,9 +1550,9 @@
                     </v-btn>
                 </v-card-actions>
             </v-card>
-        </v-dialog>
+            </v-dialog>
 
-        <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent>
+            <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent>
             <v-card rounded="lg" class="overview-v2-info-dialog">
                 <v-card-title class="overview-v2-info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-information-outline" color="primary" />
@@ -1573,9 +1614,9 @@
                     </v-btn>
                 </v-card-actions>
             </v-card>
-        </v-dialog>
+            </v-dialog>
 
-        <v-dialog v-model="studyInfoDialogOpen" max-width="960" persistent scrollable>
+            <v-dialog v-model="studyInfoDialogOpen" max-width="960" persistent scrollable>
             <v-card rounded="lg" class="overview-v2-info-dialog overview-v2-study-info-dialog">
                 <v-card-title class="overview-v2-info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-school-outline" color="teal-darken-1" />
@@ -1638,7 +1679,8 @@
                     </v-btn>
                 </v-card-actions>
             </v-card>
-        </v-dialog>
+            </v-dialog>
+        </template>
     </div>
 </template>
 
@@ -1655,6 +1697,7 @@ import {
 } from '@/actions/App/Http/Controllers/Homepage/StudentTimetableV3StateController'
 import { useStudentTimetablesUserStore } from '@/stores/studentsTimetables/StudentTimetablesUserStore'
 import TimetableV3PossibleTimetables from '@/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue'
+import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import {
     canonicalTimetableCourseLabel,
     canonicalTimetableModuleName,
@@ -1695,6 +1738,49 @@ function normalizedWorkspaceId(workspaceId) {
     const normalizedValue = String(workspaceId || '').trim()
 
     return WORKSPACE_ID_PATTERN.test(normalizedValue) ? normalizedValue.toLowerCase() : ''
+}
+
+function savedTimetableDraftRouteSelection(source, savedTimetable) {
+    const storedDraft = savedTimetable?.state?.manualTimetableDraft
+    const fingerprint = String(storedDraft?.fingerprint || '').trim().toLowerCase()
+    const timetableKey = String(storedDraft?.timetableKey || '').trim()
+    const timetableIndex = Number(storedDraft?.timetableIndex)
+
+    if (
+        !['personal', 'published'].includes(source)
+        || !/^[a-f0-9]{64}$/.test(fingerprint)
+        || !timetableKey
+        || !Number.isInteger(timetableIndex)
+        || timetableIndex < 0
+    ) return null
+
+    const sourceMarker = source === 'published' ? 'b' : 'a'
+    const workspaceHex = `${fingerprint.slice(0, 31)}${sourceMarker}`
+    const workspaceId = [
+        workspaceHex.slice(0, 8),
+        workspaceHex.slice(8, 12),
+        `4${workspaceHex.slice(13, 16)}`,
+        `8${workspaceHex.slice(17, 20)}`,
+        workspaceHex.slice(20, 32),
+    ].join('-')
+
+    return { fingerprint, timetableIndex, timetableKey, workspaceId }
+}
+
+function formattedTimetableSavedAt(value) {
+    const savedAt = new Date(String(value || ''))
+
+    if (Number.isNaN(savedAt.getTime())) return ''
+
+    return new Intl.DateTimeFormat('de-AT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Europe/Vienna',
+    }).format(savedAt)
 }
 
 function normalizedCourseKeyList(courseKeys) {
@@ -2121,6 +2207,19 @@ function normalizedCourseTimetableEntries(course) {
         })
 }
 
+function normalizedCourseTimetableKeys(course) {
+    return [...new Set([
+        ...normalizedCourseSelectionKeys(course),
+        ...normalizedCourseTimetableEntries(course).map(entry => String(entry.key || '').trim()),
+    ].filter(Boolean))]
+}
+
+function normalizedTimetableModuleCode(value) {
+    return canonicalTimetableCourseLabel(value)
+        .replace(/[\s_-]+/gu, '')
+        .toLocaleLowerCase('de-AT')
+}
+
 function uniqueCoursesForModuleGroups(moduleGroups) {
     const courseIdentities = new Set()
 
@@ -2185,17 +2284,161 @@ function manualTimetableForCourses(courses) {
     return { key: 'student-manual-timetable', slots }
 }
 
+function savedTimetableWeekdayValue(weekday, index) {
+    const label = String(weekday?.label || '').trim().toLocaleLowerCase('de-AT')
+    const weekdayByLabel = {
+        mo: 1,
+        montag: 1,
+        di: 2,
+        dienstag: 2,
+        mi: 3,
+        mittwoch: 3,
+        do: 4,
+        donnerstag: 4,
+        fr: 5,
+        freitag: 5,
+        sa: 6,
+        samstag: 6,
+    }
+
+    return weekdayByLabel[label] || index + 1
+}
+
+function savedTimetableForManualEditor(timetable, source) {
+    if (
+        timetable?.slots
+        && typeof timetable.slots === 'object'
+        && !Array.isArray(timetable.slots)
+    ) return timetable
+
+    const weekdays = (Array.isArray(timetable?.weekdays) ? timetable.weekdays : [])
+        .map((weekday, index) => savedTimetableWeekdayValue(weekday, index))
+    const slots = {}
+    const seenEntriesBySlot = new Map()
+    let entryIndex = 0
+    const semesters = Array.isArray(timetable?.semesters) ? timetable.semesters : []
+
+    semesters.forEach((semester) => {
+        const weeks = Array.isArray(semester?.weeks) ? semester.weeks : []
+
+        weeks.forEach((week) => {
+            const hourRows = Array.isArray(week?.hours) ? week.hours : []
+
+            hourRows.forEach((hourRow) => {
+                const hour = Number(hourRow?.hour)
+                if (!Number.isInteger(hour) || hour < 1) return
+
+                const cells = Array.isArray(hourRow?.cells) ? hourRow.cells : []
+
+                cells.forEach((cell, weekdayIndex) => {
+                    const weekday = weekdays[weekdayIndex] || weekdayIndex + 1
+                    if (!Number.isInteger(weekday) || weekday < 1 || weekday > 6) return
+
+                    const courses = Array.isArray(cell?.courses) ? cell.courses : []
+
+                    courses.forEach((course) => {
+                        const identifier = String(course?.identifier || '').trim()
+                        const label = String(course?.label || identifier || 'Unterricht').trim()
+                        const code = canonicalTimetableCourseLabel(identifier.split('-')[0] || label)
+                        const dates = (Array.isArray(course?.dates) ? course.dates : [])
+                            .map(date => String(date || '').trim())
+                            .filter(Boolean)
+                        const startsAt = String(course?.time_from || hourRow?.from || '').trim().slice(0, 5)
+                        const endsAt = String(course?.time_until || hourRow?.until || '').trim().slice(0, 5)
+                        const slotKey = `${weekday}-${hour}`
+                        const entrySignature = JSON.stringify([
+                            identifier,
+                            label,
+                            dates,
+                            startsAt,
+                            endsAt,
+                        ])
+                        const seenEntries = seenEntriesBySlot.get(slotKey) || new Set()
+
+                        if (seenEntries.has(entrySignature)) return
+
+                        seenEntries.add(entrySignature)
+                        seenEntriesBySlot.set(slotKey, seenEntries)
+                        entryIndex += 1
+
+                        const entryKey = `saved-${source}-${entryIndex}`
+                        const courseGroup = {
+                            key: entryKey,
+                            dates,
+                            display_label: identifier || label,
+                            ends_at: endsAt,
+                            hour,
+                            module_code: code,
+                            recurrence_interval: Number(course?.recurrence_interval || 0) || null,
+                            recurrence_label: String(course?.recurrence_label || course?.details || '').trim(),
+                            starts_at: startsAt,
+                            subject: code,
+                            weekday,
+                        }
+                        const timetableEntry = {
+                            key: entryKey,
+                            code,
+                            name: label,
+                            sourceLabel: identifier || label,
+                            courseGroup,
+                            dateRangeLabel: '',
+                            conflicts: [],
+                            sameSlotEntries: [],
+                            isDistanceLearningCourse: course?.is_fu === true,
+                        }
+
+                        if (slots[slotKey]) {
+                            slots[slotKey].sameSlotEntries.push(timetableEntry)
+
+                            return
+                        }
+
+                        slots[slotKey] = timetableEntry
+                    })
+                })
+            })
+        })
+    })
+
+    return { key: `saved-${source}-timetable`, slots }
+}
+
 function timetableEntryCourseKey(entry) {
     return String(entry?.courseGroup?.key || entry?.key || '').trim()
 }
 
-function timetableCourseKeys(timetable) {
-    return [...new Set(Object.values(timetable?.slots || {})
+function timetableEntries(timetable) {
+    return Object.values(timetable?.slots || {})
         .flatMap(slot => [
             slot,
             ...(Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []),
             ...(Array.isArray(slot?.conflicts) ? slot.conflicts : []),
         ])
+        .filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
+}
+
+function timetableEntrySchedule(entry) {
+    const courseGroup = entry?.courseGroup
+
+    return courseGroup && typeof courseGroup === 'object' && !Array.isArray(courseGroup)
+        ? { ...entry, ...courseGroup, key: timetableEntryCourseKey(entry) }
+        : entry
+}
+
+function timetableEntryOverlapLabel(entry) {
+    return canonicalTimetableCourseLabel(
+        entry?.courseGroup?.display_label
+            || entry?.sourceLabel
+            || entry?.display_label
+            || entry?.name
+            || entry?.code
+            || '',
+        entry?.courseGroup?.module_code || entry?.code || '',
+    )
+}
+
+function timetableCourseKeys(timetable) {
+    return [...new Set(timetableEntries(timetable)
         .map(entry => timetableEntryCourseKey(entry))
         .filter(Boolean))]
 }
@@ -2499,27 +2742,42 @@ function moduleSelectionLimitViolation(moduleGroups, selectedModuleKeys) {
 
 export default {
     components: {
+        LoadingAnimation,
         StudentTimetablesNavigationDrawer,
         TimetableV3PossibleTimetables,
     },
 
     async beforeMount() {
-        this.studentTimetablesStore = useStudentTimetablesUserStore()
-        const isAuthenticated = await this.studentTimetablesStore.getCurrentUser()
+        this.pageLoading = true
 
-        if (!isAuthenticated || !this.user) {
-            this.$router.push('/homepage/students-timetables')
-            return
-        }
+        try {
+            this.studentTimetablesStore = useStudentTimetablesUserStore()
+            const isAuthenticated = await this.studentTimetablesStore.getCurrentUser()
 
-        await this.studentTimetablesStore.loadOverview()
-
-        if (this.isTimetableResultsPage || this.isTimetableAdoptionPage) {
-            await this.restoreStudentTimetableResults()
-
-            if (this.isTimetableAdoptionPage && this.timetableCalculationStatus === 'success') {
-                await this.restoreManualTimetableDraft()
+            if (!isAuthenticated || !this.user) {
+                this.$router.push('/homepage/students-timetables')
+                return
             }
+
+            await this.studentTimetablesStore.loadOverview()
+
+            if (this.isTimetableAdoptionPage && this.savedTimetableAdoptionSource) {
+                const initialized = this.initializeSavedTimetableAdoption(this.savedTimetableAdoptionSource)
+
+                if (initialized) await this.restoreManualTimetableDraft()
+
+                return
+            }
+
+            if (this.isTimetableResultsPage || this.isTimetableAdoptionPage) {
+                await this.restoreStudentTimetableResults()
+
+                if (this.isTimetableAdoptionPage && this.timetableCalculationStatus === 'success') {
+                    await this.restoreManualTimetableDraft()
+                }
+            }
+        } finally {
+            this.pageLoading = false
         }
     },
 
@@ -2536,7 +2794,12 @@ export default {
             moduleCoursesDialogManual: false,
             moduleCoursesDialogOpen: false,
             moduleSelectionLimitMessage: '',
+            pageLoading: true,
+            personalTimetableSavedInEditor: false,
             personalTimetableSaving: false,
+            savedTimetableAdoptionBase: null,
+            savedTimetableAdoptionCourseKeys: [],
+            savedTimetableAdoptionModuleKeys: [],
             scheduleCreationMode: null,
             selectedCourseKeys: [],
             selectedModuleKeys: [],
@@ -2797,12 +3060,33 @@ export default {
                 })
         },
 
-        adoptionSelectedModules() {
-            const placedCourseKeys = new Set(this.adoptionPlacedCourseKeys)
+        savedTimetableAdoptionModules() {
+            const selectedModuleKeys = new Set(this.savedTimetableAdoptionModuleKeys)
             const moduleIdentities = new Set()
 
-            return [...this.selectedModules, ...this.manualSelectedModules]
+            return [...this.moduleSelectionGroups, ...this.mainModuleSelectionGroups]
+                .flatMap(group => Array.isArray(group?.modules) ? group.modules : [])
+                .filter(module => selectedModuleKeys.has(String(module?.selection_key || '').trim()))
                 .filter((module) => {
+                    const identity = String(module?.code || module?.selection_key || '').trim().toLocaleLowerCase('de-AT')
+
+                    if (!identity || moduleIdentities.has(identity)) return false
+
+                    moduleIdentities.add(identity)
+
+                    return true
+                })
+        },
+
+        adoptionSelectedModules() {
+            const placedCourseKeys = new Set(this.adoptionPlacedCourseKeys)
+            const savedModuleKeys = new Set(this.savedTimetableAdoptionModuleKeys)
+            const moduleIdentities = new Set()
+
+            return [...this.savedTimetableAdoptionModules, ...this.selectedModules, ...this.manualSelectedModules]
+                .filter((module) => {
+                    if (savedModuleKeys.has(String(module?.selection_key || '').trim())) return true
+
                     const moduleCourseKeys = (Array.isArray(module?.courses) ? module.courses : [])
                         .flatMap(course => normalizedCourseSelectionKeys(course))
 
@@ -2837,6 +3121,7 @@ export default {
         adoptionPlacedCourseKeys() {
             return [...new Set([
                 ...timetableCourseKeys(this.adoptionBaseTimetable),
+                ...this.savedTimetableAdoptionCourseKeys,
                 ...this.manualSelectedCourseKeys,
             ])]
         },
@@ -2930,11 +3215,31 @@ export default {
             return Boolean(this.overview?.personal_timetable?.id)
         },
 
+        personalTimetableSavedAtLabel() {
+            return formattedTimetableSavedAt(this.overview?.personal_timetable?.adopted_at)
+        },
+
+        personalTimetableAdoptionSavedAtLabel() {
+            return this.savedTimetableAdoptionSource === 'personal' || this.personalTimetableSavedInEditor
+                ? this.personalTimetableSavedAtLabel
+                : ''
+        },
+
         hasPublishedTimetable() {
             return Boolean(this.overview?.published_timetable?.id)
         },
 
+        savedTimetableAdoptionSource() {
+            const source = String(this.$route?.query?.manual_timetable || '').trim()
+
+            return this.isTimetableAdoptionPage && ['personal', 'published'].includes(source)
+                ? source
+                : ''
+        },
+
         timetableStartOptions() {
+            const publishedTimetableName = String(this.overview?.published_timetable?.name || '').trim()
+
             return [
                 {
                     key: 'empty',
@@ -2942,6 +3247,7 @@ export default {
                     description: 'Beginne mit einem leeren Plan und stelle deine Unterrichte selbst zusammen.',
                     icon: 'mdi-calendar-blank-outline',
                     available: true,
+                    timetableName: '',
                     availabilityLabel: 'Immer verfügbar',
                     actionLabel: 'Leer beginnen',
                 },
@@ -2951,8 +3257,11 @@ export default {
                     description: 'Setze mit deinem zuletzt für dich gespeicherten Stundenplan fort.',
                     icon: 'mdi-account-calendar',
                     available: this.hasPersonalTimetable,
+                    timetableName: '',
                     availabilityLabel: this.hasPersonalTimetable
-                        ? 'Eigener Stundenplan verfügbar'
+                        ? this.personalTimetableSavedAtLabel
+                            ? `Gespeichert am ${this.personalTimetableSavedAtLabel} Uhr`
+                            : 'Eigener Stundenplan verfügbar'
                         : 'Noch kein eigener Stundenplan gespeichert',
                     actionLabel: 'Eigenen öffnen',
                 },
@@ -2962,8 +3271,11 @@ export default {
                     description: 'Starte mit dem Stundenplan, den eine Lehrperson für dich bereitgestellt hat.',
                     icon: 'mdi-calendar-check',
                     available: this.hasPublishedTimetable,
+                    timetableName: publishedTimetableName,
                     availabilityLabel: this.hasPublishedTimetable
-                        ? 'Stundenplan der Lehrperson verfügbar'
+                        ? `Stundenplan der Lehrperson verfügbar${publishedTimetableName
+                            ? ` · Nr. ${publishedTimetableName}`
+                            : ''}`
                         : 'Noch kein Stundenplan bereitgestellt',
                     actionLabel: 'Vorlage öffnen',
                 },
@@ -3013,6 +3325,19 @@ export default {
         },
 
         selectedTimetableResult() {
+            if (this.savedTimetableAdoptionSource) {
+                const timetable = this.savedTimetableAdoptionBase
+
+                return timetable
+                    && typeof timetable === 'object'
+                    && !Array.isArray(timetable)
+                    && timetable.slots
+                    && typeof timetable.slots === 'object'
+                    && !Array.isArray(timetable.slots)
+                    ? timetable
+                    : null
+            }
+
             const timetables = Array.isArray(this.timetableCalculationResult?.timetables)
                 ? this.timetableCalculationResult.timetables
                 : []
@@ -3371,22 +3696,27 @@ export default {
         },
 
         courseScheduleRowOverlapLabels(course, scheduleRow) {
-            const activeCourseKeys = this.moduleCoursesDialogManual
-                ? [
-                    ...(Array.isArray(this.adoptionPlacedCourseKeys) ? this.adoptionPlacedCourseKeys : []),
-                    ...(Array.isArray(this.manualPendingCourseKeys) ? this.manualPendingCourseKeys : []),
-                ]
-                : (Array.isArray(this.selectedCourseKeys) ? this.selectedCourseKeys : [])
-            if (!activeCourseKeys.length) return []
-
             const scheduleEntryKeys = new Set(Array.isArray(scheduleRow?.entryKeys) ? scheduleRow.entryKeys : [])
             const scheduleEntries = normalizedCourseTimetableEntries(course)
                 .filter(entry => !scheduleEntryKeys.size || scheduleEntryKeys.has(String(entry.key || '').trim()))
             if (!scheduleEntries.length) return []
 
             const currentCourseKeys = new Set(normalizedCourseSelectionKeys(course))
+            const activeCourseKeys = this.moduleCoursesDialogManual
+                ? [
+                    ...(Array.isArray(this.manualSelectedCourseKeys) ? this.manualSelectedCourseKeys : []),
+                    ...(Array.isArray(this.manualPendingCourseKeys) ? this.manualPendingCourseKeys : []),
+                ]
+                : (Array.isArray(this.selectedCourseKeys) ? this.selectedCourseKeys : [])
+            const visibleTimetableOverlapLabels = this.moduleCoursesDialogManual
+                ? timetableEntries(this.adoptionBaseTimetable)
+                    .filter(entry => scheduleEntries
+                        .some(scheduleEntry => timetableEntriesOverlap(scheduleEntry, timetableEntrySchedule(entry))))
+                    .map(entry => timetableEntryOverlapLabel(entry))
+                    .filter(Boolean)
+                : []
 
-            return [...new Set((Array.isArray(this.manualCatalogCourses) ? this.manualCatalogCourses : [])
+            const selectedCourseOverlapLabels = (Array.isArray(this.manualCatalogCourses) ? this.manualCatalogCourses : [])
                 .filter(otherCourse => courseUsesSelectedKey(otherCourse, activeCourseKeys))
                 .filter(otherCourse => !normalizedCourseSelectionKeys(otherCourse)
                     .some(courseKey => currentCourseKeys.has(courseKey)))
@@ -3394,7 +3724,9 @@ export default {
                     .filter(otherEntry => scheduleEntries
                         .some(scheduleEntry => timetableEntriesOverlap(scheduleEntry, otherEntry)))
                     .map(otherEntry => timetableCourseOverlapLabel(otherCourse, otherEntry)))
-                .filter(Boolean))]
+                .filter(Boolean)
+
+            return [...new Set([...visibleTimetableOverlapLabels, ...selectedCourseOverlapLabels])]
         },
 
         openModuleCoursesDialog(module) {
@@ -3472,19 +3804,59 @@ export default {
         async removeAdoptionModule(module) {
             const courseKeys = (Array.isArray(module?.courses) ? module.courses : [])
                 .flatMap(course => normalizedCourseSelectionKeys(course))
-            if (!courseKeys.length) return
+            const savedTimetableEntryKeys = this.savedTimetableEntryKeysForModule(module)
+            if (!courseKeys.length && !savedTimetableEntryKeys.length) return
 
             this.manualSelectedCourseKeys = this.manualSelectedCourseKeys
                 .filter(courseKey => !courseKeys.includes(courseKey))
+            this.savedTimetableAdoptionCourseKeys = this.savedTimetableAdoptionCourseKeys
+                .filter(courseKey => !courseKeys.includes(courseKey))
+            this.savedTimetableAdoptionModuleKeys = this.savedTimetableAdoptionModuleKeys
+                .filter(moduleKey => moduleKey !== String(module?.selection_key || '').trim())
             this.manualPendingCourseKeys = []
             this.adoptionRemovedCourseKeys = [...new Set([
                 ...this.adoptionRemovedCourseKeys,
                 ...courseKeys,
+                ...savedTimetableEntryKeys,
             ])]
             await this.saveManualTimetableDraft()
         },
 
+        savedTimetableEntryKeysForModule(module) {
+            const moduleCodes = new Set([
+                module?.code,
+                ...(Array.isArray(module?.courses) ? module.courses : [])
+                    .flatMap(course => normalizedCourseTimetableEntries(course))
+                    .flatMap(entry => [entry?.module_code, entry?.subject]),
+            ].map(normalizedTimetableModuleCode).filter(Boolean))
+            if (!moduleCodes.size) return []
+
+            return [...new Set(Object.values(this.savedTimetableAdoptionBase?.slots || {})
+                .flatMap(slot => [
+                    slot,
+                    ...(Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []),
+                    ...(Array.isArray(slot?.conflicts) ? slot.conflicts : []),
+                ])
+                .filter(entry => moduleCodes.has(normalizedTimetableModuleCode(
+                    entry?.code || entry?.courseGroup?.module_code || entry?.courseGroup?.subject,
+                )))
+                .map(entry => timetableEntryCourseKey(entry))
+                .filter(Boolean))]
+        },
+
         manualTimetableDraftRouteSelection() {
+            const savedTimetableSource = this.savedTimetableAdoptionSource
+            const savedTimetable = {
+                personal: this.overview?.personal_timetable,
+                published: this.overview?.published_timetable,
+            }[savedTimetableSource]
+            const savedTimetableSelection = savedTimetableDraftRouteSelection(
+                savedTimetableSource,
+                savedTimetable,
+            )
+
+            if (savedTimetableSelection) return savedTimetableSelection
+
             const workspaceId = normalizedWorkspaceId(this.$route?.query?.workspace_id)
             const fingerprint = String(this.$route?.query?.fingerprint || '').trim()
             const timetableKey = String(this.$route?.query?.timetable_key || '').trim()
@@ -3589,13 +3961,17 @@ export default {
             this.personalTimetableSaving = true
 
             try {
-                return await this.studentTimetablesStore.savePersonalTimetable({
+                const saved = await this.studentTimetablesStore.savePersonalTimetable({
                     timetable: this.personalTimetablePayload(),
                     state: {
                         source: 'student-timetable-v2-manual',
                         activeCourseGroupFilterKeys: this.adoptionPlacedCourseKeys,
                     },
                 })
+
+                if (saved) this.personalTimetableSavedInEditor = true
+
+                return saved
             } finally {
                 this.personalTimetableSaving = false
             }
@@ -3754,19 +4130,97 @@ export default {
                 return
             }
 
-            const manualTimetableRoute = {
-                personal: 'personal',
-                published: 'published',
-            }[source]
+            if (!['personal', 'published'].includes(source)) return
 
-            if (!manualTimetableRoute) return
+            this.initializeSavedTimetableAdoption(source)
 
             this.$router.push({
-                path: '/students-timetables/overview-v1',
+                path: '/students-timetables/create/adoption',
                 query: {
-                    manual_timetable: manualTimetableRoute,
+                    manual_timetable: source,
                 },
             })
+        },
+
+        initializeSavedTimetableAdoption(source) {
+            const savedTimetable = {
+                personal: this.overview?.personal_timetable,
+                published: this.overview?.published_timetable,
+            }[source]
+
+            this.activeManualModuleGroupKey = ''
+            this.adoptionRemovedCourseKeys = []
+            this.manualPendingCourseKeys = []
+            this.manualSelectedCourseKeys = []
+            this.personalTimetableSavedInEditor = false
+            this.savedTimetableAdoptionBase = null
+            this.savedTimetableAdoptionCourseKeys = []
+            this.savedTimetableAdoptionModuleKeys = []
+
+            if (!savedTimetable?.id) {
+                this.timetableCalculationStatus = 'error'
+                this.timetableCalculationError = 'Dieser Stundenplan ist nicht mehr verfügbar.'
+
+                return false
+            }
+
+            const savedState = savedTimetable.state
+                && typeof savedTimetable.state === 'object'
+                && !Array.isArray(savedTimetable.state)
+                ? savedTimetable.state
+                : {}
+            const savedModuleSelection = savedState.moduleSelection
+                && typeof savedState.moduleSelection === 'object'
+                && !Array.isArray(savedState.moduleSelection)
+                ? savedState.moduleSelection
+                : {}
+            const savedManualDraft = savedState.manualTimetableDraft
+                && typeof savedState.manualTimetableDraft === 'object'
+                && !Array.isArray(savedState.manualTimetableDraft)
+                ? savedState.manualTimetableDraft
+                : {}
+            const removedSavedCourseKeys = new Set(normalizedCourseKeyList(savedManualDraft.removedCourseKeys))
+            const savedCourseKeys = normalizedCourseKeyList([
+                ...(Array.isArray(savedTimetable.active_course_group_keys)
+                    ? savedTimetable.active_course_group_keys
+                    : []),
+                ...(Array.isArray(savedModuleSelection.selectedCourseKeys)
+                    ? savedModuleSelection.selectedCourseKeys
+                    : []),
+                ...(Array.isArray(savedManualDraft.selectedCourseKeys)
+                    ? savedManualDraft.selectedCourseKeys
+                    : []),
+            ]).filter(courseKey => !removedSavedCourseKeys.has(courseKey))
+            const matchingCourses = this.manualCatalogCourses.filter((course) => {
+                const courseKeys = new Set(normalizedCourseTimetableKeys(course))
+
+                return savedCourseKeys.some(courseKey => courseKeys.has(courseKey))
+            })
+            const matchingCourseKeys = new Set(matchingCourses.flatMap(normalizedCourseTimetableKeys))
+            const catalogModules = [...this.moduleSelectionGroups, ...this.mainModuleSelectionGroups]
+                .flatMap(group => Array.isArray(group?.modules) ? group.modules : [])
+            const catalogModuleKeys = new Set(catalogModules
+                .map(module => String(module?.selection_key || '').trim())
+                .filter(Boolean))
+            const matchingModuleKeys = catalogModules
+                .filter(module => (Array.isArray(module?.courses) ? module.courses : [])
+                    .some(course => normalizedCourseTimetableKeys(course)
+                        .some(courseKey => matchingCourseKeys.has(courseKey))))
+                .map(module => String(module?.selection_key || '').trim())
+
+            this.savedTimetableAdoptionCourseKeys = [...new Set(
+                matchingCourses.flatMap(normalizedCourseSelectionKeys),
+            )]
+            this.savedTimetableAdoptionModuleKeys = normalizedCourseKeyList([
+                ...(Array.isArray(savedModuleSelection.selectedKeys) ? savedModuleSelection.selectedKeys : []),
+                ...matchingModuleKeys,
+            ]).filter(moduleKey => catalogModuleKeys.has(moduleKey))
+            this.savedTimetableAdoptionBase = savedTimetableForManualEditor(savedTimetable.timetable, source)
+
+            this.timetableCalculationError = ''
+            this.timetableCalculationStatus = this.savedTimetableAdoptionBase ? 'success' : 'error'
+
+            return this.timetableCalculationStatus === 'success'
         },
 
         resetStudentTimetablePlanning() {
@@ -3782,7 +4236,11 @@ export default {
             this.moduleCoursesDialogManual = false
             this.moduleCoursesDialogOpen = false
             this.moduleSelectionLimitMessage = ''
+            this.personalTimetableSavedInEditor = false
             this.scheduleCreationMode = null
+            this.savedTimetableAdoptionBase = null
+            this.savedTimetableAdoptionCourseKeys = []
+            this.savedTimetableAdoptionModuleKeys = []
             this.selectedCourseKeys = []
             this.selectedModuleKeys = []
             this.timetableCalculationCheckedCombinationCount = 0
@@ -3814,6 +4272,29 @@ export default {
         goBackToModuleSelection() {
             this.timetablePageRequestId += 1
             this.$router.push('/students-timetables/create')
+        },
+
+        goBackToTimetableResults() {
+            if (this.savedTimetableAdoptionSource) {
+                this.$router.push('/students-timetables/overview')
+
+                return
+            }
+
+            const workspaceId = normalizedWorkspaceId(
+                this.timetableWorkspaceId || this.$route?.query?.workspace_id,
+            )
+            const fingerprint = String(
+                this.timetableCalculationResult?.fingerprint || this.$route?.query?.fingerprint || '',
+            ).trim()
+
+            this.$router.push({
+                path: '/students-timetables/create/results',
+                query: {
+                    ...(workspaceId ? { workspace_id: workspaceId } : {}),
+                    ...(/^[a-f0-9]{64}$/.test(fingerprint) ? { fingerprint } : {}),
+                },
+            })
         },
 
         async openAutomaticTimetableResults() {
@@ -4210,6 +4691,23 @@ export default {
 .students-timetables-overview-v2-page > .hero {
     width: 100%;
     max-width: none;
+}
+
+.overview-v2-page-loader {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    min-height: calc(100dvh - 84px);
+    place-content: center;
+    justify-items: center;
+    gap: 16px;
+    color: #233d4c;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.overview-v2-page-loader__dots {
+    padding: 0;
 }
 
 .overview-v2-hero {
@@ -5827,6 +6325,18 @@ export default {
     align-items: center;
     justify-content: space-between;
     min-width: 0;
+}
+
+.timetable-v3__adoption-title-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.timetable-v3__adoption-saved-at {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
 .timetable-v3__adoption-actions {

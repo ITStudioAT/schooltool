@@ -29,6 +29,21 @@ describe('Student timetables overview V2 preparation', () => {
         })).toBe(false)
     })
 
+    it('shows a local loader until the complete timetable page is initialized', () => {
+        const source = readFileSync(overviewV2Path, 'utf8')
+        const initialState = OverviewV2.data.call({})
+
+        expect(initialState.pageLoading).toBe(true)
+        expect(source).toContain('v-if="pageLoading"')
+        expect(source).toContain('class="overview-v2-page-loader"')
+        expect(source).toContain('<LoadingAnimation class="overview-v2-page-loader__dots" />')
+        expect(source).toContain("import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'")
+        expect(source).not.toContain('<v-progress-circular indeterminate rounded color="primary" size="56" width="5" />')
+        expect(source).toContain('<template v-else>')
+        expect(source).toContain('this.pageLoading = true')
+        expect(source).toContain('this.pageLoading = false')
+    })
+
     it('registers the user-side overview V2 route', () => {
         const source = readFileSync(homepageRoutesPath, 'utf8')
 
@@ -177,9 +192,45 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain("title: 'Mein gespeicherter Stundenplan'")
         expect(source).toContain("title: 'Stundenplan der Lehrperson'")
         expect(source).toContain(':disabled="!option.available"')
+        expect(source).toContain('Stundenplan der Lehrperson verfügbar${publishedTimetableName')
+        expect(source).toContain('? ` · Nr. ${publishedTimetableName}`')
+        expect(source).not.toContain('class="overview-v2-timetable-start-number"')
         expect(source).toContain('this.overview?.personal_timetable?.id')
+        expect(source).toContain('this.overview?.personal_timetable?.adopted_at')
         expect(source).toContain('this.overview?.published_timetable?.id')
         expect(source).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));')
+
+        const personalTimetableSavedAtLabel = OverviewV2.computed.personalTimetableSavedAtLabel.call({
+            overview: {
+                personal_timetable: {
+                    adopted_at: '2026-08-20T12:34:00+02:00',
+                },
+            },
+        })
+
+        expect(personalTimetableSavedAtLabel).toBe('20.08.2026, 12:34')
+
+        const startOptions = OverviewV2.computed.timetableStartOptions.call({
+            hasPersonalTimetable: true,
+            hasPublishedTimetable: true,
+            personalTimetableSavedAtLabel,
+            overview: {
+                published_timetable: {
+                    id: 42,
+                    name: '26ABC',
+                },
+            },
+        })
+
+        expect(startOptions[2]).toMatchObject({
+            key: 'published',
+            timetableName: '26ABC',
+            availabilityLabel: 'Stundenplan der Lehrperson verfügbar · Nr. 26ABC',
+        })
+        expect(startOptions[1]).toMatchObject({
+            key: 'personal',
+            availabilityLabel: 'Gespeichert am 20.08.2026, 12:34 Uhr',
+        })
 
         const pushedRoutes: unknown[] = []
         let resetCount = 0
@@ -187,8 +238,12 @@ describe('Student timetables overview V2 preparation', () => {
             timetableStartOptions: [
                 { key: 'empty', available: true },
                 { key: 'personal', available: true },
-                { key: 'published', available: false },
+                { key: 'published', available: true },
             ],
+            initializedSources: [] as string[],
+            initializeSavedTimetableAdoption(source: string) {
+                this.initializedSources.push(source)
+            },
             resetStudentTimetablePlanning() {
                 resetCount += 1
             },
@@ -206,11 +261,189 @@ describe('Student timetables overview V2 preparation', () => {
         expect(pushedRoutes).toEqual([
             '/students-timetables/create',
             {
-                path: '/students-timetables/overview-v1',
+                path: '/students-timetables/create/adoption',
                 query: { manual_timetable: 'personal' },
             },
+            {
+                path: '/students-timetables/create/adoption',
+                query: { manual_timetable: 'published' },
+            },
         ])
+        expect(context.initializedSources).toEqual(['personal', 'published'])
         expect(resetCount).toBe(1)
+    })
+
+    it('loads saved and teacher timetables into the manual editor', () => {
+        const source = readFileSync(overviewV2Path, 'utf8')
+        const savedCourse = {
+            key: 'course-d1',
+            keys: ['course-d1'],
+            timetable_entries: [{
+                key: 'entry-d1',
+                weekday: 1,
+                hour: 3,
+                module_code: 'D1',
+            }],
+        }
+        const savedModule = {
+            code: 'D1',
+            selection_key: 'previous:D1',
+            courses: [savedCourse],
+        }
+
+        expect(source).toContain("path: '/students-timetables/create/adoption'")
+        expect(source).toContain('this.initializeSavedTimetableAdoption(source)')
+        expect(source).toContain('savedTimetableForManualEditor(savedTimetable.timetable, source)')
+
+        const context = {
+            activeManualModuleGroupKey: 'current',
+            adoptionRemovedCourseKeys: ['old-entry'],
+            mainModuleSelectionGroups: [],
+            manualCatalogCourses: [savedCourse],
+            manualPendingCourseKeys: ['pending-entry'],
+            manualSelectedCourseKeys: ['old-course'],
+            moduleSelectionGroups: [{ modules: [savedModule] }],
+            overview: {
+                published_timetable: {
+                    id: 42,
+                    active_course_group_keys: [],
+                    state: {
+                        moduleSelection: {
+                            selectedCourseKeys: ['entry-d1'],
+                            selectedKeys: ['previous:D1'],
+                        },
+                        manualTimetableDraft: {
+                            removedCourseKeys: [],
+                            selectedCourseKeys: [],
+                        },
+                    },
+                    timetable: {
+                        weekdays: [{ label: 'Montag' }, { label: 'Dienstag' }],
+                        semesters: [{
+                            weeks: [{
+                                hours: [{
+                                    hour: 7,
+                                    from: '14:30',
+                                    until: '15:15',
+                                    cells: [
+                                        { courses: [] },
+                                        { courses: [{ identifier: 'D1-3R-MAY', label: 'DEUTSCH' }] },
+                                    ],
+                                }],
+                            }],
+                        }],
+                    },
+                },
+            },
+            savedTimetableAdoptionBase: null,
+            savedTimetableAdoptionCourseKeys: ['old-course'],
+            savedTimetableAdoptionModuleKeys: ['old-module'],
+            timetableCalculationError: 'Alter Fehler',
+            timetableCalculationStatus: 'idle',
+        }
+
+        const initialized = OverviewV2.methods.initializeSavedTimetableAdoption.call(context, 'published')
+
+        expect(initialized).toBe(true)
+        expect(context).toMatchObject({
+            activeManualModuleGroupKey: '',
+            adoptionRemovedCourseKeys: [],
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: [],
+            savedTimetableAdoptionBase: {
+                key: 'saved-published-timetable',
+                slots: {
+                    '2-7': expect.objectContaining({ code: 'D1' }),
+                },
+            },
+            savedTimetableAdoptionCourseKeys: ['course-d1'],
+            savedTimetableAdoptionModuleKeys: ['previous:D1'],
+            timetableCalculationError: '',
+            timetableCalculationStatus: 'success',
+        })
+        expect(context.savedTimetableAdoptionBase.slots).not.toHaveProperty('1-3')
+
+        expect(OverviewV2.computed.savedTimetableAdoptionModules.call({
+            mainModuleSelectionGroups: [],
+            moduleSelectionGroups: [{ modules: [savedModule] }],
+            savedTimetableAdoptionModuleKeys: ['previous:D1'],
+        })).toEqual([savedModule])
+
+        expect(source).toContain('if (initialized) await this.restoreManualTimetableDraft()')
+    })
+
+    it('uses the published timetable identity to persist additional courses across reloads', async () => {
+        const fingerprint = 'ae960c7ed4a4012413c66eb1e187515aadb8bfc13acf1eda53eb88fa8b054f51'
+        const put = vi.spyOn(axios, 'put').mockResolvedValueOnce({ data: { data: {} } })
+        const context = {
+            savedTimetableAdoptionSource: 'published',
+            overview: {
+                published_timetable: {
+                    state: {
+                        manualTimetableDraft: {
+                            fingerprint,
+                            timetableIndex: 0,
+                            timetableKey: 'backend-full_green-1',
+                        },
+                    },
+                },
+            },
+            $route: { query: { manual_timetable: 'published' } },
+            adoptionRemovedCourseKeys: [],
+            isTimetableAdoptionPage: true,
+            manualCatalogCourses: [{ key: 'course-inf1', keys: ['course-inf1'] }],
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: ['course-inf1'],
+            manualTimetableDraftRouteSelection: OverviewV2.methods.manualTimetableDraftRouteSelection,
+            manualTimetableDraftSaveQueue: null,
+        }
+
+        expect(OverviewV2.methods.manualTimetableDraftRouteSelection.call(context)).toEqual({
+            fingerprint,
+            timetableIndex: 0,
+            timetableKey: 'backend-full_green-1',
+            workspaceId: 'ae960c7e-d4a4-4124-83c6-6eb1e187515b',
+        })
+
+        expect(await OverviewV2.methods.saveManualTimetableDraft.call(context)).toBe(true)
+        expect(put).toHaveBeenCalledWith(
+            '/api/homepage/students-timetables/timetable-v3/state',
+            {
+                workspace_id: 'ae960c7e-d4a4-4124-83c6-6eb1e187515b',
+                manual_timetable_draft: {
+                    source: 'automatic',
+                    fingerprint,
+                    timetable_key: 'backend-full_green-1',
+                    timetable_index: 0,
+                    selected_course_keys: ['course-inf1'],
+                    removed_course_keys: [],
+                },
+            },
+        )
+
+        put.mockRestore()
+
+        const get = vi.spyOn(axios, 'get').mockResolvedValueOnce({
+            data: {
+                data: {
+                    manual_timetable_draft: {
+                        source: 'automatic',
+                        fingerprint,
+                        timetableKey: 'backend-full_green-1',
+                        timetableIndex: 0,
+                        selectedCourseKeys: ['course-inf1'],
+                        removedCourseKeys: [],
+                    },
+                },
+            },
+        })
+
+        context.manualSelectedCourseKeys = []
+
+        expect(await OverviewV2.methods.restoreManualTimetableDraft.call(context)).toBe(true)
+        expect(context.manualSelectedCourseKeys).toEqual(['course-inf1'])
+
+        get.mockRestore()
     })
 
     it('clears the complete timetable planning state before starting empty', () => {
@@ -325,14 +558,14 @@ describe('Student timetables overview V2 preparation', () => {
         expect(resultsPagePosition).toBeGreaterThan(readOnlyCardPosition)
     })
 
-    it('offers the admin-style planning restart on creation and results', () => {
+    it('offers the admin-style planning restart on creation, results, and adoption', () => {
         const source = readFileSync(overviewV2Path, 'utf8')
 
-        expect(source.match(/class="overview-v2-creation-mode-restart"/g)).toHaveLength(2)
-        expect(source.match(/prepend-icon="mdi-restart"/g)).toHaveLength(2)
-        expect(source.match(/@click="restartStudentTimetablePlanning"/g)).toHaveLength(2)
-        expect(source.match(/\s+Neustart\s+/g)).toHaveLength(2)
-        expect(source.match(/overview-v2-creation-mode-actions--split/g)).toHaveLength(3)
+        expect(source.match(/class="overview-v2-creation-mode-restart"/g)).toHaveLength(3)
+        expect(source.match(/prepend-icon="mdi-restart"/g)).toHaveLength(3)
+        expect(source.match(/@click="restartStudentTimetablePlanning"/g)).toHaveLength(3)
+        expect(source.match(/\s+Neustart\s+/g)).toHaveLength(3)
+        expect(source.match(/overview-v2-creation-mode-actions--split/g)).toHaveLength(4)
         expect(source).toContain('.overview-v2-creation-mode-actions--split {')
 
         let resetCount = 0
@@ -374,6 +607,8 @@ describe('Student timetables overview V2 preparation', () => {
         expect(adoptionEnd).toBeGreaterThan(adoptionStart)
         expect(adoptionPage).toContain('timetable-v3__adoption-card--manual')
         expect(adoptionPage).toContain('Manueller Stundenplan')
+        expect(adoptionPage).toContain('v-if="personalTimetableAdoptionSavedAtLabel"')
+        expect(adoptionPage).toContain('Zuletzt gespeichert: {{ personalTimetableAdoptionSavedAtLabel }} Uhr')
         expect(adoptionPage).toContain('Ausgewählte Module')
         expect(adoptionPage).toContain('v-for="module in adoptionSelectedModules"')
         expect(adoptionPage).toContain('closable')
@@ -402,10 +637,30 @@ describe('Student timetables overview V2 preparation', () => {
         expect(adoptionPage).toContain('prepend-icon="mdi-content-save-outline"')
         expect(adoptionPage).toContain('@click="savePersonalTimetable"')
         expect(adoptionPage).toContain('Speichern')
+        expect(adoptionPage).toContain('@click="restartStudentTimetablePlanning"')
+        expect(adoptionPage).toContain('Neustart')
+        expect(adoptionPage).toContain('@click="goBackToTimetableResults"')
+        expect(adoptionPage).toContain('Zurück')
         expect(source).toContain('if (this.isTimetableResultsPage || this.isTimetableAdoptionPage)')
         expect(source).toContain("path: '/students-timetables/create/adoption'")
         expect(source).toContain('timetable_index: String(timetableIndex)')
         expect(source).toContain('timetable_key: timetableKey')
+
+        expect(OverviewV2.computed.personalTimetableAdoptionSavedAtLabel.call({
+            personalTimetableSavedInEditor: false,
+            personalTimetableSavedAtLabel: '20.08.2026, 12:34',
+            savedTimetableAdoptionSource: 'personal',
+        })).toBe('20.08.2026, 12:34')
+        expect(OverviewV2.computed.personalTimetableAdoptionSavedAtLabel.call({
+            personalTimetableSavedInEditor: false,
+            personalTimetableSavedAtLabel: '20.08.2026, 12:34',
+            savedTimetableAdoptionSource: 'published',
+        })).toBe('')
+        expect(OverviewV2.computed.personalTimetableAdoptionSavedAtLabel.call({
+            personalTimetableSavedInEditor: true,
+            personalTimetableSavedAtLabel: '20.08.2026, 12:35',
+            savedTimetableAdoptionSource: 'published',
+        })).toBe('20.08.2026, 12:35')
 
         const pushedRoutes: unknown[] = []
         const restoreManualTimetableDraft = vi.fn().mockResolvedValue(true)
@@ -438,6 +693,30 @@ describe('Student timetables overview V2 preparation', () => {
         expect(restoreManualTimetableDraft).toHaveBeenCalledOnce()
     })
 
+    it('returns from adoption to the restored timetable results', () => {
+        const pushedRoutes: unknown[] = []
+        const context = {
+            timetableCalculationResult: { fingerprint: 'a'.repeat(64) },
+            timetableWorkspaceId: 'de7c2a59-fae1-4a61-a2d9-edbe82dc8ee4',
+            $route: { query: {} },
+            $router: {
+                push(route: unknown) {
+                    pushedRoutes.push(route)
+                },
+            },
+        }
+
+        OverviewV2.methods.goBackToTimetableResults.call(context)
+
+        expect(pushedRoutes).toEqual([{
+            path: '/students-timetables/create/results',
+            query: {
+                workspace_id: 'de7c2a59-fae1-4a61-a2d9-edbe82dc8ee4',
+                fingerprint: 'a'.repeat(64),
+            },
+        }])
+    })
+
     it('saves the displayed manual timetable as the student personal version', async () => {
         const storedPayloads: unknown[] = []
         const context = {
@@ -466,6 +745,7 @@ describe('Student timetables overview V2 preparation', () => {
                 },
             },
             adoptionPlacedCourseKeys: ['rev2-course'],
+            personalTimetableSavedInEditor: false,
             personalTimetableSaving: false,
             personalTimetableSchoolHours: [{ hour: 3, from: '09:50', until: '10:35' }],
             personalTimetablePayload: OverviewV2.methods.personalTimetablePayload,
@@ -481,6 +761,7 @@ describe('Student timetables overview V2 preparation', () => {
         const saved = await OverviewV2.methods.savePersonalTimetable.call(context)
 
         expect(saved).toBe(true)
+        expect(context.personalTimetableSavedInEditor).toBe(true)
         expect(context.personalTimetableSaving).toBe(false)
         expect(storedPayloads).toEqual([{
             timetable: {
@@ -666,6 +947,7 @@ describe('Student timetables overview V2 preparation', () => {
 
     it('removes and persists a complete module from the displayed manual timetable', async () => {
         const removedModule = {
+            selection_key: 'previous:Rev2',
             courses: [
                 { key: 'course-rev2', keys: ['course-rev2', 'course-rev2-alias'] },
             ],
@@ -674,6 +956,10 @@ describe('Student timetables overview V2 preparation', () => {
             adoptionRemovedCourseKeys: ['course-existing'],
             manualPendingCourseKeys: ['course-rev2'],
             manualSelectedCourseKeys: ['course-rev2', 'course-keep'],
+            savedTimetableAdoptionBase: { slots: {} },
+            savedTimetableAdoptionCourseKeys: [],
+            savedTimetableAdoptionModuleKeys: [],
+            savedTimetableEntryKeysForModule: OverviewV2.methods.savedTimetableEntryKeysForModule,
             saveManualTimetableDraft: vi.fn().mockResolvedValue(true),
         }
 
@@ -842,23 +1128,6 @@ describe('Student timetables overview V2 preparation', () => {
                 },
             ],
         }
-        const overlappingCourse = {
-            key: 'eth3-a',
-            keys: ['eth3-a'],
-            title: 'ETH3 5RU-HER',
-            timetable_entries: [
-                {
-                    key: 'eth3-a',
-                    weekday: 1,
-                    hour: 10,
-                    starts_at: '18:00',
-                    ends_at: '18:30',
-                    dates: ['2026-09-14'],
-                    module_code: 'ETH3',
-                    display_label: 'ETH3 5RU-HER',
-                },
-            ],
-        }
         const differentDateCourse = {
             key: 'm1-a',
             keys: ['m1-a'],
@@ -876,18 +1145,54 @@ describe('Student timetables overview V2 preparation', () => {
                 },
             ],
         }
+        const stateOnlyCourse = {
+            key: 'gs2-a',
+            keys: ['gs2-a'],
+            title: 'GS2 3C-WEL',
+            timetable_entries: [
+                {
+                    key: 'gs2-a',
+                    weekday: 1,
+                    hour: 10,
+                    starts_at: '18:00',
+                    ends_at: '18:30',
+                    dates: ['2026-09-14'],
+                    module_code: 'GS2',
+                    display_label: 'GS2 3C-WEL',
+                },
+            ],
+        }
         const context = {
             moduleCoursesDialogManual: true,
-            adoptionPlacedCourseKeys: ['eth3-a', 'm1-a'],
+            adoptionBaseTimetable: {
+                slots: {
+                    '1-10': {
+                        key: 'saved-published-1',
+                        sourceLabel: 'GEOGRAFIE 2',
+                        courseGroup: {
+                            key: 'saved-published-1',
+                            display_label: 'GW2-5CK-HOA',
+                            module_code: 'GW2',
+                            weekday: 1,
+                            hour: 10,
+                            starts_at: '18:00',
+                            ends_at: '18:30',
+                            dates: ['2026-09-14'],
+                        },
+                    },
+                },
+            },
+            manualSelectedCourseKeys: ['m1-a'],
+            adoptionPlacedCourseKeys: ['eth3-a', 'm1-a', 'gs2-a'],
             manualPendingCourseKeys: [],
             selectedCourseKeys: [],
-            manualCatalogCourses: [candidateCourse, overlappingCourse, differentDateCourse],
+            manualCatalogCourses: [candidateCourse, differentDateCourse, stateOnlyCourse],
         }
         const scheduleRows = methods.courseScheduleRows(candidateCourse)
 
         expect(scheduleRows).toHaveLength(2)
         expect(methods.courseScheduleRowOverlapLabels.call(context, candidateCourse, scheduleRows[0]))
-            .toEqual(['ETH3 5RU-HER'])
+            .toEqual(['GW2-5CK-HOA'])
         expect(methods.courseScheduleRowOverlapLabels.call(context, candidateCourse, scheduleRows[1]))
             .toEqual([])
     })
