@@ -54,6 +54,8 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain("{ path: '/students-timetables/create', component: StudentTimetablesOverviewV2 }")
         expect(source).toContain("{ path: '/students-timetables/create/results', component: StudentTimetablesOverviewV2 }")
         expect(source).toContain("{ path: '/students-timetables/create/adoption', component: StudentTimetablesOverviewV2 }")
+        expect(source).toContain("if (to.path.startsWith('/students-timetables/'))")
+        expect(source).toContain('return { left: 0, top: 0 }')
     })
 
     it('keeps the V2 page behind the existing student timetable authentication flow', () => {
@@ -607,6 +609,8 @@ describe('Student timetables overview V2 preparation', () => {
         expect(adoptionEnd).toBeGreaterThan(adoptionStart)
         expect(adoptionPage).toContain('timetable-v3__adoption-card--manual')
         expect(adoptionPage).toContain('Manueller Stundenplan')
+        expect(adoptionPage).toContain('v-if="publishedTimetableAdoptionName"')
+        expect(adoptionPage).toContain('Nr. {{ publishedTimetableAdoptionName }}')
         expect(adoptionPage).toContain('v-if="personalTimetableAdoptionSavedAtLabel"')
         expect(adoptionPage).toContain('Zuletzt gespeichert: {{ personalTimetableAdoptionSavedAtLabel }} Uhr')
         expect(adoptionPage).toContain('Ausgewählte Module')
@@ -631,8 +635,11 @@ describe('Student timetables overview V2 preparation', () => {
         expect(adoptionPage).toContain(':timetables="[adoptionDisplayedTimetable]"')
         expect(adoptionPage).toContain(':navigation-visible="false"')
         expect(adoptionPage).toContain(':position-visible="false"')
-        expect(adoptionPage).not.toContain('mdi-file-pdf-box')
-        expect(adoptionPage).not.toContain('PDF')
+        expect(adoptionPage).toContain('class="timetable-v3__adoption-pdf-button"')
+        expect(adoptionPage).toContain('prepend-icon="mdi-file-pdf-box"')
+        expect(adoptionPage).toContain(':loading="pdfExporting"')
+        expect(adoptionPage).toContain('@click="downloadManualTimetablePdf"')
+        expect(adoptionPage).toContain('PDF')
         expect(adoptionPage).toContain('class="timetable-v3__adoption-save-button"')
         expect(adoptionPage).toContain('prepend-icon="mdi-content-save-outline"')
         expect(adoptionPage).toContain('@click="savePersonalTimetable"')
@@ -645,6 +652,40 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain("path: '/students-timetables/create/adoption'")
         expect(source).toContain('timetable_index: String(timetableIndex)')
         expect(source).toContain('timetable_key: timetableKey')
+        expect(source).toContain('overviewPdf as downloadStudentTimetableOverviewPdf')
+        expect(source).toContain('downloadStudentTimetableOverviewPdf.url()')
+        expect(OverviewV2.data.call({}).pdfExporting).toBe(false)
+
+        const manualTimetablePdfPayload = OverviewV2.methods.manualTimetablePdfPayload.call({
+            adoptionSelectedModuleCount: 2,
+            currentSelectionClass: '1C',
+            currentSelectionFullName: 'PABINGER Elena',
+            personalTimetablePayload: vi.fn().mockReturnValue({
+                title: 'Stundenplan',
+                weekdays: [{ label: 'Montag' }],
+                semesters: [],
+            }),
+            studentPlanningSelectionFields: [
+                { label: 'Ethik / Religion', value: 'Ethik' },
+                { label: 'Sprache', value: 'Französisch' },
+            ],
+        })
+
+        expect(manualTimetablePdfPayload).toMatchObject({
+            manual_cover: true,
+            title: 'Stundenplan',
+            subtitle: '2 Module',
+            student: '1C · PABINGER Elena',
+            study_selections: [
+                { label: 'Ethik / Religion', value: 'Ethik' },
+                { label: 'Sprache', value: 'Französisch' },
+            ],
+            print_options: {
+                single_weeks: false,
+                course_list: false,
+                course_overview: false,
+            },
+        })
 
         expect(OverviewV2.computed.personalTimetableAdoptionSavedAtLabel.call({
             personalTimetableSavedInEditor: false,
@@ -661,6 +702,14 @@ describe('Student timetables overview V2 preparation', () => {
             personalTimetableSavedAtLabel: '20.08.2026, 12:35',
             savedTimetableAdoptionSource: 'published',
         })).toBe('20.08.2026, 12:35')
+        expect(OverviewV2.computed.publishedTimetableAdoptionName.call({
+            overview: { published_timetable: { name: '26ABC' } },
+            savedTimetableAdoptionSource: 'published',
+        })).toBe('26ABC')
+        expect(OverviewV2.computed.publishedTimetableAdoptionName.call({
+            overview: { published_timetable: { name: '26ABC' } },
+            savedTimetableAdoptionSource: 'personal',
+        })).toBe('')
 
         const pushedRoutes: unknown[] = []
         const restoreManualTimetableDraft = vi.fn().mockResolvedValue(true)

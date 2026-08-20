@@ -14,22 +14,59 @@
             </v-btn>
         </v-sheet>
 
-        <v-btn-toggle
-            :model-value="studyProgram"
-            mandatory
-            density="compact"
-            color="primary"
-            variant="outlined"
-            class="mb-4"
-            :disabled="studyProgramSwitchDisabled"
-            @update:model-value="changeStudyProgram">
-            <v-btn
-                v-for="option in studyProgramOptions"
-                :key="option.value"
-                :value="option.value">
-                {{ option.label }}
-            </v-btn>
-        </v-btn-toggle>
+        <div class="d-flex flex-wrap align-center ga-3 mb-4">
+            <v-btn-toggle
+                :model-value="studyProgram"
+                mandatory
+                density="compact"
+                color="primary"
+                variant="outlined"
+                :disabled="studyProgramSwitchDisabled"
+                @update:model-value="changeStudyProgram">
+                <v-btn
+                    v-for="option in studyProgramOptions"
+                    :key="option.value"
+                    :value="option.value">
+                    {{ option.label }}
+                </v-btn>
+            </v-btn-toggle>
+
+            <strong class="text-primary">{{ personalSchoolyearLabel }}</strong>
+        </div>
+
+        <v-alert
+            v-if="!settingsLoading && !subjectRows.length && previousSchoolyear"
+            type="info"
+            variant="tonal"
+            class="mb-4">
+            <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+                <div>
+                    Für {{ personalSchoolyearLabel }} wurden noch keine Fächerdaten übernommen.
+                    Sollen die {{ previousSchoolyear.subject_rows_count }} Fachzeilen
+                    ({{ previousSchoolyear.normal_subject_rows_count }} Normalstudium,
+                    {{ previousSchoolyear.compact_subject_rows_count }} Kompaktstudium) und
+                    {{ previousSchoolyear.mappings_count }} Zuordnungen aus
+                    <strong>{{ previousSchoolyear.name }}</strong> einmalig übernommen werden?
+                </div>
+                <v-btn
+                    v-if="canManageSubjectSettings"
+                    color="primary"
+                    variant="flat"
+                    :loading="subjectPlanCarryForwardLoading"
+                    prepend-icon="mdi-content-copy"
+                    @click="carryForwardSubjectPlan">
+                    Daten aus Vorjahr übernehmen
+                </v-btn>
+                <span v-else>Bitte wenden Sie sich dafür an einen Administrator.</span>
+            </div>
+        </v-alert>
+
+        <v-alert v-if="settingsError && subject_action === 'subject-plan'" type="error" variant="tonal" class="mb-4">
+            {{ settingsError }}
+        </v-alert>
+        <v-alert v-if="settingsMessage && subject_action === 'subject-plan'" type="success" variant="tonal" class="mb-4">
+            {{ settingsMessage }}
+        </v-alert>
 
         <v-card v-if="subject_action === 'subject-plan'" rounded="lg" border class="subject-overview-card mb-4">
             <v-card-title class="subject-overview-card__title d-flex align-center ga-2">
@@ -46,13 +83,13 @@
                     variant="tonal"
                     density="compact"
                     class="mb-3">
-                    Die angezeigten Wochenstunden sind Kontakt-Unterrichtseinheiten. Eigenstudium ist nicht enthalten.
+                    Die angezeigten Wochenstunden sind Schul-Unterrichtseinheiten. Eigenstudium ist nicht enthalten.
                 </v-alert>
 
                 <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
 
                 <v-alert
-                    v-if="!settingsLoading && !activeSubjectRows.length"
+                    v-if="!settingsLoading && !activeSubjectRows.length && !previousSchoolyear"
                     type="info"
                     variant="tonal"
                     class="mb-3">
@@ -216,7 +253,7 @@
             </v-card-title>
             <v-card-text class="subject-section-card__text">
                 <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
-                <v-alert v-if="!settingsLoading && !subjectRows.length" type="info" variant="tonal">
+                <v-alert v-if="!settingsLoading && !subjectRows.length && !previousSchoolyear" type="info" variant="tonal">
                     Keine Fächer vorhanden.
                 </v-alert>
                 <div v-else class="subjects-settings-table-wrap">
@@ -399,7 +436,7 @@
             </v-card-title>
             <v-card-text class="subject-section-card__text">
                 <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
-                <v-alert v-if="!settingsLoading && !subjectMappings.length" type="info" variant="tonal">
+                <v-alert v-if="!settingsLoading && !subjectMappings.length && !previousSchoolyear" type="info" variant="tonal">
                     Keine Zuordnungen vorhanden.
                 </v-alert>
                 <div v-else class="subjects-settings-table-wrap">
@@ -483,6 +520,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import {
+    carryForwardSubjectPlan as carryForwardSubjectPlanRoute,
     settings as subjectSettingsRoute,
     updateMappings as updateSubjectMappingsRoute,
     updateSubjects as updateSubjectsRoute,
@@ -490,6 +528,7 @@ import {
 
 const NORMAL_STUDY_PROGRAM = 'normalstudium'
 const COMPACT_STUDY_PROGRAM = 'kompaktstudium'
+const PERSONAL_SCHOOLYEAR_SCOPE = 'personal'
 const STUDY_PROGRAM_OPTIONS = [
     { value: NORMAL_STUDY_PROGRAM, label: 'Normalstudium' },
     { value: COMPACT_STUDY_PROGRAM, label: 'Kompaktstudium' },
@@ -513,7 +552,9 @@ export default {
             subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection),
             subjectRows: [],
             subjectMappings: [],
+            previousSchoolyear: null,
             settingsLoading: false,
+            subjectPlanCarryForwardLoading: false,
             subjectsSaving: false,
             mappingsSaving: false,
             subjectsEditMode: false,
@@ -550,9 +591,22 @@ export default {
         studyProgramLabel() {
             return STUDY_PROGRAM_OPTIONS.find(option => option.value === this.studyProgram)?.label || 'Normalstudium'
         },
+        personalSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || 'nicht festgelegt'
+        },
+        personalSchoolyearRouteOptions() {
+            return {
+                query: {
+                    schoolyear_scope: PERSONAL_SCHOOLYEAR_SCOPE,
+                },
+            }
+        },
         studyProgramSwitchDisabled() {
             return this.settingsLoading
                 || this.subjectsSaving
+                || this.subjectPlanCarryForwardLoading
                 || this.subjectsEditMode
                 || this.mappingsSaving
                 || this.mappingsEditMode
@@ -816,17 +870,22 @@ export default {
             this.subjectMappings = []
             this.subjectRowsSnapshot = []
             this.subjectMappingsSnapshot = []
+            this.previousSchoolyear = null
             this.loadSettings()
         },
         async loadSettings() {
             this.settingsLoading = true
             this.settingsError = ''
             try {
-                const response = await axios.get(subjectSettingsRoute.url({ studyProgram: this.studyProgram }))
+                const response = await axios.get(subjectSettingsRoute.url(
+                    { studyProgram: this.studyProgram },
+                    this.personalSchoolyearRouteOptions,
+                ))
                 this.applySettings(response.data.data || {})
             } catch {
                 this.subjectRows = []
                 this.subjectMappings = []
+                this.previousSchoolyear = null
                 this.settingsError = 'Die Fächer-Einstellungen konnten nicht geladen werden.'
             } finally {
                 this.settingsLoading = false
@@ -1421,6 +1480,7 @@ export default {
         applySettings(settings) {
             this.subjectRows = (settings.subjects || []).map(subject => this.normalizeSubjectRow(subject))
             this.subjectMappings = (settings.mappings || []).map(mapping => this.normalizeMappingRow(mapping))
+            this.previousSchoolyear = settings.previous_schoolyear || null
 
             if (!this.subjectsEditMode) {
                 this.subjectRowsSnapshot = this.cloneRows(this.subjectRows)
@@ -1651,12 +1711,39 @@ export default {
 
             return this.displayValue(branch)
         },
+        async carryForwardSubjectPlan() {
+            if (
+                !this.previousSchoolyear
+                || this.subjectPlanCarryForwardLoading
+            ) {
+                return
+            }
+
+            this.subjectPlanCarryForwardLoading = true
+            this.settingsError = ''
+            this.settingsMessage = ''
+
+            try {
+                const response = await axios.post(carryForwardSubjectPlanRoute.url(
+                    this.personalSchoolyearRouteOptions,
+                ))
+                await this.loadSettings()
+                this.settingsMessage = response.data.message || 'Die Daten aus dem Vorjahr wurden übernommen.'
+            } catch (error) {
+                this.settingsError = error?.response?.data?.message || 'Die Daten aus dem Vorjahr konnten nicht übernommen werden.'
+            } finally {
+                this.subjectPlanCarryForwardLoading = false
+            }
+        },
         async saveSubjectRows() {
             this.subjectsSaving = true
             this.settingsError = ''
             this.settingsMessage = ''
             try {
-                const response = await axios.put(updateSubjectsRoute.url({ studyProgram: this.studyProgram }), {
+                const response = await axios.put(updateSubjectsRoute.url(
+                    { studyProgram: this.studyProgram },
+                    this.personalSchoolyearRouteOptions,
+                ), {
                     subjects: this.subjectRows.map(subject => ({
                         semester: subject.semester || null,
                         branch: subject.branch === 'common' ? null : subject.branch || null,
@@ -1682,7 +1769,10 @@ export default {
             this.settingsError = ''
             this.settingsMessage = ''
             try {
-                const response = await axios.put(updateSubjectMappingsRoute.url({ studyProgram: this.studyProgram }), {
+                const response = await axios.put(updateSubjectMappingsRoute.url(
+                    { studyProgram: this.studyProgram },
+                    this.personalSchoolyearRouteOptions,
+                ), {
                     mappings: this.subjectMappings.map(mapping => ({
                         json_subject: mapping.json_subject || null,
                         tt_subject: mapping.tt_subject || null,

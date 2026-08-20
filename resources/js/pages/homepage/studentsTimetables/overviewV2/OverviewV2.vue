@@ -882,7 +882,18 @@
                             <span class="timetable-v3__schedule-mode-copy">
                                 <span class="timetable-v3__adoption-heading">
                                     <span class="timetable-v3__adoption-title-copy">
-                                        <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                        <span class="timetable-v3__adoption-title">
+                                            <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                            <v-chip
+                                                v-if="publishedTimetableAdoptionName"
+                                                class="timetable-v3__published-timetable-name"
+                                                color="#c2410c"
+                                                label
+                                                size="small"
+                                                variant="tonal">
+                                                Nr. {{ publishedTimetableAdoptionName }}
+                                            </v-chip>
+                                        </span>
                                         <span
                                             v-if="personalTimetableAdoptionSavedAtLabel"
                                             class="timetable-v3__adoption-saved-at">
@@ -890,6 +901,18 @@
                                         </span>
                                     </span>
                                     <span class="timetable-v3__adoption-actions">
+                                        <v-btn
+                                            class="timetable-v3__adoption-pdf-button"
+                                            color="#c2410c"
+                                            :disabled="pdfExporting || !adoptionDisplayedTimetable"
+                                            :loading="pdfExporting"
+                                            prepend-icon="mdi-file-pdf-box"
+                                            size="large"
+                                            type="button"
+                                            variant="outlined"
+                                            @click="downloadManualTimetablePdf">
+                                            PDF
+                                        </v-btn>
                                         <v-btn
                                             class="timetable-v3__adoption-save-button"
                                             color="success"
@@ -1695,6 +1718,9 @@ import {
     show as showStudentTimetableV3State,
     update as updateStudentTimetableV3State,
 } from '@/actions/App/Http/Controllers/Homepage/StudentTimetableV3StateController'
+import {
+    overviewPdf as downloadStudentTimetableOverviewPdf,
+} from '@/actions/App/Http/Controllers/Homepage/StudentsTimetablesStudentController'
 import { useStudentTimetablesUserStore } from '@/stores/studentsTimetables/StudentTimetablesUserStore'
 import TimetableV3PossibleTimetables from '@/pages/admin/studentsTimetables/timetableV3/TimetableV3PossibleTimetables.vue'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
@@ -2795,6 +2821,7 @@ export default {
             moduleCoursesDialogOpen: false,
             moduleSelectionLimitMessage: '',
             pageLoading: true,
+            pdfExporting: false,
             personalTimetableSavedInEditor: false,
             personalTimetableSaving: false,
             savedTimetableAdoptionBase: null,
@@ -3223,6 +3250,12 @@ export default {
             return this.savedTimetableAdoptionSource === 'personal' || this.personalTimetableSavedInEditor
                 ? this.personalTimetableSavedAtLabel
                 : ''
+        },
+
+        publishedTimetableAdoptionName() {
+            if (this.savedTimetableAdoptionSource !== 'published') return ''
+
+            return String(this.overview?.published_timetable?.name || '').trim()
         },
 
         hasPublishedTimetable() {
@@ -3953,6 +3986,86 @@ export default {
                 this.adoptionDisplayedTimetable || { slots: {} },
                 this.personalTimetableSchoolHours,
             )
+        },
+
+        manualTimetablePdfPayload() {
+            return {
+                manual_cover: true,
+                ...this.personalTimetablePayload(),
+                subtitle: `${this.adoptionSelectedModuleCount} ${this.adoptionSelectedModuleCount === 1 ? 'Modul' : 'Module'}`,
+                student: [this.currentSelectionClass, this.currentSelectionFullName]
+                    .filter(Boolean)
+                    .join(' · '),
+                generated_at: new Intl.DateTimeFormat('de-AT', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                }).format(new Date()),
+                study_selections: this.studentPlanningSelectionFields.map(field => ({
+                    label: String(field?.label || '').trim().slice(0, 80),
+                    value: String(field?.value || '–').trim().slice(0, 120) || '–',
+                })).filter(field => field.label),
+                print_options: {
+                    single_weeks: false,
+                    course_list: false,
+                    course_overview: false,
+                },
+            }
+        },
+
+        async downloadManualTimetablePdf() {
+            if (this.pdfExporting || !this.adoptionDisplayedTimetable) return
+
+            this.pdfExporting = true
+
+            try {
+                const response = await axios.post(
+                    downloadStudentTimetableOverviewPdf.url(),
+                    this.manualTimetablePdfPayload(),
+                    { responseType: 'blob' },
+                )
+                const blob = response.data instanceof Blob
+                    ? response.data
+                    : new Blob([response.data], { type: 'application/pdf' })
+                const filename = this.fileNameFromContentDisposition(response?.headers?.['content-disposition'])
+                    || 'manueller-stundenplan.pdf'
+
+                this.downloadBlob(blob, filename)
+            } catch (error) {
+                console.error(error)
+                window.alert?.('Das PDF konnte nicht erstellt werden.')
+            } finally {
+                this.pdfExporting = false
+            }
+        },
+
+        downloadBlob(blob, filename) {
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+
+            link.href = objectUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
+        },
+
+        fileNameFromContentDisposition(headerValue) {
+            const normalizedHeader = String(headerValue || '').trim()
+            if (!normalizedHeader) return ''
+
+            const utf8Match = normalizedHeader.match(/filename\*=UTF-8''([^;]+)/iu)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1].replace(/^"|"$/gu, ''))
+                } catch {
+                    return utf8Match[1].replace(/^"|"$/gu, '')
+                }
+            }
+
+            const filenameMatch = normalizedHeader.match(/filename="?([^";]+)"?/iu)
+
+            return filenameMatch?.[1] || ''
         },
 
         async savePersonalTimetable() {
@@ -6333,6 +6446,20 @@ export default {
     min-width: 0;
 }
 
+.timetable-v3__adoption-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+}
+
+.timetable-v3__published-timetable-name {
+    flex: 0 0 auto;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+}
+
 .timetable-v3__adoption-saved-at {
     color: #64748b;
     font-size: 0.82rem;
@@ -6345,6 +6472,12 @@ export default {
     flex-wrap: wrap;
     gap: 10px;
     justify-content: flex-end;
+}
+
+.timetable-v3__adoption-pdf-button {
+    flex: 0 0 auto;
+    font-weight: 800;
+    letter-spacing: 0.04em;
 }
 
 .timetable-v3__adoption-save-button {

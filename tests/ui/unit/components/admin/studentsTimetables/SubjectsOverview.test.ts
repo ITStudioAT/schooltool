@@ -6,6 +6,111 @@ import TimetableV2 from '@/pages/admin/studentsTimetables/timetableV2/TimetableV
 import TtEntries from '@/pages/admin/studentsTimetables/ttEntries/TtEntries.vue'
 
 describe('Students timetable subjects overview', () => {
+    it('shows and loads the subject plan for the personal schoolyear', async () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    subjects: [{ json_code: 'D1' }],
+                    mappings: [],
+                },
+            },
+        })
+        const applySettings = vi.fn()
+        const context: any = {
+            applySettings,
+            settingsError: '',
+            settingsLoading: false,
+            studyProgram: 'normalstudium',
+            personalSchoolyearRouteOptions: computed.personalSchoolyearRouteOptions.call({}),
+        }
+
+        vi.stubGlobal('axios', { get })
+
+        try {
+            await methods.loadSettings.call(context)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(computed.personalSchoolyearLabel.call({
+            config: {
+                selected_schoolyear: {
+                    concerns: '2026/27',
+                    name: 'Schuljahr 2026/27',
+                },
+            },
+        })).toBe('2026/27')
+        expect(get).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/subjects-overview-settings/normalstudium?schoolyear_scope=personal',
+        )
+        expect(applySettings).toHaveBeenCalledWith({
+            subjects: [{ json_code: 'D1' }],
+            mappings: [],
+        })
+
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('<strong class="text-primary">{{ personalSchoolyearLabel }}</strong>')
+        expect(componentSource).not.toContain('Persönliches Schuljahr:')
+        expect(componentSource).not.toContain('prepend-icon="mdi-calendar"')
+        expect(componentSource).toContain('schoolyear_scope: PERSONAL_SCHOOLYEAR_SCOPE')
+    })
+
+    it('asks once before carrying all subject-plan data forward from the previous schoolyear', async () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const post = vi.fn().mockResolvedValue({
+            data: {
+                message: '151 Fachzeilen und 5 Zuordnungen aus 2025/26 übernommen.',
+            },
+        })
+        const loadSettings = vi.fn().mockResolvedValue(undefined)
+        const context: any = {
+            loadSettings,
+            subjectPlanCarryForwardLoading: false,
+            personalSchoolyearRouteOptions: computed.personalSchoolyearRouteOptions.call({}),
+            previousSchoolyear: {
+                id: 24,
+                name: '2025/26',
+                subject_rows_count: 151,
+                normal_subject_rows_count: 75,
+                compact_subject_rows_count: 76,
+                mappings_count: 5,
+            },
+            settingsError: '',
+            settingsMessage: '',
+        }
+
+        vi.stubGlobal('axios', { post })
+
+        try {
+            await methods.carryForwardSubjectPlan.call(context)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(post).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal',
+        )
+        expect(loadSettings).toHaveBeenCalledOnce()
+        expect(context.settingsMessage).toBe('151 Fachzeilen und 5 Zuordnungen aus 2025/26 übernommen.')
+        expect(context.subjectPlanCarryForwardLoading).toBe(false)
+
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('Sollen die {{ previousSchoolyear.subject_rows_count }} Fachzeilen')
+        expect(componentSource).toContain('Daten aus Vorjahr übernehmen')
+        expect(componentSource).toContain('@click="carryForwardSubjectPlan"')
+    })
+
     it('keeps language alternatives together while splitting shared multi-module courses', () => {
         const methods = (SubjectsOverview as any).methods
         const ctx = {
@@ -2555,7 +2660,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('refreshForSchoolyearChange()')
         expect(componentSource).not.toContain('refreshFilePond')
         expect(componentSource).not.toContain('Noch keine JSON-Datei importiert.')
-        expect(componentSource).toContain('Kontakt-Unterrichtseinheiten')
+        expect(componentSource).toContain('Schul-Unterrichtseinheiten')
         expect(componentSource).not.toContain('importSubjectCountLabel(importItem.analysis)')
         expect(componentSource).not.toContain('analysis?.subjects_total')
         expect(componentSource).not.toContain('Fächer / ${courseRowsTotal} Kurse')
@@ -2608,9 +2713,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subjects-settings-table__name-lines')
         expect(componentSource).not.toContain('Importierte Fächer')
         expect(componentSource).toContain('Fach-Zuordnung')
-        expect(componentSource).toContain('subjectSettingsRoute.url({ studyProgram: this.studyProgram })')
-        expect(componentSource).toContain('updateSubjectsRoute.url({ studyProgram: this.studyProgram })')
-        expect(componentSource).toContain('updateSubjectMappingsRoute.url({ studyProgram: this.studyProgram })')
+        expect(componentSource).toContain('subjectSettingsRoute.url(')
+        expect(componentSource).toContain('updateSubjectsRoute.url(')
+        expect(componentSource).toContain('updateSubjectMappingsRoute.url(')
+        expect(componentSource).toContain('this.personalSchoolyearRouteOptions')
         expect(componentSource).toContain('saveSubjectRows()')
         expect(componentSource).toContain('saveMappings()')
         expect(componentSource).toContain('rawSubjectHours(subjects)')

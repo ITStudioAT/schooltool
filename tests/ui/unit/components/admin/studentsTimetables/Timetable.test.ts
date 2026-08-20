@@ -222,7 +222,9 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('st-import-file-info-note')
         expect(componentSource).toContain('st-import-history-card')
         expect(componentSource).toContain('Importverlauf')
-        expect(componentSource).toContain("import { downloadSource as downloadTimetableImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/TimetableImportController'")
+        expect(componentSource).toContain('downloadSource as downloadTimetableImportSource')
+        expect(componentSource).toContain('confirm as confirmTimetableImport')
+        expect(componentSource).toContain('destroy as destroyTimetableImport')
         expect(componentSource).toContain("import { downloadSource as downloadRecognitionImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/RecognitionCsvUploadController'")
         expect(componentSource).toContain("import { downloadSource as downloadImport116Source } from '@/actions/App/Http/Controllers/Admin/Teaching/Import116Controller'")
         expect(componentSource).toContain(':href="timetableSourceDownloadUrl(importItem)"')
@@ -473,6 +475,21 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain("this.uploadError = serverMessage || 'Die CSV-Datei konnte nicht gespeichert werden.'")
         expect(componentSource).toContain('Vor der Übernahme wird geprüft, ob die Datei gültige Schülerdaten enthält.')
         expect(componentSource).toContain('Vor dem Löschen prüft das System alle verbleibenden Quelldateien.')
+        expect(componentSource).toContain('Vorimport – noch nicht übernommen')
+        expect(componentSource).toContain('Die Datei wurde geprüft. Der aktive Stundenplan wurde noch nicht verändert.')
+        expect(componentSource).toContain('Gültige TT-Einträge')
+        expect(componentSource).toContain('<strong>Datumsprüfung:</strong>')
+        expect(componentSource).toContain('timetablePreview.date_plausibility.message')
+        expect(componentSource).toContain(":type=\"timetablePreviewDateIsPlausible ? 'success' : 'error'\"")
+        expect(componentSource).toContain(':disabled="deletingPreview || !timetablePreviewDateIsPlausible"')
+        expect(componentSource).toContain('Jetzt importieren')
+        expect(componentSource).toContain('Datei löschen')
+        expect(componentSource).toContain('confirmTimetablePreview()')
+        expect(componentSource).toContain('deleteTimetablePreview()')
+        expect(componentSource).toContain('confirmTimetableImport.url(this.timetablePreview.id)')
+        expect(componentSource).toContain('destroyTimetableImport.url(this.timetablePreview.id)')
+        expect(componentSource).toContain('this.timetablePreview = timetableResponse.data?.preview || null')
+        expect(componentSource.match(/Schuljahr:\s*\{\{ personalImportSchoolyearLabel \}\}/g)?.length).toBeGreaterThanOrEqual(2)
         expect(componentSource).toContain('@click.stop="import116OpenDeleteDialog(run)"')
         expect(componentSource).toContain('Die aktiven Schülerdaten bleiben unverändert.')
         expect(fileUploadSource).toContain('onerror: onServerError')
@@ -524,6 +541,18 @@ describe('Students timetable timetable page', () => {
                 selected_schoolyear: { id: 11, concerns: '2025/26' },
             },
         })).toBe('2025/26')
+    })
+
+    it('allows confirming only date-plausible timetable previews', () => {
+        const computed = (Timetable as any).computed
+
+        expect(computed.timetablePreviewDateIsPlausible.call({
+            timetablePreview: { date_plausibility: { is_plausible: true } },
+        })).toBe(true)
+        expect(computed.timetablePreviewDateIsPlausible.call({
+            timetablePreview: { date_plausibility: { is_plausible: false } },
+        })).toBe(false)
+        expect(computed.timetablePreviewDateIsPlausible.call({ timetablePreview: null })).toBe(false)
     })
 
     it('shows a failed Sokrates import as an error without updating the last import time', async () => {
@@ -580,6 +609,55 @@ describe('Students timetable timetable page', () => {
         expect(ctx.deleteError).toBe('Die verbleibende Quelldatei fehlt. Es wurde nichts gelöscht.')
         expect(ctx.deleting).toBe(false)
         expect(ctx.loadImportButtonInfo).not.toHaveBeenCalled()
+    })
+
+    it('confirms and deletes timetable previews through the scoped import actions', async () => {
+        const methods = (Timetable as any).methods
+        const globalScope = globalThis as any
+        const originalAxios = globalScope.axios
+        const post = vi.fn().mockResolvedValue({})
+        const remove = vi.fn().mockResolvedValue({})
+        globalScope.axios = { post, delete: remove }
+
+        try {
+            const confirmContext: any = {
+                timetablePreview: { id: 41 },
+                confirmingPreview: false,
+                previewActionError: 'alt',
+                uploadedFilename: 'preview.txt',
+                loadImportButtonInfo: vi.fn().mockResolvedValue(undefined),
+                schedulePolling: vi.fn(),
+                closeImportUploadPage: vi.fn(),
+            }
+
+            await methods.confirmTimetablePreview.call(confirmContext)
+
+            expect(post).toHaveBeenCalledWith('/api/admin/students-timetables/imports/41/confirm')
+            expect(confirmContext.timetablePreview).toBeNull()
+            expect(confirmContext.loadImportButtonInfo).toHaveBeenCalledOnce()
+            expect(confirmContext.schedulePolling).toHaveBeenCalledOnce()
+            expect(confirmContext.closeImportUploadPage).toHaveBeenCalledOnce()
+            expect(confirmContext.confirmingPreview).toBe(false)
+
+            const deleteContext: any = {
+                timetablePreview: { id: 42 },
+                deletingPreview: false,
+                previewActionError: 'alt',
+                uploadedFilename: 'preview.txt',
+                refreshFilePond: 0,
+                loadImportButtonInfo: vi.fn().mockResolvedValue(undefined),
+            }
+
+            await methods.deleteTimetablePreview.call(deleteContext)
+
+            expect(remove).toHaveBeenCalledWith('/api/admin/students-timetables/imports/42')
+            expect(deleteContext.timetablePreview).toBeNull()
+            expect(deleteContext.refreshFilePond).toBe(1)
+            expect(deleteContext.loadImportButtonInfo).toHaveBeenCalledOnce()
+            expect(deleteContext.deletingPreview).toBe(false)
+        } finally {
+            globalScope.axios = originalAxios
+        }
     })
 
     it('formats import button metadata', () => {

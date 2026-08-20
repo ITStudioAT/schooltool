@@ -8,6 +8,8 @@ use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
+use App\Support\PrivateImportSourceFile;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -88,6 +90,31 @@ class TimetableImportService
         ];
     }
 
+    /**
+     * @return array{
+     *     is_plausible: bool,
+     *     status: string,
+     *     schoolyear_label: ?string,
+     *     schoolyear_from: ?string,
+     *     schoolyear_until: ?string,
+     *     data_from: ?string,
+     *     data_until: ?string,
+     *     message: string
+     * }
+     */
+    public function datePlausibilityFor(TimetableImport $import): array
+    {
+        $schoolyear = Schoolyear::query()
+            ->where('school_id', $import->school_id)
+            ->find($import->schoolyear_id);
+
+        return $this->datePlausibility(
+            $schoolyear,
+            $this->dateString($import->tt_first_date),
+            $this->dateString($import->tt_last_date),
+        );
+    }
+
     public function createImport(User $user, string $storedFilename, string $originalFilename, string $filePath, ?int $schoolyearId = null): TimetableImport
     {
         $schoolyear = $this->schoolyearWithSemesterTwoStart($user, $schoolyearId);
@@ -104,6 +131,116 @@ class TimetableImportService
         ProcessTimetableImportJob::dispatch($import->id);
 
         return $import;
+    }
+
+    public function createPreview(User $user, string $storedFilename, string $originalFilename, string $filePath, ?int $schoolyearId = null): TimetableImport
+    {
+        $schoolyear = $this->schoolyearWithSemesterTwoStart($user, $schoolyearId);
+
+        if (TimetableImport::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->where('import_status', 'preview')
+            ->exists()) {
+            $this->deleteSourceFile($user->school_id, $schoolyear->id, $filePath);
+
+            throw ValidationException::withMessages([
+                'file' => 'Für dieses Schuljahr ist bereits ein Vorimport offen. Bitte importieren oder löschen Sie zuerst diese Vorschau.',
+            ]);
+        }
+
+        $analysis = $this->analyzeFile(storage_path($filePath));
+
+        if ($this->importableTimetableRows($analysis) === 0) {
+            $this->deleteSourceFile($user->school_id, $schoolyear->id, $filePath);
+
+            throw ValidationException::withMessages([
+                'file' => 'Die TXT-Datei enthält keine gültigen Stundenplan-Einträge. Bestehende Daten wurden nicht verändert.',
+            ]);
+        }
+
+        return $this->createImportRecord(
+            $user,
+            $storedFilename,
+            $originalFilename,
+            $filePath,
+            $schoolyear,
+            $analysis,
+            'preview',
+        );
+    }
+
+    public function confirmPreview(TimetableImport $import): TimetableImport
+    {
+        $analysis = $this->analyzeFile(storage_path($import->file_path));
+
+        if ($this->importableTimetableRows($analysis) === 0) {
+            throw ValidationException::withMessages([
+                'file' => 'Die Vorschau kann nicht importiert werden: Die Quelldatei fehlt, ist unlesbar oder enthält keine gültigen Stundenplan-Einträge.',
+            ]);
+        }
+
+        $schoolyear = Schoolyear::query()
+            ->where('school_id', $import->school_id)
+            ->find($import->schoolyear_id);
+        $datePlausibility = $this->datePlausibility(
+            $schoolyear,
+            $analysis['tt_first_date'],
+            $analysis['tt_last_date'],
+        );
+
+        if (! $datePlausibility['is_plausible']) {
+            throw ValidationException::withMessages([
+                'file' => $datePlausibility['message'],
+            ]);
+        }
+
+        $updated = TimetableImport::query()
+            ->whereKey($import->id)
+            ->where('import_status', 'preview')
+            ->update([
+                ...$analysis,
+                'import_status' => 'pending',
+                'progress_current' => 0,
+                'progress_total' => 0,
+                'import_message' => 'Import wartet auf Verarbeitung.',
+                'import_error' => null,
+                'started_at' => null,
+                'finished_at' => null,
+            ]);
+
+        if ($updated !== 1) {
+            throw ValidationException::withMessages([
+                'import' => 'Diese Vorschau wurde bereits bestätigt oder gelöscht.',
+            ]);
+        }
+
+        ProcessTimetableImportJob::dispatch((int) $import->id);
+
+        return $import->refresh();
+    }
+
+    public function deletePreview(TimetableImport $import): void
+    {
+        $sourcePath = PrivateImportSourceFile::resolve(
+            $import->file_path,
+            "app/private/{$import->school_id}/timetable-imports/{$import->schoolyear_id}",
+        );
+
+        $deleted = TimetableImport::query()
+            ->whereKey($import->id)
+            ->where('import_status', 'preview')
+            ->delete();
+
+        if ($deleted !== 1) {
+            throw ValidationException::withMessages([
+                'import' => 'Nur eine noch nicht bestätigte Vorschau kann direkt gelöscht werden.',
+            ]);
+        }
+
+        if ($sourcePath !== null) {
+            @unlink($sourcePath);
+        }
     }
 
     public function processImport(TimetableImport $import): TimetableImport
@@ -137,6 +274,18 @@ class TimetableImportService
                 $import,
                 'Die TXT-Datei enthält keine gültigen Stundenplan-Einträge. Bestehende Daten wurden nicht verändert.',
             );
+
+            return $import->refresh();
+        }
+
+        $datePlausibility = $this->datePlausibility(
+            $schoolyear,
+            $analysis['tt_first_date'],
+            $analysis['tt_last_date'],
+        );
+
+        if (! $datePlausibility['is_plausible']) {
+            $this->markFailed($import, $datePlausibility['message']);
 
             return $import->refresh();
         }
@@ -251,9 +400,12 @@ class TimetableImportService
         $filePath = storage_path($import->file_path);
         $removedImportEntries = StudentTimetableEntry::where('timetable_import_id', $importId)->count();
 
+        $this->assertRemainingImportsCanBeReplayed($import);
+
         $remainingImports = TimetableImport::where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->whereKeyNot($importId)
+            ->where('import_status', 'completed')
             ->orderBy('imported_at')
             ->orderBy('id')
             ->get();
@@ -301,9 +453,28 @@ class TimetableImportService
         $this->schoolyearWithSemesterTwoStart($user, $schoolyearId);
     }
 
-    private function createImportRecord(User $user, string $storedFilename, string $originalFilename, string $filePath, Schoolyear $schoolyear): TimetableImport
-    {
-        return DB::transaction(function () use ($user, $storedFilename, $originalFilename, $filePath, $schoolyear): TimetableImport {
+    /**
+     * @param  array{sections: array<string, int>, total_lines: int, tt_courses: int, tt_skipped_invalid: int, tt_first_date: ?string, tt_last_date: ?string}|null  $analysis
+     */
+    private function createImportRecord(
+        User $user,
+        string $storedFilename,
+        string $originalFilename,
+        string $filePath,
+        Schoolyear $schoolyear,
+        ?array $analysis = null,
+        string $status = 'pending',
+    ): TimetableImport {
+        return DB::transaction(function () use ($user, $storedFilename, $originalFilename, $filePath, $schoolyear, $analysis, $status): TimetableImport {
+            $analysis ??= [
+                'sections' => [],
+                'total_lines' => 0,
+                'tt_courses' => 0,
+                'tt_skipped_invalid' => 0,
+                'tt_first_date' => null,
+                'tt_last_date' => null,
+            ];
+
             return TimetableImport::create($this->importCreationPayload([
                 'school_id' => $user->school_id,
                 'schoolyear_id' => $schoolyear->id,
@@ -311,16 +482,13 @@ class TimetableImportService
                 'original_filename' => $originalFilename,
                 'stored_filename' => $storedFilename,
                 'file_path' => $filePath,
-                'sections' => [],
-                'total_lines' => 0,
-                'tt_courses' => 0,
-                'tt_skipped_invalid' => 0,
-                'tt_first_date' => null,
-                'tt_last_date' => null,
-                'import_status' => 'pending',
+                ...$analysis,
+                'import_status' => $status,
                 'progress_current' => 0,
                 'progress_total' => 0,
-                'import_message' => 'Import wartet auf Verarbeitung.',
+                'import_message' => $status === 'preview'
+                    ? 'Vorimport geprüft. Die Daten wurden noch nicht übernommen.'
+                    : 'Import wartet auf Verarbeitung.',
                 'import_error' => null,
                 'imported_at' => now(),
                 'started_at' => null,
@@ -472,6 +640,103 @@ class TimetableImportService
         ]));
     }
 
+    /**
+     * @return array{
+     *     is_plausible: bool,
+     *     status: string,
+     *     schoolyear_label: ?string,
+     *     schoolyear_from: ?string,
+     *     schoolyear_until: ?string,
+     *     data_from: ?string,
+     *     data_until: ?string,
+     *     message: string
+     * }
+     */
+    private function datePlausibility(?Schoolyear $schoolyear, ?string $dataFrom, ?string $dataUntil): array
+    {
+        $schoolyearLabel = $schoolyear
+            ? trim((string) ($schoolyear->concerns ?: $schoolyear->name))
+            : null;
+        $schoolyearFrom = $schoolyear ? $this->dateString($schoolyear->from) : null;
+        $schoolyearUntil = $schoolyear ? $this->dateString($schoolyear->until) : null;
+
+        $payload = [
+            'is_plausible' => false,
+            'status' => 'invalid',
+            'schoolyear_label' => $schoolyearLabel ?: null,
+            'schoolyear_from' => $schoolyearFrom,
+            'schoolyear_until' => $schoolyearUntil,
+            'data_from' => $dataFrom,
+            'data_until' => $dataUntil,
+        ];
+
+        if (! $schoolyear) {
+            return [
+                ...$payload,
+                'status' => 'schoolyear_missing',
+                'message' => 'Das gewählte Schuljahr wurde nicht gefunden. Der Import ist gesperrt.',
+            ];
+        }
+
+        if (! $schoolyearFrom || ! $schoolyearUntil || $schoolyearFrom > $schoolyearUntil) {
+            return [
+                ...$payload,
+                'status' => 'schoolyear_dates_missing',
+                'message' => 'Für das gewählte Schuljahr sind Beginn und Ende nicht vollständig oder nicht plausibel hinterlegt. Der Import ist gesperrt.',
+            ];
+        }
+
+        if (! $dataFrom || ! $dataUntil || $dataFrom > $dataUntil) {
+            return [
+                ...$payload,
+                'status' => 'data_dates_missing',
+                'message' => 'Aus den gültigen TT-Einträgen konnte kein plausibler Datenzeitraum ermittelt werden. Der Import ist gesperrt.',
+            ];
+        }
+
+        $formattedDataRange = $this->formattedDateRange($dataFrom, $dataUntil);
+        $formattedSchoolyearRange = $this->formattedDateRange($schoolyearFrom, $schoolyearUntil);
+        $formattedSchoolyearLabel = $schoolyearLabel !== '' ? " {$schoolyearLabel}" : '';
+
+        if ($dataFrom < $schoolyearFrom || $dataUntil > $schoolyearUntil) {
+            return [
+                ...$payload,
+                'status' => 'outside_schoolyear',
+                'message' => "Der Datenzeitraum {$formattedDataRange} liegt nicht vollständig im ausgewählten Schuljahr{$formattedSchoolyearLabel} ({$formattedSchoolyearRange}). Der Import ist gesperrt.",
+            ];
+        }
+
+        return [
+            ...$payload,
+            'is_plausible' => true,
+            'status' => 'plausible',
+            'message' => "Der Datenzeitraum {$formattedDataRange} liegt vollständig im ausgewählten Schuljahr{$formattedSchoolyearLabel} ({$formattedSchoolyearRange}).",
+        ];
+    }
+
+    private function dateString(mixed $date): ?string
+    {
+        if ($date instanceof CarbonInterface) {
+            return $date->toDateString();
+        }
+
+        if (! is_string($date)) {
+            return null;
+        }
+
+        return $this->normalizeDate($date);
+    }
+
+    private function formattedDateRange(string $from, string $until): string
+    {
+        return $this->formattedDate($from).' – '.$this->formattedDate($until);
+    }
+
+    private function formattedDate(string $date): string
+    {
+        return substr($date, 8, 2).'.'.substr($date, 5, 2).'.'.substr($date, 0, 4);
+    }
+
     private function normalizeDate(?string $rawDate): ?string
     {
         $rawDate = trim((string) $rawDate);
@@ -541,6 +806,18 @@ class TimetableImportService
         return max(0, (int) ($analysis['sections']['TT'] ?? 0) - $analysis['tt_skipped_invalid']);
     }
 
+    private function deleteSourceFile(int $schoolId, int $schoolyearId, string $filePath): void
+    {
+        $sourcePath = PrivateImportSourceFile::resolve(
+            $filePath,
+            "app/private/{$schoolId}/timetable-imports/{$schoolyearId}",
+        );
+
+        if ($sourcePath !== null) {
+            @unlink($sourcePath);
+        }
+    }
+
     private function assertRemainingImportsCanBeReplayed(TimetableImport $import): void
     {
         $remainingImports = TimetableImport::query()
@@ -564,6 +841,10 @@ class TimetableImportService
                 throw ValidationException::withMessages([
                     'imports' => "Der Import {$import->original_filename} wird gerade verarbeitet. Es wurde nichts gelöscht.",
                 ]);
+            }
+
+            if ($import->import_status !== 'completed') {
+                continue;
             }
 
             $filePath = storage_path($import->file_path);

@@ -7,6 +7,7 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableSubjectImport;
+use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,50 +17,123 @@ use Tests\TestCase;
 
 uses(RefreshDatabase::class);
 
-it('provides the built-in compact subject plan without an import', function () {
+it('offers and carries forward all subject-plan data from the previous schoolyear once', function () {
     $user = createSubjectStudyProgramUser();
-    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $previousSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'name' => 'Schuljahr 2025/26',
+        'concerns' => '2025/26',
+        'from' => '2025-09-08',
+        'until' => '2026-07-10',
+    ]);
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'name' => 'Schuljahr 2026/27',
+        'concerns' => '2026/27',
+        'from' => '2026-09-14',
+        'until' => '2027-07-09',
+    ]);
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
 
+    foreach ([
+        ['study_program' => StudentTimetableStudyProgram::Normalstudium, 'semester' => 1, 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 1, 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 2, 'json_code' => 'M2', 'json_subject' => 'M', 'name' => 'Mathematik 2'],
+    ] as $index => $subjectRow) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'hours_per_week' => 2,
+            'is_active' => true,
+            'sort_order' => $index,
+            'source' => 'manual',
+            ...$subjectRow,
+        ]);
+    }
+
+    StudentTimetableSubjectMapping::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'json_subject' => 'D',
+        'tt_subject' => 'DEU',
+        'is_active' => true,
+        'source' => 'manual',
+    ]);
+
     $this->actingAs($user)
-        ->getJson('/api/admin/students-timetables/subjects-overview-settings/kompaktstudium')
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings/kompaktstudium?schoolyear_scope=personal')
         ->assertSuccessful()
         ->assertJsonPath('data.study_program', 'kompaktstudium')
-        ->assertJsonCount(76, 'data.subjects');
-
-    $compactRows = StudentTimetableSubjectRow::query()
-        ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
-        ->where('school_id', $user->school_id)
-        ->where('schoolyear_id', $schoolyear->id)
-        ->get()
-        ->keyBy(fn (StudentTimetableSubjectRow $subjectRow): string => implode('|', [
-            $subjectRow->semester,
-            $subjectRow->branch,
-            $subjectRow->json_code,
-        ]));
-
-    expect($compactRows)->toHaveCount(76)
-        ->and($compactRows['1||R1']->json_subject)->toBe('R')
-        ->and($compactRows['1||ET1']->json_subject)->toBe('ET')
-        ->and($compactRows['1||D2']->hours_per_week)->toBe('1.50')
-        ->and($compactRows['1||E1']->hours_per_week)->toBe('2.00')
-        ->and($compactRows['3|wirtschaftskundlich|ÖKO2']->hours_per_week)->toBe('1.00')
-        ->and($compactRows['4|wirtschaftskundlich|INF2']->hours_per_week)->toBe('1.50')
-        ->and($compactRows['4|gymnasial|BE1']->hours_per_week)->toBe('1.00')
-        ->and($compactRows['5|gymnasial|L7']->hours_per_week)->toBe('1.50')
-        ->and(StudentTimetableSubjectImport::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
-            ->count())->toBe(0);
-
-    $this->actingAs($user)
-        ->getJson('/api/admin/students-timetables/subjects-overview-settings/kompaktstudium')
-        ->assertSuccessful();
+        ->assertJsonCount(0, 'data.subjects')
+        ->assertJsonPath('data.previous_schoolyear.id', $previousSchoolyear->id)
+        ->assertJsonPath('data.previous_schoolyear.name', '2025/26')
+        ->assertJsonPath('data.previous_schoolyear.subject_rows_count', 3)
+        ->assertJsonPath('data.previous_schoolyear.normal_subject_rows_count', 1)
+        ->assertJsonPath('data.previous_schoolyear.compact_subject_rows_count', 2)
+        ->assertJsonPath('data.previous_schoolyear.mappings_count', 1);
 
     expect(StudentTimetableSubjectRow::query()
         ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
         ->where('school_id', $user->school_id)
         ->where('schoolyear_id', $schoolyear->id)
-        ->count())->toBe(76);
+        ->count())->toBe(0);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal')
+        ->assertSuccessful()
+        ->assertJsonPath('message', '3 Fachzeilen und 1 Zuordnung aus 2025/26 übernommen.');
+
+    $this->assertDatabaseHas('student_timetable_subject_mappings', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'json_subject' => 'D',
+        'tt_subject' => 'DEU',
+        'source' => 'previous_schoolyear',
+    ]);
+
+    expect(StudentTimetableSubjectRow::query()
+        ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->count())->toBe(2)
+        ->and(StudentTimetableSubjectRow::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->where('source', 'previous_schoolyear')
+            ->count())->toBe(1)
+        ->and(StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $previousSchoolyear->id)
+            ->count())->toBe(2);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal')
+        ->assertUnprocessable();
+
+    expect(StudentTimetableSubjectRow::query()
+        ->withoutGlobalScopes()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->count())->toBe(3);
+});
+
+it('forbids moderators from carrying forward subject-plan data', function () {
+    $user = createSubjectStudyProgramUser();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-14',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    Role::firstOrCreate([
+        'name' => 'studentstimetables_moderator',
+        'guard_name' => 'web',
+    ]);
+    $user->syncRoles(['studentstimetables_moderator']);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal')
+        ->assertForbidden();
 });
 
 it('keeps the existing timetable v2 subject payload on the normal study program', function () {
@@ -220,6 +294,93 @@ it('updates subjects only for the selected study program', function () {
         ->and(StudentTimetableSubjectRow::query()
             ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
             ->pluck('json_code')->all())->toBe(['E8']);
+});
+
+it('loads and updates subject settings for the personal schoolyear when requested', function () {
+    $user = createSubjectStudyProgramUser();
+    $personalSchoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $schoolwideSchoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+
+    $user->forceFill(['schoolyear_id' => $personalSchoolyear->id])->save();
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolwideSchoolyear->id]);
+
+    foreach ([
+        [$personalSchoolyear, 'PERS1', 'Persönliches Fach'],
+        [$schoolwideSchoolyear, 'GLOB1', 'Schulweites Fach'],
+    ] as [$schoolyear, $code, $name]) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'semester' => 1,
+            'json_code' => $code,
+            'json_subject' => $code,
+            'name' => $name,
+        ]);
+
+        StudentTimetableSubjectMapping::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'json_subject' => $code,
+            'tt_subject' => $code,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings/normalstudium?schoolyear_scope=personal')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data.subjects')
+        ->assertJsonPath('data.subjects.0.json_code', 'PERS1');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects/normalstudium?schoolyear_scope=personal', [
+            'subjects' => [[
+                'semester' => 2,
+                'json_code' => 'PERS2',
+                'json_subject' => 'PERS',
+                'name' => 'Persönliches Fach 2',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ]],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.subjects.0.json_code', 'PERS2');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/mappings/normalstudium?schoolyear_scope=personal', [
+            'mappings' => [[
+                'json_subject' => 'PERS',
+                'tt_subject' => 'PERS-TT',
+                'is_active' => true,
+            ]],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.mappings.0.json_subject', 'PERS');
+
+    $this->assertDatabaseHas('student_timetable_subject_rows', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $personalSchoolyear->id,
+        'json_code' => 'PERS2',
+    ]);
+    $this->assertDatabaseHas('student_timetable_subject_rows', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolwideSchoolyear->id,
+        'json_code' => 'GLOB1',
+    ]);
+    $this->assertDatabaseHas('student_timetable_subject_mappings', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $personalSchoolyear->id,
+        'json_subject' => 'PERS',
+        'tt_subject' => 'PERS-TT',
+    ]);
+    $this->assertDatabaseHas('student_timetable_subject_mappings', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolwideSchoolyear->id,
+        'json_subject' => 'GLOB1',
+        'tt_subject' => 'GLOB1',
+    ]);
 });
 
 it('rejects invalid and mismatched study programs without replacing existing rows', function () {

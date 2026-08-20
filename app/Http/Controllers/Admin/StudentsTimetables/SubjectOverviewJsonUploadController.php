@@ -10,7 +10,7 @@ use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\FileUploadService;
-use App\Services\StudentsTimetables\StudentTimetableCompactSubjectPlanService;
+use App\Services\StudentsTimetables\StudentTimetableSubjectPlanCarryForwardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -30,7 +30,7 @@ class SubjectOverviewJsonUploadController extends Controller
     ];
 
     public function __construct(
-        private StudentTimetableCompactSubjectPlanService $compactSubjectPlanService,
+        private StudentTimetableSubjectPlanCarryForwardService $subjectPlanCarryForwardService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -99,17 +99,39 @@ class SubjectOverviewJsonUploadController extends Controller
         $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
         $studyProgram = $this->studyProgram($request);
 
-        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium) {
-            $this->compactSubjectPlanService->seedIfMissing(
-                (int) $authUser->school_id,
-                (int) $authUser->schoolyear_id,
-            );
-        } else {
+        if ($studyProgram === StudentTimetableStudyProgram::Normalstudium) {
             $this->seedEditableDataFromLatestImportIfMissing($authUser, $studyProgram);
         }
 
+        $settingsData = $this->editableSettingsData($authUser, $studyProgram, $request->boolean('subjects_only'));
+
+        $settingsData['previous_schoolyear'] = $this->subjectPlanCarryForwardService->previousSchoolyearSummary(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+        );
+
         return response()->json([
-            'data' => $this->editableSettingsData($authUser, $studyProgram, $request->boolean('subjects_only')),
+            'data' => $settingsData,
+        ]);
+    }
+
+    public function carryForwardSubjectPlan(Request $request): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
+        $result = $this->subjectPlanCarryForwardService->carryForwardFromPreviousSchoolyear(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+        );
+        $mappingLabel = $result['mappings_count'] === 1
+            ? '1 Zuordnung'
+            : "{$result['mappings_count']} Zuordnungen";
+
+        return response()->json([
+            'message' => "{$result['subject_rows_count']} Fachzeilen und {$mappingLabel} aus {$result['previous_schoolyear']['name']} übernommen.",
         ]);
     }
 
@@ -119,7 +141,7 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
         $studyProgram = $this->studyProgram($request);
 
         $validated = $request->validate([
@@ -176,7 +198,7 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
         $studyProgram = $this->studyProgram($request);
 
         $validated = $request->validate([

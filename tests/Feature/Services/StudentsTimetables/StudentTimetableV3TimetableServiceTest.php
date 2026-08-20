@@ -1986,7 +1986,7 @@ function v3TimetableService(
     $informationService = Mockery::mock(StudentTimetableV3StudentInformationService::class);
     $informationService
         ->shouldReceive('informationForStudent')
-        ->with($user, $studentCode, [], true, true)
+        ->with($user, $studentCode, [], false, true)
         ->andReturn($information);
     $overviewService = Mockery::mock(StudentTimetableOverviewService::class);
     $overviewService

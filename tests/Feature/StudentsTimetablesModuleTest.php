@@ -1838,10 +1838,12 @@ it('returns the canonical LPT subject name in subjects overview settings', funct
         ->value('name'))->toBe('Lern- und Präsentationstechniken');
 });
 
-it('stores timetable uploads for the personal schoolyear when the schoolwide schoolyear differs', function () {
+it('creates a timetable preview for the personal schoolyear and imports only after confirmation', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $personalSchoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
+        'from' => '2025-09-08',
+        'until' => '2026-07-10',
         'sem_2_start' => '2026-02-16',
     ]);
     $schoolwideSchoolyear = Schoolyear::factory()->create([
@@ -1881,10 +1883,150 @@ it('stores timetable uploads for the personal schoolyear when the schoolwide sch
         ->where('schoolyear_id', $schoolwideSchoolyear->id)
         ->exists())->toBeFalse();
 
+    expect($import->import_status)->toBe('preview')
+        ->and($import->sections)->toBe(['TT' => 1])
+        ->and($import->tt_courses)->toBe(1)
+        ->and(StudentTimetableEntry::query()->where('timetable_import_id', $import->id)->exists())->toBeFalse();
+
+    Queue::assertNotPushed(ProcessTimetableImportJob::class);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports')
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('preview.id', $import->id)
+        ->assertJsonPath('preview.import_status', 'preview')
+        ->assertJsonPath('preview.date_plausibility.is_plausible', true)
+        ->assertJsonPath('preview.date_plausibility.status', 'plausible')
+        ->assertJsonPath('preview.date_plausibility.schoolyear_from', '2025-09-08')
+        ->assertJsonPath('preview.date_plausibility.schoolyear_until', '2026-07-10');
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/imports/{$import->id}/confirm")
+        ->assertAccepted()
+        ->assertJsonPath('data.import_status', 'pending');
+
     Queue::assertPushed(
         ProcessTimetableImportJob::class,
         fn (ProcessTimetableImportJob $job): bool => $job->timetableImportId === $import->id,
     );
+});
+
+it('keeps an implausible timetable preview visible but blocks confirmation', function () {
+    Queue::fake([ProcessTimetableImportJob::class]);
+
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'name' => 'Schuljahr 2025/26',
+        'concerns' => '2025/26',
+        'from' => '2025-09-08',
+        'until' => '2026-07-10',
+        'sem_2_start' => '2026-02-16',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $relativePath = "app/private/{$user->school_id}/timetable-imports/{$schoolyear->id}/wrong-schoolyear.txt";
+    File::ensureDirectoryExists(dirname(storage_path($relativePath)));
+    File::put(storage_path($relativePath), "TT\t100\t20270217\t1\t08:00\t08:45\t1A\tMATH1-1A-MAY\tMATH");
+
+    $preview = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'file_path' => $relativePath,
+        'import_status' => 'preview',
+        'tt_first_date' => '2027-02-17',
+        'tt_last_date' => '2027-02-17',
+        'started_at' => null,
+        'finished_at' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports')
+        ->assertSuccessful()
+        ->assertJsonPath('preview.id', $preview->id)
+        ->assertJsonPath('preview.date_plausibility.is_plausible', false)
+        ->assertJsonPath('preview.date_plausibility.status', 'outside_schoolyear')
+        ->assertJsonPath('preview.date_plausibility.data_from', '2027-02-17')
+        ->assertJsonPath('preview.date_plausibility.schoolyear_from', '2025-09-08')
+        ->assertJsonPath('preview.date_plausibility.schoolyear_until', '2026-07-10');
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/imports/{$preview->id}/confirm")
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('file')
+        ->assertJsonPath('errors.file.0', 'Der Datenzeitraum 17.02.2027 – 17.02.2027 liegt nicht vollständig im ausgewählten Schuljahr 2025/26 (08.09.2025 – 10.07.2026). Der Import ist gesperrt.');
+
+    expect($preview->refresh()->import_status)->toBe('preview')
+        ->and(StudentTimetableEntry::query()->where('timetable_import_id', $preview->id)->exists())->toBeFalse();
+    Queue::assertNotPushed(ProcessTimetableImportJob::class);
+});
+
+it('deletes a timetable preview and its private source without changing active timetable data', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'sem_2_start' => '2026-02-16',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $completedImport = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+    $activeEntry = StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $completedImport->id,
+    ]);
+
+    $relativePath = "app/private/{$user->school_id}/timetable-imports/{$schoolyear->id}/preview.txt";
+    File::ensureDirectoryExists(dirname(storage_path($relativePath)));
+    File::put(storage_path($relativePath), 'TT\t100\t20260217\t1\t08:00\t08:45\t1A\tMATH1-1A-TT\tMATH');
+
+    $preview = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'file_path' => $relativePath,
+        'import_status' => 'preview',
+        'started_at' => null,
+        'finished_at' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->deleteJson("/api/admin/students-timetables/imports/{$preview->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Vorimport und Quelldatei wurden gelöscht.');
+
+    $this->assertDatabaseMissing('timetable_imports', ['id' => $preview->id]);
+    $this->assertDatabaseHas('student_timetable_entries', ['id' => $activeEntry->id]);
+    expect(File::exists(storage_path($relativePath)))->toBeFalse();
+});
+
+it('does not allow confirming a timetable preview from another school', function () {
+    Queue::fake([ProcessTimetableImportJob::class]);
+
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $preview = TimetableImport::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'import_status' => 'preview',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/imports/{$preview->id}/confirm")
+        ->assertForbidden();
+
+    expect($preview->refresh()->import_status)->toBe('preview');
+    Queue::assertNotPushed(ProcessTimetableImportJob::class);
 });
 
 it('stores filtered recognition csv uploads for the personal schoolyear', function () {
@@ -4390,6 +4532,14 @@ it('returns the requested timetable import history for the selected schoolyear',
         'imported_at' => now()->subMinutes($index),
     ]));
 
+    $preview = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import_status' => 'preview',
+        'original_filename' => 'vorschau.txt',
+        'imported_at' => now(),
+    ]);
+
     TimetableImport::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $otherSchoolyear->id,
@@ -4446,6 +4596,8 @@ it('returns the requested timetable import history for the selected schoolyear',
         ->getJson('/api/admin/students-timetables/imports?per_page=20')
         ->assertSuccessful()
         ->assertJsonCount(12, 'data')
+        ->assertJsonPath('preview.id', $preview->id)
+        ->assertJsonPath('preview.original_filename', 'vorschau.txt')
         ->assertJsonPath('per_page', 20)
         ->assertJsonPath('main_dataset.table', 'student_timetable_entries')
         ->assertJsonPath('main_dataset.entries_count', 4)
@@ -4485,6 +4637,7 @@ it('returns the requested timetable import history for the selected schoolyear',
         ->assertJsonPath('total', 1)
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.original_filename', 'stundenplan-1.txt')
+        ->assertJsonPath('preview.id', $preview->id)
         ->assertJsonPath('main_dataset', null);
 });
 
@@ -5537,6 +5690,69 @@ it('lists a Saturday course in the manual pdf subject overview', function () {
     });
 });
 
+it('keeps the French subject name unnumbered in the manual pdf', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'manual_cover' => true,
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '3R · FRUK Alan',
+            'print_options' => [
+                'single_weeks' => false,
+                'course_list' => false,
+                'course_overview' => false,
+            ],
+            'weekdays' => [
+                ['label' => 'Montag'],
+                ['label' => 'Freitag'],
+            ],
+            'semesters' => [[
+                'label' => 'Stundenplan',
+                'date_range' => '',
+                'weeks' => [[
+                    'label' => '',
+                    'hours' => [[
+                        'hour' => 10,
+                        'from' => '17:05',
+                        'until' => '17:50',
+                        'cells' => [[
+                            'status' => 'filled',
+                            'courses' => [[
+                                'label' => 'FRANZÖSISCH 2',
+                                'identifier' => 'F2-3C-SCHO',
+                            ]],
+                            'markers' => [],
+                        ], [
+                            'status' => 'filled',
+                            'courses' => [[
+                                'label' => 'F',
+                                'identifier' => 'F2-3C-SCHO',
+                            ]],
+                            'markers' => [],
+                        ]],
+                    ]],
+                ]],
+            ]],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        expect($pdf->contains('<h1 class="title">Fächerübersicht</h1>'))->toBeTrue();
+
+        preg_match_all('/<td class="subject-overview-course-name">\s*([^<]+)\s*<\/td>/u', $pdf->html, $courseNameMatches);
+
+        expect($courseNameMatches[1])->toBe(['FRANZÖSISCH', 'FRANZÖSISCH'])
+            ->and($pdf->contains('<td class="subject-overview-course-name">FRANZÖSISCH 2</td>'))->toBeFalse()
+            ->and(substr_count($pdf->html, '<td class="subject-overview-short-name">F2-3C-SCHO</td>'))->toBe(2);
+
+        return true;
+    });
+});
+
 it('adds recurrence week timetable pages to the overview pdf', function () {
     Pdf::fake();
 
@@ -6025,13 +6241,25 @@ it('lets students create their personal timetable overview pdf from posted timet
     Pdf::fake();
 
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_user');
+    $schoolName = $user->selectedSchool->long_name;
 
     $this->actingAs($user)
         ->postJson('/api/homepage/students-timetables/overview/pdf', [
-            'title' => 'Mein Stundenplan',
+            'manual_cover' => true,
+            'title' => 'Stundenplan',
+            'subtitle' => '1 Modul',
             'schoolyear' => '2025/26',
             'student' => '1C · PABINGER Elena',
             'generated_at' => '31.05.2026, 20:00',
+            'study_selections' => [
+                ['label' => 'Ethik / Religion', 'value' => 'Ethik'],
+                ['label' => 'Sprache', 'value' => 'Französisch'],
+            ],
+            'print_options' => [
+                'single_weeks' => false,
+                'course_list' => false,
+                'course_overview' => false,
+            ],
             'weekdays' => [
                 ['label' => 'Mo'],
             ],
@@ -6053,7 +6281,12 @@ it('lets students create their personal timetable overview pdf from posted timet
                                             'courses' => [
                                                 [
                                                     'label' => 'L4 - SHAM',
+                                                    'identifier' => 'L4-1C-SHAM',
                                                     'details' => '2-wöchig · L4-SHAM',
+                                                    'dates' => ['2026-05-18', '2026-06-01'],
+                                                    'overlap_dates' => [],
+                                                    'time_from' => '08:00',
+                                                    'time_until' => '08:45',
                                                     'is_fu' => true,
                                                     'recurrence_label' => '2-wöchig',
                                                     'recurrence_interval' => 2,
@@ -6071,20 +6304,24 @@ it('lets students create their personal timetable overview pdf from posted timet
         ])
         ->assertSuccessful();
 
-    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+    Pdf::assertRespondedWithPdf(function ($pdf) use ($schoolName): bool {
+        expect($pdf->contains('class="pdf-cover-page"'))->toBeTrue()
+            ->and($pdf->contains('Studienauswahl'))->toBeTrue()
+            ->and($pdf->contains('Ethik / Religion'))->toBeTrue()
+            ->and($pdf->contains('Französisch'))->toBeTrue()
+            ->and($pdf->contains('Buchen nicht vergessen!'))->toBeTrue()
+            ->and($pdf->contains($schoolName))->toBeTrue()
+            ->and($pdf->contains('Stundenplan'))->toBeTrue()
+            ->and($pdf->contains('L4 - SHAM'))->toBeTrue()
+            ->and($pdf->contains('L4-1C-SHAM'))->toBeTrue()
+            ->and($pdf->contains('<th class="col-subject-hints">Hinweise</th>'))->toBeTrue()
+            ->and($pdf->contains('<span class="subject-overview-hint">Fernunterricht</span>'))->toBeTrue()
+            ->and($pdf->contains('<div class="course-fu">Fernunterricht</div>'))->toBeTrue()
+            ->and($pdf->contains('.course-fu'))->toBeTrue();
+
         return $pdf->viewName === 'pdfs.students-timetable-overview'
             && $pdf->downloadName === 'stundenplan.pdf'
-            && $pdf->isDownload()
-            && $pdf->contains('Mein Stundenplan')
-            && $pdf->contains('L4 - SHAM')
-            && $pdf->contains('<th class="col-directory-hints">Hinweise</th>')
-            && $pdf->contains('<span class="course-hint">Fernunterricht</span>')
-            && $pdf->contains('<span class="course-hint">2-wöchentlich</span>')
-            && $pdf->contains('<div class="course-fu">Fernunterricht</div>')
-            && $pdf->contains('.course-fu')
-            && $pdf->contains('<span class="recurrence-detail">2-wöchig</span>')
-            && $pdf->contains('color: #1d4ed8;')
-            && $pdf->contains('vertical-align: baseline;');
+            && $pdf->isDownload();
     });
 });
 

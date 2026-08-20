@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.46.2 !!!
+## 3.46.2
 
 ### System
 
@@ -12,6 +12,10 @@
 - Sicherheits-Check ausgebaut gegen falsche Daten
 - Source-Dateien sind downloadbar
 - Bereinigung Untis-TT-Schema, Entfernung der drei Legacy-Felder
+
+### Fächer
+
+- Können aus Vorjahr übernommen werden
 
 ### TT-Einträge
 

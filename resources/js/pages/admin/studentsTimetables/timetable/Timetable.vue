@@ -257,6 +257,18 @@
                     </v-btn>
                 </v-card-title>
                 <v-card-text class="px-4 pb-4">
+                <v-alert
+                    v-if="activeImportPage === 'stundenplan'"
+                    type="info"
+                    variant="tonal"
+                    class="mb-4">
+                    <div class="d-flex align-center ga-2">
+                        <v-icon icon="mdi-calendar-range" />
+                        <div>
+                            <strong>Schuljahr: {{ personalImportSchoolyearLabel }}</strong>
+                        </div>
+                    </div>
+                </v-alert>
                 <section
                     v-if="activeImportPage === 'stundenplan' && mainDataset"
                     class="st-main-dataset-summary mb-4">
@@ -1063,6 +1075,10 @@
             </v-card-title>
             <v-card-text class="px-4 pb-4">
                 <v-alert v-if="activeImportPage === 'stundenplan'" type="info" variant="tonal" class="mb-3">
+                    <div class="d-flex align-center ga-2 mb-2">
+                        <v-icon icon="mdi-calendar-range" />
+                        <span>Schuljahr: <strong>{{ personalImportSchoolyearLabel }}</strong></span>
+                    </div>
                     <template v-if="semester2Start">
                         Semester 2 beginnt am <strong>{{ semester2Start }}</strong>
                     </template>
@@ -1084,6 +1100,103 @@
                 <v-alert v-if="uploadedFilename" type="success" variant="tonal" class="mb-3">
                     {{ activeImportUploadSuccessLabel }} gespeichert: <strong>{{ uploadedFilename }}</strong>
                 </v-alert>
+                <v-card
+                    v-if="activeImportPage === 'stundenplan' && timetablePreview"
+                    variant="outlined"
+                    class="mb-4">
+                    <v-card-title class="d-flex flex-wrap align-center ga-2">
+                        <v-icon icon="mdi-file-eye-outline" color="warning" />
+                        <span>Vorimport – noch nicht übernommen</span>
+                        <v-spacer />
+                        <v-chip size="small" color="primary" variant="tonal">
+                            Schuljahr: {{ personalImportSchoolyearLabel }}
+                        </v-chip>
+                    </v-card-title>
+                    <v-card-text>
+                        <v-alert type="warning" variant="tonal" density="compact" class="mb-4">
+                            Die Datei wurde geprüft. Der aktive Stundenplan wurde noch nicht verändert.
+                        </v-alert>
+
+                        <v-alert
+                            v-if="timetablePreview.date_plausibility"
+                            :type="timetablePreviewDateIsPlausible ? 'success' : 'error'"
+                            variant="tonal"
+                            density="compact"
+                            class="mb-4">
+                            <strong>Datumsprüfung:</strong>
+                            {{ timetablePreview.date_plausibility.message }}
+                        </v-alert>
+
+                        <div class="st-import-history-meta-grid mb-4">
+                            <div class="st-import-history-meta-item st-import-history-meta-item--wide">
+                                <span>Datei</span>
+                                <strong>{{ timetablePreview.original_filename }}</strong>
+                            </div>
+                            <div class="st-import-history-meta-item">
+                                <span>Gesamtzeilen</span>
+                                <strong>{{ timetablePreview.total_lines || 0 }}</strong>
+                            </div>
+                            <div class="st-import-history-meta-item">
+                                <span>Gültige TT-Einträge</span>
+                                <strong>{{ importedTtCount(timetablePreview) }}</strong>
+                            </div>
+                            <div class="st-import-history-meta-item">
+                                <span>Nicht importierbare TT-Einträge</span>
+                                <strong>{{ timetablePreview.tt_skipped_invalid || 0 }}</strong>
+                            </div>
+                            <div class="st-import-history-meta-item">
+                                <span>Verschiedene Kurse</span>
+                                <strong>{{ timetablePreview.tt_courses || 0 }}</strong>
+                            </div>
+                            <div class="st-import-history-meta-item">
+                                <span>Zeitraum</span>
+                                <strong>{{ dateRangeLabel(timetablePreview) }}</strong>
+                            </div>
+                        </div>
+
+                        <v-table density="compact">
+                            <thead>
+                                <tr>
+                                    <th>Sektion</th>
+                                    <th>Beschreibung</th>
+                                    <th class="text-right">Anzahl</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(count, code) in timetablePreview.sections" :key="`preview-${code}`">
+                                    <td><v-chip size="small" color="primary" variant="tonal">{{ code }}</v-chip></td>
+                                    <td>{{ sectionLabel(code) }}</td>
+                                    <td class="text-right font-weight-medium">{{ count }}</td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+
+                        <v-alert v-if="previewActionError" type="error" variant="tonal" density="compact" class="mt-4">
+                            {{ previewActionError }}
+                        </v-alert>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-btn
+                            color="error"
+                            variant="outlined"
+                            prepend-icon="mdi-delete-outline"
+                            :loading="deletingPreview"
+                            :disabled="confirmingPreview"
+                            @click="deleteTimetablePreview">
+                            Datei löschen
+                        </v-btn>
+                        <v-spacer />
+                        <v-btn
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-database-import-outline"
+                            :loading="confirmingPreview"
+                            :disabled="deletingPreview || !timetablePreviewDateIsPlausible"
+                            @click="confirmTimetablePreview">
+                            Jetzt importieren
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
                 <FileUpload
                     v-if="activeImportUploadVisible"
                     :path="activeImportUploadPath"
@@ -1223,7 +1336,11 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { downloadSource as downloadRecognitionImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/RecognitionCsvUploadController'
-import { downloadSource as downloadTimetableImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/TimetableImportController'
+import {
+    confirm as confirmTimetableImport,
+    destroy as destroyTimetableImport,
+    downloadSource as downloadTimetableImportSource,
+} from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/TimetableImportController'
 import { downloadSource as downloadImport116Source } from '@/actions/App/Http/Controllers/Admin/Teaching/Import116Controller'
 
 const FileUpload = defineAsyncComponent(() => import('@/pages/components/FileUpload.vue'))
@@ -1260,6 +1377,7 @@ export default {
                 recognitionDataset: null,
             },
             imports: [],
+            timetablePreview: null,
             recognitionImports: [],
             deleteTargetImport: null,
             deleteDialog: false,
@@ -1283,6 +1401,9 @@ export default {
             uploadedFilename: '',
             refreshFilePond: 0,
             uploadError: '',
+            confirmingPreview: false,
+            deletingPreview: false,
+            previewActionError: '',
             import116UploadFinished: false,
             import116UploadHasError: false,
             import116UploadErrorMessage: 'Upload fehlgeschlagen.',
@@ -1322,6 +1443,9 @@ export default {
             return this.config?.selected_schoolyear?.concerns
                 || this.config?.selected_schoolyear?.name
                 || 'nicht festgelegt'
+        },
+        timetablePreviewDateIsPlausible() {
+            return this.timetablePreview?.date_plausibility?.is_plausible === true
         },
         import116LastImportDisplay() {
             const value = this.import116LastImportAt || this.config?.teaching?.last_import_116_at
@@ -1423,6 +1547,8 @@ export default {
         },
         activeImportUploadVisible() {
             if (this.activeImportPage === 'anrechnungen') return true
+
+            if (this.activeImportPage === 'stundenplan' && this.timetablePreview) return false
 
             return Boolean(this.semester2StartRaw)
         },
@@ -1590,6 +1716,7 @@ export default {
             this.importPage = this.normalizedImportPage(detail)
             this.uploadedFilename = ''
             this.uploadError = ''
+            this.previewActionError = ''
             if (this.redirectRemovedSubjectImportRoute()) {
                 return
             }
@@ -1755,6 +1882,7 @@ export default {
         onImportUploadStart() {
             this.uploadError = ''
             this.uploadedFilename = ''
+            this.previewActionError = ''
         },
         onUploadFinished(file) {
             this.uploadError = ''
@@ -1767,8 +1895,9 @@ export default {
                 return
             }
 
+            this.uploadedFilename = ''
+            this.refreshFilePond++
             this.loadImportButtonInfo()
-            this.schedulePolling()
         },
         onUploadError(message) {
             const serverMessage = typeof message === 'string' && message.trim() !== '' ? message : ''
@@ -1781,6 +1910,42 @@ export default {
             }
 
             this.uploadError = serverMessage || 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
+            this.refreshFilePond++
+        },
+        async confirmTimetablePreview() {
+            if (!this.timetablePreview) return
+
+            this.confirmingPreview = true
+            this.previewActionError = ''
+            try {
+                await axios.post(confirmTimetableImport.url(this.timetablePreview.id))
+                this.timetablePreview = null
+                this.uploadedFilename = ''
+                await this.loadImportButtonInfo()
+                this.schedulePolling()
+                this.closeImportUploadPage()
+            } catch (error) {
+                this.previewActionError = error?.response?.data?.message || 'Der Vorimport konnte nicht gestartet werden.'
+            } finally {
+                this.confirmingPreview = false
+            }
+        },
+        async deleteTimetablePreview() {
+            if (!this.timetablePreview) return
+
+            this.deletingPreview = true
+            this.previewActionError = ''
+            try {
+                await axios.delete(destroyTimetableImport.url(this.timetablePreview.id))
+                this.timetablePreview = null
+                this.uploadedFilename = ''
+                this.refreshFilePond++
+                await this.loadImportButtonInfo()
+            } catch (error) {
+                this.previewActionError = error?.response?.data?.message || 'Der Vorimport konnte nicht gelöscht werden.'
+            } finally {
+                this.deletingPreview = false
+            }
         },
         openSchoolyearEdit() {
             const schoolyear = this.config?.selected_schoolyear
@@ -1830,6 +1995,7 @@ export default {
                     }),
                 ])
                 this.imports = timetableResponse.data?.data || []
+                this.timetablePreview = timetableResponse.data?.preview || null
                 this.recognitionImports = recognitionsResponse.data?.data || []
 
                 this.importButtonInfo = {
@@ -1844,6 +2010,7 @@ export default {
                 this.updatePolling()
             } catch {
                 this.imports = []
+                this.timetablePreview = null
                 this.importButtonInfo = {
                     timetable: null,
                     recognitions: null,

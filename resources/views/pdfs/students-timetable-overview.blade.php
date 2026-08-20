@@ -40,13 +40,25 @@
             'ROR' => 'Religion orthodox',
             'SPA' => 'Spanisch',
         ];
-        $formatPdfCourseName = function (?string $label, ?string $identifier = null) use ($pdfCourseNames): string {
+        $pdfCourseNamesWithoutModuleNumber = ['F'];
+        $formatPdfCourseName = function (?string $label, ?string $identifier = null) use ($pdfCourseNames, $pdfCourseNamesWithoutModuleNumber): string {
             $label = trim((string) $label);
             if ($label === '') {
                 return '';
             }
 
             $normalizedLabel = mb_strtoupper($label);
+            foreach ($pdfCourseNamesWithoutModuleNumber as $courseCode) {
+                $courseName = mb_strtoupper($pdfCourseNames[$courseCode]);
+                $courseLabelPattern = '/^(?:'.preg_quote($courseCode, '/').'|'.preg_quote($courseName, '/').')\s*\d+(?:\.\d+)?$/u';
+
+                if ($normalizedLabel === $courseCode
+                    || $normalizedLabel === $courseName
+                    || preg_match($courseLabelPattern, $normalizedLabel) === 1) {
+                    return $courseName;
+                }
+            }
+
             if (isset($pdfCourseNames[$normalizedLabel])) {
                 $courseName = $pdfCourseNames[$normalizedLabel];
                 $identifierPrefix = preg_split('/\s*-\s*/u', trim((string) $identifier), 2)[0] ?? '';

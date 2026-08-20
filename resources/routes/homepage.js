@@ -57,6 +57,15 @@ const routes = [
 const router = createRouter({
     history: createWebHistory(),
     routes,
+    scrollBehavior(to, from, savedPosition) {
+        if (savedPosition) return savedPosition
+
+        if (to.path.startsWith('/students-timetables/')) {
+            return { left: 0, top: 0 }
+        }
+
+        return undefined
+    },
 })
 
 router.beforeEach(async (to, from, next) => {

@@ -22,6 +22,8 @@ beforeEach(function () {
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
+        'from' => '2025-09-08',
+        'until' => '2026-07-10',
         'sem_2_start' => '2026-02-16',
     ]);
     $this->user = User::factory()->create([
@@ -88,6 +90,24 @@ it('stores TT rows as semester-aware timetable entries for the selected schoolye
     ]);
 
     expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(2);
+});
+
+it('rejects timetable dates outside the selected schoolyear before writing entries', function () {
+    $filePath = "{$this->storageDirectory}/wrong-schoolyear.txt";
+    File::put($filePath, "TT\t100\t20270217\t1\t08:00\t08:45\t1A\tMATH1-1A-MAY\tMATH");
+
+    $import = $this->service->createImport(
+        $this->user,
+        'wrong-schoolyear.txt',
+        'wrong-schoolyear.txt',
+        'app/private/testing/student-timetables/wrong-schoolyear.txt',
+        $this->schoolyear->id,
+    );
+
+    expect($import->import_status)->toBe('failed')
+        ->and($import->import_error)->toContain('17.02.2027')
+        ->and($import->import_error)->toContain('08.09.2025 – 10.07.2026')
+        ->and(StudentTimetableEntry::query()->where('timetable_import_id', $import->id)->exists())->toBeFalse();
 });
 
 it('streams timetable rows across database batch boundaries', function () {

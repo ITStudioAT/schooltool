@@ -63,7 +63,7 @@ class TimetableFileUploadController extends Controller
             return $result;
         }
 
-        $importService->createQueuedImport(
+        $importService->createPreview(
             $authUser,
             $result,
             is_string($originalName) ? $originalName : 'import.txt',

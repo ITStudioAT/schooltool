@@ -30,7 +30,7 @@ class StudentTimetableV3StudentInformationService
         User $user,
         ?string $studentCode,
         array $selectionOverride = [],
-        bool $seedCompactSubjectPlanIfMissing = true,
+        bool $seedCompactSubjectPlanIfMissing = false,
         bool $includeAllSelectableModules = false,
     ): array {
         $schoolyearId = (int) $user->schoolyear_id;

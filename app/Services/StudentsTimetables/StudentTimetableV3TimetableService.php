@@ -403,7 +403,7 @@ class StudentTimetableV3TimetableService
         array $modules,
         array $parameters,
         int $schoolyearId,
-        bool $seedCompactSubjectPlanIfMissing = true,
+        bool $seedCompactSubjectPlanIfMissing = false,
         ?callable $progressCallback = null,
     ): array {
         $moduleInput = $this->normalizedModuleInput($modules);

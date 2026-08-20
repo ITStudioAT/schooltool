@@ -249,6 +249,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'uploadNext'])
             ->middleware('throttle:uploads');
         Route::get('/admin/students-timetables/subjects-overview-settings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'settings']);
+        Route::post('/admin/students-timetables/subjects-overview-settings/carry-forward', [SubjectOverviewJsonUploadController::class, 'carryForwardSubjectPlan']);
         Route::put('/admin/students-timetables/subjects-overview-settings/subjects/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateSubjects']);
         Route::put('/admin/students-timetables/subjects-overview-settings/mappings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload'])
@@ -269,6 +270,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/imports/{timetableImport}/download', [TimetableImportController::class, 'downloadSource'])
             ->whereNumber('timetableImport');
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
+        Route::post('/admin/students-timetables/imports/{timetableImport}/confirm', [TimetableImportController::class, 'confirm'])
+            ->whereNumber('timetableImport');
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);
 
         Route::post('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'upload'])

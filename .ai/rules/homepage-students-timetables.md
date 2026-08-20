@@ -22,3 +22,6 @@ Published V3 timetable records may have no top-level `active_course_group_keys`.
 
 ## Never rebuild a saved timetable from the current catalog
 This refines selected-module restoration for personal and teacher-published manual entry. Always render the exact serialized saved timetable as the base; use V3 module/course keys only for the module summary, duplicate prevention, and removal metadata. Never replace the saved slots with `manualTimetableForCourses`, because current catalog times can differ from the published plan.
+
+## Show the teacher timetable number in manual adoption
+When the student manual editor is opened with manual_timetable=published, show the scoped published timetable name as “Nr. xxYYY” directly beside “Manueller Stundenplan”. Hide it for personal and ordinary calculated adoption sources and for legacy published rows without a name.

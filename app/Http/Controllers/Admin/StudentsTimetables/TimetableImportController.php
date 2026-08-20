@@ -22,7 +22,7 @@ class TimetableImportController extends Controller
 
     private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, TimetableImportService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -30,10 +30,23 @@ class TimetableImportController extends Controller
 
         $this->ensurePersonalSchoolyear($authUser);
 
+        $preview = TimetableImport::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('import_status', 'preview')
+            ->orderByDesc('imported_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($preview) {
+            $preview->setAttribute('date_plausibility', $service->datePlausibilityFor($preview));
+        }
+
         if ($request->boolean('summary')) {
             $import = TimetableImport::query()
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->where('import_status', '!=', 'preview')
                 ->orderByDesc('imported_at')
                 ->orderByDesc('id')
                 ->first([
@@ -56,6 +69,7 @@ class TimetableImportController extends Controller
                 'data' => $import ? [$import] : [],
                 'total' => $import ? 1 : 0,
                 'main_dataset' => null,
+                'preview' => $preview,
             ]);
         }
 
@@ -63,6 +77,7 @@ class TimetableImportController extends Controller
 
         $imports = TimetableImport::where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('import_status', '!=', 'preview')
             ->orderByDesc('imported_at')
             ->orderByDesc('id')
             ->paginate($perPage);
@@ -73,6 +88,7 @@ class TimetableImportController extends Controller
 
         return response()->json([
             ...$imports->toArray(),
+            'preview' => $preview,
             'main_dataset' => $this->mainDatasetMetadata(
                 (int) $authUser->school_id,
                 (int) $authUser->schoolyear_id,
@@ -110,6 +126,14 @@ class TimetableImportController extends Controller
             abort(403, 'Kein Zugriff auf diesen Import.');
         }
 
+        if ($timetableImport->import_status === 'preview') {
+            $service->deletePreview($timetableImport);
+
+            return response()->json([
+                'message' => 'Vorimport und Quelldatei wurden gelöscht.',
+            ]);
+        }
+
         if (in_array($timetableImport->import_status, ['pending', 'running', 'deleting'], true)) {
             abort(409, 'Import wird bereits verarbeitet.');
         }
@@ -118,6 +142,26 @@ class TimetableImportController extends Controller
 
         return response()->json([
             'message' => 'Import-Löschung wurde in die Warteschlange gestellt.',
+            'data' => $queuedImport,
+        ], 202);
+    }
+
+    public function confirm(TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $this->ensurePersonalSchoolyear($authUser);
+
+        if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(403, 'Kein Zugriff auf diesen Import.');
+        }
+
+        $queuedImport = $service->confirmPreview($timetableImport);
+
+        return response()->json([
+            'message' => 'Import wurde bestätigt und in die Warteschlange gestellt.',
             'data' => $queuedImport,
         ], 202);
     }

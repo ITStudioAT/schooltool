@@ -307,11 +307,19 @@ class StudentsTimetablesStudentController extends Controller
         $key = fn (string $field): string => $prefix === '' ? $field : "{$prefix}.{$field}";
 
         return [
+            $key('manual_cover') => ['nullable', 'boolean'],
             $key('title') => ['nullable', 'string', 'max:120'],
             $key('subtitle') => ['nullable', 'string', 'max:255'],
             $key('student') => ['nullable', 'string', 'max:255'],
             $key('schoolyear') => ['nullable', 'string', 'max:120'],
             $key('generated_at') => ['nullable', 'string', 'max:120'],
+            $key('study_selections') => ['nullable', 'array', 'max:12'],
+            $key('study_selections.*.label') => ['required', 'string', 'max:80'],
+            $key('study_selections.*.value') => ['required', 'string', 'max:120'],
+            $key('print_options') => ['nullable', 'array'],
+            $key('print_options.single_weeks') => ['nullable', 'boolean'],
+            $key('print_options.course_list') => ['nullable', 'boolean'],
+            $key('print_options.course_overview') => ['nullable', 'boolean'],
             $key('weekdays') => ['required', 'array', 'min:1', 'max:6'],
             $key('weekdays.*.label') => ['required', 'string', 'max:12'],
             $key('semesters') => ['required', 'array', 'min:1', 'max:2'],
@@ -327,9 +335,14 @@ class StudentsTimetablesStudentController extends Controller
             $key('semesters.*.weeks.*.hours.*.cells.*.status') => ['nullable', 'string', Rule::in(['empty', 'filled', 'warning', 'conflict', 'related'])],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses') => ['array', 'max:10'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.label') => ['required', 'string', 'max:160'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.identifier') => ['nullable', 'string', 'max:160'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.details') => ['nullable', 'string', 'max:160'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates') => ['nullable', 'array', 'max:120'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*') => ['string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.overlap_dates') => ['nullable', 'array', 'max:120'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.overlap_dates.*') => ['string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.time_from') => ['nullable', 'string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.time_until') => ['nullable', 'string', 'max:20'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_fu') => ['nullable', 'boolean'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_kompaktunterricht') => ['nullable', 'boolean'],
             $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_block') => ['nullable', 'boolean'],
@@ -353,6 +366,7 @@ class StudentsTimetablesStudentController extends Controller
 
                         foreach ($cell['courses'] ?? [] as $courseIndex => $course) {
                             $cellData['courses'][$courseIndex]['label'] = $this->normalizedTimetableCourseDisplayLabel($course['label'] ?? '');
+                            $cellData['courses'][$courseIndex]['identifier'] = $this->normalizedTimetableCourseDisplayLabel($course['identifier'] ?? '');
                         }
 
                         foreach ($cell['markers'] ?? [] as $markerIndex => $marker) {

@@ -61,3 +61,6 @@ Render the timetable-cell !N/N marker as a prominent 9pt badge with extra paddin
 
 ## Use full identifiers in the PDF subject overview
 This supersedes the source-abbreviation and numeric-short-label rules for Fächerübersicht. In the Kurzname column, show the complete uppercase course identifier whenever present (for example D1-1C-HER); use the existing short-label derivation only when the identifier is empty.
+
+## Keep French PDF subject names unnumbered
+In timetable PDFs, render F/F2 course labels as the subject name FRANZÖSISCH without a module number, while keeping the full identifier such as F2-3C-SCHO in Kurzname. Other established identifier-number expansions such as BU2 → BIOLOGIE 2 remain unchanged.
