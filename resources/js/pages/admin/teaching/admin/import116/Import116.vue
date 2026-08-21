@@ -486,7 +486,6 @@ export default {
             return type
         },
         onUploadStart() {
-            this.stopImportStatusPolling()
             this.is_upload_finished = false
             this.is_upload_error = false
             this.run_action_message = ''
@@ -494,6 +493,7 @@ export default {
             this.import_run_baseline_id = Math.max(0, ...(this.runs || []).map((run) => Number(run?.id || 0)))
             this.active_import_run_id = null
             this.is_importing = true
+            this.startImportStatusPolling()
         },
         fileUploadFinished() {
             this.is_upload_finished = true

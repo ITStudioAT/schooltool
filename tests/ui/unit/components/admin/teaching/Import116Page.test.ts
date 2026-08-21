@@ -91,6 +91,32 @@ describe('Teaching import116 page', () => {
         expect(scheduleImportStatusPoll).not.toHaveBeenCalled()
     })
 
+    it('starts status polling when the upload starts', () => {
+        const startImportStatusPolling = vi.fn()
+        const ctx: Record<string, unknown> = {
+            is_upload_finished: true,
+            is_upload_error: true,
+            run_action_message: 'old message',
+            run_action_error: 'old error',
+            runs: [{ id: 40 }, { id: 42 }],
+            import_run_baseline_id: 0,
+            active_import_run_id: 41,
+            is_importing: false,
+            startImportStatusPolling,
+        }
+
+        ;(Import116 as any).methods.onUploadStart.call(ctx)
+
+        expect(ctx.is_upload_finished).toBe(false)
+        expect(ctx.is_upload_error).toBe(false)
+        expect(ctx.run_action_message).toBe('')
+        expect(ctx.run_action_error).toBe('')
+        expect(ctx.import_run_baseline_id).toBe(42)
+        expect(ctx.active_import_run_id).toBeNull()
+        expect(ctx.is_importing).toBe(true)
+        expect(startImportStatusPolling).toHaveBeenCalledTimes(1)
+    })
+
     it('computes canRestoreSelection from selected depth and run meta limits', () => {
         const ctx = {
             run_tracking_error: '',
