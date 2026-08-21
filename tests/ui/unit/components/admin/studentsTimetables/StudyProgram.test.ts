@@ -108,17 +108,27 @@ describe('Students timetable study programs', () => {
     it('counts compact language paths per module and combines them for display', () => {
         const methods = (SubjectsOverview as any).methods
         const languageRows = [
-            { semester: 4, branch: null, json_code: 'L4', json_subject: 'L', hours_per_week: 2 },
-            { semester: 4, branch: null, json_code: 'F4', json_subject: 'F', hours_per_week: 2 },
-            { semester: 4, branch: null, json_code: 'S4', json_subject: 'S', hours_per_week: 2 },
-            { semester: 4, branch: null, json_code: 'L5', json_subject: 'L', hours_per_week: 2 },
-            { semester: 4, branch: null, json_code: 'F5', json_subject: 'F', hours_per_week: 2 },
-            { semester: 4, branch: null, json_code: 'S5', json_subject: 'S', hours_per_week: 2 },
+            { stable_key: 'l4', semester: 4, branch: null, json_code: 'L4', json_subject: 'L', hours_per_week: 2 },
+            { stable_key: 'f4', semester: 4, branch: null, json_code: 'F4', json_subject: 'F', hours_per_week: 2 },
+            { stable_key: 's4', semester: 4, branch: null, json_code: 'S4', json_subject: 'S', hours_per_week: 2 },
+            { stable_key: 'l5', semester: 4, branch: null, json_code: 'L5', json_subject: 'L', hours_per_week: 2 },
+            { stable_key: 'f5', semester: 4, branch: null, json_code: 'F5', json_subject: 'F', hours_per_week: 2 },
+            { stable_key: 's5', semester: 4, branch: null, json_code: 'S5', json_subject: 'S', hours_per_week: 2 },
         ]
         const ctx: any = {
             ...methods,
             studyProgram: 'kompaktstudium',
             activeSubjectRows: languageRows,
+            subjectRulesVersion: 1,
+            subjectRules: [{
+                stable_key: 'language-rule',
+                is_active: true,
+                options: [
+                    { value: 'L', label: 'Latein', subject_keys: ['l4', 'l5'] },
+                    { value: 'F', label: 'Französisch', subject_keys: ['f4', 'f5'] },
+                    { value: 'S', label: 'Spanisch', subject_keys: ['s4', 's5'] },
+                ],
+            }],
         }
 
         expect(methods.subjectOverviewCourseItems.call(ctx, languageRows)).toMatchObject([

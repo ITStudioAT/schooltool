@@ -73,6 +73,7 @@ test('it builds canonical backend timetable settings from a student overview sum
             ],
             'student' => [
                 'student_code' => '50112620250330',
+                'religion' => 'RK',
             ],
             'additional_courses' => [
                 ['key' => 'INF2'],
@@ -96,6 +97,7 @@ test('it builds canonical backend timetable settings from a student overview sum
             'branch' => 'gymnasial',
             'artsSubject' => 'BE',
             'language' => 'L',
+            'student_religion' => 'RK',
         ],
         'constraints' => [
             'availableWeekdays' => [1, 2, 3, 4, 5, 6],

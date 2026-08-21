@@ -80,7 +80,7 @@ class StudentsTimetablesController extends Controller
             ->orderBy('class')
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex']);
+            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex', 'study_selection', 'course_results']);
 
         $publishedTimetables = StudentTimetablePublishedTimetable::query()
             ->where('school_id', $authUser->school_id)
@@ -88,7 +88,6 @@ class StudentsTimetablesController extends Controller
             ->whereIn('student_code', $students->pluck('student_code')->filter()->values())
             ->get(['id', 'student_code', 'published_at'])
             ->keyBy(fn (StudentTimetablePublishedTimetable $publishedTimetable): string => (string) $publishedTimetable->student_code);
-
         $students = $students
             ->map(fn (Import116 $student): array => [
                 'id' => (int) $student->id,
@@ -101,6 +100,8 @@ class StudentsTimetablesController extends Controller
                 'first_name' => (string) $student->first_name,
                 'email' => (string) $student->email,
                 'sex' => (string) $student->sex,
+                'study_selection' => $this->storedStudySelection($student),
+                'course_results' => $this->storedCourseResults($student),
                 'instruction_type' => $studentOverviewService->instructionTypeForStudent($student),
                 'semester' => $studentOverviewService->semesterForStudent($student),
                 'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
@@ -752,6 +753,54 @@ class StudentsTimetablesController extends Controller
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    /** @return array{religion: ?string, language: ?string, branch: ?string, arts_subject: ?string} */
+    private function storedStudySelection(Import116 $student): array
+    {
+        $studySelection = is_array($student->study_selection) ? $student->study_selection : [];
+
+        return [
+            'religion' => $this->emptyStringToNull($studySelection['religion'] ?? null),
+            'language' => $this->emptyStringToNull($studySelection['language'] ?? null),
+            'branch' => $this->emptyStringToNull($studySelection['branch'] ?? null),
+            'arts_subject' => $this->emptyStringToNull($studySelection['arts_subject'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     completed: list<array{code: string, grade: string, status: string}>,
+     *     negative: list<array{code: string, grade: string, status: string}>
+     * }
+     */
+    private function storedCourseResults(Import116 $student): array
+    {
+        $courseResults = is_array($student->course_results) ? $student->course_results : [];
+
+        return [
+            'completed' => $this->storedCourseResultItems($courseResults['completed'] ?? []),
+            'negative' => $this->storedCourseResultItems($courseResults['negative'] ?? []),
+        ];
+    }
+
+    /** @return list<array{code: string, grade: string, status: string}> */
+    private function storedCourseResultItems(mixed $items): array
+    {
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return collect($items)
+            ->filter(fn (mixed $item): bool => is_array($item))
+            ->map(fn (array $item): array => [
+                'code' => trim((string) ($item['code'] ?? '')),
+                'grade' => trim((string) ($item['grade'] ?? '')),
+                'status' => trim((string) ($item['status'] ?? '')),
+            ])
+            ->filter(fn (array $item): bool => $item['code'] !== '' && $item['grade'] !== '')
+            ->values()
+            ->all();
     }
 
     private function studentsTimetablesUser(): User

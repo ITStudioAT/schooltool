@@ -35,6 +35,7 @@ class TeachingTestEnvironmentService
         'student_timetable_published_timetables',
         'student_timetable_remembered_tt_entries',
         'student_timetable_subject_mappings',
+        'student_timetable_subject_rule_sets',
         'student_timetable_subject_rows',
         'student_timetable_v2_states',
         'student_timetable_recognition_imports',

@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Enums\StudentTimetableStudyProgram;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StudentsTimetables\UpdateSubjectPlanRulesRequest;
 use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\StudentTimetableSubjectPlanCarryForwardService;
+use App\Services\StudentsTimetables\StudentTimetableSubjectRuleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -18,6 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SubjectOverviewJsonUploadController extends Controller
 {
@@ -31,6 +35,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function __construct(
         private StudentTimetableSubjectPlanCarryForwardService $subjectPlanCarryForwardService,
+        private StudentTimetableSubjectRuleService $subjectRuleService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -125,6 +130,7 @@ class SubjectOverviewJsonUploadController extends Controller
         $result = $this->subjectPlanCarryForwardService->carryForwardFromPreviousSchoolyear(
             (int) $authUser->school_id,
             (int) $authUser->schoolyear_id,
+            (int) $authUser->id,
         );
         $mappingLabel = $result['mappings_count'] === 1
             ? '1 Zuordnung'
@@ -146,6 +152,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
         $validated = $request->validate([
             'subjects' => ['array'],
+            'subjects.*.stable_key' => ['nullable', 'uuid', 'distinct'],
             'subjects.*.semester' => ['nullable', 'integer', 'between:1,20'],
             'subjects.*.branch' => ['nullable', 'string', 'max:80'],
             'subjects.*.json_code' => ['nullable', 'string', 'max:80'],
@@ -160,6 +167,7 @@ class SubjectOverviewJsonUploadController extends Controller
                 'school_id' => $authUser->school_id,
                 'schoolyear_id' => $authUser->schoolyear_id,
                 'study_program' => $studyProgram->value,
+                'stable_key' => $subject['stable_key'] ?? (string) Str::uuid(),
                 'semester' => $subject['semester'] ?? null,
                 'branch' => $this->normalizeSubjectBranch($subject['branch'] ?? null),
                 'json_code' => $this->emptyToNull($subject['json_code'] ?? null),
@@ -175,20 +183,106 @@ class SubjectOverviewJsonUploadController extends Controller
                 'source' => 'manual',
             ])
             ->filter(fn (array $subject): bool => $this->subjectRowHasContent($subject))
+            ->unique('stable_key')
             ->values();
 
         DB::transaction(function () use ($authUser, $studyProgram, $subjects): void {
-            StudentTimetableSubjectRow::query()
+            Schoolyear::query()
+                ->whereKey($authUser->schoolyear_id)
+                ->where('school_id', $authUser->school_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $existingRows = StudentTimetableSubjectRow::query()
                 ->forStudyProgram($studyProgram)
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
-                ->delete();
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('stable_key');
+            $incomingKeys = $subjects->pluck('stable_key');
+            $removedKeys = $existingRows->keys()->diff($incomingKeys);
+            $rules = collect($this->subjectRuleService->payload(
+                (int) $authUser->school_id,
+                (int) $authUser->schoolyear_id,
+                $studyProgram,
+            )['rules']);
+            $referencedKeys = $rules
+                ->flatMap(fn (array $rule): Collection => collect($rule['options'] ?? [])
+                    ->flatMap(fn (array $option): array => $option['subject_keys'] ?? []))
+                ->unique();
+            $activeReferencedKeys = $rules
+                ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
+                ->flatMap(fn (array $rule): Collection => collect($rule['options'] ?? [])
+                    ->flatMap(fn (array $option): array => $option['subject_keys'] ?? []))
+                ->unique();
 
-            $subjects->each(fn (array $subject): StudentTimetableSubjectRow => StudentTimetableSubjectRow::create($subject));
+            if ($removedKeys->intersect($referencedKeys)->isNotEmpty()) {
+                abort(422, 'Mindestens ein zu löschendes Fach wird noch von einer Regel verwendet. Entfernen Sie zuerst diese Regelzuordnung.');
+            }
+
+            $inactiveReferencedKeys = $subjects
+                ->filter(fn (array $subject): bool => $subject['is_active'] === false)
+                ->pluck('stable_key')
+                ->intersect($activeReferencedKeys);
+
+            if ($inactiveReferencedKeys->isNotEmpty()) {
+                abort(422, 'Mindestens ein zu deaktivierendes Fach wird noch von einer aktiven Regel verwendet. Deaktivieren oder ändern Sie zuerst die Regel.');
+            }
+
+            $subjects->each(function (array $subject) use ($existingRows): void {
+                $existingRow = $existingRows->get($subject['stable_key']);
+
+                if ($existingRow) {
+                    $existingRow->update($subject);
+
+                    return;
+                }
+
+                StudentTimetableSubjectRow::query()->create($subject);
+            });
+
+            StudentTimetableSubjectRow::query()
+                ->withoutGlobalScopes()
+                ->whereIn('id', $existingRows
+                    ->filter(fn (StudentTimetableSubjectRow $row, string $stableKey): bool => $removedKeys->containsStrict($stableKey))
+                    ->pluck('id'))
+                ->delete();
         });
+
+        $this->subjectRuleService->ensureDefaultRuleSet(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+            $studyProgram,
+            (int) $authUser->id,
+        );
 
         return response()->json([
             'data' => $this->editableSettingsData($authUser, $studyProgram),
+        ]);
+    }
+
+    public function updateRules(UpdateSubjectPlanRulesRequest $request): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $authUser = $this->scopeSettingsSchoolyear($authUser, $request);
+        $studyProgram = $this->studyProgram($request);
+        $validated = $request->validated();
+        $ruleSet = $this->subjectRuleService->replace(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+            $studyProgram,
+            (int) $authUser->id,
+            (int) $validated['version'],
+            array_values($validated['rules']),
+        );
+
+        return response()->json([
+            'message' => 'Regeln gespeichert.',
+            'data' => $ruleSet,
         ]);
     }
 
@@ -1162,6 +1256,10 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(422, 'Kein aktives Schuljahr gefunden.');
         }
 
+        if (! Schoolyear::query()->whereKey($schoolyearId)->where('school_id', $authUser->school_id)->exists()) {
+            abort(422, 'Das aktive Schuljahr gehört nicht zur ausgewählten Schule.');
+        }
+
         $authUser->schoolyear_id = (int) $schoolyearId;
 
         return $authUser;
@@ -1175,6 +1273,15 @@ class SubjectOverviewJsonUploadController extends Controller
 
         if (! $authUser->schoolyear_id) {
             abort(422, 'Kein persönliches Schuljahr gefunden.');
+        }
+
+        $personalSchoolyearExists = Schoolyear::query()
+            ->whereKey($authUser->schoolyear_id)
+            ->where('school_id', $authUser->school_id)
+            ->exists();
+
+        if (! $personalSchoolyearExists) {
+            abort(422, 'Das persönliche Schuljahr gehört nicht zur ausgewählten Schule.');
         }
 
         return $authUser;
@@ -1277,36 +1384,93 @@ class SubjectOverviewJsonUploadController extends Controller
         StudentTimetableStudyProgram $studyProgram,
         array $analysis,
     ): void {
-        $subjectRows = collect($analysis['subject_rows'] ?? [])
-            ->values()
-            ->map(fn (array $subjectRow, int $index): array => [
-                'school_id' => $authUser->school_id,
-                'schoolyear_id' => $authUser->schoolyear_id,
-                'study_program' => $studyProgram->value,
-                'semester' => $subjectRow['semester'] ?? null,
-                'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
-                'json_code' => $subjectRow['json_code'] ?? null,
-                'json_subject' => $subjectRow['json_subject'] ?? null,
-                'name' => $this->canonicalSubjectName(
-                    $subjectRow['name'] ?? null,
-                    $subjectRow['json_code'] ?? null,
-                    $subjectRow['json_subject'] ?? null,
-                ),
-                'hours_per_week' => $subjectRow['hours_per_week'] ?? null,
-                'is_active' => true,
-                'sort_order' => $index,
-                'source' => 'json',
-            ]);
+        DB::transaction(function () use ($analysis, $authUser, $studyProgram): void {
+            Schoolyear::query()
+                ->whereKey($authUser->schoolyear_id)
+                ->where('school_id', $authUser->school_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        DB::transaction(function () use ($authUser, $studyProgram, $subjectRows): void {
-            StudentTimetableSubjectRow::query()
+            $existingRows = StudentTimetableSubjectRow::query()
                 ->forStudyProgram($studyProgram)
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
-                ->delete();
+                ->lockForUpdate()
+                ->get();
+            $existingRowsByIdentity = $existingRows->keyBy(fn (StudentTimetableSubjectRow $row): string => $this->subjectRowStableIdentitySignature([
+                'semester' => $row->semester,
+                'branch' => $row->branch,
+                'json_code' => $row->json_code,
+                'json_subject' => $row->json_subject,
+            ]));
+            $subjectRows = collect($analysis['subject_rows'] ?? [])
+                ->values()
+                ->map(function (array $subjectRow, int $index) use ($authUser, $studyProgram, $existingRowsByIdentity): array {
+                    $normalizedRow = [
+                        'school_id' => $authUser->school_id,
+                        'schoolyear_id' => $authUser->schoolyear_id,
+                        'study_program' => $studyProgram->value,
+                        'semester' => $subjectRow['semester'] ?? null,
+                        'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
+                        'json_code' => $subjectRow['json_code'] ?? null,
+                        'json_subject' => $subjectRow['json_subject'] ?? null,
+                        'name' => $this->canonicalSubjectName(
+                            $subjectRow['name'] ?? null,
+                            $subjectRow['json_code'] ?? null,
+                            $subjectRow['json_subject'] ?? null,
+                        ),
+                        'hours_per_week' => $subjectRow['hours_per_week'] ?? null,
+                        'is_active' => true,
+                        'sort_order' => $index,
+                        'source' => 'json',
+                    ];
+                    $existingRow = $existingRowsByIdentity->get($this->subjectRowStableIdentitySignature($normalizedRow));
+                    $normalizedRow['stable_key'] = $existingRow?->stable_key ?? (string) Str::uuid();
 
-            $subjectRows->each(fn (array $subjectRow): StudentTimetableSubjectRow => StudentTimetableSubjectRow::create($subjectRow));
+                    return $normalizedRow;
+                });
+            $incomingKeys = $subjectRows->pluck('stable_key');
+            $removedRows = $existingRows->reject(fn (StudentTimetableSubjectRow $row): bool => $incomingKeys->containsStrict($row->stable_key));
+            $referencedKeys = collect($this->subjectRuleService->payload(
+                (int) $authUser->school_id,
+                (int) $authUser->schoolyear_id,
+                $studyProgram,
+            )['rules'])
+                ->flatMap(fn (array $rule): Collection => collect($rule['options'] ?? [])
+                    ->flatMap(fn (array $option): array => $option['subject_keys'] ?? []))
+                ->unique();
+
+            if ($removedRows->pluck('stable_key')->intersect($referencedKeys)->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'subjects' => 'Der Import würde Fächer entfernen, die noch von Regeln verwendet werden.',
+                ]);
+            }
+
+            $existingRowsByKey = $existingRows->keyBy('stable_key');
+            $subjectRows->each(function (array $subjectRow) use ($existingRowsByKey): void {
+                $existingRow = $existingRowsByKey->get($subjectRow['stable_key']);
+
+                if ($existingRow) {
+                    $existingRow->update($subjectRow);
+
+                    return;
+                }
+
+                StudentTimetableSubjectRow::query()->create($subjectRow);
+            });
+
+            StudentTimetableSubjectRow::query()
+                ->withoutGlobalScopes()
+                ->whereIn('id', $removedRows->pluck('id'))
+                ->delete();
         });
+
+        $this->subjectRuleService->ensureDefaultRuleSet(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+            $studyProgram,
+            (int) $authUser->id,
+        );
     }
 
     /**
@@ -1578,6 +1742,7 @@ class SubjectOverviewJsonUploadController extends Controller
                 ->get()
                 ->map(fn (StudentTimetableSubjectRow $row): array => [
                     'id' => $row->id,
+                    'stable_key' => $row->stable_key,
                     'semester' => $row->semester,
                     'branch' => $this->normalizeSubjectBranch($row->branch),
                     'json_code' => $row->json_code,
@@ -1590,6 +1755,12 @@ class SubjectOverviewJsonUploadController extends Controller
                 ->values()
                 ->all(),
         ];
+
+        $settingsData['rule_set'] = $this->subjectRuleService->payload(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+            $studyProgram,
+        );
 
         if ($subjectsOnly) {
             return $settingsData;

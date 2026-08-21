@@ -61,10 +61,10 @@
             </div>
         </v-alert>
 
-        <v-alert v-if="settingsError && subject_action === 'subject-plan'" type="error" variant="tonal" class="mb-4">
+        <v-alert v-if="settingsError && ['subject-plan', 'subject-plan-v2'].includes(subject_action)" type="error" variant="tonal" class="mb-4">
             {{ settingsError }}
         </v-alert>
-        <v-alert v-if="settingsMessage && subject_action === 'subject-plan'" type="success" variant="tonal" class="mb-4">
+        <v-alert v-if="settingsMessage && ['subject-plan', 'subject-plan-v2'].includes(subject_action)" type="success" variant="tonal" class="mb-4">
             {{ settingsMessage }}
         </v-alert>
 
@@ -77,15 +77,6 @@
                 </v-chip>
             </v-card-title>
             <v-card-text class="subject-overview-card__text">
-                <v-alert
-                    v-if="studyProgram === 'kompaktstudium'"
-                    type="info"
-                    variant="tonal"
-                    density="compact"
-                    class="mb-3">
-                    Die angezeigten Wochenstunden sind Schul-Unterrichtseinheiten. Eigenstudium ist nicht enthalten.
-                </v-alert>
-
                 <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
 
                 <v-alert
@@ -199,10 +190,148 @@
             </v-card-text>
         </v-card>
 
-        <v-alert v-if="settingsError && ['subjects', 'mapping'].includes(subject_action)" type="error" variant="tonal" class="mb-4">
+        <v-card v-if="subject_action === 'subject-plan-v2'" rounded="lg" border class="subject-overview-card mb-4">
+            <v-card-title class="subject-overview-card__title d-flex align-center ga-2">
+                <v-icon icon="mdi-view-dashboard-outline" />
+                Fächerübersicht v2 · {{ studyProgramLabel }}
+            </v-card-title>
+            <v-card-text class="subject-overview-v2-card__text">
+                <div class="subject-overview-v2-card__canvas">
+                    <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
+
+                    <v-alert
+                        v-if="!settingsLoading && !activeSubjectRows.length && !previousSchoolyear"
+                        type="info"
+                        variant="tonal"
+                        class="mb-3">
+                        Keine aktiven Fächer vorhanden.
+                    </v-alert>
+
+                    <div
+                        v-if="!settingsLoading && subjectOverviewV2Columns.length"
+                        class="subject-plan-wrap subject-plan-v2-wrap mb-4">
+                        <div
+                            class="subject-plan-grid subject-plan-v2-grid"
+                            :style="subjectOverviewV2GridStyle">
+                            <div class="subject-plan-cell subject-plan-cell--header subject-plan-cell--semester">
+                                SEMESTER
+                            </div>
+                            <div
+                                v-for="column in subjectOverviewV2Columns"
+                                :key="`subject-plan-v2-header-${column.key}`"
+                                class="subject-plan-cell subject-plan-cell--header">
+                                <div class="subject-plan-header-code">{{ column.label }}</div>
+                                <div class="subject-plan-header-name">{{ column.subtitle }}</div>
+                            </div>
+                            <div
+                                v-if="subjectOverviewV2ShowsHoursAndTotals"
+                                class="subject-plan-cell subject-plan-cell--header subject-plan-cell--sum">
+                                SUMME
+                            </div>
+
+                            <template v-for="row in subjectOverviewV2Rows" :key="`subject-plan-v2-row-${row.semester}`">
+                                <div class="subject-plan-cell subject-plan-cell--semester subject-plan-cell--semester-number">
+                                    {{ row.semester }}
+                                </div>
+                                <div
+                                    v-for="cell in row.cells"
+                                    :key="`subject-plan-v2-cell-${row.semester}-${cell.column.key}`"
+                                    class="subject-plan-cell"
+                                    :class="[
+                                        subjectOverviewCellClass(cell),
+                                        { 'subject-plan-cell--v2-course': cell.subjects.length },
+                                        { 'subject-plan-cell--v2-branches': cell.groups.length > 1 },
+                                    ]">
+                                    <template v-if="cell.groups.length === 1">
+                                        <div class="subject-plan-code">{{ cell.display_code }}</div>
+                                        <div v-if="subjectOverviewV2ShowsHoursAndTotals" class="subject-plan-hours">
+                                            {{ cell.hours }}
+                                        </div>
+                                    </template>
+                                    <template v-else-if="cell.groups.length > 1">
+                                        <div
+                                            v-for="group in cell.groups"
+                                            :key="`subject-plan-v2-cell-${row.semester}-${cell.column.key}-${group.branch}`"
+                                            class="subject-plan-v2-course-group"
+                                            :class="group.class">
+                                            <div class="subject-plan-code">{{ group.display_code }}</div>
+                                            <div v-if="subjectOverviewV2ShowsHoursAndTotals" class="subject-plan-hours">
+                                                {{ group.hours }}
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div
+                                    v-if="subjectOverviewV2ShowsHoursAndTotals"
+                                    class="subject-plan-cell subject-plan-cell--sum">
+                                    <span
+                                        v-for="total in row.totals"
+                                        :key="`subject-plan-v2-row-total-${row.semester}-${total.value}-${total.class}`"
+                                        class="subject-plan-total"
+                                        :class="total.class">
+                                        {{ total.value }}
+                                    </span>
+                                </div>
+                            </template>
+
+                            <template v-if="subjectOverviewV2ShowsHoursAndTotals">
+                                <div class="subject-plan-cell subject-plan-cell--footer subject-plan-cell--semester">
+                                    SUMME
+                                </div>
+                                <div
+                                    v-for="column in subjectOverviewV2Footer"
+                                    :key="`subject-plan-v2-footer-${column.key}`"
+                                    class="subject-plan-cell subject-plan-cell--footer">
+                                    <span
+                                        v-for="total in column.totals"
+                                        :key="`subject-plan-v2-footer-total-${column.key}-${total.value}-${total.class}`"
+                                        class="subject-plan-total"
+                                        :class="total.class">
+                                        {{ total.value }}
+                                    </span>
+                                </div>
+                                <div class="subject-plan-cell subject-plan-cell--footer subject-plan-cell--sum">
+                                    <span
+                                        v-for="total in subjectOverviewV2GrandTotals"
+                                        :key="`subject-plan-v2-grand-total-${total.value}-${total.class}`"
+                                        class="subject-plan-total"
+                                        :class="total.class">
+                                        {{ total.value }}
+                                    </span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="subject-overview-v2-card__footer">
+                    <div class="subject-plan-choice-note">* wahlweise</div>
+                    <div class="subject-plan-legend subject-plan-legend--detailed">
+                        <div
+                            v-for="legendItem in subjectOverviewV2BranchLegendItems"
+                            :key="`subject-plan-v2-legend-${legendItem.branch}`"
+                            class="subject-plan-legend-item subject-plan-legend-item--detailed">
+                            <span
+                                class="subject-plan-legend-swatch subject-plan-legend-swatch--detailed"
+                                :class="`subject-plan-legend-swatch--${legendItem.branch}`"></span>
+                            <div class="subject-plan-legend-copy">
+                                <div class="subject-plan-legend-title">{{ legendItem.label }}</div>
+                                <div
+                                    v-for="line in legendItem.lines"
+                                    :key="`${legendItem.branch}-${line}`"
+                                    class="subject-plan-legend-line">
+                                    {{ line }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </v-card-text>
+        </v-card>
+
+        <v-alert v-if="settingsError && ['subjects', 'rules', 'mapping'].includes(subject_action)" type="error" variant="tonal" class="mb-4">
             {{ settingsError }}
         </v-alert>
-        <v-alert v-if="settingsMessage && ['subjects', 'mapping'].includes(subject_action)" type="success" variant="tonal" class="mb-4">
+        <v-alert v-if="settingsMessage && ['subjects', 'rules', 'mapping'].includes(subject_action)" type="success" variant="tonal" class="mb-4">
             {{ settingsMessage }}
         </v-alert>
 
@@ -389,6 +518,218 @@
             </v-card-text>
         </v-card>
 
+        <v-card v-if="subject_action === 'rules'" rounded="lg" border class="subject-section-card mb-4">
+            <v-card-title class="subject-section-card__title d-flex flex-wrap align-center ga-2">
+                <v-icon icon="mdi-source-branch" />
+                Regeln
+                <v-chip size="x-small" color="primary" variant="tonal">Version {{ subjectRulesVersion }}</v-chip>
+                <v-spacer />
+                <v-btn
+                    v-if="rulesEditMode"
+                    size="small"
+                    color="primary"
+                    :loading="rulesSaving"
+                    prepend-icon="mdi-content-save"
+                    @click="saveSubjectRules">
+                    Speichern und anwenden
+                </v-btn>
+                <v-btn
+                    v-if="rulesEditMode"
+                    size="small"
+                    variant="text"
+                    prepend-icon="mdi-close"
+                    :disabled="rulesSaving"
+                    @click="cancelRulesEdit">
+                    Abbrechen
+                </v-btn>
+            </v-card-title>
+            <v-card-text class="subject-section-card__text">
+                <v-alert v-if="!subjectRules.length" type="info" variant="tonal">
+                    Keine Regeln vorhanden. Fächer ohne Regel gelten immer.
+                </v-alert>
+
+                <section v-else class="subject-rule-impact-preview mb-6">
+                    <div class="subject-rule-impact-preview__header">
+                        <div>
+                            <div class="text-h6">So wirken die Regeln</div>
+                            <div class="text-body-2 text-medium-emphasis">
+                                Pflichtfächer gelten gemeinsam. Unter Auswahl steht, woraus gewählt werden kann.
+                            </div>
+                        </div>
+                        <v-chip
+                            v-if="rulesEditMode"
+                            color="warning"
+                            size="small"
+                            variant="tonal"
+                            prepend-icon="mdi-eye-outline">
+                            Live-Vorschau – noch nicht gespeichert
+                        </v-chip>
+                    </div>
+
+                    <div class="subject-rule-impact-preview__grid">
+                        <v-card
+                            v-for="impact in subjectRuleImpactCards"
+                            :key="impact.branch"
+                            variant="outlined"
+                            class="subject-rule-impact-card"
+                            :class="`subject-rule-impact-card--${impact.branch}`">
+                            <v-card-title class="subject-rule-impact-card__title">
+                                <span
+                                    class="subject-plan-legend-swatch"
+                                    :class="`subject-plan-legend-swatch--${impact.branch}`"></span>
+                                {{ impact.label }}
+                            </v-card-title>
+                            <v-card-text class="subject-rule-impact-card__content">
+                                <div class="subject-rule-impact-row">
+                                    <div class="subject-rule-impact-row__label">
+                                        <v-icon icon="mdi-check-circle-outline" size="small" />
+                                        Pflicht
+                                    </div>
+                                    <div v-if="impact.required.length" class="subject-rule-impact-values">
+                                        <v-chip
+                                            v-for="description in impact.required"
+                                            :key="description"
+                                            size="small"
+                                            variant="tonal">
+                                            {{ description }}
+                                        </v-chip>
+                                    </div>
+                                    <span v-else class="text-body-2 text-medium-emphasis">
+                                        Keine zusätzlichen Zweig-Pflichtfächer
+                                    </span>
+                                </div>
+
+                                <div class="subject-rule-impact-row">
+                                    <div class="subject-rule-impact-row__label">
+                                        <v-icon icon="mdi-call-split" size="small" />
+                                        Auswahl
+                                    </div>
+                                    <div v-if="impact.choices.length" class="subject-rule-impact-choices">
+                                        <div
+                                            v-for="choice in impact.choices"
+                                            :key="`${choice.label}-${choice.description}`"
+                                            class="subject-rule-impact-choice">
+                                            <strong>{{ choice.label }}:</strong>
+                                            {{ choice.description }}
+                                        </div>
+                                    </div>
+                                    <span v-else class="text-body-2 text-medium-emphasis">
+                                        Keine zusätzliche Auswahl
+                                    </span>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </div>
+                </section>
+
+                <v-expansion-panels v-if="subjectRules.length" v-model="subjectRuleOpenPanels" variant="accordion" multiple>
+                    <v-expansion-panel
+                        v-for="rule in subjectRules"
+                        :key="rule.stable_key"
+                        :value="rule.stable_key">
+                        <v-expansion-panel-title>
+                            <div class="d-flex align-center ga-2 w-100">
+                                <strong>{{ subjectRuleSelectionTitle(rule.selection_key) }}</strong>
+                                <v-chip v-if="!rule.is_active" size="x-small" color="warning" variant="tonal">ausgeschaltet</v-chip>
+                            </div>
+                        </v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                            <div v-if="!rulesEditMode" class="d-flex justify-end mb-3">
+                                <v-btn
+                                    size="small"
+                                    color="primary"
+                                    variant="tonal"
+                                    prepend-icon="mdi-pencil"
+                                    @click="startRulesEdit(rule)">
+                                    Ändern
+                                </v-btn>
+                            </div>
+                            <div class="subject-rule-grid mb-3">
+                                <v-switch
+                                    v-model="rule.is_active"
+                                    :label="rule.is_active ? 'Diese Regel wird angewendet' : 'Diese Regel ist ausgeschaltet'"
+                                    color="primary"
+                                    hide-details
+                                    :readonly="!isSubjectRuleEditing(rule)" />
+                            </div>
+
+                            <div v-if="rule.conditions.length" class="mb-3">
+                                <div class="text-subtitle-2 mb-2">Bedingungen (alle müssen zutreffen)</div>
+                                <div v-for="(condition, conditionIndex) in rule.conditions" :key="`${rule.stable_key}-condition-${conditionIndex}`" class="subject-rule-condition-grid">
+                                    <v-select v-model="condition.field" :items="subjectRuleConditionFields" item-title="title" item-value="value" label="Feld" variant="outlined" density="compact" :readonly="!isSubjectRuleEditing(rule)" />
+                                    <v-select v-model="condition.operator" :items="subjectRuleConditionOperators" item-title="title" item-value="value" label="Vergleich" variant="outlined" density="compact" :readonly="!isSubjectRuleEditing(rule)" />
+                                    <v-text-field v-model="condition.value" label="Wert" variant="outlined" density="compact" :readonly="!isSubjectRuleEditing(rule)" />
+                                    <v-btn v-if="isSubjectRuleEditing(rule)" icon="mdi-delete-outline" color="error" variant="text" @click="removeRuleCondition(rule, conditionIndex)" />
+                                </div>
+                            </div>
+
+                            <v-card v-for="option in rule.options" :key="option.stable_key" variant="outlined" class="mb-3">
+                                <v-card-title class="text-subtitle-2">
+                                    {{ subjectRuleOptionHeading(rule, option) }}
+                                </v-card-title>
+                                <v-card-subtitle>{{ subjectRuleOptionImpactLabel(rule) }}</v-card-subtitle>
+                                <v-card-text>
+                                    <div
+                                        v-for="subjectGroup in subjectRuleSelectedSubjectGroups(rule, option)"
+                                        :key="subjectGroup.branch"
+                                        class="subject-rule-subject-group">
+                                        <div
+                                            v-if="rule.selection_key !== 'branch'"
+                                            class="subject-rule-subject-group__title">
+                                            <span
+                                                v-if="subjectGroup.branch !== 'common'"
+                                                class="subject-plan-legend-swatch subject-rule-subject-group__swatch"
+                                                :class="`subject-plan-legend-swatch--${subjectGroup.branch}`"></span>
+                                            {{ subjectGroup.label }}
+                                        </div>
+                                        <div
+                                            v-for="family in subjectRuleSelectedSubjectFamilies(rule, subjectGroup)"
+                                            :key="family.key"
+                                            class="subject-rule-subject-family"
+                                            :class="{ 'subject-rule-subject-family--labelled': family.label }">
+                                            <div v-if="family.label" class="subject-rule-subject-family__label">
+                                                {{ family.label }}
+                                            </div>
+                                            <div class="subject-rule-subject-chips">
+                                                <v-chip
+                                                    v-for="subject in family.subjects"
+                                                    :key="subject.value"
+                                                    size="small"
+                                                    variant="tonal"
+                                                    :closable="isSubjectRuleEditing(rule)"
+                                                    @click:close="removeSubjectRuleOptionSubject(option, subject.value)">
+                                                    {{ subject.title }}
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span
+                                        v-if="!subjectRuleSelectedSubjectGroups(rule, option).length"
+                                        class="text-medium-emphasis text-body-2">
+                                        Keine Fächer / Module zugeordnet.
+                                    </span>
+                                    <v-autocomplete
+                                        v-if="isSubjectRuleEditing(rule) && subjectRuleAvailableSubjectOptions(rule, option).length"
+                                        :model-value="null"
+                                        :items="subjectRuleAvailableSubjectOptions(rule, option)"
+                                        item-title="title"
+                                        item-value="value"
+                                        label="Fach / Modul hinzufügen"
+                                        no-data-text="Keine weiteren Fächer / Module"
+                                        variant="outlined"
+                                        density="compact"
+                                        clearable
+                                        hide-details
+                                        class="mt-3"
+                                        @update:model-value="subjectKey => addSubjectRuleOptionSubject(option, subjectKey)" />
+                                </v-card-text>
+                            </v-card>
+                        </v-expansion-panel-text>
+                    </v-expansion-panel>
+                </v-expansion-panels>
+            </v-card-text>
+        </v-card>
+
         <v-card v-if="subject_action === 'mapping'" rounded="lg" border class="subject-section-card">
             <v-card-title class="subject-section-card__title d-flex flex-wrap align-center ga-2">
                 <v-icon icon="mdi-transit-connection-variant" />
@@ -523,6 +864,7 @@ import {
     carryForwardSubjectPlan as carryForwardSubjectPlanRoute,
     settings as subjectSettingsRoute,
     updateMappings as updateSubjectMappingsRoute,
+    updateRules as updateRulesRoute,
     updateSubjects as updateSubjectsRoute,
 } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
 
@@ -559,6 +901,13 @@ export default {
             mappingsSaving: false,
             subjectsEditMode: false,
             mappingsEditMode: false,
+            rulesEditMode: false,
+            editingSubjectRuleKey: null,
+            subjectRuleOpenPanels: [],
+            rulesSaving: false,
+            subjectRulesVersion: 0,
+            subjectRules: [],
+            subjectRulesSnapshot: [],
             subjectRowsSnapshot: [],
             subjectMappingsSnapshot: [],
             settingsError: '',
@@ -610,13 +959,15 @@ export default {
                 || this.subjectsEditMode
                 || this.mappingsSaving
                 || this.mappingsEditMode
+                || this.rulesSaving
+                || this.rulesEditMode
         },
         subjectNavigationItems() {
             return [
                 {
-                    key: 'subject-plan',
-                    label: 'Grafik',
-                    icon: 'mdi-table-large',
+                    key: 'subject-plan-v2',
+                    label: 'Grafik v2',
+                    icon: 'mdi-view-dashboard-outline',
                 },
                 {
                     key: 'subjects',
@@ -624,11 +975,21 @@ export default {
                     icon: 'mdi-table-edit',
                 },
                 {
+                    key: 'rules',
+                    label: 'Regeln',
+                    icon: 'mdi-source-branch',
+                },
+                {
                     key: 'mapping',
                     label: 'Zuordnung',
                     icon: 'mdi-transit-connection-variant',
                 },
-            ].filter(item => item.key === 'subject-plan' || this.canManageSubjectSettings)
+                {
+                    key: 'subject-plan',
+                    label: 'Grafik',
+                    icon: 'mdi-table-large',
+                },
+            ].filter(item => ['subject-plan', 'subject-plan-v2'].includes(item.key) || this.canManageSubjectSettings)
         },
         sortedSubjectRows() {
             const directionMultiplier = this.subjectSort.direction === 'desc' ? -1 : 1
@@ -638,11 +999,159 @@ export default {
 
                 if (comparison !== 0) return comparison * directionMultiplier
 
-                return (firstSubject.sort_index || 0) - (secondSubject.sort_index || 0)
+                return this.compareSubjectRowDisplayOrder(firstSubject, secondSubject)
             })
         },
         activeSubjectRows() {
             return this.subjectRows.filter(subject => subject.is_active !== false)
+        },
+        subjectOverviewV2Columns() {
+            const activeSubjectKeys = new Set(
+                this.activeSubjectRows
+                    .map(subject => this.subjectOverviewSubjectKey(subject))
+                    .filter(Boolean),
+            )
+            const assignedSubjectKeys = new Set()
+            const preferredColumns = this.subjectOverviewColumns.flatMap(column => {
+                const isReligionColumn = column.key === 'R/ET'
+                const subjectKeys = isReligionColumn
+                    ? [...new Set([...column.subjectKeys, 'R/ETH', 'ETH'])]
+                    : column.subjectKeys
+                const availableSubjectKeys = subjectKeys.filter(subjectKey => activeSubjectKeys.has(subjectKey))
+
+                if (!availableSubjectKeys.length) return []
+
+                availableSubjectKeys.forEach(subjectKey => assignedSubjectKeys.add(subjectKey))
+                const preferredColumn = {
+                    ...column,
+                    key: isReligionColumn ? 'R/ETH' : column.key,
+                    label: isReligionColumn ? 'R/ETH' : column.label,
+                    subjectKeys,
+                }
+
+                return [{
+                    ...preferredColumn,
+                    subtitle: this.subjectOverviewV2ColumnSubtitle(preferredColumn),
+                }]
+            })
+            const additionalColumnKeys = new Set()
+            const additionalColumns = this.activeSubjectRows.reduce((columns, subject) => {
+                const subjectKey = this.subjectOverviewSubjectKey(subject)
+
+                if (!subjectKey || assignedSubjectKeys.has(subjectKey) || additionalColumnKeys.has(subjectKey)) {
+                    return columns
+                }
+
+                additionalColumnKeys.add(subjectKey)
+                const column = {
+                    key: subjectKey,
+                    label: subjectKey,
+                    subjectKeys: [subjectKey],
+                }
+
+                columns.push({
+                    ...column,
+                    subtitle: this.subjectOverviewV2ColumnSubtitle(column),
+                })
+
+                return columns
+            }, [])
+
+            return [...preferredColumns, ...additionalColumns]
+        },
+        subjectOverviewV2Semesters() {
+            const semesterCount = this.studyProgram === COMPACT_STUDY_PROGRAM ? 5 : 8
+
+            return Array.from({ length: semesterCount }, (value, index) => index + 1)
+        },
+        subjectOverviewV2PopulatedSubjects() {
+            const semesterCount = this.studyProgram === COMPACT_STUDY_PROGRAM ? 5 : 8
+
+            return this.activeSubjectRows.filter(subject => {
+                const semester = Number(subject.semester)
+
+                return semester >= 1 && semester <= semesterCount
+            })
+        },
+        subjectOverviewV2Rows() {
+            return this.subjectOverviewV2Semesters.map(semester => {
+                const semesterSubjects = this.subjectOverviewV2PopulatedSubjects
+                    .filter(subject => Number(subject.semester) === semester)
+
+                return {
+                    semester,
+                    cells: this.subjectOverviewV2Columns.map(column =>
+                        this.subjectOverviewV2Cell(semesterSubjects, column)),
+                    totals: this.subjectOverviewTotals(semesterSubjects),
+                }
+            })
+        },
+        subjectOverviewV2Footer() {
+            return this.subjectOverviewV2Columns.map(column => ({
+                key: column.key,
+                totals: this.subjectOverviewFooterTotals(
+                    this.subjectOverviewV2SubjectsForColumn(this.subjectOverviewV2PopulatedSubjects, column),
+                ),
+            }))
+        },
+        subjectOverviewV2GrandTotals() {
+            return this.subjectOverviewTotals(this.subjectOverviewV2PopulatedSubjects)
+        },
+        subjectOverviewV2ShowsHoursAndTotals() {
+            return this.studyProgram !== COMPACT_STUDY_PROGRAM
+        },
+        subjectOverviewV2BranchLegendItems() {
+            const branchLabels = {
+                wirtschaftskundlich: 'Wirtschaftskundlicher Zweig',
+                gymnasial: 'Gymnasialer Zweig',
+            }
+
+            return this.subjectOverviewBranchKeys().map(branch => ({
+                branch,
+                label: branchLabels[branch] || this.displayBranch(branch),
+                lines: this.subjectOverviewV2BranchLegendLines(branch),
+            }))
+        },
+        subjectRuleImpactCards() {
+            const branchLabels = {
+                wirtschaftskundlich: 'Wirtschaftskundlicher Zweig',
+                gymnasial: 'Gymnasialer Zweig',
+            }
+
+            return this.subjectOverviewBranchKeys().map(branch => ({
+                branch,
+                label: branchLabels[branch] || this.displayBranch(branch),
+                required: this.subjectRuleImpactRequiredDescriptions(branch),
+                choices: this.subjectRuleImpactChoiceDescriptions(branch),
+            }))
+        },
+        subjectOverviewV2GridStyle() {
+            return {
+                '--subject-plan-columns': this.subjectOverviewV2Columns.length
+                    + (this.subjectOverviewV2ShowsHoursAndTotals ? 2 : 1),
+            }
+        },
+        subjectRuleSelectionKeys() {
+            return [
+                { title: 'Zweig', value: 'branch' },
+                { title: 'Sprache', value: 'language' },
+                { title: 'Künstlerisches Fach', value: 'arts_subject' },
+                { title: 'Ethik / Religion', value: 'religion' },
+            ]
+        },
+        subjectRuleConditionFields() {
+            return [
+                ...this.subjectRuleSelectionKeys,
+                { title: 'Religion laut Stammdaten', value: 'student_religion' },
+            ]
+        },
+        subjectRuleConditionOperators() {
+            return [
+                { title: 'ist gleich', value: 'equals' },
+                { title: 'ist nicht gleich', value: 'not_equals' },
+                { title: 'ist einer von (Komma)', value: 'in' },
+                { title: 'ist keiner von (Komma)', value: 'not_in' },
+            ]
         },
         subjectOverviewColumns() {
             const columns = [
@@ -656,7 +1165,11 @@ export default {
                 { key: 'BU', label: 'BU', subjectKeys: ['BU'] },
                 { key: 'GS', label: 'GS', subjectKeys: ['GS'] },
                 { key: 'GW', label: 'GW', subjectKeys: ['GW'] },
-                { key: 'LPT/VWA', label: 'LPT/VWA', subjectKeys: ['LPT', 'VWA'] },
+                {
+                    key: 'LPT/VWA',
+                    label: this.studyProgram === COMPACT_STUDY_PROGRAM ? 'VWA' : 'LPT/VWA',
+                    subjectKeys: ['LPT', 'VWA'],
+                },
                 { key: 'R/ET', label: 'R/ET', subjectKeys: ['R/ET', 'R', 'ET'] },
                 { key: 'L/F/S', label: 'L/F/S', subjectKeys: ['L/F/S', 'L', 'F', 'S'] },
                 { key: 'D', label: 'D', subjectKeys: ['D'] },
@@ -789,12 +1302,160 @@ export default {
         },
     },
     methods: {
+        subjectRuleSelectionTitle(selectionKey) {
+            return this.subjectRuleSelectionKeys.find(item => item.value === selectionKey)?.title || 'Regel'
+        },
+        subjectRuleOptionHeading(rule, option) {
+            const optionLabel = option.label || option.value
+            const headings = {
+                branch: `Wenn „${optionLabel}“ gewählt ist`,
+                language: `Wenn „${optionLabel}“ als Sprache gewählt ist`,
+                arts_subject: `Wenn „${optionLabel}“ als künstlerisches Fach gewählt ist`,
+                religion: `Wenn „${optionLabel}“ als Religion oder Ethik gewählt ist`,
+            }
+
+            return headings[rule.selection_key] || `Wenn „${optionLabel}“ gewählt ist`
+        },
+        subjectRuleOptionImpactLabel(rule) {
+            const labels = {
+                branch: 'Diese Zweig-Fächer gelten dann:',
+                language: 'Diese Sprachmodule gelten dann:',
+                arts_subject: 'Diese Kunstmodule gelten dann:',
+                religion: 'Diese Religions- oder Ethikmodule gelten dann:',
+            }
+
+            return labels[rule.selection_key] || 'Diese Fächer / Module gelten dann:'
+        },
+        subjectRuleSelectedSubjectGroups(rule, option) {
+            const selectedSubjectKeys = new Set(option.subject_keys)
+            const groups = new Map()
+            const selectedSubjects = this.subjectRows
+                .filter(subject => subject.stable_key && selectedSubjectKeys.has(subject.stable_key))
+
+            if (rule.selection_key === 'branch') {
+                selectedSubjects.sort((firstSubject, secondSubject) =>
+                    this.compareText(
+                        this.subjectOverviewSubjectKey(firstSubject),
+                        this.subjectOverviewSubjectKey(secondSubject),
+                    )
+                    || this.compareText(firstSubject.json_code, secondSubject.json_code)
+                    || this.compareNullableNumbers(firstSubject.semester, secondSubject.semester))
+            }
+
+            selectedSubjects.forEach(subject => {
+                const branch = rule.selection_key === 'branch'
+                    ? option.value
+                    : subject.branch || 'common'
+                const group = groups.get(branch) || {
+                    branch,
+                    label: this.subjectRuleSubjectGroupLabel(branch),
+                    subjects: [],
+                }
+
+                group.subjects.push({
+                    value: subject.stable_key,
+                    title: [
+                        `Sem. ${subject.semester || '–'}`,
+                        subject.json_code || subject.json_subject || subject.name || 'Ohne Code',
+                        rule.selection_key === 'branch' && this.isBranchSubject(subject)
+                            ? this.displayBranch(subject.branch)
+                            : null,
+                    ].filter(Boolean).join(' · '),
+                })
+                groups.set(branch, group)
+            })
+
+            const branchOrder = ['common', ...this.subjectOverviewBranchKeys()]
+
+            return [...groups.values()].sort((firstGroup, secondGroup) =>
+                branchOrder.indexOf(firstGroup.branch) - branchOrder.indexOf(secondGroup.branch))
+        },
+        subjectRuleSubjectGroupLabel(branch) {
+            if (branch === 'wirtschaftskundlich') return 'Wirtschaftskundlicher Zweig'
+            if (branch === 'gymnasial') return 'Gymnasialer Zweig'
+
+            return 'Für beide Zweige'
+        },
+        subjectRuleSelectedSubjectFamilies(rule, subjectGroup) {
+            if (rule.selection_key !== 'branch') {
+                return [{ key: 'all', label: '', subjects: subjectGroup.subjects }]
+            }
+
+            const subjectsByKey = new Map(this.subjectRows.map(subject => [subject.stable_key, subject]))
+            const families = new Map()
+
+            subjectGroup.subjects.forEach(subjectOption => {
+                const subject = subjectsByKey.get(subjectOption.value)
+                const subjectKey = this.subjectOverviewSubjectKey(subject)
+                const isLanguage = ['L', 'F', 'S', 'L/F/S'].includes(subjectKey)
+                const familyKey = isLanguage ? 'languages' : subjectKey || 'other'
+                const family = families.get(familyKey) || {
+                    key: familyKey,
+                    label: isLanguage ? 'Sprachen' : subjectKey || 'Weitere',
+                    subjects: [],
+                }
+
+                family.subjects.push(subjectOption)
+                families.set(familyKey, family)
+            })
+
+            const orderedFamilies = [...families.values()]
+            const musicFamilyIndex = orderedFamilies.findIndex(family => family.key === 'ME')
+            const artFamilyIndex = orderedFamilies.findIndex(family => family.key === 'BE')
+
+            if (artFamilyIndex !== -1 && musicFamilyIndex !== -1) {
+                const [musicFamily] = orderedFamilies.splice(musicFamilyIndex, 1)
+                const updatedArtFamilyIndex = orderedFamilies.findIndex(family => family.key === 'BE')
+
+                orderedFamilies.splice(updatedArtFamilyIndex + 1, 0, musicFamily)
+            }
+
+            return orderedFamilies
+        },
+        subjectRuleSubjectOptions(rule, option) {
+            return this.subjectRows
+                .filter(subject => subject.stable_key)
+                .map(subject => ({
+                    value: subject.stable_key,
+                    title: [
+                        `Sem. ${subject.semester || '–'}`,
+                        subject.json_code || subject.json_subject || subject.name || 'Ohne Code',
+                        rule.selection_key !== 'branch' || subject.branch !== option.value
+                            ? this.displayBranch(subject.branch)
+                            : null,
+                    ].filter(Boolean).join(' · '),
+                }))
+        },
+        subjectRuleSelectedSubjectOptions(rule, option) {
+            const subjectsByKey = new Map(
+                this.subjectRuleSubjectOptions(rule, option)
+                    .map(subject => [subject.value, subject]),
+            )
+
+            return option.subject_keys
+                .map(subjectKey => subjectsByKey.get(subjectKey))
+                .filter(Boolean)
+        },
+        subjectRuleAvailableSubjectOptions(rule, option) {
+            const selectedSubjectKeys = new Set(option.subject_keys)
+
+            return this.subjectRuleSubjectOptions(rule, option)
+                .filter(subject => !selectedSubjectKeys.has(subject.value))
+        },
+        addSubjectRuleOptionSubject(option, subjectKey) {
+            if (!subjectKey || option.subject_keys.includes(subjectKey)) return
+
+            option.subject_keys.push(subjectKey)
+        },
+        removeSubjectRuleOptionSubject(option, subjectKey) {
+            option.subject_keys = option.subject_keys.filter(key => key !== subjectKey)
+        },
         normalizedSubjectAction(subsection) {
             const allowedActions = this.canManageSubjectSettings
-                ? ['subject-plan', 'subjects', 'mapping']
-                : ['subject-plan']
+                ? ['subject-plan', 'subject-plan-v2', 'subjects', 'rules', 'mapping']
+                : ['subject-plan', 'subject-plan-v2']
 
-            return allowedActions.includes(subsection) ? subsection : 'subject-plan'
+            return allowedActions.includes(subsection) ? subsection : 'subject-plan-v2'
         },
         handleSubjectNavigation(key) {
             this.subject_action = this.normalizedSubjectAction(key)
@@ -816,9 +1477,9 @@ export default {
                 return false
             }
 
-            this.subject_action = 'subject-plan'
+            this.subject_action = 'subject-plan-v2'
             this.$router.replace({
-                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
                 query: { ...this.$route.query, study_program: this.studyProgram },
             })
 
@@ -827,9 +1488,9 @@ export default {
         redirectRemovedSubjectImportRoute() {
             if (this.embedded || this.$route.params.subsection !== 'import') return false
 
-            this.subject_action = 'subject-plan'
+            this.subject_action = 'subject-plan-v2'
             this.$router.replace({
-                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
                 query: { ...this.$route.query, study_program: this.studyProgram },
             })
 
@@ -839,9 +1500,9 @@ export default {
             if (this.embedded || this.canManageSubjectSettings) return
             if (!['subjects', 'mapping'].includes(this.$route.params.subsection)) return
 
-            this.subject_action = 'subject-plan'
+            this.subject_action = 'subject-plan-v2'
             this.$router.replace({
-                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
                 query: { ...this.$route.query, study_program: this.studyProgram },
             })
         },
@@ -866,10 +1527,15 @@ export default {
             this.settingsMessage = ''
             this.subjectsEditMode = false
             this.mappingsEditMode = false
+            this.rulesEditMode = false
+            this.editingSubjectRuleKey = null
+            this.subjectRuleOpenPanels = []
             this.subjectRows = []
             this.subjectMappings = []
             this.subjectRowsSnapshot = []
             this.subjectMappingsSnapshot = []
+            this.subjectRules = []
+            this.subjectRulesSnapshot = []
             this.previousSchoolyear = null
             this.loadSettings()
         },
@@ -898,6 +1564,356 @@ export default {
                 '--subject-plan-columns': columnGroup.columns.length + 1 + sumColumnCount,
             }
         },
+        subjectOverviewV2SubjectsForColumn(subjects, column) {
+            return this.uniqueSubjectOverviewTotalSubjects(subjects.filter(subject =>
+                column.subjectKeys.includes(this.subjectOverviewSubjectKey(subject)),
+            )).sort((firstSubject, secondSubject) => {
+                const firstSubjectIndex = column.subjectKeys.indexOf(this.subjectOverviewSubjectKey(firstSubject))
+                const secondSubjectIndex = column.subjectKeys.indexOf(this.subjectOverviewSubjectKey(secondSubject))
+
+                return firstSubjectIndex - secondSubjectIndex
+                    || this.compareText(firstSubject.json_code, secondSubject.json_code)
+            })
+        },
+        subjectOverviewV2Cell(subjects, column) {
+            const matchingSubjects = this.subjectOverviewV2SubjectsForColumn(subjects, column)
+            const groups = this.subjectOverviewV2CellGroups(matchingSubjects)
+            const singleGroup = groups.length === 1 ? groups[0] : null
+
+            return {
+                column,
+                subjects: matchingSubjects,
+                groups,
+                branches: [...new Set(groups.map(group => group.branch))],
+                display_code: singleGroup?.display_code || this.subjectOverviewV2CellDisplayCode(matchingSubjects),
+                hours: singleGroup?.hours || '',
+            }
+        },
+        subjectOverviewV2CellGroups(subjects) {
+            const subjectsByBranch = new Map()
+
+            subjects.forEach(subject => {
+                const branch = this.subjectOverviewV2SubjectBranch(subject)
+                const branchSubjects = subjectsByBranch.get(branch) || []
+
+                branchSubjects.push(subject)
+                subjectsByBranch.set(branch, branchSubjects)
+            })
+
+            const sharedBranchSubjects = this.subjectOverviewV2SharedBranchSubjects(subjectsByBranch)
+
+            if (sharedBranchSubjects.subjects.length) {
+                const commonSubjects = this.uniqueSubjectOverviewSubjects([
+                    ...(subjectsByBranch.get('common') || []),
+                    ...sharedBranchSubjects.subjects,
+                ])
+
+                subjectsByBranch.set('common', commonSubjects)
+                this.subjectOverviewBranchKeys().forEach(branch => {
+                    const remainingSubjects = (subjectsByBranch.get(branch) || [])
+                        .filter(subject => !sharedBranchSubjects.consumed.has(subject))
+
+                    if (remainingSubjects.length) {
+                        subjectsByBranch.set(branch, remainingSubjects)
+                    } else {
+                        subjectsByBranch.delete(branch)
+                    }
+                })
+            }
+
+            const branchOrder = ['common', ...this.subjectOverviewBranchKeys()]
+
+            return [...subjectsByBranch.entries()]
+                .sort(([firstBranch], [secondBranch]) =>
+                    branchOrder.indexOf(firstBranch) - branchOrder.indexOf(secondBranch))
+                .map(([branch, branchSubjects]) => ({
+                    branch,
+                    subjects: branchSubjects,
+                    display_code: this.subjectOverviewV2CellDisplayCode(branchSubjects),
+                    hours: this.formatSubjectHours(this.sumSubjectHours(branchSubjects)),
+                    class: branch === 'common'
+                        ? 'subject-plan-cell--filled'
+                        : `subject-plan-cell--${branch}`,
+                }))
+        },
+        subjectOverviewV2SharedBranchSubjects(subjectsByBranch) {
+            const [firstBranch, secondBranch] = this.subjectOverviewBranchKeys()
+            const firstBranchSubjects = subjectsByBranch.get(firstBranch) || []
+            const secondBranchSubjects = subjectsByBranch.get(secondBranch) || []
+            const secondSubjectsByKey = new Map()
+
+            secondBranchSubjects.forEach(subject => {
+                const subjectKey = this.subjectOverviewV2SharedBranchSubjectKey(subject)
+                const matchingSubjects = secondSubjectsByKey.get(subjectKey) || []
+
+                matchingSubjects.push(subject)
+                secondSubjectsByKey.set(subjectKey, matchingSubjects)
+            })
+
+            const sharedSubjects = []
+            const consumedSubjects = new Set()
+
+            firstBranchSubjects.forEach(subject => {
+                const subjectKey = this.subjectOverviewV2SharedBranchSubjectKey(subject)
+                const [matchingSubject, ...remainingMatchingSubjects] = secondSubjectsByKey.get(subjectKey) || []
+
+                if (!matchingSubject) return
+
+                secondSubjectsByKey.set(subjectKey, remainingMatchingSubjects)
+                sharedSubjects.push(subject)
+                consumedSubjects.add(subject)
+                consumedSubjects.add(matchingSubject)
+            })
+
+            return {
+                subjects: sharedSubjects,
+                consumed: consumedSubjects,
+            }
+        },
+        subjectOverviewV2SharedBranchSubjectKey(subject) {
+            return [
+                this.subjectOverviewSubjectKey(subject),
+                String(subject.json_code || '').trim(),
+                this.subjectOverviewV2SubjectDisplayCodes(subject).join('|'),
+                Number(subject.hours_per_week || 0),
+                this.isSubjectOverviewChoiceSubject(subject) ? 'choice' : 'required',
+            ].join('|')
+        },
+        subjectOverviewV2CellDisplayCode(subjects) {
+            const displayCodes = [...new Set(subjects.flatMap(subject =>
+                this.subjectOverviewV2SubjectDisplayCodes(subject),
+            ))]
+            const combinedDisplayCodes = this.subjectOverviewCombinedCompactChoiceCodes(displayCodes)
+            const isChoice = subjects.some(subject => this.isSubjectOverviewChoiceSubject(subject))
+
+            return `${combinedDisplayCodes.join(' | ')}${isChoice ? ' *' : ''}`
+        },
+        subjectOverviewV2SubjectDisplayCodes(subject) {
+            const moduleNumber = String(subject.json_code || '').match(/\d+$/u)?.[0] || ''
+            const ruleDisplayCodes = (this.subjectRules || [])
+                .filter(rule => rule.is_active !== false)
+                .flatMap(rule => rule.options
+                    .filter(option =>
+                        option.course_code_prefix
+                        && option.subject_keys.includes(subject.stable_key),
+                    )
+                    .map(option => {
+                        const courseCodePrefix = String(option.course_code_prefix)
+                        const displayPrefix = rule.selection_key === 'religion'
+                            && courseCodePrefix.toUpperCase() !== 'ETH'
+                            ? 'R'
+                            : courseCodePrefix
+
+                        return `${displayPrefix}${moduleNumber}`
+                    }))
+
+            if (!ruleDisplayCodes.length) return [this.alternativeDisplay(subject.json_code)]
+
+            return [...new Set(ruleDisplayCodes)].sort((firstCode, secondCode) =>
+                this.subjectOverviewV2CourseCodePriority(firstCode)
+                - this.subjectOverviewV2CourseCodePriority(secondCode)
+                || this.compareText(firstCode, secondCode),
+            )
+        },
+        subjectOverviewV2CourseCodePriority(courseCode) {
+            if (/^R\d/u.test(courseCode)) return 0
+            if (/^ETH\d/u.test(courseCode)) return 1
+
+            return 2
+        },
+        subjectOverviewV2SubjectBranch(subject) {
+            const ruleBranches = (this.subjectRules || [])
+                .filter(rule => rule.is_active !== false && rule.selection_key === 'branch')
+                .flatMap(rule => rule.options
+                    .filter(option => option.subject_keys.includes(subject.stable_key))
+                    .map(option => option.value))
+                .filter(branch => this.subjectOverviewBranchKeys().includes(branch))
+            const distinctRuleBranches = [...new Set(ruleBranches)]
+
+            if (distinctRuleBranches.length === 1) return distinctRuleBranches[0]
+
+            return subject.branch || 'common'
+        },
+        subjectOverviewV2BranchLegendLines(branch) {
+            const languageLines = this.subjectOverviewV2LanguageLegendLines(branch)
+            const branchRequirements = [
+                ...this.subjectOverviewV2ArtsLegendDescriptions(branch),
+                ...this.subjectOverviewV2OtherBranchLegendDescriptions(branch),
+            ]
+
+            return [
+                ...languageLines,
+                ...(branchRequirements.length ? [branchRequirements.join(' / ')] : []),
+            ]
+        },
+        subjectRuleImpactRequiredDescriptions(branch) {
+            const requiredGroups = new Map()
+
+            this.activeSubjectRows
+                .filter(subject => this.subjectOverviewV2SubjectBranch(subject) === branch)
+                .filter(subject => !this.isSubjectOverviewChoiceSubject(subject))
+                .filter(subject => !['L', 'F', 'S', 'L/F/S'].includes(this.subjectOverviewSubjectKey(subject)))
+                .forEach(subject => {
+                    const subjectKey = this.subjectOverviewSubjectKey(subject)
+                    const moduleNumber = this.subjectOverviewV2SubjectModuleNumber(subject)
+                    const groupKey = ['BE', 'ME'].includes(subjectKey)
+                        ? `arts-${moduleNumber}`
+                        : subjectKey
+                    const group = requiredGroups.get(groupKey) || {
+                        firstSemester: Number(subject.semester || 0),
+                        key: groupKey,
+                        codes: [],
+                    }
+
+                    group.firstSemester = Math.min(group.firstSemester, Number(subject.semester || 0))
+                    group.codes.push(String(subject.json_code || ''))
+                    requiredGroups.set(groupKey, group)
+                })
+
+            return [...requiredGroups.values()]
+                .sort((firstGroup, secondGroup) =>
+                    firstGroup.firstSemester - secondGroup.firstSemester
+                    || this.compareText(firstGroup.key, secondGroup.key))
+                .map(group => this.subjectOverviewV2GermanList(
+                    [...new Set(group.codes)].sort((firstCode, secondCode) => this.compareText(firstCode, secondCode)),
+                    'und',
+                ))
+                .filter(Boolean)
+        },
+        subjectRuleImpactChoiceDescriptions(branch) {
+            return [
+                ...this.subjectOverviewV2LanguageLegendLines(branch).map(description => ({
+                    label: 'Sprache',
+                    description,
+                })),
+                ...this.subjectRuleImpactArtChoiceDescriptions(branch).map(description => ({
+                    label: 'Künstlerisches Fach',
+                    description,
+                })),
+            ]
+        },
+        subjectRuleImpactArtChoiceDescriptions(branch) {
+            const artChoicesByModule = new Map()
+
+            this.activeSubjectRows
+                .filter(subject => this.subjectOverviewV2SubjectBranch(subject) === branch)
+                .filter(subject => ['BE', 'ME'].includes(this.subjectOverviewSubjectKey(subject)))
+                .filter(subject => this.isSubjectOverviewChoiceSubject(subject))
+                .forEach(subject => {
+                    const moduleNumber = this.subjectOverviewV2SubjectModuleNumber(subject)
+                    const codes = artChoicesByModule.get(moduleNumber) || []
+
+                    codes.push(String(subject.json_code || ''))
+                    artChoicesByModule.set(moduleNumber, codes)
+                })
+
+            return [...artChoicesByModule.entries()]
+                .sort(([firstModule], [secondModule]) => firstModule - secondModule)
+                .map(([, codes]) => this.subjectOverviewV2GermanList(
+                    [...new Set(codes)].sort((firstCode, secondCode) => this.compareText(firstCode, secondCode)),
+                    'oder',
+                ))
+                .filter(Boolean)
+        },
+        subjectOverviewV2LanguageLegendLines(branch) {
+            const languageRule = (this.subjectRules || [])
+                .find(rule => rule.is_active !== false && rule.selection_key === 'language')
+
+            if (!languageRule) return []
+
+            const optionsByLastModule = new Map()
+
+            languageRule.options.forEach(option => {
+                const subjectKeys = new Set(option.subject_keys || [])
+                const moduleNumbers = this.activeSubjectRows
+                    .filter(subject => subjectKeys.has(subject.stable_key))
+                    .filter(subject => ['common', branch].includes(this.subjectOverviewV2SubjectBranch(subject)))
+                    .map(subject => this.subjectOverviewV2SubjectModuleNumber(subject))
+                    .filter(moduleNumber => moduleNumber > 0)
+
+                if (!moduleNumbers.length) return
+
+                const lastModule = Math.max(...moduleNumbers)
+                const optionLabels = optionsByLastModule.get(lastModule) || []
+
+                optionLabels.push(this.subjectOverviewV2RuleOptionShortLabel(option))
+                optionsByLastModule.set(lastModule, optionLabels)
+            })
+
+            return [...optionsByLastModule.entries()]
+                .sort(([firstModule], [secondModule]) => firstModule - secondModule)
+                .map(([lastModule, optionLabels]) =>
+                    `${this.subjectOverviewV2GermanList(optionLabels, 'oder')} bis zum Modul ${lastModule}`)
+        },
+        subjectOverviewV2ArtsLegendDescriptions(branch) {
+            const artSubjectsByModuleAndChoice = new Map()
+
+            this.activeSubjectRows
+                .filter(subject => this.subjectOverviewV2SubjectBranch(subject) === branch)
+                .filter(subject => ['BE', 'ME'].includes(this.subjectOverviewSubjectKey(subject)))
+                .forEach(subject => {
+                    const moduleNumber = this.subjectOverviewV2SubjectModuleNumber(subject)
+                    const isChoice = this.isSubjectOverviewChoiceSubject(subject)
+                    const groupKey = `${moduleNumber}|${isChoice ? 'choice' : 'required'}`
+                    const group = artSubjectsByModuleAndChoice.get(groupKey) || {
+                        moduleNumber,
+                        isChoice,
+                        codes: [],
+                    }
+
+                    group.codes.push(String(subject.json_code || ''))
+                    artSubjectsByModuleAndChoice.set(groupKey, group)
+                })
+
+            return [...artSubjectsByModuleAndChoice.values()]
+                .sort((firstGroup, secondGroup) =>
+                    firstGroup.moduleNumber - secondGroup.moduleNumber
+                    || Number(firstGroup.isChoice) - Number(secondGroup.isChoice))
+                .map(group => this.subjectOverviewV2GermanList(
+                    [...new Set(group.codes)].sort((firstCode, secondCode) => this.compareText(firstCode, secondCode)),
+                    group.isChoice ? 'oder' : 'und',
+                ))
+                .filter(Boolean)
+        },
+        subjectOverviewV2OtherBranchLegendDescriptions(branch) {
+            const excludedSubjectKeys = ['BE', 'ME', 'L', 'F', 'S', 'L/F/S']
+            const subjectsByFamily = new Map()
+
+            this.activeSubjectRows
+                .filter(subject => this.subjectOverviewV2SubjectBranch(subject) === branch)
+                .filter(subject => !excludedSubjectKeys.includes(this.subjectOverviewSubjectKey(subject)))
+                .forEach(subject => {
+                    const subjectKey = this.subjectOverviewSubjectKey(subject)
+                    const familySubjects = subjectsByFamily.get(subjectKey) || []
+
+                    familySubjects.push(String(subject.json_code || ''))
+                    subjectsByFamily.set(subjectKey, familySubjects)
+                })
+
+            return [...subjectsByFamily.entries()]
+                .sort(([firstSubjectKey], [secondSubjectKey]) => this.compareText(firstSubjectKey, secondSubjectKey))
+                .map(([, subjectCodes]) => this.subjectOverviewV2GermanList(
+                    [...new Set(subjectCodes)].sort((firstCode, secondCode) => this.compareText(firstCode, secondCode)),
+                    'und',
+                ))
+                .filter(Boolean)
+        },
+        subjectOverviewV2RuleOptionShortLabel(option) {
+            return String(option.label || option.value || '')
+                .replace(/^[^-–]+[-–]\s*/u, '')
+                .trim()
+        },
+        subjectOverviewV2SubjectModuleNumber(subject) {
+            return Number(String(subject.json_code || '').match(/(\d+)$/u)?.[1] || 0)
+        },
+        subjectOverviewV2GermanList(values, conjunction) {
+            const uniqueValues = [...new Set(values.filter(Boolean))]
+
+            if (uniqueValues.length < 2) return uniqueValues[0] || ''
+            if (uniqueValues.length === 2) return `${uniqueValues[0]} ${conjunction} ${uniqueValues[1]}`
+
+            return `${uniqueValues.slice(0, -1).join(', ')} ${conjunction} ${uniqueValues.at(-1)}`
+        },
         subjectOverviewCellsForColumns(row, columns) {
             const columnKeys = columns.map(column => column.key)
 
@@ -919,6 +1935,20 @@ export default {
             const subjectNames = this.activeSubjectRows
                 .filter(subject => column.subjectKeys.includes(this.subjectOverviewSubjectKey(subject)))
                 .map(subject => this.subjectOverviewBaseName(subject))
+                .filter(Boolean)
+
+            if (!subjectNames.length) {
+                return column.label.replace('/', ' / ')
+            }
+
+            return [...new Set(subjectNames)].join(' / ')
+        },
+        subjectOverviewV2ColumnSubtitle(column) {
+            const subjectNames = this.activeSubjectRows
+                .filter(subject => column.subjectKeys.includes(this.subjectOverviewSubjectKey(subject)))
+                .map(subject => String(subject.name || subject.json_subject || subject.json_code || '')
+                    .replace(/\s+\d+$/u, '')
+                    .trim())
                 .filter(Boolean)
 
             if (!subjectNames.length) {
@@ -1019,7 +2049,12 @@ export default {
                 const displayCodes = this.subjectOverviewCombinedCompactChoiceCodes(sortedSubjects
                     .map(candidate => this.alternativeDisplay(candidate.json_code))
                     .filter(displayCode => displayCode !== '-'))
-                const subjectHours = Math.max(...sortedSubjects.map(candidate => Number(candidate.hours_per_week || 0)))
+                const optionHours = (choiceGroup.options || []).map(option => this.rawSubjectHours(
+                    sortedSubjects.filter(candidate => option.subject_keys.includes(candidate.stable_key)),
+                ))
+                const subjectHours = optionHours.length
+                    ? Math.max(...optionHours, 0)
+                    : Math.max(...sortedSubjects.map(candidate => Number(candidate.hours_per_week || 0)), 0)
 
                 return [
                     {
@@ -1209,15 +2244,69 @@ export default {
             return (
                 Number(subject.semester) === group.semester
                 && this.subjectOverviewChoiceGroupBranch(subject) === group.branch
-                && group.codes.includes(String(subject.json_code || ''))
+                && (
+                    (group.options || []).some(option => option.subject_keys.includes(subject.stable_key))
+                    || group.codes.includes(String(subject.json_code || ''))
+                )
             )
         },
         subjectOverviewChoiceGroups() {
-            return [
-                ...this.subjectOverviewReligionChoiceGroups(),
-                ...this.subjectOverviewLanguageChoiceGroups(),
-                ...this.subjectOverviewArtChoiceGroups(),
-            ]
+            if (Number(this.subjectRulesVersion || 0) === 0 || !Array.isArray(this.subjectRules)) {
+                return [
+                    ...this.subjectOverviewReligionChoiceGroups(),
+                    ...this.subjectOverviewLanguageChoiceGroups(),
+                    ...this.subjectOverviewArtChoiceGroups(),
+                ]
+            }
+
+            const subjectsByKey = new Map((this.activeSubjectRows || []).map(subject => [subject.stable_key, subject]))
+
+            return this.subjectRules
+                .filter(rule => rule.is_active !== false)
+                .flatMap(rule => {
+                    const contexts = new Map()
+
+                    rule.options.forEach(option => {
+                        const optionSubjects = option.subject_keys
+                            .map(subjectKey => subjectsByKey.get(subjectKey))
+                            .filter(Boolean)
+
+                        optionSubjects.forEach(subject => {
+                            const semester = Number(subject.semester) || 0
+                            const branch = this.subjectOverviewChoiceGroupBranch(subject)
+                            const contextKey = `${semester}|${branch}`
+                            const context = contexts.get(contextKey) || {
+                                semester,
+                                branch,
+                                options: [],
+                            }
+                            let contextOption = context.options.find(item => item.value === option.value)
+
+                            if (!contextOption) {
+                                contextOption = {
+                                    value: option.value,
+                                    label: option.label,
+                                    subject_keys: [],
+                                    codes: [],
+                                }
+                                context.options.push(contextOption)
+                            }
+
+                            contextOption.subject_keys.push(subject.stable_key)
+                            contextOption.codes.push(String(subject.json_code || ''))
+                            contexts.set(contextKey, context)
+                        })
+                    })
+
+                    return [...contexts.values()]
+                        .filter(context => context.semester > 0 && context.options.filter(option => option.subject_keys.length).length > 1)
+                        .map(context => ({
+                            ...context,
+                            rule_key: rule.stable_key,
+                            codes: [...new Set(context.options.flatMap(option => option.codes))],
+                            orderedCodes: context.options.flatMap(option => option.codes),
+                        }))
+                })
         },
         subjectOverviewReligionChoiceGroups() {
             const groups = new Map()
@@ -1436,8 +2525,17 @@ export default {
             return [{ value: this.formatSubjectHours(commonTotal), class: '' }]
         },
         subjectOverviewBranchTotals(subjects, commonTotal) {
-            const branchTotals = [...new Set(subjects.map(subject => subject.branch).filter(branch => branch && branch !== 'common'))]
-                .sort((firstBranch, secondBranch) => this.compareText(this.displayBranch(firstBranch), this.displayBranch(secondBranch)))
+            const availableBranches = new Set(subjects
+                .map(subject => subject.branch)
+                .filter(branch => branch && branch !== 'common'))
+            const branchOrder = [
+                ...this.subjectOverviewBranchKeys().filter(branch => availableBranches.has(branch)),
+                ...[...availableBranches]
+                    .filter(branch => !this.subjectOverviewBranchKeys().includes(branch))
+                    .sort((firstBranch, secondBranch) =>
+                        this.compareText(this.displayBranch(firstBranch), this.displayBranch(secondBranch))),
+            ]
+            const branchTotals = branchOrder
                 .map(branch => ({
                     value: this.formatSubjectHours(commonTotal + this.sumSubjectHours(subjects.filter(subject => subject.branch === branch))),
                     class: `subject-plan-total--${branch}`,
@@ -1466,8 +2564,19 @@ export default {
 
                 if (choiceSubjects.length < 2) return duplicateHours
 
-                const choiceHours = choiceSubjects.map(subject => Number(subject.hours_per_week || 0))
-                const countedHours = Math.max(...choiceHours)
+                if (!group.options?.length) {
+                    const countedHours = Math.max(
+                        ...choiceSubjects.map(subject => Number(subject.hours_per_week || 0)),
+                        0,
+                    )
+
+                    return duplicateHours + this.rawSubjectHours(choiceSubjects) - countedHours
+                }
+
+                const optionHours = (group.options || []).map(option => this.rawSubjectHours(
+                    choiceSubjects.filter(subject => option.subject_keys.includes(subject.stable_key)),
+                ))
+                const countedHours = Math.max(...optionHours, 0)
 
                 return duplicateHours + this.rawSubjectHours(choiceSubjects) - countedHours
             }, 0)
@@ -1480,6 +2589,8 @@ export default {
         applySettings(settings) {
             this.subjectRows = (settings.subjects || []).map(subject => this.normalizeSubjectRow(subject))
             this.subjectMappings = (settings.mappings || []).map(mapping => this.normalizeMappingRow(mapping))
+            this.subjectRulesVersion = Number(settings.rule_set?.version || 0)
+            this.subjectRules = (settings.rule_set?.rules || []).map(rule => this.normalizeSubjectRule(rule))
             this.previousSchoolyear = settings.previous_schoolyear || null
 
             if (!this.subjectsEditMode) {
@@ -1489,11 +2600,16 @@ export default {
             if (!this.mappingsEditMode) {
                 this.subjectMappingsSnapshot = this.cloneRows(this.subjectMappings)
             }
+
+            if (!this.rulesEditMode) {
+                this.subjectRulesSnapshot = this.deepClone(this.subjectRules)
+            }
         },
         normalizeSubjectRow(subject = {}) {
             return {
                 local_id: this.nextLocalId++,
                 id: subject.id || null,
+                stable_key: subject.stable_key || null,
                 semester: subject.semester ?? null,
                 branch: subject.branch || null,
                 json_code: subject.json_code || '',
@@ -1513,6 +2629,43 @@ export default {
                 note: mapping.note || null,
                 is_active: mapping.is_active !== false,
             }
+        },
+        normalizeSubjectRule(rule = {}) {
+            return {
+                stable_key: rule.stable_key || this.createStableKey(),
+                name: rule.name || '',
+                label: rule.label || '',
+                selection_key: rule.selection_key || 'branch',
+                selection_mode: rule.selection_mode || 'single',
+                min_selections: Number(rule.min_selections ?? 1),
+                max_selections: Number(rule.max_selections ?? 1),
+                conditions: (rule.conditions || []).map(condition => ({
+                    field: condition.field || 'branch',
+                    operator: condition.operator || 'equals',
+                    value: Array.isArray(condition.value) ? condition.value.join(', ') : condition.value || '',
+                })),
+                is_active: rule.is_active !== false,
+                options: (rule.options || []).map(option => this.normalizeSubjectRuleOption(option)),
+            }
+        },
+        normalizeSubjectRuleOption(option = {}) {
+            return {
+                stable_key: option.stable_key || this.createStableKey(),
+                value: option.value || '',
+                label: option.label || '',
+                course_code_prefix: option.course_code_prefix || '',
+                subject_keys: [...new Set(option.subject_keys || [])],
+            }
+        },
+        createStableKey() {
+            if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+                const randomValue = Math.floor(Math.random() * 16)
+                const value = character === 'x' ? randomValue : (randomValue & 0x3) | 0x8
+
+                return value.toString(16)
+            })
         },
         addSubjectRow() {
             this.subjectRows.push(
@@ -1555,6 +2708,28 @@ export default {
             this.mappingsEditMode = false
             this.settingsError = ''
         },
+        startRulesEdit(rule) {
+            this.settingsMessage = ''
+            this.subjectRulesSnapshot = this.deepClone(this.subjectRules)
+            this.rulesEditMode = true
+            this.editingSubjectRuleKey = rule.stable_key
+            this.subjectRuleOpenPanels = [...new Set([...this.subjectRuleOpenPanels, rule.stable_key])]
+        },
+        cancelRulesEdit() {
+            this.subjectRules = this.deepClone(this.subjectRulesSnapshot)
+            this.rulesEditMode = false
+            this.editingSubjectRuleKey = null
+            this.settingsError = ''
+        },
+        isSubjectRuleEditing(rule) {
+            return this.rulesEditMode && this.editingSubjectRuleKey === rule.stable_key
+        },
+        removeRuleCondition(rule, conditionIndex) {
+            rule.conditions.splice(conditionIndex, 1)
+        },
+        deepClone(value) {
+            return JSON.parse(JSON.stringify(value))
+        },
         cloneRows(rows) {
             return rows.map(row => ({ ...row }))
         },
@@ -1592,6 +2767,28 @@ export default {
             }
 
             return 0
+        },
+        compareSubjectRowDisplayOrder(firstSubject, secondSubject) {
+            const semesterComparison = this.compareNullableNumbers(firstSubject.semester, secondSubject.semester)
+
+            if (semesterComparison !== 0) return semesterComparison
+
+            const branchComparison = this.compareText(
+                this.displayBranch(firstSubject.branch),
+                this.displayBranch(secondSubject.branch),
+            )
+
+            if (branchComparison !== 0) return branchComparison
+
+            const codeComparison = this.compareText(firstSubject.json_code, secondSubject.json_code)
+
+            if (codeComparison !== 0) return codeComparison
+
+            const subjectComparison = this.compareText(firstSubject.json_subject, secondSubject.json_subject)
+
+            if (subjectComparison !== 0) return subjectComparison
+
+            return (firstSubject.sort_index || 0) - (secondSubject.sort_index || 0)
         },
         compareNullableNumbers(firstValue, secondValue) {
             const firstNumber = Number(firstValue || 9999)
@@ -1746,6 +2943,7 @@ export default {
                 ), {
                     subjects: this.subjectRows.map(subject => ({
                         semester: subject.semester || null,
+                        stable_key: subject.stable_key || null,
                         branch: subject.branch === 'common' ? null : subject.branch || null,
                         json_code: subject.json_code || null,
                         json_subject: subject.json_subject || null,
@@ -1790,6 +2988,46 @@ export default {
                 this.mappingsSaving = false
             }
         },
+        async saveSubjectRules() {
+            this.rulesSaving = true
+            this.settingsError = ''
+            this.settingsMessage = ''
+
+            try {
+                const response = await axios.put(updateRulesRoute.url(
+                    { studyProgram: this.studyProgram },
+                    this.personalSchoolyearRouteOptions,
+                ), {
+                    version: this.subjectRulesVersion,
+                    rules: this.subjectRules.map(rule => ({
+                        ...rule,
+                        conditions: rule.conditions.map(condition => ({
+                            ...condition,
+                            value: ['in', 'not_in'].includes(condition.operator)
+                                ? String(condition.value || '').split(',').map(value => value.trim()).filter(Boolean)
+                                : condition.value,
+                        })),
+                        options: rule.options.map(option => ({
+                            ...option,
+                            course_code_prefix: option.course_code_prefix || null,
+                            subject_keys: [...new Set(option.subject_keys || [])],
+                        })),
+                    })),
+                })
+                this.subjectRulesVersion = Number(response.data.data?.version || this.subjectRulesVersion + 1)
+                this.subjectRules = (response.data.data?.rules || []).map(rule => this.normalizeSubjectRule(rule))
+                this.subjectRulesSnapshot = this.deepClone(this.subjectRules)
+                this.rulesEditMode = false
+                this.editingSubjectRuleKey = null
+                this.settingsMessage = response.data.message || 'Regeln gespeichert und angewendet.'
+            } catch (error) {
+                this.settingsError = error?.response?.status === 409
+                    ? 'Die Regeln wurden inzwischen geändert. Ihre Eingaben bleiben erhalten; laden Sie die Seite neu, bevor Sie erneut speichern.'
+                    : error?.response?.data?.message || 'Die Regeln konnten nicht gespeichert werden.'
+            } finally {
+                this.rulesSaving = false
+            }
+        },
     },
 }
 </script>
@@ -1822,9 +3060,202 @@ export default {
     max-width: 920px;
 }
 
+.subject-rule-grid,
+.subject-rule-condition-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.subject-rule-condition-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
+.subject-rule-subject-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.subject-rule-impact-preview__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.subject-rule-impact-preview__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.subject-rule-impact-card {
+    overflow: hidden;
+}
+
+.subject-rule-impact-card--wirtschaftskundlich {
+    border-color: rgba(55, 146, 94, 0.42) !important;
+}
+
+.subject-rule-impact-card--gymnasial {
+    border-color: rgba(31, 153, 198, 0.42) !important;
+}
+
+.subject-rule-impact-card__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+}
+
+.subject-rule-impact-card__content {
+    display: grid;
+    gap: 16px;
+}
+
+.subject-rule-impact-row {
+    display: grid;
+    gap: 8px;
+}
+
+.subject-rule-impact-row__label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.subject-rule-impact-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.subject-rule-impact-choices {
+    display: grid;
+    gap: 6px;
+}
+
+.subject-rule-impact-choice {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(37, 99, 235, 0.06);
+    font-size: 0.9rem;
+}
+
+.subject-rule-subject-group + .subject-rule-subject-group {
+    margin-top: 14px;
+}
+
+.subject-rule-subject-group__title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 7px;
+    color: rgba(var(--v-theme-on-surface), 0.72);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.subject-rule-subject-group__swatch {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    border-radius: 6px;
+}
+
+.subject-rule-subject-family {
+    display: grid;
+    gap: 8px;
+}
+
+.subject-rule-subject-family + .subject-rule-subject-family {
+    margin-top: 10px;
+}
+
+.subject-rule-subject-family--labelled {
+    grid-template-columns: minmax(86px, 120px) minmax(0, 1fr);
+    align-items: start;
+}
+
+.subject-rule-subject-family__label {
+    padding-top: 4px;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+@media (max-width: 760px) {
+    .subject-rule-grid,
+    .subject-rule-condition-grid,
+    .subject-rule-impact-preview__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .subject-rule-impact-preview__header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .subject-rule-subject-family--labelled {
+        grid-template-columns: 1fr;
+    }
+}
+
 .subject-overview-card {
     width: 100%;
     max-width: none;
+}
+
+.subject-overview-v2-card__text {
+    display: flex;
+    min-height: 320px;
+    flex-direction: column;
+}
+
+.subject-overview-v2-card__canvas {
+    min-height: 220px;
+    flex: 1;
+}
+
+.subject-plan-wrap.subject-plan-v2-wrap {
+    overflow-x: auto;
+}
+
+.subject-plan-v2-grid {
+    min-width: 920px;
+}
+
+.subject-plan-cell--v2-course {
+    flex-direction: column;
+    gap: 2px;
+}
+
+.subject-plan-cell--v2-branches {
+    align-items: stretch;
+    padding: 2px;
+    background: #cfdde0;
+}
+
+.subject-plan-v2-course-group {
+    display: flex;
+    min-height: 34px;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+    border-radius: 5px;
+}
+
+.subject-overview-v2-card__footer {
+    padding-top: 12px;
+    border-top: 1px solid rgba(15, 23, 42, 0.12);
 }
 
 .subject-section-card__title,
@@ -2044,11 +3475,47 @@ export default {
     font-weight: 650;
 }
 
+.subject-plan-legend--detailed {
+    align-items: stretch;
+    gap: 28px;
+}
+
+.subject-plan-legend-item--detailed {
+    min-width: 320px;
+    flex: 1 1 420px;
+    align-items: center;
+    font-weight: 400;
+}
+
+.subject-plan-legend-copy {
+    min-width: 0;
+}
+
+.subject-plan-legend-title {
+    margin-bottom: 1px;
+    font-size: 0.8rem;
+    font-variant: small-caps;
+    font-weight: 850;
+    line-height: 1.1;
+}
+
+.subject-plan-legend-line {
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
 .subject-plan-legend-swatch {
     display: inline-block;
     width: 22px;
     height: 14px;
     border-radius: 5px;
+}
+
+.subject-plan-legend-swatch--detailed {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    border-radius: 12px;
 }
 
 .subject-plan-legend-swatch--wirtschaftskundlich {

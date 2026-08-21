@@ -56,6 +56,7 @@ use App\Http\Controllers\Admin\SpaRoleController;
 use App\Http\Controllers\Admin\StudentsTimetables\AdminUserController as StudentsTimetablesAdminUserController;
 use App\Http\Controllers\Admin\StudentsTimetables\RecognitionCsvUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableDataRefreshController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StateController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StudentInformationController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TimetableController;
@@ -251,6 +252,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/subjects-overview-settings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'settings']);
         Route::post('/admin/students-timetables/subjects-overview-settings/carry-forward', [SubjectOverviewJsonUploadController::class, 'carryForwardSubjectPlan']);
         Route::put('/admin/students-timetables/subjects-overview-settings/subjects/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateSubjects']);
+        Route::put('/admin/students-timetables/subjects-overview-settings/rules/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateRules']);
         Route::put('/admin/students-timetables/subjects-overview-settings/mappings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload'])
             ->middleware('throttle:uploads');
@@ -266,6 +268,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/students-timetables/recognitions-csv/{recognitionImport}', [RecognitionCsvUploadController::class, 'destroy'])
             ->whereNumber('recognitionImport');
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
+        Route::get('/admin/students-timetables/data-refreshes', [StudentTimetableDataRefreshController::class, 'index']);
+        Route::post('/admin/students-timetables/data-refreshes', [StudentTimetableDataRefreshController::class, 'store'])
+            ->middleware('throttle:10,1');
         Route::put('/admin/students-timetables/imports/single-date-appointments', [TimetableImportController::class, 'updateSingleDateAppointments']);
         Route::get('/admin/students-timetables/imports/{timetableImport}/download', [TimetableImportController::class, 'downloadSource'])
             ->whereNumber('timetableImport');

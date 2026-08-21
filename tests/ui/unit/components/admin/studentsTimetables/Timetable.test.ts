@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import DataRefresh from '@/pages/admin/studentsTimetables/timetable/DataRefresh.vue'
 import Timetable from '@/pages/admin/studentsTimetables/timetable/Timetable.vue'
 
 describe('Students timetable timetable page', () => {
@@ -166,6 +167,12 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain("label: 'Stundenplan'")
         expect(componentSource).toContain("label: 'Anrechnungen'")
         expect(componentSource).toContain("label: 'Sokrates 116'")
+        expect(componentSource).toContain("key: 'datenaktualisierung'")
+        expect(componentSource).toContain("label: 'Datenaktualisierung'")
+        expect(componentSource).toContain("meta: 'Studienauswahl und Noten aktualisieren'")
+        expect(componentSource).toContain("'datenaktualisierung'")
+        expect(componentSource).toContain('<DataRefresh')
+        expect(componentSource).toContain(':disabled="button.disabled === true"')
         expect(componentSource).not.toContain("key: 'faecher'")
         expect(componentSource).toContain(':prepend-icon="button.icon"')
         expect(componentSource).toContain('/api/admin/students-timetables/imports')
@@ -173,6 +180,7 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('Letzter Import:')
         expect(componentSource).toContain('@click="openImportPage(button.key)"')
         expect(componentSource).toContain('openImportPage(key)')
+        expect(componentSource).toContain('if (!importButton || importButton.disabled === true) return')
         expect(componentSource).toContain('/admin/students-timetables/timetable/imports/${this.importPage}')
         expect(componentSource).toContain('activeImportButton')
         expect(componentSource).toContain('st-import-page-title')
@@ -530,6 +538,73 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('Änderungen werden im Hintergrund gespeichert.')
         expect(componentSource).toContain('queueSingleDateAppointmentActivationSave()')
         expect(routeSource).toContain('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
+    })
+
+    it('shows progress and a completion summary on the data refresh page', () => {
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetable/DataRefresh.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('Datenaktualisierung')
+        expect(componentSource).toContain('{{ schoolyearLabel }}')
+        expect(componentSource).toContain('Aktualisierung aller Studienauswahl bei den Studierenden')
+        expect(componentSource).toContain('Aktualisierung aller Noten bei den Studierenden')
+        expect(componentSource).toContain('Datenaktualisierung starten')
+        expect(componentSource).toContain('<v-progress-linear')
+        expect(componentSource).toContain('Datenaktualisierung abgeschlossen')
+        expect(componentSource).toContain('Studierende verarbeitet')
+        expect(componentSource).toContain('Studienauswahl aktualisiert')
+        expect(componentSource).toContain('Noten aktualisiert')
+        expect(componentSource).toContain('loadStudentDataRefresh.url()')
+        expect(componentSource).toContain('startStudentDataRefresh.url()')
+        expect(componentSource).toContain('this.loadRefresh({ silent: true })')
+    })
+
+    it('polls an active data refresh and stops after completion', async () => {
+        const computed = (DataRefresh as any).computed
+        const methods = (DataRefresh as any).methods
+        const runningRefresh = {
+            status: 'running',
+            total_students: 20,
+            processed_students: 10,
+            progress_percent: 50,
+        }
+        const completedRefresh = {
+            ...runningRefresh,
+            status: 'completed',
+            processed_students: 20,
+            progress_percent: 100,
+        }
+        const get = vi.fn()
+            .mockResolvedValueOnce({ data: { data: runningRefresh } })
+            .mockResolvedValueOnce({ data: { data: completedRefresh } })
+        const ctx: any = {
+            dataRefresh: null,
+            loading: false,
+            loadError: '',
+            schedulePolling: vi.fn(),
+            clearPolling: vi.fn(),
+        }
+        Object.defineProperty(ctx, 'refreshIsActive', {
+            get: () => computed.refreshIsActive.call(ctx),
+        })
+        vi.stubGlobal('axios', { get })
+
+        try {
+            await methods.loadRefresh.call(ctx)
+
+            expect(ctx.dataRefresh).toEqual(runningRefresh)
+            expect(ctx.schedulePolling).toHaveBeenCalledOnce()
+            expect(ctx.loading).toBe(false)
+
+            await methods.loadRefresh.call(ctx, { silent: true })
+
+            expect(ctx.dataRefresh).toEqual(completedRefresh)
+            expect(ctx.clearPolling).toHaveBeenCalledOnce()
+        } finally {
+            vi.unstubAllGlobals()
+        }
     })
 
     it('shows the personal target schoolyear for all import types', () => {

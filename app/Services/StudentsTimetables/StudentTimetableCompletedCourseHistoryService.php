@@ -25,6 +25,25 @@ class StudentTimetableCompletedCourseHistoryService
             return [];
         }
 
+        return $this->coursesForStudentCodes($user, $schoolyearId, [$studentCode])[$studentCode] ?? [];
+    }
+
+    /**
+     * @param  list<string>  $studentCodes
+     * @return array<string, list<array<string, mixed>>>
+     */
+    public function coursesForStudentCodes(User $user, int $schoolyearId, array $studentCodes): array
+    {
+        $studentCodes = collect($studentCodes)
+            ->map(fn (string $studentCode): string => trim($studentCode))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($studentCodes->isEmpty()) {
+            return [];
+        }
+
         $subjectRows = StudentTimetableSubjectRow::query()
             ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $user->school_id)
@@ -35,7 +54,7 @@ class StudentTimetableCompletedCourseHistoryService
         $recognitionRows = StudentTimetableRecognitionRow::query()
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
-            ->where('student_code', $studentCode)
+            ->whereIn('student_code', $studentCodes)
             ->orderByDesc('student_timetable_recognition_import_id')
             ->orderByDesc('id')
             ->get(['id', 'row_number', 'student_code', 'subject', 'grade', 'note', 'raw_data'])
@@ -48,6 +67,26 @@ class StudentTimetableCompletedCourseHistoryService
                     ...($row->raw_data ?? []),
                 ],
             ))
+            ->groupBy(fn (StudentTimetableRecognitionRow $row): string => (string) $row->student_code);
+
+        return $studentCodes
+            ->mapWithKeys(fn (string $studentCode): array => [
+                $studentCode => $this->coursesFromRecognitionRows(
+                    $recognitionRows->get($studentCode, collect()),
+                    $subjectRows,
+                ),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, StudentTimetableRecognitionRow>  $recognitionRows
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     * @return list<array<string, mixed>>
+     */
+    private function coursesFromRecognitionRows(Collection $recognitionRows, Collection $subjectRows): array
+    {
+        $recognitionRows = $recognitionRows
             ->sortBy(fn (StudentTimetableRecognitionRow $row): string => sprintf(
                 '%s|%010d',
                 (string) $row->subject,

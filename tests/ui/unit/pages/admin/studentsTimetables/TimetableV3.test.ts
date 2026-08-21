@@ -916,6 +916,29 @@ describe('TimetableV3', () => {
         expect(source).toContain('timetable-v3__page-actions')
     })
 
+    it('shows the personal schoolyear directly after the V3 title', () => {
+        const computed = (TimetableV3 as any).computed
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+
+        expect(computed.personalSchoolyearLabel.call({
+            selectedSchoolyear: {
+                concerns: '2026/27',
+                name: 'Schuljahr 2026/27',
+            },
+        })).toBe('2026/27')
+        expect(computed.personalSchoolyearLabel.call({
+            selectedSchoolyear: {
+                name: 'Schuljahr 2026/27',
+            },
+        })).toBe('Schuljahr 2026/27')
+        expect(source.match(/<strong class="timetable-v3__schoolyear text-primary">\{\{ personalSchoolyearLabel \}\}<\/strong>/g))
+            .toHaveLength(2)
+        expect(source).toContain('class="timetable-v3__title-row"')
+    })
+
     it('numbers V3 pages according to the active planning branch', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',

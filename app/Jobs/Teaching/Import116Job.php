@@ -9,6 +9,7 @@ use App\Models\Import116RunChange;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroupMember;
+use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -58,8 +59,9 @@ class Import116Job implements ShouldQueue
         $this->onQueue('imports');
     }
 
-    public function handle(): void
+    public function handle(?StudentTimetableStudySelectionRefreshService $studySelectionRefreshService = null): void
     {
+        $studySelectionRefreshService ??= app(StudentTimetableStudySelectionRefreshService::class);
         $schoolId = (int) $this->user->school_id;
         $schoolyearId = $this->schoolyearId ?? $this->user->schoolyear_id;
         $run = $this->createRun($schoolId, $schoolyearId);
@@ -127,7 +129,16 @@ class Import116Job implements ShouldQueue
 
             $initialReportCounts = $report['counts'];
 
-            DB::transaction(function () use ($stagingTable, $schoolId, $schoolyearId, $run, $now, $initialReportCounts, &$report): void {
+            DB::transaction(function () use (
+                $stagingTable,
+                $schoolId,
+                $schoolyearId,
+                $run,
+                $now,
+                $initialReportCounts,
+                $studySelectionRefreshService,
+                &$report,
+            ): void {
                 $report['counts'] = $initialReportCounts;
 
                 if ($run) {
@@ -172,6 +183,10 @@ class Import116Job implements ShouldQueue
                 $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);
                 $schoolTool->import_166_at = $now;
                 $schoolTool->save();
+
+                if ($schoolyearId) {
+                    $studySelectionRefreshService->refreshForUser($this->user, (int) $schoolyearId);
+                }
             }, attempts: 3);
         } catch (\Throwable $e) {
             $this->markRunFailed($run, 'Import 116 fehlgeschlagen: '.$e->getMessage());

@@ -1,0 +1,1091 @@
+<template>
+    <v-col cols="12" class="tests-v3-page">
+        <div class="tests-v3-page__title-row">
+            <h2 class="tests-v3-page__title">Tests für Stundenplan Version 3</h2>
+            <strong class="tests-v3-page__schoolyear text-primary">{{ personalSchoolyearLabel }}</strong>
+        </div>
+
+        <v-sheet rounded="lg" class="tests-v3-subnav">
+            <v-btn
+                v-for="item in testsV3NavigationItems"
+                :key="item.key"
+                size="small"
+                :color="testsV3Action === item.key ? 'primary' : 'secondary'"
+                :variant="testsV3Action === item.key ? 'flat' : 'tonal'"
+                :prepend-icon="item.icon"
+                class="tests-v3-subnav__button"
+                @click="handleTestsV3Navigation(item.key)">
+                {{ item.label }}
+            </v-btn>
+        </v-sheet>
+
+        <v-card
+            v-if="testsV3Action === 'students'"
+            rounded="lg"
+            border
+            class="tests-v3-students">
+            <v-card-title class="tests-v3-students__header d-flex flex-wrap align-center ga-3">
+                <div>
+                    <div class="tests-v3-students__title">Studierende</div>
+                    <div class="text-caption text-medium-emphasis">
+                        {{ selectedStudentCount }} von {{ sortedStudents.length }} ausgewählt
+                    </div>
+                </div>
+                <v-spacer />
+                <div class="tests-v3-students__actions d-flex flex-wrap ga-2">
+                    <v-btn
+                        size="small"
+                        color="primary"
+                        variant="tonal"
+                        prepend-icon="mdi-checkbox-multiple-marked-outline"
+                        :disabled="studentsLoading || !sortedStudents.length || allStudentsSelected"
+                        @click="selectAllStudents">
+                        Alle auswählen
+                    </v-btn>
+                    <v-btn
+                        size="small"
+                        color="error"
+                        variant="tonal"
+                        prepend-icon="mdi-checkbox-multiple-blank-outline"
+                        :disabled="studentsLoading || !selectedStudentCount"
+                        @click="clearStudentSelection">
+                        Keine auswählen
+                    </v-btn>
+                </div>
+            </v-card-title>
+
+            <v-progress-linear v-if="studentsLoading" color="primary" indeterminate />
+
+            <v-card-text v-if="studentsError" class="pt-4">
+                <v-alert type="error" variant="tonal">
+                    <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+                        <span>Die Studierenden konnten nicht geladen werden.</span>
+                        <v-btn size="small" color="error" variant="outlined" @click="loadStudents">
+                            Erneut versuchen
+                        </v-btn>
+                    </div>
+                </v-alert>
+            </v-card-text>
+
+            <v-card-text v-else-if="!studentsLoading && !sortedStudents.length" class="pt-4">
+                <v-alert type="info" variant="tonal">
+                    Für {{ personalSchoolyearLabel }} sind keine Studierenden vorhanden.
+                </v-alert>
+            </v-card-text>
+
+            <v-table
+                v-else
+                fixed-header
+                hover
+                density="comfortable"
+                height="min(62vh, 720px)"
+                class="tests-v3-students__table">
+                <thead>
+                    <tr>
+                        <th class="tests-v3-students__selection-column">
+                            <v-checkbox-btn
+                                :model-value="allStudentsSelected"
+                                :indeterminate="someStudentsSelected && !allStudentsSelected"
+                                :disabled="studentsLoading || !sortedStudents.length"
+                                color="primary"
+                                density="compact"
+                                aria-label="Alle Studierenden auswählen oder Auswahl aufheben"
+                                @update:model-value="toggleAllStudents" />
+                        </th>
+                        <th class="tests-v3-students__class-column">Klasse</th>
+                        <th class="tests-v3-students__name-column">Name</th>
+                        <th class="tests-v3-students__study-selection-column">Studienauswahl</th>
+                        <th class="tests-v3-students__semester-column">Semester</th>
+                        <th class="tests-v3-students__course-results-column">Befreit/Bestanden</th>
+                        <th class="tests-v3-students__course-results-column">Negativ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr
+                        v-for="student in sortedStudents"
+                        :key="studentSelectionKey(student)"
+                        :class="{ 'tests-v3-students__row--selected': isStudentSelected(student) }">
+                        <td class="tests-v3-students__selection-column">
+                            <v-checkbox-btn
+                                :model-value="isStudentSelected(student)"
+                                color="primary"
+                                density="compact"
+                                :aria-label="`${studentDisplayName(student)} auswählen`"
+                                @update:model-value="toggleStudentSelection(student, $event)" />
+                        </td>
+                        <td class="font-weight-bold">{{ studentClassLabel(student) }}</td>
+                        <td>
+                            <span class="tests-v3-students__name">
+                                <span>{{ studentDisplayName(student) }}</span>
+                                <span
+                                    v-if="studentReligionLabel(student)"
+                                    class="tests-v3-students__religion">
+                                    {{ studentReligionLabel(student) }}
+                                </span>
+                                <v-icon
+                                    v-if="studentSexPresentation(student)"
+                                    :icon="studentSexPresentation(student).icon"
+                                    :color="studentSexPresentation(student).color"
+                                    :title="studentSexPresentation(student).label"
+                                    :aria-label="studentSexPresentation(student).label"
+                                    size="21" />
+                            </span>
+                        </td>
+                        <td>
+                            <div
+                                v-if="studentStudySelectionLabels(student).length"
+                                class="tests-v3-students__study-selection">
+                                <span
+                                    v-for="selectionLabel in studentStudySelectionLabels(student)"
+                                    :key="selectionLabel"
+                                    class="tests-v3-students__study-selection-item">
+                                    {{ selectionLabel }}
+                                </span>
+                            </div>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__semester">
+                            <template v-if="studentSemesterLabel(student) || studentSchoolLevelLabel(student)">
+                                <span class="tests-v3-students__semester-main">{{ studentSemesterLabel(student) }}</span>
+                                <span
+                                    v-if="studentSchoolLevelLabel(student)"
+                                    class="tests-v3-students__semester-school-level">
+                                    ({{ studentSchoolLevelLabel(student) }})
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__course-results">
+                            <template v-if="studentCourseResultItems(student, 'completed').length">
+                                <span
+                                    v-for="courseResult in studentCourseResultItems(student, 'completed')"
+                                    :key="courseResult.key"
+                                    class="tests-v3-students__course-result">
+                                    {{ courseResult.code }} (<strong
+                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--completed">{{ courseResult.grade }}</strong>)
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__course-results">
+                            <template v-if="studentCourseResultItems(student, 'negative').length">
+                                <span
+                                    v-for="courseResult in studentCourseResultItems(student, 'negative')"
+                                    :key="courseResult.key"
+                                    class="tests-v3-students__course-result">
+                                    {{ courseResult.code }} (<strong
+                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--negative">{{ courseResult.grade }}</strong>)
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </v-card>
+
+        <v-card
+            v-else-if="testsV3Action === 'tests'"
+            rounded="lg"
+            border
+            class="tests-v3-selection">
+            <v-card-title class="tests-v3-selection__header d-flex flex-wrap align-center ga-3">
+                <div>
+                    <div class="tests-v3-selection__title">Ausgewählte Studierende</div>
+                    <div class="text-caption text-medium-emphasis">
+                        {{ selectedStudents.length }} Studierende für die Tests übernommen
+                    </div>
+                </div>
+                <v-spacer />
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-play-circle-outline"
+                    :loading="studentV3TestsRunning"
+                    :disabled="studentV3TestsRunning || !selectedStudents.length"
+                    @click="runTests"
+                    class="tests-v3-selection__run-button">
+                    Run Tests
+                </v-btn>
+            </v-card-title>
+            <div
+                v-if="studentV3TestsRunning || completedStudentV3TestCount"
+                class="tests-v3-selection__progress text-caption">
+                {{ completedStudentV3TestCount }} von {{ selectedStudents.length }} geprüft
+                <span v-if="failedStudentV3TestCount">· {{ failedStudentV3TestCount }} fehlgeschlagen</span>
+            </div>
+            <v-card-text v-if="!selectedStudents.length">
+                <v-alert v-if="!selectedStudents.length" type="info" variant="tonal">
+                    Unter „Studierende“ wurden noch keine Studierenden ausgewählt.
+                </v-alert>
+            </v-card-text>
+            <v-table
+                v-else
+                fixed-header
+                hover
+                density="comfortable"
+                class="tests-v3-students__table tests-v3-selection__table">
+                <thead>
+                    <tr>
+                        <th class="tests-v3-students__selection-column" aria-label="Ausgewählt" />
+                        <th class="tests-v3-students__class-column">Klasse</th>
+                        <th class="tests-v3-students__name-column">Name</th>
+                        <th class="tests-v3-students__study-selection-column">Studienauswahl</th>
+                        <th class="tests-v3-students__semester-column">Semester</th>
+                        <th class="tests-v3-students__course-results-column">Befreit/Bestanden</th>
+                        <th class="tests-v3-students__course-results-column">Negativ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template
+                        v-for="student in selectedStudents"
+                        :key="studentSelectionKey(student)">
+                        <tr class="tests-v3-students__row--selected">
+                        <td class="tests-v3-students__selection-column">
+                            <v-icon
+                                icon="mdi-checkbox-marked"
+                                color="primary"
+                                size="22"
+                                aria-label="Ausgewählt" />
+                        </td>
+                        <td class="font-weight-bold">{{ studentClassLabel(student) }}</td>
+                        <td>
+                            <span class="tests-v3-students__name">
+                                <span>{{ studentDisplayName(student) }}</span>
+                                <span
+                                    v-if="studentReligionLabel(student)"
+                                    class="tests-v3-students__religion">
+                                    {{ studentReligionLabel(student) }}
+                                </span>
+                                <v-icon
+                                    v-if="studentSexPresentation(student)"
+                                    :icon="studentSexPresentation(student).icon"
+                                    :color="studentSexPresentation(student).color"
+                                    :title="studentSexPresentation(student).label"
+                                    :aria-label="studentSexPresentation(student).label"
+                                    size="21" />
+                            </span>
+                        </td>
+                        <td>
+                            <div
+                                v-if="studentStudySelectionLabels(student).length"
+                                class="tests-v3-students__study-selection">
+                                <span
+                                    v-for="selectionLabel in studentStudySelectionLabels(student)"
+                                    :key="selectionLabel"
+                                    class="tests-v3-students__study-selection-item">
+                                    {{ selectionLabel }}
+                                </span>
+                            </div>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__semester">
+                            <template v-if="studentSemesterLabel(student) || studentSchoolLevelLabel(student)">
+                                <span class="tests-v3-students__semester-main">{{ studentSemesterLabel(student) }}</span>
+                                <span
+                                    v-if="studentSchoolLevelLabel(student)"
+                                    class="tests-v3-students__semester-school-level">
+                                    ({{ studentSchoolLevelLabel(student) }})
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__course-results">
+                            <template v-if="studentCourseResultItems(student, 'completed').length">
+                                <span
+                                    v-for="courseResult in studentCourseResultItems(student, 'completed')"
+                                    :key="courseResult.key"
+                                    class="tests-v3-students__course-result">
+                                    {{ courseResult.code }} (<strong
+                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--completed">{{ courseResult.grade }}</strong>)
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        <td class="tests-v3-students__course-results">
+                            <template v-if="studentCourseResultItems(student, 'negative').length">
+                                <span
+                                    v-for="courseResult in studentCourseResultItems(student, 'negative')"
+                                    :key="courseResult.key"
+                                    class="tests-v3-students__course-result">
+                                    {{ courseResult.code }} (<strong
+                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--negative">{{ courseResult.grade }}</strong>)
+                                </span>
+                            </template>
+                            <span v-else class="text-medium-emphasis">–</span>
+                        </td>
+                        </tr>
+                        <tr class="tests-v3-selection__module-test-row">
+                            <td colspan="7" class="tests-v3-selection__module-test">
+                                <div class="tests-v3-selection__module-test-title">V3-Modultest</div>
+                                <div
+                                    v-if="studentV3TestResult(student)?.status === 'running'"
+                                    class="tests-v3-selection__test-status text-primary">
+                                    <v-progress-circular color="primary" indeterminate size="18" width="2" />
+                                    V3-Berechnung läuft …
+                                </div>
+                                <div
+                                    v-else-if="studentV3TestResult(student)?.status === 'pending'"
+                                    class="tests-v3-selection__test-status text-medium-emphasis">
+                                    <v-icon icon="mdi-clock-outline" size="18" />
+                                    Wartet auf Prüfung …
+                                </div>
+                                <div
+                                    v-else-if="studentV3TestResult(student)?.status === 'error'"
+                                    class="tests-v3-selection__test-status text-error">
+                                    <v-icon icon="mdi-alert-circle-outline" size="18" />
+                                    {{ studentV3TestResult(student).message }}
+                                </div>
+                                <div
+                                    v-else-if="studentV3TestResult(student)?.status === 'complete'"
+                                    class="tests-v3-selection__module-groups">
+                                    <div
+                                        v-for="group in studentV3TestResult(student).groups"
+                                        :key="group.key"
+                                        :class="[
+                                            'tests-v3-selection__module-group',
+                                            `tests-v3-selection__module-group--${group.key}`,
+                                        ]">
+                                        <div class="tests-v3-selection__module-group-header">
+                                            <span>{{ group.label }}</span>
+                                            <v-chip
+                                                :color="group.color"
+                                                size="x-small"
+                                                variant="tonal"
+                                                label>
+                                                {{ group.count }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="tests-v3-selection__module-codes">
+                                            <span
+                                                v-for="module in group.modules"
+                                                :key="`${group.key}:${module.code}`"
+                                                :title="module.name"
+                                                class="tests-v3-selection__module-code">
+                                                {{ module.code }}
+                                            </span>
+                                            <span v-if="!group.modules.length" class="text-medium-emphasis">–</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <span v-else class="text-medium-emphasis">Noch nicht geprüft</span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </v-table>
+        </v-card>
+    </v-col>
+</template>
+
+<script>
+import { mapWritableState } from 'pinia'
+import { show as loadV3StudentInformation } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3StudentInformationController'
+import { robotStudents as loadRobotStudents } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+
+const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
+const STUDENT_V3_TEST_CONCURRENCY = 4
+const STUDENT_V3_TEST_GROUPS = [
+    { key: 'finished', label: 'Abgeschlossene', color: 'success' },
+    { key: 'negative', label: 'Negative', color: 'error' },
+    { key: 'previous', label: 'Frühere', color: 'warning' },
+    { key: 'current', label: 'Aktuelle', color: 'primary' },
+    { key: 'additional', label: 'Zusätzliche', color: 'info' },
+]
+const testsV3Actions = ['students', 'tests']
+const studentCollator = new Intl.Collator('de-AT', { numeric: true, sensitivity: 'base' })
+
+export default {
+    data() {
+        return {
+            testsV3Action: this.normalizedTestsV3Action(this.$route.params.subsection),
+            students: [],
+            selectedStudentKeys: [],
+            studentsLoading: false,
+            studentsError: false,
+            studentV3TestResults: {},
+            studentV3TestsRunning: false,
+        }
+    },
+    computed: {
+        ...mapWritableState(useAdminStore, ['config']),
+        personalSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || 'nicht festgelegt'
+        },
+        testsV3NavigationItems() {
+            return [
+                {
+                    key: 'students',
+                    label: 'Studierende',
+                    icon: 'mdi-account-school-outline',
+                },
+                {
+                    key: 'tests',
+                    label: 'Tests',
+                    icon: 'mdi-test-tube',
+                },
+            ]
+        },
+        sortedStudents() {
+            return [...this.students].sort((firstStudent, secondStudent) => {
+                const classComparison = studentCollator.compare(
+                    this.studentClassLabel(firstStudent),
+                    this.studentClassLabel(secondStudent),
+                )
+
+                if (classComparison !== 0) return classComparison
+
+                const nameComparison = studentCollator.compare(
+                    this.studentDisplayName(firstStudent),
+                    this.studentDisplayName(secondStudent),
+                )
+
+                if (nameComparison !== 0) return nameComparison
+
+                return studentCollator.compare(
+                    this.studentSelectionKey(firstStudent),
+                    this.studentSelectionKey(secondStudent),
+                )
+            })
+        },
+        studentSelectionKeys() {
+            return this.sortedStudents
+                .map(student => this.studentSelectionKey(student))
+                .filter(Boolean)
+        },
+        selectedStudentCount() {
+            return this.selectedStudentKeys.length
+        },
+        selectedStudents() {
+            const selectedStudentKeys = new Set(this.selectedStudentKeys)
+
+            return this.sortedStudents.filter(student => selectedStudentKeys.has(this.studentSelectionKey(student)))
+        },
+        allStudentsSelected() {
+            return this.studentSelectionKeys.length > 0
+                && this.studentSelectionKeys.every(studentKey => this.selectedStudentKeys.includes(studentKey))
+        },
+        someStudentsSelected() {
+            return this.selectedStudentCount > 0
+        },
+        completedStudentV3TestCount() {
+            return this.selectedStudents.filter((student) => {
+                const status = this.studentV3TestResult(student)?.status
+
+                return status === 'complete' || status === 'error'
+            }).length
+        },
+        failedStudentV3TestCount() {
+            return this.selectedStudents.filter(
+                student => this.studentV3TestResult(student)?.status === 'error',
+            ).length
+        },
+    },
+    mounted() {
+        if (!this.redirectInvalidTestsV3Route() && this.testsV3Action === 'students') {
+            void this.loadStudents()
+        }
+    },
+    watch: {
+        '$route.params.subsection'(subsection) {
+            this.testsV3Action = this.normalizedTestsV3Action(subsection)
+            if (this.redirectInvalidTestsV3Route()) return
+
+            if (this.testsV3Action === 'students') {
+                void this.loadStudents()
+            }
+        },
+    },
+    methods: {
+        normalizedTestsV3Action(subsection) {
+            return testsV3Actions.includes(subsection) ? subsection : 'students'
+        },
+        handleTestsV3Navigation(key) {
+            this.testsV3Action = this.normalizedTestsV3Action(key)
+            this.$router.push({ path: `/admin/students-timetables/tests-v3/${this.testsV3Action}` })
+        },
+        studentSelectionKey(student) {
+            const studentCode = String(student?.student_code || student?.studentCode || '').trim()
+
+            if (studentCode) return studentCode
+
+            const studentId = String(student?.id || '').trim()
+
+            return studentId ? `id:${studentId}` : ''
+        },
+        studentClassLabel(student) {
+            return String(student?.class || '').trim() || '–'
+        },
+        studentDisplayName(student) {
+            const lastName = String(student?.last_name || student?.lastName || '').trim()
+            const firstName = String(student?.first_name || student?.firstName || '').trim()
+
+            return [lastName, firstName].filter(Boolean).join(' ') || 'Unbekannt'
+        },
+        studentReligionLabel(student) {
+            return String(student?.religion || '').trim()
+        },
+        studentStudySelectionLabels(student) {
+            const selection = student?.study_selection || student?.studySelection || {}
+            const branch = String(selection.branch || '').trim().toLocaleLowerCase('de-AT')
+            const branchLabel = {
+                wirtschaftskundlich: 'WIKU',
+                gymnasial: 'GYM',
+            }[branch] || ''
+
+            return [
+                String(selection.religion || '').trim().toLocaleUpperCase('de-AT'),
+                String(selection.language || '').trim().toLocaleUpperCase('de-AT'),
+                branchLabel,
+                String(selection.arts_subject || selection.artsSubject || '').trim().toLocaleUpperCase('de-AT'),
+            ].filter(Boolean)
+        },
+        studentSemesterLabel(student) {
+            const studyProgram = String(student?.study_program || student?.studyProgram || '')
+                .trim()
+                .toLocaleLowerCase('de-AT')
+            const instructionType = String(student?.instruction_type || student?.instructionType || '')
+                .trim()
+                .toLocaleLowerCase('de-AT')
+            const studyProgramAbbreviation = studyProgram === 'kompaktstudium'
+                || instructionType === 'kompaktunterricht'
+                ? 'K'
+                : studyProgram === 'normalstudium' || instructionType === 'normalunterricht'
+                    ? 'N'
+                    : ''
+            const semester = String(student?.semester ?? '').trim()
+
+            return [studyProgramAbbreviation, semester].filter(Boolean).join(' ')
+        },
+        studentSchoolLevelLabel(student) {
+            const schoolLevel = String(student?.school_level || student?.schoolLevel || '')
+                .trim()
+                .replace(/[.\s-]+/gu, '_')
+            const attendanceYear = String(student?.attendance_year || student?.attendanceYear || '').trim()
+
+            return schoolLevel && attendanceYear && !schoolLevel.includes('_')
+                ? `${schoolLevel}_${attendanceYear}`
+                : schoolLevel
+        },
+        studentCourseResultLabels(student, group) {
+            return this.studentCourseResultItems(student, group)
+                .map(({ code, grade }) => `${code} (${grade})`)
+        },
+        studentCourseResultItems(student, group) {
+            const courseResults = student?.course_results || student?.courseResults || {}
+            const results = Array.isArray(courseResults[group]) ? courseResults[group] : []
+
+            return results
+                .map((result, index) => {
+                    const code = String(result?.code || '').trim()
+                    const grade = String(result?.grade || '').trim().toLocaleUpperCase('de-AT')
+
+                    return code && grade
+                        ? { code, grade, key: `${code}|${grade}|${index}` }
+                        : null
+                })
+                .filter(Boolean)
+        },
+        studentSexPresentation(student) {
+            const sex = String(student?.sex || '').trim().toLocaleLowerCase('de-AT')
+
+            if (sex === 'm') {
+                return { icon: 'mdi-gender-male', color: 'blue', label: 'männlich' }
+            }
+
+            if (sex === 'w') {
+                return { icon: 'mdi-gender-female', color: 'pink', label: 'weiblich' }
+            }
+
+            return null
+        },
+        isStudentSelected(student) {
+            const studentKey = this.studentSelectionKey(student)
+
+            return Boolean(studentKey) && this.selectedStudentKeys.includes(studentKey)
+        },
+        toggleStudentSelection(student, isSelected) {
+            const studentKey = this.studentSelectionKey(student)
+
+            if (!studentKey) return
+
+            if (isSelected) {
+                this.selectedStudentKeys = [...new Set([...this.selectedStudentKeys, studentKey])]
+
+                return
+            }
+
+            this.selectedStudentKeys = this.selectedStudentKeys.filter(selectedKey => selectedKey !== studentKey)
+        },
+        selectAllStudents() {
+            this.selectedStudentKeys = [...this.studentSelectionKeys]
+        },
+        clearStudentSelection() {
+            this.selectedStudentKeys = []
+        },
+        toggleAllStudents(isSelected) {
+            if (isSelected) {
+                this.selectAllStudents()
+
+                return
+            }
+
+            this.clearStudentSelection()
+        },
+        studentV3TestResult(student) {
+            const studentKey = this.studentSelectionKey(student)
+
+            return studentKey ? this.studentV3TestResults[studentKey] || null : null
+        },
+        setStudentV3TestResult(student, result) {
+            const studentKey = this.studentSelectionKey(student)
+
+            if (!studentKey) return
+
+            this.studentV3TestResults = {
+                ...this.studentV3TestResults,
+                [studentKey]: result,
+            }
+        },
+        normalizedStudentV3TestGroups(moduleGroups) {
+            const groupsByKey = new Map(
+                (Array.isArray(moduleGroups) ? moduleGroups : [])
+                    .map(group => [String(group?.key || '').trim(), group]),
+            )
+            const missingGroup = STUDENT_V3_TEST_GROUPS.find(group => !groupsByKey.has(group.key))
+
+            if (missingGroup) {
+                throw new Error(`Die V3-Gruppe ${missingGroup.key} fehlt.`)
+            }
+
+            return STUDENT_V3_TEST_GROUPS.map((groupDefinition) => {
+                const group = groupsByKey.get(groupDefinition.key)
+                const modules = (Array.isArray(group?.modules) ? group.modules : [])
+                    .map(module => ({
+                        code: String(module?.code || '').trim(),
+                        name: String(module?.name || '').trim(),
+                    }))
+                    .filter(module => module.code)
+                const reportedCount = Number(group?.count)
+
+                if (Number.isFinite(reportedCount) && reportedCount !== modules.length) {
+                    throw new Error(`Der V3-Count für ${groupDefinition.key} ist inkonsistent.`)
+                }
+
+                return {
+                    ...groupDefinition,
+                    count: modules.length,
+                    modules,
+                }
+            })
+        },
+        async runStudentV3Test(student) {
+            const studentCode = String(student?.student_code || student?.studentCode || '').trim()
+
+            if (!studentCode) {
+                this.setStudentV3TestResult(student, {
+                    status: 'error',
+                    message: 'Keine Schülerkennzahl vorhanden.',
+                    groups: [],
+                })
+
+                return
+            }
+
+            this.setStudentV3TestResult(student, { status: 'running', message: '', groups: [] })
+
+            try {
+                const response = await axios.get(loadV3StudentInformation.url({
+                    query: { student_code: studentCode },
+                }))
+                const groups = this.normalizedStudentV3TestGroups(
+                    response.data?.data?.module_selection_groups,
+                )
+
+                this.setStudentV3TestResult(student, { status: 'complete', message: '', groups })
+            } catch {
+                this.setStudentV3TestResult(student, {
+                    status: 'error',
+                    message: 'V3-Modulberechnung fehlgeschlagen.',
+                    groups: [],
+                })
+            }
+        },
+        async runTests() {
+            if (this.studentV3TestsRunning || !this.selectedStudents.length) return
+
+            const students = [...this.selectedStudents]
+            const studentQueue = [...students]
+
+            this.studentV3TestResults = Object.fromEntries(students.map(student => [
+                this.studentSelectionKey(student),
+                { status: 'pending', message: '', groups: [] },
+            ]))
+            this.studentV3TestsRunning = true
+
+            try {
+                const workers = Array.from(
+                    { length: Math.min(STUDENT_V3_TEST_CONCURRENCY, studentQueue.length) },
+                    async () => {
+                        while (studentQueue.length) {
+                            const student = studentQueue.shift()
+
+                            if (student) await this.runStudentV3Test(student)
+                        }
+                    },
+                )
+
+                await Promise.all(workers)
+            } finally {
+                this.studentV3TestsRunning = false
+            }
+        },
+        async loadStudents() {
+            if (this.students.length || this.studentsLoading) return
+
+            this.studentsLoading = true
+            this.studentsError = false
+
+            try {
+                const response = await axios.get(loadRobotStudents.url())
+                this.students = Array.isArray(response.data?.data) ? response.data.data : []
+
+                const availableStudentKeys = new Set(
+                    this.students
+                        .map(student => this.studentSelectionKey(student))
+                        .filter(Boolean),
+                )
+                this.selectedStudentKeys = this.selectedStudentKeys.filter(studentKey => availableStudentKeys.has(studentKey))
+            } catch {
+                this.students = []
+                this.selectedStudentKeys = []
+                this.studentsError = true
+            } finally {
+                this.studentsLoading = false
+            }
+        },
+        redirectInvalidTestsV3Route() {
+            if (
+                this.$route.params.section !== 'tests-v3'
+                || testsV3Actions.includes(this.$route.params.subsection)
+            ) {
+                return false
+            }
+
+            this.testsV3Action = 'students'
+            this.$router.replace({ path: TESTS_V3_STUDENTS_PATH })
+
+            return true
+        },
+    },
+}
+</script>
+
+<style scoped>
+.tests-v3-page__title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 16px;
+}
+
+.tests-v3-page__title {
+    margin: 0;
+    color: #1e2433;
+}
+
+.tests-v3-page__schoolyear {
+    font-size: 1rem;
+    white-space: nowrap;
+}
+
+.tests-v3-subnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.tests-v3-students {
+    overflow: hidden;
+}
+
+.tests-v3-students__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-students__title {
+    color: #1e2433;
+    font-weight: 800;
+}
+
+.tests-v3-students__actions {
+    justify-content: flex-end;
+}
+
+.tests-v3-students__table :deep(th) {
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tests-v3-students__table :deep(table) {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.tests-v3-students__table :deep(th),
+.tests-v3-students__table :deep(td) {
+    padding-inline: 10px !important;
+    overflow-wrap: anywhere;
+}
+
+.tests-v3-students__selection-column {
+    width: 5%;
+}
+
+.tests-v3-students__class-column {
+    width: 5%;
+}
+
+.tests-v3-students__name-column {
+    width: 21%;
+}
+
+.tests-v3-students__study-selection-column {
+    width: 13%;
+}
+
+.tests-v3-students__semester-column {
+    width: 8%;
+}
+
+.tests-v3-students__course-results-column {
+    width: 24%;
+}
+
+.tests-v3-students__semester {
+    color: #334155;
+    font-size: 0.82rem;
+}
+
+.tests-v3-students__semester-main {
+    font-weight: 800;
+}
+
+.tests-v3-students__semester-school-level {
+    margin-left: 4px;
+    font-weight: 400;
+}
+
+.tests-v3-students__course-results {
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+.tests-v3-students__course-result {
+    overflow-wrap: anywhere;
+}
+
+.tests-v3-students__course-result:not(:last-child)::after {
+    content: ', ';
+}
+
+.tests-v3-students__course-result-grade {
+    font-weight: 700;
+}
+
+.tests-v3-students__course-result-grade--completed {
+    color: rgb(var(--v-theme-success));
+}
+
+.tests-v3-students__course-result-grade--negative {
+    color: rgb(var(--v-theme-error));
+}
+
+.tests-v3-students__name {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+    max-width: 100%;
+}
+
+.tests-v3-students__religion {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.tests-v3-students__study-selection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.tests-v3-students__study-selection-item {
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.tests-v3-students__row--selected {
+    background: #eef2ff;
+}
+
+.tests-v3-selection__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-selection__progress {
+    padding: 8px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    background: #f8fafc;
+    color: #475569;
+}
+
+.tests-v3-selection__title {
+    color: #1e2433;
+    font-weight: 800;
+}
+
+.tests-v3-selection__table :deep(.tests-v3-students__row--selected) {
+    background: #eef2ff;
+}
+
+.tests-v3-selection__table :deep(.tests-v3-selection__module-test-row) {
+    background: #f8fafc;
+}
+
+.tests-v3-selection__module-test {
+    padding-block: 12px !important;
+    border-bottom: 2px solid rgba(148, 163, 184, 0.28) !important;
+    vertical-align: top;
+}
+
+.tests-v3-selection__module-test-title {
+    margin-bottom: 8px;
+    color: #1e3a8a;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tests-v3-selection__test-status {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    min-height: 32px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.tests-v3-selection__module-groups {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.tests-v3-selection__module-group {
+    padding-left: 8px;
+    border-left: 3px solid #94a3b8;
+}
+
+.tests-v3-selection__module-group--finished {
+    border-left-color: rgb(var(--v-theme-success));
+}
+
+.tests-v3-selection__module-group--negative {
+    border-left-color: rgb(var(--v-theme-error));
+}
+
+.tests-v3-selection__module-group--previous {
+    border-left-color: rgb(var(--v-theme-warning));
+}
+
+.tests-v3-selection__module-group--current {
+    border-left-color: rgb(var(--v-theme-primary));
+}
+
+.tests-v3-selection__module-group--additional {
+    border-left-color: rgb(var(--v-theme-info));
+}
+
+.tests-v3-selection__module-group-header {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.tests-v3-selection__module-codes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+}
+
+.tests-v3-selection__module-code {
+    padding: 1px 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+@media (max-width: 600px) {
+    .tests-v3-students__actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .tests-v3-selection__module-groups {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 601px) and (max-width: 1100px) {
+    .tests-v3-selection__module-groups {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.tests-v3-subnav__button {
+    background: #dbeafe !important;
+    border: 1px solid rgba(37, 99, 235, 0.22) !important;
+    color: #1e3a8a !important;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.tests-v3-subnav__button.v-btn--variant-flat {
+    background: rgb(var(--v-theme-primary)) !important;
+    border-color: rgba(30, 64, 175, 0.52) !important;
+    color: rgb(var(--v-theme-on-primary)) !important;
+}
+</style>

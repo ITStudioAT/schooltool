@@ -10,6 +10,8 @@ use Illuminate\Support\Str;
 
 class StudentTimetableCompactSubjectPlanService
 {
+    public function __construct(private StudentTimetableSubjectRuleService $subjectRuleService) {}
+
     public const SOURCE_URL = 'https://abendgymnasium.salzburg.at/fernstudium/#1656333107389-24d5288b-e172';
 
     private const SUBJECT_NAMES = [
@@ -125,7 +127,7 @@ class StudentTimetableCompactSubjectPlanService
 
     public function seedIfMissing(int $schoolId, int $schoolyearId): bool
     {
-        return DB::transaction(function () use ($schoolId, $schoolyearId): bool {
+        $insertedRows = DB::transaction(function () use ($schoolId, $schoolyearId): bool {
             Schoolyear::query()
                 ->whereKey($schoolyearId)
                 ->where('school_id', $schoolId)
@@ -148,6 +150,14 @@ class StudentTimetableCompactSubjectPlanService
 
             return true;
         });
+
+        $this->subjectRuleService->ensureDefaultRuleSet(
+            $schoolId,
+            $schoolyearId,
+            StudentTimetableStudyProgram::Kompaktstudium,
+        );
+
+        return $insertedRows;
     }
 
     /**
@@ -167,6 +177,7 @@ class StudentTimetableCompactSubjectPlanService
                     'school_id' => $schoolId,
                     'schoolyear_id' => $schoolyearId,
                     'study_program' => StudentTimetableStudyProgram::Kompaktstudium->value,
+                    'stable_key' => (string) Str::uuid(),
                     'semester' => $semester,
                     'branch' => $branch,
                     'json_code' => $jsonCode,

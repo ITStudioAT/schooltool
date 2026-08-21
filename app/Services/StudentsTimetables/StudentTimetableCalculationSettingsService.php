@@ -130,6 +130,7 @@ class StudentTimetableCalculationSettingsService
                 'branch' => $selection['branch'] ?? null,
                 'artsSubject' => $selection['arts_subject'] ?? 'ME',
                 'language' => $selection['language'] ?? 'L',
+                'student_religion' => $summary['student']['religion'] ?? null,
             ],
             'constraints' => [
                 'availableWeekdays' => [1, 2, 3, 4, 5, 6],
@@ -199,6 +200,7 @@ class StudentTimetableCalculationSettingsService
             'selection.religion' => ['nullable', 'string', 'max:20'],
             'selection.branch' => ['nullable', 'string', 'max:80'],
             'selection.artsSubject' => ['nullable', 'string', 'max:20'],
+            'selection.student_religion' => ['nullable', 'string', 'max:80'],
             'selection.language' => ['nullable', 'string', 'max:20'],
             'constraints' => ['required', 'array'],
             'constraints.availableWeekdays' => ['array'],

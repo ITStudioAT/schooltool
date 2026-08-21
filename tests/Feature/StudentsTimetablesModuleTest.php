@@ -4,12 +4,14 @@ use App\Enums\StudentTimetableStudyProgram;
 use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
+use App\Jobs\StudentsTimetables\RefreshStudentTimetableDataJob;
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\StudentTimetableDataRefresh;
 use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableOverviewSelection;
 use App\Models\StudentTimetableRecognitionImport;
@@ -27,6 +29,7 @@ use App\Services\AdminNavigationService;
 use App\Services\StudentsTimetables\RecognitionImportService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableRecognitionIdentityService;
+use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -1088,6 +1091,8 @@ it('denies students timetables moderators access to admin-only import and subjec
 
 it('allows super admins to call students timetables admin-only endpoints', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'super_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables')
@@ -1101,9 +1106,14 @@ it('allows super admins to call students timetables admin-only endpoints', funct
         ->getJson('/api/admin/students-timetables/recognitions-csv')
         ->assertSuccessful();
 
+    $subjects = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings')
+        ->assertSuccessful()
+        ->json('data.subjects');
+
     $this->actingAs($user)
         ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects', [
-            'subjects' => [],
+            'subjects' => $subjects,
         ])
         ->assertSuccessful();
 
@@ -2123,6 +2133,8 @@ it('stores filtered recognition csv uploads for the personal schoolyear', functi
     app(RecognitionImportService::class)->processImport($import);
 
     $import->refresh();
+    expect($normalStudent->refresh()->study_selection)->toBeArray()
+        ->and($normalStudent->course_results)->toBeArray();
     $storedContents = File::get($storedPath);
 
     expect($storedContents)
@@ -2254,7 +2266,9 @@ it('stores filtered recognition csv uploads for the personal schoolyear', functi
         ->and(StudentTimetableRecognitionRow::query()
             ->where('student_timetable_recognition_import_id', $import->id)
             ->exists())->toBeFalse()
-        ->and(File::exists($storedPath))->toBeFalse();
+        ->and(File::exists($storedPath))->toBeFalse()
+        ->and($normalStudent->refresh()->study_selection)->toBeNull()
+        ->and($normalStudent->course_results)->toBeNull();
 });
 
 it('rejects recognition csv files without importable rows and keeps existing data', function () {
@@ -2263,6 +2277,22 @@ it('rejects recognition csv files without importable rows and keeps existing dat
         'school_id' => $user->school_id,
     ]);
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $student = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => '100',
+        'import_user_id' => $user->id,
+        'study_selection' => [
+            'religion' => 'Rk',
+            'language' => 'L',
+            'branch' => 'gymnasial',
+            'arts_subject' => 'BE',
+        ],
+        'course_results' => [
+            'completed' => [['code' => 'D1', 'grade' => '1', 'status' => 'passed']],
+            'negative' => [],
+        ],
+    ]);
 
     $directory = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}");
     File::ensureDirectoryExists($directory);
@@ -2323,7 +2353,17 @@ it('rejects recognition csv files without importable rows and keeps existing dat
         ->and($invalidImport->fresh()?->import_message)->toContain('keine gültigen Anrechnungsdaten')
         ->and(File::get($absolutePath))->toBe($csv)
         ->and(StudentTimetableRecognitionRow::where('student_timetable_recognition_import_id', $existingImport->id)->count())->toBe(1)
-        ->and(StudentTimetableRecognitionRow::where('student_timetable_recognition_import_id', $invalidImport->id)->count())->toBe(0);
+        ->and(StudentTimetableRecognitionRow::where('student_timetable_recognition_import_id', $invalidImport->id)->count())->toBe(0)
+        ->and($student->refresh()->study_selection)->toMatchArray([
+            'religion' => 'Rk',
+            'language' => 'L',
+            'branch' => 'gymnasial',
+            'arts_subject' => 'BE',
+        ])
+        ->and($student->course_results)->toMatchArray([
+            'completed' => [['code' => 'D1', 'grade' => '1', 'status' => 'passed']],
+            'negative' => [],
+        ]);
 
     File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
 });
@@ -2893,6 +2933,142 @@ it('returns school hours for the selected schoolyear', function () {
         ->assertJsonPath('data.0.until', '08:45');
 });
 
+it('starts one scoped student data refresh and returns its progress', function () {
+    Queue::fake([RefreshStudentTimetableDataJob::class]);
+
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'concerns' => '2026/27',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->count(2)->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    $response = $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/data-refreshes')
+        ->assertStatus(202)
+        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.total_students', 2)
+        ->assertJsonPath('data.processed_students', 0)
+        ->assertJsonPath('data.progress_percent', 0)
+        ->assertJsonPath('data.schoolyear.label', '2026/27');
+
+    $dataRefreshId = (int) $response->json('data.id');
+
+    Queue::assertPushed(
+        RefreshStudentTimetableDataJob::class,
+        fn (RefreshStudentTimetableDataJob $job): bool => $job->dataRefreshId === $dataRefreshId,
+    );
+
+    $this->assertDatabaseHas('student_timetable_data_refreshes', [
+        'id' => $dataRefreshId,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'status' => 'queued',
+        'total_students' => 2,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/data-refreshes')
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $dataRefreshId);
+
+    Queue::assertPushedTimes(RefreshStudentTimetableDataJob::class, 1);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/data-refreshes')
+        ->assertSuccessful()
+        ->assertJsonPath('data.id', $dataRefreshId)
+        ->assertJsonPath('data.total_students', 2);
+});
+
+it('restricts student data refreshes to timetable admins and their personal schoolyear', function () {
+    Queue::fake([RefreshStudentTimetableDataJob::class]);
+
+    $moderator = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $moderator->school_id]);
+    $moderator->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $this->actingAs($moderator)
+        ->getJson('/api/admin/students-timetables/data-refreshes')
+        ->assertForbidden();
+    $this->actingAs($moderator)
+        ->postJson('/api/admin/students-timetables/data-refreshes')
+        ->assertForbidden();
+
+    Role::firstOrCreate([
+        'name' => 'studentstimetables_admin',
+        'guard_name' => 'web',
+    ]);
+    $moderator->syncRoles('studentstimetables_admin');
+    $foreignSchoolyear = Schoolyear::factory()->create();
+    $moderator->forceFill(['schoolyear_id' => $foreignSchoolyear->id])->save();
+
+    $this->actingAs($moderator)
+        ->postJson('/api/admin/students-timetables/data-refreshes')
+        ->assertUnprocessable()
+        ->assertJsonPath('message', 'Das persönliche Schuljahr ist ungültig.');
+
+    Queue::assertNothingPushed();
+});
+
+it('stores student data refresh progress and its completion summary', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $dataRefresh = StudentTimetableDataRefresh::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'status' => 'queued',
+        'total_students' => 12,
+        'processed_students' => 0,
+        'study_selections_updated' => 0,
+        'course_results_updated' => 0,
+        'started_at' => null,
+        'finished_at' => null,
+    ]);
+    $refreshService = Mockery::mock(StudentTimetableStudySelectionRefreshService::class);
+    $refreshService
+        ->shouldReceive('refreshForUserWithProgress')
+        ->once()
+        ->andReturnUsing(function (User $jobUser, int $schoolyearId, $onProgress) use ($user, $schoolyear): array {
+            expect($jobUser->is($user))->toBeTrue()
+                ->and($schoolyearId)->toBe($schoolyear->id);
+
+            $onProgress([
+                'total_students' => 12,
+                'processed_students' => 10,
+                'study_selections_updated' => 7,
+                'course_results_updated' => 6,
+            ]);
+
+            return [
+                'total_students' => 12,
+                'processed_students' => 12,
+                'study_selections_updated' => 8,
+                'course_results_updated' => 9,
+            ];
+        });
+
+    (new RefreshStudentTimetableDataJob((int) $dataRefresh->id))->handle($refreshService);
+
+    expect($dataRefresh->refresh())
+        ->status->toBe('completed')
+        ->total_students->toBe(12)
+        ->processed_students->toBe(12)
+        ->study_selections_updated->toBe(8)
+        ->course_results_updated->toBe(9)
+        ->finished_at->not->toBeNull();
+});
+
 it('returns current schoolyear import116 students for the robot student selector', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
@@ -2910,7 +3086,7 @@ it('returns current schoolyear import116 students for the robot student selector
         'import_user_id' => $user->id,
         'exists_date' => now(),
     ]);
-    Import116::factory()->create([
+    $student = Import116::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
         'class' => '1A',
@@ -2922,6 +3098,16 @@ it('returns current schoolyear import116 students for the robot student selector
         'first_name' => 'Anna',
         'email' => 'anna.alpha@example.test',
         'sex' => 'w',
+        'study_selection' => [
+            'religion' => 'ETH',
+            'language' => 'S',
+            'branch' => 'wirtschaftskundlich',
+            'arts_subject' => 'ME',
+        ],
+        'course_results' => [
+            'completed' => [['code' => 'M1', 'grade' => '3', 'status' => 'passed']],
+            'negative' => [['code' => 'D1', 'grade' => '5', 'status' => 'failed']],
+        ],
         'import_user_id' => $user->id,
         'exists_date' => now(),
     ]);
@@ -2932,6 +3118,70 @@ it('returns current schoolyear import116 students for the robot student selector
         'import_user_id' => $user->id,
         'exists_date' => null,
     ]);
+
+    collect(['L1', 'BE1', 'D1', 'M1', 'E1', 'BU1'])->each(fn (string $code, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => 1,
+        'branch' => 'gymnasial',
+        'json_code' => $code,
+        'json_subject' => preg_replace('/\d+$/u', '', $code),
+        'name' => $code,
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => $index,
+    ]));
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'studienauswahl.csv',
+        'stored_filename' => 'studienauswahl.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/studienauswahl.csv",
+        'total_rows' => 7,
+        'imported_rows' => 7,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+    collect([
+        ['subject' => 'L', 'grade' => '1'],
+        ['subject' => 'BE', 'grade' => '1'],
+        ['subject' => 'D', 'grade' => 'B'],
+        ['subject' => 'M', 'grade' => '3'],
+        ['subject' => 'E', 'grade' => '5'],
+        ['subject' => 'BU', 'grade' => 'N'],
+        ['subject' => 'PH', 'grade' => 'A'],
+    ])->each(fn (array $result, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 2,
+        'student_code' => '100',
+        'subject' => $result['subject'],
+        'grade' => $result['grade'],
+        'note' => $result['grade'],
+        'raw_data' => ['semester' => '1'],
+    ]));
+
+    app(StudentTimetableStudySelectionRefreshService::class)->refreshForUser($user, $schoolyear->id);
+
+    expect($student->refresh()->study_selection)->toMatchArray([
+        'religion' => 'Rk',
+        'language' => 'L',
+        'branch' => 'gymnasial',
+        'arts_subject' => 'BE',
+    ]);
+
+    StudentTimetableRecognitionRow::query()
+        ->where('student_timetable_recognition_import_id', $recognitionImport->id)
+        ->where('subject', 'L')
+        ->update(['subject' => 'S']);
+    StudentTimetableRecognitionRow::query()
+        ->where('student_timetable_recognition_import_id', $recognitionImport->id)
+        ->where('subject', 'BE')
+        ->update(['subject' => 'ME']);
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/robot/students')
@@ -2944,6 +3194,22 @@ it('returns current schoolyear import116 students for the robot student selector
         ->assertJsonPath('data.0.religion', 'Rk')
         ->assertJsonPath('data.0.email', 'anna.alpha@example.test')
         ->assertJsonPath('data.0.sex', 'w')
+        ->assertJsonPath('data.0.study_selection.religion', 'Rk')
+        ->assertJsonPath('data.0.study_selection.language', 'L')
+        ->assertJsonPath('data.0.study_selection.branch', 'gymnasial')
+        ->assertJsonPath('data.0.study_selection.arts_subject', 'BE')
+        ->assertJsonPath('data.0.course_results.completed.0.code', 'BE1')
+        ->assertJsonPath('data.0.course_results.completed.0.grade', '1')
+        ->assertJsonPath('data.0.course_results.completed.1.code', 'D1')
+        ->assertJsonPath('data.0.course_results.completed.1.grade', 'B')
+        ->assertJsonPath('data.0.course_results.completed.1.status', 'exempt')
+        ->assertJsonPath('data.0.course_results.completed.2.code', 'L1')
+        ->assertJsonPath('data.0.course_results.completed.3.code', 'M1')
+        ->assertJsonPath('data.0.course_results.completed.3.grade', '3')
+        ->assertJsonPath('data.0.course_results.negative.0.code', 'BU1')
+        ->assertJsonPath('data.0.course_results.negative.0.grade', 'N')
+        ->assertJsonPath('data.0.course_results.negative.1.code', 'E1')
+        ->assertJsonPath('data.0.course_results.negative.1.grade', '5')
         ->assertJsonPath('data.0.instruction_type', 'Normalunterricht')
         ->assertJsonPath('data.0.semester', 1)
         ->assertJsonPath('data.1.student_code', '200');
@@ -3457,13 +3723,25 @@ it('returns the shared student overview summary for a selected robot student', f
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'M2', 'json_subject' => 'M', 'name' => 'Mathematik 2', 'hours_per_week' => 3],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 2],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
-    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
-        'school_id' => $user->school_id,
-        'schoolyear_id' => $schoolyear->id,
-        'is_active' => true,
-        'sort_order' => $index + 1,
-        ...$subjectRow,
-    ]));
+    ])->each(function (array $subjectRow, int $index) use ($schoolyear, $user): void {
+        foreach (StudentTimetableStudyProgram::cases() as $studyProgram) {
+            StudentTimetableSubjectRow::query()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyear->id,
+                'study_program' => $studyProgram,
+                'is_active' => true,
+                'sort_order' => $index + 1,
+                ...$subjectRow,
+                'hours_per_week' => $studyProgram === StudentTimetableStudyProgram::Kompaktstudium
+                    ? match ($subjectRow['json_code']) {
+                        'BU2' => 2,
+                        'D2', 'M2' => 1.5,
+                        default => $subjectRow['hours_per_week'],
+                    }
+                    : $subjectRow['hours_per_week'],
+            ]);
+        }
+    });
 
     $timetableImport = TimetableImport::factory()->create([
         'school_id' => $user->school_id,

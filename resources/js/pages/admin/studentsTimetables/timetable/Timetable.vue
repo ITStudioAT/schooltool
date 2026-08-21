@@ -21,6 +21,7 @@
                         color="primary"
                         size="x-large"
                         variant="tonal"
+                        :disabled="button.disabled === true"
                         :prepend-icon="button.icon"
                         @click="openImportPage(button.key)">
                         <span class="st-import-button__content">
@@ -234,6 +235,12 @@
                 </v-card-text>
             </v-card>
         </template>
+
+        <DataRefresh
+            v-else-if="subAction === 'imports' && activeImportPage === 'datenaktualisierung'"
+            :schoolyear-label="personalImportSchoolyearLabel"
+            :schoolyear-id="config?.selected_schoolyear?.id"
+            @back="closeImportPage" />
 
         <template v-else-if="subAction === 'imports' && activeImportButton && activeImportSubPage !== 'import'">
             <v-card rounded="xl" class="st-dummy-card">
@@ -1346,6 +1353,7 @@ import { downloadSource as downloadImport116Source } from '@/actions/App/Http/Co
 const FileUpload = defineAsyncComponent(() => import('@/pages/components/FileUpload.vue'))
 const LoadingAnimation = defineAsyncComponent(() => import('@/pages/components/LoadingAnimation.vue'))
 const Overview = defineAsyncComponent(() => import('../overview/Overview.vue'))
+const DataRefresh = defineAsyncComponent(() => import('./DataRefresh.vue'))
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',
@@ -1363,7 +1371,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload, LoadingAnimation, Overview },
+    components: { DataRefresh, FileUpload, LoadingAnimation, Overview },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1493,6 +1501,13 @@ export default {
                     icon: 'mdi-account-school-outline',
                     meta: this.importButtonDateMeta(this.config?.teaching?.last_import_116_at),
                     detail: 'Schüler- und Elterndaten',
+                },
+                {
+                    key: 'datenaktualisierung',
+                    label: 'Datenaktualisierung',
+                    icon: 'mdi-database-sync-outline',
+                    meta: 'Studienauswahl und Noten aktualisieren',
+                    detail: this.personalImportSchoolyearLabel,
                 },
             ]
         },
@@ -1785,7 +1800,7 @@ export default {
         normalizedImportPage(detail) {
             if (!this.canManageTimetableImports) return ''
 
-            const allowed = ['stundenplan', 'anrechnungen', 'import116']
+            const allowed = ['stundenplan', 'anrechnungen', 'import116', 'datenaktualisierung']
 
             return allowed.includes(detail) ? detail : ''
         },
@@ -1860,6 +1875,9 @@ export default {
             this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })
         },
         openImportPage(key) {
+            const importButton = this.importButtons.find(button => button.key === key)
+            if (!importButton || importButton.disabled === true) return
+
             this.importPage = this.normalizedImportPage(key)
             this.importSubPage = ''
             this.uploadedFilename = ''

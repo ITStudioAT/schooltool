@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $original_school_level
  * @property string|null $original_attendance_year
  * @property StudentTimetableStudyProgram|null $study_program
+ * @property array<string, string|null>|null $study_selection
+ * @property array{completed: list<array{code: string, grade: string, status: string}>, negative: list<array{code: string, grade: string, status: string}>}|null $course_results
  * @property string|null $religion
  * @property string $student_code
  * @property string $last_name
@@ -59,6 +61,8 @@ class Import116 extends Model
         'original_school_level',
         'original_attendance_year',
         'study_program',
+        'study_selection',
+        'course_results',
         'religion',
         'student_code',
         'last_name',
@@ -84,6 +88,8 @@ class Import116 extends Model
 
     protected $casts = [
         'study_program' => StudentTimetableStudyProgram::class,
+        'study_selection' => 'array',
+        'course_results' => 'array',
         'birth_date' => 'date',
         'import_date' => 'datetime',
         'exists_date' => 'datetime',

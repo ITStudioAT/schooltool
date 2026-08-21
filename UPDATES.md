@@ -1,5 +1,23 @@
 # UPDATES
 
+## 3.46.3 !!!
+
+### Schülerstundenpläne
+
+### Fächer
+
+- Implementierung als regelbasiertes System
+- Neue Ansicht als Grafik (v2)
+
+### Tests V3
+
+- Testsystem für Stundenplan 3 eingeführt
+- Studierende: Auflistung aller Studierenden inkl. Studienauswahl bestandene/nicht bestandene Fäche
+
+### Importe
+
+- Datenaktualisierung eingeführt: Für Studienauswahl und Noten
+
 ## 3.46.2
 
 ### System

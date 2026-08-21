@@ -18,7 +18,10 @@ class RecognitionImportService
 {
     private const BATCH_SIZE = 500;
 
-    public function __construct(private StudentTimetableRecognitionIdentityService $identityService) {}
+    public function __construct(
+        private StudentTimetableRecognitionIdentityService $identityService,
+        private ?StudentTimetableStudySelectionRefreshService $studySelectionRefreshService = null,
+    ) {}
 
     public function createQueuedImport(
         User $user,
@@ -98,6 +101,18 @@ class RecognitionImportService
                     'import_status' => 'completed',
                     'import_message' => 'Import abgeschlossen.',
                 ]);
+
+                $importUser = User::query()
+                    ->whereKey($import->user_id)
+                    ->where('school_id', $import->school_id)
+                    ->first();
+
+                if ($importUser && $import->schoolyear_id) {
+                    ($this->studySelectionRefreshService ?? app(StudentTimetableStudySelectionRefreshService::class))->refreshForUser(
+                        $importUser,
+                        (int) $import->schoolyear_id,
+                    );
+                }
             });
         } catch (\Throwable $exception) {
             if ($replacementActivated) {

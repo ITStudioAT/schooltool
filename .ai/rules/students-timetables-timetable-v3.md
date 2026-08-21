@@ -327,3 +327,6 @@ On the V3 adoption page, show the publish/save action only when a student is sel
 
 ## Show read-only Studienauswahl on creation
 The shared compact read-only Studienauswahl card appears directly below Aktuelle Auswahl on modules, automatic creation, and adoption. Reuse compactPlanningSelectionItems plus existing loading/error states; do not add editing or duplicate selection calculations.
+
+## Show the personal schoolyear beside the V3 title
+Display the authenticated admin user's selected personal schoolyear directly after the visible “Stundenplan erstellen” title. Prefer selected_schoolyear.concerns, then name, and keep the title row responsive.

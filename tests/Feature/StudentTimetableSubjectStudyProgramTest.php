@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StudentTimetableStudyProgram;
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
@@ -9,9 +10,11 @@ use App\Models\Schoolyear;
 use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\StudentTimetableSubjectRuleSet;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -59,6 +62,36 @@ it('offers and carries forward all subject-plan data from the previous schoolyea
         'is_active' => true,
         'source' => 'manual',
     ]);
+    $normalSubject = StudentTimetableSubjectRow::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $previousSchoolyear->id)
+        ->firstOrFail();
+    $sourceRuleKey = (string) Str::uuid();
+    StudentTimetableSubjectRuleSet::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'version' => 4,
+        'rules' => [[
+            'stable_key' => $sourceRuleKey,
+            'name' => 'Vorjahresregel',
+            'label' => 'Vorjahresregel',
+            'selection_key' => 'branch',
+            'selection_mode' => 'single',
+            'min_selections' => 1,
+            'max_selections' => 1,
+            'conditions' => [],
+            'is_active' => true,
+            'options' => [[
+                'stable_key' => (string) Str::uuid(),
+                'value' => 'wirtschaftskundlich',
+                'label' => 'Wirtschaftskundlich',
+                'course_code_prefix' => null,
+                'subject_keys' => [$normalSubject->stable_key],
+            ]],
+        ]],
+        'updated_by_user_id' => $user->id,
+    ]);
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/subjects-overview-settings/kompaktstudium?schoolyear_scope=personal')
@@ -76,7 +109,11 @@ it('offers and carries forward all subject-plan data from the previous schoolyea
         ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
         ->where('school_id', $user->school_id)
         ->where('schoolyear_id', $schoolyear->id)
-        ->count())->toBe(0);
+        ->count())->toBe(0)
+        ->and(StudentTimetableSubjectRuleSet::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->count())->toBe(0);
 
     $this->actingAs($user)
         ->postJson('/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal')
@@ -105,7 +142,14 @@ it('offers and carries forward all subject-plan data from the previous schoolyea
             ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $previousSchoolyear->id)
-            ->count())->toBe(2);
+            ->count())->toBe(2)
+        ->and(StudentTimetableSubjectRuleSet::query()
+            ->forPlan($user->school_id, $schoolyear->id, StudentTimetableStudyProgram::Normalstudium)
+            ->value('version'))->toBe(1)
+        ->and(StudentTimetableSubjectRuleSet::query()
+            ->forPlan($user->school_id, $schoolyear->id, StudentTimetableStudyProgram::Normalstudium)
+            ->firstOrFail()
+            ->rules[0]['stable_key'])->toBe($sourceRuleKey);
 
     $this->actingAs($user)
         ->postJson('/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal')
@@ -463,6 +507,252 @@ it('rejects invalid and mismatched study programs without replacing existing row
             ->forStudyProgram(StudentTimetableStudyProgram::Kompaktstudium)
             ->count())->toBe(0)
         ->and(StudentTimetableSubjectImport::query()->count())->toBe(0);
+});
+
+it('stores versioned rules and preserves stable subject identities', function () {
+    $user = createSubjectStudyProgramUser();
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $paint = StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 7,
+        'json_code' => 'ALPHA1',
+        'json_subject' => 'ALPHA',
+        'name' => 'Bildnerisches Wahlfach',
+        'hours_per_week' => 2,
+    ]);
+    $music = StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 7,
+        'json_code' => 'BETA1',
+        'json_subject' => 'BETA',
+        'name' => 'Musisches Wahlfach',
+        'hours_per_week' => 2,
+    ]);
+    $rule = [
+        'stable_key' => (string) Str::uuid(),
+        'name' => 'Künstlerisches Fach',
+        'label' => 'ME / BE',
+        'selection_key' => 'arts_subject',
+        'selection_mode' => 'single',
+        'min_selections' => 1,
+        'max_selections' => 1,
+        'conditions' => [[
+            'field' => 'student_religion',
+            'operator' => 'equals',
+            'value' => 'RK',
+        ]],
+        'is_active' => true,
+        'options' => [
+            [
+                'stable_key' => (string) Str::uuid(),
+                'value' => 'BE',
+                'label' => 'Bildnerische Erziehung',
+                'course_code_prefix' => null,
+                'subject_keys' => [$paint->stable_key],
+            ],
+            [
+                'stable_key' => (string) Str::uuid(),
+                'value' => 'ME',
+                'label' => 'Musikerziehung',
+                'course_code_prefix' => null,
+                'subject_keys' => [$music->stable_key],
+            ],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/rules/normalstudium?schoolyear_scope=personal', [
+            'version' => 0,
+            'rules' => [$rule],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.version', 1)
+        ->assertJsonPath('data.rules.0.options.0.subject_keys.0', $paint->stable_key);
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/rules/normalstudium?schoolyear_scope=personal', [
+            'version' => 0,
+            'rules' => [$rule],
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('current_version', 1);
+
+    $foreignSchool = School::factory()->create();
+    $foreignSchoolyear = Schoolyear::factory()->create(['school_id' => $foreignSchool->id]);
+    $foreignSubject = StudentTimetableSubjectRow::query()->create([
+        'school_id' => $foreignSchool->id,
+        'schoolyear_id' => $foreignSchoolyear->id,
+        'semester' => 7,
+        'json_code' => 'FOREIGN1',
+        'json_subject' => 'FOREIGN',
+        'name' => 'Fremdes Fach',
+        'hours_per_week' => 2,
+    ]);
+    $foreignRule = $rule;
+    $foreignRule['options'][0]['subject_keys'] = [$foreignSubject->stable_key];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/rules/normalstudium?schoolyear_scope=personal', [
+            'version' => 1,
+            'rules' => [$foreignRule],
+        ])
+        ->assertUnprocessable();
+
+    expect(StudentTimetableSubjectRuleSet::query()->firstOrFail()->version)->toBe(1);
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4S',
+        'school_level' => '09_1',
+        'student_code' => 'rule-student',
+        'last_name' => 'Regel',
+        'first_name' => 'Test',
+        'religion' => 'RK',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    $overview = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=rule-student&strict_selection=1&selection[semester]=6&selection[artsSubject]=BE')
+        ->assertSuccessful();
+    $suggestedCodes = collect([
+        ...$overview->json('data.proposed_courses', []),
+        ...$overview->json('data.additional_courses', []),
+    ])->pluck('code');
+
+    expect($suggestedCodes)->toContain('ALPHA1')->not->toContain('BETA1');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects/normalstudium?schoolyear_scope=personal', [
+            'subjects' => collect([$paint, $music])->map(fn (StudentTimetableSubjectRow $subject): array => [
+                'stable_key' => $subject->stable_key,
+                'semester' => $subject->semester,
+                'json_code' => $subject->json_code,
+                'json_subject' => $subject->json_subject,
+                'name' => $subject->name,
+                'hours_per_week' => $subject->hours_per_week,
+                'is_active' => true,
+            ])->all(),
+        ])
+        ->assertSuccessful();
+
+    expect($paint->fresh()->id)->toBe($paint->id)
+        ->and($paint->fresh()->stable_key)->toBe($paint->stable_key)
+        ->and(StudentTimetableSubjectRuleSet::query()->firstOrFail()->version)->toBe(1);
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects/normalstudium?schoolyear_scope=personal', [
+            'subjects' => [[
+                'stable_key' => $music->stable_key,
+                'semester' => $music->semester,
+                'json_code' => $music->json_code,
+                'json_subject' => $music->json_subject,
+                'name' => $music->name,
+                'hours_per_week' => $music->hours_per_week,
+                'is_active' => true,
+            ]],
+        ])
+        ->assertUnprocessable();
+
+    expect($paint->fresh())->not->toBeNull();
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects/normalstudium?schoolyear_scope=personal', [
+            'subjects' => collect([$paint, $music])->map(fn (StudentTimetableSubjectRow $subject): array => [
+                'stable_key' => $subject->stable_key,
+                'semester' => $subject->semester,
+                'json_code' => $subject->json_code,
+                'json_subject' => $subject->json_subject,
+                'name' => $subject->name,
+                'hours_per_week' => $subject->hours_per_week,
+                'is_active' => $subject->is($paint) ? false : true,
+            ])->all(),
+        ])
+        ->assertUnprocessable();
+
+    expect($paint->fresh()->is_active)->toBeTrue();
+});
+
+it('migrates existing arts rules from gym module one to gym module two without replacing other settings', function () {
+    $user = createSubjectStudyProgramUser();
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $rows = collect([
+        ['branch' => 'wirtschaftskundlich', 'json_code' => 'BE1'],
+        ['branch' => 'gymnasial', 'json_code' => 'BE1'],
+        ['branch' => 'gymnasial', 'json_code' => 'BE2'],
+    ])->map(fn (array $subject): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => str_ends_with($subject['json_code'], '1') ? 7 : 8,
+        'branch' => $subject['branch'],
+        'json_code' => $subject['json_code'],
+        'json_subject' => 'BE',
+        'name' => $subject['json_code'],
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'manual',
+    ]));
+    $wikuBe1 = $rows->firstWhere('branch', 'wirtschaftskundlich');
+    $gymBe1 = $rows->first(fn (StudentTimetableSubjectRow $row): bool => $row->json_code === 'BE1' && $row->branch === 'gymnasial');
+    $gymBe2 = $rows->firstWhere('json_code', 'BE2');
+    $branchRuleKey = (string) Str::uuid();
+    $artsRuleKey = (string) Str::uuid();
+    $ruleSet = StudentTimetableSubjectRuleSet::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'version' => 4,
+        'rules' => [
+            [
+                'stable_key' => $branchRuleKey,
+                'selection_key' => 'branch',
+                'options' => [],
+            ],
+            [
+                'stable_key' => $artsRuleKey,
+                'selection_key' => 'arts_subject',
+                'options' => [[
+                    'stable_key' => (string) Str::uuid(),
+                    'value' => 'BE',
+                    'subject_keys' => [$wikuBe1->stable_key, $gymBe1->stable_key, $gymBe2->stable_key],
+                ]],
+            ],
+        ],
+        'updated_by_user_id' => $user->id,
+    ]);
+
+    $migration = require database_path('migrations/2026_08_21_141907_correct_arts_subject_rule_memberships.php');
+    $migration->up();
+    $ruleSet->refresh();
+
+    expect($ruleSet->version)->toBe(5)
+        ->and($ruleSet->rules[0]['stable_key'])->toBe($branchRuleKey)
+        ->and($ruleSet->rules[1]['stable_key'])->toBe($artsRuleKey)
+        ->and($ruleSet->rules[1]['options'][0]['subject_keys'])->toBe([
+            $wikuBe1->stable_key,
+            $gymBe2->stable_key,
+        ]);
+});
+
+it('forbids moderators from updating subject rules', function () {
+    $user = createSubjectStudyProgramUser();
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    Role::firstOrCreate(['name' => 'studentstimetables_moderator', 'guard_name' => 'web']);
+    $user->syncRoles(['studentstimetables_moderator']);
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/rules/normalstudium?schoolyear_scope=personal', [
+            'version' => 0,
+            'rules' => [],
+        ])
+        ->assertForbidden();
 });
 
 /**

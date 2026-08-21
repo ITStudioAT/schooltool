@@ -6,12 +6,15 @@ use App\Enums\StudentTimetableStudyProgram;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\StudentTimetableSubjectRuleSet;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StudentTimetableSubjectPlanCarryForwardService
 {
+    public function __construct(private StudentTimetableSubjectRuleService $subjectRuleService) {}
+
     /** @return array{id: int, name: string, subject_rows_count: int, normal_subject_rows_count: int, compact_subject_rows_count: int, mappings_count: int}|null */
     public function previousSchoolyearSummary(int $schoolId, int $schoolyearId): ?array
     {
@@ -20,7 +23,7 @@ class StudentTimetableSubjectPlanCarryForwardService
             ->where('school_id', $schoolId)
             ->firstOrFail();
 
-        if ($this->subjectRowsExist($schoolId, $schoolyearId)) {
+        if ($this->subjectRowsExist($schoolId, $schoolyearId) || $this->ruleSetsExist($schoolId, $schoolyearId)) {
             return null;
         }
 
@@ -54,16 +57,16 @@ class StudentTimetableSubjectPlanCarryForwardService
     }
 
     /** @return array{previous_schoolyear: array{id: int, name: string}, subject_rows_count: int, mappings_count: int} */
-    public function carryForwardFromPreviousSchoolyear(int $schoolId, int $schoolyearId): array
+    public function carryForwardFromPreviousSchoolyear(int $schoolId, int $schoolyearId, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($schoolId, $schoolyearId): array {
+        return DB::transaction(function () use ($schoolId, $schoolyearId, $userId): array {
             $schoolyear = Schoolyear::query()
                 ->whereKey($schoolyearId)
                 ->where('school_id', $schoolId)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($this->subjectRowsExist($schoolId, $schoolyearId)) {
+            if ($this->subjectRowsExist($schoolId, $schoolyearId) || $this->ruleSetsExist($schoolId, $schoolyearId)) {
                 throw ValidationException::withMessages([
                     'schoolyear' => 'Für dieses Schuljahr sind bereits Fächerdaten vorhanden.',
                 ]);
@@ -93,6 +96,7 @@ class StudentTimetableSubjectPlanCarryForwardService
                         'school_id' => $schoolId,
                         'schoolyear_id' => $schoolyearId,
                         'study_program' => $subjectRow->study_program->value,
+                        'stable_key' => $subjectRow->stable_key,
                         'semester' => $subjectRow->semester,
                         'branch' => $subjectRow->branch,
                         'json_code' => $subjectRow->json_code,
@@ -126,6 +130,41 @@ class StudentTimetableSubjectPlanCarryForwardService
                 ]),
             );
 
+            collect(StudentTimetableStudyProgram::cases())->each(function (StudentTimetableStudyProgram $studyProgram) use (
+                $schoolId,
+                $schoolyearId,
+                $previousSchoolyear,
+                $previousSubjectRows,
+                $userId,
+            ): void {
+                if (! $previousSubjectRows->contains('study_program', $studyProgram)) {
+                    return;
+                }
+
+                $this->subjectRuleService->ensureDefaultRuleSet(
+                    $schoolId,
+                    (int) $previousSchoolyear->id,
+                    $studyProgram,
+                    $userId,
+                );
+                $sourceRuleSet = StudentTimetableSubjectRuleSet::query()
+                    ->forPlan($schoolId, (int) $previousSchoolyear->id, $studyProgram)
+                    ->first();
+
+                if (! $sourceRuleSet) {
+                    return;
+                }
+
+                StudentTimetableSubjectRuleSet::query()->create([
+                    'school_id' => $schoolId,
+                    'schoolyear_id' => $schoolyearId,
+                    'study_program' => $studyProgram->value,
+                    'version' => 1,
+                    'rules' => $sourceRuleSet->rules,
+                    'updated_by_user_id' => $userId,
+                ]);
+            });
+
             return [
                 'previous_schoolyear' => [
                     'id' => $previousSchoolyear->id,
@@ -141,6 +180,14 @@ class StudentTimetableSubjectPlanCarryForwardService
     {
         return StudentTimetableSubjectRow::query()
             ->withoutGlobalScopes()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->exists();
+    }
+
+    private function ruleSetsExist(int $schoolId, int $schoolyearId): bool
+    {
+        return StudentTimetableSubjectRuleSet::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->exists();

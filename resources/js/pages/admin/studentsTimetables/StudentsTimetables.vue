@@ -17,10 +17,7 @@
                         :key="item.key"
                         variant="text"
                         class="st-nav__button"
-                        :class="[
-                            activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle',
-                            { 'st-nav__button--legacy': item.key === 'timetable-v2' },
-                        ]"
+                        :class="activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
                         @click="handleNavigation(item.key)">
                         <span class="st-nav__button-copy">
                             <span class="st-nav__button-title">{{ item.label }}</span>
@@ -49,6 +46,7 @@
                 <v-col v-if="main_action === 'tt-entries'" cols="12">
                     <TtEntries />
                 </v-col>
+                <TestsV3 v-if="main_action === 'tests-v3'" />
                 <Import v-if="main_action === 'import'" />
                 <SubjectsOverview v-if="main_action === 'subjects-overview'" />
             </v-row>
@@ -65,6 +63,7 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
 const TimetableV3 = defineAsyncComponent(() => import('./timetableV3/TimetableV3.vue'))
+const TestsV3 = defineAsyncComponent(() => import('./testsV3/TestsV3.vue'))
 const TtEntries = defineAsyncComponent(() => import('./ttEntries/TtEntries.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
@@ -73,8 +72,9 @@ const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
+const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
-const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'subjects-overview', 'import']
+const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']
 
 export default {
     components: {
@@ -82,6 +82,7 @@ export default {
         Timetable,
         TimetableV2,
         TimetableV3,
+        TestsV3,
         TtEntries,
         Import,
         SubjectsOverview,
@@ -117,6 +118,13 @@ export default {
                     label: 'Stundenplan v3',
                     meta: 'Entwicklung',
                     icon: 'mdi-flask-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
+                {
+                    key: 'tests-v3',
+                    label: 'Tests v3',
+                    meta: 'Stundenplan v3',
+                    icon: 'mdi-test-tube',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
                 {
@@ -198,6 +206,11 @@ export default {
                     label: 'Stundenplan v3',
                     icon: 'mdi-flask-outline',
                     note: 'Unabhängiger Entwicklungsbereich.',
+                },
+                'tests-v3': {
+                    label: 'Tests v3',
+                    icon: 'mdi-test-tube',
+                    note: 'Tests für Stundenplan Version 3.',
                 },
                 'tt-entries': {
                     label: 'TT-Einträge',
@@ -316,10 +329,11 @@ export default {
                 'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
                 'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH,
                 'tt-entries': TT_ENTRIES_OVERVIEW_PATH,
+                'tests-v3': TESTS_V3_STUDENTS_PATH,
                 'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
-                'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',
+                'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan-v2',
             }
             const path = paths[key] || `/admin/students-timetables/${key}`
 
@@ -446,10 +460,6 @@ export default {
     box-shadow: none !important;
 }
 
-.st-nav__button--legacy {
-    margin-left: auto;
-}
-
 .st-nav__button-copy {
     display: inline-flex;
     flex-direction: column;
@@ -498,10 +508,6 @@ export default {
         flex: 1 1 auto;
         min-height: 38px !important;
         padding: 0 12px;
-    }
-
-    .st-nav__button--legacy {
-        margin-left: 0;
     }
 
     .st-nav__settings-button {

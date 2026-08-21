@@ -33,6 +33,14 @@ class StudentTimetableV3StudentInformationService
         bool $seedCompactSubjectPlanIfMissing = false,
         bool $includeAllSelectableModules = false,
     ): array {
+        $hasCompleteSelectionOverride = $selectionOverride !== []
+            && collect(self::INFORMATION_KEYS)
+                ->every(fn (string $key): bool => array_key_exists($key, $selectionOverride));
+        $selectionOverride = $hasCompleteSelectionOverride
+            ? $selectionOverride
+            : collect($selectionOverride)
+                ->reject(fn (mixed $value): bool => trim((string) $value) === '')
+                ->all();
         $schoolyearId = (int) $user->schoolyear_id;
         $studyInformation = $this->completedCourseHistoryService->studyInformationForStudentCode(
             $user,
@@ -49,7 +57,7 @@ class StudentTimetableV3StudentInformationService
             $user,
             $studentCode,
             $selectionOverride,
-            strictSelectionOverride: $selectionOverride !== [],
+            strictSelectionOverride: $hasCompleteSelectionOverride,
             studyProgram: $studyProgram,
             includeAllSelectableModules: $includeAllSelectableModules,
         );

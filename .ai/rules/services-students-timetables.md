@@ -40,3 +40,6 @@ After V3 selection keys and underlying active course-group keys are resolved aga
 
 ## Resolve unnumbered authoritative V3 modules strictly
 Authoritative V3 module codes may be all-letter unnumbered codes such as LPT. Match an empty numeric suffix only to subject rows whose module number is also empty, then retain active alias/mapping resolution and the exact one-to-one plus required-course-group validation. Bump the V3 algorithm version whenever resolution semantics change.
+
+## Subject-plan rules are authoritative
+Persist subject-plan rules by school, schoolyear, and study program using stable subject UUID keys. When a versioned rule set exists, recommendations and legacy V2 preparation must use the shared evaluator and must not fall back to code-pattern inference. V3-selected modules remain authoritative; include the rule-set version in its generation fingerprint.

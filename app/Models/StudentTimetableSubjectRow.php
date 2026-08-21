@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\StudentTimetableStudyProgram;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class StudentTimetableSubjectRow extends Model
 {
@@ -14,6 +15,7 @@ class StudentTimetableSubjectRow extends Model
         'school_id',
         'schoolyear_id',
         'study_program',
+        'stable_key',
         'semester',
         'branch',
         'json_code',
@@ -31,6 +33,10 @@ class StudentTimetableSubjectRow extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (StudentTimetableSubjectRow $row): void {
+            $row->stable_key ??= (string) Str::uuid();
+        });
+
         static::addGlobalScope(self::DEFAULT_STUDY_PROGRAM_SCOPE, function (Builder $query): void {
             $query->where(
                 $query->getModel()->qualifyColumn('study_program'),

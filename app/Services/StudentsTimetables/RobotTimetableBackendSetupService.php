@@ -33,6 +33,7 @@ class RobotTimetableBackendSetupService
     public function __construct(
         private StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
         private TimetableDateSlotOverlapService $dateSlotOverlapService,
+        private ?StudentTimetableSubjectRuleService $subjectRuleService = null,
     ) {}
 
     /**
@@ -50,15 +51,7 @@ class RobotTimetableBackendSetupService
     ): array {
         $this->resetRuntimeCache();
 
-        $subjectRows = StudentTimetableSubjectRow::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
-            ->where('school_id', $authUser->school_id)
-            ->where('schoolyear_id', $authUser->schoolyear_id)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (StudentTimetableSubjectRow $row): array => $row->toArray())
-            ->all();
+        $subjectRows = $this->subjectRowsForUser($authUser, $settings);
 
         $subjectMappings = StudentTimetableSubjectMapping::query()
             ->where('school_id', $authUser->school_id)
@@ -248,15 +241,7 @@ class RobotTimetableBackendSetupService
     ): array {
         $this->resetRuntimeCache();
 
-        $subjectRows = StudentTimetableSubjectRow::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
-            ->where('school_id', $authUser->school_id)
-            ->where('schoolyear_id', $authUser->schoolyear_id)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (StudentTimetableSubjectRow $row): array => $row->toArray())
-            ->all();
+        $subjectRows = $this->subjectRowsForUser($authUser, $settings);
 
         $subjectMappings = StudentTimetableSubjectMapping::query()
             ->where('school_id', $authUser->school_id)
@@ -298,15 +283,7 @@ class RobotTimetableBackendSetupService
     ): array {
         $this->resetRuntimeCache();
 
-        $subjectRows = StudentTimetableSubjectRow::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
-            ->where('school_id', $authUser->school_id)
-            ->where('schoolyear_id', $authUser->schoolyear_id)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (StudentTimetableSubjectRow $row): array => $row->toArray())
-            ->all();
+        $subjectRows = $this->subjectRowsForUser($authUser, $settings);
 
         $subjectMappings = StudentTimetableSubjectMapping::query()
             ->where('school_id', $authUser->school_id)
@@ -5660,6 +5637,12 @@ class RobotTimetableBackendSetupService
             return $authoritativeCourseCode;
         }
 
+        $ruleResolvedCode = collect($subject['_rule_resolved_codes'] ?? [])->first();
+
+        if ($ruleResolvedCode) {
+            return (string) $ruleResolvedCode;
+        }
+
         if ($this->isReligionSubject($subject)) {
             return (string) data_get($settings, 'selection.religion', 'ETH').$this->subjectModuleNumber($subject);
         }
@@ -5677,6 +5660,10 @@ class RobotTimetableBackendSetupService
      */
     private function subjectMatchesSelectedBranch(array $subject, array $settings): bool
     {
+        if (array_key_exists('_rule_eligible', $subject)) {
+            return $subject['_rule_eligible'] === true;
+        }
+
         $branch = (string) ($subject['branch'] ?? '');
 
         return $branch === '' || $branch === 'common' || $branch === (string) data_get($settings, 'selection.branch', '');
@@ -5688,6 +5675,10 @@ class RobotTimetableBackendSetupService
      */
     private function subjectMatchesSelectedChoices(array $subject, array $settings): bool
     {
+        if (array_key_exists('_rule_eligible', $subject)) {
+            return $subject['_rule_eligible'] === true;
+        }
+
         if ($this->isArtsSubject($subject)) {
             return $this->subjectBaseKey($subject) === (string) data_get($settings, 'selection.artsSubject', 'ME');
         }
@@ -5699,6 +5690,50 @@ class RobotTimetableBackendSetupService
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private function subjectRowsForUser(User $authUser, array $settings): array
+    {
+        $studyProgram = StudentTimetableStudyProgram::Normalstudium;
+        $ruleSet = $this->subjectRuleService()->ruleSet(
+            (int) $authUser->school_id,
+            (int) $authUser->schoolyear_id,
+            $studyProgram,
+        );
+        $evaluator = $ruleSet ? new SubjectPlanRuleEvaluator($ruleSet->rules ?? []) : null;
+        $selection = (array) ($settings['selection'] ?? []);
+
+        return StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(function (StudentTimetableSubjectRow $row) use ($evaluator, $ruleSet, $selection): array {
+                $subject = $row->toArray();
+
+                if (! $evaluator) {
+                    return $subject;
+                }
+
+                $evaluation = $evaluator->evaluate($row, $selection);
+                $subject['_rule_eligible'] = $evaluation['eligible'];
+                $subject['_rule_resolved_codes'] = $evaluation['resolved_codes'];
+                $subject['_rule_set_version'] = $ruleSet?->version;
+
+                return $subject;
+            })
+            ->all();
+    }
+
+    private function subjectRuleService(): StudentTimetableSubjectRuleService
+    {
+        return $this->subjectRuleService ??= app(StudentTimetableSubjectRuleService::class);
     }
 
     /**

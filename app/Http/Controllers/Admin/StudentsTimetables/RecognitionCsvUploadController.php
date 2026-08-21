@@ -8,6 +8,7 @@ use App\Models\StudentTimetableRecognitionRow;
 use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\RecognitionImportService;
+use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
 use App\Support\PrivateImportSourceFile;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -127,8 +128,10 @@ class RecognitionCsvUploadController extends Controller
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
 
-    public function destroy(StudentTimetableRecognitionImport $recognitionImport): JsonResponse
-    {
+    public function destroy(
+        StudentTimetableRecognitionImport $recognitionImport,
+        StudentTimetableStudySelectionRefreshService $studySelectionRefreshService,
+    ): JsonResponse {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
@@ -142,8 +145,9 @@ class RecognitionCsvUploadController extends Controller
         $filePath = storage_path($recognitionImport->file_path);
         $expectedDirectory = storage_path("app/private/{$authUser->school_id}/recognition-imports/{$authUser->schoolyear_id}");
 
-        DB::transaction(function () use ($recognitionImport): void {
+        DB::transaction(function () use ($authUser, $recognitionImport, $studySelectionRefreshService): void {
             $recognitionImport->delete();
+            $studySelectionRefreshService->refreshForUser($authUser, (int) $recognitionImport->schoolyear_id);
         });
 
         if (str_starts_with($filePath, $expectedDirectory) && File::exists($filePath)) {

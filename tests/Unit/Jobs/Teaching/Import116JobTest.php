@@ -317,6 +317,53 @@ describe('import record handling', function () {
         expect(Import116Run::query()->latest('id')->value('source_path'))->toBe($relativePath);
     });
 
+    test('refreshes the stored study selection after a successful spreadsheet import', function () {
+        Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'STU-SELECTION-001',
+            'import_user_id' => $this->admin->id,
+            'study_selection' => [
+                'religion' => 'ETH',
+                'language' => 'S',
+                'branch' => 'wirtschaftskundlich',
+                'arts_subject' => 'ME',
+            ],
+            'course_results' => [
+                'completed' => [['code' => 'M1', 'grade' => '3', 'status' => 'passed']],
+                'negative' => [],
+            ],
+        ]);
+
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A',
+            'Schülerkennzahl' => 'STU-SELECTION-001',
+            'Familienname' => 'Mustermann',
+            'Vorname' => 'Max',
+            'Geschlecht' => 'm',
+            'Adressart' => 'Eigen',
+            'Mailadresse' => 'max.mustermann@student.test',
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
+
+        expect(Import116::query()
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('student_code', 'STU-SELECTION-001')
+            ->sole()
+            ->study_selection)->toBeNull()
+            ->and(Import116::query()
+                ->where('school_id', $this->school->id)
+                ->where('schoolyear_id', $this->schoolyear->id)
+                ->where('student_code', 'STU-SELECTION-001')
+                ->sole()
+                ->course_results)->toBeNull();
+    });
+
     test('reuses a student account from the previous school year', function () {
         $previousSchoolyear = Schoolyear::factory()->create([
             'school_id' => $this->school->id,

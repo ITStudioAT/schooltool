@@ -52,6 +52,7 @@ class StudentTimetableV3TimetableService
         private StudentTimetableV3TimetableStorage $timetableStorage,
         private StudentTimetableV3TimetableFilterService $timetableFilterService,
         private StudentTimetableV3SessionScope $sessionScope,
+        private ?StudentTimetableSubjectRuleService $subjectRuleService = null,
     ) {}
 
     /**
@@ -445,6 +446,8 @@ class StudentTimetableV3TimetableService
 
         $studyProgram = $this->studyProgram($information);
         $subjectRows = $this->subjectRows($authUser, $schoolyearId, $studyProgram);
+        $subjectRuleSetVersion = $this->subjectRuleService()
+            ->ruleSet((int) $authUser->school_id, $schoolyearId, $studyProgram)?->version;
         $subjectMappings = $this->subjectMappings($authUser, $schoolyearId);
         $constraints = $this->constraints(
             $parameters,
@@ -484,6 +487,7 @@ class StudentTimetableV3TimetableService
             'modules' => $modulePayload,
             'parameters' => $canonicalParameters,
             'subject_rows' => $subjectRows,
+            'subject_rule_set_version' => $subjectRuleSetVersion,
             'subject_mappings' => $subjectMappings,
             'course_groups' => $selectedCourseGroups,
         ]);
@@ -1479,6 +1483,11 @@ class StudentTimetableV3TimetableService
         }
 
         return $schoolyearId;
+    }
+
+    private function subjectRuleService(): StudentTimetableSubjectRuleService
+    {
+        return $this->subjectRuleService ??= app(StudentTimetableSubjectRuleService::class);
     }
 
     private function invalid(string $key, string $message): never

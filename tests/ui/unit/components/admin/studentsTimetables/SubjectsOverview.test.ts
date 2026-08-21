@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import StudentsTimetables from '@/pages/admin/studentsTimetables/StudentsTimetables.vue'
 import SubjectsOverview from '@/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue'
+import TestsV3 from '@/pages/admin/studentsTimetables/testsV3/TestsV3.vue'
 import TimetableV2 from '@/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue'
 import TtEntries from '@/pages/admin/studentsTimetables/ttEntries/TtEntries.vue'
 
@@ -59,6 +60,33 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('Persönliches Schuljahr:')
         expect(componentSource).not.toContain('prepend-icon="mdi-calendar"')
         expect(componentSource).toContain('schoolyear_scope: PERSONAL_SCHOOLYEAR_SCOPE')
+    })
+
+    it('uses the same semester, branch, and subject order for both study programs', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const sortedCodes = (subjectRows: Array<Record<string, unknown>>) => computed.sortedSubjectRows.call({
+            ...methods,
+            subjectRows,
+            subjectSort: {
+                key: 'semester',
+                direction: 'asc',
+            },
+        }).map((subject: { json_code: string }) => subject.json_code)
+
+        expect(sortedCodes([
+            { semester: 7, branch: 'wirtschaftskundlich', json_code: 'INF2', sort_index: 1 },
+            { semester: 7, branch: 'gymnasial', json_code: 'ME1', sort_index: 2 },
+            { semester: 7, branch: null, json_code: 'D7', sort_index: 3 },
+            { semester: 7, branch: 'gymnasial', json_code: 'BE1', sort_index: 4 },
+        ])).toEqual(['D7', 'BE1', 'ME1', 'INF2'])
+
+        expect(sortedCodes([
+            { semester: 4, branch: 'gymnasial', json_code: 'ME1', sort_index: 1 },
+            { semester: 4, branch: 'wirtschaftskundlich', json_code: 'INF2', sort_index: 2 },
+            { semester: 4, branch: 'gymnasial', json_code: 'BE1', sort_index: 3 },
+            { semester: 4, branch: null, json_code: 'D6', sort_index: 4 },
+        ])).toEqual(['D6', 'BE1', 'ME1', 'INF2'])
     })
 
     it('asks once before carrying all subject-plan data forward from the previous schoolyear', async () => {
@@ -192,6 +220,484 @@ describe('Students timetable subjects overview', () => {
         expect(row.totals.map(total => total.value)).toEqual(['4'])
     })
 
+    it('fills all Normalstudium semesters in Grafik v2 from subjects and rules', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const context: any = {
+            ...methods,
+            studyProgram: 'normalstudium',
+            subjectRulesVersion: 1,
+            activeSubjectRows: [
+                {
+                    stable_key: 'd1',
+                    semester: 1,
+                    branch: null,
+                    json_code: 'D1',
+                    json_subject: 'D',
+                    name: 'Deutsch 1',
+                    hours_per_week: 3,
+                },
+                {
+                    stable_key: 'religion-1',
+                    semester: 1,
+                    branch: null,
+                    json_code: 'R/ET1',
+                    json_subject: 'R/ET',
+                    name: 'Religion/Ethik 1',
+                    hours_per_week: 2,
+                },
+                {
+                    stable_key: 'e2',
+                    semester: 2,
+                    branch: null,
+                    json_code: 'E2',
+                    json_subject: 'E',
+                    name: 'Englisch 2',
+                    hours_per_week: 4,
+                },
+                {
+                    stable_key: 'm8',
+                    semester: 8,
+                    branch: null,
+                    json_code: 'M8',
+                    json_subject: 'M',
+                    name: 'Mathematik 8',
+                    hours_per_week: 2,
+                },
+            ],
+            subjectRules: [
+                {
+                    stable_key: 'religion-rule',
+                    selection_key: 'religion',
+                    is_active: true,
+                    options: [
+                        {
+                            value: 'ETH',
+                            course_code_prefix: 'ETH',
+                            subject_keys: ['religion-1'],
+                        },
+                        {
+                            value: 'Rk',
+                            course_code_prefix: 'Rk',
+                            subject_keys: ['religion-1'],
+                        },
+                    ],
+                },
+                {
+                    stable_key: 'branch-rule',
+                    selection_key: 'branch',
+                    is_active: true,
+                    options: [
+                        {
+                            value: 'wirtschaftskundlich',
+                            course_code_prefix: '',
+                            subject_keys: ['wiku-subject'],
+                        },
+                        {
+                            value: 'gymnasial',
+                            course_code_prefix: '',
+                            subject_keys: ['gym-subject'],
+                        },
+                    ],
+                },
+            ],
+            subjectOverviewV2Columns: [
+                { key: 'R/ETH', subjectKeys: ['R/ET', 'R', 'ET', 'ETH'] },
+                { key: 'D', subjectKeys: ['D'] },
+                { key: 'E', subjectKeys: ['E'] },
+                { key: 'M', subjectKeys: ['M'] },
+            ],
+            subjectOverviewV2Semesters: [1, 2, 3, 4, 5, 6, 7, 8],
+        }
+        context.subjectOverviewV2PopulatedSubjects = computed.subjectOverviewV2PopulatedSubjects.call(context)
+
+        const rows = computed.subjectOverviewV2Rows.call(context)
+        const religionCell = rows[0].cells.find(cell => cell.column.key === 'R/ETH')
+        const secondSemester = rows[1]
+        const eighthSemester = rows[7]
+        const footer = computed.subjectOverviewV2Footer.call(context)
+
+        expect(context.subjectOverviewV2PopulatedSubjects.map(subject => subject.json_code))
+            .toEqual(['D1', 'R/ET1', 'E2', 'M8'])
+        expect(computed.subjectOverviewV2PopulatedSubjects.call({
+            ...context,
+            studyProgram: 'kompaktstudium',
+        }).map(subject => subject.json_code)).toEqual(['D1', 'R/ET1', 'E2'])
+        expect(religionCell.display_code).toBe('R1 | ETH1 *')
+        expect(religionCell.hours).toBe('2')
+        expect(methods.subjectOverviewCellClass.call(context, religionCell)).toBe('subject-plan-cell--filled')
+        expect(rows[0].totals.map(total => total.value)).toEqual(['5'])
+        expect(secondSemester.cells.find(cell => cell.column.key === 'E').display_code).toBe('E2')
+        expect(secondSemester.cells.find(cell => cell.column.key === 'E').hours).toBe('4')
+        expect(secondSemester.totals.map(total => total.value)).toEqual(['4'])
+        expect(eighthSemester.cells.find(cell => cell.column.key === 'M').display_code).toBe('M8')
+        expect(eighthSemester.totals.map(total => total.value)).toEqual(['2'])
+        expect(footer.map(column => column.totals.map(total => total.value))).toEqual([['2'], ['3'], ['4'], ['2']])
+        expect(computed.subjectOverviewV2GrandTotals.call(context).map(total => total.value)).toEqual(['11'])
+        expect(methods.subjectOverviewV2SubjectBranch.call(context, { stable_key: 'wiku-subject', branch: null }))
+            .toBe('wirtschaftskundlich')
+        expect(methods.subjectOverviewCellClass.call(context, {
+            subjects: [{ stable_key: 'wiku-subject' }],
+            branches: ['wirtschaftskundlich'],
+        })).toBe('subject-plan-cell--wirtschaftskundlich')
+        expect(methods.subjectOverviewCellClass.call(context, {
+            subjects: [{ stable_key: 'gym-subject' }],
+            branches: ['gymnasial'],
+        })).toBe('subject-plan-cell--gymnasial')
+        const branchCell = methods.subjectOverviewV2Cell.call(context, [
+            {
+                stable_key: 'gym-subject',
+                semester: 7,
+                branch: 'gymnasial',
+                json_code: 'BE1',
+                json_subject: 'BE',
+                hours_per_week: 2,
+            },
+            {
+                stable_key: 'wiku-subject',
+                semester: 7,
+                branch: 'wirtschaftskundlich',
+                json_code: 'BE1',
+                json_subject: 'BE',
+                hours_per_week: 2,
+            },
+        ], {
+            key: 'BE',
+            subjectKeys: ['BE'],
+        })
+
+        expect(branchCell.groups.map(group => [group.branch, group.class])).toEqual([
+            ['common', 'subject-plan-cell--filled'],
+        ])
+        expect(branchCell.display_code).toBe('BE1')
+        expect(branchCell.hours).toBe('2')
+        expect(methods.subjectOverviewCellClass.call(context, branchCell)).toBe('subject-plan-cell--filled')
+
+        const differentBranchCell = methods.subjectOverviewV2Cell.call(context, [
+            {
+                stable_key: 'gym-subject',
+                semester: 7,
+                branch: 'gymnasial',
+                json_code: 'BE1',
+                json_subject: 'BE',
+                hours_per_week: 3,
+            },
+            {
+                stable_key: 'wiku-subject',
+                semester: 7,
+                branch: 'wirtschaftskundlich',
+                json_code: 'BE1',
+                json_subject: 'BE',
+                hours_per_week: 2,
+            },
+        ], {
+            key: 'BE',
+            subjectKeys: ['BE'],
+        })
+
+        expect(differentBranchCell.groups.map(group => [group.branch, group.class])).toEqual([
+            ['wirtschaftskundlich', 'subject-plan-cell--wirtschaftskundlich'],
+            ['gymnasial', 'subject-plan-cell--gymnasial'],
+        ])
+        expect(methods.subjectOverviewV2SubjectsForColumn.call(context, [
+            { semester: 2, json_subject: 'F', json_code: 'F1' },
+            { semester: 2, json_subject: 'S', json_code: 'S1' },
+            { semester: 2, json_subject: 'L', json_code: 'L1' },
+        ], {
+            subjectKeys: ['L/F/S', 'L', 'F', 'S'],
+        }).map(subject => subject.json_code)).toEqual(['L1', 'F1', 'S1'])
+    })
+
+    it('fills all Kompaktstudium semesters in Grafik v2 and combines modules from the stored rules', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const subject = (
+            stableKey: string,
+            semester: number,
+            code: string,
+            subjectKey: string,
+            hours: number,
+            branch: string | null = null,
+        ) => ({
+            stable_key: stableKey,
+            semester,
+            branch,
+            json_code: code,
+            json_subject: subjectKey,
+            name: code,
+            hours_per_week: hours,
+        })
+        const activeSubjectRows = [
+            subject('d2', 1, 'D2', 'D', 1.5),
+            subject('d3', 1, 'D3', 'D', 1.5),
+            subject('r1', 1, 'R1', 'R', 1),
+            subject('et1', 1, 'ET1', 'ET', 1),
+            subject('l1', 1, 'L1', 'L', 2),
+            subject('f1', 1, 'F1', 'F', 2),
+            subject('s1', 1, 'S1', 'S', 2),
+            subject('d7', 5, 'D7', 'D', 2),
+            subject('d8', 5, 'D8', 'D', 2),
+            subject('l6', 5, 'L6', 'L', 1.5, 'gymnasial'),
+            subject('l7', 5, 'L7', 'L', 1.5, 'gymnasial'),
+            subject('f6', 5, 'F6', 'F', 1.5, 'gymnasial'),
+            subject('f7', 5, 'F7', 'F', 1.5, 'gymnasial'),
+            subject('s6', 5, 'S6', 'S', 1.5, 'gymnasial'),
+            subject('s7', 5, 'S7', 'S', 1.5, 'gymnasial'),
+            subject('inf3', 5, 'INF3', 'INF', 1.5, 'wirtschaftskundlich'),
+            subject('outside-compact-plan', 6, 'D9', 'D', 9),
+        ]
+        const context: any = {
+            ...methods,
+            studyProgram: 'kompaktstudium',
+            subjectRulesVersion: 1,
+            activeSubjectRows,
+            subjectRules: [
+                {
+                    stable_key: 'branch-rule',
+                    selection_key: 'branch',
+                    is_active: true,
+                    options: [
+                        { value: 'wirtschaftskundlich', subject_keys: ['inf3'] },
+                        { value: 'gymnasial', subject_keys: ['l6', 'l7', 'f6', 'f7', 's6', 's7'] },
+                    ],
+                },
+                {
+                    stable_key: 'language-rule',
+                    selection_key: 'language',
+                    is_active: true,
+                    options: [
+                        { value: 'L', label: 'L - Latein', subject_keys: ['l1', 'l6', 'l7'] },
+                        { value: 'F', label: 'F - Französisch', subject_keys: ['f1', 'f6', 'f7'] },
+                        { value: 'S', label: 'S - Spanisch', subject_keys: ['s1', 's6', 's7'] },
+                    ],
+                },
+                {
+                    stable_key: 'religion-rule',
+                    selection_key: 'religion',
+                    is_active: true,
+                    options: [
+                        { value: 'Rk', course_code_prefix: 'Rk', subject_keys: ['r1'] },
+                        { value: 'ETH', course_code_prefix: 'ETH', subject_keys: ['et1'] },
+                    ],
+                },
+            ],
+        }
+
+        context.subjectOverviewColumns = computed.subjectOverviewColumns.call(context)
+        context.subjectOverviewV2Columns = computed.subjectOverviewV2Columns.call(context)
+        context.subjectOverviewV2Semesters = computed.subjectOverviewV2Semesters.call(context)
+        context.subjectOverviewV2PopulatedSubjects = computed.subjectOverviewV2PopulatedSubjects.call(context)
+
+        const rows = computed.subjectOverviewV2Rows.call(context)
+        const firstSemester = rows[0]
+        const fifthSemester = rows[4]
+        const firstSemesterLanguage = firstSemester.cells.find(cell => cell.column.key === 'L/F/S')
+        const firstSemesterReligion = firstSemester.cells.find(cell => cell.column.key === 'R/ETH')
+        const fifthSemesterLanguage = fifthSemester.cells.find(cell => cell.column.key === 'L/F/S')
+        const fifthSemesterGerman = fifthSemester.cells.find(cell => cell.column.key === 'D')
+        const footer = computed.subjectOverviewV2Footer.call(context)
+
+        expect(context.subjectOverviewV2Semesters).toEqual([1, 2, 3, 4, 5])
+        expect(context.subjectOverviewV2PopulatedSubjects).toHaveLength(16)
+        expect(rows).toHaveLength(5)
+        expect(firstSemester.cells.find(cell => cell.column.key === 'D')).toMatchObject({
+            display_code: 'D2+3',
+            hours: '3',
+        })
+        expect(firstSemesterLanguage).toMatchObject({
+            display_code: 'L1 | F1 | S1 *',
+            hours: '2',
+        })
+        expect(firstSemesterReligion).toMatchObject({
+            display_code: 'R1 | ETH1 *',
+            hours: '1',
+        })
+        expect(firstSemester.totals.map(total => total.value)).toEqual(['6'])
+        expect(fifthSemesterLanguage).toMatchObject({
+            display_code: 'L6+7 | F6+7 | S6+7 *',
+            hours: '3',
+        })
+        expect(methods.subjectOverviewCellClass.call(context, fifthSemesterLanguage))
+            .toBe('subject-plan-cell--gymnasial')
+        expect(fifthSemesterGerman).toMatchObject({
+            display_code: 'D7+8',
+            hours: '4',
+        })
+        expect(fifthSemester.totals.map(total => [total.value, total.class])).toEqual([
+            ['5,5', 'subject-plan-total--wirtschaftskundlich'],
+            ['7', 'subject-plan-total--gymnasial'],
+        ])
+        expect(footer.find(column => column.key === 'D').totals.map(total => total.value)).toEqual(['7'])
+        expect(computed.subjectOverviewV2GrandTotals.call(context).map(total => [total.value, total.class])).toEqual([
+            ['11,5', 'subject-plan-total--wirtschaftskundlich'],
+            ['13', 'subject-plan-total--gymnasial'],
+        ])
+    })
+
+    it('describes the branch rules below Grafik v2 and keeps different BE1 semantics separated', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const subject = (branch: string | null, code: string, semester: number) => ({
+            stable_key: `${branch || 'common'}-${code}`,
+            semester,
+            branch,
+            json_code: code,
+            json_subject: code.replace(/\d+$/u, ''),
+            name: code,
+            hours_per_week: 2,
+        })
+        const activeSubjectRows = [
+            subject(null, 'L5', 6),
+            subject(null, 'F5', 6),
+            subject(null, 'S5', 6),
+            subject('wirtschaftskundlich', 'BE1', 7),
+            subject('wirtschaftskundlich', 'ME1', 7),
+            subject('wirtschaftskundlich', 'INF2', 7),
+            subject('wirtschaftskundlich', 'INF3', 8),
+            subject('wirtschaftskundlich', 'ÖKO1', 7),
+            subject('wirtschaftskundlich', 'ÖKO2', 8),
+            subject('wirtschaftskundlich', 'ÖKO3', 8),
+            subject('gymnasial', 'BE1', 7),
+            subject('gymnasial', 'ME1', 7),
+            subject('gymnasial', 'BE2', 8),
+            subject('gymnasial', 'ME2', 8),
+            subject('gymnasial', 'L7', 8),
+            subject('gymnasial', 'F7', 8),
+            subject('gymnasial', 'S7', 8),
+        ]
+        const subjectKeys = (branch: string | null, codes: string[]) => codes.map(code => `${branch || 'common'}-${code}`)
+        const context: any = {
+            ...methods,
+            subjectRulesVersion: 1,
+            activeSubjectRows,
+            subjectRules: [
+                {
+                    stable_key: 'branch-rule',
+                    selection_key: 'branch',
+                    is_active: true,
+                    options: [
+                        {
+                            value: 'wirtschaftskundlich',
+                            subject_keys: activeSubjectRows
+                                .filter(item => item.branch === 'wirtschaftskundlich')
+                                .map(item => item.stable_key),
+                        },
+                        {
+                            value: 'gymnasial',
+                            subject_keys: activeSubjectRows
+                                .filter(item => item.branch === 'gymnasial')
+                                .map(item => item.stable_key),
+                        },
+                    ],
+                },
+                {
+                    stable_key: 'language-rule',
+                    selection_key: 'language',
+                    is_active: true,
+                    options: [
+                        { value: 'L', label: 'L - Latein', subject_keys: [...subjectKeys(null, ['L5']), ...subjectKeys('gymnasial', ['L7'])] },
+                        { value: 'F', label: 'F - Französisch', subject_keys: [...subjectKeys(null, ['F5']), ...subjectKeys('gymnasial', ['F7'])] },
+                        { value: 'S', label: 'S - Spanisch', subject_keys: [...subjectKeys(null, ['S5']), ...subjectKeys('gymnasial', ['S7'])] },
+                    ],
+                },
+                {
+                    stable_key: 'arts-rule',
+                    selection_key: 'arts_subject',
+                    is_active: true,
+                    options: [
+                        { value: 'BE', subject_keys: [...subjectKeys('wirtschaftskundlich', ['BE1']), ...subjectKeys('gymnasial', ['BE2'])] },
+                        { value: 'ME', subject_keys: [...subjectKeys('wirtschaftskundlich', ['ME1']), ...subjectKeys('gymnasial', ['ME2'])] },
+                    ],
+                },
+            ],
+        }
+        const legendItems = computed.subjectOverviewV2BranchLegendItems.call(context)
+        const impactCards = computed.subjectRuleImpactCards.call(context)
+        const be1Cell = methods.subjectOverviewV2Cell.call(
+            context,
+            activeSubjectRows.filter(item => item.json_code === 'BE1'),
+            { key: 'BE', subjectKeys: ['BE'] },
+        )
+
+        expect(legendItems).toEqual([
+            {
+                branch: 'wirtschaftskundlich',
+                label: 'Wirtschaftskundlicher Zweig',
+                lines: [
+                    'Latein, Französisch oder Spanisch bis zum Modul 5',
+                    'BE1 oder ME1 / INF2 und INF3 / ÖKO1, ÖKO2 und ÖKO3',
+                ],
+            },
+            {
+                branch: 'gymnasial',
+                label: 'Gymnasialer Zweig',
+                lines: [
+                    'Latein, Französisch oder Spanisch bis zum Modul 7',
+                    'BE1 und ME1 / BE2 oder ME2',
+                ],
+            },
+        ])
+        expect(impactCards).toEqual([
+            {
+                branch: 'wirtschaftskundlich',
+                label: 'Wirtschaftskundlicher Zweig',
+                required: [
+                    'INF2 und INF3',
+                    'ÖKO1, ÖKO2 und ÖKO3',
+                ],
+                choices: [
+                    {
+                        label: 'Sprache',
+                        description: 'Latein, Französisch oder Spanisch bis zum Modul 5',
+                    },
+                    {
+                        label: 'Künstlerisches Fach',
+                        description: 'BE1 oder ME1',
+                    },
+                ],
+            },
+            {
+                branch: 'gymnasial',
+                label: 'Gymnasialer Zweig',
+                required: ['BE1 und ME1'],
+                choices: [
+                    {
+                        label: 'Sprache',
+                        description: 'Latein, Französisch oder Spanisch bis zum Modul 7',
+                    },
+                    {
+                        label: 'Künstlerisches Fach',
+                        description: 'BE2 oder ME2',
+                    },
+                ],
+            },
+        ])
+        expect(be1Cell.groups.map(group => [group.branch, group.display_code, group.class])).toEqual([
+            ['wirtschaftskundlich', 'BE1 *', 'subject-plan-cell--wirtschaftskundlich'],
+            ['gymnasial', 'BE1', 'subject-plan-cell--gymnasial'],
+        ])
+
+        context.subjectRules
+            .find(rule => rule.selection_key === 'arts_subject')
+            .options.find(option => option.value === 'BE')
+            .subject_keys = subjectKeys('wirtschaftskundlich', ['BE1'])
+
+        expect(computed.subjectRuleImpactCards.call(context)[1]).toEqual({
+            branch: 'gymnasial',
+            label: 'Gymnasialer Zweig',
+            required: [
+                'BE1 und ME1',
+                'BE2 und ME2',
+            ],
+            choices: [
+                {
+                    label: 'Sprache',
+                    description: 'Latein, Französisch oder Spanisch bis zum Modul 7',
+                },
+            ],
+        })
+    })
+
     it('marks BE and ME alternatives per branch and counts each branch choice once', () => {
         const methods = (SubjectsOverview as any).methods
         const computed = (SubjectsOverview as any).computed
@@ -249,8 +755,13 @@ describe('Students timetable subjects overview', () => {
     })
 
     it('keeps the module shell navigation focused on the configured timetable version', () => {
+        const computed = (StudentsTimetables as any).computed
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
+            'utf8',
+        )
+        const testsV3Source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/testsV3/TestsV3.vue',
             'utf8',
         )
 
@@ -264,6 +775,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain("meta: 'Center'")
         expect(componentSource).toContain("label: 'Stundenplan v2'")
         expect(componentSource).toContain("label: 'Stundenplan v3'")
+        expect(componentSource).toContain("label: 'Tests v3'")
+        expect(testsV3Source).toContain('Tests für Stundenplan Version 3')
         expect(componentSource).toContain("meta: 'Stabil'")
         expect(componentSource).toContain("meta: 'Entwicklung'")
         expect(componentSource).toContain("label: 'TT-Einträge'")
@@ -279,12 +792,13 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain("handleNavigation('automatic-timetable')")
         expect(componentSource).not.toContain('st-nav__automatic-button')
         expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
-        expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan')
-        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'subjects-overview', 'import']")
+        expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan-v2')
+        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
         expect(componentSource).toContain("const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'")
         expect(componentSource).toContain("const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'")
         expect(componentSource).toContain("const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'")
+        expect(componentSource).toContain("const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'")
         expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
@@ -297,9 +811,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH")
         expect(componentSource).toContain("'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH")
         expect(componentSource).toContain("'tt-entries': TT_ENTRIES_OVERVIEW_PATH")
+        expect(componentSource).toContain("'tests-v3': TESTS_V3_STUDENTS_PATH")
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
         expect(componentSource).toContain("import('./timetableV2/TimetableV2.vue')")
         expect(componentSource).toContain("import('./timetableV3/TimetableV3.vue')")
+        expect(componentSource).toContain("import('./testsV3/TestsV3.vue')")
         expect(componentSource).toContain("import('./ttEntries/TtEntries.vue')")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
@@ -308,6 +824,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('<TimetableV2 />')
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v3'\" cols=\"12\">")
         expect(componentSource).toContain('<TimetableV3 />')
+        expect(componentSource).toContain("<TestsV3 v-if=\"main_action === 'tests-v3'\" />")
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'tt-entries'\" cols=\"12\">")
         expect(componentSource).toContain('<TtEntries />')
         expect(componentSource).toContain("Import v-if=\"main_action === 'import'\"")
@@ -318,6 +835,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('useSchoolyearStore')
         expect(componentSource).not.toContain('switchSchoolyear')
         expect(componentSource.indexOf("key: 'timetable-v3'"))
+            .toBeLessThan(componentSource.indexOf("key: 'tests-v3'"))
+        expect(componentSource.indexOf("key: 'tests-v3'"))
             .toBeLessThan(componentSource.indexOf("key: 'tt-entries'"))
         expect(componentSource.indexOf("key: 'tt-entries'"))
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
@@ -325,8 +844,11 @@ describe('Students timetable subjects overview', () => {
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
         expect(componentSource.indexOf("key: 'subjects-overview'"))
             .toBeLessThan(componentSource.indexOf("key: 'timetable-v2'"))
-        expect(componentSource).toContain("{ 'st-nav__button--legacy': item.key === 'timetable-v2' }")
-        expect(componentSource).toMatch(/\.st-nav__button--legacy\s*\{[\s\S]*?margin-left:\s*auto;/)
+        expect(computed.allNavigationItems.call({}).at(-1)).toMatchObject({
+            key: 'timetable-v2',
+            label: 'Stundenplan v2',
+        })
+        expect(componentSource).not.toContain('st-nav__button--legacy')
     })
 
     it('uses timetable v3 when no school-specific default is configured', () => {
@@ -433,6 +955,395 @@ describe('Students timetable subjects overview', () => {
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
     })
 
+    it('opens the timetable v3 tests page on the students subsection', () => {
+        const methods = (StudentsTimetables as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            $router: { push },
+            main_action: 'timetable-v2',
+        }
+
+        methods.handleNavigation.call(ctx, 'tests-v3')
+
+        expect(ctx.main_action).toBe('tests-v3')
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/tests-v3/students' })
+    })
+
+    it('provides the students selection and carries it into the tests subsection', () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const push = vi.fn()
+        const replace = vi.fn()
+        const context: any = {
+            ...methods,
+            config: {
+                selected_schoolyear: {
+                    concerns: '2026/27',
+                    name: 'Schuljahr 2026/27',
+                },
+            },
+            $route: {
+                params: {
+                    section: 'tests-v3',
+                    subsection: 'overview',
+                },
+            },
+            $router: { push, replace },
+            testsV3Action: 'students',
+            selectedStudentKeys: ['1001'],
+        }
+
+        expect(computed.testsV3NavigationItems.call(context)).toEqual([
+            {
+                key: 'students',
+                label: 'Studierende',
+                icon: 'mdi-account-school-outline',
+            },
+            {
+                key: 'tests',
+                label: 'Tests',
+                icon: 'mdi-test-tube',
+            },
+        ])
+        expect(computed.personalSchoolyearLabel.call(context)).toBe('2026/27')
+        expect(methods.redirectInvalidTestsV3Route.call(context)).toBe(true)
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/tests-v3/students' })
+
+        methods.handleTestsV3Navigation.call(context, 'tests')
+
+        expect(context.testsV3Action).toBe('tests')
+        expect(context.selectedStudentKeys).toEqual(['1001'])
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/tests-v3/tests' })
+
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/testsV3/TestsV3.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('Tests für Stundenplan Version 3')
+        expect(componentSource).toContain(
+            '<strong class="tests-v3-page__schoolyear text-primary">{{ personalSchoolyearLabel }}</strong>',
+        )
+        expect(componentSource).toContain("v-if=\"testsV3Action === 'students'\"")
+        expect(componentSource).toContain("v-else-if=\"testsV3Action === 'tests'\"")
+        expect(componentSource).toContain('Ausgewählte Studierende')
+        expect(componentSource).toContain('{{ selectedStudents.length }} Studierende für die Tests übernommen')
+        expect(componentSource).toContain('v-for="student in selectedStudents"')
+        expect(componentSource).toContain('class="tests-v3-students__table tests-v3-selection__table"')
+        expect(componentSource).toContain('icon="mdi-checkbox-marked"')
+        expect(componentSource).toContain('class="tests-v3-students__row--selected"')
+        const runTestsButtonClassIndex = componentSource.indexOf('class="tests-v3-selection__run-button"')
+        const runTestsButtonStartIndex = componentSource.lastIndexOf('<v-btn', runTestsButtonClassIndex)
+        const runTestsButtonEndIndex = componentSource.indexOf('</v-btn>', runTestsButtonClassIndex)
+        const runTestsButtonSource = componentSource.slice(runTestsButtonStartIndex, runTestsButtonEndIndex + 8)
+
+        expect(runTestsButtonClassIndex).toBeGreaterThan(-1)
+        expect(runTestsButtonStartIndex).toBeGreaterThan(-1)
+        expect(runTestsButtonEndIndex).toBeGreaterThan(-1)
+        expect(runTestsButtonSource).toContain('Run Tests')
+        expect(runTestsButtonSource).toContain('@click="runTests"')
+        expect(runTestsButtonSource).toContain(':loading="studentV3TestsRunning"')
+        expect(runTestsButtonSource).not.toContain('href=')
+        expect(runTestsButtonSource).not.toContain('to=')
+        expect(componentSource).toContain('V3-Modultest')
+        expect(componentSource).toContain('class="tests-v3-selection__module-test-row"')
+        expect(componentSource).toContain('<td colspan="7" class="tests-v3-selection__module-test">')
+        expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
+        expect(componentSource).toContain('loadV3StudentInformation')
+        expect(componentSource).toContain('response.data?.data?.module_selection_groups')
+        expect(componentSource).toContain('STUDENT_V3_TEST_CONCURRENCY = 4')
+        expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
+        expect(componentSource).toContain("{ key: 'negative', label: 'Negative', color: 'error' }")
+        expect(componentSource).toContain("{ key: 'previous', label: 'Frühere', color: 'warning' }")
+        expect(componentSource).toContain("{ key: 'current', label: 'Aktuelle', color: 'primary' }")
+        expect(componentSource).toContain("{ key: 'additional', label: 'Zusätzliche', color: 'info' }")
+        expect(componentSource).toContain('Alle auswählen')
+        expect(componentSource).toContain('Keine auswählen')
+        expect(componentSource).toContain('<v-checkbox-btn')
+        expect(componentSource).toContain('<th class="tests-v3-students__class-column">Klasse</th>')
+        expect(componentSource).toContain('<th class="tests-v3-students__name-column">Name</th>')
+        expect(componentSource).toContain('Studienauswahl')
+        expect(componentSource).toContain('<th class="tests-v3-students__semester-column">Semester</th>')
+        expect(componentSource.indexOf('Studienauswahl'))
+            .toBeLessThan(componentSource.indexOf('<th class="tests-v3-students__semester-column">Semester</th>'))
+        expect(componentSource.indexOf('<th class="tests-v3-students__semester-column">Semester</th>'))
+            .toBeLessThan(componentSource.indexOf('Befreit/Bestanden'))
+        expect(componentSource).toContain('Befreit/Bestanden')
+        expect(componentSource).toContain('Negativ')
+        expect(componentSource).toContain("studentCourseResultItems(student, 'completed')")
+        expect(componentSource).toContain("studentCourseResultItems(student, 'negative')")
+        expect(componentSource).toContain('<td class="tests-v3-students__selection-column">')
+        expect(componentSource).toContain('table-layout: fixed')
+        expect(componentSource).toContain('padding-inline: 10px !important')
+        expect(componentSource).toContain('overflow-wrap: anywhere')
+        expect(componentSource).toMatch(/\.tests-v3-students__selection-column\s*\{[^}]*width:\s*5%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__class-column\s*\{[^}]*width:\s*5%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__name-column\s*\{[^}]*width:\s*21%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__study-selection-column\s*\{[^}]*width:\s*13%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__semester-column\s*\{[^}]*width:\s*8%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__course-results-column\s*\{[^}]*width:\s*24%;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__course-results\s*\{[^}]*font-weight:\s*400;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__course-result-grade\s*\{[^}]*font-weight:\s*700;/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__course-result-grade--completed\s*\{[^}]*--v-theme-success/s)
+        expect(componentSource).toMatch(/\.tests-v3-students__course-result-grade--negative\s*\{[^}]*--v-theme-error/s)
+        expect(componentSource).toContain('robotStudents as loadRobotStudents')
+        expect(componentSource).toContain('studentReligionLabel(student)')
+        expect(componentSource).toContain('studentSexPresentation(student)')
+        expect(componentSource).toContain('mdi-gender-male')
+        expect(componentSource).toContain('mdi-gender-female')
+    })
+
+    it('runs the existing v3 module calculation for every selected student and publishes each result immediately', async () => {
+        const methods = (TestsV3 as any).methods
+        const students = [
+            { student_code: '1001', class: '1A', last_name: 'Auer', first_name: 'Anna' },
+            { student_code: '2002', class: '1A', last_name: 'Bauer', first_name: 'Berta' },
+        ]
+        const firstStudentGroups = [
+            {
+                key: 'finished',
+                count: 2,
+                modules: [
+                    { code: 'D1', name: 'Deutsch 1' },
+                    { code: 'M1', name: 'Mathematik 1' },
+                ],
+            },
+            { key: 'negative', count: 1, modules: [{ code: 'E1', name: 'Englisch 1' }] },
+            { key: 'previous', count: 1, modules: [{ code: 'BU1', name: 'Biologie 1' }] },
+            { key: 'current', count: 1, modules: [{ code: 'D2', name: 'Deutsch 2' }] },
+            { key: 'additional', count: 1, modules: [{ code: 'PH1', name: 'Physik 1' }] },
+        ]
+        const secondStudentGroups = [
+            { key: 'finished', count: 0, modules: [] },
+            { key: 'negative', count: 0, modules: [] },
+            { key: 'previous', count: 0, modules: [] },
+            { key: 'current', count: 1, modules: [{ code: 'D1', name: 'Deutsch 1' }] },
+            { key: 'additional', count: 0, modules: [] },
+        ]
+        let resolveFirstStudentRequest: (value: unknown) => void = () => {}
+        let resolveSecondStudentRequest: (value: unknown) => void = () => {}
+        const firstStudentRequest = new Promise((resolve) => {
+            resolveFirstStudentRequest = resolve
+        })
+        const secondStudentRequest = new Promise((resolve) => {
+            resolveSecondStudentRequest = resolve
+        })
+        const get = vi.fn((url: string) => url.includes('student_code=1001')
+            ? firstStudentRequest
+            : secondStudentRequest)
+        const context: any = {
+            ...methods,
+            selectedStudents: students,
+            studentV3TestResults: {},
+            studentV3TestsRunning: false,
+        }
+
+        vi.stubGlobal('axios', { get })
+
+        try {
+            const testsPromise = methods.runTests.call(context)
+
+            await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+            expect(context.studentV3TestResults['1001'].status).toBe('running')
+            expect(context.studentV3TestResults['2002'].status).toBe('running')
+
+            resolveFirstStudentRequest({
+                data: { data: { module_selection_groups: firstStudentGroups } },
+            })
+
+            await vi.waitFor(() => expect(context.studentV3TestResults['1001'].status).toBe('complete'))
+            expect(context.studentV3TestResults['2002'].status).toBe('running')
+            expect(context.studentV3TestResults['1001'].groups.map((group: any) => [
+                group.key,
+                group.count,
+                group.modules.map((module: any) => module.code),
+            ])).toEqual([
+                ['finished', 2, ['D1', 'M1']],
+                ['negative', 1, ['E1']],
+                ['previous', 1, ['BU1']],
+                ['current', 1, ['D2']],
+                ['additional', 1, ['PH1']],
+            ])
+
+            resolveSecondStudentRequest({
+                data: { data: { module_selection_groups: secondStudentGroups } },
+            })
+            await testsPromise
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(context.studentV3TestResults['2002'].status).toBe('complete')
+        expect(context.studentV3TestsRunning).toBe(false)
+        expect(get.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
+            '/api/admin/students-timetables/timetable-v3/student-information?student_code=1001',
+            '/api/admin/students-timetables/timetable-v3/student-information?student_code=2002',
+        ]))
+        expect(() => methods.normalizedStudentV3TestGroups.call(context, firstStudentGroups.slice(0, 4)))
+            .toThrow('Die V3-Gruppe additional fehlt.')
+        expect(() => methods.normalizedStudentV3TestGroups.call(context, [
+            { ...firstStudentGroups[0], count: 99 },
+            ...firstStudentGroups.slice(1),
+        ])).toThrow('Der V3-Count für finished ist inkonsistent.')
+    })
+
+    it('loads, sorts, and selects all or no timetable v3 students', async () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const students = [
+            {
+                id: 3,
+                student_code: '3003',
+                class: '2A',
+                last_name: 'Zeller',
+                first_name: 'Anna',
+            },
+            {
+                id: 2,
+                student_code: '2002',
+                class: '1B',
+                last_name: 'Zorn',
+                first_name: 'Berta',
+            },
+            {
+                id: 1,
+                student_code: '1001',
+                class: '1B',
+                last_name: 'Auer',
+                first_name: 'Clara',
+            },
+        ]
+        const get = vi.fn().mockResolvedValue({ data: { data: students } })
+        const loadContext: any = {
+            students: [],
+            selectedStudentKeys: [],
+            studentsLoading: false,
+            studentsError: false,
+            studentSelectionKey: methods.studentSelectionKey,
+        }
+
+        vi.stubGlobal('axios', { get })
+
+        try {
+            await methods.loadStudents.call(loadContext)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/robot/students')
+        expect(loadContext.students).toEqual(students)
+        expect(loadContext.studentsLoading).toBe(false)
+        expect(loadContext.studentsError).toBe(false)
+
+        const selectionContext: any = {
+            ...methods,
+            students: loadContext.students,
+            selectedStudentKeys: [],
+        }
+        selectionContext.sortedStudents = computed.sortedStudents.call(selectionContext)
+        selectionContext.studentSelectionKeys = computed.studentSelectionKeys.call(selectionContext)
+
+        expect(selectionContext.sortedStudents.map((student: { student_code: string }) => student.student_code))
+            .toEqual(['1001', '2002', '3003'])
+        expect(methods.studentSexPresentation({ sex: ' M ' })).toEqual({
+            icon: 'mdi-gender-male',
+            color: 'blue',
+            label: 'männlich',
+        })
+        expect(methods.studentSexPresentation({ sex: 'w' })).toEqual({
+            icon: 'mdi-gender-female',
+            color: 'pink',
+            label: 'weiblich',
+        })
+        expect(methods.studentSexPresentation({ sex: 'x' })).toBeNull()
+        expect(methods.studentSexPresentation({})).toBeNull()
+        expect(methods.studentReligionLabel({ religion: ' Rk ' })).toBe('Rk')
+        expect(methods.studentReligionLabel({})).toBe('')
+        expect(methods.studentStudySelectionLabels({
+            study_selection: {
+                religion: 'Rev',
+                language: 'f',
+                branch: 'gymnasial',
+                arts_subject: 'be',
+            },
+        })).toEqual(['REV', 'F', 'GYM', 'BE'])
+        expect(methods.studentStudySelectionLabels({
+            study_selection: {
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                arts_subject: 'ME',
+            },
+        })).toEqual(['ETH', 'L', 'WIKU', 'ME'])
+        expect(methods.studentStudySelectionLabels({})).toEqual([])
+        expect(methods.studentSemesterLabel({
+            instruction_type: 'Normalunterricht',
+            semester: 5,
+            school_level: '11',
+            attendance_year: '1',
+        })).toBe('N 5')
+        expect(methods.studentSchoolLevelLabel({
+            school_level: '11',
+            attendance_year: '1',
+        })).toBe('11_1')
+        expect(methods.studentSemesterLabel({
+            instruction_type: 'Kompaktunterricht',
+            semester: 3,
+            school_level: '11-1',
+        })).toBe('K 3')
+        expect(methods.studentSchoolLevelLabel({ school_level: '11-1' })).toBe('11_1')
+        expect(methods.studentSemesterLabel({
+            study_program: 'kompaktstudium',
+            semester: 2,
+            school_level: '09_2',
+            attendance_year: '2',
+        })).toBe('K 2')
+        expect(methods.studentSchoolLevelLabel({
+            school_level: '09_2',
+            attendance_year: '2',
+        })).toBe('09_2')
+        expect(methods.studentSemesterLabel({ semester: 4 })).toBe('4')
+        expect(methods.studentSemesterLabel({})).toBe('')
+        expect(methods.studentSchoolLevelLabel({})).toBe('')
+        expect(methods.studentCourseResultLabels({
+            course_results: {
+                completed: [
+                    { code: 'M1', grade: '3', status: 'passed' },
+                    { code: 'D1', grade: 'b', status: 'exempt' },
+                ],
+                negative: [
+                    { code: 'E1', grade: '5', status: 'failed' },
+                    { code: 'BU1', grade: 'n', status: 'failed' },
+                ],
+            },
+        }, 'completed')).toEqual(['M1 (3)', 'D1 (B)'])
+        expect(methods.studentCourseResultLabels({
+            course_results: {
+                negative: [
+                    { code: 'E1', grade: '5', status: 'failed' },
+                    { code: 'BU1', grade: 'n', status: 'failed' },
+                ],
+            },
+        }, 'negative')).toEqual(['E1 (5)', 'BU1 (N)'])
+        expect(methods.studentCourseResultLabels({}, 'completed')).toEqual([])
+
+        methods.selectAllStudents.call(selectionContext)
+
+        expect(selectionContext.selectedStudentKeys).toEqual(['1001', '2002', '3003'])
+        expect(computed.allStudentsSelected.call(selectionContext)).toBe(true)
+
+        methods.toggleStudentSelection.call(selectionContext, students[1], false)
+
+        expect(selectionContext.selectedStudentKeys).toEqual(['1001', '3003'])
+        expect(computed.selectedStudents.call(selectionContext)
+            .map((student: { student_code: string }) => student.student_code))
+            .toEqual(['1001', '3003'])
+
+        methods.clearStudentSelection.call(selectionContext)
+
+        expect(selectionContext.selectedStudentKeys).toEqual([])
+    })
+
     it('opens the TT entries page from the module navigation', () => {
         const methods = (StudentsTimetables as any).methods
         const push = vi.fn()
@@ -475,6 +1386,7 @@ describe('Students timetable subjects overview', () => {
         expect(moderatorNavigationKeys).not.toContain('tt-entries')
         expect(moderatorNavigationKeys).toContain('timetable-v2')
         expect(moderatorNavigationKeys).toContain('timetable-v3')
+        expect(moderatorNavigationKeys).toContain('tests-v3')
         expect(moderatorNavigationKeys).toContain('subjects-overview')
     })
 
@@ -2530,40 +3442,390 @@ describe('Students timetable subjects overview', () => {
         })
     })
 
-    it('splits the subjects area into subject plan, subjects, and mapping pages', () => {
+    it('splits the subjects area into two graphics, subjects, rules, and mapping pages', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
             'utf8',
         )
+
+        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: false }))
+            .toMatchObject([
+                { key: 'subject-plan-v2', label: 'Grafik v2' },
+                { key: 'subject-plan', label: 'Grafik' },
+            ])
+        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: true }))
+            .toMatchObject([
+                { key: 'subject-plan-v2', label: 'Grafik v2' },
+                { key: 'subjects', label: 'Fächer' },
+                { key: 'rules', label: 'Regeln' },
+                { key: 'mapping', label: 'Zuordnung' },
+                { key: 'subject-plan', label: 'Grafik' },
+            ])
+        expect(methods.normalizedSubjectAction.call({ canManageSubjectSettings: false }, 'subject-plan-v2'))
+            .toBe('subject-plan-v2')
+        expect(computed.studyProgramLabel.call({ studyProgram: 'normalstudium' })).toBe('Normalstudium')
+        expect(computed.studyProgramLabel.call({ studyProgram: 'kompaktstudium' })).toBe('Kompaktstudium')
+        expect(computed.subjectOverviewV2Semesters.call({ studyProgram: 'normalstudium' }))
+            .toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+        expect(computed.subjectOverviewV2Semesters.call({ studyProgram: 'kompaktstudium' }))
+            .toEqual([1, 2, 3, 4, 5])
+        expect(computed.subjectOverviewV2ShowsHoursAndTotals.call({ studyProgram: 'normalstudium' })).toBe(true)
+        expect(computed.subjectOverviewV2ShowsHoursAndTotals.call({ studyProgram: 'kompaktstudium' })).toBe(false)
+        expect(computed.subjectOverviewV2GridStyle.call({
+            subjectOverviewV2Columns: [{}, {}, {}],
+            subjectOverviewV2ShowsHoursAndTotals: false,
+        })).toEqual({ '--subject-plan-columns': 4 })
+
+        const subjectOverviewColumnContext = {
+            ...methods,
+            activeSubjectRows: [],
+        }
+        const normalSubjectColumns = computed.subjectOverviewColumns.call({
+            ...subjectOverviewColumnContext,
+            studyProgram: 'normalstudium',
+        })
+        const compactSubjectColumns = computed.subjectOverviewColumns.call({
+            ...subjectOverviewColumnContext,
+            studyProgram: 'kompaktstudium',
+        })
+
+        expect(normalSubjectColumns.find((column: { key: string }) => column.key === 'LPT/VWA')?.label)
+            .toBe('LPT/VWA')
+        expect(compactSubjectColumns.find((column: { key: string }) => column.key === 'LPT/VWA')?.label)
+            .toBe('VWA')
+
+        const dynamicColumnsContext = {
+            activeSubjectRows: [
+                { json_subject: 'D', json_code: 'D1', name: 'Deutsch 1' },
+                { json_subject: 'E', json_code: 'E1', name: 'Englisch 1' },
+                { json_subject: 'D', json_code: 'D2', name: 'Deutsch 2' },
+            ],
+            subjectOverviewColumns: [
+                { key: 'LPT/VWA', label: 'LPT/VWA', subjectKeys: ['LPT', 'VWA'] },
+                { key: 'R/ET', label: 'R/ET', subjectKeys: ['R/ET', 'R', 'ET'] },
+                { key: 'L/F/S', label: 'L/F/S', subjectKeys: ['L/F/S', 'L', 'F', 'S'] },
+                { key: 'D', label: 'D', subjectKeys: ['D'] },
+                { key: 'E', label: 'E', subjectKeys: ['E'] },
+            ],
+            subjectOverviewSubjectKey: methods.subjectOverviewSubjectKey,
+            subjectOverviewV2ColumnSubtitle: (column: { label: string }) => column.label,
+        }
+
+        expect(computed.subjectOverviewV2Columns.call(dynamicColumnsContext).map((column: { key: string }) => column.key))
+            .toEqual(['D', 'E'])
+        expect(computed.subjectOverviewV2Columns.call({
+            ...dynamicColumnsContext,
+            activeSubjectRows: dynamicColumnsContext.activeSubjectRows.filter(subject => subject.json_subject !== 'D'),
+        }).map((column: { key: string }) => column.key))
+            .toEqual(['E'])
+        expect(computed.subjectOverviewV2Columns.call({
+            ...dynamicColumnsContext,
+            activeSubjectRows: [
+                { json_subject: 'D', json_code: 'D1' },
+                { json_subject: 'S', json_code: 'S1' },
+                { json_subject: 'ET', json_code: 'ET1' },
+                { json_subject: 'VWA', json_code: 'VWA' },
+                { json_subject: 'NEU', json_code: 'NEU1' },
+            ],
+        }).map((column: { key: string }) => column.key))
+            .toEqual(['LPT/VWA', 'R/ETH', 'L/F/S', 'D', 'NEU'])
+
+        expect(methods.subjectOverviewV2ColumnSubtitle.call({
+            activeSubjectRows: [
+                {
+                    json_subject: 'R/ET',
+                    json_code: 'R/ET1',
+                    name: 'Religion/Ethik 1',
+                },
+            ],
+            subjectOverviewSubjectKey: methods.subjectOverviewSubjectKey,
+        }, {
+            label: 'R/ETH',
+            subjectKeys: ['R/ET', 'R', 'ET', 'ETH'],
+        })).toBe('Religion/Ethik')
 
         expect(componentSource).toContain('subjectNavigationItems()')
         expect(componentSource).not.toContain("key: 'overview'")
         expect(componentSource).not.toContain("label: 'Übersicht'")
         expect(componentSource).toContain("key: 'subject-plan'")
         expect(componentSource).toContain("label: 'Grafik'")
+        expect(componentSource).toContain("key: 'subject-plan-v2'")
+        expect(componentSource).toContain("label: 'Grafik v2'")
         expect(componentSource).not.toContain("key: 'import'")
         expect(componentSource).not.toContain("label: 'Import'")
         expect(componentSource).toContain("label: 'Fächer'")
+        expect(componentSource).toContain("label: 'Regeln'")
         expect(componentSource).toContain("label: 'Zuordnung'")
         expect(componentSource).toContain("v-if=\"subject_action === 'subject-plan'\"")
+        expect(componentSource).toContain("v-if=\"subject_action === 'subject-plan-v2'\"")
         expect(componentSource).toContain("subject_action === 'subject-plan'")
         expect(componentSource).not.toContain("v-if=\"subject_action === 'import'\"")
         expect(componentSource).toContain("v-if=\"subject_action === 'subjects'\"")
+        expect(componentSource).toContain("v-if=\"subject_action === 'rules'\"")
         expect(componentSource).toContain("v-if=\"subject_action === 'mapping'\"")
         expect(componentSource).toContain("'subject-plan'")
         expect(componentSource).toContain('canManageSubjectSettings()')
-        expect(componentSource).toContain("['subject-plan', 'subjects', 'mapping']")
-        expect(componentSource).toContain("['subject-plan']")
-        expect(componentSource).toContain("return allowedActions.includes(subsection) ? subsection : 'subject-plan'")
+        expect(componentSource).toContain("['subject-plan', 'subject-plan-v2', 'subjects', 'rules', 'mapping']")
+        expect(componentSource).toContain("['subject-plan', 'subject-plan-v2']")
+        expect(componentSource).toContain('Fächerübersicht v2 · {{ studyProgramLabel }}')
+        expect(componentSource).toContain('subject-overview-v2-card__canvas')
+        expect(componentSource).toContain('subject-overview-v2-card__footer')
+        expect(componentSource).toContain('v-for="column in subjectOverviewV2Columns"')
+        expect(componentSource).toContain('v-for="row in subjectOverviewV2Rows"')
+        expect(componentSource).toContain(':style="subjectOverviewV2GridStyle"')
+        expect(componentSource).toContain('subjectOverviewV2Footer')
+        expect(componentSource).toContain('subjectOverviewV2GrandTotals')
+        expect(componentSource).toContain('v-if="subjectOverviewV2ShowsHoursAndTotals" class="subject-plan-hours"')
+        expect(componentSource).toContain('<template v-if="subjectOverviewV2ShowsHoursAndTotals">')
+        expect(componentSource).toContain("'subject-plan-cell--v2-course': cell.subjects.length")
+        expect(componentSource).toContain('* wahlweise')
+        expect(componentSource).toContain('Wirtschaftskundlicher Zweig')
+        expect(componentSource).toContain('Gymnasialer Zweig')
+        expect(componentSource).toContain("return allowedActions.includes(subsection) ? subsection : 'subject-plan-v2'")
         expect(componentSource).toContain('redirectUnauthorizedSubjectRoute()')
         expect(componentSource).toContain('redirectRemovedSubjectImportRoute()')
         expect(componentSource).toContain('redirectMissingSubjectRoute()')
-        expect(componentSource).toContain("path: '/admin/students-timetables/subjects-overview/subject-plan'")
+        expect(componentSource).toContain("path: '/admin/students-timetables/subjects-overview/subject-plan-v2'")
         expect(componentSource).toContain('handleSubjectNavigation(key)')
         expect(componentSource).toContain('embedded')
         expect(componentSource).toContain("subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection)")
         expect(componentSource).toContain('if (this.embedded) {')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/${this.subject_action}')
+    })
+
+    it('keeps the rule editor focused on one admin-facing rule type', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
+            'utf8',
+        )
+        const ctx: any = {
+            ...methods,
+            subjectRuleSelectionKeys: computed.subjectRuleSelectionKeys.call({}),
+            subjectRows: [
+                {
+                    stable_key: 'language-l6',
+                    semester: 7,
+                    branch: 'gymnasial',
+                    json_code: 'L6',
+                },
+                {
+                    stable_key: 'computer-science-inf2',
+                    semester: 7,
+                    branch: 'wirtschaftskundlich',
+                    json_code: 'INF2',
+                },
+            ],
+        }
+
+        expect(methods.subjectRuleSelectionTitle.call(ctx, 'branch')).toBe('Zweig')
+        expect(methods.subjectRuleSubjectOptions.call(
+            ctx,
+            { selection_key: 'branch' },
+            { value: 'gymnasial' },
+        )).toEqual([
+            { value: 'language-l6', title: 'Sem. 7 · L6' },
+            { value: 'computer-science-inf2', title: 'Sem. 7 · INF2 · Wirtschaftskundlich' },
+        ])
+        expect(methods.subjectRuleSubjectOptions.call(
+            ctx,
+            { selection_key: 'language' },
+            { value: 'L' },
+        )[0].title).toBe('Sem. 7 · L6 · Gymnasial')
+
+        const gymnasialOption = { value: 'gymnasial', subject_keys: ['language-l6'] }
+
+        expect(methods.subjectRuleSelectedSubjectOptions.call(
+            ctx,
+            { selection_key: 'branch' },
+            gymnasialOption,
+        )).toEqual([
+            { value: 'language-l6', title: 'Sem. 7 · L6' },
+        ])
+        expect(methods.subjectRuleAvailableSubjectOptions.call(
+            ctx,
+            { selection_key: 'branch' },
+            gymnasialOption,
+        )).toEqual([
+            { value: 'computer-science-inf2', title: 'Sem. 7 · INF2 · Wirtschaftskundlich' },
+        ])
+        expect(methods.subjectRuleSelectedSubjectGroups.call(
+            ctx,
+            { selection_key: 'language' },
+            { subject_keys: ['language-l6', 'computer-science-inf2'] },
+        )).toEqual([
+            {
+                branch: 'wirtschaftskundlich',
+                label: 'Wirtschaftskundlicher Zweig',
+                subjects: [
+                    { value: 'computer-science-inf2', title: 'Sem. 7 · INF2' },
+                ],
+            },
+            {
+                branch: 'gymnasial',
+                label: 'Gymnasialer Zweig',
+                subjects: [
+                    { value: 'language-l6', title: 'Sem. 7 · L6' },
+                ],
+            },
+        ])
+        expect(methods.subjectRuleSelectedSubjectGroups.call(
+            {
+                ...ctx,
+                subjectRows: [
+                    {
+                        stable_key: 'gym-me2',
+                        semester: 8,
+                        branch: 'gymnasial',
+                        json_code: 'ME2',
+                    },
+                    {
+                        stable_key: 'gym-be2',
+                        semester: 8,
+                        branch: 'gymnasial',
+                        json_code: 'BE2',
+                    },
+                    {
+                        stable_key: 'gym-be1',
+                        semester: 7,
+                        branch: 'gymnasial',
+                        json_code: 'BE1',
+                    },
+                    {
+                        stable_key: 'common-d7',
+                        semester: 7,
+                        branch: null,
+                        json_code: 'D7',
+                    },
+                ],
+            },
+            { selection_key: 'branch' },
+            { value: 'gymnasial', subject_keys: ['gym-me2', 'gym-be2', 'gym-be1', 'common-d7'] },
+        )).toEqual([
+            {
+                branch: 'gymnasial',
+                label: 'Gymnasialer Zweig',
+                subjects: [
+                    { value: 'gym-be1', title: 'Sem. 7 · BE1 · Gymnasial' },
+                    { value: 'gym-be2', title: 'Sem. 8 · BE2 · Gymnasial' },
+                    { value: 'common-d7', title: 'Sem. 7 · D7' },
+                    { value: 'gym-me2', title: 'Sem. 8 · ME2 · Gymnasial' },
+                ],
+            },
+        ])
+        const familyContext: any = {
+            ...ctx,
+            subjectRows: [
+                { stable_key: 'gym-me2', semester: 8, branch: 'gymnasial', json_code: 'ME2' },
+                { stable_key: 'gym-l7', semester: 8, branch: 'gymnasial', json_code: 'L7' },
+                { stable_key: 'gym-be1', semester: 7, branch: 'gymnasial', json_code: 'BE1' },
+                { stable_key: 'gym-s7', semester: 8, branch: 'gymnasial', json_code: 'S7' },
+                { stable_key: 'gym-f7', semester: 8, branch: 'gymnasial', json_code: 'F7' },
+            ],
+        }
+        const [familySubjectGroup] = methods.subjectRuleSelectedSubjectGroups.call(
+            familyContext,
+            { selection_key: 'branch' },
+            {
+                value: 'gymnasial',
+                subject_keys: ['gym-me2', 'gym-l7', 'gym-be1', 'gym-s7', 'gym-f7'],
+            },
+        )
+
+        expect(methods.subjectRuleSelectedSubjectFamilies.call(
+            familyContext,
+            { selection_key: 'branch' },
+            familySubjectGroup,
+        )).toEqual([
+            {
+                key: 'BE',
+                label: 'BE',
+                subjects: [
+                    { value: 'gym-be1', title: 'Sem. 7 · BE1 · Gymnasial' },
+                ],
+            },
+            {
+                key: 'ME',
+                label: 'ME',
+                subjects: [
+                    { value: 'gym-me2', title: 'Sem. 8 · ME2 · Gymnasial' },
+                ],
+            },
+            {
+                key: 'languages',
+                label: 'Sprachen',
+                subjects: [
+                    { value: 'gym-f7', title: 'Sem. 8 · F7 · Gymnasial' },
+                    { value: 'gym-l7', title: 'Sem. 8 · L7 · Gymnasial' },
+                    { value: 'gym-s7', title: 'Sem. 8 · S7 · Gymnasial' },
+                ],
+            },
+        ])
+
+        methods.removeSubjectRuleOptionSubject.call(ctx, gymnasialOption, 'language-l6')
+        methods.addSubjectRuleOptionSubject.call(ctx, gymnasialOption, 'computer-science-inf2')
+        methods.addSubjectRuleOptionSubject.call(ctx, gymnasialOption, 'computer-science-inf2')
+
+        expect(gymnasialOption.subject_keys).toEqual(['computer-science-inf2'])
+
+        const branchRule = { stable_key: 'branch-rule', selection_key: 'branch' }
+        const languageRule = { stable_key: 'language-rule', selection_key: 'language' }
+        const editContext: any = {
+            ...methods,
+            subjectRules: [branchRule, languageRule],
+            subjectRulesSnapshot: [],
+            subjectRuleOpenPanels: [],
+            editingSubjectRuleKey: null,
+            rulesEditMode: false,
+            settingsMessage: 'Gespeichert',
+        }
+
+        methods.startRulesEdit.call(editContext, languageRule)
+
+        expect(editContext.rulesEditMode).toBe(true)
+        expect(editContext.editingSubjectRuleKey).toBe('language-rule')
+        expect(editContext.subjectRuleOpenPanels).toEqual(['language-rule'])
+        expect(methods.isSubjectRuleEditing.call(editContext, branchRule)).toBe(false)
+        expect(methods.isSubjectRuleEditing.call(editContext, languageRule)).toBe(true)
+
+        expect(componentSource).not.toContain('label="Regelart"')
+        expect(componentSource).toContain('So wirken die Regeln')
+        expect(componentSource).toContain('Pflichtfächer gelten gemeinsam.')
+        expect(componentSource).toContain('Live-Vorschau – noch nicht gespeichert')
+        expect(componentSource).toContain('{{ subjectRuleOptionHeading(rule, option) }}')
+        expect(componentSource).toContain('{{ subjectRuleOptionImpactLabel(rule) }}')
+        expect(componentSource).toContain('subjectRuleSelectedSubjectGroups(rule, option)')
+        expect(componentSource).toContain('subjectRuleSelectedSubjectFamilies(rule, subjectGroup)')
+        expect(componentSource).toContain('subject-rule-subject-chips')
+        expect(componentSource).toContain(':closable="isSubjectRuleEditing(rule)"')
+        expect(componentSource).toContain('@click:close="removeSubjectRuleOptionSubject(option, subject.value)"')
+        expect(componentSource).toContain('label="Fach / Modul hinzufügen"')
+        expect(componentSource).toContain(':items="subjectRuleAvailableSubjectOptions(rule, option)"')
+        expect(componentSource).not.toContain('v-model="option.subject_keys"')
+        expect(componentSource).toContain('@click="startRulesEdit(rule)"')
+        expect(componentSource).toContain('v-model="subjectRuleOpenPanels"')
+        expect(componentSource).toContain('isSubjectRuleEditing(rule)')
+        expect(componentSource).not.toContain('@click="addSubjectRule"')
+        expect(componentSource).not.toContain('addSubjectRule()')
+        expect(componentSource).not.toContain('Regel entfernen')
+        expect(componentSource).not.toContain('removeSubjectRule(')
+        expect(componentSource).not.toContain('v-model="option.value"')
+        expect(componentSource).not.toContain('Option entfernen')
+        expect(componentSource).not.toContain('addRuleOption(')
+        expect(componentSource).not.toContain('removeRuleOption(')
+        expect(componentSource).not.toContain('@click="addRuleCondition(rule)"')
+        expect(componentSource).not.toContain('addRuleCondition(rule)')
+        expect(componentSource).not.toContain('mdi-filter-plus-outline')
+        expect(componentSource).not.toContain('<v-text-field v-model="rule.name"')
+        expect(componentSource).not.toContain('<v-text-field v-model="rule.label"')
+        expect(componentSource).not.toContain('<v-text-field v-model="option.label"')
+        expect(componentSource).not.toContain('Code-Präfix (optional)')
+        expect(componentSource).not.toContain('{{ rule.selection_key }}')
+        expect(componentSource).not.toContain('Eine Option kann mehrere Fächer enthalten.')
+        expect(componentSource).not.toContain('Ein Fach kann von mehreren Regeln abhängig sein')
     })
 
     it('writes the default subject plan step into the URL', () => {
@@ -2584,9 +3846,9 @@ describe('Students timetable subjects overview', () => {
         }
 
         expect(methods.redirectMissingSubjectRoute.call(ctx)).toBe(true)
-        expect(ctx.subject_action).toBe('subject-plan')
+        expect(ctx.subject_action).toBe('subject-plan-v2')
         expect(replace).toHaveBeenCalledWith({
-            path: '/admin/students-timetables/subjects-overview/subject-plan',
+            path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
             query: { study_program: undefined },
         })
     })
@@ -2606,9 +3868,9 @@ describe('Students timetable subjects overview', () => {
         }
 
         expect(methods.redirectRemovedSubjectImportRoute.call(ctx)).toBe(true)
-        expect(ctx.subject_action).toBe('subject-plan')
+        expect(ctx.subject_action).toBe('subject-plan-v2')
         expect(replace).toHaveBeenCalledWith({
-            path: '/admin/students-timetables/subjects-overview/subject-plan',
+            path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
             query: { study_program: 'kompaktstudium' },
         })
     })
@@ -2660,13 +3922,14 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('refreshForSchoolyearChange()')
         expect(componentSource).not.toContain('refreshFilePond')
         expect(componentSource).not.toContain('Noch keine JSON-Datei importiert.')
-        expect(componentSource).toContain('Schul-Unterrichtseinheiten')
+        expect(componentSource).not.toContain('Schul-Unterrichtseinheiten')
+        expect(componentSource).not.toContain('Eigenstudium ist nicht enthalten.')
         expect(componentSource).not.toContain('importSubjectCountLabel(importItem.analysis)')
         expect(componentSource).not.toContain('analysis?.subjects_total')
         expect(componentSource).not.toContain('Fächer / ${courseRowsTotal} Kurse')
         expect(componentSource).not.toContain('semester.subjects')
         expect(componentSource).not.toContain('semester.branch_variants?.length')
-        expect(componentSource).not.toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(componentSource).toContain('.subject-rule-grid')
         expect(componentSource).toContain('flex-direction: column')
         expect(componentSource).not.toContain('grid-template-columns: minmax(0, 1fr)')
         expect(componentSource).toContain('width: 100%')

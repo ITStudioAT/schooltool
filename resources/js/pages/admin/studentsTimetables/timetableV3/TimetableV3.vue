@@ -9,7 +9,10 @@
             <div class="timetable-v3__page-header">
                 <div>
                     <div class="text-overline text-primary">Version 3</div>
-                    <h2 class="text-h5 font-weight-bold mb-2">Stundenplan erstellen</h2>
+                    <div class="timetable-v3__title-row">
+                        <h2 class="text-h5 font-weight-bold mb-0">Stundenplan erstellen</h2>
+                        <strong class="timetable-v3__schoolyear text-primary">{{ personalSchoolyearLabel }}</strong>
+                    </div>
                     <p class="text-body-1 text-medium-emphasis mb-0">
                         Wie möchten Sie beginnen?
                     </p>
@@ -361,7 +364,10 @@
                 class="timetable-v3__page-header">
                 <div v-if="currentStep !== 'adoption'">
                     <div class="text-overline text-primary">Version 3</div>
-                    <h2 class="text-h5 font-weight-bold mb-2">Stundenplan erstellen</h2>
+                    <div class="timetable-v3__title-row">
+                        <h2 class="text-h5 font-weight-bold mb-0">Stundenplan erstellen</h2>
+                        <strong class="timetable-v3__schoolyear text-primary">{{ personalSchoolyearLabel }}</strong>
+                    </div>
                 </div>
                 <div
                     v-if="currentPageLabel"
@@ -3287,6 +3293,11 @@ export default {
         },
         schoolyearName() {
             return this.selectedSchoolyear?.name || ''
+        },
+        personalSchoolyearLabel() {
+            return this.selectedSchoolyear?.concerns
+                || this.selectedSchoolyear?.name
+                || 'nicht festgelegt'
         },
         currentStep() {
             const subsection = this.$route?.params?.subsection
@@ -6382,6 +6393,19 @@ export default {
     gap: 24px;
     align-items: flex-start;
     justify-content: space-between;
+}
+
+.timetable-v3__title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 8px;
+}
+
+.timetable-v3__schoolyear {
+    font-size: 1rem;
+    white-space: nowrap;
 }
 
 .timetable-v3__page-number {
