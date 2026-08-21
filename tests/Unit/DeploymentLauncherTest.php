@@ -45,7 +45,7 @@ function writeDeploymentExecutable(string $path, string $contents): void
     chmod($path, 0777);
 }
 
-function createTerminalPullFixture(): string
+function createTerminalPullFixture(bool $useRealFlock = false): string
 {
     $filesystem = new Filesystem;
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-pdeploy-test-'.bin2hex(random_bytes(6));
@@ -62,10 +62,23 @@ function createTerminalPullFixture(): string
 #!/usr/bin/bash
 exit 1
 BASH);
-    writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'flock', <<<'BASH'
+    if (! $useRealFlock) {
+        writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'flock', <<<'BASH'
 #!/usr/bin/bash
-exit 0
+set -e
+
+if [ "${1:-}" != --exclusive ] \
+    || [ "${2:-}" != --nonblock ] \
+    || [ "${3:-}" != --close ] \
+    || [ "${4:-}" != --conflict-exit-code ] \
+    || [ "${5:-}" != 75 ]; then
+    exit 1
+fi
+
+exec "${@:7}"
 BASH);
+    }
+
     writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'php', <<<'BASH'
 #!/usr/bin/bash
 set -e
@@ -105,6 +118,11 @@ if [ "${2:-}" = --prepare ]; then
     exit 0
 fi
 
+if [ -f storage/framework/spawn-lock-inheritor ]; then
+    nohup sh -c 'cd / && exec sleep 30' </dev/null >/dev/null 2>&1 &
+    printf '%s\n' "$!" > storage/framework/lock-inheritor-pid
+fi
+
 touch storage/framework/full-deployment-ran
 rm -f storage/framework/down storage/framework/cloudways-deploy-maintenance
 BASH);
@@ -124,6 +142,44 @@ function runTerminalPullFixture(string $directory): Process
     $process->run();
 
     return $process;
+}
+
+function probeTerminalPullFixtureLock(string $directory): Process
+{
+    $process = new Process([
+        deploymentBashExecutable(),
+        '-lc',
+        'flock -n "$1/storage/framework/cloudways-pdeploy.lock" true',
+        'schooltool-pdeploy-lock-probe',
+        deploymentBashPath($directory),
+    ], $directory);
+    $process->run();
+
+    return $process;
+}
+
+function stopTerminalPullFixtureLockInheritor(string $directory): void
+{
+    $processIdPath = $directory.DIRECTORY_SEPARATOR.'storage/framework/lock-inheritor-pid';
+
+    if (! is_file($processIdPath)) {
+        return;
+    }
+
+    $processId = trim((string) file_get_contents($processIdPath));
+
+    if (preg_match('/^[1-9][0-9]*$/', $processId) !== 1) {
+        return;
+    }
+
+    $process = new Process([
+        deploymentBashExecutable(),
+        '-lc',
+        'kill -TERM "$1" 2>/dev/null || true',
+        'schooltool-pdeploy-lock-cleanup',
+        $processId,
+    ], $directory);
+    $process->run();
 }
 
 it('selects the local update plan explicitly', function (): void {
@@ -200,9 +256,13 @@ it('exposes a terminal Cloudways pull deployment workflow', function (): void {
         ->toContain('SCHOOLTOOL_CLOUDWAYS_TERMINAL_PULL=true bash scripts/deploy_cloudways.sh --prepare')
         ->toContain('php artisan cloudways:pull --no-interaction')
         ->toContain('bash scripts/deploy_cloudways.sh')
-        ->toContain('exec 8>storage/framework/cloudways-pdeploy.lock')
+        ->toContain('SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED=true flock')
+        ->toContain('--close')
+        ->toContain('storage/framework/cloudways-pdeploy.lock')
+        ->not->toContain('exec 8>storage/framework/cloudways-pdeploy.lock')
         ->and($cloudwaysDeployment)
         ->toContain('prepare_cloudways_pull')
+        ->toContain('nohup php artisan horizon 8>&- 9>&-')
         ->toContain("printf 'prepared\\n' > \"\$maintenance_marker\"")
         ->toContain("printf 'backend-started\\n' > \"\$maintenance_marker\"")
         ->toContain('php scripts/source-manifest.php prune-unlisted');
@@ -231,6 +291,27 @@ it('uses the Cloudways API and hands a no-Git terminal pull to deployment', func
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/down'))->toBeFalse()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-deploy-maintenance'))->toBeFalse();
     } finally {
+        $filesystem->deleteDirectory($directory);
+    }
+});
+
+it('does not let deployment descendants retain the terminal pull lock', function (): void {
+    if (PHP_OS_FAMILY === 'Windows') {
+        $this->markTestSkipped('This regression test requires the production util-linux flock implementation.');
+    }
+
+    $filesystem = new Filesystem;
+    $directory = createTerminalPullFixture(useRealFlock: true);
+    file_put_contents($directory.DIRECTORY_SEPARATOR.'storage/framework/spawn-lock-inheritor', '1');
+
+    try {
+        $deployment = runTerminalPullFixture($directory);
+        $lockProbe = probeTerminalPullFixtureLock($directory);
+
+        expect($deployment->isSuccessful())->toBeTrue($deployment->getErrorOutput())
+            ->and($lockProbe->isSuccessful())->toBeTrue('A deployment descendant retained the terminal pull lock.');
+    } finally {
+        stopTerminalPullFixtureLockInheritor($directory);
         $filesystem->deleteDirectory($directory);
     }
 });

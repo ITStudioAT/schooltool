@@ -118,7 +118,7 @@ start_horizon_directly() {
 
     echo "The process monitor did not restart Horizon. Starting Horizon directly..."
 
-    nohup php artisan horizon 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &
+    nohup php artisan horizon 8>&- 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &
     local horizon_process_id=$!
 
     for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do

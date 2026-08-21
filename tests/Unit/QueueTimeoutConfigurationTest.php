@@ -142,7 +142,7 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->toContain('php artisan queue:health-check')
         ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-60')
         ->toContain('attempt <= horizon_restart_timeout')
-        ->toContain('nohup php artisan horizon 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &')
+        ->toContain('nohup php artisan horizon 8>&- 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &')
         ->toContain('Recycling unhealthy Horizon master process(es):')
         ->toContain('kill -TERM "$process_id"')
         ->toContain('health_check_arguments+=("--exclude-master-pid=${process_id}")')

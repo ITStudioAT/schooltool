@@ -4,6 +4,39 @@ set -Eeuo pipefail
 project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
+for command_name in bash php flock; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "${command_name} was not found on PATH." >&2
+        exit 1
+    fi
+done
+
+pdeploy_lock="${project_directory}/storage/framework/cloudways-pdeploy.lock"
+pdeploy_lock_conflict_exit_code=75
+
+if [ "${SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED:-false}" != true ]; then
+    if SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED=true flock \
+        --exclusive \
+        --nonblock \
+        --close \
+        --conflict-exit-code "$pdeploy_lock_conflict_exit_code" \
+        "$pdeploy_lock" \
+        "$BASH" "$project_directory/scripts/pdeploy_cloudways.sh" "$@"; then
+        exit 0
+    else
+        deployment_exit_code=$?
+    fi
+
+    if [ "$deployment_exit_code" -eq "$pdeploy_lock_conflict_exit_code" ]; then
+        echo "Another terminal pull deployment is already running." >&2
+        exit 1
+    fi
+
+    exit "$deployment_exit_code"
+fi
+
+unset SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED
+
 maintenance_marker="${project_directory}/storage/framework/cloudways-deploy-maintenance"
 maintenance_prepared=false
 deployment_handed_off=false
@@ -55,20 +88,6 @@ pull_with_cloudways_api() {
 }
 
 trap restore_after_pull_failure EXIT
-
-for command_name in bash php flock; do
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-        echo "${command_name} was not found on PATH." >&2
-        exit 1
-    fi
-done
-
-exec 8>storage/framework/cloudways-pdeploy.lock
-
-if ! flock -n 8; then
-    echo "Another terminal pull deployment is already running." >&2
-    exit 1
-fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     pull_with_cloudways_api
