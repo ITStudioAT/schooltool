@@ -44,6 +44,21 @@ class StudentTimetablesStudentOverviewService
         '12_2' => 8,
     ];
 
+    /** @var array<string, Collection<int, StudentTimetableSubjectRow>> */
+    private array $activeSubjectRowsByPlan = [];
+
+    /** @var array<string, SubjectPlanRuleEvaluator|null> */
+    private array $subjectRuleEvaluatorsByPlan = [];
+
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $manualTimetableCourseGroupsByContext = [];
+
+    /** @var array<string, array<string, array<int, array<string, mixed>>>> */
+    private array $manualTimetableCourseGroupIndexByContext = [];
+
+    /** @var array<string, list<array{hour: int, from: ?string, until: ?string}>> */
+    private array $schoolHoursByContext = [];
+
     public function __construct(
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
         protected StudentTimetableOverviewService $overviewService,
@@ -256,16 +271,9 @@ class StudentTimetablesStudentOverviewService
         );
         $branchRowsByStudyProgram = collect(StudentTimetableStudyProgram::cases())
             ->mapWithKeys(fn (StudentTimetableStudyProgram $studyProgram): array => [
-                $studyProgram->value => StudentTimetableSubjectRow::query()
-                    ->forStudyProgram($studyProgram)
-                    ->where('school_id', $user->school_id)
-                    ->where('schoolyear_id', $schoolyearId)
-                    ->where('is_active', true)
+                $studyProgram->value => $this->activeSubjectRows($user, $schoolyearId, $studyProgram)
                     ->whereIn('branch', ['wirtschaftskundlich', 'gymnasial'])
-                    ->orderBy('semester')
-                    ->orderBy('sort_order')
-                    ->orderBy('id')
-                    ->get(),
+                    ->values(),
             ]);
 
         return $students
@@ -298,10 +306,10 @@ class StudentTimetablesStudentOverviewService
                     $studyProgram,
                     $branchRowsByStudyProgram->get($studyProgram->value, collect()),
                 );
-                $completedReligionSelection = $this->completedReligionSelection($completedCourses);
+                $courseHistoryReligionSelection = $this->courseHistoryReligionSelection($recognizedCourses);
 
-                if ($completedReligionSelection !== null) {
-                    $selection['religion'] = $completedReligionSelection;
+                if ($courseHistoryReligionSelection !== null) {
+                    $selection['religion'] = $courseHistoryReligionSelection;
                 }
 
                 return [$studentCode => [
@@ -325,6 +333,7 @@ class StudentTimetablesStudentOverviewService
         bool $strictSelectionOverride = false,
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
         bool $includeAllSelectableModules = false,
+        bool $includeModuleCourses = true,
     ): array {
         $schoolyearId = $this->schoolyearIdForUser($user);
 
@@ -362,6 +371,7 @@ class StudentTimetablesStudentOverviewService
                     [],
                     $studyProgram,
                     applySelectionEligibility: ! $includeAllSelectableModules,
+                    includeModuleCourses: $includeModuleCourses,
                 ),
             ];
         }
@@ -373,15 +383,15 @@ class StudentTimetablesStudentOverviewService
         );
         $completedCourses = $this->positiveCourses($recognizedCourses);
         $missingCourses = $this->negativeCourses($recognizedCourses);
-        $completedReligionSelection = $this->completedReligionSelection($completedCourses);
+        $courseHistoryReligionSelection = $this->courseHistoryReligionSelection($recognizedCourses);
         $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses, $studyProgram);
         $selection = $this->selectionWithOverrides($selection, $selectionOverride, $strictSelectionOverride);
 
         if (
-            $completedReligionSelection !== null
+            $courseHistoryReligionSelection !== null
             && ! array_key_exists('religion', $selectionOverride)
         ) {
-            $selection['religion'] = $completedReligionSelection;
+            $selection['religion'] = $courseHistoryReligionSelection;
         }
 
         $ruleSelection = [
@@ -414,6 +424,7 @@ class StudentTimetablesStudentOverviewService
                 studyProgram: $studyProgram,
                 limitToStudentProgression: ! $includeAllSelectableModules,
                 applySelectionEligibility: ! $includeAllSelectableModules,
+                includeModuleCourses: $includeModuleCourses,
             ),
         ];
     }
@@ -456,7 +467,13 @@ class StudentTimetablesStudentOverviewService
     {
         $recognizedCourses = $this->completedCourses($user, $schoolyearId, $student?->student_code);
         $completedCourses = $this->positiveCourses($recognizedCourses);
+        $courseHistoryReligionSelection = $this->courseHistoryReligionSelection($recognizedCourses);
         $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses);
+
+        if ($courseHistoryReligionSelection !== null) {
+            $selection['religion'] = $courseHistoryReligionSelection;
+        }
+
         $selection = $this->selectionWithOverrides($selection, $selectionOverride, $strictSelectionOverride);
         $subjectCourses = $this->subjectCourses($user, $schoolyearId, [
             ...$selection,
@@ -733,7 +750,7 @@ class StudentTimetablesStudentOverviewService
         array $selection,
         ?string $studentReligion,
     ): array {
-        $evaluator = $this->subjectRuleService->evaluator((int) $user->school_id, $schoolyearId, $studyProgram);
+        $evaluator = $this->subjectRuleEvaluator($user, $schoolyearId, $studyProgram);
 
         if ($evaluator) {
             $options = $evaluator->selectionOptions();
@@ -793,7 +810,7 @@ class StudentTimetablesStudentOverviewService
         StudentTimetableStudyProgram $studyProgram,
         ?string $studentReligion,
     ): array {
-        $evaluator = $this->subjectRuleService->evaluator((int) $user->school_id, $schoolyearId, $studyProgram);
+        $evaluator = $this->subjectRuleEvaluator($user, $schoolyearId, $studyProgram);
 
         if ($evaluator) {
             return $evaluator->selectionOptions();
@@ -884,13 +901,13 @@ class StudentTimetablesStudentOverviewService
      */
     private function manualTimetableSelection(User $user, array $courseSections): array
     {
-        $courseGroups = $this->manualTimetableCourseGroupsForUser($user);
+        $courseGroupsByCode = $this->manualTimetableCourseGroupIndexForUser($user);
         $sections = collect($courseSections)
             ->filter(fn (array $section): bool => in_array((string) ($section['key'] ?? ''), ['missing', 'proposed', 'additional'], true))
             ->map(fn (array $section): array => [
                 ...$section,
                 'items' => collect(is_array($section['items'] ?? null) ? $section['items'] : [])
-                    ->map(fn (array $course): array => $this->courseWithManualTimetableGroups($course, $courseGroups))
+                    ->map(fn (array $course): array => $this->courseWithManualTimetableGroups($course, $courseGroupsByCode))
                     ->values()
                     ->all(),
             ])
@@ -923,9 +940,15 @@ class StudentTimetablesStudentOverviewService
      */
     private function manualTimetableCourseGroupsForUser(User $user): array
     {
+        $contextKey = $this->userContextCacheKey($user);
+
+        if (array_key_exists($contextKey, $this->manualTimetableCourseGroupsByContext)) {
+            return $this->manualTimetableCourseGroupsByContext[$contextKey];
+        }
+
         $schoolHours = collect($this->schoolHoursForUser($user))->keyBy('hour');
 
-        return collect($this->overviewService->courseGroupsForUser($user))
+        return $this->manualTimetableCourseGroupsByContext[$contextKey] = collect($this->overviewService->courseGroupsForUser($user))
             ->map(function (array $courseGroup) use ($schoolHours): array {
                 $schoolHour = $schoolHours->get((int) ($courseGroup['hour'] ?? 0), []);
 
@@ -940,14 +963,43 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function manualTimetableCourseGroupIndexForUser(User $user): array
+    {
+        $contextKey = $this->userContextCacheKey($user);
+
+        if (array_key_exists($contextKey, $this->manualTimetableCourseGroupIndexByContext)) {
+            return $this->manualTimetableCourseGroupIndexByContext[$contextKey];
+        }
+
+        $courseGroupsByCode = [];
+
+        foreach ($this->manualTimetableCourseGroupsForUser($user) as $groupPosition => $courseGroup) {
+            foreach ($this->courseGroupCodes($courseGroup) as $courseCode) {
+                $courseGroupsByCode[$courseCode][$groupPosition] = $courseGroup;
+            }
+        }
+
+        return $this->manualTimetableCourseGroupIndexByContext[$contextKey] = $courseGroupsByCode;
+    }
+
+    /**
      * @param  array<string, mixed>  $course
-     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, array<int, array<string, mixed>>>  $courseGroupsByCode
      * @return array<string, mixed>
      */
-    private function courseWithManualTimetableGroups(array $course, array $courseGroups): array
+    private function courseWithManualTimetableGroups(array $course, array $courseGroupsByCode): array
     {
-        $matchingGroups = collect($courseGroups)
-            ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course))
+        $matchingGroupsByPosition = [];
+
+        foreach ($this->courseAliases($course) as $courseCode) {
+            foreach ($courseGroupsByCode[$courseCode] ?? [] as $groupPosition => $courseGroup) {
+                $matchingGroupsByPosition[$groupPosition] = $courseGroup;
+            }
+        }
+
+        $matchingGroups = collect($matchingGroupsByPosition)
             ->sortBy(fn (array $courseGroup): string => $this->manualCourseGroupSortValue($courseGroup))
             ->values()
             ->all();
@@ -956,17 +1008,6 @@ class StudentTimetablesStudentOverviewService
             ...$course,
             'course_groups' => $matchingGroups,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $courseGroup
-     * @param  array<string, mixed>  $course
-     */
-    private function courseGroupMatchesCourse(array $courseGroup, array $course): bool
-    {
-        return collect($this->courseAliases($course))
-            ->intersect($this->courseGroupCodes($courseGroup))
-            ->isNotEmpty();
     }
 
     /**
@@ -1071,7 +1112,13 @@ class StudentTimetablesStudentOverviewService
      */
     private function schoolHoursForUser(User $user): array
     {
-        return $this->schoolHourService->listForUser($user)
+        $contextKey = $this->userContextCacheKey($user);
+
+        if (array_key_exists($contextKey, $this->schoolHoursByContext)) {
+            return $this->schoolHoursByContext[$contextKey];
+        }
+
+        return $this->schoolHoursByContext[$contextKey] = $this->schoolHourService->listForUser($user)
             ->map(fn (mixed $schoolHour): array => [
                 'hour' => (int) $schoolHour->hour,
                 'from' => $this->formatTimeValue($schoolHour->from),
@@ -1368,15 +1415,15 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
-     * @param  list<array<string, mixed>>  $completedCourses
+     * @param  list<array<string, mixed>>  $recognizedCourses
      */
-    private function completedReligionSelection(array $completedCourses): ?string
+    private function courseHistoryReligionSelection(array $recognizedCourses): ?string
     {
-        $completedCodes = collect($completedCourses)
+        $recognizedCodes = collect($recognizedCourses)
             ->pluck('code')
             ->map(fn (mixed $code): string => $this->normalizedCourseCode((string) $code));
 
-        $ethicsSelection = $this->selectionOptionFromCompletedCodes($completedCodes, [
+        $ethicsSelection = $this->selectionOptionFromCompletedCodes($recognizedCodes, [
             'ETH' => ['ETH', 'ET'],
         ]);
 
@@ -1384,7 +1431,7 @@ class StudentTimetablesStudentOverviewService
             return $ethicsSelection;
         }
 
-        return $this->selectionOptionFromCompletedCodes($completedCodes, [
+        return $this->selectionOptionFromCompletedCodes($recognizedCodes, [
             'Rev' => ['REV'],
             'Ris' => ['RIS'],
             'Rk' => ['RK'],
@@ -1672,16 +1719,9 @@ class StudentTimetablesStudentOverviewService
         $branchOptions = ['wirtschaftskundlich', 'gymnasial'];
         $bestMatch = null;
 
-        $branchSubjectRows ??= StudentTimetableSubjectRow::query()
-            ->forStudyProgram($studyProgram)
-            ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyearId)
-            ->where('is_active', true)
+        $branchSubjectRows ??= $this->activeSubjectRows($user, $schoolyearId, $studyProgram)
             ->whereIn('branch', $branchOptions)
-            ->orderBy('semester')
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get();
+            ->values();
 
         $branchSubjectRows
             ->each(function (StudentTimetableSubjectRow $row, int $subjectIndex) use ($completedCodes, &$bestMatch): void {
@@ -1769,6 +1809,64 @@ class StudentTimetablesStudentOverviewService
             - (int) ($match['option_index'] ?? 0);
     }
 
+    /** @return Collection<int, StudentTimetableSubjectRow> */
+    private function activeSubjectRows(
+        User $user,
+        int $schoolyearId,
+        StudentTimetableStudyProgram $studyProgram,
+    ): Collection {
+        $planKey = $this->subjectPlanCacheKey($user, $schoolyearId, $studyProgram);
+
+        return $this->activeSubjectRowsByPlan[$planKey] ??= StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
+            ->orderBy('semester')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+    }
+
+    private function subjectRuleEvaluator(
+        User $user,
+        int $schoolyearId,
+        StudentTimetableStudyProgram $studyProgram,
+    ): ?SubjectPlanRuleEvaluator {
+        $planKey = $this->subjectPlanCacheKey($user, $schoolyearId, $studyProgram);
+
+        if (array_key_exists($planKey, $this->subjectRuleEvaluatorsByPlan)) {
+            return $this->subjectRuleEvaluatorsByPlan[$planKey];
+        }
+
+        return $this->subjectRuleEvaluatorsByPlan[$planKey] = $this->subjectRuleService->evaluator(
+            (int) $user->school_id,
+            $schoolyearId,
+            $studyProgram,
+        );
+    }
+
+    private function subjectPlanCacheKey(
+        User $user,
+        int $schoolyearId,
+        StudentTimetableStudyProgram $studyProgram,
+    ): string {
+        return implode(':', [
+            (int) $user->school_id,
+            $schoolyearId,
+            $studyProgram->value,
+        ]);
+    }
+
+    private function userContextCacheKey(User $user): string
+    {
+        return implode(':', [
+            (int) $user->school_id,
+            $this->schoolyearIdForUser($user),
+            (int) $user->id,
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $selection
      * @return list<array<string, mixed>>
@@ -1780,21 +1878,9 @@ class StudentTimetablesStudentOverviewService
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
         bool $applySelectionEligibility = true,
     ): Collection {
-        $evaluator = $this->subjectRuleService->evaluator(
-            (int) $user->school_id,
-            $schoolyearId,
-            $studyProgram,
-        );
+        $evaluator = $this->subjectRuleEvaluator($user, $schoolyearId, $studyProgram);
 
-        return StudentTimetableSubjectRow::query()
-            ->forStudyProgram($studyProgram)
-            ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyearId)
-            ->where('is_active', true)
-            ->orderBy('semester')
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
+        return $this->activeSubjectRows($user, $schoolyearId, $studyProgram)
             ->when(
                 $applySelectionEligibility,
                 fn (Collection $rows): Collection => $rows
@@ -2060,6 +2146,11 @@ class StudentTimetablesStudentOverviewService
             ->reject(fn (array $course): bool => $this->isArtsSelectionCourse($course))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course));
         $firstAvailableCourseKeys = $candidates
+            ->filter(fn (array $course): bool => $this->courseWithinStudentProgressionWindow(
+                $course,
+                $completedCourseCodes,
+                $visitedCourseCodes,
+            ))
             ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
             ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
             ->filter()
@@ -2196,6 +2287,7 @@ class StudentTimetablesStudentOverviewService
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
         bool $limitToStudentProgression = false,
         bool $applySelectionEligibility = true,
+        bool $includeModuleCourses = true,
     ): array {
         $studyModules = $this->studyModules($completedCourses, $missingCourses);
         $subjectCourses = $this->subjectCourses(
@@ -2226,7 +2318,9 @@ class StudentTimetablesStudentOverviewService
             ->values();
         $negativeModules = collect($studyModules['failed'])
             ->map(fn (array $course): array => $this->moduleWithSubjectPlanHours($course, $historicalSubjectCourses));
-        $courseGroups = $this->manualTimetableCourseGroupsForUser($user);
+        $courseGroupsByCode = $includeModuleCourses
+            ? $this->manualTimetableCourseGroupIndexForUser($user)
+            : [];
         $unavailableCourseCodes = $this->studentPlannedCourseCodes([
             ...$completedCourses,
             ...$missingCourses,
@@ -2274,11 +2368,52 @@ class StudentTimetablesStudentOverviewService
             : $availableModules->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) > $currentSemester);
 
         return [
-            $this->moduleSelectionGroup('finished', 'Abgeschlossene', $finishedModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('negative', 'Negative', $negativeModules, false, $regularSubjectCourses, $currentSemester, $courseGroups),
-            $this->moduleSelectionGroup('previous', 'Frühere', $previousModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('current', 'Aktuelle', $currentModules, true, $regularSubjectCourses, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('additional', 'Zusätzliche', $additionalModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup(
+                'finished',
+                'Abgeschlossene',
+                $finishedModules,
+                false,
+                $regularSubjectCourses,
+                courseGroupsByCode: $courseGroupsByCode,
+                includeCourses: $includeModuleCourses,
+            ),
+            $this->moduleSelectionGroup(
+                'negative',
+                'Negative',
+                $negativeModules,
+                false,
+                $regularSubjectCourses,
+                selectedSemester: $currentSemester,
+                courseGroupsByCode: $courseGroupsByCode,
+                includeCourses: $includeModuleCourses,
+            ),
+            $this->moduleSelectionGroup(
+                'previous',
+                'Frühere',
+                $previousModules,
+                false,
+                $regularSubjectCourses,
+                courseGroupsByCode: $courseGroupsByCode,
+                includeCourses: $includeModuleCourses,
+            ),
+            $this->moduleSelectionGroup(
+                'current',
+                'Aktuelle',
+                $currentModules,
+                true,
+                $regularSubjectCourses,
+                courseGroupsByCode: $courseGroupsByCode,
+                includeCourses: $includeModuleCourses,
+            ),
+            $this->moduleSelectionGroup(
+                'additional',
+                'Zusätzliche',
+                $additionalModules,
+                false,
+                $regularSubjectCourses,
+                courseGroupsByCode: $courseGroupsByCode,
+                includeCourses: $includeModuleCourses,
+            ),
         ];
     }
 
@@ -2293,18 +2428,22 @@ class StudentTimetablesStudentOverviewService
         bool $selectedByDefault,
         Collection $regularSubjectCourses,
         ?int $selectedSemester = null,
-        array $courseGroups = [],
+        array $courseGroupsByCode = [],
+        bool $includeCourses = true,
     ): array {
         return [
             'key' => $key,
             'label' => $label,
             'modules' => $modules
-                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester, $courseGroups, $regularSubjectCourses): array {
+                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester, $courseGroupsByCode, $regularSubjectCourses, $includeCourses): array {
                     $semester = $this->integerOrNull($module['semester'] ?? null);
                     $module = $this->moduleWithRegularSubjectPlanHours($module, $regularSubjectCourses);
+                    $module = $includeCourses
+                        ? $this->courseWithManualTimetableGroups($module, $courseGroupsByCode)
+                        : $module;
 
                     return [
-                        ...$this->courseWithManualTimetableGroups($module, $courseGroups),
+                        ...$module,
                         'selection_key' => $key.':'.$this->normalizedCourseCode((string) ($module['code'] ?? '')),
                         'selected_by_default' => $selectedByDefault
                             || ($key === 'negative' && $semester !== null && $semester === $selectedSemester),
@@ -2545,7 +2684,7 @@ class StudentTimetablesStudentOverviewService
             return false;
         }
 
-        $baseAliases = $this->studentCourseBaseAliases((string) ($courseParts['base'] ?? ''));
+        $baseAliases = $this->studentEquivalentCourseBaseAliases((string) ($courseParts['base'] ?? ''));
 
         return collect($courseCodes)
             ->map(fn (string $courseCode): array => $this->courseCodeModuleParts($courseCode))
@@ -2576,6 +2715,29 @@ class StudentTimetablesStudentOverviewService
             ->contains(fn (array $parts): bool => $this->courseModulePrerequisiteMet($parts, $completedCourseCodes, $visitedCourseCodes, [
                 'allow_initial_modules' => true,
             ]));
+    }
+
+    /**
+     * @param  list<string>  $completedCourseCodes
+     * @param  list<string>  $visitedCourseCodes
+     */
+    private function courseWithinStudentProgressionWindow(array $course, array $completedCourseCodes, array $visitedCourseCodes): bool
+    {
+        $moduleParts = collect($this->courseModulePartsForStudentPlanning($course));
+
+        if ($moduleParts->isEmpty()) {
+            return true;
+        }
+
+        return $moduleParts->contains(function (array $parts) use ($completedCourseCodes, $visitedCourseCodes): bool {
+            $moduleNumber = $this->integerOrNull($parts['module'] ?? null);
+
+            if ($moduleNumber !== null && $moduleNumber <= 2) {
+                return true;
+            }
+
+            return $this->courseModulePrerequisiteMet($parts, $completedCourseCodes, $visitedCourseCodes);
+        });
     }
 
     /**
@@ -2705,12 +2867,46 @@ class StudentTimetablesStudentOverviewService
             'GPB' => ['GS'],
             'GW' => ['GWB'],
             'GWB' => ['GW'],
-            'ET' => ['ETH', 'R', 'RK'],
-            'ETH' => ['ET', 'R', 'RK'],
+            'ET' => ['ETH', 'R', 'RK', 'RIS', 'REV', 'ROR'],
+            'ETH' => ['ET', 'R', 'RK', 'RIS', 'REV', 'ROR'],
             'ME' => ['MU'],
             'MU' => ['ME'],
-            'R' => ['RK', 'ET', 'ETH'],
-            'RK' => ['R', 'ET', 'ETH'],
+            'R' => ['RK', 'RIS', 'REV', 'ROR', 'ET', 'ETH'],
+            'RK' => ['R', 'RIS', 'REV', 'ROR', 'ET', 'ETH'],
+            'RIS' => ['R', 'RK', 'REV', 'ROR', 'ET', 'ETH'],
+            'REV' => ['R', 'RK', 'RIS', 'ROR', 'ET', 'ETH'],
+            'ROR' => ['R', 'RK', 'RIS', 'REV', 'ET', 'ETH'],
+            'S' => ['SPA'],
+            'SPA' => ['S'],
+            'LPT' => ['LET'],
+            'LET' => ['LPT'],
+        ];
+
+        return collect([
+            $normalizedBase,
+            ...($mappedAliases[$normalizedBase] ?? []),
+        ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function studentEquivalentCourseBaseAliases(string $base): array
+    {
+        $normalizedBase = $this->normalizedCourseCode($base);
+        $mappedAliases = [
+            'GS' => ['GPB'],
+            'GPB' => ['GS'],
+            'GW' => ['GWB'],
+            'GWB' => ['GW'],
+            'ET' => ['ETH'],
+            'ETH' => ['ET'],
+            'ME' => ['MU'],
+            'MU' => ['ME'],
             'S' => ['SPA'],
             'SPA' => ['S'],
             'LPT' => ['LET'],

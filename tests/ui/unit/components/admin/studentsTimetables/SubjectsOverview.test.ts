@@ -1077,14 +1077,19 @@ describe('Students timetable subjects overview', () => {
         expect(runTestsButtonSource).toContain(':loading="studentV3TestsRunning"')
         expect(runTestsButtonSource).not.toContain('href=')
         expect(runTestsButtonSource).not.toContain('to=')
+        expect(componentSource).toContain('data-testid="student-v3-test-summary-dialog"')
+        expect(componentSource).toContain('v-model="studentV3TestSummaryDialog"')
+        expect(componentSource).toContain('persistent')
+        expect(componentSource).toContain('Testzusammenfassung')
+        expect(componentSource).toContain('Schließen')
         expect(componentSource).toContain('V3-Modultest')
         expect(componentSource).not.toContain('class="tests-v3-selection__study-plan-row"')
         expect(componentSource).toContain('class="tests-v3-selection__module-test-row"')
         expect(componentSource).toContain('<td colspan="5" class="tests-v3-selection__module-test">')
         expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
-        expect(componentSource).toContain('loadV3StudentInformation')
-        expect(componentSource).toContain('response.data?.data?.module_selection_groups')
-        expect(componentSource).toContain('STUDENT_V3_TEST_CONCURRENCY = 4')
+        expect(componentSource).toContain('runV3StudentModuleTests')
+        expect(componentSource).toContain('axios.post(runV3StudentModuleTests.url()')
+        expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 100')
         expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
         expect(componentSource).toContain(
             "v-if=\"['finished', 'negative', 'previous', 'current', 'additional'].includes(group.key)\"",
@@ -1251,7 +1256,7 @@ describe('Students timetable subjects overview', () => {
         })).toBeNull()
     })
 
-    it('runs the existing v3 module calculation for every selected student and publishes each result immediately', async () => {
+    it('runs the existing v3 module calculation for selected students in one batch request', async () => {
         const methods = (TestsV3 as any).methods
         const students = [
             {
@@ -1268,12 +1273,10 @@ describe('Students timetable subjects overview', () => {
                     negative: [{ code: 'e1', grade: '5' }],
                 },
                 expected_modules: [
-                    { code: 'OLD1', name: 'Altes Soll 1', semester: 1 },
-                    { code: 'OLD2', name: 'Altes Soll 2', semester: 2 },
-                ],
-                expected_additional_modules: [
                     { code: 'BU1', name: 'Biologie 1', semester: 1 },
                     { code: 'D2', name: 'Deutsch 2', semester: 2 },
+                ],
+                expected_additional_modules: [
                     { code: 'PH1', name: 'Physik 1', semester: 3 },
                 ],
             },
@@ -1284,8 +1287,8 @@ describe('Students timetable subjects overview', () => {
                 last_name: 'Bauer',
                 first_name: 'Berta',
                 course_results: { completed: [], negative: [] },
-                expected_modules: [],
-                expected_additional_modules: [{ code: 'D1', name: 'Deutsch 1', semester: 1 }],
+                expected_modules: [{ code: 'D1', name: 'Deutsch 1', semester: 1 }],
+                expected_additional_modules: [],
             },
         ]
         const firstStudentGroups = [
@@ -1309,39 +1312,41 @@ describe('Students timetable subjects overview', () => {
             { key: 'current', count: 1, modules: [{ code: 'D1', name: 'Deutsch 1' }] },
             { key: 'additional', count: 0, modules: [] },
         ]
-        let resolveFirstStudentRequest: (value: unknown) => void = () => {}
-        let resolveSecondStudentRequest: (value: unknown) => void = () => {}
-        const firstStudentRequest = new Promise((resolve) => {
-            resolveFirstStudentRequest = resolve
+        let resolveBatchRequest: (value: unknown) => void = () => {}
+        const batchRequest = new Promise((resolve) => {
+            resolveBatchRequest = resolve
         })
-        const secondStudentRequest = new Promise((resolve) => {
-            resolveSecondStudentRequest = resolve
-        })
-        const get = vi.fn((url: string) => url.includes('student_code=1001')
-            ? firstStudentRequest
-            : secondStudentRequest)
+        const post = vi.fn(() => batchRequest)
         const context: any = {
             ...methods,
             selectedStudents: students,
             studentV3TestResults: {},
             studentV3TestsRunning: false,
+            studentV3TestSummaryDialog: true,
         }
 
-        vi.stubGlobal('axios', { get })
+        vi.stubGlobal('axios', { post })
 
         try {
             const testsPromise = methods.runTests.call(context)
 
-            await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+            await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1))
             expect(context.studentV3TestResults['1001'].status).toBe('running')
             expect(context.studentV3TestResults['2002'].status).toBe('running')
+            expect(context.studentV3TestSummaryDialog).toBe(false)
 
-            resolveFirstStudentRequest({
-                data: { data: { module_selection_groups: firstStudentGroups } },
+            resolveBatchRequest({
+                data: {
+                    data: [
+                        { student_code: '1001', module_selection_groups: firstStudentGroups },
+                        { student_code: '2002', module_selection_groups: secondStudentGroups },
+                    ],
+                },
             })
 
-            await vi.waitFor(() => expect(context.studentV3TestResults['1001'].status).toBe('complete'))
-            expect(context.studentV3TestResults['2002'].status).toBe('running')
+            await testsPromise
+            expect(context.studentV3TestResults['1001'].status).toBe('complete')
+            expect(context.studentV3TestResults['2002'].status).toBe('complete')
             expect(context.studentV3TestResults['1001'].groups.map((group: any) => [
                 group.key,
                 group.count,
@@ -1407,10 +1412,6 @@ describe('Students timetable subjects overview', () => {
                 },
             })).toBe(false)
 
-            resolveSecondStudentRequest({
-                data: { data: { module_selection_groups: secondStudentGroups } },
-            })
-            await testsPromise
         } finally {
             vi.unstubAllGlobals()
         }
@@ -1420,16 +1421,166 @@ describe('Students timetable subjects overview', () => {
         expect(methods.studentNegativeModulesMatch.call(context, students[1])).toBe(true)
         expect(methods.studentModuleGroupMatches.call(context, students[1], 'additional')).toBe(true)
         expect(context.studentV3TestsRunning).toBe(false)
-        expect(get.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
-            '/api/admin/students-timetables/timetable-v3/student-information?student_code=1001',
-            '/api/admin/students-timetables/timetable-v3/student-information?student_code=2002',
-        ]))
+        expect(context.studentV3TestSummaryDialog).toBe(true)
+        expect(post).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/timetable-v3/student-information',
+            { student_codes: ['1001', '2002'] },
+        )
         expect(() => methods.normalizedStudentV3TestGroups.call(context, firstStudentGroups.slice(0, 4)))
             .toThrow('Die V3-Gruppe additional fehlt.')
         expect(() => methods.normalizedStudentV3TestGroups.call(context, [
             { ...firstStudentGroups[0], count: 99 },
             ...firstStudentGroups.slice(1),
         ])).toThrow('Der V3-Count für finished ist inkonsistent.')
+    })
+
+    it('summarizes passed, mismatching, and errored timetable v3 tests for the completion dialog', () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const emptyGroups = [
+            { key: 'finished', count: 0, modules: [] },
+            { key: 'negative', count: 0, modules: [] },
+            { key: 'previous', count: 0, modules: [] },
+            { key: 'current', count: 0, modules: [] },
+            { key: 'additional', count: 0, modules: [] },
+        ]
+        const selectedStudents = [
+            {
+                student_code: '1001',
+                class: '1A',
+                last_name: 'Auer',
+                first_name: 'Anna',
+                semester: 1,
+                course_results: { completed: [], negative: [] },
+                expected_modules: [],
+                expected_additional_modules: [],
+            },
+            {
+                student_code: '2002',
+                class: '1B',
+                last_name: 'Bauer',
+                first_name: 'Berta',
+                semester: 1,
+                course_results: { completed: [], negative: [] },
+                expected_modules: [{ code: 'D1', name: 'Deutsch 1', semester: 1 }],
+                expected_additional_modules: [],
+            },
+            {
+                student_code: '3003',
+                class: '1C',
+                last_name: 'Celik',
+                first_name: 'Cem',
+                semester: 1,
+                course_results: { completed: [], negative: [] },
+                expected_modules: [],
+                expected_additional_modules: [],
+            },
+        ]
+        const context: any = {
+            ...methods,
+            selectedStudents,
+            studentV3TestResults: {
+                1001: { status: 'complete', message: '', groups: emptyGroups },
+                2002: { status: 'complete', message: '', groups: emptyGroups },
+                3003: { status: 'error', message: 'V3-Modulberechnung fehlgeschlagen.', groups: [] },
+            },
+        }
+
+        context.completedStudentV3TestCount = computed.completedStudentV3TestCount.call(context)
+        context.failedStudentV3TestCount = computed.failedStudentV3TestCount.call(context)
+
+        expect(context.completedStudentV3TestCount).toBe(3)
+        expect(context.failedStudentV3TestCount).toBe(2)
+        expect(computed.passedStudentV3TestCount.call(context)).toBe(1)
+        expect(computed.failedStudentV3TestSummaries.call(context)).toEqual([
+            {
+                key: '2002',
+                classLabel: '1B',
+                studentName: 'Bauer Berta',
+                message: 'Abweichungen: Aktuelle',
+            },
+            {
+                key: '3003',
+                classLabel: '1C',
+                studentName: 'Celik Cem',
+                message: 'V3-Modulberechnung fehlgeschlagen.',
+            },
+        ])
+    })
+
+    it('keeps unresolved semester defaults in the current module comparison', () => {
+        const methods = (TestsV3 as any).methods
+        const student = {
+            student_code: '50112620250130',
+            semester: 1,
+            course_results: {
+                completed: [],
+                negative: [
+                    { code: 'D2', grade: 'N' },
+                    { code: 'D3', grade: 'N' },
+                ],
+            },
+            expected_modules: [
+                { code: 'D1', name: 'Deutsch 1', semester: 1 },
+                { code: 'INF1', name: 'Informatik 1', semester: 1 },
+                { code: 'LPT', name: 'Lern- Präsentationstechnik', semester: 1 },
+            ],
+            expected_additional_modules: [
+                { code: 'D4', name: 'Deutsch 4', semester: 4 },
+            ],
+        }
+        const context: any = {
+            ...methods,
+            studentV3TestResults: {
+                50112620250130: {
+                    status: 'complete',
+                    groups: [
+                        {
+                            key: 'current',
+                            modules: [
+                                { code: 'D1', name: 'Deutsch 1' },
+                                { code: 'INF1', name: 'Informatik 1' },
+                                { code: 'LPT', name: 'Lern- Präsentationstechnik' },
+                            ],
+                        },
+                        { key: 'additional', modules: [{ code: 'D4', name: 'Deutsch 4' }] },
+                    ],
+                },
+            },
+        }
+
+        expect(methods.studentModuleGroupExpectedModules.call(context, student, 'current'))
+            .toEqual([
+                expect.objectContaining({ code: 'D1' }),
+                expect.objectContaining({ code: 'INF1' }),
+                expect.objectContaining({ code: 'LPT' }),
+            ])
+        expect(methods.studentModuleGroupExpectedModules.call(context, student, 'additional'))
+            .toEqual([expect.objectContaining({ code: 'D4' })])
+        expect(methods.studentModuleGroupMatches.call(context, student, 'current')).toBe(true)
+        expect(methods.studentModuleGroupMismatches.call(context, student, 'current')).toEqual([])
+    })
+
+    it('compares semester defaults and progression modules only when their payload is available', () => {
+        const methods = (TestsV3 as any).methods
+        const context: any = { ...methods }
+        const semesterDefaultsOnly = {
+            student_code: 'semester-defaults',
+            semester: 1,
+            expected_modules: [],
+        }
+        const progressionOnly = {
+            student_code: 'progression',
+            semester: 1,
+            expected_additional_modules: [],
+        }
+
+        expect(methods.studentModuleGroupCanCompare.call(context, semesterDefaultsOnly, 'previous')).toBe(true)
+        expect(methods.studentModuleGroupCanCompare.call(context, semesterDefaultsOnly, 'current')).toBe(true)
+        expect(methods.studentModuleGroupCanCompare.call(context, semesterDefaultsOnly, 'additional')).toBe(false)
+        expect(methods.studentModuleGroupCanCompare.call(context, progressionOnly, 'previous')).toBe(false)
+        expect(methods.studentModuleGroupCanCompare.call(context, progressionOnly, 'current')).toBe(false)
+        expect(methods.studentModuleGroupCanCompare.call(context, progressionOnly, 'additional')).toBe(true)
     })
 
     it('presents the selected student test status before the student', () => {

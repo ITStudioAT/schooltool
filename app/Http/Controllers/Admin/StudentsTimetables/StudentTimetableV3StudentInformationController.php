@@ -13,6 +13,34 @@ class StudentTimetableV3StudentInformationController extends Controller
 {
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
 
+    public function store(
+        Request $request,
+        StudentTimetableV3StudentInformationService $service,
+    ): JsonResponse {
+        $authUser = $this->studentsTimetablesUser();
+        $validated = $request->validate([
+            'student_codes' => ['required', 'array', 'min:1', 'max:100'],
+            'student_codes.*' => ['required', 'string', 'max:255', 'distinct:strict'],
+        ]);
+        $studentCodes = collect($validated['student_codes'])
+            ->map(fn (string $studentCode): string => trim($studentCode))
+            ->values();
+        $moduleSelectionGroupsByStudentCode = $service->moduleSelectionGroupsForStudents(
+            $authUser,
+            $studentCodes->all(),
+        );
+
+        return response()->json([
+            'data' => $studentCodes
+                ->map(fn (string $studentCode): array => [
+                    'student_code' => $studentCode,
+                    'module_selection_groups' => $moduleSelectionGroupsByStudentCode[$studentCode],
+                ])
+                ->values()
+                ->all(),
+        ]);
+    }
+
     public function show(
         Request $request,
         StudentTimetableV3StudentInformationService $service,

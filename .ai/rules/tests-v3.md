@@ -91,3 +91,12 @@ In Tests V3 > Tests, use the leading student icon for test status: neutral befor
 
 ## Collapse both study-plan sections by default
 In Tests V3 > Tests, render Normalstudium and Kompaktstudium as independently expandable sections. Both sections start collapsed when the page loads.
+
+## Use semester Soll for previous and current groups
+This supersedes the earlier rule “Use progression Soll for all open groups”. Frühere and Aktuelle must use expected_modules split at the student's current semester (< current / = current). Only Zusätzliche uses expected_additional_modules progression (> current).
+
+## Show a persistent completion summary
+After every Tests V3 run finishes, open a persistent dialog summarizing checked, passed, and failed student tests. List failed students with calculation errors or mismatching module groups; the dialog stays open until the user explicitly closes it.
+
+## Batch V3 test transport supersedes per-student requests
+This supersedes the bounded-concurrency per-student request rule. Run Tests uses sequential batches of at most 100 student codes; rows become running per batch and receive their canonical comparison groups when that batch completes.

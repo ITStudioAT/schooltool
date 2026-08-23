@@ -16,6 +16,9 @@ class StudentTimetableExpectedModulesService
     /** @var array<string, SubjectPlanRuleEvaluator|null> */
     private array $evaluators = [];
 
+    /** @var array<string, Collection<int, array{code: string, name: string, semester: int}>> */
+    private array $eligibleModules = [];
+
     public function __construct(
         protected StudentTimetableSubjectRuleService $subjectRuleService,
     ) {}
@@ -74,7 +77,17 @@ class StudentTimetableExpectedModulesService
         array $selection,
         array $courseResults,
     ): array {
-        $latestModuleResults = $this->latestModuleResults($courseResults);
+        $latestCompletedModuleResults = $this->latestCompletedModuleResults($courseResults);
+        $unavailableModuleCodes = collect([
+            ...((array) ($courseResults['completed'] ?? [])),
+            ...((array) ($courseResults['negative'] ?? [])),
+        ])
+            ->map(fn (mixed $module): string => $this->normalizedComparisonCode(
+                is_array($module) ? (string) ($module['code'] ?? '') : '',
+            ))
+            ->filter()
+            ->unique()
+            ->all();
 
         return $this->eligibleModules($user, $studyProgram, $selection)
             ->map(function (array $module): array {
@@ -90,8 +103,8 @@ class StudentTimetableExpectedModulesService
             ->filter(fn (array $module): bool => $module['module_base'] !== '' && $module['module_number'] !== null)
             ->unique('comparison_code')
             ->groupBy('module_base')
-            ->flatMap(function (Collection $modules, string $moduleBase) use ($latestModuleResults): Collection {
-                $latestModuleResult = $latestModuleResults[$moduleBase] ?? null;
+            ->flatMap(function (Collection $modules, string $moduleBase) use ($latestCompletedModuleResults): Collection {
+                $latestCompletedModuleNumber = $latestCompletedModuleResults[$moduleBase] ?? null;
                 $sortedModules = $modules
                     ->sortBy([
                         ['module_number', 'asc'],
@@ -100,14 +113,15 @@ class StudentTimetableExpectedModulesService
                     ])
                     ->values();
 
-                if ($latestModuleResult === null) {
+                if ($latestCompletedModuleNumber === null) {
                     return $sortedModules->take(2);
                 }
 
                 return $sortedModules
-                    ->filter(fn (array $module): bool => $module['module_number'] > $latestModuleResult['module_number'])
-                    ->take($latestModuleResult['passed'] ? 2 : 1);
+                    ->filter(fn (array $module): bool => $module['module_number'] > $latestCompletedModuleNumber)
+                    ->take(2);
             })
+            ->reject(fn (array $module): bool => in_array($module['comparison_code'], $unavailableModuleCodes, true))
             ->map(fn (array $module): array => Arr::except($module, [
                 'comparison_code',
                 'module_base',
@@ -130,9 +144,15 @@ class StudentTimetableExpectedModulesService
         StudentTimetableStudyProgram $studyProgram,
         array $selection,
     ): Collection {
+        $cacheKey = $this->eligibleModulesCacheKey($user, $studyProgram, $selection);
+
+        if (array_key_exists($cacheKey, $this->eligibleModules)) {
+            return $this->eligibleModules[$cacheKey];
+        }
+
         $evaluator = $this->evaluator($user, $studyProgram);
 
-        return $this->subjectRows($user, $studyProgram)
+        return $this->eligibleModules[$cacheKey] = $this->subjectRows($user, $studyProgram)
             ->flatMap(function (StudentTimetableSubjectRow $subjectRow) use ($evaluator, $selection, $studyProgram): array {
                 if (! $this->matchesExplicitSelection($subjectRow, $selection, $studyProgram)) {
                     return [];
@@ -151,6 +171,18 @@ class StudentTimetableExpectedModulesService
                     ->filter(fn (array $module): bool => $module['code'] !== '')
                     ->all();
             });
+    }
+
+    /** @param array<string, mixed> $selection */
+    private function eligibleModulesCacheKey(
+        User $user,
+        StudentTimetableStudyProgram $studyProgram,
+        array $selection,
+    ): string {
+        return implode('|', [
+            $this->planCacheKey($user, $studyProgram),
+            hash('sha256', serialize(Arr::sortRecursive($selection))),
+        ]);
     }
 
     /** @param array<string, mixed> $selection */
@@ -188,46 +220,29 @@ class StudentTimetableExpectedModulesService
 
     /**
      * @param  array<string, mixed>  $courseResults
-     * @return array<string, array{module_number: int, passed: bool}>
+     * @return array<string, int>
      */
-    private function latestModuleResults(array $courseResults): array
+    private function latestCompletedModuleResults(array $courseResults): array
     {
-        $latestModuleResults = [];
-        $resultGroups = [
-            ['modules' => (array) ($courseResults['negative'] ?? []), 'passed' => false],
-            ['modules' => (array) ($courseResults['completed'] ?? []), 'passed' => true],
-        ];
+        $latestCompletedModuleResults = [];
 
-        foreach ($resultGroups as $resultGroup) {
-            foreach ($resultGroup['modules'] as $module) {
-                $progressionParts = $this->moduleProgressionParts(
-                    is_array($module) ? (string) ($module['code'] ?? '') : '',
-                );
+        foreach ((array) ($courseResults['completed'] ?? []) as $module) {
+            $progressionParts = $this->moduleProgressionParts(
+                is_array($module) ? (string) ($module['code'] ?? '') : '',
+            );
 
-                if ($progressionParts === null) {
-                    continue;
-                }
-
-                $moduleBase = $progressionParts['base'];
-                $existingResult = $latestModuleResults[$moduleBase] ?? null;
-                $isLaterModule = $existingResult === null
-                    || $progressionParts['module_number'] > $existingResult['module_number'];
-                $isPassedRepeat = $existingResult !== null
-                    && $progressionParts['module_number'] === $existingResult['module_number']
-                    && $resultGroup['passed'];
-
-                if (! $isLaterModule && ! $isPassedRepeat) {
-                    continue;
-                }
-
-                $latestModuleResults[$moduleBase] = [
-                    'module_number' => $progressionParts['module_number'],
-                    'passed' => $resultGroup['passed'],
-                ];
+            if ($progressionParts === null) {
+                continue;
             }
+
+            $moduleBase = $progressionParts['base'];
+            $latestCompletedModuleResults[$moduleBase] = max(
+                $progressionParts['module_number'],
+                $latestCompletedModuleResults[$moduleBase] ?? 0,
+            );
         }
 
-        return $latestModuleResults;
+        return $latestCompletedModuleResults;
     }
 
     /** @return array{base: string, module_number: int}|null */
@@ -235,8 +250,15 @@ class StudentTimetableExpectedModulesService
     {
         $normalizedCode = $this->normalizedComparisonCode($code);
 
-        if (preg_match('/^(.*?)(\d+)$/u', $normalizedCode, $matches) !== 1) {
+        if ($normalizedCode === '') {
             return null;
+        }
+
+        if (preg_match('/^(.*?)(\d+)$/u', $normalizedCode, $matches) !== 1) {
+            return [
+                'base' => $normalizedCode,
+                'module_number' => 1,
+            ];
         }
 
         return [

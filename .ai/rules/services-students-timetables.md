@@ -4,6 +4,8 @@ paths:
   - 'app/Services/StudentsTimetables/*TimetableV3*'
   - 'app/Services/StudentsTimetables/StudentTimetableV3Timetable*.php'
   - 'app/Services/StudentsTimetables/*.php'
+  - app/Services/StudentsTimetables/StudentTimetableExpectedModulesService.php
+  - app/Services/StudentsTimetables/StudentTimetablesStudentOverviewService.php
 ---
 
 # Services Students Timetables
@@ -43,3 +45,12 @@ Authoritative V3 module codes may be all-letter unnumbered codes such as LPT. Ma
 
 ## Subject-plan rules are authoritative
 Persist subject-plan rules by school, schoolyear, and study program using stable subject UUID keys. When a versioned rule set exists, recommendations and legacy V2 preparation must use the shared evaluator and must not fall back to code-pattern inference. V3-selected modules remain authoritative; include the rule-set version in its generation fingerprint.
+
+## Advance additional Soll only from completed modules
+Negative results never advance Soll-Zusätzliche. With no passed/exempt result, only the first two modules in a numbered family are eligible; remove every completed or negative module from that open set. After passed/exempt module N, allow the next two modules. Unnumbered standalone modules such as VWA are prerequisite-free until completed or negative.
+
+## Apply V3 progression before removing failed modules
+For V3 selectable modules, determine the completed-result progression window before selecting the first remaining candidate: modules 1-2 are initially eligible, while module N>=3 requires its positive prerequisite. Failed modules stay unavailable and must never cause module N+1 to become first available. Treat RIS, REV, ROR, and RK as aliases of the R religion family for progression.
+
+## Visited ethics dominates religion without merging result identities
+Any visited ETH/ET result, including a negative one, makes ETH the effective study selection and must be persisted by the student snapshot refresh. Religion aliases may share one progression/prerequisite family, but concrete result matching keeps ETH/Rk/Ris/Rev/Ror distinct (except ET/ETH synonyms) so one choice cannot hide another choice's module.

@@ -25,6 +25,56 @@ class StudentTimetableV3StudentInformationService
         protected StudentTimetableCompactSubjectPlanService $compactSubjectPlanService,
     ) {}
 
+    /** @return list<array<string, mixed>> */
+    public function moduleSelectionGroupsForStudent(User $user, string $studentCode): array
+    {
+        return $this->studentSelectionCalculation(
+            $user,
+            $studentCode,
+            [],
+            false,
+            false,
+        )['module_selection_groups'];
+    }
+
+    /**
+     * @param  list<string>  $studentCodes
+     * @return array<string, list<array<string, mixed>>>
+     */
+    public function moduleSelectionGroupsForStudents(User $user, array $studentCodes): array
+    {
+        $studentCodes = collect($studentCodes)
+            ->map(fn (string $studentCode): string => trim($studentCode))
+            ->filter()
+            ->unique()
+            ->values();
+        $schoolyearId = (int) $user->schoolyear_id;
+        $studyPrograms = $this->completedCourseHistoryService->studyProgramsForStudentCodes(
+            $user,
+            $schoolyearId,
+            $studentCodes->all(),
+        );
+        $this->completedCourseHistoryService->coursesForStudentCodes(
+            $user,
+            $schoolyearId,
+            $studentCodes->all(),
+        );
+
+        return $studentCodes
+            ->mapWithKeys(fn (string $studentCode): array => [
+                $studentCode => $this->studentSelectionCalculation(
+                    $user,
+                    $studentCode,
+                    [],
+                    false,
+                    false,
+                    $studyPrograms[$studentCode],
+                    false,
+                )['module_selection_groups'],
+            ])
+            ->all();
+    }
+
     /** @return array<string, mixed> */
     public function informationForStudent(
         User $user,
@@ -33,37 +83,17 @@ class StudentTimetableV3StudentInformationService
         bool $seedCompactSubjectPlanIfMissing = false,
         bool $includeAllSelectableModules = false,
     ): array {
-        $hasCompleteSelectionOverride = $selectionOverride !== []
-            && collect(self::INFORMATION_KEYS)
-                ->every(fn (string $key): bool => array_key_exists($key, $selectionOverride));
-        $selectionOverride = $hasCompleteSelectionOverride
-            ? $selectionOverride
-            : collect($selectionOverride)
-                ->reject(fn (mixed $value): bool => trim((string) $value) === '')
-                ->all();
-        $schoolyearId = (int) $user->schoolyear_id;
-        $studyInformation = $this->completedCourseHistoryService->studyInformationForStudentCode(
-            $user,
-            $schoolyearId,
-            $studentCode,
-        );
-        $studyProgram = $studyInformation['study_program'];
-
-        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium && $seedCompactSubjectPlanIfMissing) {
-            $this->compactSubjectPlanService->seedIfMissing((int) $user->school_id, $schoolyearId);
-        }
-
-        $selectionSummary = $this->studentOverviewService->selectionSummaryForStudentCode(
+        $calculation = $this->studentSelectionCalculation(
             $user,
             $studentCode,
             $selectionOverride,
-            strictSelectionOverride: $hasCompleteSelectionOverride,
-            studyProgram: $studyProgram,
-            includeAllSelectableModules: $includeAllSelectableModules,
+            $seedCompactSubjectPlanIfMissing,
+            $includeAllSelectableModules,
         );
-        $moduleSelectionGroups = $this->moduleSelectionGroups(
-            (array) ($selectionSummary['module_selection_groups'] ?? []),
-        );
+        $studyInformation = $calculation['study_information'];
+        $studyProgram = $calculation['study_program'];
+        $selectionSummary = $calculation['selection_summary'];
+        $moduleSelectionGroups = $calculation['module_selection_groups'];
         $mainModuleSelectionSummary = trim((string) $studentCode) !== '' && ! $includeAllSelectableModules
             ? $this->studentOverviewService->selectionSummaryForStudentCode(
                 $user,
@@ -111,6 +141,70 @@ class StudentTimetableV3StudentInformationService
                 ? $this->mainModuleSelectionGroups($moduleSelectionGroups)
                 : $moduleSelectionGroups,
             'main_module_selection_groups' => $mainModuleSelectionGroups,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     study_information: array<string, mixed>,
+     *     study_program: StudentTimetableStudyProgram,
+     *     selection_summary: array<string, mixed>,
+     *     module_selection_groups: list<array<string, mixed>>
+     * }
+     */
+    private function studentSelectionCalculation(
+        User $user,
+        ?string $studentCode,
+        array $selectionOverride,
+        bool $seedCompactSubjectPlanIfMissing,
+        bool $includeAllSelectableModules,
+        ?StudentTimetableStudyProgram $precalculatedStudyProgram = null,
+        bool $includeModuleCourses = true,
+    ): array {
+        $hasCompleteSelectionOverride = $selectionOverride !== []
+            && collect(self::INFORMATION_KEYS)
+                ->every(fn (string $key): bool => array_key_exists($key, $selectionOverride));
+        $selectionOverride = $hasCompleteSelectionOverride
+            ? $selectionOverride
+            : collect($selectionOverride)
+                ->reject(fn (mixed $value): bool => trim((string) $value) === '')
+                ->all();
+        $schoolyearId = (int) $user->schoolyear_id;
+        $studyInformation = $precalculatedStudyProgram
+            ? [
+                'study_program' => $precalculatedStudyProgram,
+                'subject_plan' => null,
+                'subject_plan_mismatch' => false,
+            ]
+            : $this->completedCourseHistoryService->studyInformationForStudentCode(
+                $user,
+                $schoolyearId,
+                $studentCode,
+            );
+        $studyProgram = $studyInformation['study_program'];
+
+        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium && $seedCompactSubjectPlanIfMissing) {
+            $this->compactSubjectPlanService->seedIfMissing((int) $user->school_id, $schoolyearId);
+        }
+
+        $selectionSummary = $this->studentOverviewService->selectionSummaryForStudentCode(
+            $user,
+            $studentCode,
+            $selectionOverride,
+            strictSelectionOverride: $hasCompleteSelectionOverride,
+            studyProgram: $studyProgram,
+            includeAllSelectableModules: $includeAllSelectableModules,
+            includeModuleCourses: $includeModuleCourses,
+        );
+        $moduleSelectionGroups = $this->moduleSelectionGroups(
+            (array) ($selectionSummary['module_selection_groups'] ?? []),
+        );
+
+        return [
+            'study_information' => $studyInformation,
+            'study_program' => $studyProgram,
+            'selection_summary' => $selectionSummary,
+            'module_selection_groups' => $moduleSelectionGroups,
         ];
     }
 

@@ -11,6 +11,9 @@ use Illuminate\Support\Collection;
 
 class StudentTimetableCompletedCourseHistoryService
 {
+    /** @var array<string, array<string, list<array<string, mixed>>>> */
+    private array $coursesByScopeAndStudentCode = [];
+
     public function __construct(
         private StudentTimetableRecognitionIdentityService $identityService,
         private StudentTimetableOverviewService $overviewService,
@@ -44,6 +47,23 @@ class StudentTimetableCompletedCourseHistoryService
             return [];
         }
 
+        $scopeKey = "{$user->school_id}|{$schoolyearId}";
+        $this->coursesByScopeAndStudentCode[$scopeKey] ??= [];
+        $uncachedStudentCodes = $studentCodes
+            ->reject(fn (string $studentCode): bool => array_key_exists(
+                $studentCode,
+                $this->coursesByScopeAndStudentCode[$scopeKey],
+            ))
+            ->values();
+
+        if ($uncachedStudentCodes->isEmpty()) {
+            return $studentCodes
+                ->mapWithKeys(fn (string $studentCode): array => [
+                    $studentCode => $this->coursesByScopeAndStudentCode[$scopeKey][$studentCode],
+                ])
+                ->all();
+        }
+
         $subjectRows = StudentTimetableSubjectRow::query()
             ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $user->school_id)
@@ -54,7 +74,7 @@ class StudentTimetableCompletedCourseHistoryService
         $recognitionRows = StudentTimetableRecognitionRow::query()
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
-            ->whereIn('student_code', $studentCodes)
+            ->whereIn('student_code', $uncachedStudentCodes)
             ->orderByDesc('student_timetable_recognition_import_id')
             ->orderByDesc('id')
             ->get(['id', 'row_number', 'student_code', 'subject', 'grade', 'note', 'raw_data'])
@@ -69,12 +89,20 @@ class StudentTimetableCompletedCourseHistoryService
             ))
             ->groupBy(fn (StudentTimetableRecognitionRow $row): string => (string) $row->student_code);
 
+        $uncachedStudentCodes->each(function (string $studentCode) use (
+            $recognitionRows,
+            $scopeKey,
+            $subjectRows,
+        ): void {
+            $this->coursesByScopeAndStudentCode[$scopeKey][$studentCode] = $this->coursesFromRecognitionRows(
+                $recognitionRows->get($studentCode, collect()),
+                $subjectRows,
+            );
+        });
+
         return $studentCodes
             ->mapWithKeys(fn (string $studentCode): array => [
-                $studentCode => $this->coursesFromRecognitionRows(
-                    $recognitionRows->get($studentCode, collect()),
-                    $subjectRows,
-                ),
+                $studentCode => $this->coursesByScopeAndStudentCode[$scopeKey][$studentCode],
             ])
             ->all();
     }
@@ -139,6 +167,41 @@ class StudentTimetableCompletedCourseHistoryService
         return $this->studyInformationForStudentCode($user, $schoolyearId, $studentCode)['study_program'];
     }
 
+    /**
+     * @param  list<string>  $studentCodes
+     * @return array<string, StudentTimetableStudyProgram>
+     */
+    public function studyProgramsForStudentCodes(User $user, int $schoolyearId, array $studentCodes): array
+    {
+        $studentCodes = collect($studentCodes)
+            ->map(fn (string $studentCode): string => trim($studentCode))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($studentCodes->isEmpty()) {
+            return [];
+        }
+
+        $studentsByCode = Import116::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereIn('student_code', $studentCodes)
+            ->get(['student_code', 'class'])
+            ->keyBy(fn (Import116 $student): string => trim((string) $student->student_code));
+
+        return $studentCodes
+            ->mapWithKeys(function (string $studentCode) use ($studentsByCode): array {
+                $student = $studentsByCode->get($studentCode);
+                $studyProgram = $this->overviewService->isKompaktunterrichtClass((string) $student?->class)
+                    ? StudentTimetableStudyProgram::Kompaktstudium
+                    : StudentTimetableStudyProgram::Normalstudium;
+
+                return [$studentCode => $studyProgram];
+            })
+            ->all();
+    }
+
     /** @return array{study_program: StudentTimetableStudyProgram, subject_plan: ?string, subject_plan_mismatch: bool} */
     public function studyInformationForStudentCode(
         User $user,
@@ -153,14 +216,11 @@ class StudentTimetableCompletedCourseHistoryService
             ];
         }
 
-        $student = Import116::query()
-            ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyearId)
-            ->where('student_code', $studentCode)
-            ->first(['class']);
-        $studyProgram = $this->overviewService->isKompaktunterrichtClass((string) $student?->class)
-            ? StudentTimetableStudyProgram::Kompaktstudium
-            : StudentTimetableStudyProgram::Normalstudium;
+        $studyProgram = $this->studyProgramsForStudentCodes(
+            $user,
+            $schoolyearId,
+            [$studentCode],
+        )[$studentCode];
         $subjectPlan = null;
         $subjectPlanMismatch = false;
 
