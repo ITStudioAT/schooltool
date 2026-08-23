@@ -54,6 +54,29 @@
                 </div>
             </v-card-title>
 
+            <v-card-text
+                v-if="studentClasses.length"
+                class="tests-v3-students__classes">
+                <span class="tests-v3-students__classes-label">Klassen</span>
+                <div class="tests-v3-students__class-chips">
+                    <v-chip
+                        v-for="studentClass in studentClasses"
+                        :key="studentClass.key"
+                        :color="isStudentClassSelected(studentClass) ? 'primary' : 'secondary'"
+                        :variant="isStudentClassSelected(studentClass) ? 'flat' : 'tonal'"
+                        :prepend-icon="isStudentClassSelected(studentClass) ? 'mdi-check' : 'mdi-account-group-outline'"
+                        :disabled="!studentClass.studentKeys.length"
+                        :aria-pressed="isStudentClassSelected(studentClass)"
+                        :aria-label="`Klasse ${studentClass.label} ${isStudentClassSelected(studentClass) ? 'abwählen' : 'auswählen'}`"
+                        size="small"
+                        label
+                        class="tests-v3-students__class-chip"
+                        @click="toggleStudentClassSelection(studentClass)">
+                        {{ studentClass.label }}
+                    </v-chip>
+                </div>
+            </v-card-text>
+
             <v-progress-linear v-if="studentsLoading" color="primary" indeterminate />
 
             <v-card-text v-if="studentsError" class="pt-4">
@@ -184,11 +207,78 @@
             </v-table>
         </v-card>
 
-        <v-card
-            v-else-if="testsV3Action === 'tests'"
-            rounded="lg"
-            border
-            class="tests-v3-selection">
+        <template v-else-if="testsV3Action === 'tests'">
+            <v-card
+                rounded="lg"
+                border
+                class="tests-v3-study-plans">
+                <v-card-title class="tests-v3-study-plans__header d-flex flex-wrap align-center ga-3">
+                    <v-icon icon="mdi-book-open-page-variant-outline" color="primary" size="28" />
+                    <div>
+                        <div class="tests-v3-study-plans__title">Module nach Semester</div>
+                        <div class="text-caption text-medium-emphasis">
+                            Fachpläne für {{ personalSchoolyearLabel }}
+                        </div>
+                    </div>
+                </v-card-title>
+
+                <v-progress-linear v-if="studyPlansLoading" color="primary" indeterminate />
+
+                <v-card-text v-if="studyPlansError" class="pt-4">
+                    <v-alert type="error" variant="tonal">
+                        <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+                            <span>{{ studyPlansError }}</span>
+                            <v-btn size="small" color="error" variant="outlined" @click="loadStudyPlans">
+                                Erneut versuchen
+                            </v-btn>
+                        </div>
+                    </v-alert>
+                </v-card-text>
+
+                <v-card-text v-else class="tests-v3-study-plans__content">
+                    <section
+                        v-for="studyPlan in studyPlanSections"
+                        :key="studyPlan.key"
+                        class="tests-v3-study-plan">
+                        <div class="tests-v3-study-plan__heading">
+                            <v-icon :icon="studyPlan.icon" :color="studyPlan.color" size="24" />
+                            <h3>{{ studyPlan.label }}</h3>
+                        </div>
+
+                        <v-alert v-if="!studyPlan.semesters.length" type="info" variant="tonal">
+                            Für {{ studyPlan.label }} sind keine aktiven Module hinterlegt.
+                        </v-alert>
+
+                        <div v-else class="tests-v3-study-plan__semesters">
+                            <div
+                                v-for="semester in studyPlan.semesters"
+                                :key="`${studyPlan.key}:${semester.semester}`"
+                                class="tests-v3-study-plan__semester">
+                                <div class="tests-v3-study-plan__semester-label">
+                                    {{ semester.semester }}. Semester
+                                </div>
+                                <div class="tests-v3-study-plan__modules">
+                                    <v-chip
+                                        v-for="module in semester.modules"
+                                        :key="module.key"
+                                        :color="studyPlan.color"
+                                        :title="module.name"
+                                        size="small"
+                                        variant="tonal"
+                                        label>
+                                        {{ module.code }}<template v-if="module.branchLabel"> · {{ module.branchLabel }}</template>
+                                    </v-chip>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </v-card-text>
+            </v-card>
+
+            <v-card
+                rounded="lg"
+                border
+                class="tests-v3-selection">
             <v-card-title class="tests-v3-selection__header d-flex flex-wrap align-center ga-3">
                 <div>
                     <div class="tests-v3-selection__title">Ausgewählte Studierende</div>
@@ -315,6 +405,42 @@
                             <span v-else class="text-medium-emphasis">–</span>
                         </td>
                         </tr>
+                        <tr class="tests-v3-selection__study-plan-row">
+                            <td colspan="7" class="tests-v3-selection__study-plan">
+                                <div class="tests-v3-selection__study-plan-header">
+                                    <span class="tests-v3-selection__study-plan-title">Module nach Semester</span>
+                                    <span
+                                        v-if="studentStudyPlanSemester(student)"
+                                        class="tests-v3-selection__study-plan-context">
+                                        {{ studentStudyPlanSemester(student).studyProgramLabel }} ·
+                                        {{ studentStudyPlanSemester(student).semester }}. Semester
+                                    </span>
+                                </div>
+                                <div
+                                    v-if="studyPlansLoading"
+                                    class="tests-v3-selection__test-status text-medium-emphasis">
+                                    <v-progress-circular color="primary" indeterminate size="18" width="2" />
+                                    Module werden geladen …
+                                </div>
+                                <div
+                                    v-else-if="studentStudyPlanSemester(student)"
+                                    class="tests-v3-study-plan__modules tests-v3-selection__study-plan-modules">
+                                    <v-chip
+                                        v-for="module in studentStudyPlanSemester(student).modules"
+                                        :key="module.key"
+                                        :color="studentStudyPlanSemester(student).color"
+                                        :title="module.name"
+                                        size="small"
+                                        variant="tonal"
+                                        label>
+                                        {{ module.code }}<template v-if="module.branchLabel"> · {{ module.branchLabel }}</template>
+                                    </v-chip>
+                                </div>
+                                <span v-else class="text-medium-emphasis">
+                                    Keine passende Modulzeile für {{ studentSemesterLabel(student) || 'dieses Semester' }} vorhanden.
+                                </span>
+                            </td>
+                        </tr>
                         <tr class="tests-v3-selection__module-test-row">
                             <td colspan="7" class="tests-v3-selection__module-test">
                                 <div class="tests-v3-selection__module-test-title">V3-Modultest</div>
@@ -355,6 +481,19 @@
                                                 label>
                                                 {{ group.count }}
                                             </v-chip>
+                                            <v-chip
+                                                v-if="['finished', 'negative'].includes(group.key)"
+                                                :color="studentModuleGroupMatches(student, group.key) ? 'success' : 'error'"
+                                                :prepend-icon="studentModuleGroupMatches(student, group.key) ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                                :title="studentModuleGroupMatches(student, group.key)
+                                                    ? 'Snapshot und V3-Ergebnis stimmen überein.'
+                                                    : 'Snapshot und V3-Ergebnis stimmen nicht überein.'"
+                                                size="x-small"
+                                                variant="flat"
+                                                label
+                                                class="tests-v3-selection__module-match">
+                                                {{ studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL' }}
+                                            </v-chip>
                                         </div>
                                         <div class="tests-v3-selection__module-codes">
                                             <span
@@ -374,17 +513,20 @@
                     </template>
                 </tbody>
             </v-table>
-        </v-card>
+            </v-card>
+        </template>
     </v-col>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
+import { settings as loadSubjectPlanSettings } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
 import { show as loadV3StudentInformation } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3StudentInformationController'
 import { robotStudents as loadRobotStudents } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
+const TESTS_V3_STUDENT_SELECTION_STORAGE_KEY_PREFIX = 'schooltool:students-timetables:tests-v3:selected-students'
 const STUDENT_V3_TEST_CONCURRENCY = 4
 const STUDENT_V3_TEST_GROUPS = [
     { key: 'finished', label: 'Abgeschlossene', color: 'success' },
@@ -392,6 +534,20 @@ const STUDENT_V3_TEST_GROUPS = [
     { key: 'previous', label: 'Frühere', color: 'warning' },
     { key: 'current', label: 'Aktuelle', color: 'primary' },
     { key: 'additional', label: 'Zusätzliche', color: 'info' },
+]
+const STUDY_PROGRAM_DEFINITIONS = [
+    {
+        key: 'normalstudium',
+        label: 'Normalstudium',
+        color: 'primary',
+        icon: 'mdi-calendar-range-outline',
+    },
+    {
+        key: 'kompaktstudium',
+        label: 'Kompaktstudium',
+        color: 'teal-darken-2',
+        icon: 'mdi-calendar-compress',
+    },
 ]
 const testsV3Actions = ['students', 'tests']
 const studentCollator = new Intl.Collator('de-AT', { numeric: true, sensitivity: 'base' })
@@ -404,6 +560,13 @@ export default {
             selectedStudentKeys: [],
             studentsLoading: false,
             studentsError: false,
+            studyPlanRows: {
+                normalstudium: [],
+                kompaktstudium: [],
+            },
+            studyPlansLoading: false,
+            studyPlansLoaded: false,
+            studyPlansError: '',
             studentV3TestResults: {},
             studentV3TestsRunning: false,
         }
@@ -456,6 +619,25 @@ export default {
                 .map(student => this.studentSelectionKey(student))
                 .filter(Boolean)
         },
+        studentClasses() {
+            const studentKeysByClass = new Map()
+
+            this.sortedStudents.forEach((student) => {
+                const classLabel = this.studentClassLabel(student)
+                const studentKey = this.studentSelectionKey(student)
+                const studentKeys = studentKeysByClass.get(classLabel) || []
+
+                if (studentKey) studentKeys.push(studentKey)
+
+                studentKeysByClass.set(classLabel, studentKeys)
+            })
+
+            return [...studentKeysByClass.entries()].map(([classLabel, studentKeys]) => ({
+                key: classLabel,
+                label: classLabel,
+                studentKeys: [...new Set(studentKeys)],
+            }))
+        },
         selectedStudentCount() {
             return this.selectedStudentKeys.length
         },
@@ -483,19 +665,70 @@ export default {
                 student => this.studentV3TestResult(student)?.status === 'error',
             ).length
         },
+        studyPlanSections() {
+            return STUDY_PROGRAM_DEFINITIONS.map((studyProgram) => {
+                const semesters = new Map()
+                const subjectRows = Array.isArray(this.studyPlanRows[studyProgram.key])
+                    ? this.studyPlanRows[studyProgram.key]
+                    : []
+
+                subjectRows
+                    .filter(subject => subject?.is_active !== false)
+                    .forEach((subject, subjectIndex) => {
+                        const semester = Number(subject?.semester)
+                        const code = String(subject?.json_code || '').trim()
+
+                        if (!Number.isInteger(semester) || semester < 1 || !code) return
+
+                        const branch = String(subject?.branch || '').trim().toLocaleLowerCase('de-AT')
+                        const branchLabel = {
+                            gymnasial: 'GYM',
+                            wirtschaftskundlich: 'WIKU',
+                        }[branch] || ''
+                        const modules = semesters.get(semester) || []
+
+                        modules.push({
+                            key: `${studyProgram.key}:${semester}:${code}:${branch || 'common'}:${subjectIndex}`,
+                            code,
+                            name: String(subject?.name || code).trim(),
+                            branchLabel,
+                        })
+                        semesters.set(semester, modules)
+                    })
+
+                return {
+                    ...studyProgram,
+                    semesters: [...semesters.entries()]
+                        .sort(([firstSemester], [secondSemester]) => firstSemester - secondSemester)
+                        .map(([semester, modules]) => ({ semester, modules })),
+                }
+            })
+        },
     },
     mounted() {
-        if (!this.redirectInvalidTestsV3Route() && this.testsV3Action === 'students') {
-            void this.loadStudents()
+        if (this.redirectInvalidTestsV3Route()) return
+
+        this.restoreStudentSelection()
+        void this.loadStudents()
+
+        if (this.testsV3Action === 'tests') {
+            void this.loadStudyPlans()
         }
     },
     watch: {
+        selectedStudentKeys() {
+            this.persistStudentSelection()
+        },
         '$route.params.subsection'(subsection) {
             this.testsV3Action = this.normalizedTestsV3Action(subsection)
             if (this.redirectInvalidTestsV3Route()) return
 
             if (this.testsV3Action === 'students') {
                 void this.loadStudents()
+            }
+
+            if (this.testsV3Action === 'tests') {
+                void this.loadStudyPlans()
             }
         },
     },
@@ -506,6 +739,47 @@ export default {
         handleTestsV3Navigation(key) {
             this.testsV3Action = this.normalizedTestsV3Action(key)
             this.$router.push({ path: `/admin/students-timetables/tests-v3/${this.testsV3Action}` })
+        },
+        studentSelectionStorageKey() {
+            const schoolyearId = this.config?.selected_schoolyear?.id || 'default'
+
+            return `${TESTS_V3_STUDENT_SELECTION_STORAGE_KEY_PREFIX}:${schoolyearId}`
+        },
+        studentSelectionStorage() {
+            if (typeof window === 'undefined' || !window.localStorage) return null
+
+            return window.localStorage
+        },
+        persistStudentSelection() {
+            try {
+                const studentKeys = [...new Set(
+                    this.selectedStudentKeys
+                        .map(studentKey => String(studentKey || '').trim())
+                        .filter(Boolean),
+                )]
+
+                this.studentSelectionStorage()?.setItem(
+                    this.studentSelectionStorageKey(),
+                    JSON.stringify(studentKeys),
+                )
+            } catch {
+                // Ignore unavailable or full browser storage.
+            }
+        },
+        restoreStudentSelection() {
+            try {
+                const storedStudentKeys = JSON.parse(
+                    this.studentSelectionStorage()?.getItem(this.studentSelectionStorageKey()) || '[]',
+                )
+
+                this.selectedStudentKeys = [...new Set(
+                    (Array.isArray(storedStudentKeys) ? storedStudentKeys : [])
+                        .map(studentKey => String(studentKey || '').trim())
+                        .filter(Boolean),
+                )]
+            } catch {
+                this.selectedStudentKeys = []
+            }
         },
         studentSelectionKey(student) {
             const studentCode = String(student?.student_code || student?.studentCode || '').trim()
@@ -543,22 +817,49 @@ export default {
                 String(selection.arts_subject || selection.artsSubject || '').trim().toLocaleUpperCase('de-AT'),
             ].filter(Boolean)
         },
-        studentSemesterLabel(student) {
+        studentStudyProgramKey(student) {
             const studyProgram = String(student?.study_program || student?.studyProgram || '')
                 .trim()
                 .toLocaleLowerCase('de-AT')
             const instructionType = String(student?.instruction_type || student?.instructionType || '')
                 .trim()
                 .toLocaleLowerCase('de-AT')
-            const studyProgramAbbreviation = studyProgram === 'kompaktstudium'
-                || instructionType === 'kompaktunterricht'
-                ? 'K'
-                : studyProgram === 'normalstudium' || instructionType === 'normalunterricht'
-                    ? 'N'
-                    : ''
+
+            if (studyProgram === 'kompaktstudium' || instructionType === 'kompaktunterricht') {
+                return 'kompaktstudium'
+            }
+
+            if (studyProgram === 'normalstudium' || instructionType === 'normalunterricht') {
+                return 'normalstudium'
+            }
+
+            return ''
+        },
+        studentSemesterLabel(student) {
+            const studyProgramAbbreviation = {
+                normalstudium: 'N',
+                kompaktstudium: 'K',
+            }[this.studentStudyProgramKey(student)] || ''
             const semester = String(student?.semester ?? '').trim()
 
             return [studyProgramAbbreviation, semester].filter(Boolean).join(' ')
+        },
+        studentStudyPlanSemester(student) {
+            const studyProgramKey = this.studentStudyProgramKey(student)
+            const semester = Number(student?.semester)
+
+            if (!studyProgramKey || !Number.isInteger(semester)) return null
+
+            const studyPlan = this.studyPlanSections.find(plan => plan.key === studyProgramKey)
+            const studyPlanSemester = studyPlan?.semesters.find(planSemester => planSemester.semester === semester)
+
+            if (!studyPlan || !studyPlanSemester) return null
+
+            return {
+                ...studyPlanSemester,
+                color: studyPlan.color,
+                studyProgramLabel: studyPlan.label,
+            }
         },
         studentSchoolLevelLabel(student) {
             const schoolLevel = String(student?.school_level || student?.schoolLevel || '')
@@ -619,6 +920,23 @@ export default {
             }
 
             this.selectedStudentKeys = this.selectedStudentKeys.filter(selectedKey => selectedKey !== studentKey)
+        },
+        isStudentClassSelected(studentClass) {
+            return studentClass.studentKeys.length > 0
+                && studentClass.studentKeys.every(studentKey => this.selectedStudentKeys.includes(studentKey))
+        },
+        toggleStudentClassSelection(studentClass) {
+            const classStudentKeys = new Set(studentClass.studentKeys)
+
+            if (this.isStudentClassSelected(studentClass)) {
+                this.selectedStudentKeys = this.selectedStudentKeys.filter(
+                    studentKey => !classStudentKeys.has(studentKey),
+                )
+
+                return
+            }
+
+            this.selectedStudentKeys = [...new Set([...this.selectedStudentKeys, ...studentClass.studentKeys])]
         },
         selectAllStudents() {
             this.selectedStudentKeys = [...this.studentSelectionKeys]
@@ -681,6 +999,40 @@ export default {
                     modules,
                 }
             })
+        },
+        normalizedStudentModuleCodes(modules) {
+            return [...new Set(
+                (Array.isArray(modules) ? modules : [])
+                    .map(module => String(module?.code || '').trim().toLocaleUpperCase('de-AT'))
+                    .filter(Boolean),
+            )].sort(studentCollator.compare)
+        },
+        studentModuleGroupMatches(student, moduleGroupKey) {
+            const result = this.studentV3TestResult(student)
+
+            if (result?.status !== 'complete') return null
+
+            const snapshotGroupKey = {
+                finished: 'completed',
+                negative: 'negative',
+            }[moduleGroupKey]
+
+            if (!snapshotGroupKey) return null
+
+            const moduleGroup = result.groups.find(group => group.key === moduleGroupKey)
+            const snapshotCodes = this.normalizedStudentModuleCodes(
+                this.studentCourseResultItems(student, snapshotGroupKey),
+            )
+            const testResultCodes = this.normalizedStudentModuleCodes(moduleGroup?.modules)
+
+            return snapshotCodes.length === testResultCodes.length
+                && snapshotCodes.every((code, index) => code === testResultCodes[index])
+        },
+        studentFinishedModulesMatch(student) {
+            return this.studentModuleGroupMatches(student, 'finished')
+        },
+        studentNegativeModulesMatch(student) {
+            return this.studentModuleGroupMatches(student, 'negative')
         },
         async runStudentV3Test(student) {
             const studentCode = String(student?.student_code || student?.studentCode || '').trim()
@@ -767,6 +1119,42 @@ export default {
                 this.studentsLoading = false
             }
         },
+        async loadStudyPlans() {
+            if (this.studyPlansLoading || this.studyPlansLoaded) return
+
+            this.studyPlansLoading = true
+            this.studyPlansError = ''
+
+            try {
+                const responses = await Promise.all(STUDY_PROGRAM_DEFINITIONS.map(studyProgram => axios.get(
+                    loadSubjectPlanSettings.url(
+                        { studyProgram: studyProgram.key },
+                        {
+                            query: {
+                                schoolyear_scope: 'personal',
+                                subjects_only: true,
+                            },
+                        },
+                    ),
+                )))
+
+                this.studyPlanRows = Object.fromEntries(STUDY_PROGRAM_DEFINITIONS.map((studyProgram, index) => [
+                    studyProgram.key,
+                    Array.isArray(responses[index].data?.data?.subjects)
+                        ? responses[index].data.data.subjects
+                        : [],
+                ]))
+                this.studyPlansLoaded = true
+            } catch {
+                this.studyPlanRows = {
+                    normalstudium: [],
+                    kompaktstudium: [],
+                }
+                this.studyPlansError = 'Die Fachpläne konnten nicht geladen werden.'
+            } finally {
+                this.studyPlansLoading = false
+            }
+        },
         redirectInvalidTestsV3Route() {
             if (
                 this.$route.params.section !== 'tests-v3'
@@ -817,6 +1205,88 @@ export default {
     overflow: hidden;
 }
 
+.tests-v3-study-plans {
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.tests-v3-study-plans__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-study-plans__title {
+    color: #1e2433;
+    font-weight: 800;
+}
+
+.tests-v3-study-plans__content {
+    display: grid;
+    gap: 22px;
+    padding: 20px;
+}
+
+.tests-v3-study-plan {
+    min-width: 0;
+}
+
+.tests-v3-study-plan + .tests-v3-study-plan {
+    padding-top: 22px;
+    border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-study-plan__heading {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.tests-v3-study-plan__heading h3 {
+    margin: 0;
+    color: #1e2433;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.tests-v3-study-plan__semesters {
+    overflow: hidden;
+    border: 1px solid #dbe3ee;
+    border-radius: 10px;
+}
+
+.tests-v3-study-plan__semester {
+    display: grid;
+    grid-template-columns: minmax(100px, 128px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 11px 13px;
+    background: #fff;
+}
+
+.tests-v3-study-plan__semester:nth-child(even) {
+    background: #f8fafc;
+}
+
+.tests-v3-study-plan__semester + .tests-v3-study-plan__semester {
+    border-top: 1px solid #e2e8f0;
+}
+
+.tests-v3-study-plan__semester-label {
+    padding-top: 4px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.tests-v3-study-plan__modules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
 .tests-v3-students__header {
     padding: 16px 20px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.24);
@@ -829,6 +1299,33 @@ export default {
 
 .tests-v3-students__actions {
     justify-content: flex-end;
+}
+
+.tests-v3-students__classes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-students__classes-label {
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tests-v3-students__class-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tests-v3-students__class-chip {
+    font-weight: 800;
 }
 
 .tests-v3-students__table :deep(th) {
@@ -971,8 +1468,44 @@ export default {
     background: #eef2ff;
 }
 
-.tests-v3-selection__table :deep(.tests-v3-selection__module-test-row) {
+.tests-v3-selection__table :deep(.tests-v3-selection__study-plan-row) {
     background: #f8fafc;
+}
+
+.tests-v3-selection__table :deep(.tests-v3-selection__module-test-row) {
+    background: #f1f5f9;
+}
+
+.tests-v3-selection__study-plan {
+    padding-block: 12px !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24) !important;
+    vertical-align: top;
+}
+
+.tests-v3-selection__study-plan-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 8px;
+}
+
+.tests-v3-selection__study-plan-title {
+    color: #1e3a8a;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tests-v3-selection__study-plan-context {
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.tests-v3-selection__study-plan-modules {
+    min-height: 26px;
 }
 
 .tests-v3-selection__module-test {
@@ -1039,6 +1572,11 @@ export default {
     font-weight: 800;
 }
 
+.tests-v3-selection__module-match {
+    margin-left: auto;
+    font-weight: 900;
+}
+
 .tests-v3-selection__module-codes {
     display: flex;
     flex-wrap: wrap;
@@ -1058,6 +1596,15 @@ export default {
 }
 
 @media (max-width: 600px) {
+    .tests-v3-study-plan__semester {
+        grid-template-columns: 1fr;
+        gap: 7px;
+    }
+
+    .tests-v3-study-plan__semester-label {
+        padding-top: 0;
+    }
+
     .tests-v3-students__actions {
         width: 100%;
         justify-content: flex-start;

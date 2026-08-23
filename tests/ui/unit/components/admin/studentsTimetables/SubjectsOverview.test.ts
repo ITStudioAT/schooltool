@@ -1026,6 +1026,13 @@ describe('Students timetable subjects overview', () => {
         )
         expect(componentSource).toContain("v-if=\"testsV3Action === 'students'\"")
         expect(componentSource).toContain("v-else-if=\"testsV3Action === 'tests'\"")
+        expect(componentSource).toContain('Module nach Semester')
+        expect(componentSource).toContain('{{ semester.semester }}. Semester')
+        expect(componentSource).toContain('{{ module.code }}')
+        expect(componentSource).toContain('Normalstudium')
+        expect(componentSource).toContain('Kompaktstudium')
+        expect(componentSource.indexOf('class="tests-v3-study-plans"'))
+            .toBeLessThan(componentSource.indexOf('class="tests-v3-selection"'))
         expect(componentSource).toContain('Ausgewählte Studierende')
         expect(componentSource).toContain('{{ selectedStudents.length }} Studierende für die Tests übernommen')
         expect(componentSource).toContain('v-for="student in selectedStudents"')
@@ -1046,6 +1053,10 @@ describe('Students timetable subjects overview', () => {
         expect(runTestsButtonSource).not.toContain('href=')
         expect(runTestsButtonSource).not.toContain('to=')
         expect(componentSource).toContain('V3-Modultest')
+        expect(componentSource).toContain('class="tests-v3-selection__study-plan-row"')
+        expect(componentSource).toContain('studentStudyPlanSemester(student).modules')
+        expect(componentSource.indexOf('class="tests-v3-selection__study-plan-row"'))
+            .toBeLessThan(componentSource.indexOf('class="tests-v3-selection__module-test-row"'))
         expect(componentSource).toContain('class="tests-v3-selection__module-test-row"')
         expect(componentSource).toContain('<td colspan="7" class="tests-v3-selection__module-test">')
         expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
@@ -1053,12 +1064,17 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('response.data?.data?.module_selection_groups')
         expect(componentSource).toContain('STUDENT_V3_TEST_CONCURRENCY = 4')
         expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
+        expect(componentSource).toContain("['finished', 'negative'].includes(group.key)")
+        expect(componentSource).toContain("studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL'")
+        expect(componentSource).toContain('class="tests-v3-selection__module-match"')
         expect(componentSource).toContain("{ key: 'negative', label: 'Negative', color: 'error' }")
         expect(componentSource).toContain("{ key: 'previous', label: 'Frühere', color: 'warning' }")
         expect(componentSource).toContain("{ key: 'current', label: 'Aktuelle', color: 'primary' }")
         expect(componentSource).toContain("{ key: 'additional', label: 'Zusätzliche', color: 'info' }")
         expect(componentSource).toContain('Alle auswählen')
         expect(componentSource).toContain('Keine auswählen')
+        expect(componentSource).toContain('v-for="studentClass in studentClasses"')
+        expect(componentSource).toContain('@click="toggleStudentClassSelection(studentClass)"')
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('<th class="tests-v3-students__class-column">Klasse</th>')
         expect(componentSource).toContain('<th class="tests-v3-students__name-column">Name</th>')
@@ -1093,11 +1109,127 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('mdi-gender-female')
     })
 
+    it('loads and groups both personal-schoolyear study plans by semester', async () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const get = vi.fn((url: string) => Promise.resolve({
+            data: {
+                data: {
+                    subjects: url.includes('/kompaktstudium')
+                        ? [
+                            { semester: 1, json_code: 'D2', name: 'Deutsch 2', is_active: true },
+                            {
+                                semester: 3,
+                                json_code: 'ÖKO2',
+                                name: 'Ökonomie und Ökologie 2',
+                                branch: 'wirtschaftskundlich',
+                                is_active: true,
+                            },
+                        ]
+                        : [
+                            { semester: 1, json_code: 'D1', name: 'Deutsch 1', is_active: true },
+                            { semester: 2, json_code: 'M2', name: 'Mathematik 2', is_active: true },
+                            { semester: 2, json_code: 'OLD', name: 'Inaktiv', is_active: false },
+                        ],
+                },
+            },
+        }))
+        const context: any = {
+            studyPlanRows: {
+                normalstudium: [],
+                kompaktstudium: [],
+            },
+            studyPlansLoading: false,
+            studyPlansLoaded: false,
+            studyPlansError: '',
+        }
+
+        vi.stubGlobal('axios', { get })
+
+        try {
+            await methods.loadStudyPlans.call(context)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(get).toHaveBeenCalledTimes(2)
+        expect(get.mock.calls.map(([url]) => url)).toEqual([
+            '/api/admin/students-timetables/subjects-overview-settings/normalstudium?schoolyear_scope=personal&subjects_only=1',
+            '/api/admin/students-timetables/subjects-overview-settings/kompaktstudium?schoolyear_scope=personal&subjects_only=1',
+        ])
+        expect(context.studyPlansLoaded).toBe(true)
+        expect(context.studyPlansError).toBe('')
+
+        const studyPlanSections = computed.studyPlanSections.call(context)
+
+        expect(studyPlanSections.map((studyPlan: any) => studyPlan.label)).toEqual([
+            'Normalstudium',
+            'Kompaktstudium',
+        ])
+        expect(studyPlanSections[0].semesters.map((semester: any) => [
+            semester.semester,
+            semester.modules.map((module: any) => module.code),
+        ])).toEqual([
+            [1, ['D1']],
+            [2, ['M2']],
+        ])
+        expect(studyPlanSections[1].semesters[1].modules[0]).toMatchObject({
+            code: 'ÖKO2',
+            branchLabel: 'WIKU',
+        })
+
+        const studentStudyPlanContext: any = {
+            ...methods,
+            studyPlanSections,
+        }
+
+        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
+            instruction_type: 'Normalunterricht',
+            semester: 2,
+        })).toMatchObject({
+            studyProgramLabel: 'Normalstudium',
+            semester: 2,
+            color: 'primary',
+            modules: [{ code: 'M2' }],
+        })
+        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
+            instruction_type: 'Kompaktunterricht',
+            semester: 3,
+        })).toMatchObject({
+            studyProgramLabel: 'Kompaktstudium',
+            semester: 3,
+            color: 'teal-darken-2',
+            modules: [{ code: 'ÖKO2', branchLabel: 'WIKU' }],
+        })
+        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
+            instruction_type: 'Normalunterricht',
+            semester: 8,
+        })).toBeNull()
+    })
+
     it('runs the existing v3 module calculation for every selected student and publishes each result immediately', async () => {
         const methods = (TestsV3 as any).methods
         const students = [
-            { student_code: '1001', class: '1A', last_name: 'Auer', first_name: 'Anna' },
-            { student_code: '2002', class: '1A', last_name: 'Bauer', first_name: 'Berta' },
+            {
+                student_code: '1001',
+                class: '1A',
+                last_name: 'Auer',
+                first_name: 'Anna',
+                course_results: {
+                    completed: [
+                        { code: 'm1', grade: '2' },
+                        { code: 'D1', grade: 'B' },
+                    ],
+                    negative: [{ code: 'e1', grade: '5' }],
+                },
+            },
+            {
+                student_code: '2002',
+                class: '1A',
+                last_name: 'Bauer',
+                first_name: 'Berta',
+                course_results: { completed: [], negative: [] },
+            },
         ]
         const firstStudentGroups = [
             {
@@ -1164,6 +1296,22 @@ describe('Students timetable subjects overview', () => {
                 ['current', 1, ['D2']],
                 ['additional', 1, ['PH1']],
             ])
+            expect(methods.studentFinishedModulesMatch.call(context, students[0])).toBe(true)
+            expect(methods.studentNegativeModulesMatch.call(context, students[0])).toBe(true)
+            expect(methods.studentFinishedModulesMatch.call(context, {
+                ...students[0],
+                course_results: {
+                    completed: [{ code: 'D1', grade: 'B' }],
+                    negative: [{ code: 'E1', grade: '5' }],
+                },
+            })).toBe(false)
+            expect(methods.studentNegativeModulesMatch.call(context, {
+                ...students[0],
+                course_results: {
+                    completed: students[0].course_results.completed,
+                    negative: [{ code: 'BU1', grade: '5' }],
+                },
+            })).toBe(false)
 
             resolveSecondStudentRequest({
                 data: { data: { module_selection_groups: secondStudentGroups } },
@@ -1174,6 +1322,8 @@ describe('Students timetable subjects overview', () => {
         }
 
         expect(context.studentV3TestResults['2002'].status).toBe('complete')
+        expect(methods.studentFinishedModulesMatch.call(context, students[1])).toBe(true)
+        expect(methods.studentNegativeModulesMatch.call(context, students[1])).toBe(true)
         expect(context.studentV3TestsRunning).toBe(false)
         expect(get.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
             '/api/admin/students-timetables/timetable-v3/student-information?student_code=1001',
@@ -1242,9 +1392,22 @@ describe('Students timetable subjects overview', () => {
         }
         selectionContext.sortedStudents = computed.sortedStudents.call(selectionContext)
         selectionContext.studentSelectionKeys = computed.studentSelectionKeys.call(selectionContext)
+        selectionContext.studentClasses = computed.studentClasses.call(selectionContext)
 
         expect(selectionContext.sortedStudents.map((student: { student_code: string }) => student.student_code))
             .toEqual(['1001', '2002', '3003'])
+        expect(selectionContext.studentClasses).toEqual([
+            {
+                key: '1B',
+                label: '1B',
+                studentKeys: ['1001', '2002'],
+            },
+            {
+                key: '2A',
+                label: '2A',
+                studentKeys: ['3003'],
+            },
+        ])
         expect(methods.studentSexPresentation({ sex: ' M ' })).toEqual({
             icon: 'mdi-gender-male',
             color: 'blue',
@@ -1327,6 +1490,15 @@ describe('Students timetable subjects overview', () => {
         }, 'negative')).toEqual(['E1 (5)', 'BU1 (N)'])
         expect(methods.studentCourseResultLabels({}, 'completed')).toEqual([])
 
+        methods.toggleStudentClassSelection.call(selectionContext, selectionContext.studentClasses[0])
+
+        expect(selectionContext.selectedStudentKeys).toEqual(['1001', '2002'])
+        expect(methods.isStudentClassSelected.call(selectionContext, selectionContext.studentClasses[0])).toBe(true)
+
+        methods.toggleStudentClassSelection.call(selectionContext, selectionContext.studentClasses[0])
+
+        expect(selectionContext.selectedStudentKeys).toEqual([])
+
         methods.selectAllStudents.call(selectionContext)
 
         expect(selectionContext.selectedStudentKeys).toEqual(['1001', '2002', '3003'])
@@ -1342,6 +1514,70 @@ describe('Students timetable subjects overview', () => {
         methods.clearStudentSelection.call(selectionContext)
 
         expect(selectionContext.selectedStudentKeys).toEqual([])
+    })
+
+    it('restores the selected timetable v3 students after a refresh', async () => {
+        const methods = (TestsV3 as any).methods
+        const watch = (TestsV3 as any).watch
+        const storageContext: any = {
+            ...methods,
+            config: {
+                selected_schoolyear: { id: 77 },
+            },
+            students: [],
+            selectedStudentKeys: ['1001', '2002', '1001'],
+            studentsLoading: false,
+            studentsError: false,
+        }
+        const storageKey = methods.studentSelectionStorageKey.call(storageContext)
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    { id: 1, student_code: '1001' },
+                    { id: 2, student_code: '2002' },
+                ],
+            },
+        })
+
+        window.localStorage.clear()
+        vi.stubGlobal('axios', { get })
+
+        try {
+            methods.persistStudentSelection.call(storageContext)
+
+            expect(JSON.parse(window.localStorage.getItem(storageKey) || '[]'))
+                .toEqual(['1001', '2002'])
+
+            window.localStorage.setItem(storageKey, JSON.stringify(['1001', 'missing', '1001']))
+            storageContext.selectedStudentKeys = []
+            methods.restoreStudentSelection.call(storageContext)
+
+            expect(storageContext.selectedStudentKeys).toEqual(['1001', 'missing'])
+
+            await methods.loadStudents.call(storageContext)
+            watch.selectedStudentKeys.call(storageContext)
+
+            expect(storageContext.selectedStudentKeys).toEqual(['1001'])
+            expect(JSON.parse(window.localStorage.getItem(storageKey) || '[]')).toEqual(['1001'])
+        } finally {
+            vi.unstubAllGlobals()
+            window.localStorage.clear()
+        }
+
+        const mountedContext = {
+            testsV3Action: 'tests',
+            redirectInvalidTestsV3Route: vi.fn().mockReturnValue(false),
+            restoreStudentSelection: vi.fn(),
+            loadStudents: vi.fn(),
+            loadStudyPlans: vi.fn(),
+        }
+        const mounted = (TestsV3 as any).mounted
+
+        mounted.call(mountedContext)
+
+        expect(mountedContext.restoreStudentSelection).toHaveBeenCalledOnce()
+        expect(mountedContext.loadStudents).toHaveBeenCalledOnce()
+        expect(mountedContext.loadStudyPlans).toHaveBeenCalledOnce()
     })
 
     it('opens the TT entries page from the module navigation', () => {

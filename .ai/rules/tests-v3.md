@@ -37,3 +37,21 @@ This supersedes the presentational-only Run Tests rule. Run Tests calls the exis
 
 ## Show V3 module results in a second student row
 This supersedes the one-complete-row rule. Keep the first Tests table row identical to the transferred student overview; render V3-Modultest as a full-width second row directly below that student. Retain progressive per-student updates and the five backend-calculated groups.
+
+## Show both study plans before selected test students
+In Tests V3 > Tests, render one read-only "Module nach Semester" card immediately before "Ausgewählte Studierende". Load both personal-schoolyear Normalstudium and Kompaktstudium rows through the existing subject-plan settings action, group active rows by semester, and mark branch-specific modules GYM/WIKU; do not hardcode plan modules in Vue.
+
+## Toggle Tests v3 students by class
+In Tests V3 > Studierende, show one chip per loaded class. Clicking a class chip selects every student in that class unless the whole class is already selected; clicking a fully selected class chip deselects every student in that class.
+
+## Show the matching semester modules for each test student
+In Tests V3 > Tests, render a Module nach Semester row directly below each selected student's overview and before V3-Modultest. Select the Normalstudium/Kompaktstudium plan and semester from the same backend-provided values used for the student's N/K semester label (for example N 1); never derive this row from the class name.
+
+## Compare snapshot completion with V3 finished modules
+After each Tests V3 student calculation completes, compare the unique, case-normalized module-code set from the student's stored Befreit/Bestanden snapshot with the V3 finished/Abgeschlossene set. Show a green OK or red FAIL at the top right of the Abgeschlossene group; compare sets independent of order and treat two empty sets as matching.
+
+## Compare stored and V3 negative module sets
+After a student's V3 calculation completes, compare the stored Negativ snapshot module codes with the V3 Negative module codes. Normalize case, remove duplicates, and ignore order. Show green OK or red FAIL at the top right of the Negative group; two empty sets count as a match.
+
+## Persist the Tests V3 student selection
+Keep selected Tests V3 student keys in schoolyear-scoped browser storage so F5 restores them on both Studierende and Tests. Always reload the server student list after restoration and remove stored keys that are no longer available.
