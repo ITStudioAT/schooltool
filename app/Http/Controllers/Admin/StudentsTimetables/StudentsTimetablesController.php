@@ -17,6 +17,7 @@ use App\Services\StudentsTimetables\StudentsTimetablesService;
 use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableCompletedCourseHistoryService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
+use App\Services\StudentsTimetables\StudentTimetableExpectedModulesService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetablePublishedTimetableService;
 use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
@@ -70,6 +71,7 @@ class StudentsTimetablesController extends Controller
 
     public function robotStudents(
         StudentTimetablesStudentOverviewService $studentOverviewService,
+        StudentTimetableExpectedModulesService $expectedModulesService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
@@ -89,26 +91,56 @@ class StudentsTimetablesController extends Controller
             ->get(['id', 'student_code', 'published_at'])
             ->keyBy(fn (StudentTimetablePublishedTimetable $publishedTimetable): string => (string) $publishedTimetable->student_code);
         $students = $students
-            ->map(fn (Import116 $student): array => [
-                'id' => (int) $student->id,
-                'class' => (string) $student->class,
-                'school_level' => $student->school_level,
-                'attendance_year' => $student->attendance_year,
-                'religion' => $student->religion,
-                'student_code' => (string) $student->student_code,
-                'last_name' => (string) $student->last_name,
-                'first_name' => (string) $student->first_name,
-                'email' => (string) $student->email,
-                'sex' => (string) $student->sex,
-                'study_selection' => $this->storedStudySelection($student),
-                'course_results' => $this->storedCourseResults($student),
-                'instruction_type' => $studentOverviewService->instructionTypeForStudent($student),
-                'semester' => $studentOverviewService->semesterForStudent($student),
-                'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
-                'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
-                'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
-                'published_timetable_at' => optional($publishedTimetables->get((string) $student->student_code)?->published_at)->toIso8601String(),
-            ])
+            ->map(function (Import116 $student) use ($authUser, $expectedModulesService, $publishedTimetables, $studentOverviewService): array {
+                $instructionType = $studentOverviewService->instructionTypeForStudent($student);
+                $studyProgram = $instructionType === 'Kompaktunterricht'
+                    ? StudentTimetableStudyProgram::Kompaktstudium
+                    : StudentTimetableStudyProgram::Normalstudium;
+                $semester = $studentOverviewService->semesterForStudent($student, $studyProgram);
+                $studySelection = $this->storedStudySelection($student);
+                $courseResults = $this->storedCourseResults($student);
+
+                return [
+                    'id' => (int) $student->id,
+                    'class' => (string) $student->class,
+                    'school_level' => $student->school_level,
+                    'attendance_year' => $student->attendance_year,
+                    'religion' => $student->religion,
+                    'student_code' => (string) $student->student_code,
+                    'last_name' => (string) $student->last_name,
+                    'first_name' => (string) $student->first_name,
+                    'email' => (string) $student->email,
+                    'sex' => (string) $student->sex,
+                    'study_program' => $studyProgram->value,
+                    'study_selection' => $studySelection,
+                    'course_results' => $courseResults,
+                    'expected_modules' => $expectedModulesService->forStudent(
+                        $authUser,
+                        $studyProgram,
+                        $semester,
+                        [
+                            ...$studySelection,
+                            'student_religion' => $this->emptyStringToNull($student->religion),
+                        ],
+                        $courseResults,
+                    ),
+                    'expected_additional_modules' => $expectedModulesService->additionalForStudent(
+                        $authUser,
+                        $studyProgram,
+                        [
+                            ...$studySelection,
+                            'student_religion' => $this->emptyStringToNull($student->religion),
+                        ],
+                        $courseResults,
+                    ),
+                    'instruction_type' => $instructionType,
+                    'semester' => $semester,
+                    'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
+                    'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
+                    'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
+                    'published_timetable_at' => optional($publishedTimetables->get((string) $student->student_code)?->published_at)->toIso8601String(),
+                ];
+            })
             ->values();
 
         return response()->json([

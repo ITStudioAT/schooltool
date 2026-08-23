@@ -1027,17 +1027,42 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("v-if=\"testsV3Action === 'students'\"")
         expect(componentSource).toContain("v-else-if=\"testsV3Action === 'tests'\"")
         expect(componentSource).toContain('Module nach Semester')
+        expect(componentSource).not.toContain('Soll-Module nach Semester')
         expect(componentSource).toContain('{{ semester.semester }}. Semester')
         expect(componentSource).toContain('{{ module.code }}')
         expect(componentSource).toContain('Normalstudium')
         expect(componentSource).toContain('Kompaktstudium')
+        expect(componentSource).toContain('v-model="expandedStudyPlans"')
+        expect(componentSource).toContain('<v-expansion-panel')
+        expect(componentSource).toContain('multiple')
+        expect(componentSource).toContain('expandedStudyPlans: []')
         expect(componentSource.indexOf('class="tests-v3-study-plans"'))
             .toBeLessThan(componentSource.indexOf('class="tests-v3-selection"'))
         expect(componentSource).toContain('Ausgewählte Studierende')
         expect(componentSource).toContain('{{ selectedStudents.length }} Studierende für die Tests übernommen')
         expect(componentSource).toContain('v-for="student in selectedStudents"')
         expect(componentSource).toContain('class="tests-v3-students__table tests-v3-selection__table"')
-        expect(componentSource).toContain('icon="mdi-checkbox-marked"')
+        const selectedStudentsTableClassIndex = componentSource.indexOf(
+            'class="tests-v3-students__table tests-v3-selection__table"',
+        )
+        const selectedStudentsTableStartIndex = componentSource.lastIndexOf('<v-table', selectedStudentsTableClassIndex)
+        const selectedStudentsTableEndIndex = componentSource.indexOf('</v-table>', selectedStudentsTableClassIndex)
+        const selectedStudentsTableSource = componentSource.slice(
+            selectedStudentsTableStartIndex,
+            selectedStudentsTableEndIndex + 10,
+        )
+
+        expect(selectedStudentsTableStartIndex).toBeGreaterThan(-1)
+        expect(selectedStudentsTableEndIndex).toBeGreaterThan(-1)
+        expect(selectedStudentsTableSource).not.toContain('>Befreit/Bestanden</th>')
+        expect(selectedStudentsTableSource).not.toContain('>Negativ</th>')
+        expect(selectedStudentsTableSource).not.toContain("studentCourseResultItems(student, 'completed')")
+        expect(selectedStudentsTableSource).not.toContain("studentCourseResultItems(student, 'negative')")
+        expect(selectedStudentsTableSource).not.toContain('tests-v3-selection__study-plan')
+        expect(selectedStudentsTableSource).toContain('<td colspan="5" class="tests-v3-selection__module-test">')
+        expect(selectedStudentsTableSource).toContain('aria-label="Teststatus"')
+        expect(selectedStudentsTableSource).toContain('v-bind="studentV3TestStatusPresentation(student)"')
+        expect(selectedStudentsTableSource).not.toContain('icon="mdi-checkbox-marked"')
         expect(componentSource).toContain('class="tests-v3-students__row--selected"')
         const runTestsButtonClassIndex = componentSource.indexOf('class="tests-v3-selection__run-button"')
         const runTestsButtonStartIndex = componentSource.lastIndexOf('<v-btn', runTestsButtonClassIndex)
@@ -1053,20 +1078,45 @@ describe('Students timetable subjects overview', () => {
         expect(runTestsButtonSource).not.toContain('href=')
         expect(runTestsButtonSource).not.toContain('to=')
         expect(componentSource).toContain('V3-Modultest')
-        expect(componentSource).toContain('class="tests-v3-selection__study-plan-row"')
-        expect(componentSource).toContain('studentStudyPlanSemester(student).modules')
-        expect(componentSource.indexOf('class="tests-v3-selection__study-plan-row"'))
-            .toBeLessThan(componentSource.indexOf('class="tests-v3-selection__module-test-row"'))
+        expect(componentSource).not.toContain('class="tests-v3-selection__study-plan-row"')
         expect(componentSource).toContain('class="tests-v3-selection__module-test-row"')
-        expect(componentSource).toContain('<td colspan="7" class="tests-v3-selection__module-test">')
+        expect(componentSource).toContain('<td colspan="5" class="tests-v3-selection__module-test">')
         expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
         expect(componentSource).toContain('loadV3StudentInformation')
         expect(componentSource).toContain('response.data?.data?.module_selection_groups')
         expect(componentSource).toContain('STUDENT_V3_TEST_CONCURRENCY = 4')
         expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
-        expect(componentSource).toContain("['finished', 'negative'].includes(group.key)")
+        expect(componentSource).toContain(
+            "v-if=\"['finished', 'negative', 'previous', 'current', 'additional'].includes(group.key)\"",
+        )
+        expect(componentSource).toContain(
+            "const STUDENT_V3_TEST_COMPARISON_GROUP_KEYS = ['finished', 'negative', 'previous', 'current', 'additional']",
+        )
         expect(componentSource).toContain("studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL'")
         expect(componentSource).toContain('class="tests-v3-selection__module-match"')
+        expect(componentSource).toContain('class="tests-v3-selection__module-comparison"')
+        expect(componentSource).toContain('class="tests-v3-selection__module-comparison-divider"')
+        expect(componentSource).toContain('class="tests-v3-selection__module-comparison-result"')
+        expect(componentSource).toContain('Soll-Module')
+        expect(componentSource).toContain('Abweichende Module')
+        expect(componentSource).toContain(
+            '<template v-if="studentModuleGroupMismatches(student, group.key).length">',
+        )
+        expect(componentSource).not.toContain(
+            'v-if="!studentModuleGroupMismatches(student, group.key).length"',
+        )
+        expect(componentSource)
+            .toMatch(/\.tests-v3-selection__module-group\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
+        expect(componentSource)
+            .toMatch(/\.tests-v3-selection__module-comparison-result\s*\{[^}]*margin-top:\s*auto;/s)
+        expect(componentSource).toContain('<template v-if="module.grade"> (<strong')
+        expect(componentSource).toContain("group.key === 'finished'")
+        expect(componentSource).toContain("'tests-v3-students__course-result-grade--completed'")
+        expect(componentSource).toContain("'tests-v3-students__course-result-grade--negative'")
+        expect(componentSource).toContain('{{ module.grade }}</strong>)</template>')
+        expect(componentSource).toContain('studentModuleGroupMismatches(student, group.key)')
+        expect(componentSource.indexOf('class="tests-v3-selection__module-comparison-divider"'))
+            .toBeLessThan(componentSource.indexOf('class="tests-v3-selection__module-comparison-result"'))
         expect(componentSource).toContain("{ key: 'negative', label: 'Negative', color: 'error' }")
         expect(componentSource).toContain("{ key: 'previous', label: 'Frühere', color: 'warning' }")
         expect(componentSource).toContain("{ key: 'current', label: 'Aktuelle', color: 'primary' }")
@@ -1166,6 +1216,9 @@ describe('Students timetable subjects overview', () => {
             'Normalstudium',
             'Kompaktstudium',
         ])
+        expect(studyPlanSections[1]).toMatchObject({
+            icon: 'mdi-calendar-collapse-horizontal-outline',
+        })
         expect(studyPlanSections[0].semesters.map((semester: any) => [
             semester.semester,
             semester.modules.map((module: any) => module.code),
@@ -1183,27 +1236,18 @@ describe('Students timetable subjects overview', () => {
             studyPlanSections,
         }
 
-        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
-            instruction_type: 'Normalunterricht',
-            semester: 2,
-        })).toMatchObject({
-            studyProgramLabel: 'Normalstudium',
-            semester: 2,
-            color: 'primary',
-            modules: [{ code: 'M2' }],
-        })
-        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
-            instruction_type: 'Kompaktunterricht',
-            semester: 3,
-        })).toMatchObject({
-            studyProgramLabel: 'Kompaktstudium',
-            semester: 3,
-            color: 'teal-darken-2',
-            modules: [{ code: 'ÖKO2', branchLabel: 'WIKU' }],
-        })
-        expect(methods.studentStudyPlanSemester.call(studentStudyPlanContext, {
-            instruction_type: 'Normalunterricht',
-            semester: 8,
+        expect(methods.studentExpectedModules.call(studentStudyPlanContext, {
+            student_code: '1001',
+            expected_modules: [
+                { code: 'E1', name: 'Englisch 1', semester: 1 },
+                { code: 'BU2', name: 'Biologie 2', semester: 2 },
+            ],
+        })).toEqual([
+            expect.objectContaining({ code: 'E1', semester: 1 }),
+            expect.objectContaining({ code: 'BU2', semester: 2 }),
+        ])
+        expect(methods.studentExpectedModules.call(studentStudyPlanContext, {
+            student_code: '1001',
         })).toBeNull()
     })
 
@@ -1213,6 +1257,7 @@ describe('Students timetable subjects overview', () => {
             {
                 student_code: '1001',
                 class: '1A',
+                semester: 2,
                 last_name: 'Auer',
                 first_name: 'Anna',
                 course_results: {
@@ -1222,13 +1267,25 @@ describe('Students timetable subjects overview', () => {
                     ],
                     negative: [{ code: 'e1', grade: '5' }],
                 },
+                expected_modules: [
+                    { code: 'OLD1', name: 'Altes Soll 1', semester: 1 },
+                    { code: 'OLD2', name: 'Altes Soll 2', semester: 2 },
+                ],
+                expected_additional_modules: [
+                    { code: 'BU1', name: 'Biologie 1', semester: 1 },
+                    { code: 'D2', name: 'Deutsch 2', semester: 2 },
+                    { code: 'PH1', name: 'Physik 1', semester: 3 },
+                ],
             },
             {
                 student_code: '2002',
                 class: '1A',
+                semester: 1,
                 last_name: 'Bauer',
                 first_name: 'Berta',
                 course_results: { completed: [], negative: [] },
+                expected_modules: [],
+                expected_additional_modules: [{ code: 'D1', name: 'Deutsch 1', semester: 1 }],
             },
         ]
         const firstStudentGroups = [
@@ -1298,6 +1355,43 @@ describe('Students timetable subjects overview', () => {
             ])
             expect(methods.studentFinishedModulesMatch.call(context, students[0])).toBe(true)
             expect(methods.studentNegativeModulesMatch.call(context, students[0])).toBe(true)
+            expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'finished')).toEqual([
+                expect.objectContaining({ code: 'D1', grade: 'B' }),
+                expect.objectContaining({ code: 'm1', grade: '2' }),
+            ])
+            expect(methods.studentModuleGroupMismatches.call(context, students[0], 'finished')).toEqual([])
+            expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'negative')).toEqual([
+                expect.objectContaining({ code: 'e1', grade: '5' }),
+            ])
+            expect(methods.studentModuleGroupMismatches.call(context, students[0], 'negative')).toEqual([])
+            expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'previous')).toEqual([
+                expect.objectContaining({ code: 'BU1', title: 'Biologie 1' }),
+            ])
+            expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'current')).toEqual([
+                expect.objectContaining({ code: 'D2', title: 'Deutsch 2' }),
+            ])
+            expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'additional')).toEqual([
+                expect.objectContaining({ code: 'PH1', title: 'Physik 1' }),
+            ])
+            expect(methods.studentModuleGroupMatches.call(context, students[0], 'previous')).toBe(true)
+            expect(methods.studentModuleGroupMatches.call(context, students[0], 'current')).toBe(true)
+            expect(methods.studentModuleGroupMatches.call(context, students[0], 'additional')).toBe(true)
+            expect(methods.studentModuleGroupMismatches.call(context, students[0], 'previous')).toEqual([])
+            expect(methods.studentModuleGroupMismatches.call(context, students[0], 'current')).toEqual([])
+            expect(methods.studentModuleGroupMismatches.call(context, students[0], 'additional')).toEqual([])
+            expect(methods.studentModuleGroupMismatches.call(context, {
+                ...students[0],
+                course_results: {
+                    completed: [
+                        { code: 'D1', grade: 'B' },
+                        { code: 'BU1', grade: '2' },
+                    ],
+                    negative: students[0].course_results.negative,
+                },
+            }, 'finished')).toEqual([
+                expect.objectContaining({ code: 'BU1', title: 'Fehlt im V3-Ergebnis' }),
+                expect.objectContaining({ code: 'M1', title: 'Zusätzlich im V3-Ergebnis: Mathematik 1' }),
+            ])
             expect(methods.studentFinishedModulesMatch.call(context, {
                 ...students[0],
                 course_results: {
@@ -1324,6 +1418,7 @@ describe('Students timetable subjects overview', () => {
         expect(context.studentV3TestResults['2002'].status).toBe('complete')
         expect(methods.studentFinishedModulesMatch.call(context, students[1])).toBe(true)
         expect(methods.studentNegativeModulesMatch.call(context, students[1])).toBe(true)
+        expect(methods.studentModuleGroupMatches.call(context, students[1], 'additional')).toBe(true)
         expect(context.studentV3TestsRunning).toBe(false)
         expect(get.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
             '/api/admin/students-timetables/timetable-v3/student-information?student_code=1001',
@@ -1336,6 +1431,90 @@ describe('Students timetable subjects overview', () => {
             ...firstStudentGroups.slice(1),
         ])).toThrow('Der V3-Count für finished ist inkonsistent.')
     })
+
+    it('presents the selected student test status before the student', () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const student = { student_code: '1001' }
+        const context: any = {
+            ...methods,
+            selectedStudents: [student],
+            studentV3TestResults: {},
+            studentModuleGroupMatches: vi.fn(() => true),
+        }
+
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-circle-outline',
+            color: 'grey-darken-1',
+            'aria-label': 'Noch kein Test gestartet',
+        })
+
+        context.studentV3TestResults['1001'] = { status: 'pending', groups: [] }
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-clock-outline',
+            color: 'warning',
+            'aria-label': 'Wartet auf Test',
+        })
+
+        context.studentV3TestResults['1001'] = { status: 'running', groups: [] }
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-progress-clock',
+            color: 'primary',
+            'aria-label': 'Test läuft',
+        })
+
+        context.studentV3TestResults['1001'] = { status: 'complete', groups: [] }
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-check-circle',
+            color: 'success',
+            'aria-label': 'Test gültig',
+        })
+        expect(computed.failedStudentV3TestCount.call(context)).toBe(0)
+
+        context.studentModuleGroupMatches = vi.fn((_student, groupKey) => groupKey !== 'current')
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-alert-circle',
+            color: 'error',
+            'aria-label': 'Test fehlgeschlagen',
+        })
+        expect(computed.failedStudentV3TestCount.call(context)).toBe(1)
+
+        context.studentV3TestResults['1001'] = { status: 'error', groups: [] }
+        expect(methods.studentV3TestStatusPresentation.call(context, student)).toMatchObject({
+            icon: 'mdi-alert-circle',
+            color: 'error',
+            'aria-label': 'Test fehlgeschlagen',
+        })
+    })
+
+    it.each(['Rev1', 'Ris1', 'Rk1', 'Ror1'])(
+        'treats the specific religion module %s as generic R1 in negative comparisons',
+        (specificReligionModule) => {
+            const methods = (TestsV3 as any).methods
+            const student = {
+                student_code: '1001',
+                course_results: {
+                    negative: [{ code: 'R1', grade: '5' }],
+                },
+            }
+            const context: any = {
+                ...methods,
+                studentV3TestResults: {
+                    1001: {
+                        status: 'complete',
+                        groups: [
+                            {
+                                key: 'negative',
+                                modules: [{ code: specificReligionModule }],
+                            },
+                        ],
+                    },
+                },
+            }
+
+            expect(methods.studentNegativeModulesMatch.call(context, student)).toBe(true)
+        },
+    )
 
     it('loads, sorts, and selects all or no timetable v3 students', async () => {
         const computed = (TestsV3 as any).computed

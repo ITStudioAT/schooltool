@@ -55,3 +55,39 @@ After a student's V3 calculation completes, compare the stored Negativ snapshot 
 
 ## Persist the Tests V3 student selection
 Keep selected Tests V3 student keys in schoolyear-scoped browser storage so F5 restores them on both Studierende and Tests. Always reload the server student list after restoration and remove stored keys that are no longer available.
+
+## Compare religion module variants generically
+For Tests V3 finished/negative snapshot comparisons, treat Rev, Ris, Rk, and Ror module codes as the generic R module with the same number (for example Ris1 equals R1). Keep the displayed V3 module code unchanged.
+
+## Build Soll modules independently
+For the V3 module test, build `expected_modules` independently from active subject-plan rows through the student's current semester, resolve the stored study selection with the subject-plan rules, then subtract completed and negative snapshot modules. Compare this Soll set only with the union of V3 `previous` and `current`; never derive the Soll set from those V3 groups.
+
+## Show the finished-module comparison in reading order
+In Tests V3 > V3-Modultest, render Abgeschlossene with the snapshot Soll-Module first, a horizontal divider, and only the symmetric module differences below it. Place the Abgeschlossene OK/FAIL result at the bottom right; keep the other module groups unchanged until specified.
+
+## Use the comparison layout for finished and negative modules
+This extends the finished-only comparison rule. In V3-Modultest, both Abgeschlossene and Negative show snapshot Soll-Module, a horizontal divider, symmetric module differences, and OK/FAIL at the bottom right. Keep Frühere, Aktuelle, and Zusätzliche unchanged until specified.
+
+## Color snapshot grades in module comparisons
+In the Abgeschlossene and Negative comparison blocks, append each stored snapshot grade in parentheses after its module code. Render Abgeschlossene grades green and Negative grades red; show the same grade treatment for missing snapshot modules in the differences list.
+
+## Align V3 comparison results
+Render each module comparison result at the bottom right of its group. Keep the module-group columns as equal-height vertical flex containers so every OK/FAIL chip shares the same vertical position even when module lists have different lengths.
+
+## Compare previous and current modules separately
+Extend the V3 comparison layout to Frühere and Aktuelle. Derive Frühere Soll-Module from expected_modules rows before the student's current semester and Aktuelle Soll-Module from rows in the current semester; show the divider, symmetric differences, and bottom-right OK/FAIL. Keep Zusätzliche unchanged.
+
+## Keep the selected-student summary compact
+In Tests V3 > Tests, the selected-student overview row contains only selection, class, name, study selection, and semester. Omit Befreit/Bestanden and Negativ headers and cells there because those snapshots are shown in V3-Modultest comparisons; keep both columns in the Studierende selection table.
+
+## Hide empty module differences
+In V3-Modultest comparison groups, render the horizontal divider and Abweichende Module section only when the symmetric difference contains at least one module. When there are no differences, show only the Soll-Module and bottom-right OK result without an empty placeholder.
+
+## Omit the separate per-student expected-module row
+This supersedes “Show the matching semester modules for each test student”. In Tests V3 > Tests, do not render a separate “Soll-Module nach Semester” row between the selected-student overview and V3-Modultest. Keep expected_modules for the Frühere/Aktuelle comparison groups and keep the general “Module nach Semester” card.
+
+## Show per-student V3 test status
+In Tests V3 > Tests, use the leading student icon for test status: neutral before a run, clock while pending, progress icon while running, green check only when all finished/negative/previous/current comparisons pass, and red alert for comparison failures or request errors.
+
+## Collapse both study-plan sections by default
+In Tests V3 > Tests, render Normalstudium and Kompaktstudium as independently expandable sections. Both sections start collapsed when the page loads.

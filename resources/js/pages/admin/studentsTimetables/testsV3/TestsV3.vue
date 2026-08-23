@@ -236,42 +236,54 @@
                 </v-card-text>
 
                 <v-card-text v-else class="tests-v3-study-plans__content">
-                    <section
-                        v-for="studyPlan in studyPlanSections"
-                        :key="studyPlan.key"
-                        class="tests-v3-study-plan">
-                        <div class="tests-v3-study-plan__heading">
-                            <v-icon :icon="studyPlan.icon" :color="studyPlan.color" size="24" />
-                            <h3>{{ studyPlan.label }}</h3>
-                        </div>
-
-                        <v-alert v-if="!studyPlan.semesters.length" type="info" variant="tonal">
-                            Für {{ studyPlan.label }} sind keine aktiven Module hinterlegt.
-                        </v-alert>
-
-                        <div v-else class="tests-v3-study-plan__semesters">
-                            <div
-                                v-for="semester in studyPlan.semesters"
-                                :key="`${studyPlan.key}:${semester.semester}`"
-                                class="tests-v3-study-plan__semester">
-                                <div class="tests-v3-study-plan__semester-label">
-                                    {{ semester.semester }}. Semester
+                    <v-expansion-panels
+                        v-model="expandedStudyPlans"
+                        multiple
+                        flat
+                        tile
+                        variant="accordion"
+                        class="tests-v3-study-plans__panels">
+                        <v-expansion-panel
+                            v-for="studyPlan in studyPlanSections"
+                            :key="studyPlan.key"
+                            :value="studyPlan.key"
+                            class="tests-v3-study-plan">
+                            <v-expansion-panel-title class="tests-v3-study-plan__title">
+                                <div class="tests-v3-study-plan__heading">
+                                    <v-icon :icon="studyPlan.icon" :color="studyPlan.color" size="24" />
+                                    <h3>{{ studyPlan.label }}</h3>
                                 </div>
-                                <div class="tests-v3-study-plan__modules">
-                                    <v-chip
-                                        v-for="module in semester.modules"
-                                        :key="module.key"
-                                        :color="studyPlan.color"
-                                        :title="module.name"
-                                        size="small"
-                                        variant="tonal"
-                                        label>
-                                        {{ module.code }}<template v-if="module.branchLabel"> · {{ module.branchLabel }}</template>
-                                    </v-chip>
+                            </v-expansion-panel-title>
+                            <v-expansion-panel-text>
+                                <v-alert v-if="!studyPlan.semesters.length" type="info" variant="tonal">
+                                    Für {{ studyPlan.label }} sind keine aktiven Module hinterlegt.
+                                </v-alert>
+
+                                <div v-else class="tests-v3-study-plan__semesters">
+                                    <div
+                                        v-for="semester in studyPlan.semesters"
+                                        :key="`${studyPlan.key}:${semester.semester}`"
+                                        class="tests-v3-study-plan__semester">
+                                        <div class="tests-v3-study-plan__semester-label">
+                                            {{ semester.semester }}. Semester
+                                        </div>
+                                        <div class="tests-v3-study-plan__modules">
+                                            <v-chip
+                                                v-for="module in semester.modules"
+                                                :key="module.key"
+                                                :color="studyPlan.color"
+                                                :title="module.name"
+                                                size="small"
+                                                variant="tonal"
+                                                label>
+                                                {{ module.code }}<template v-if="module.branchLabel"> · {{ module.branchLabel }}</template>
+                                            </v-chip>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </section>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
                 </v-card-text>
             </v-card>
 
@@ -317,13 +329,11 @@
                 class="tests-v3-students__table tests-v3-selection__table">
                 <thead>
                     <tr>
-                        <th class="tests-v3-students__selection-column" aria-label="Ausgewählt" />
+                        <th class="tests-v3-students__selection-column" aria-label="Teststatus" />
                         <th class="tests-v3-students__class-column">Klasse</th>
                         <th class="tests-v3-students__name-column">Name</th>
                         <th class="tests-v3-students__study-selection-column">Studienauswahl</th>
                         <th class="tests-v3-students__semester-column">Semester</th>
-                        <th class="tests-v3-students__course-results-column">Befreit/Bestanden</th>
-                        <th class="tests-v3-students__course-results-column">Negativ</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -333,10 +343,9 @@
                         <tr class="tests-v3-students__row--selected">
                         <td class="tests-v3-students__selection-column">
                             <v-icon
-                                icon="mdi-checkbox-marked"
-                                color="primary"
+                                v-bind="studentV3TestStatusPresentation(student)"
                                 size="22"
-                                aria-label="Ausgewählt" />
+                                class="tests-v3-selection__student-test-status" />
                         </td>
                         <td class="font-weight-bold">{{ studentClassLabel(student) }}</td>
                         <td>
@@ -380,69 +389,9 @@
                             </template>
                             <span v-else class="text-medium-emphasis">–</span>
                         </td>
-                        <td class="tests-v3-students__course-results">
-                            <template v-if="studentCourseResultItems(student, 'completed').length">
-                                <span
-                                    v-for="courseResult in studentCourseResultItems(student, 'completed')"
-                                    :key="courseResult.key"
-                                    class="tests-v3-students__course-result">
-                                    {{ courseResult.code }} (<strong
-                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--completed">{{ courseResult.grade }}</strong>)
-                                </span>
-                            </template>
-                            <span v-else class="text-medium-emphasis">–</span>
-                        </td>
-                        <td class="tests-v3-students__course-results">
-                            <template v-if="studentCourseResultItems(student, 'negative').length">
-                                <span
-                                    v-for="courseResult in studentCourseResultItems(student, 'negative')"
-                                    :key="courseResult.key"
-                                    class="tests-v3-students__course-result">
-                                    {{ courseResult.code }} (<strong
-                                        class="tests-v3-students__course-result-grade tests-v3-students__course-result-grade--negative">{{ courseResult.grade }}</strong>)
-                                </span>
-                            </template>
-                            <span v-else class="text-medium-emphasis">–</span>
-                        </td>
-                        </tr>
-                        <tr class="tests-v3-selection__study-plan-row">
-                            <td colspan="7" class="tests-v3-selection__study-plan">
-                                <div class="tests-v3-selection__study-plan-header">
-                                    <span class="tests-v3-selection__study-plan-title">Module nach Semester</span>
-                                    <span
-                                        v-if="studentStudyPlanSemester(student)"
-                                        class="tests-v3-selection__study-plan-context">
-                                        {{ studentStudyPlanSemester(student).studyProgramLabel }} ·
-                                        {{ studentStudyPlanSemester(student).semester }}. Semester
-                                    </span>
-                                </div>
-                                <div
-                                    v-if="studyPlansLoading"
-                                    class="tests-v3-selection__test-status text-medium-emphasis">
-                                    <v-progress-circular color="primary" indeterminate size="18" width="2" />
-                                    Module werden geladen …
-                                </div>
-                                <div
-                                    v-else-if="studentStudyPlanSemester(student)"
-                                    class="tests-v3-study-plan__modules tests-v3-selection__study-plan-modules">
-                                    <v-chip
-                                        v-for="module in studentStudyPlanSemester(student).modules"
-                                        :key="module.key"
-                                        :color="studentStudyPlanSemester(student).color"
-                                        :title="module.name"
-                                        size="small"
-                                        variant="tonal"
-                                        label>
-                                        {{ module.code }}<template v-if="module.branchLabel"> · {{ module.branchLabel }}</template>
-                                    </v-chip>
-                                </div>
-                                <span v-else class="text-medium-emphasis">
-                                    Keine passende Modulzeile für {{ studentSemesterLabel(student) || 'dieses Semester' }} vorhanden.
-                                </span>
-                            </td>
                         </tr>
                         <tr class="tests-v3-selection__module-test-row">
-                            <td colspan="7" class="tests-v3-selection__module-test">
+                            <td colspan="5" class="tests-v3-selection__module-test">
                                 <div class="tests-v3-selection__module-test-title">V3-Modultest</div>
                                 <div
                                     v-if="studentV3TestResult(student)?.status === 'running'"
@@ -481,21 +430,63 @@
                                                 label>
                                                 {{ group.count }}
                                             </v-chip>
-                                            <v-chip
-                                                v-if="['finished', 'negative'].includes(group.key)"
-                                                :color="studentModuleGroupMatches(student, group.key) ? 'success' : 'error'"
-                                                :prepend-icon="studentModuleGroupMatches(student, group.key) ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                                :title="studentModuleGroupMatches(student, group.key)
-                                                    ? 'Snapshot und V3-Ergebnis stimmen überein.'
-                                                    : 'Snapshot und V3-Ergebnis stimmen nicht überein.'"
-                                                size="x-small"
-                                                variant="flat"
-                                                label
-                                                class="tests-v3-selection__module-match">
-                                                {{ studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL' }}
-                                            </v-chip>
                                         </div>
-                                        <div class="tests-v3-selection__module-codes">
+                                        <div
+                                            v-if="['finished', 'negative', 'previous', 'current', 'additional'].includes(group.key)"
+                                            class="tests-v3-selection__module-comparison">
+                                            <div class="tests-v3-selection__module-comparison-section">
+                                                <span class="tests-v3-selection__module-comparison-label">Soll-Module</span>
+                                                <div class="tests-v3-selection__module-codes">
+                                                    <span
+                                                        v-for="module in studentModuleGroupExpectedModules(student, group.key)"
+                                                        :key="module.key"
+                                                        :title="module.title"
+                                                        class="tests-v3-selection__module-code">
+                                                        {{ module.code }}<template v-if="module.grade"> (<strong
+                                                            :class="group.key === 'finished'
+                                                                ? 'tests-v3-students__course-result-grade--completed'
+                                                                : 'tests-v3-students__course-result-grade--negative'">{{ module.grade }}</strong>)</template>
+                                                    </span>
+                                                    <span
+                                                        v-if="!studentModuleGroupExpectedModules(student, group.key).length"
+                                                        class="text-medium-emphasis">–</span>
+                                                </div>
+                                            </div>
+                                            <template v-if="studentModuleGroupMismatches(student, group.key).length">
+                                                <v-divider class="tests-v3-selection__module-comparison-divider" />
+                                                <div class="tests-v3-selection__module-comparison-section">
+                                                    <span class="tests-v3-selection__module-comparison-label">Abweichende Module</span>
+                                                    <div class="tests-v3-selection__module-codes">
+                                                        <span
+                                                            v-for="module in studentModuleGroupMismatches(student, group.key)"
+                                                            :key="module.key"
+                                                            :title="module.title"
+                                                            class="tests-v3-selection__module-code">
+                                                            {{ module.code }}<template v-if="module.grade"> (<strong
+                                                                :class="group.key === 'finished'
+                                                                    ? 'tests-v3-students__course-result-grade--completed'
+                                                                    : 'tests-v3-students__course-result-grade--negative'">{{ module.grade }}</strong>)</template>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                            <div class="tests-v3-selection__module-comparison-result">
+                                                <v-chip
+                                                    v-if="studentModuleGroupMatches(student, group.key) !== null"
+                                                    :color="studentModuleGroupMatches(student, group.key) ? 'success' : 'error'"
+                                                    :prepend-icon="studentModuleGroupMatches(student, group.key) ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                                    :title="studentModuleGroupMatches(student, group.key)
+                                                        ? 'Soll-Module und V3-Ergebnis stimmen überein.'
+                                                        : 'Soll-Module und V3-Ergebnis stimmen nicht überein.'"
+                                                    size="x-small"
+                                                    variant="flat"
+                                                    label
+                                                    class="tests-v3-selection__module-match">
+                                                    {{ studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL' }}
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                        <div v-else class="tests-v3-selection__module-codes">
                                             <span
                                                 v-for="module in group.modules"
                                                 :key="`${group.key}:${module.code}`"
@@ -535,6 +526,44 @@ const STUDENT_V3_TEST_GROUPS = [
     { key: 'current', label: 'Aktuelle', color: 'primary' },
     { key: 'additional', label: 'Zusätzliche', color: 'info' },
 ]
+const STUDENT_V3_TEST_COMPARISON_GROUP_KEYS = ['finished', 'negative', 'previous', 'current', 'additional']
+const STUDENT_V3_TEST_STATUS_PRESENTATIONS = {
+    idle: {
+        icon: 'mdi-circle-outline',
+        color: 'grey-darken-1',
+        title: 'Noch kein Test gestartet',
+        'aria-label': 'Noch kein Test gestartet',
+        'data-test-status': 'idle',
+    },
+    pending: {
+        icon: 'mdi-clock-outline',
+        color: 'warning',
+        title: 'Wartet auf Test',
+        'aria-label': 'Wartet auf Test',
+        'data-test-status': 'pending',
+    },
+    running: {
+        icon: 'mdi-progress-clock',
+        color: 'primary',
+        title: 'Test läuft',
+        'aria-label': 'Test läuft',
+        'data-test-status': 'running',
+    },
+    valid: {
+        icon: 'mdi-check-circle',
+        color: 'success',
+        title: 'Test gültig',
+        'aria-label': 'Test gültig',
+        'data-test-status': 'valid',
+    },
+    failed: {
+        icon: 'mdi-alert-circle',
+        color: 'error',
+        title: 'Test fehlgeschlagen',
+        'aria-label': 'Test fehlgeschlagen',
+        'data-test-status': 'failed',
+    },
+}
 const STUDY_PROGRAM_DEFINITIONS = [
     {
         key: 'normalstudium',
@@ -546,7 +575,7 @@ const STUDY_PROGRAM_DEFINITIONS = [
         key: 'kompaktstudium',
         label: 'Kompaktstudium',
         color: 'teal-darken-2',
-        icon: 'mdi-calendar-compress',
+        icon: 'mdi-calendar-collapse-horizontal-outline',
     },
 ]
 const testsV3Actions = ['students', 'tests']
@@ -567,6 +596,7 @@ export default {
             studyPlansLoading: false,
             studyPlansLoaded: false,
             studyPlansError: '',
+            expandedStudyPlans: [],
             studentV3TestResults: {},
             studentV3TestsRunning: false,
         }
@@ -662,7 +692,7 @@ export default {
         },
         failedStudentV3TestCount() {
             return this.selectedStudents.filter(
-                student => this.studentV3TestResult(student)?.status === 'error',
+                student => this.studentV3TestStatusPresentation(student)['data-test-status'] === 'failed',
             ).length
         },
         studyPlanSections() {
@@ -844,22 +874,33 @@ export default {
 
             return [studyProgramAbbreviation, semester].filter(Boolean).join(' ')
         },
-        studentStudyPlanSemester(student) {
-            const studyProgramKey = this.studentStudyProgramKey(student)
-            const semester = Number(student?.semester)
+        studentExpectedModules(student) {
+            const modules = student?.expected_modules ?? student?.expectedModules
 
-            if (!studyProgramKey || !Number.isInteger(semester)) return null
+            if (!Array.isArray(modules)) return null
 
-            const studyPlan = this.studyPlanSections.find(plan => plan.key === studyProgramKey)
-            const studyPlanSemester = studyPlan?.semesters.find(planSemester => planSemester.semester === semester)
+            return modules
+                .map((module, moduleIndex) => ({
+                    key: `${this.studentSelectionKey(student)}:${String(module?.code || '').trim()}:${moduleIndex}`,
+                    code: String(module?.code || '').trim(),
+                    name: String(module?.name || module?.code || '').trim(),
+                    semester: Number(module?.semester),
+                }))
+                .filter(module => module.code)
+        },
+        studentExpectedAdditionalModules(student) {
+            const modules = student?.expected_additional_modules ?? student?.expectedAdditionalModules
 
-            if (!studyPlan || !studyPlanSemester) return null
+            if (!Array.isArray(modules)) return null
 
-            return {
-                ...studyPlanSemester,
-                color: studyPlan.color,
-                studyProgramLabel: studyPlan.label,
-            }
+            return modules
+                .map((module, moduleIndex) => ({
+                    key: `${this.studentSelectionKey(student)}:additional:${String(module?.code || '').trim()}:${moduleIndex}`,
+                    code: String(module?.code || '').trim(),
+                    name: String(module?.name || module?.code || '').trim(),
+                    semester: Number(module?.semester),
+                }))
+                .filter(module => module.code)
         },
         studentSchoolLevelLabel(student) {
             const schoolLevel = String(student?.school_level || student?.schoolLevel || '')
@@ -958,6 +999,25 @@ export default {
 
             return studentKey ? this.studentV3TestResults[studentKey] || null : null
         },
+        studentV3TestStatusPresentation(student) {
+            const result = this.studentV3TestResult(student)
+
+            if (!result) return STUDENT_V3_TEST_STATUS_PRESENTATIONS.idle
+            if (result.status === 'pending') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.pending
+            if (result.status === 'running') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.running
+
+            if (result.status === 'complete') {
+                const isValid = STUDENT_V3_TEST_COMPARISON_GROUP_KEYS.every(
+                    groupKey => this.studentModuleGroupMatches(student, groupKey) === true,
+                )
+
+                return isValid
+                    ? STUDENT_V3_TEST_STATUS_PRESENTATIONS.valid
+                    : STUDENT_V3_TEST_STATUS_PRESENTATIONS.failed
+            }
+
+            return STUDENT_V3_TEST_STATUS_PRESENTATIONS.failed
+        },
         setStudentV3TestResult(student, result) {
             const studentKey = this.studentSelectionKey(student)
 
@@ -1000,33 +1060,156 @@ export default {
                 }
             })
         },
+        normalizedStudentModuleComparisonCode(code) {
+            const normalizedCode = String(code || '').trim().toLocaleUpperCase('de-AT')
+            const codeParts = normalizedCode.match(/^(.*?)(\d*)$/u)
+            const base = codeParts?.[1] || ''
+            const moduleNumber = codeParts?.[2] || ''
+            const canonicalBase = {
+                GPB: 'GS',
+                GWB: 'GW',
+                LET: 'LPT',
+                MU: 'ME',
+                REV: 'R',
+                RIS: 'R',
+                RK: 'R',
+                ROR: 'R',
+                SPA: 'S',
+            }[base] || base
+
+            return `${canonicalBase}${moduleNumber}`
+        },
         normalizedStudentModuleCodes(modules) {
             return [...new Set(
                 (Array.isArray(modules) ? modules : [])
-                    .map(module => String(module?.code || '').trim().toLocaleUpperCase('de-AT'))
+                    .map(module => this.normalizedStudentModuleComparisonCode(module?.code))
                     .filter(Boolean),
             )].sort(studentCollator.compare)
         },
         studentModuleGroupMatches(student, moduleGroupKey) {
             const result = this.studentV3TestResult(student)
 
-            if (result?.status !== 'complete') return null
+            if (result?.status !== 'complete' || !this.studentModuleGroupCanCompare(student, moduleGroupKey)) {
+                return null
+            }
 
+            const moduleGroup = result.groups.find(group => group.key === moduleGroupKey)
+            const expectedCodes = this.normalizedStudentModuleCodes(
+                this.studentModuleGroupExpectedModules(student, moduleGroupKey),
+            )
+            const testResultCodes = this.normalizedStudentModuleCodes(moduleGroup?.modules)
+
+            return expectedCodes.length === testResultCodes.length
+                && expectedCodes.every((code, index) => code === testResultCodes[index])
+        },
+        studentModuleGroupCanCompare(student, moduleGroupKey) {
+            if (['finished', 'negative'].includes(moduleGroupKey)) return true
+
+            if (!['previous', 'current', 'additional'].includes(moduleGroupKey)) return false
+
+            if (this.studentExpectedAdditionalModules(student) === null) return false
+
+            return moduleGroupKey === 'additional'
+                || Number.isInteger(Number(student?.semester))
+        },
+        studentModuleGroupExpectedModules(student, moduleGroupKey) {
             const snapshotGroupKey = {
                 finished: 'completed',
                 negative: 'negative',
             }[moduleGroupKey]
+            let sourceModules = []
 
-            if (!snapshotGroupKey) return null
+            if (snapshotGroupKey) {
+                sourceModules = this.studentCourseResultItems(student, snapshotGroupKey)
+            } else if (['previous', 'current', 'additional'].includes(moduleGroupKey)) {
+                const currentSemester = Number(student?.semester)
+                const expectedProgressionModules = this.studentExpectedAdditionalModules(student)
+
+                if (expectedProgressionModules === null) return []
+
+                if (!Number.isInteger(currentSemester)) {
+                    sourceModules = moduleGroupKey === 'additional' ? expectedProgressionModules : []
+                } else {
+                    sourceModules = expectedProgressionModules.filter((module) => {
+                        if (moduleGroupKey === 'previous') return module.semester < currentSemester
+
+                        if (moduleGroupKey === 'current') return module.semester === currentSemester
+
+                        return module.semester > currentSemester
+                    })
+                }
+            } else {
+                return []
+            }
+
+            const expectedModulesByCode = new Map()
+
+            sourceModules.forEach((module) => {
+                const normalizedCode = this.normalizedStudentModuleComparisonCode(module.code)
+
+                if (!normalizedCode || expectedModulesByCode.has(normalizedCode)) return
+
+                expectedModulesByCode.set(normalizedCode, {
+                    key: `expected:${moduleGroupKey}:${normalizedCode}`,
+                    code: module.code,
+                    grade: module.grade,
+                    normalizedCode,
+                    title: module.grade
+                        ? `Soll-Modul ${module.code} (${module.grade})`
+                        : module.name || `Soll-Modul ${module.code}`,
+                })
+            })
+
+            return [...expectedModulesByCode.values()]
+                .sort((leftModule, rightModule) => studentCollator.compare(
+                    leftModule.normalizedCode,
+                    rightModule.normalizedCode,
+                ))
+        },
+        studentModuleGroupMismatches(student, moduleGroupKey) {
+            const result = this.studentV3TestResult(student)
+
+            if (result?.status !== 'complete' || !this.studentModuleGroupCanCompare(student, moduleGroupKey)) {
+                return []
+            }
 
             const moduleGroup = result.groups.find(group => group.key === moduleGroupKey)
-            const snapshotCodes = this.normalizedStudentModuleCodes(
-                this.studentCourseResultItems(student, snapshotGroupKey),
-            )
-            const testResultCodes = this.normalizedStudentModuleCodes(moduleGroup?.modules)
+            const expectedModules = this.studentModuleGroupExpectedModules(student, moduleGroupKey)
+            const expectedModuleCodes = new Set(expectedModules.map(module => module.normalizedCode))
+            const testResultModulesByCode = new Map()
+            const testResultModules = Array.isArray(moduleGroup?.modules) ? moduleGroup.modules : []
 
-            return snapshotCodes.length === testResultCodes.length
-                && snapshotCodes.every((code, index) => code === testResultCodes[index])
+            testResultModules.forEach((module) => {
+                const normalizedCode = this.normalizedStudentModuleComparisonCode(module.code)
+
+                if (!normalizedCode || testResultModulesByCode.has(normalizedCode)) return
+
+                testResultModulesByCode.set(normalizedCode, {
+                    key: `actual:${moduleGroupKey}:${normalizedCode}`,
+                    code: module.code,
+                    normalizedCode,
+                    title: module.name
+                        ? `Zusätzlich im V3-Ergebnis: ${module.name}`
+                        : 'Zusätzlich im V3-Ergebnis',
+                })
+            })
+
+            const testResultModuleCodes = new Set(testResultModulesByCode.keys())
+            const missingModules = expectedModules
+                .filter(module => !testResultModuleCodes.has(module.normalizedCode))
+                .map(module => ({
+                    ...module,
+                    key: `missing:${moduleGroupKey}:${module.normalizedCode}`,
+                    title: 'Fehlt im V3-Ergebnis',
+                }))
+            const additionalModules = [...testResultModulesByCode.values()]
+                .filter(module => !expectedModuleCodes.has(module.normalizedCode))
+
+            return [...missingModules, ...additionalModules]
+                .sort((leftModule, rightModule) => studentCollator.compare(
+                    leftModule.normalizedCode,
+                    rightModule.normalizedCode,
+                ))
         },
         studentFinishedModulesMatch(student) {
             return this.studentModuleGroupMatches(student, 'finished')
@@ -1221,9 +1404,7 @@ export default {
 }
 
 .tests-v3-study-plans__content {
-    display: grid;
-    gap: 22px;
-    padding: 20px;
+    padding: 0;
 }
 
 .tests-v3-study-plan {
@@ -1231,15 +1412,21 @@ export default {
 }
 
 .tests-v3-study-plan + .tests-v3-study-plan {
-    padding-top: 22px;
     border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-study-plan__title {
+    padding: 16px 20px;
+}
+
+.tests-v3-study-plan :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0 20px 20px;
 }
 
 .tests-v3-study-plan__heading {
     display: flex;
     gap: 9px;
     align-items: center;
-    margin-bottom: 12px;
 }
 
 .tests-v3-study-plan__heading h3 {
@@ -1468,44 +1655,8 @@ export default {
     background: #eef2ff;
 }
 
-.tests-v3-selection__table :deep(.tests-v3-selection__study-plan-row) {
-    background: #f8fafc;
-}
-
 .tests-v3-selection__table :deep(.tests-v3-selection__module-test-row) {
     background: #f1f5f9;
-}
-
-.tests-v3-selection__study-plan {
-    padding-block: 12px !important;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.24) !important;
-    vertical-align: top;
-}
-
-.tests-v3-selection__study-plan-header {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: baseline;
-    margin-bottom: 8px;
-}
-
-.tests-v3-selection__study-plan-title {
-    color: #1e3a8a;
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.tests-v3-selection__study-plan-context {
-    color: #475569;
-    font-size: 0.78rem;
-    font-weight: 700;
-}
-
-.tests-v3-selection__study-plan-modules {
-    min-height: 26px;
 }
 
 .tests-v3-selection__module-test {
@@ -1539,6 +1690,9 @@ export default {
 }
 
 .tests-v3-selection__module-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
     padding-left: 8px;
     border-left: 3px solid #94a3b8;
 }
@@ -1582,6 +1736,41 @@ export default {
     flex-wrap: wrap;
     gap: 4px;
     margin-top: 3px;
+}
+
+.tests-v3-selection__module-comparison {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 112px;
+}
+
+.tests-v3-selection__module-comparison-section {
+    display: grid;
+    gap: 2px;
+}
+
+.tests-v3-selection__module-comparison-label {
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.tests-v3-selection__module-comparison-divider {
+    margin-block: 8px;
+}
+
+.tests-v3-selection__module-comparison-result {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.tests-v3-selection__module-comparison-result .tests-v3-selection__module-match {
+    margin-left: 0;
 }
 
 .tests-v3-selection__module-code {
