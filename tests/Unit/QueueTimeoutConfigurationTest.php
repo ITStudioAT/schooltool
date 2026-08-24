@@ -7,6 +7,7 @@ use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
 use App\Notifications\StandardEmail;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Str;
+use Laravel\Horizon\ProvisioningPlan;
 use Laravel\Pulse\Recorders\CacheInteractions;
 use Laravel\Pulse\Recorders\Servers;
 use Laravel\Pulse\Recorders\SlowOutgoingRequests;
@@ -90,6 +91,16 @@ it('segments latency-sensitive, import, material, and maintenance workloads', fu
         ->and((new ProcessMaterialV2Item(1))->queue)->toBe('materials')
         ->and((new BuildMaterialStorageAuditJob(1, 'operation'))->queue)->toBe('maintenance')
         ->and((new StandardEmail([]))->viaQueues())->toBe(['mail' => 'notifications']);
+});
+
+it('provisions the segmented supervisors in the testing environment', function (): void {
+    $plan = ProvisioningPlan::get('testing-master');
+
+    expect($plan->hasEnvironment('testing'))->toBeTrue()
+        ->and($plan->optionsFor('testing', 'supervisor-critical')->queue)->toBe('critical,notifications')
+        ->and($plan->optionsFor('testing', 'supervisor-default')->queue)->toBe('default')
+        ->and($plan->optionsFor('testing', 'supervisor-imports')->queue)->toBe('imports')
+        ->and($plan->optionsFor('testing', 'supervisor-long-running')->queue)->toBe('materials,maintenance');
 });
 
 it('starts segmented queue workers and the scheduler in the local development workflow', function (): void {

@@ -4188,6 +4188,21 @@ describe('Students timetable subjects overview', () => {
         }
 
         expect(methods.subjectRuleSelectionTitle.call(ctx, 'branch')).toBe('Zweig')
+        expect(methods.subjectRuleOptionBranchClass.call(
+            ctx,
+            { selection_key: 'branch' },
+            { value: 'gymnasial' },
+        )).toBe('subject-plan-legend-swatch--gymnasial')
+        expect(methods.subjectRuleOptionBranchClass.call(
+            ctx,
+            { selection_key: 'branch' },
+            { value: 'wirtschaftskundlich' },
+        )).toBe('subject-plan-legend-swatch--wirtschaftskundlich')
+        expect(methods.subjectRuleOptionBranchClass.call(
+            ctx,
+            { selection_key: 'language' },
+            { value: 'gymnasial' },
+        )).toBeNull()
         expect(methods.subjectRuleSubjectOptions.call(
             ctx,
             { selection_key: 'branch' },
@@ -4361,6 +4376,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('So wirken die Regeln')
         expect(componentSource).toContain('Pflichtfächer gelten gemeinsam.')
         expect(componentSource).toContain('Live-Vorschau – noch nicht gespeichert')
+        expect(componentSource).toContain('class="subject-plan-legend-swatch subject-rule-option-heading__swatch"')
+        expect(componentSource).toContain(':class="subjectRuleOptionBranchClass(rule, option)"')
         expect(componentSource).toContain('{{ subjectRuleOptionHeading(rule, option) }}')
         expect(componentSource).toContain('{{ subjectRuleOptionImpactLabel(rule) }}')
         expect(componentSource).toContain('subjectRuleSelectedSubjectGroups(rule, option)')

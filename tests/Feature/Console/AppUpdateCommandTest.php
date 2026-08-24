@@ -265,11 +265,16 @@ it('uses an installed frontend artifact without rebuilding the frontend', functi
         'npm' => '11.17.0',
         'node' => 'v24.19.0',
     ], JSON_THROW_ON_ERROR));
-    Process::fake([
-        'composer --version --no-ansi' => Process::result('Composer version 2.10.0 2026-05-28 11:22:08'),
-        'npm --version' => Process::result(errorOutput: 'npm: command not found', exitCode: 127),
-        'node --version' => Process::result(errorOutput: 'node: command not found', exitCode: 127),
-    ]);
+    Process::fake(function ($process) {
+        $command = implode(' ', $process->command);
+
+        return match (true) {
+            str_contains($command, 'composer --version --no-ansi') => Process::result('Composer version 2.10.0 2026-05-28 11:22:08'),
+            str_contains($command, 'npm --version') => Process::result(errorOutput: 'npm: command not found', exitCode: 127),
+            str_contains($command, 'node --version') => Process::result(errorOutput: 'node: command not found', exitCode: 127),
+            default => Process::result(errorOutput: 'Unexpected process: '.$command, exitCode: 1),
+        };
+    });
     File::shouldReceive('put')
         ->once()
         ->with(

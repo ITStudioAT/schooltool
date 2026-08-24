@@ -39,6 +39,7 @@ class StudentTimetableExpectedModulesService
             return null;
         }
 
+        $completedModuleResults = $this->completedModuleResults($courseResults);
         $unavailableModuleCodes = collect([
             ...((array) ($courseResults['completed'] ?? [])),
             ...((array) ($courseResults['negative'] ?? [])),
@@ -52,6 +53,10 @@ class StudentTimetableExpectedModulesService
 
         return $this->eligibleModules($user, $studyProgram, $selection)
             ->where('semester', '<=', $semester)
+            ->filter(fn (array $module): bool => $this->moduleCodeWithinProgression(
+                $module['code'],
+                $completedModuleResults,
+            ))
             ->reject(fn (array $module): bool => in_array(
                 $this->normalizedComparisonCode($module['code']),
                 $unavailableModuleCodes,
@@ -77,7 +82,7 @@ class StudentTimetableExpectedModulesService
         array $selection,
         array $courseResults,
     ): array {
-        $latestCompletedModuleResults = $this->latestCompletedModuleResults($courseResults);
+        $completedModuleResults = $this->completedModuleResults($courseResults);
         $unavailableModuleCodes = collect([
             ...((array) ($courseResults['completed'] ?? [])),
             ...((array) ($courseResults['negative'] ?? [])),
@@ -103,8 +108,8 @@ class StudentTimetableExpectedModulesService
             ->filter(fn (array $module): bool => $module['module_base'] !== '' && $module['module_number'] !== null)
             ->unique('comparison_code')
             ->groupBy('module_base')
-            ->flatMap(function (Collection $modules, string $moduleBase) use ($latestCompletedModuleResults): Collection {
-                $latestCompletedModuleNumber = $latestCompletedModuleResults[$moduleBase] ?? null;
+            ->flatMap(function (Collection $modules, string $moduleBase) use ($completedModuleResults): Collection {
+                $completedModuleNumbers = $completedModuleResults[$moduleBase] ?? [];
                 $sortedModules = $modules
                     ->sortBy([
                         ['module_number', 'asc'],
@@ -113,13 +118,12 @@ class StudentTimetableExpectedModulesService
                     ])
                     ->values();
 
-                if ($latestCompletedModuleNumber === null) {
-                    return $sortedModules->take(2);
-                }
-
                 return $sortedModules
-                    ->filter(fn (array $module): bool => $module['module_number'] > $latestCompletedModuleNumber)
-                    ->take(2);
+                    ->filter(fn (array $module): bool => $this->moduleNumberWithinProgression(
+                        $module['module_number'],
+                        $completedModuleNumbers,
+                        $moduleBase,
+                    ));
             })
             ->reject(fn (array $module): bool => in_array($module['comparison_code'], $unavailableModuleCodes, true))
             ->map(fn (array $module): array => Arr::except($module, [
@@ -209,22 +213,16 @@ class StudentTimetableExpectedModulesService
             return $language !== '' && ($subjectBase === 'L/F/S' || $subjectBase === $language);
         }
 
-        if (in_array($subjectBase, ['BE', 'ME'], true)) {
-            $artsSubject = mb_strtoupper(trim((string) ($selection['arts_subject'] ?? '')), 'UTF-8');
-
-            return $artsSubject !== '' && $subjectBase === $artsSubject;
-        }
-
         return true;
     }
 
     /**
      * @param  array<string, mixed>  $courseResults
-     * @return array<string, int>
+     * @return array<string, list<int>>
      */
-    private function latestCompletedModuleResults(array $courseResults): array
+    private function completedModuleResults(array $courseResults): array
     {
-        $latestCompletedModuleResults = [];
+        $completedModuleResults = [];
 
         foreach ((array) ($courseResults['completed'] ?? []) as $module) {
             $progressionParts = $this->moduleProgressionParts(
@@ -236,13 +234,55 @@ class StudentTimetableExpectedModulesService
             }
 
             $moduleBase = $progressionParts['base'];
-            $latestCompletedModuleResults[$moduleBase] = max(
-                $progressionParts['module_number'],
-                $latestCompletedModuleResults[$moduleBase] ?? 0,
-            );
+            $completedModuleResults[$moduleBase][] = $progressionParts['module_number'];
         }
 
-        return $latestCompletedModuleResults;
+        return collect($completedModuleResults)
+            ->map(fn (array $moduleNumbers): array => collect($moduleNumbers)
+                ->unique()
+                ->sort()
+                ->values()
+                ->all())
+            ->all();
+    }
+
+    /** @param array<string, list<int>> $completedModuleResults */
+    private function moduleCodeWithinProgression(string $code, array $completedModuleResults): bool
+    {
+        $progressionParts = $this->moduleProgressionParts($code);
+
+        if ($progressionParts === null) {
+            return false;
+        }
+
+        return $this->moduleNumberWithinProgression(
+            $progressionParts['module_number'],
+            $completedModuleResults[$progressionParts['base']] ?? [],
+            $progressionParts['base'],
+        );
+    }
+
+    /** @param list<int> $completedModuleNumbers */
+    private function moduleNumberWithinProgression(
+        int $moduleNumber,
+        array $completedModuleNumbers,
+        string $moduleBase,
+    ): bool {
+        if ($completedModuleNumbers === []) {
+            return $moduleNumber <= 2;
+        }
+
+        foreach ($completedModuleNumbers as $completedModuleNumber) {
+            if ($moduleBase === 'R' && $moduleNumber < $completedModuleNumber) {
+                return true;
+            }
+
+            if ($moduleNumber > $completedModuleNumber && $moduleNumber <= $completedModuleNumber + 2) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array{base: string, module_number: int}|null */

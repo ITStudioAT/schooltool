@@ -152,7 +152,7 @@ describe('Students timetable study programs', () => {
         expect(subjectsSource).toContain("{ value: NORMAL_STUDY_PROGRAM, label: 'Normalstudium' }")
         expect(subjectsSource).toContain("{ value: COMPACT_STUDY_PROGRAM, label: 'Kompaktstudium' }")
         expect(subjectsSource).toContain(':disabled="studyProgramSwitchDisabled"')
-        expect(subjectsSource).toContain('Schul-Unterrichtseinheiten')
+        expect(subjectsSource).not.toContain('Schul-Unterrichtseinheiten')
         expect(subjectsSource).not.toContain('<FileUpload')
         expect(subjectsSource).not.toContain('loadImports()')
     })

@@ -2527,7 +2527,7 @@ class StudentTimetablesStudentOverviewService
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $regularCourseCodes))
             ->filter(fn (array $course): bool => $this->coursePossibleAsStudentAdditional($course, $completedCourseCodes, $visitedCourseCodes, $plannedCourseCodes))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
-            ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
+            ->groupBy(fn (array $course): string => $this->studentProgressionAdditionalCourseGroupKey($course))
             ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
             ->filter()
             ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
@@ -2560,6 +2560,15 @@ class StudentTimetablesStudentOverviewService
             ->implode('|');
 
         return $baseAliases !== '' ? $baseAliases : $this->studentPlanningCourseUniqueKey($course);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function studentProgressionAdditionalCourseGroupKey(array $course): string
+    {
+        return $this->studentProgressionCourseGroupKey($course)
+            .'|'.$this->studentProgressionCourseModuleNumber($course);
     }
 
     /**
@@ -2819,9 +2828,14 @@ class StudentTimetablesStudentOverviewService
                     || in_array("{$baseAlias}1", $plannedCourseCodes, true));
         }
 
-        $prerequisiteModuleNumber = $moduleNumber - 2;
+        $prerequisiteModuleNumbers = [$moduleNumber - 2, $moduleNumber - 1];
         $hasPositivePrerequisite = collect($baseAliases)
-            ->contains(fn (string $baseAlias): bool => in_array("{$baseAlias}{$prerequisiteModuleNumber}", $completedCourseCodes, true));
+            ->contains(fn (string $baseAlias): bool => collect($prerequisiteModuleNumbers)
+                ->contains(fn (int $prerequisiteModuleNumber): bool => in_array(
+                    "{$baseAlias}{$prerequisiteModuleNumber}",
+                    $completedCourseCodes,
+                    true,
+                )));
 
         if (! $hasPositivePrerequisite) {
             return false;

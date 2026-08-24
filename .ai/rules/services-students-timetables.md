@@ -54,3 +54,15 @@ For V3 selectable modules, determine the completed-result progression window bef
 
 ## Visited ethics dominates religion without merging result identities
 Any visited ETH/ET result, including a negative one, makes ETH the effective study selection and must be persisted by the student snapshot refresh. Religion aliases may share one progression/prerequisite family, but concrete result matching keeps ETH/Rk/Ris/Rev/Ror distinct (except ET/ETH synonyms) so one choice cannot hide another choice's module.
+
+## Union Soll progression from every completion
+For expected_additional_modules / Soll-Zusätzliche, union the next two numbered modules opened by every positive or exempt completed result, then remove all completed and negative modules. For example, completed E1 and E3 yield E2, E4, E5. This supersedes latest-completed-only progression.
+
+## Union TT-V3 progression from every completion
+For TT-V3 selectable modules, every positive or exempt completed module N unlocks N+1 and N+2. Union all unlocked windows, retain each family-and-module result, then exclude finished and negative modules. E1 and E3 therefore yield selectable E2, E4, and E5; do not use a fixed N-2 prerequisite or collapse additional results to one module per family.
+
+## Apply progression after semester Soll rules
+Subject-plan semester rules provide candidate SOLL modules but never bypass numbered progression. With no positive/exempt completion, only absolute module numbers 1 and 2 are valid—even when the plan's first rows are D2 and D3. A positive/exempt N opens N+1 and N+2; apply this same gate to expected_modules and expected_additional_modules before removing completed or negative modules.
+
+## Keep unfinished lower religion modules in SOLL
+For canonical religion progression R (including Ris, Rk, Rev, and Ror aliases), a positive/exempt completion of module N opens N+1 and N+2 but does not imply lower religion modules were completed. Keep every lower candidate unless it is explicitly completed or negative; for example, R2 completed without R1 yields R1 plus the opened R3/R4 window. Do not apply this lower-gap exception to unrelated subject bases.

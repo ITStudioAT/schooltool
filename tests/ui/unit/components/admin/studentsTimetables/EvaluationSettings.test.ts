@@ -29,7 +29,7 @@ describe('Students timetable evaluation settings', () => {
         expect(componentSource).toContain('moveCriterion(index, 1)')
         expect(componentSource).toContain('oppositeDistanceLearningPreferenceKey')
         expect(componentSource).toContain('storageCriteria(criteria)')
-        expect(timetableSource).toContain('components: { FileUpload, LoadingAnimation, Overview }')
+        expect(timetableSource).toContain('components: { DataRefresh, FileUpload, LoadingAnimation, Overview }')
     })
 
     it('normalizes priorities and builds the storage payload', () => {

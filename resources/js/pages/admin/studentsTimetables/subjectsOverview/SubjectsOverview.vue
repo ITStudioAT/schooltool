@@ -664,7 +664,11 @@
                             </div>
 
                             <v-card v-for="option in rule.options" :key="option.stable_key" variant="outlined" class="mb-3">
-                                <v-card-title class="text-subtitle-2">
+                                <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                                    <span
+                                        v-if="subjectRuleOptionBranchClass(rule, option)"
+                                        class="subject-plan-legend-swatch subject-rule-option-heading__swatch"
+                                        :class="subjectRuleOptionBranchClass(rule, option)"></span>
                                     {{ subjectRuleOptionHeading(rule, option) }}
                                 </v-card-title>
                                 <v-card-subtitle>{{ subjectRuleOptionImpactLabel(rule) }}</v-card-subtitle>
@@ -1315,6 +1319,15 @@ export default {
             }
 
             return headings[rule.selection_key] || `Wenn „${optionLabel}“ gewählt ist`
+        },
+        subjectRuleOptionBranchClass(rule, option) {
+            if (rule.selection_key !== 'branch') return null
+
+            const branch = String(option.value || '').trim()
+
+            return ['wirtschaftskundlich', 'gymnasial'].includes(branch)
+                ? `subject-plan-legend-swatch--${branch}`
+                : null
         },
         subjectRuleOptionImpactLabel(rule) {
             const labels = {
@@ -3076,6 +3089,10 @@ export default {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.subject-rule-option-heading__swatch {
+    flex: 0 0 22px;
 }
 
 .subject-rule-impact-preview__header {

@@ -479,7 +479,7 @@ describe('Notification Integration Tests', function () {
     it('can send notifications to user', function () {
         Notification::fake();
 
-        $user = User::factory()->create();
+        $user = User::factory()->make();
         $data = [
             'from_address' => 'test@example.com',
             'from_name' => 'Test Sender',
@@ -495,7 +495,7 @@ describe('Notification Integration Tests', function () {
     it('can send notifications with attachments to user', function () {
         Notification::fake();
 
-        $user = User::factory()->create();
+        $user = User::factory()->make();
         $data = [
             'from_address' => 'test@example.com',
             'from_name' => 'Test Sender',

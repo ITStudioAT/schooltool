@@ -300,6 +300,8 @@ return [
                 'maxProcesses' => 1,
             ],
         ],
+
+        'testing' => [],
     ],
 
     /*
