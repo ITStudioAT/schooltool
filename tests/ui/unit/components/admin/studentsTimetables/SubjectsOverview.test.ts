@@ -89,20 +89,96 @@ describe('Students timetable subjects overview', () => {
         ])).toEqual(['D6', 'BE1', 'ME1', 'INF2'])
     })
 
-    it('asks once before carrying all subject-plan data forward from the previous schoolyear', async () => {
-        const methods = (SubjectsOverview as any).methods
-        const computed = (SubjectsOverview as any).computed
+    it('shows the missing subject-plan prompt across the whole students-timetables module', async () => {
+        const methods = (StudentsTimetables as any).methods
+        const computed = (StudentsTimetables as any).computed
+        const previousSchoolyear = {
+            id: 24,
+            name: '2025/26',
+            subject_rows_count: 151,
+            normal_subject_rows_count: 75,
+            compact_subject_rows_count: 76,
+            mappings_count: 5,
+        }
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    previous_schoolyear: previousSchoolyear,
+                },
+            },
+        })
+        const context: any = {
+            ...methods,
+            ...(StudentsTimetables as any).data(),
+            canManageStudentsTimetables: true,
+            personalSchoolyearRouteOptions: computed.personalSchoolyearRouteOptions.call({}),
+        }
+
+        Object.defineProperty(context, 'shouldOfferSubjectPlanCarryForward', {
+            get() {
+                return computed.shouldOfferSubjectPlanCarryForward.call(context)
+            },
+        })
+
+        vi.stubGlobal('axios', { get })
+
+        try {
+            await methods.loadSubjectPlanCarryForwardStatus.call(context)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(get).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/subjects-overview-settings?schoolyear_scope=personal',
+        )
+        expect(context.subjectPlanPreviousSchoolyear).toEqual(previousSchoolyear)
+        expect(context.shouldOfferSubjectPlanCarryForward).toBe(true)
+        expect(context.subjectPlanCarryForwardDialog).toBe(true)
+
+        const moduleSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
+            'utf8',
+        )
+        const subjectsOverviewSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
+            'utf8',
+        )
+        const ttEntriesSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/ttEntries/TtEntries.vue',
+            'utf8',
+        )
+
+        expect(moduleSource).toContain('Der Soll-/Fachplan für {{ personalSchoolyearLabel }} fehlt.')
+        expect(moduleSource).toContain('{{ subjectPlanPreviousSchoolyear.normal_subject_rows_count }} Normalstudium')
+        expect(moduleSource).toContain('{{ subjectPlanPreviousSchoolyear.compact_subject_rows_count }} Kompaktstudium')
+        expect(moduleSource).toContain('v-model="subjectPlanCarryForwardDialog"')
+        expect(moduleSource).toContain('Später')
+        expect(moduleSource).toContain('Jetzt übernehmen')
+        expect(moduleSource).toContain(':key="subjectPlanRevision"')
+        expect(subjectsOverviewSource).not.toContain('@click="carryForwardSubjectPlan"')
+        expect(ttEntriesSource).not.toContain('subjectPlanCarryForwardDialog')
+    })
+
+    it('carries both study programs and mappings forward in one module-wide request', async () => {
+        const methods = (StudentsTimetables as any).methods
+        const computed = (StudentsTimetables as any).computed
         const post = vi.fn().mockResolvedValue({
             data: {
                 message: '151 Fachzeilen und 5 Zuordnungen aus 2025/26 übernommen.',
             },
         })
-        const loadSettings = vi.fn().mockResolvedValue(undefined)
+        const loadSubjectPlanCarryForwardStatus = vi.fn().mockResolvedValue(undefined)
         const context: any = {
-            loadSettings,
+            ...methods,
+            canManageStudentsTimetables: true,
+            loadSubjectPlanCarryForwardStatus,
+            subjectPlanCarryForwardDialog: true,
+            subjectPlanCarryForwardError: '',
             subjectPlanCarryForwardLoading: false,
+            subjectPlanCarryForwardMessage: '',
+            subjectPlanRevision: 0,
             personalSchoolyearRouteOptions: computed.personalSchoolyearRouteOptions.call({}),
-            previousSchoolyear: {
+            subjectPlanPreviousSchoolyear: {
                 id: 24,
                 name: '2025/26',
                 subject_rows_count: 151,
@@ -110,8 +186,6 @@ describe('Students timetable subjects overview', () => {
                 compact_subject_rows_count: 76,
                 mappings_count: 5,
             },
-            settingsError: '',
-            settingsMessage: '',
         }
 
         vi.stubGlobal('axios', { post })
@@ -125,18 +199,11 @@ describe('Students timetable subjects overview', () => {
         expect(post).toHaveBeenCalledWith(
             '/api/admin/students-timetables/subjects-overview-settings/carry-forward?schoolyear_scope=personal',
         )
-        expect(loadSettings).toHaveBeenCalledOnce()
-        expect(context.settingsMessage).toBe('151 Fachzeilen und 5 Zuordnungen aus 2025/26 übernommen.')
+        expect(loadSubjectPlanCarryForwardStatus).toHaveBeenCalledOnce()
+        expect(context.subjectPlanCarryForwardMessage).toBe('151 Fachzeilen und 5 Zuordnungen aus 2025/26 übernommen.')
+        expect(context.subjectPlanRevision).toBe(1)
+        expect(context.subjectPlanCarryForwardDialog).toBe(false)
         expect(context.subjectPlanCarryForwardLoading).toBe(false)
-
-        const componentSource = readFileSync(
-            'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
-            'utf8',
-        )
-
-        expect(componentSource).toContain('Sollen die {{ previousSchoolyear.subject_rows_count }} Fachzeilen')
-        expect(componentSource).toContain('Daten aus Vorjahr übernehmen')
-        expect(componentSource).toContain('@click="carryForwardSubjectPlan"')
     })
 
     it('keeps language alternatives together while splitting shared multi-module courses', () => {
@@ -1063,7 +1130,7 @@ describe('Students timetable subjects overview', () => {
         expect(selectedStudentsTableSource).toContain('aria-label="Teststatus"')
         expect(selectedStudentsTableSource).toContain('v-bind="studentV3TestStatusPresentation(student)"')
         expect(selectedStudentsTableSource).not.toContain('icon="mdi-checkbox-marked"')
-        expect(componentSource).toContain('class="tests-v3-students__row--selected"')
+        expect(componentSource).toContain("'tests-v3-students__row--selected'")
         const runTestsButtonClassIndex = componentSource.indexOf('class="tests-v3-selection__run-button"')
         const runTestsButtonStartIndex = componentSource.lastIndexOf('<v-btn', runTestsButtonClassIndex)
         const runTestsButtonEndIndex = componentSource.indexOf('</v-btn>', runTestsButtonClassIndex)
@@ -1089,7 +1156,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
         expect(componentSource).toContain('runV3StudentModuleTests')
         expect(componentSource).toContain('axios.post(runV3StudentModuleTests.url()')
-        expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 100')
+        expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 10')
+        expect(componentSource).toContain(':model-value="studentV3TestProgressPercentage"')
+        expect(componentSource).toContain('{{ runningStudentV3TestCount }} in Bearbeitung')
         expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
         expect(componentSource).toContain(
             "v-if=\"['finished', 'negative', 'previous', 'current', 'additional'].includes(group.key)\"",
@@ -1162,6 +1231,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('studentSexPresentation(student)')
         expect(componentSource).toContain('mdi-gender-male')
         expect(componentSource).toContain('mdi-gender-female')
+        expect(componentSource).toContain('Falsche Daten – Test übersprungen')
+        expect(componentSource).toContain('studentDataQualityIssues(student)')
+        expect(componentSource).toContain("status: 'invalid_data'")
+        expect(componentSource).toContain('Nicht getestete Datensätze')
     })
 
     it('loads and groups both personal-schoolyear study plans by semester', async () => {
@@ -1369,6 +1442,21 @@ describe('Students timetable subjects overview', () => {
                 expect.objectContaining({ code: 'e1', grade: '5' }),
             ])
             expect(methods.studentModuleGroupMismatches.call(context, students[0], 'negative')).toEqual([])
+            expect(methods.studentModuleGroupExpectedModules.call(context, {
+                ...students[0],
+                course_results: {
+                    completed: [
+                        ...students[0].course_results.completed,
+                        { code: 'E1', grade: '2' },
+                    ],
+                    negative: [
+                        { code: 'e1', grade: '5' },
+                        { code: 'BU1', grade: '5' },
+                    ],
+                },
+            }, 'negative')).toEqual([
+                expect.objectContaining({ code: 'BU1', grade: '5' }),
+            ])
             expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'previous')).toEqual([
                 expect.objectContaining({ code: 'BU1', title: 'Biologie 1' }),
             ])
@@ -1488,9 +1576,13 @@ describe('Students timetable subjects overview', () => {
 
         context.completedStudentV3TestCount = computed.completedStudentV3TestCount.call(context)
         context.failedStudentV3TestCount = computed.failedStudentV3TestCount.call(context)
+        context.invalidStudentV3TestCount = computed.invalidStudentV3TestCount.call(context)
+        context.testedStudentV3TestCount = computed.testedStudentV3TestCount.call(context)
 
         expect(context.completedStudentV3TestCount).toBe(3)
         expect(context.failedStudentV3TestCount).toBe(2)
+        expect(context.invalidStudentV3TestCount).toBe(0)
+        expect(context.testedStudentV3TestCount).toBe(3)
         expect(computed.passedStudentV3TestCount.call(context)).toBe(1)
         expect(computed.failedStudentV3TestSummaries.call(context)).toEqual([
             {
@@ -1506,6 +1598,144 @@ describe('Students timetable subjects overview', () => {
                 message: 'V3-Modulberechnung fehlgeschlagen.',
             },
         ])
+    })
+
+    it('updates progress between small sequential timetable v3 test batches', async () => {
+        const computed = (TestsV3 as any).computed
+        const methods = (TestsV3 as any).methods
+        const students = Array.from({ length: 21 }, (_, index) => ({
+            student_code: String(index + 1).padStart(4, '0'),
+        }))
+        const emptyGroups = [
+            { key: 'finished', count: 0, modules: [] },
+            { key: 'negative', count: 0, modules: [] },
+            { key: 'previous', count: 0, modules: [] },
+            { key: 'current', count: 0, modules: [] },
+            { key: 'additional', count: 0, modules: [] },
+        ]
+        const batchResolvers: Array<(value: unknown) => void> = []
+        const post = vi.fn(() => new Promise(resolve => batchResolvers.push(resolve)))
+        const context: any = {
+            ...methods,
+            selectedStudents: students,
+            studentV3TestResults: {},
+            studentV3TestsRunning: false,
+            studentV3TestSummaryDialog: true,
+        }
+        const resolveBatch = (batchIndex: number, batchStudents: any[]) => {
+            batchResolvers[batchIndex]({
+                data: {
+                    data: batchStudents.map(student => ({
+                        student_code: student.student_code,
+                        module_selection_groups: emptyGroups,
+                    })),
+                },
+            })
+        }
+        const updateProgressCounts = () => {
+            context.completedStudentV3TestCount = computed.completedStudentV3TestCount.call(context)
+            context.runningStudentV3TestCount = computed.runningStudentV3TestCount.call(context)
+        }
+
+        vi.stubGlobal('axios', { post })
+
+        try {
+            const testsPromise = methods.runTests.call(context)
+
+            await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+            updateProgressCounts()
+            expect(post.mock.calls[0][1].student_codes).toHaveLength(10)
+            expect(context.completedStudentV3TestCount).toBe(0)
+            expect(context.runningStudentV3TestCount).toBe(10)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(0)
+
+            resolveBatch(0, students.slice(0, 10))
+            await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2))
+            updateProgressCounts()
+            expect(post.mock.calls[1][1].student_codes).toHaveLength(10)
+            expect(context.completedStudentV3TestCount).toBe(10)
+            expect(context.runningStudentV3TestCount).toBe(10)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(48)
+
+            resolveBatch(1, students.slice(10, 20))
+            await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(3))
+            updateProgressCounts()
+            expect(post.mock.calls[2][1].student_codes).toHaveLength(1)
+            expect(context.completedStudentV3TestCount).toBe(20)
+            expect(context.runningStudentV3TestCount).toBe(1)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(95)
+
+            resolveBatch(2, students.slice(20))
+            await testsPromise
+            updateProgressCounts()
+            expect(context.completedStudentV3TestCount).toBe(21)
+            expect(context.runningStudentV3TestCount).toBe(0)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(100)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('skips wrong student data when running timetable v3 batches', async () => {
+        const methods = (TestsV3 as any).methods
+        const computed = (TestsV3 as any).computed
+        const emptyGroups = [
+            { key: 'finished', count: 0, modules: [] },
+            { key: 'negative', count: 0, modules: [] },
+            { key: 'previous', count: 0, modules: [] },
+            { key: 'current', count: 0, modules: [] },
+            { key: 'additional', count: 0, modules: [] },
+        ]
+        const invalidStudent = {
+            student_code: 'invalid',
+            data_quality_issues: [
+                'Falscher Datensatz: Im Kompaktstudium ist die Schulstufe 10_1 nicht zulässig.',
+            ],
+        }
+        const validStudent = { student_code: 'valid', data_quality_issues: [] }
+        const post = vi.fn().mockResolvedValue({
+            data: {
+                data: [{
+                    student_code: 'valid',
+                    module_selection_groups: emptyGroups,
+                }],
+            },
+        })
+        const context: any = {
+            ...methods,
+            studentV3TestResults: {},
+        }
+
+        vi.stubGlobal('axios', { post })
+
+        try {
+            await methods.runStudentV3TestBatch.call(context, [invalidStudent, validStudent])
+        } finally {
+            vi.unstubAllGlobals()
+        }
+
+        expect(post).toHaveBeenCalledOnce()
+        expect(post.mock.calls[0][1]).toEqual({ student_codes: ['valid'] })
+        expect(context.studentV3TestResults.invalid).toEqual({
+            status: 'invalid_data',
+            message: 'Falscher Datensatz: Im Kompaktstudium ist die Schulstufe 10_1 nicht zulässig.',
+            groups: [],
+        })
+        expect(methods.studentV3TestStatusPresentation.call(context, invalidStudent)).toMatchObject({
+            icon: 'mdi-database-alert',
+            color: 'error',
+            'aria-label': 'Falsche Daten – Test übersprungen',
+            'data-test-status': 'invalid-data',
+        })
+        expect(context.studentV3TestResults.valid.status).toBe('complete')
+
+        context.selectedStudents = [invalidStudent, validStudent]
+        context.completedStudentV3TestCount = computed.completedStudentV3TestCount.call(context)
+        context.invalidStudentV3TestCount = computed.invalidStudentV3TestCount.call(context)
+
+        expect(context.completedStudentV3TestCount).toBe(2)
+        expect(context.invalidStudentV3TestCount).toBe(1)
+        expect(computed.testedStudentV3TestCount.call(context)).toBe(1)
     })
 
     it('keeps unresolved semester defaults in the current module comparison', () => {
@@ -1540,7 +1770,7 @@ describe('Students timetable subjects overview', () => {
                             modules: [
                                 { code: 'D1', name: 'Deutsch 1' },
                                 { code: 'INF1', name: 'Informatik 1' },
-                                { code: 'LPT', name: 'Lern- Präsentationstechnik' },
+                                { code: 'LPT1', name: 'Lern- Präsentationstechnik' },
                             ],
                         },
                         { key: 'additional', modules: [{ code: 'D4', name: 'Deutsch 4' }] },
@@ -1557,6 +1787,10 @@ describe('Students timetable subjects overview', () => {
             ])
         expect(methods.studentModuleGroupExpectedModules.call(context, student, 'additional'))
             .toEqual([expect.objectContaining({ code: 'D4' })])
+        expect(methods.normalizedStudentModuleComparisonCode.call(context, 'LPT')).toBe('LPT')
+        expect(methods.normalizedStudentModuleComparisonCode.call(context, 'LPT1')).toBe('LPT')
+        expect(methods.normalizedStudentModuleComparisonCode.call(context, 'LET1')).toBe('LPT')
+        expect(methods.normalizedStudentModuleComparisonCode.call(context, 'LPT2')).toBe('LPT2')
         expect(methods.studentModuleGroupMatches.call(context, student, 'current')).toBe(true)
         expect(methods.studentModuleGroupMismatches.call(context, student, 'current')).toEqual([])
     })

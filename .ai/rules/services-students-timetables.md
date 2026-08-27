@@ -66,3 +66,24 @@ Subject-plan semester rules provide candidate SOLL modules but never bypass numb
 
 ## Keep unfinished lower religion modules in SOLL
 For canonical religion progression R (including Ris, Rk, Rev, and Ror aliases), a positive/exempt completion of module N opens N+1 and N+2 but does not imply lower religion modules were completed. Keep every lower candidate unless it is explicitly completed or negative; for example, R2 completed without R1 yields R1 plus the opened R3/R4 window. Do not apply this lower-gap exception to unrelated subject bases.
+
+## Keep SOLL result groups disjoint
+For Tests V3 SOLL calculation, completed and negative snapshot modules belong only to Abgeschlossene or Negative. Remove those module codes from expected_modules and expected_additional_modules so they never reappear in Frühere, Aktuelle, or Zusätzliche. A visited ETH/ET result may still make ETH the effective SOLL religion selection, but the visited module itself remains excluded.
+
+## Keep unfinished lower religion modules in TT-V3
+When a visited ETH/ET result switches TT-V3 to ethics, completions from another religion variant may advance the shared progression but must not mark matching ETH modules completed. Keep lower unfinished ETH modules selectable unless that exact ETH/ET module is completed or failed.
+
+## Do not advance ETH from religion after visited ethics
+A visited ETH/ET result still switches TT-V3 to ETH, but completed R/Rk/Ris/Rev/Ror modules must not advance the ETH progression window in that case. Only positive ETH/ET results advance ETH; a negative ETH result selects ETH without advancing it, so the initial ETH1 and ETH2 remain eligible. This supersedes shared R/ETH progression for students with visited ethics.
+
+## Mirror arts rules in TT V3 fallbacks
+When no persisted subject-plan rule set exists, TT V3 fallbacks must preserve the same arts semantics: Wirtschaftskundlich chooses BE1 or ME1; Gymnasial requires both BE1 and ME1, and the arts choice filters only BE2 versus ME2. Apply branch eligibility before the arts choice.
+
+## Do not infer a branch from shared modules
+A completed module that matches subject-plan rows in both wirtschaftskundlich and gymnasial is branch-neutral and must not win by row order. Infer the branch only from an unambiguous branch-specific completion; otherwise keep a valid persisted Import116 study_selection.branch (then use the legacy school-level fallback).
+
+## Keep every unfinished lower module in SOLL
+A positive or exempt completion of numbered module N never implies that lower modules in the same family are complete. Keep every lower subject-plan candidate in expected_modules and expected_additional_modules unless that exact code is completed or negative; this applies to ETH and all other numbered module families and supersedes the religion-only lower-gap exception.
+
+## Keep every unfinished lower module in TT-V3
+A positive or exempt numbered module N opens N+1 and N+2 but never implies that lower modules in the same family are complete. Keep every lower subject-plan module selectable unless that exact module is completed or negative; apply this to every numbered family, not only D, ETH, or religion aliases. Negative modules remain unavailable and never advance progression.

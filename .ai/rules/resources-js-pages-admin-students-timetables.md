@@ -1,6 +1,7 @@
 ---
 paths:
   - resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue
+  - 'resources/js/pages/admin/studentsTimetables/**'
 ---
 
 # Resources Js Pages Admin Students Timetables
@@ -16,3 +17,6 @@ The main module navigation order starts Stundenplan v3, Tests v3, then the exist
 
 ## Open Tests v3 on Studierende
 This supersedes the earlier Tests v3 /overview placeholder route. The main Tests v3 item opens /admin/students-timetables/tests-v3/students and renders the dedicated TestsV3 submenu component.
+
+## Prompt globally before missing subject-plan carry-forward
+Check the personal schoolyear subject-plan carry-forward state in the shared StudentsTimetables shell so every module section shows one prominent warning. Auto-open the admin confirmation dialog, but never copy on page open; one confirmed request carries Normalstudium, Kompaktstudium, and mappings together and refreshes the active section.

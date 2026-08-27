@@ -34,33 +34,6 @@
             <strong class="text-primary">{{ personalSchoolyearLabel }}</strong>
         </div>
 
-        <v-alert
-            v-if="!settingsLoading && !subjectRows.length && previousSchoolyear"
-            type="info"
-            variant="tonal"
-            class="mb-4">
-            <div class="d-flex flex-wrap align-center justify-space-between ga-3">
-                <div>
-                    Für {{ personalSchoolyearLabel }} wurden noch keine Fächerdaten übernommen.
-                    Sollen die {{ previousSchoolyear.subject_rows_count }} Fachzeilen
-                    ({{ previousSchoolyear.normal_subject_rows_count }} Normalstudium,
-                    {{ previousSchoolyear.compact_subject_rows_count }} Kompaktstudium) und
-                    {{ previousSchoolyear.mappings_count }} Zuordnungen aus
-                    <strong>{{ previousSchoolyear.name }}</strong> einmalig übernommen werden?
-                </div>
-                <v-btn
-                    v-if="canManageSubjectSettings"
-                    color="primary"
-                    variant="flat"
-                    :loading="subjectPlanCarryForwardLoading"
-                    prepend-icon="mdi-content-copy"
-                    @click="carryForwardSubjectPlan">
-                    Daten aus Vorjahr übernehmen
-                </v-btn>
-                <span v-else>Bitte wenden Sie sich dafür an einen Administrator.</span>
-            </div>
-        </v-alert>
-
         <v-alert v-if="settingsError && ['subject-plan', 'subject-plan-v2'].includes(subject_action)" type="error" variant="tonal" class="mb-4">
             {{ settingsError }}
         </v-alert>
@@ -865,7 +838,6 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import {
-    carryForwardSubjectPlan as carryForwardSubjectPlanRoute,
     settings as subjectSettingsRoute,
     updateMappings as updateSubjectMappingsRoute,
     updateRules as updateRulesRoute,
@@ -900,7 +872,6 @@ export default {
             subjectMappings: [],
             previousSchoolyear: null,
             settingsLoading: false,
-            subjectPlanCarryForwardLoading: false,
             subjectsSaving: false,
             mappingsSaving: false,
             subjectsEditMode: false,
@@ -959,7 +930,6 @@ export default {
         studyProgramSwitchDisabled() {
             return this.settingsLoading
                 || this.subjectsSaving
-                || this.subjectPlanCarryForwardLoading
                 || this.subjectsEditMode
                 || this.mappingsSaving
                 || this.mappingsEditMode
@@ -2920,30 +2890,6 @@ export default {
             if (branch === 'gymnasial') return 'Gymnasial'
 
             return this.displayValue(branch)
-        },
-        async carryForwardSubjectPlan() {
-            if (
-                !this.previousSchoolyear
-                || this.subjectPlanCarryForwardLoading
-            ) {
-                return
-            }
-
-            this.subjectPlanCarryForwardLoading = true
-            this.settingsError = ''
-            this.settingsMessage = ''
-
-            try {
-                const response = await axios.post(carryForwardSubjectPlanRoute.url(
-                    this.personalSchoolyearRouteOptions,
-                ))
-                await this.loadSettings()
-                this.settingsMessage = response.data.message || 'Die Daten aus dem Vorjahr wurden übernommen.'
-            } catch (error) {
-                this.settingsError = error?.response?.data?.message || 'Die Daten aus dem Vorjahr konnten nicht übernommen werden.'
-            } finally {
-                this.subjectPlanCarryForwardLoading = false
-            }
         },
         async saveSubjectRows() {
             this.subjectsSaving = true

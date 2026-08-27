@@ -35,7 +35,54 @@
                     to="/admin/settings?tab=students_timetables" />
             </v-sheet>
 
-            <v-row class="students-timetables-content w-100" dense>
+            <v-row :key="subjectPlanRevision" class="students-timetables-content w-100" dense>
+                <v-col v-if="shouldOfferSubjectPlanCarryForward" cols="12">
+                    <v-alert
+                        type="warning"
+                        variant="tonal"
+                        class="subject-plan-carry-forward-warning">
+                        <div class="subject-plan-carry-forward-warning__content">
+                            <div class="subject-plan-carry-forward-warning__copy">
+                                <strong>Der Soll-/Fachplan für {{ personalSchoolyearLabel }} fehlt.</strong>
+                                <span>
+                                    Ohne diesen Plan können Stundenplan v2/v3, Tests, TT-Einträge und
+                                    Fächerdaten unvollständig sein. Aus {{ subjectPlanPreviousSchoolyear.name }}
+                                    können {{ subjectPlanPreviousSchoolyear.subject_rows_count }} Fachzeilen
+                                    ({{ subjectPlanPreviousSchoolyear.normal_subject_rows_count }} Normalstudium,
+                                    {{ subjectPlanPreviousSchoolyear.compact_subject_rows_count }} Kompaktstudium)
+                                    und {{ subjectPlanPreviousSchoolyear.mappings_count }} Zuordnungen übernommen werden.
+                                </span>
+                            </div>
+                            <v-btn
+                                v-if="canManageStudentsTimetables"
+                                color="warning"
+                                variant="flat"
+                                size="large"
+                                prepend-icon="mdi-content-copy"
+                                @click="openSubjectPlanCarryForwardDialog">
+                                Soll-/Fachplan übernehmen
+                            </v-btn>
+                            <strong v-else class="subject-plan-carry-forward-warning__admin-note">
+                                Bitte wenden Sie sich für die Übernahme an einen Administrator.
+                            </strong>
+                        </div>
+                    </v-alert>
+                </v-col>
+
+                <v-col v-if="subjectPlanCarryForwardMessage" cols="12">
+                    <v-alert type="success" variant="tonal">
+                        {{ subjectPlanCarryForwardMessage }}
+                    </v-alert>
+                </v-col>
+
+                <v-col
+                    v-if="subjectPlanStatusError || (subjectPlanCarryForwardError && !subjectPlanCarryForwardDialog)"
+                    cols="12">
+                    <v-alert type="error" variant="tonal">
+                        {{ subjectPlanStatusError || subjectPlanCarryForwardError }}
+                    </v-alert>
+                </v-col>
+
                 <Timetable v-if="main_action === 'timetable'" />
                 <v-col v-if="main_action === 'timetable-v2'" cols="12">
                     <TimetableV2 />
@@ -50,6 +97,52 @@
                 <Import v-if="main_action === 'import'" />
                 <SubjectsOverview v-if="main_action === 'subjects-overview'" />
             </v-row>
+
+            <v-dialog
+                v-model="subjectPlanCarryForwardDialog"
+                persistent
+                max-width="760">
+                <v-card rounded="lg">
+                    <v-card-title class="d-flex align-center ga-3 text-wrap">
+                        <v-icon icon="mdi-alert-circle-outline" color="warning" />
+                        Soll-/Fachplan für {{ personalSchoolyearLabel }} übernehmen?
+                    </v-card-title>
+                    <v-card-text class="d-grid ga-4">
+                        <p class="ma-0">
+                            Für das persönliche Schuljahr <strong>{{ personalSchoolyearLabel }}</strong>
+                            gibt es noch keinen Soll-/Fachplan. Er wird in mehreren Bereichen der
+                            Schülerstundenpläne benötigt.
+                        </p>
+                        <v-alert type="info" variant="tonal">
+                            Aus <strong>{{ subjectPlanPreviousSchoolyear?.name }}</strong> werden gemeinsam
+                            <strong>{{ subjectPlanPreviousSchoolyear?.subject_rows_count }} Fachzeilen</strong>
+                            ({{ subjectPlanPreviousSchoolyear?.normal_subject_rows_count }} Normalstudium,
+                            {{ subjectPlanPreviousSchoolyear?.compact_subject_rows_count }} Kompaktstudium) und
+                            <strong>{{ subjectPlanPreviousSchoolyear?.mappings_count }} Zuordnungen</strong> übernommen.
+                        </v-alert>
+                        <v-alert v-if="subjectPlanCarryForwardError" type="error" variant="tonal">
+                            {{ subjectPlanCarryForwardError }}
+                        </v-alert>
+                    </v-card-text>
+                    <v-card-actions class="px-6 pb-5">
+                        <v-spacer />
+                        <v-btn
+                            variant="text"
+                            :disabled="subjectPlanCarryForwardLoading"
+                            @click="dismissSubjectPlanCarryForwardDialog">
+                            Später
+                        </v-btn>
+                        <v-btn
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-content-copy"
+                            :loading="subjectPlanCarryForwardLoading"
+                            @click="carryForwardSubjectPlan">
+                            Jetzt übernehmen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
         </div>
     </v-container>
 </template>
@@ -59,6 +152,10 @@ import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import {
+    carryForwardSubjectPlan as carryForwardSubjectPlanRoute,
+    settings as subjectSettingsRoute,
+} from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
@@ -74,6 +171,7 @@ const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/over
 const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
+const PERSONAL_SCHOOLYEAR_SCOPE = 'personal'
 const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']
 
 export default {
@@ -90,6 +188,15 @@ export default {
     data() {
         return {
             main_action: 'timetable-v3',
+            subjectPlanCarryForwardDialog: false,
+            subjectPlanCarryForwardDismissed: false,
+            subjectPlanCarryForwardError: '',
+            subjectPlanCarryForwardLoading: false,
+            subjectPlanCarryForwardMessage: '',
+            subjectPlanPreviousSchoolyear: null,
+            subjectPlanRevision: 0,
+            subjectPlanStatusError: '',
+            subjectPlanStatusLoading: false,
         }
     },
     computed: {
@@ -185,6 +292,21 @@ export default {
         canManageStudentsTimetables() {
             return this.hasAnyRole(['super_admin', 'admin', 'studentstimetables_admin'])
         },
+        personalSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || 'nicht festgelegt'
+        },
+        personalSchoolyearRouteOptions() {
+            return {
+                query: {
+                    schoolyear_scope: PERSONAL_SCHOOLYEAR_SCOPE,
+                },
+            }
+        },
+        shouldOfferSubjectPlanCarryForward() {
+            return !this.subjectPlanStatusLoading && Boolean(this.subjectPlanPreviousSchoolyear)
+        },
         activeSection() {
             const sections = {
                 timetable: {
@@ -246,7 +368,14 @@ export default {
         }
         this.redirectUnauthorizedSection()
     },
+    mounted() {
+        this.loadSubjectPlanCarryForwardStatus()
+    },
     watch: {
+        'config.selected_schoolyear.id'() {
+            this.resetSubjectPlanCarryForwardPrompt()
+            this.loadSubjectPlanCarryForwardStatus()
+        },
         '$route.params.section'(section) {
             if (this.redirectMissingSection()) {
                 return
@@ -276,6 +405,79 @@ export default {
         },
     },
     methods: {
+        async loadSubjectPlanCarryForwardStatus() {
+            this.subjectPlanStatusLoading = true
+            this.subjectPlanStatusError = ''
+
+            try {
+                const response = await axios.get(subjectSettingsRoute.url(
+                    undefined,
+                    this.personalSchoolyearRouteOptions,
+                ))
+
+                this.subjectPlanPreviousSchoolyear = response.data?.data?.previous_schoolyear || null
+            } catch {
+                this.subjectPlanPreviousSchoolyear = null
+                this.subjectPlanStatusError = 'Es konnte nicht geprüft werden, ob der Soll-/Fachplan übernommen werden muss.'
+            } finally {
+                this.subjectPlanStatusLoading = false
+
+                if (
+                    this.shouldOfferSubjectPlanCarryForward
+                    && this.canManageStudentsTimetables
+                    && !this.subjectPlanCarryForwardDismissed
+                ) {
+                    this.subjectPlanCarryForwardDialog = true
+                }
+            }
+        },
+        openSubjectPlanCarryForwardDialog() {
+            this.subjectPlanCarryForwardError = ''
+            this.subjectPlanCarryForwardDialog = true
+        },
+        dismissSubjectPlanCarryForwardDialog() {
+            this.subjectPlanCarryForwardDismissed = true
+            this.subjectPlanCarryForwardDialog = false
+        },
+        resetSubjectPlanCarryForwardPrompt() {
+            this.subjectPlanCarryForwardDialog = false
+            this.subjectPlanCarryForwardDismissed = false
+            this.subjectPlanCarryForwardError = ''
+            this.subjectPlanCarryForwardMessage = ''
+            this.subjectPlanPreviousSchoolyear = null
+            this.subjectPlanStatusError = ''
+        },
+        async carryForwardSubjectPlan() {
+            if (
+                !this.subjectPlanPreviousSchoolyear
+                || this.subjectPlanCarryForwardLoading
+                || !this.canManageStudentsTimetables
+            ) {
+                return
+            }
+
+            this.subjectPlanCarryForwardLoading = true
+            this.subjectPlanCarryForwardError = ''
+            this.subjectPlanCarryForwardMessage = ''
+
+            try {
+                const response = await axios.post(carryForwardSubjectPlanRoute.url(
+                    this.personalSchoolyearRouteOptions,
+                ))
+
+                this.subjectPlanCarryForwardDialog = false
+                this.subjectPlanPreviousSchoolyear = null
+                this.subjectPlanCarryForwardMessage = response.data.message
+                    || 'Der Soll-/Fachplan aus dem Vorjahr wurde übernommen.'
+                this.subjectPlanRevision++
+                await this.loadSubjectPlanCarryForwardStatus()
+            } catch (error) {
+                this.subjectPlanCarryForwardError = error?.response?.data?.message
+                    || 'Der Soll-/Fachplan konnte nicht übernommen werden.'
+            } finally {
+                this.subjectPlanCarryForwardLoading = false
+            }
+        },
         hasAnyRole(roleNames) {
             return roleNames.some(roleName => this.configuredRoleNames.includes(roleName))
         },
@@ -475,6 +677,36 @@ export default {
 .students-timetables-content {
     margin: 0 !important;
     padding: 20px 24px 32px;
+}
+
+.subject-plan-carry-forward-warning {
+    border: 2px solid rgba(245, 158, 11, 0.55);
+    box-shadow: 0 10px 24px rgba(120, 53, 15, 0.12);
+}
+
+.subject-plan-carry-forward-warning__content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 2px;
+}
+
+.subject-plan-carry-forward-warning__copy {
+    display: grid;
+    flex: 1 1 560px;
+    gap: 6px;
+    color: #713f12;
+}
+
+.subject-plan-carry-forward-warning__copy strong {
+    font-size: 1.08rem;
+    font-weight: 900;
+}
+
+.subject-plan-carry-forward-warning__admin-note {
+    color: #713f12;
 }
 
 @media (max-width: 700px) {

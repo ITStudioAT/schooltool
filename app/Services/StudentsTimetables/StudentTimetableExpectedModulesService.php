@@ -39,17 +39,9 @@ class StudentTimetableExpectedModulesService
             return null;
         }
 
+        $selection = $this->selectionWithVisitedEthics($selection, $courseResults);
         $completedModuleResults = $this->completedModuleResults($courseResults);
-        $unavailableModuleCodes = collect([
-            ...((array) ($courseResults['completed'] ?? [])),
-            ...((array) ($courseResults['negative'] ?? [])),
-        ])
-            ->map(fn (mixed $module): string => $this->normalizedComparisonCode(
-                is_array($module) ? (string) ($module['code'] ?? '') : '',
-            ))
-            ->filter()
-            ->unique()
-            ->all();
+        $unavailableModuleCodes = $this->unavailableModuleCodes($courseResults);
 
         return $this->eligibleModules($user, $studyProgram, $selection)
             ->where('semester', '<=', $semester)
@@ -82,17 +74,9 @@ class StudentTimetableExpectedModulesService
         array $selection,
         array $courseResults,
     ): array {
+        $selection = $this->selectionWithVisitedEthics($selection, $courseResults);
         $completedModuleResults = $this->completedModuleResults($courseResults);
-        $unavailableModuleCodes = collect([
-            ...((array) ($courseResults['completed'] ?? [])),
-            ...((array) ($courseResults['negative'] ?? [])),
-        ])
-            ->map(fn (mixed $module): string => $this->normalizedComparisonCode(
-                is_array($module) ? (string) ($module['code'] ?? '') : '',
-            ))
-            ->filter()
-            ->unique()
-            ->all();
+        $unavailableModuleCodes = $this->unavailableModuleCodes($courseResults);
 
         return $this->eligibleModules($user, $studyProgram, $selection)
             ->map(function (array $module): array {
@@ -122,7 +106,6 @@ class StudentTimetableExpectedModulesService
                     ->filter(fn (array $module): bool => $this->moduleNumberWithinProgression(
                         $module['module_number'],
                         $completedModuleNumbers,
-                        $moduleBase,
                     ));
             })
             ->reject(fn (array $module): bool => in_array($module['comparison_code'], $unavailableModuleCodes, true))
@@ -137,6 +120,56 @@ class StudentTimetableExpectedModulesService
             ))
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @param  array<string, mixed>  $courseResults
+     * @return array<string, mixed>
+     */
+    private function selectionWithVisitedEthics(array $selection, array $courseResults): array
+    {
+        $hasVisitedEthics = collect([
+            ...((array) ($courseResults['completed'] ?? [])),
+            ...((array) ($courseResults['negative'] ?? [])),
+        ])->contains(fn (mixed $module): bool => $this->isEthicsModuleCode(
+            is_array($module) ? (string) ($module['code'] ?? '') : '',
+        ));
+
+        if (! $hasVisitedEthics) {
+            return $selection;
+        }
+
+        return [
+            ...$selection,
+            'religion' => 'ETH',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseResults
+     * @return list<string>
+     */
+    private function unavailableModuleCodes(array $courseResults): array
+    {
+        return collect([
+            ...((array) ($courseResults['completed'] ?? [])),
+            ...((array) ($courseResults['negative'] ?? [])),
+        ])
+            ->map(fn (mixed $module): string => $this->normalizedComparisonCode(
+                is_array($module) ? (string) ($module['code'] ?? '') : '',
+            ))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function isEthicsModuleCode(string $code): bool
+    {
+        $progressionParts = $this->moduleProgressionParts($code);
+
+        return in_array($progressionParts['base'] ?? null, ['ET', 'ETH'], true);
     }
 
     /**
@@ -258,7 +291,6 @@ class StudentTimetableExpectedModulesService
         return $this->moduleNumberWithinProgression(
             $progressionParts['module_number'],
             $completedModuleResults[$progressionParts['base']] ?? [],
-            $progressionParts['base'],
         );
     }
 
@@ -266,14 +298,13 @@ class StudentTimetableExpectedModulesService
     private function moduleNumberWithinProgression(
         int $moduleNumber,
         array $completedModuleNumbers,
-        string $moduleBase,
     ): bool {
         if ($completedModuleNumbers === []) {
             return $moduleNumber <= 2;
         }
 
         foreach ($completedModuleNumbers as $completedModuleNumber) {
-            if ($moduleBase === 'R' && $moduleNumber < $completedModuleNumber) {
+            if ($moduleNumber < $completedModuleNumber) {
                 return true;
             }
 
@@ -398,8 +429,11 @@ class StudentTimetableExpectedModulesService
         }
 
         if (in_array($subjectBase, ['BE', 'ME'], true)) {
-            $artsSubject = mb_strtoupper(trim((string) ($selection['arts_subject'] ?? '')), 'UTF-8');
+            if (! $this->artsSelectionControlsRow($subjectRow)) {
+                return $this->defaultCodes($subjectRow);
+            }
 
+            $artsSubject = mb_strtoupper(trim((string) ($selection['arts_subject'] ?? '')), 'UTF-8');
             if ($artsSubject === '' || $subjectBase !== $artsSubject) {
                 return [];
             }
@@ -411,14 +445,23 @@ class StudentTimetableExpectedModulesService
     /** @param array<string, mixed> $selection */
     private function matchesSelectedBranch(StudentTimetableSubjectRow $subjectRow, array $selection): bool
     {
-        if (in_array($this->subjectBase($subjectRow), ['BE', 'ME'], true)) {
-            return true;
-        }
-
         $branch = mb_strtolower(trim((string) $subjectRow->branch), 'UTF-8');
         $selectedBranch = mb_strtolower(trim((string) ($selection['branch'] ?? '')), 'UTF-8');
 
         return in_array($branch, ['', 'common'], true) || $branch === $selectedBranch;
+    }
+
+    private function artsSelectionControlsRow(StudentTimetableSubjectRow $subjectRow): bool
+    {
+        if (! in_array($this->subjectBase($subjectRow), ['BE', 'ME'], true)) {
+            return false;
+        }
+
+        $branch = mb_strtolower(trim((string) $subjectRow->branch), 'UTF-8');
+        $moduleNumber = (int) $this->moduleNumber((string) $subjectRow->json_code);
+
+        return ($branch === 'wirtschaftskundlich' && $moduleNumber === 1)
+            || ($branch === 'gymnasial' && $moduleNumber === 2);
     }
 
     private function religionMatchesSubject(string $religion, string $subjectBase): bool
@@ -487,6 +530,10 @@ class StudentTimetableExpectedModulesService
             'ROR' => 'R',
             'SPA' => 'S',
         ][$base] ?? $base;
+
+        if ($canonicalBase === 'LPT' && $moduleNumber === '1') {
+            $moduleNumber = '';
+        }
 
         return "{$canonicalBase}{$moduleNumber}";
     }

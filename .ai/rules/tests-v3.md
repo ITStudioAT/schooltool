@@ -100,3 +100,12 @@ After every Tests V3 run finishes, open a persistent dialog summarizing checked,
 
 ## Batch V3 test transport supersedes per-student requests
 This supersedes the bounded-concurrency per-student request rule. Run Tests uses sequential batches of at most 100 student codes; rows become running per batch and receive their canonical comparison groups when that batch completes.
+
+## Completed SOLL results override negative
+When the same normalized module code exists in completed and negative snapshots, Tests V3 SOLL comparison keeps it only under Abgeschlossene and excludes it from Negative. Use the existing comparison-code aliases; leave raw snapshot rows unchanged outside the SOLL comparison.
+
+## Show Tests V3 progress in small batches
+Run selected-student V3 checks sequentially in batches of 10 so medium selections receive intermediate results instead of one final update. While running, show a determinate progress bar with completed percentage and the number currently being processed.
+
+## Skip Tests V3 for invalid student data
+When the backend reports data_quality_issues for a student, keep the record visible and label it clearly as Falsche Daten with every reason. Do not send that student's code to the V3 calculation endpoint; mark the run as skipped invalid data and report it separately from passed or failed tests.

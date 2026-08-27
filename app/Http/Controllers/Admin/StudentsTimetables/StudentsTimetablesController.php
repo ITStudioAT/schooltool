@@ -112,6 +112,10 @@ class StudentsTimetablesController extends Controller
                     'email' => (string) $student->email,
                     'sex' => (string) $student->sex,
                     'study_program' => $studyProgram->value,
+                    'data_quality_issues' => $studentOverviewService->dataQualityIssuesForStudent(
+                        $student,
+                        $studyProgram,
+                    ),
                     'study_selection' => $studySelection,
                     'course_results' => $courseResults,
                     'expected_modules' => $expectedModulesService->forStudent(

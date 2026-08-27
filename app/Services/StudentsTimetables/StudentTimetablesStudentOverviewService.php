@@ -1467,6 +1467,25 @@ class StudentTimetablesStudentOverviewService
             ->all();
     }
 
+    /** @return list<string> */
+    public function dataQualityIssuesForStudent(
+        Import116 $student,
+        StudentTimetableStudyProgram $studyProgram,
+    ): array {
+        if (! $this->schoolLevelMismatchForStudent($student, $studyProgram)) {
+            return [];
+        }
+
+        $schoolLevel = $this->displaySchoolLevel($student->school_level, $student->attendance_year);
+        $allowedSchoolLevels = collect($this->schoolLevelOptionsForStudyProgram($studyProgram))
+            ->pluck('value')
+            ->join(', ', ' und ');
+
+        return [
+            "Falscher Datensatz: Im {$studyProgram->label()} ist die Schulstufe {$schoolLevel} nicht zulässig. Zulässig sind {$allowedSchoolLevels}.",
+        ];
+    }
+
     private function schoolLevelMismatchForStudent(
         ?Import116 $student,
         StudentTimetableStudyProgram $studyProgram,
@@ -1502,6 +1521,12 @@ class StudentTimetablesStudentOverviewService
 
     private function studentBranch(?Import116 $student): ?string
     {
+        $storedBranch = mb_strtolower(trim((string) data_get($student?->study_selection, 'branch')), 'UTF-8');
+
+        if (in_array($storedBranch, ['wirtschaftskundlich', 'gymnasial'], true)) {
+            return $storedBranch;
+        }
+
         $schoolLevel = mb_strtolower(trim((string) $student?->school_level), 'UTF-8');
 
         if (str_contains($schoolLevel, 'gymnasial')) {
@@ -1717,24 +1742,23 @@ class StudentTimetablesStudentOverviewService
         ?Collection $branchSubjectRows = null,
     ): ?string {
         $branchOptions = ['wirtschaftskundlich', 'gymnasial'];
-        $bestMatch = null;
 
         $branchSubjectRows ??= $this->activeSubjectRows($user, $schoolyearId, $studyProgram)
             ->whereIn('branch', $branchOptions)
             ->values();
 
-        $branchSubjectRows
-            ->each(function (StudentTimetableSubjectRow $row, int $subjectIndex) use ($completedCodes, &$bestMatch): void {
-                $match = $this->bestSubjectRowCompletedCourseMatch($row, $completedCodes, $subjectIndex);
-
-                if (! $match) {
-                    return;
-                }
-
-                if (! $bestMatch || $this->courseMatchSortValue($match) > $this->courseMatchSortValue($bestMatch)) {
-                    $bestMatch = $match;
-                }
-            });
+        $bestMatch = $branchSubjectRows
+            ->map(fn (StudentTimetableSubjectRow $row, int $subjectIndex): ?array => $this->bestSubjectRowCompletedCourseMatch(
+                $row,
+                $completedCodes,
+                $subjectIndex,
+            ))
+            ->filter()
+            ->groupBy('course_index')
+            ->filter(fn (Collection $matches): bool => $matches->pluck('branch')->unique()->count() === 1)
+            ->flatten(1)
+            ->sortByDesc(fn (array $match): int => $this->courseMatchSortValue($match))
+            ->first();
 
         return $bestMatch['branch'] ?? $this->studentBranch($student);
     }
@@ -1924,6 +1948,10 @@ class StudentTimetablesStudentOverviewService
         }
 
         if ($this->isArtsSubject($row)) {
+            if (! $this->artsSelectionControlsRow($row)) {
+                return true;
+            }
+
             $selectedArtsSubject = $this->nonEmptyString($selection['arts_subject'] ?? null);
 
             return $selectedArtsSubject !== null && $this->subjectBaseKey($row) === $selectedArtsSubject;
@@ -1950,10 +1978,6 @@ class StudentTimetablesStudentOverviewService
     {
         $branch = trim((string) $row->branch);
         $selectedBranch = trim((string) ($selection['branch'] ?? ''));
-
-        if ($this->isArtsSubject($row)) {
-            return true;
-        }
 
         return $branch === '' || $branch === 'common' || $branch === $selectedBranch;
     }
@@ -2139,7 +2163,7 @@ class StudentTimetablesStudentOverviewService
      */
     private function plannedCoursesForProgression(Collection $subjectCourses, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses): array
     {
-        $missingCourseCodes = $this->studentPlannedCourseCodes($missingCourses);
+        $missingCourseCodes = $this->studentResultCourseCodes($missingCourses);
         $candidates = $subjectCourses
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $missingCourseCodes))
@@ -2321,17 +2345,20 @@ class StudentTimetablesStudentOverviewService
         $courseGroupsByCode = $includeModuleCourses
             ? $this->manualTimetableCourseGroupIndexForUser($user)
             : [];
-        $unavailableCourseCodes = $this->studentPlannedCourseCodes([
+        $unavailableCourseCodes = $this->studentResultCourseCodes([
             ...$completedCourses,
             ...$missingCourses,
         ]);
 
         if ($limitToStudentProgression) {
-            $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
             $visitedCourseCodes = $this->studentVisitedCourseCodes([
                 ...$completedCourses,
                 ...$missingCourses,
             ]);
+            $completedCourseCodes = $this->studentCompletedCourseCodesForProgression(
+                $completedCourses,
+                $visitedCourseCodes,
+            );
             $plannedModules = $this->plannedCoursesForProgression(
                 $subjectCourses,
                 $completedCourseCodes,
@@ -2513,13 +2540,13 @@ class StudentTimetablesStudentOverviewService
     private function additionalCoursesForProgression(Collection $subjectCourses, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses, array $plannedCourses): array
     {
         $plannedCourseCodes = $this->studentPlannedCourseCodes($plannedCourses);
-        $regularCourseCodes = $this->studentPlannedCourseCodes([
-            ...$missingCourses,
-            ...$plannedCourses,
-        ]);
+        $regularCourseCodes = collect([
+            ...$this->studentResultCourseCodes($missingCourses),
+            ...$plannedCourseCodes,
+        ])->unique()->values()->all();
         $unavailableCourseCodes = $this->studentUnavailableAdditionalCourseCodes($completedCourseCodes, [
-            ...$missingCourses,
-            ...$plannedCourses,
+            ...$this->studentResultCourseCodes($missingCourses),
+            ...$plannedCourseCodes,
         ]);
 
         return $subjectCourses
@@ -2619,9 +2646,46 @@ class StudentTimetablesStudentOverviewService
      */
     private function studentCompletedCourseCodes(array $completedCourses): array
     {
-        return collect($completedCourses)
+        return $this->studentResultCourseCodes(collect($completedCourses)
             ->filter(fn (array $course): bool => $this->completedCourseCountsAsDone((string) ($course['grade'] ?? '')))
-            ->flatMap(fn (array $course): array => $this->studentPlanningCodes($course))
+            ->values()
+            ->all());
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $completedCourses
+     * @param  list<string>  $visitedCourseCodes
+     * @return list<string>
+     */
+    private function studentCompletedCourseCodesForProgression(array $completedCourses, array $visitedCourseCodes): array
+    {
+        $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
+        $hasVisitedEthics = collect($visitedCourseCodes)
+            ->map(fn (string $courseCode): string => $this->courseCodeWithoutModule($courseCode))
+            ->contains(fn (string $courseBase): bool => in_array($courseBase, ['ET', 'ETH'], true));
+
+        if (! $hasVisitedEthics) {
+            return $completedCourseCodes;
+        }
+
+        return collect($completedCourseCodes)
+            ->reject(fn (string $courseCode): bool => in_array(
+                $this->courseCodeWithoutModule($courseCode),
+                ['R', 'RK', 'RIS', 'REV', 'ROR'],
+                true,
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courses
+     * @return list<string>
+     */
+    private function studentResultCourseCodes(array $courses): array
+    {
+        return collect($courses)
+            ->flatMap(fn (array $course): array => $this->courseCodeAliases($course))
             ->map(fn (string $code): string => $this->normalizedCourseCode($code))
             ->filter()
             ->unique()
@@ -2635,13 +2699,7 @@ class StudentTimetablesStudentOverviewService
      */
     private function studentVisitedCourseCodes(array $completedCourses): array
     {
-        return collect($completedCourses)
-            ->flatMap(fn (array $course): array => $this->studentPlanningCodes($course))
-            ->map(fn (string $code): string => $this->normalizedCourseCode($code))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return $this->studentResultCourseCodes($completedCourses);
     }
 
     private function completedCourseCountsAsDone(string $grade): bool
@@ -2810,9 +2868,13 @@ class StudentTimetablesStudentOverviewService
 
         $baseAliases = $this->studentCourseBaseAliases((string) ($parts['base'] ?? ''));
 
+        if ($this->courseBaseHasLaterModule($baseAliases, $completedCourseCodes, $moduleNumber)) {
+            return true;
+        }
+
         if ($moduleNumber === 1) {
             if (($options['allow_initial_modules'] ?? false) === true) {
-                return ! $this->courseBaseHasVisitedLaterModule($baseAliases, $visitedCourseCodes, $moduleNumber);
+                return ! $this->courseBaseHasLaterModule($baseAliases, $visitedCourseCodes, $moduleNumber);
             }
 
             return true;
@@ -2841,32 +2903,27 @@ class StudentTimetablesStudentOverviewService
             return false;
         }
 
-        if (in_array($this->normalizedCourseCode((string) ($parts['base'] ?? '')), ['E', 'M'], true) && $moduleNumber === 8) {
-            return collect($baseAliases)
-                ->contains(fn (string $baseAlias): bool => in_array("{$baseAlias}7", $visitedCourseCodes, true));
-        }
-
         return true;
     }
 
     /**
      * @param  list<string>  $baseAliases
-     * @param  list<string>  $visitedCourseCodes
+     * @param  list<string>  $courseCodes
      */
-    private function courseBaseHasVisitedLaterModule(array $baseAliases, array $visitedCourseCodes, int $moduleNumber): bool
+    private function courseBaseHasLaterModule(array $baseAliases, array $courseCodes, int $moduleNumber): bool
     {
-        if ($visitedCourseCodes === []) {
+        if ($courseCodes === []) {
             return false;
         }
 
-        return collect($visitedCourseCodes)
+        return collect($courseCodes)
             ->map(fn (string $courseCode): array => $this->courseCodeModuleParts($courseCode))
             ->contains(function (array $parts) use ($baseAliases, $moduleNumber): bool {
-                $visitedModuleNumber = $this->integerOrNull($parts['module'] ?? null);
+                $laterModuleNumber = $this->integerOrNull($parts['module'] ?? null);
 
                 return in_array((string) ($parts['base'] ?? ''), $baseAliases, true)
-                    && $visitedModuleNumber !== null
-                    && $visitedModuleNumber > $moduleNumber;
+                    && $laterModuleNumber !== null
+                    && $laterModuleNumber > $moduleNumber;
             });
     }
 
@@ -2971,13 +3028,12 @@ class StudentTimetablesStudentOverviewService
 
     /**
      * @param  list<string>  $completedCourseCodes
-     * @param  list<array<string, mixed>>  $plannedCourses
+     * @param  list<string>  $plannedCourseCodes
      * @return list<string>
      */
-    private function studentUnavailableAdditionalCourseCodes(array $completedCourseCodes, array $plannedCourses): array
+    private function studentUnavailableAdditionalCourseCodes(array $completedCourseCodes, array $plannedCourseCodes): array
     {
-        return collect($plannedCourses)
-            ->flatMap(fn (array $course): array => $this->courseCodeAliases($course))
+        return collect($plannedCourseCodes)
             ->merge($completedCourseCodes)
             ->map(fn (string $courseCode): string => $this->normalizedCourseCode($courseCode))
             ->filter()
@@ -3039,6 +3095,19 @@ class StudentTimetablesStudentOverviewService
     private function isArtsSubject(StudentTimetableSubjectRow $row): bool
     {
         return in_array($this->subjectBaseKey($row), ['ME', 'BE'], true);
+    }
+
+    private function artsSelectionControlsRow(StudentTimetableSubjectRow $row): bool
+    {
+        if (! $this->isArtsSubject($row)) {
+            return false;
+        }
+
+        $branch = mb_strtolower(trim((string) $row->branch), 'UTF-8');
+        $moduleNumber = (int) $this->subjectModuleNumber($row);
+
+        return ($branch === 'wirtschaftskundlich' && $moduleNumber === 1)
+            || ($branch === 'gymnasial' && $moduleNumber === 2);
     }
 
     private function languageSubjectCode(StudentTimetableSubjectRow $row): string

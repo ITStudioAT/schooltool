@@ -127,7 +127,10 @@
                     <tr
                         v-for="student in sortedStudents"
                         :key="studentSelectionKey(student)"
-                        :class="{ 'tests-v3-students__row--selected': isStudentSelected(student) }">
+                        :class="{
+                            'tests-v3-students__row--selected': isStudentSelected(student),
+                            'tests-v3-students__row--invalid-data': studentDataQualityIssues(student).length,
+                        }">
                         <td class="tests-v3-students__selection-column">
                             <v-checkbox-btn
                                 :model-value="isStudentSelected(student)"
@@ -177,6 +180,24 @@
                                 </span>
                             </template>
                             <span v-else class="text-medium-emphasis">–</span>
+                            <div
+                                v-if="studentDataQualityIssues(student).length"
+                                class="tests-v3-students__data-quality-error">
+                                <v-chip
+                                    color="error"
+                                    prepend-icon="mdi-database-alert"
+                                    size="x-small"
+                                    variant="flat"
+                                    label>
+                                    Falsche Daten
+                                </v-chip>
+                                <span
+                                    v-for="issue in studentDataQualityIssues(student)"
+                                    :key="issue"
+                                    class="tests-v3-students__data-quality-message">
+                                    {{ issue }}
+                                </span>
+                            </div>
                         </td>
                         <td class="tests-v3-students__course-results">
                             <template v-if="studentCourseResultItems(student, 'completed').length">
@@ -312,9 +333,27 @@
             </v-card-title>
             <div
                 v-if="studentV3TestsRunning || completedStudentV3TestCount"
-                class="tests-v3-selection__progress text-caption">
-                {{ completedStudentV3TestCount }} von {{ selectedStudents.length }} geprüft
-                <span v-if="failedStudentV3TestCount">· {{ failedStudentV3TestCount }} fehlgeschlagen</span>
+                class="tests-v3-selection__progress">
+                <v-progress-linear
+                    :model-value="studentV3TestProgressPercentage"
+                    color="primary"
+                    height="8"
+                    rounded />
+                <div class="tests-v3-selection__progress-summary text-caption">
+                    <span>
+                        {{ completedStudentV3TestCount }} von {{ selectedStudents.length }} geprüft
+                        <template v-if="runningStudentV3TestCount">
+                            · {{ runningStudentV3TestCount }} in Bearbeitung
+                        </template>
+                        <template v-if="failedStudentV3TestCount">
+                            · {{ failedStudentV3TestCount }} fehlgeschlagen
+                        </template>
+                        <template v-if="invalidStudentV3TestCount">
+                            · {{ invalidStudentV3TestCount }} falsche Datensätze
+                        </template>
+                    </span>
+                    <strong>{{ studentV3TestProgressPercentage }} %</strong>
+                </div>
             </div>
             <v-card-text v-if="!selectedStudents.length">
                 <v-alert v-if="!selectedStudents.length" type="info" variant="tonal">
@@ -340,7 +379,10 @@
                     <template
                         v-for="student in selectedStudents"
                         :key="studentSelectionKey(student)">
-                        <tr class="tests-v3-students__row--selected">
+                        <tr :class="[
+                            'tests-v3-students__row--selected',
+                            { 'tests-v3-students__row--invalid-data': studentDataQualityIssues(student).length },
+                        ]">
                         <td class="tests-v3-students__selection-column">
                             <v-icon
                                 v-bind="studentV3TestStatusPresentation(student)"
@@ -388,13 +430,40 @@
                                 </span>
                             </template>
                             <span v-else class="text-medium-emphasis">–</span>
+                            <div
+                                v-if="studentDataQualityIssues(student).length"
+                                class="tests-v3-students__data-quality-error">
+                                <v-chip
+                                    color="error"
+                                    prepend-icon="mdi-database-alert"
+                                    size="x-small"
+                                    variant="flat"
+                                    label>
+                                    Falsche Daten
+                                </v-chip>
+                                <span
+                                    v-for="issue in studentDataQualityIssues(student)"
+                                    :key="issue"
+                                    class="tests-v3-students__data-quality-message">
+                                    {{ issue }}
+                                </span>
+                            </div>
                         </td>
                         </tr>
                         <tr class="tests-v3-selection__module-test-row">
                             <td colspan="5" class="tests-v3-selection__module-test">
                                 <div class="tests-v3-selection__module-test-title">V3-Modultest</div>
                                 <div
-                                    v-if="studentV3TestResult(student)?.status === 'running'"
+                                    v-if="studentV3TestResult(student)?.status === 'invalid_data'"
+                                    class="tests-v3-selection__invalid-data-status text-error">
+                                    <v-icon icon="mdi-database-alert" size="20" />
+                                    <div>
+                                        <strong>Falsche Daten – Test übersprungen</strong>
+                                        <div>{{ studentV3TestResult(student).message }}</div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-else-if="studentV3TestResult(student)?.status === 'running'"
                                     class="tests-v3-selection__test-status text-primary">
                                     <v-progress-circular color="primary" indeterminate size="18" width="2" />
                                     V3-Berechnung läuft …
@@ -516,18 +585,24 @@
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon
-                        :color="failedStudentV3TestCount ? 'error' : 'success'"
-                        :icon="failedStudentV3TestCount ? 'mdi-alert-circle' : 'mdi-check-circle'" />
+                        :color="failedStudentV3TestCount || invalidStudentV3TestCount ? 'error' : 'success'"
+                        :icon="failedStudentV3TestCount || invalidStudentV3TestCount ? 'mdi-alert-circle' : 'mdi-check-circle'" />
                     Testzusammenfassung
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="tests-v3-test-summary__content pa-5">
                     <v-alert
-                        :type="failedStudentV3TestCount ? 'error' : 'success'"
+                        :type="failedStudentV3TestCount || invalidStudentV3TestCount ? 'error' : 'success'"
                         variant="tonal"
                         class="mb-4">
                         <template v-if="failedStudentV3TestCount">
-                            {{ failedStudentV3TestCount }} von {{ completedStudentV3TestCount }} Tests sind fehlgeschlagen.
+                            {{ failedStudentV3TestCount }} von {{ testedStudentV3TestCount }} Tests sind fehlgeschlagen.
+                            <span v-if="invalidStudentV3TestCount">
+                                {{ invalidStudentV3TestCount }} Datensätze wurden wegen falscher Daten nicht getestet.
+                            </span>
+                        </template>
+                        <template v-else-if="invalidStudentV3TestCount">
+                            {{ invalidStudentV3TestCount }} Datensätze wurden wegen falscher Daten nicht getestet.
                         </template>
                         <template v-else>
                             Alle {{ completedStudentV3TestCount }} Tests wurden erfolgreich abgeschlossen.
@@ -536,13 +611,16 @@
 
                     <div class="d-flex flex-wrap ga-2 mb-4">
                         <v-chip color="primary" variant="tonal" prepend-icon="mdi-account-group">
-                            Geprüft: {{ completedStudentV3TestCount }}
+                            Geprüft: {{ testedStudentV3TestCount }}
                         </v-chip>
                         <v-chip color="success" variant="tonal" prepend-icon="mdi-check-circle">
                             Bestanden: {{ passedStudentV3TestCount }}
                         </v-chip>
                         <v-chip color="error" variant="tonal" prepend-icon="mdi-alert-circle">
                             Fehlgeschlagen: {{ failedStudentV3TestCount }}
+                        </v-chip>
+                        <v-chip color="error" variant="tonal" prepend-icon="mdi-database-alert">
+                            Falsche Daten: {{ invalidStudentV3TestCount }}
                         </v-chip>
                     </div>
 
@@ -559,6 +637,26 @@
                                 <v-list-item-subtitle>{{ summary.message }}</v-list-item-subtitle>
                                 <template #append>
                                     <v-chip color="error" size="x-small" variant="flat" label>FAIL</v-chip>
+                                </template>
+                            </v-list-item>
+                        </v-list>
+                    </template>
+
+                    <template v-if="invalidStudentV3TestSummaries.length">
+                        <div class="text-subtitle-2 mt-4 mb-2">Nicht getestete Datensätze</div>
+                        <v-list border rounded="lg" density="compact" lines="two">
+                            <v-list-item
+                                v-for="summary in invalidStudentV3TestSummaries"
+                                :key="summary.key"
+                                prepend-icon="mdi-database-alert">
+                                <v-list-item-title>
+                                    {{ summary.classLabel }} · {{ summary.studentName }}
+                                </v-list-item-title>
+                                <v-list-item-subtitle>{{ summary.message }}</v-list-item-subtitle>
+                                <template #append>
+                                    <v-chip color="error" size="x-small" variant="flat" label>
+                                        FALSCHE DATEN
+                                    </v-chip>
                                 </template>
                             </v-list-item>
                         </v-list>
@@ -588,7 +686,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const TESTS_V3_STUDENT_SELECTION_STORAGE_KEY_PREFIX = 'schooltool:students-timetables:tests-v3:selected-students'
-const STUDENT_V3_TEST_BATCH_SIZE = 100
+const STUDENT_V3_TEST_BATCH_SIZE = 10
 const STUDENT_V3_TEST_GROUPS = [
     { key: 'finished', label: 'Abgeschlossene', color: 'success' },
     { key: 'negative', label: 'Negative', color: 'error' },
@@ -618,6 +716,13 @@ const STUDENT_V3_TEST_STATUS_PRESENTATIONS = {
         title: 'Test läuft',
         'aria-label': 'Test läuft',
         'data-test-status': 'running',
+    },
+    invalidData: {
+        icon: 'mdi-database-alert',
+        color: 'error',
+        title: 'Falsche Daten – Test übersprungen',
+        'aria-label': 'Falsche Daten – Test übersprungen',
+        'data-test-status': 'invalid-data',
     },
     valid: {
         icon: 'mdi-check-circle',
@@ -758,16 +863,37 @@ export default {
             return this.selectedStudents.filter((student) => {
                 const status = this.studentV3TestResult(student)?.status
 
-                return status === 'complete' || status === 'error'
+                return status === 'complete' || status === 'error' || status === 'invalid_data'
             }).length
+        },
+        runningStudentV3TestCount() {
+            return this.selectedStudents.filter(
+                student => this.studentV3TestResult(student)?.status === 'running',
+            ).length
+        },
+        studentV3TestProgressPercentage() {
+            if (!this.selectedStudents.length) return 0
+
+            return Math.round((this.completedStudentV3TestCount / this.selectedStudents.length) * 100)
         },
         failedStudentV3TestCount() {
             return this.selectedStudents.filter(
                 student => this.studentV3TestStatusPresentation(student)['data-test-status'] === 'failed',
             ).length
         },
+        invalidStudentV3TestCount() {
+            return this.selectedStudents.filter(
+                student => this.studentV3TestStatusPresentation(student)['data-test-status'] === 'invalid-data',
+            ).length
+        },
+        testedStudentV3TestCount() {
+            return Math.max(0, this.completedStudentV3TestCount - this.invalidStudentV3TestCount)
+        },
         passedStudentV3TestCount() {
-            return Math.max(0, this.completedStudentV3TestCount - this.failedStudentV3TestCount)
+            return Math.max(
+                0,
+                this.testedStudentV3TestCount - this.failedStudentV3TestCount,
+            )
         },
         failedStudentV3TestSummaries() {
             return this.selectedStudents
@@ -790,6 +916,18 @@ export default {
                         message,
                     }
                 })
+        },
+        invalidStudentV3TestSummaries() {
+            return this.selectedStudents
+                .filter(
+                    student => this.studentV3TestStatusPresentation(student)['data-test-status'] === 'invalid-data',
+                )
+                .map(student => ({
+                    key: this.studentSelectionKey(student),
+                    classLabel: this.studentClassLabel(student),
+                    studentName: this.studentDisplayName(student),
+                    message: this.studentV3TestResult(student)?.message || 'Falscher Datensatz.',
+                }))
         },
         studyPlanSections() {
             return STUDY_PROGRAM_DEFINITIONS.map((studyProgram) => {
@@ -1008,6 +1146,15 @@ export default {
                 ? `${schoolLevel}_${attendanceYear}`
                 : schoolLevel
         },
+        studentDataQualityIssues(student) {
+            const issues = student?.data_quality_issues ?? student?.dataQualityIssues
+
+            if (!Array.isArray(issues)) return []
+
+            return issues
+                .map(issue => String(typeof issue === 'string' ? issue : issue?.message || '').trim())
+                .filter(Boolean)
+        },
         studentCourseResultLabels(student, group) {
             return this.studentCourseResultItems(student, group)
                 .map(({ code, grade }) => `${code} (${grade})`)
@@ -1101,6 +1248,7 @@ export default {
             if (!result) return STUDENT_V3_TEST_STATUS_PRESENTATIONS.idle
             if (result.status === 'pending') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.pending
             if (result.status === 'running') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.running
+            if (result.status === 'invalid_data') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.invalidData
 
             if (result.status === 'complete') {
                 const isValid = STUDENT_V3_TEST_COMPARISON_GROUP_KEYS.every(
@@ -1172,8 +1320,11 @@ export default {
                 ROR: 'R',
                 SPA: 'S',
             }[base] || base
+            const canonicalModuleNumber = canonicalBase === 'LPT' && moduleNumber === '1'
+                ? ''
+                : moduleNumber
 
-            return `${canonicalBase}${moduleNumber}`
+            return `${canonicalBase}${canonicalModuleNumber}`
         },
         normalizedStudentModuleCodes(modules) {
             return [...new Set(
@@ -1221,6 +1372,17 @@ export default {
 
             if (snapshotGroupKey) {
                 sourceModules = this.studentCourseResultItems(student, snapshotGroupKey)
+
+                if (snapshotGroupKey === 'negative') {
+                    const completedModuleCodes = new Set(
+                        this.studentCourseResultItems(student, 'completed')
+                            .map(module => this.normalizedStudentModuleComparisonCode(module.code)),
+                    )
+
+                    sourceModules = sourceModules.filter(module => !completedModuleCodes.has(
+                        this.normalizedStudentModuleComparisonCode(module.code),
+                    ))
+                }
             } else if (['previous', 'current'].includes(moduleGroupKey)) {
                 const currentSemester = Number(student?.semester)
                 const expectedSemesterModules = this.studentExpectedModules(student)
@@ -1324,6 +1486,18 @@ export default {
             const studentsByCode = new Map()
 
             students.forEach((student) => {
+                const dataQualityIssues = this.studentDataQualityIssues(student)
+
+                if (dataQualityIssues.length) {
+                    this.setStudentV3TestResult(student, {
+                        status: 'invalid_data',
+                        message: dataQualityIssues.join(' '),
+                        groups: [],
+                    })
+
+                    return
+                }
+
                 const studentCode = String(student?.student_code || student?.studentCode || '').trim()
 
                 if (!studentCode) {
@@ -1755,16 +1929,45 @@ export default {
     background: #eef2ff;
 }
 
+.tests-v3-students__row--invalid-data {
+    background: #fff1f2;
+}
+
+.tests-v3-students__data-quality-error {
+    display: grid;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.tests-v3-students__data-quality-error :deep(.v-chip) {
+    justify-self: start;
+}
+
+.tests-v3-students__data-quality-message {
+    color: rgb(var(--v-theme-error));
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
 .tests-v3-selection__header {
     padding: 16px 20px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.24);
 }
 
 .tests-v3-selection__progress {
-    padding: 8px 20px;
+    display: grid;
+    gap: 7px;
+    padding: 10px 20px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.18);
     background: #f8fafc;
     color: #475569;
+}
+
+.tests-v3-selection__progress-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
 }
 
 .tests-v3-selection__title {
@@ -1774,6 +1977,10 @@ export default {
 
 .tests-v3-selection__table :deep(.tests-v3-students__row--selected) {
     background: #eef2ff;
+}
+
+.tests-v3-selection__table :deep(.tests-v3-students__row--invalid-data) {
+    background: #fff1f2;
 }
 
 .tests-v3-selection__table :deep(.tests-v3-selection__module-test-row) {
@@ -1802,6 +2009,18 @@ export default {
     min-height: 32px;
     font-size: 0.82rem;
     font-weight: 700;
+}
+
+.tests-v3-selection__invalid-data-status {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--v-theme-error), 0.28);
+    border-radius: 8px;
+    background: rgba(var(--v-theme-error), 0.08);
+    font-size: 0.82rem;
+    line-height: 1.45;
 }
 
 .tests-v3-selection__module-groups {

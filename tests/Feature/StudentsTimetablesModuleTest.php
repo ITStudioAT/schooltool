@@ -27,6 +27,7 @@ use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\StudentsTimetables\RecognitionImportService;
+use App\Services\StudentsTimetables\StudentTimetableExpectedModulesService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableRecognitionIdentityService;
 use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
@@ -3076,7 +3077,6 @@ it('returns current schoolyear import116 students for the robot student selector
         'school_id' => $user->school_id,
     ]);
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
-
     Import116::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
@@ -3240,7 +3240,10 @@ it('returns independent expected modules through the current semester for the V3
             'arts_subject' => 'BE',
         ],
         'course_results' => [
-            'completed' => [['code' => 'd1', 'grade' => '2', 'status' => 'passed']],
+            'completed' => [
+                ['code' => 'd1', 'grade' => '2', 'status' => 'passed'],
+                ['code' => 'LPT1', 'grade' => '2', 'status' => 'passed'],
+            ],
             'negative' => [
                 ['code' => 'M2', 'grade' => '5', 'status' => 'failed'],
                 ['code' => 'R1', 'grade' => '5', 'status' => 'failed'],
@@ -3255,6 +3258,7 @@ it('returns independent expected modules through the current semester for the V3
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'E1', 'json_subject' => 'E'],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET'],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'L/F/S1', 'json_subject' => 'L/F/S'],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'LPT', 'json_subject' => 'LPT'],
         ['semester' => 1, 'branch' => 'gymnasial', 'json_code' => 'INF1', 'json_subject' => 'INF'],
         ['semester' => 1, 'branch' => 'wirtschaftskundlich', 'json_code' => 'GW1', 'json_subject' => 'GW'],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'M2', 'json_subject' => 'M'],
@@ -3464,6 +3468,92 @@ it('keeps missing lower religion modules in soll across religion aliases', funct
         ->and($moduleCodes('missing-orthodox-r1', 'expected_additional_modules'))->toBe(['Ror1', 'Ror3', 'Ror4']);
 });
 
+it('keeps unfinished lower modules in soll when a higher module is completed', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    collect([
+        ...collect(range(1, 5))->map(fn (int $moduleNumber): array => [
+            'semester' => $moduleNumber,
+            'json_code' => "D{$moduleNumber}",
+            'json_subject' => 'D',
+            'name' => "Deutsch {$moduleNumber}",
+        ]),
+        ...collect(range(1, 4))->map(fn (int $moduleNumber): array => [
+            'semester' => $moduleNumber,
+            'json_code' => "R/ET{$moduleNumber}",
+            'json_subject' => 'R/ET',
+            'name' => "Religion/Ethik {$moduleNumber}",
+        ]),
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'branch' => 'common',
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => $index,
+        ...$subjectRow,
+    ]));
+
+    app(StudentTimetableSubjectRuleService::class)->ensureDefaultRuleSet(
+        (int) $user->school_id,
+        (int) $schoolyear->id,
+        StudentTimetableStudyProgram::Normalstudium,
+        (int) $user->id,
+    );
+
+    $expectedModulesService = app(StudentTimetableExpectedModulesService::class);
+    $selection = [
+        'religion' => 'ETH',
+        'language' => null,
+        'branch' => null,
+        'arts_subject' => null,
+    ];
+    $moduleCodes = fn (array $modules, string $prefix): array => collect($modules)
+        ->pluck('code')
+        ->filter(fn (string $code): bool => str_starts_with($code, $prefix))
+        ->values()
+        ->all();
+    $completedModule = fn (string $code): array => [
+        'completed' => [['code' => $code, 'grade' => '2', 'status' => 'passed']],
+        'negative' => [],
+    ];
+
+    $ethicsResults = $completedModule('ETH2');
+    $germanResults = $completedModule('D3');
+
+    expect($moduleCodes($expectedModulesService->forStudent(
+        $user,
+        StudentTimetableStudyProgram::Normalstudium,
+        2,
+        $selection,
+        $ethicsResults,
+    ), 'ETH'))->toBe(['ETH1'])
+        ->and($moduleCodes($expectedModulesService->additionalForStudent(
+            $user,
+            StudentTimetableStudyProgram::Normalstudium,
+            $selection,
+            $ethicsResults,
+        ), 'ETH'))->toBe(['ETH1', 'ETH3', 'ETH4'])
+        ->and($moduleCodes($expectedModulesService->forStudent(
+            $user,
+            StudentTimetableStudyProgram::Normalstudium,
+            3,
+            $selection,
+            $germanResults,
+        ), 'D'))->toBe(['D1', 'D2'])
+        ->and($moduleCodes($expectedModulesService->additionalForStudent(
+            $user,
+            StudentTimetableStudyProgram::Normalstudium,
+            $selection,
+            $germanResults,
+        ), 'D'))->toBe(['D1', 'D2', 'D4', 'D5']);
+});
+
 it('returns selected expected additional modules from the stored result progression', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
@@ -3584,7 +3674,7 @@ it('returns selected expected additional modules from the stored result progress
         ->all();
 
     expect($additionalCodes('passed-progression'))->toBe([
-        'D3', 'D4', 'E3', 'E4', 'INF3', 'INF4', 'Ris1', 'Ris3', 'Ris4', 'S3', 'S4',
+        'D1', 'D3', 'D4', 'E1', 'E3', 'E4', 'INF1', 'INF3', 'INF4', 'Ris1', 'Ris3', 'Ris4', 'S1', 'S3', 'S4',
     ])->and($englishAdditionalCodes('non-consecutive-passed-progression'))->toBe([
         'E2', 'E4', 'E5',
     ])->and($additionalCodes('failed-progression'))->toBe([
@@ -3923,7 +4013,7 @@ it('uses only the student class for v3 study program and flags conflicting impor
     ]);
 });
 
-it('limits v3 selectable modules to the next two levels per subject', function () {
+it('limits v3 selectable modules without dropping unfinished lower levels', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -3937,6 +4027,15 @@ it('limits v3 selectable modules to the next two levels per subject', function (
             'student_code' => 'non-consecutive-english-modules',
             'last_name' => 'Nicht aufeinanderfolgend',
             'school_level' => '10_1',
+        ],
+        [
+            'student_code' => 'english-six-exempt',
+            'last_name' => 'Englisch Sechs',
+            'school_level' => '09_1',
+        ],
+        [
+            'student_code' => 'gapped-german-modules',
+            'last_name' => 'Deutsch Lücke',
         ],
     ])->each(function (array $student) use ($user, $schoolyear): void {
         Import116::factory()->create([
@@ -3952,8 +4051,8 @@ it('limits v3 selectable modules to the next two levels per subject', function (
         ]);
     });
 
-    collect(['M' => 'Mathematik', 'E' => 'Englisch'])
-        ->flatMap(fn (string $subjectName, string $subjectCode): array => collect(range(1, 5))
+    collect(['D' => 'Deutsch', 'M' => 'Mathematik', 'E' => 'Englisch'])
+        ->flatMap(fn (string $subjectName, string $subjectCode): array => collect(range(1, 8))
             ->map(fn (int $moduleNumber): array => [
                 'subject_code' => $subjectCode,
                 'subject_name' => $subjectName,
@@ -3982,8 +4081,8 @@ it('limits v3 selectable modules to the next two levels per subject', function (
         'original_filename' => 'noten.csv',
         'stored_filename' => 'noten.csv',
         'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
-        'total_rows' => 3,
-        'imported_rows' => 3,
+        'total_rows' => 11,
+        'imported_rows' => 11,
         'skipped_rows' => 0,
         'import_status' => 'completed',
         'imported_at' => now(),
@@ -4005,24 +4104,32 @@ it('limits v3 selectable modules to the next two levels per subject', function (
     ]);
 
     collect([
-        ['row_number' => 3, 'subject' => 'E1', 'grade' => '2'],
-        ['row_number' => 4, 'subject' => 'E3', 'grade' => '3'],
+        ['row_number' => 3, 'student_code' => 'non-consecutive-english-modules', 'subject' => 'E1', 'grade' => '2'],
+        ['row_number' => 4, 'student_code' => 'non-consecutive-english-modules', 'subject' => 'E3', 'grade' => '3'],
+        ['row_number' => 5, 'student_code' => 'english-six-exempt', 'subject' => 'E1', 'grade' => 'B'],
+        ['row_number' => 6, 'student_code' => 'english-six-exempt', 'subject' => 'E2', 'grade' => 'B'],
+        ['row_number' => 7, 'student_code' => 'english-six-exempt', 'subject' => 'E3', 'grade' => 'B'],
+        ['row_number' => 8, 'student_code' => 'english-six-exempt', 'subject' => 'E4', 'grade' => 'B'],
+        ['row_number' => 9, 'student_code' => 'english-six-exempt', 'subject' => 'E5', 'grade' => 'B'],
+        ['row_number' => 10, 'student_code' => 'english-six-exempt', 'subject' => 'E6', 'grade' => 'B'],
+        ['row_number' => 11, 'student_code' => 'gapped-german-modules', 'subject' => 'D2', 'grade' => '5'],
+        ['row_number' => 12, 'student_code' => 'gapped-german-modules', 'subject' => 'D4', 'grade' => '2'],
     ])->each(fn (array $result): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
         'student_timetable_recognition_import_id' => $import->id,
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
         'row_number' => $result['row_number'],
-        'student_code' => 'non-consecutive-english-modules',
+        'student_code' => $result['student_code'],
         'subject' => $result['subject'],
         'grade' => $result['grade'],
         'note' => $result['grade'],
         'raw_data' => [
-            'semester' => str_ends_with($result['subject'], '1') ? '1' : '3',
+            'semester' => preg_replace('/\D+/u', '', $result['subject']),
             'stundentafel' => 'AHS-Alle',
         ],
     ]));
 
-    $selectableModuleCodes = function (string $studentCode) use ($user): array {
+    $selectableModuleCodes = function (string $studentCode, string $subjectCode = 'M') use ($user): array {
         $response = $this->actingAs($user)
             ->getJson("/api/admin/students-timetables/timetable-v3/student-information?student_code={$studentCode}")
             ->assertSuccessful();
@@ -4031,14 +4138,31 @@ it('limits v3 selectable modules to the next two levels per subject', function (
             ->whereIn('key', ['previous', 'current', 'additional'])
             ->flatMap(fn (array $group): array => $group['modules'])
             ->pluck('code')
-            ->filter(fn (string $code): bool => str_starts_with($code, 'M'))
+            ->filter(fn (string $code): bool => str_starts_with($code, $subjectCode))
             ->sort(fn (string $firstCode, string $secondCode): int => strnatcasecmp($firstCode, $secondCode))
             ->values()
             ->all();
     };
 
     expect($selectableModuleCodes('no-mathematics-module'))->toBe(['M1', 'M2'])
-        ->and($selectableModuleCodes('mathematics-one-completed'))->toBe(['M2', 'M3']);
+        ->and($selectableModuleCodes('mathematics-one-completed'))->toBe(['M2', 'M3'])
+        ->and($selectableModuleCodes('english-six-exempt', 'E'))->toBe(['E7', 'E8']);
+
+    $gappedGermanResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=gapped-german-modules')
+        ->assertSuccessful();
+    $gappedGermanModuleGroups = collect($gappedGermanResponse->json('data.module_selection_groups'))->keyBy('key');
+    $gappedGermanModuleCodes = fn (string $groupKey): array => collect($gappedGermanModuleGroups->get($groupKey)['modules'] ?? [])
+        ->pluck('code')
+        ->filter(fn (string $code): bool => str_starts_with($code, 'D'))
+        ->values()
+        ->all();
+
+    expect($gappedGermanModuleCodes('finished'))->toBe(['D4'])
+        ->and($gappedGermanModuleCodes('negative'))->toBe(['D2'])
+        ->and($gappedGermanModuleCodes('previous'))->toBe(['D1', 'D3', 'D5'])
+        ->and($gappedGermanModuleCodes('current'))->toBe(['D6'])
+        ->and($gappedGermanModuleCodes('additional'))->toBe([]);
 
     $englishResponse = $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=non-consecutive-english-modules')
@@ -4995,8 +5119,9 @@ it('uses the imported confession for a generic recognized religion course', func
         ->pluck('code');
 
     expect($selectableEthicsModules)
+        ->toContain('ETH1')
         ->toContain('ETH2')
-        ->not->toContain('ETH1');
+        ->not->toContain('ETH3');
 });
 
 it('does not advance v3 selectable modules from failed english or specific religion results', function () {
@@ -5085,7 +5210,7 @@ it('does not advance v3 selectable modules from failed english or specific relig
         ->and($additionalCodes)->toBe(['Ris2']);
 });
 
-it('lets visited ethics dominate the imported religion selection', function () {
+it('uses visited ethics for soll modules without repeating result modules', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -5167,6 +5292,16 @@ it('lets visited ethics dominate the imported religion selection', function () {
         ],
     ]);
 
+    $staleSnapshotResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.study_selection.religion', 'Rk');
+
+    expect(collect($staleSnapshotResponse->json('data.0.expected_modules'))->pluck('code')->all())
+        ->toBe([])
+        ->and(collect($staleSnapshotResponse->json('data.0.expected_additional_modules'))->pluck('code')->all())
+        ->toBe(['ETH2']);
+
     app(StudentTimetableStudySelectionRefreshService::class)->refreshForUser($user, (int) $schoolyear->id);
 
     $response = $this->actingAs($user)
@@ -5182,11 +5317,117 @@ it('lets visited ethics dominate the imported religion selection', function () {
         ->and($currentCodes)->toBe([])
         ->and($additionalCodes)->toBe(['ETH2']);
 
-    $this->getJson('/api/admin/students-timetables/robot/students')
+    $robotStudentsResponse = $this->getJson('/api/admin/students-timetables/robot/students')
         ->assertSuccessful()
-        ->assertJsonPath('data.0.study_selection.religion', 'ETH')
-        ->assertJsonPath('data.0.expected_modules', [])
-        ->assertJsonPath('data.0.expected_additional_modules.0.code', 'ETH2');
+        ->assertJsonPath('data.0.study_selection.religion', 'ETH');
+
+    expect(collect($robotStudentsResponse->json('data.0.expected_modules'))->pluck('code')->all())
+        ->toBe([])
+        ->and(collect($robotStudentsResponse->json('data.0.expected_additional_modules'))->pluck('code')->all())
+        ->toBe(['ETH2']);
+});
+
+it('keeps unfinished ethics modules selectable in v3 after completed religion modules', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $student = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '1U',
+        'school_level' => '09_1',
+        'attendance_year' => '6',
+        'religion' => 'islam. (IGGÖ)',
+        'student_code' => '200',
+        'last_name' => 'Ethik',
+        'first_name' => 'Wechsel',
+        'study_selection' => [
+            'religion' => 'Ris',
+            'language' => null,
+            'branch' => null,
+            'arts_subject' => null,
+        ],
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 1, 'json_code' => 'R1', 'json_subject' => 'R', 'name' => 'Religion 1'],
+        ['semester' => 1, 'json_code' => 'ET1', 'json_subject' => 'ET', 'name' => 'Ethik 1'],
+        ['semester' => 2, 'json_code' => 'R2', 'json_subject' => 'R', 'name' => 'Religion 2'],
+        ['semester' => 2, 'json_code' => 'ET2', 'json_subject' => 'ET', 'name' => 'Ethik 2'],
+        ['semester' => 5, 'json_code' => 'R3', 'json_subject' => 'R', 'name' => 'Religion 3'],
+        ['semester' => 5, 'json_code' => 'ET3', 'json_subject' => 'ET', 'name' => 'Ethik 3'],
+        ['semester' => 5, 'json_code' => 'R4', 'json_subject' => 'R', 'name' => 'Religion 4'],
+        ['semester' => 5, 'json_code' => 'ET4', 'json_subject' => 'ET', 'name' => 'Ethik 4'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'branch' => 'common',
+        'hours_per_week' => 1,
+        ...$subjectRow,
+    ]));
+
+    app(StudentTimetableSubjectRuleService::class)->ensureDefaultRuleSet(
+        (int) $user->school_id,
+        (int) $schoolyear->id,
+        StudentTimetableStudyProgram::Kompaktstudium,
+        (int) $user->id,
+    );
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'total_rows' => 4,
+        'imported_rows' => 4,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    collect([
+        ['subject' => 'R', 'semester' => '1', 'grade' => 'B'],
+        ['subject' => 'R', 'semester' => '2', 'grade' => 'B'],
+        ['subject' => 'R', 'semester' => '3', 'grade' => 'B'],
+        ['subject' => 'ETH', 'semester' => '4', 'grade' => '5'],
+    ])->each(fn (array $row, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 1,
+        'student_code' => $student->student_code,
+        'subject' => $row['subject'],
+        'grade' => $row['grade'],
+        'raw_data' => [
+            'semester' => $row['semester'],
+            'stundentafel' => 'AHS-KS-Alle',
+        ],
+    ]));
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=200')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'ETH');
+    $moduleGroups = collect($response->json('data.module_selection_groups'))->keyBy('key');
+    $finishedCodes = collect($moduleGroups->get('finished')['modules'])->pluck('code')->all();
+    $negativeCodes = collect($moduleGroups->get('negative')['modules'])->pluck('code')->all();
+    $currentCodes = collect($moduleGroups->get('current')['modules'])->pluck('code')->all();
+    $additionalCodes = collect($moduleGroups->get('additional')['modules'])->pluck('code')->all();
+
+    expect($finishedCodes)->toBe(['Ris1', 'Ris2', 'Ris3'])
+        ->and($negativeCodes)->toBe(['ETH4'])
+        ->and($currentCodes)->toBe(['ETH1'])
+        ->and($additionalCodes)->toBe(['ETH2']);
 });
 
 it('can return a slim robot student overview course history payload', function () {
@@ -5276,6 +5517,37 @@ it('uses the compact semester progression only for class suffixes made exclusive
             ->assertSuccessful()
             ->assertJsonPath('data.selection.semester', $semesterCase['semester']);
     }
+});
+
+it('marks a compact student with an unsupported school level as wrong data', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '1R',
+        'school_level' => '10_1',
+        'attendance_year' => '6',
+        'student_code' => 'invalid-compact-school-level',
+        'last_name' => 'Sretenovic',
+        'first_name' => 'Niklas-Konstantin',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.study_program', StudentTimetableStudyProgram::Kompaktstudium->value)
+        ->assertJsonPath('data.0.semester', null)
+        ->assertJsonPath(
+            'data.0.data_quality_issues.0',
+            'Falscher Datensatz: Im Kompaktstudium ist die Schulstufe 10_1 nicht zulässig. Zulässig sind 09_1, 09_2, 11_1, 11_2 und 12_2.',
+        );
 });
 
 it('bases student overview planned and additional courses on passed progression instead of student semester', function () {
@@ -5431,6 +5703,170 @@ it('offers selected arts courses independently from the selected branch', functi
 
     expect(collect($response->json('data.additional_courses'))->pluck('code')->all())
         ->toBe(['ME1']);
+});
+
+it('keeps both first arts modules compulsory for compact gym students without saved rules', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $selection = [
+        'religion' => 'ETH',
+        'language' => 'L',
+        'branch' => 'gymnasial',
+        'arts_subject' => 'ME',
+    ];
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4Q',
+        'school_level' => '11_2',
+        'student_code' => 'compact-gym-arts',
+        'last_name' => 'Kunst',
+        'first_name' => 'Gymnasial',
+        'study_selection' => $selection,
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 4, 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+        ['semester' => 4, 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => 5, 'json_code' => 'BE2', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 2'],
+        ['semester' => 5, 'json_code' => 'ME2', 'json_subject' => 'ME', 'name' => 'Musikerziehung 2'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
+        'branch' => 'gymnasial',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index,
+        ...$subjectRow,
+    ]));
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?'.http_build_query([
+            'student_code' => 'compact-gym-arts',
+            'selection' => $selection,
+        ]))
+        ->assertSuccessful();
+
+    $moduleGroups = collect($response->json('data.module_selection_groups'))->keyBy('key');
+
+    expect(collect($moduleGroups['current']['modules'])->pluck('code')->all())
+        ->toBe(['BE1', 'ME1'])
+        ->and(collect($moduleGroups['additional']['modules'])->pluck('code')->all())
+        ->toBe([]);
+
+    $expectedModulesService = app(StudentTimetableExpectedModulesService::class);
+
+    expect(collect($expectedModulesService->forStudent(
+        $user,
+        StudentTimetableStudyProgram::Kompaktstudium,
+        4,
+        $selection,
+        [],
+    ))->pluck('code')->all())->toBe(['BE1', 'ME1'])
+        ->and(collect($expectedModulesService->additionalForStudent(
+            $user,
+            StudentTimetableStudyProgram::Kompaktstudium,
+            $selection,
+            [],
+        ))->pluck('code')->all())->toBe(['BE1', 'ME1', 'ME2']);
+});
+
+it('keeps the stored gym branch when a completed arts module belongs to both compact branches', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '2Q',
+        'school_level' => '09_2',
+        'student_code' => 'compact-gym-shared-arts',
+        'last_name' => 'Helminger',
+        'first_name' => 'Katja',
+        'study_selection' => [
+            'religion' => 'ETH',
+            'language' => 'S',
+            'branch' => 'gymnasial',
+            'arts_subject' => 'ME',
+        ],
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 4, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => 4, 'branch' => 'wirtschaftskundlich', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+        ['semester' => 4, 'branch' => 'gymnasial', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => 4, 'branch' => 'gymnasial', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+        ['semester' => 5, 'branch' => 'gymnasial', 'json_code' => 'ME2', 'json_subject' => 'ME', 'name' => 'Musikerziehung 2'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index,
+        ...$subjectRow,
+    ]));
+
+    app(StudentTimetableSubjectRuleService::class)->ensureDefaultRuleSet(
+        (int) $user->school_id,
+        (int) $schoolyear->id,
+        StudentTimetableStudyProgram::Kompaktstudium,
+    );
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => 'compact-gym-shared-arts',
+        'subject' => 'ME1',
+        'grade' => '2',
+        'note' => '2',
+        'raw_data' => [
+            'semester' => '1',
+            'stundentafel' => 'AHS-KS-GYM',
+        ],
+    ]);
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=compact-gym-shared-arts')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.2.key', 'branch')
+        ->assertJsonPath('data.selection_fields.2.selected_value', 'gymnasial');
+
+    $moduleGroups = collect($response->json('data.module_selection_groups'))->keyBy('key');
+    $additionalCodes = collect($moduleGroups['additional']['modules'])->pluck('code')->all();
+
+    expect($additionalCodes)
+        ->toContain('BE1')
+        ->toContain('ME2');
 });
 
 it('normalizes recognized completed course school semesters to subject plan modules', function () {
