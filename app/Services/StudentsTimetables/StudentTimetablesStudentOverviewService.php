@@ -47,6 +47,9 @@ class StudentTimetablesStudentOverviewService
     /** @var array<string, Collection<int, StudentTimetableSubjectRow>> */
     private array $activeSubjectRowsByPlan = [];
 
+    /** @var array<string, array<string, Import116>> */
+    private array $studentsByScopeAndCode = [];
+
     /** @var array<string, SubjectPlanRuleEvaluator|null> */
     private array $subjectRuleEvaluatorsByPlan = [];
 
@@ -58,6 +61,33 @@ class StudentTimetablesStudentOverviewService
 
     /** @var array<string, list<array{hour: int, from: ?string, until: ?string}>> */
     private array $schoolHoursByContext = [];
+
+    /** @var array<string, list<string>> */
+    private array $courseCodeAliasPartsCache = [];
+
+    /** @var array<string, list<string>> */
+    private array $courseCodeAliasesCache = [];
+
+    /** @var array<string, array{base: string, module: string}> */
+    private array $courseCodeModulePartsCache = [];
+
+    /** @var array<string, list<array{base: string, module: string}>> */
+    private array $courseModulePartsForStudentPlanningCache = [];
+
+    /** @var array<string, string> */
+    private array $normalizedCourseCodeCache = [];
+
+    /** @var array<string, string> */
+    private array $courseCodeWithoutModuleCache = [];
+
+    /** @var array<string, string> */
+    private array $courseModuleNumberCache = [];
+
+    /** @var array<string, list<string>> */
+    private array $studentCourseBaseAliasesCache = [];
+
+    /** @var array<string, list<string>> */
+    private array $studentEquivalentCourseBaseAliasesCache = [];
 
     public function __construct(
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
@@ -323,6 +353,53 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
+     * @param  list<string>  $studentCodes
+     */
+    public function prepareSelectionSummariesForStudentCodes(User $user, array $studentCodes): void
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $studentCodes = collect($studentCodes)
+            ->map(fn (string $studentCode): string => trim($studentCode))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($studentCodes->isEmpty()) {
+            return;
+        }
+
+        $scopeKey = $this->studentScopeCacheKey($user, $schoolyearId);
+        $this->studentsByScopeAndCode[$scopeKey] ??= [];
+        $uncachedStudentCodes = $studentCodes
+            ->reject(fn (string $studentCode): bool => array_key_exists(
+                $studentCode,
+                $this->studentsByScopeAndCode[$scopeKey],
+            ))
+            ->values();
+
+        if ($uncachedStudentCodes->isNotEmpty()) {
+            Import116::query()
+                ->where('school_id', $user->school_id)
+                ->where('schoolyear_id', $schoolyearId)
+                ->whereIn('student_code', $uncachedStudentCodes)
+                ->get()
+                ->each(function (Import116 $student) use ($scopeKey): void {
+                    $studentCode = trim((string) $student->student_code);
+
+                    if ($studentCode !== '') {
+                        $this->studentsByScopeAndCode[$scopeKey][$studentCode] = $student;
+                    }
+                });
+        }
+
+        $this->completedCourseHistoryService->coursesForStudentCodes(
+            $user,
+            $schoolyearId,
+            $studentCodes->all(),
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $selectionOverride
      * @return array<string, mixed>
      */
@@ -514,6 +591,13 @@ class StudentTimetablesStudentOverviewService
 
     private function studentByCode(User $user, int $schoolyearId, string $studentCode): Import116
     {
+        $scopeKey = $this->studentScopeCacheKey($user, $schoolyearId);
+        $this->studentsByScopeAndCode[$scopeKey] ??= [];
+
+        if (array_key_exists($studentCode, $this->studentsByScopeAndCode[$scopeKey])) {
+            return $this->studentsByScopeAndCode[$scopeKey][$studentCode];
+        }
+
         $student = Import116::query()
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
@@ -524,7 +608,7 @@ class StudentTimetablesStudentOverviewService
             abort(404, 'Student nicht gefunden.');
         }
 
-        return $student;
+        return $this->studentsByScopeAndCode[$scopeKey][$studentCode] = $student;
     }
 
     /**
@@ -1472,6 +1556,12 @@ class StudentTimetablesStudentOverviewService
         Import116 $student,
         StudentTimetableStudyProgram $studyProgram,
     ): array {
+        if (trim((string) $student->school_level) === '') {
+            return [
+                "Falscher Datensatz: Für {$student->last_name} {$student->first_name} fehlt die Schulstufe.",
+            ];
+        }
+
         if (! $this->schoolLevelMismatchForStudent($student, $studyProgram)) {
             return [];
         }
@@ -1882,6 +1972,14 @@ class StudentTimetablesStudentOverviewService
         ]);
     }
 
+    private function studentScopeCacheKey(User $user, int $schoolyearId): string
+    {
+        return implode(':', [
+            (int) $user->school_id,
+            $schoolyearId,
+        ]);
+    }
+
     private function userContextCacheKey(User $user): string
     {
         return implode(':', [
@@ -1906,11 +2004,10 @@ class StudentTimetablesStudentOverviewService
 
         return $this->activeSubjectRows($user, $schoolyearId, $studyProgram)
             ->when(
-                $applySelectionEligibility,
-                fn (Collection $rows): Collection => $rows
-                    ->filter(fn (StudentTimetableSubjectRow $row): bool => $evaluator
-                        ? $evaluator->evaluate($row, $selection)['eligible']
-                        : $this->subjectMatchesSelection($row, $selection)),
+                $applySelectionEligibility && ! $evaluator,
+                fn (Collection $rows): Collection => $rows->filter(
+                    fn (StudentTimetableSubjectRow $row): bool => $this->subjectMatchesSelection($row, $selection),
+                ),
             )
             ->flatMap(fn (StudentTimetableSubjectRow $row): array => $this->subjectRowCoursePayloads(
                 $row,
@@ -2812,7 +2909,10 @@ class StudentTimetablesStudentOverviewService
      */
     private function courseModulePartsForStudentPlanning(array $course): array
     {
-        return collect($this->courseCodeAliases($course))
+        $courseCodeAliases = $this->courseCodeAliases($course);
+        $cacheKey = md5(serialize($courseCodeAliases));
+
+        return $this->courseModulePartsForStudentPlanningCache[$cacheKey] ??= collect($courseCodeAliases)
             ->map(fn (string $courseCode): array => $this->courseCodeModuleParts($courseCode))
             ->filter(fn (array $parts): bool => (string) ($parts['module'] ?? '') !== '')
             ->filter(fn (array $parts): bool => $this->courseBaseEligibleForStudentAdditional((string) ($parts['base'] ?? '')))
@@ -2933,6 +3033,11 @@ class StudentTimetablesStudentOverviewService
     private function studentCourseBaseAliases(string $base): array
     {
         $normalizedBase = $this->normalizedCourseCode($base);
+
+        if (array_key_exists($normalizedBase, $this->studentCourseBaseAliasesCache)) {
+            return $this->studentCourseBaseAliasesCache[$normalizedBase];
+        }
+
         $mappedAliases = [
             'GS' => ['GPB'],
             'GPB' => ['GS'],
@@ -2953,7 +3058,7 @@ class StudentTimetablesStudentOverviewService
             'LET' => ['LPT'],
         ];
 
-        return collect([
+        return $this->studentCourseBaseAliasesCache[$normalizedBase] = collect([
             $normalizedBase,
             ...($mappedAliases[$normalizedBase] ?? []),
         ])
@@ -2969,6 +3074,11 @@ class StudentTimetablesStudentOverviewService
     private function studentEquivalentCourseBaseAliases(string $base): array
     {
         $normalizedBase = $this->normalizedCourseCode($base);
+
+        if (array_key_exists($normalizedBase, $this->studentEquivalentCourseBaseAliasesCache)) {
+            return $this->studentEquivalentCourseBaseAliasesCache[$normalizedBase];
+        }
+
         $mappedAliases = [
             'GS' => ['GPB'],
             'GPB' => ['GS'],
@@ -2984,7 +3094,7 @@ class StudentTimetablesStudentOverviewService
             'LET' => ['LPT'],
         ];
 
-        return collect([
+        return $this->studentEquivalentCourseBaseAliasesCache[$normalizedBase] = collect([
             $normalizedBase,
             ...($mappedAliases[$normalizedBase] ?? []),
         ])
@@ -3047,7 +3157,13 @@ class StudentTimetablesStudentOverviewService
      */
     private function courseCodeAliases(array $course): array
     {
-        return collect([
+        $cacheKey = md5(serialize([
+            $course['code'] ?? null,
+            $course['ttCode'] ?? null,
+            ...($course['ttCodes'] ?? []),
+        ]));
+
+        return $this->courseCodeAliasesCache[$cacheKey] ??= collect([
             $course['code'] ?? null,
             $course['ttCode'] ?? null,
             ...($course['ttCodes'] ?? []),
@@ -3065,9 +3181,13 @@ class StudentTimetablesStudentOverviewService
      */
     private function courseCodeModuleParts(string $code): array
     {
+        if (array_key_exists($code, $this->courseCodeModulePartsCache)) {
+            return $this->courseCodeModulePartsCache[$code];
+        }
+
         $normalizedCode = $this->normalizedCourseCode($code);
 
-        return [
+        return $this->courseCodeModulePartsCache[$code] = [
             'base' => $this->courseCodeWithoutModule($normalizedCode),
             'module' => $this->courseModuleNumber($normalizedCode),
         ];
@@ -3146,7 +3266,7 @@ class StudentTimetablesStudentOverviewService
      */
     private function courseCodeAliasParts(string $value): array
     {
-        return collect(explode('/', trim($value)))
+        return $this->courseCodeAliasPartsCache[$value] ??= collect(explode('/', trim($value)))
             ->map(fn (string $part): string => trim($part))
             ->filter()
             ->values()
@@ -3155,19 +3275,31 @@ class StudentTimetablesStudentOverviewService
 
     private function normalizedCourseCode(string $code): string
     {
-        return preg_replace('/\s+/u', '', mb_strtoupper(trim($code), 'UTF-8')) ?: '';
+        return $this->normalizedCourseCodeCache[$code] ??= preg_replace(
+            '/\s+/u',
+            '',
+            mb_strtoupper(trim($code), 'UTF-8'),
+        ) ?: '';
     }
 
     private function courseCodeWithoutModule(string $code): string
     {
-        return preg_replace('/\d+$/u', '', $this->normalizedCourseCode($code)) ?: '';
+        return $this->courseCodeWithoutModuleCache[$code] ??= preg_replace(
+            '/\d+$/u',
+            '',
+            $this->normalizedCourseCode($code),
+        ) ?: '';
     }
 
     private function courseModuleNumber(string $code): string
     {
+        if (array_key_exists($code, $this->courseModuleNumberCache)) {
+            return $this->courseModuleNumberCache[$code];
+        }
+
         preg_match('/(\d+)$/u', $this->normalizedCourseCode($code), $match);
 
-        return $match[1] ?? '';
+        return $this->courseModuleNumberCache[$code] = $match[1] ?? '';
     }
 
     private function integerOrNull(mixed $value): ?int

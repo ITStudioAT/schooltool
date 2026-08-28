@@ -31,7 +31,7 @@
                         Schuljahr ändern
                     </a>
                 </v-alert>
-                <v-alert v-if="uploadError" type="error" variant="tonal" class="mb-3">
+                <v-alert v-if="uploadError" type="error" variant="tonal" prominent border="start" title="Import nicht möglich" class="mb-3">
                     {{ uploadError }}
                 </v-alert>
                 <FileUpload
@@ -632,8 +632,9 @@ export default {
             this.loadImport()
             this.schedulePolling()
         },
-        onUploadError() {
-            this.uploadError = 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
+        onUploadError(message) {
+            const serverMessage = typeof message === 'string' && message.trim() !== '' ? message : ''
+            this.uploadError = serverMessage || 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
         },
         openSchoolyearEdit() {
             const sy = this.config?.selected_schoolyear

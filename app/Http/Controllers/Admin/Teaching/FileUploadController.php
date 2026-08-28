@@ -23,7 +23,7 @@ class FileUploadController extends Controller
 
         $this->ensureAllowedSlug($slug);
         $this->ensurePersonalSchoolyear($auth_user, $slug);
-        $this->ensureXlsx($request);
+        $this->ensureSpreadsheetType($request, $slug);
         $id = $fileUploadService->upload($request, 'teaching-import');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
@@ -37,7 +37,7 @@ class FileUploadController extends Controller
 
         $this->ensureAllowedSlug($slug);
         $this->ensurePersonalSchoolyear($auth_user, $slug);
-        $this->ensureXlsx($request);
+        $this->ensureSpreadsheetType($request, $slug);
 
         $result = $fileUploadService->uploadNext(
             $request,
@@ -61,7 +61,8 @@ class FileUploadController extends Controller
                 $auth_user,
                 $archivePath,
                 (int) $auth_user->schoolyear_id,
-                is_string($originalUploadName) ? $originalUploadName : null
+                is_string($originalUploadName) ? $originalUploadName : null,
+                $request->is('api/admin/students-timetables/import116-upload/*'),
             );
         }
 
@@ -74,7 +75,7 @@ class FileUploadController extends Controller
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
 
-    private function ensureXlsx(Request $request): void
+    private function ensureSpreadsheetType(Request $request, string $slug): void
     {
         $originalName = $request->header('Upload-Name');
         if (! $originalName) {
@@ -82,7 +83,13 @@ class FileUploadController extends Controller
         }
 
         $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        if (! in_array($extension, ['xlsx', 'xls'], true)) {
+        $allowedExtensions = $slug === '116' ? ['xlsx'] : ['xlsx', 'xls'];
+
+        if (! in_array($extension, $allowedExtensions, true)) {
+            if ($slug === '116') {
+                abort(422, 'Import 116 unterstützt nur XLSX-Dateien. Alte XLS-Dateien müssen zuerst als XLSX gespeichert werden.');
+            }
+
             abort(422, 'Nur XLSX- oder XLS-Dateien sind erlaubt.');
         }
     }

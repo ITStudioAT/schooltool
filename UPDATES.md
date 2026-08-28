@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.46.3 !!!
+## 3.46.3
 
 ### Schülerstundenpläne
 

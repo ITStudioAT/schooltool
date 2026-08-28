@@ -16,6 +16,13 @@ it('resolves the StudentsTimetables scope to admin roles', function () {
         ->toBe(['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator']);
 });
 
+it('resolves the StudentsTimetables Tests V3 scope to timetable admins', function () {
+    $service = app(AccessScopeService::class);
+
+    expect($service->resolveRoleNames(['scope:students_timetables_tests_v3_access']))
+        ->toBe(['super_admin', 'admin', 'studentstimetables_admin']);
+});
+
 it('resolves tool web access to all module dashboard roles', function () {
     $service = app(AccessScopeService::class);
 

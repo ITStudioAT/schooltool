@@ -20,3 +20,6 @@ This supersedes the earlier Tests v3 /overview placeholder route. The main Tests
 
 ## Prompt globally before missing subject-plan carry-forward
 Check the personal schoolyear subject-plan carry-forward state in the shared StudentsTimetables shell so every module section shows one prominent warning. Auto-open the admin confirmation dialog, but never copy on page open; one confirmed request carries Normalstudium, Kompaktstudium, and mappings together and refreshes the active section.
+
+## Remove the admin Stundenplan v2 entry
+This supersedes the rules that keep Stundenplan v2 in the module navigation or use students_timetables.admin_version to select it. The admin Students Timetables shell exposes only Stundenplan v3; legacy timetable-v2 URLs redirect to /admin/students-timetables/timetable-v3/overview. Keep the underlying V2 implementation files intact for rollback.

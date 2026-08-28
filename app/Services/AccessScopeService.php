@@ -20,6 +20,7 @@ class AccessScopeService
         'school_tool_access' => ['super_admin', 'admin', 'tutoring_admin', 'register_admin', 'teacher'],
         'restaurant_access' => ['admin', 'lunch_admin'],
         'students_timetables_access' => ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+        'students_timetables_tests_v3_access' => ['super_admin', 'admin', 'studentstimetables_admin'],
         'materials_access' => ['admin', 'materials_admin', 'materials_moderator'],
         'tutoring_admin_access' => ['admin', 'tutoring_admin'],
         'teaching_access' => ['admin', 'teaching_admin', 'teacher'],

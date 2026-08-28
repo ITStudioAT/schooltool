@@ -400,8 +400,9 @@ class RobotTimetableBackendSetupService
         foreach ($candidateCourses as $candidateCourse) {
             $availabilityKey = (string) $candidateCourse['availability_key'];
             $courseKey = trim((string) $candidateCourse['course_key']);
+            $availableCourse = $this->availableCourseForSelectedKey($availableCoursesByKey, $courseKey);
 
-            if ($courseKey === '' || ! array_key_exists($courseKey, $availableCoursesByKey)) {
+            if ($courseKey === '' || $availableCourse === null) {
                 $availability[$availabilityKey] = [
                     'available' => false,
                     'valid_timetable_count' => 0,
@@ -416,7 +417,7 @@ class RobotTimetableBackendSetupService
             ) {
                 $candidateSettings = $this->settingsWithAvailabilityCandidate($settings, $candidateCourse);
                 $courseOptions = $this->courseOptions(
-                    $availableCoursesByKey[$courseKey],
+                    $availableCourse,
                     $courseGroups,
                     $subjectMappings,
                     $candidateSettings,
@@ -460,6 +461,24 @@ class RobotTimetableBackendSetupService
         }
 
         return $availability;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $availableCoursesByKey
+     * @return array<string, mixed>|null
+     */
+    private function availableCourseForSelectedKey(array $availableCoursesByKey, string $courseKey): ?array
+    {
+        if ($courseKey === '') {
+            return null;
+        }
+
+        if (array_key_exists($courseKey, $availableCoursesByKey)) {
+            return $availableCoursesByKey[$courseKey];
+        }
+
+        return collect($availableCoursesByKey)
+            ->first(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, [$courseKey]));
     }
 
     /**
@@ -571,7 +590,7 @@ class RobotTimetableBackendSetupService
     ): array {
         $candidateSettings = $this->settingsWithAvailabilityCandidate($settings, $candidateCourse);
         $courseKey = trim((string) $candidateCourse['course_key']);
-        $course = $availableCoursesByKey[$courseKey] ?? null;
+        $course = $this->availableCourseForSelectedKey($availableCoursesByKey, $courseKey);
 
         if ($courseKey === '' || $course === null) {
             return [$baseInput, $candidateSettings];
@@ -1896,9 +1915,11 @@ class RobotTimetableBackendSetupService
                 }
 
                 $reason = $this->unavailableCourseReason($course, $courseGroups, $subjectMappings, $settings);
+                $requestedCourseKey = collect($this->stringList($settings['selected_course_keys'] ?? []))
+                    ->first(fn (string $courseKey): bool => $this->courseMatchesSelectedCourseKeys($course, [$courseKey]));
 
                 return [
-                    'key' => (string) ($course['key'] ?? ''),
+                    'key' => $requestedCourseKey ?? (string) ($course['key'] ?? ''),
                     'code' => (string) ($course['code'] ?? ''),
                     'name' => (string) ($course['name'] ?? ''),
                     'label' => $this->courseProblemLabel($course),
@@ -4912,12 +4933,28 @@ class RobotTimetableBackendSetupService
             return true;
         }
 
+        if ($courseKey !== '' && collect($selectedCourseKeys)->contains(
+            fn (string $selectedCourseKey): bool => $this->structuredCourseKeysMatch($courseKey, $selectedCourseKey),
+        )) {
+            return true;
+        }
+
         $courseAliases = $this->courseAliases($course);
 
         return collect($selectedCourseKeys)
             ->map(fn (string $selectedCourseKey): string => $this->selectedCourseCodeFromKey($selectedCourseKey))
             ->filter()
             ->contains(fn (string $selectedCourseCode): bool => in_array($selectedCourseCode, $courseAliases, true));
+    }
+
+    private function structuredCourseKeysMatch(string $courseKey, string $selectedCourseKey): bool
+    {
+        $courseKeyParts = explode('|', $courseKey);
+        $selectedCourseKeyParts = explode('|', $selectedCourseKey);
+
+        return count($courseKeyParts) === 7
+            && count($selectedCourseKeyParts) === 7
+            && array_slice($courseKeyParts, 1) === array_slice($selectedCourseKeyParts, 1);
     }
 
     private function selectedCourseCodeFromKey(string $selectedCourseKey): string
@@ -5259,7 +5296,7 @@ class RobotTimetableBackendSetupService
 
         return [
             'key' => implode('|', [
-                $subject['id'] ?? $subject['local_id'] ?? '',
+                $subject['stable_key'] ?? $subject['id'] ?? $subject['local_id'] ?? '',
                 $subject['semester'] ?? '',
                 $subject['branch'] ?? 'common',
                 $subject['json_code'] ?? '',

@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Teaching;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Events\Import116FinishedEvent;
 use App\Models\Import116;
 use App\Models\Import116Run;
@@ -9,6 +10,7 @@ use App\Models\Import116RunChange;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroupMember;
+use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -24,6 +26,7 @@ use Illuminate\Support\Str;
 use PDO;
 use RuntimeException;
 use Spatie\SimpleExcel\SimpleExcelReader;
+use Throwable;
 
 class Import116Job implements ShouldQueue
 {
@@ -40,6 +43,27 @@ class Import116Job implements ShouldQueue
 
     private const PLACEHOLDER_PASSWORD_ROUNDS = 4;
 
+    private const UNEXPECTED_FAILURE_MESSAGE = 'Import 116 fehlgeschlagen: Unerwarteter Verarbeitungsfehler.';
+
+    private const REQUIRED_HEADERS = [
+        'class' => [
+            'label' => 'Klasse',
+            'variants' => ['klasse', 'class', 'klasse/bezeichnung'],
+        ],
+        'student_code' => [
+            'label' => 'Schülerkennzahl',
+            'variants' => ['schülerkennzahl', 'schuelerkennzahl', 'student_code', 'schueler_kennzahl'],
+        ],
+        'last_name' => [
+            'label' => 'Familienname',
+            'variants' => ['familienname', 'nachname', 'last_name'],
+        ],
+        'first_name' => [
+            'label' => 'Vorname',
+            'variants' => ['vorname', 'first_name'],
+        ],
+    ];
+
     private const OPTIONAL_CONTACT_FIELDS = [
         'email',
         'phone_1',
@@ -54,14 +78,24 @@ class Import116Job implements ShouldQueue
         'father_phone_2',
     ];
 
-    public function __construct(public $user, public string $path, public ?int $schoolyearId = null, public ?string $originalFilename = null)
-    {
+    public function __construct(
+        public $user,
+        public string $path,
+        public ?int $schoolyearId = null,
+        public ?string $originalFilename = null,
+        public bool $requiresStudentTimetableData = false,
+    ) {
         $this->onQueue('imports');
     }
 
-    public function handle(?StudentTimetableStudySelectionRefreshService $studySelectionRefreshService = null): void
-    {
+    public function handle(
+        ?StudentTimetableStudySelectionRefreshService $studySelectionRefreshService = null,
+        ?StudentTimetablesStudentOverviewService $studentOverviewService = null,
+    ): void {
         $studySelectionRefreshService ??= app(StudentTimetableStudySelectionRefreshService::class);
+        $studentOverviewService ??= $this->requiresStudentTimetableData
+            ? app(StudentTimetablesStudentOverviewService::class)
+            : null;
         $schoolId = (int) $this->user->school_id;
         $schoolyearId = $this->schoolyearId ?? $this->user->schoolyear_id;
         $run = $this->createRun($schoolId, $schoolyearId);
@@ -79,27 +113,43 @@ class Import116Job implements ShouldQueue
             return;
         }
 
-        $reader = SimpleExcelReader::create($fullPath);
-        $headers = $reader->getHeaders();
-        $headerMapping = $this->mapHeaders($headers);
-
-        if ($headerMapping === false) {
-            $this->markRunFailed($run, 'Import 116 fehlgeschlagen: Spaltenüberschriften nicht erkannt.');
-            broadcast(new Import116FinishedEvent(
-                422,
-                $this->user->id,
-                'Import 116 fehlgeschlagen: Spaltenüberschriften nicht erkannt.',
-                ['run_id' => $run?->id]
-            ));
-
-            return;
-        }
-
         $report = ['counts' => $this->emptyReportCounts()];
         $stagingTable = $this->newStagingTableName();
         $stagingTableCreated = false;
 
         try {
+            $reader = SimpleExcelReader::create($fullPath);
+            $headers = $reader->getHeaders();
+            $missingRequiredHeaders = $this->missingRequiredHeaderLabels($headers);
+
+            if ($missingRequiredHeaders !== []) {
+                $message = 'Import 116 fehlgeschlagen: Pflichtspalten fehlen: '.collect($missingRequiredHeaders)->join(', ', ' und ').'. Bestehende Daten wurden nicht verändert.';
+                $this->markRunFailed($run, $message);
+                broadcast(new Import116FinishedEvent(
+                    422,
+                    $this->user->id,
+                    $message,
+                    ['run_id' => $run?->id],
+                ));
+
+                return;
+            }
+
+            $headerMapping = $this->mapHeaders($headers);
+
+            if ($headerMapping === false) {
+                $message = 'Import 116 fehlgeschlagen: Spaltenüberschriften nicht erkannt.';
+                $this->markRunFailed($run, $message);
+                broadcast(new Import116FinishedEvent(
+                    422,
+                    $this->user->id,
+                    $message,
+                    ['run_id' => $run?->id],
+                ));
+
+                return;
+            }
+
             $now = now();
             $this->createStagingTable($stagingTable);
             $stagingTableCreated = true;
@@ -110,12 +160,29 @@ class Import116Job implements ShouldQueue
                 $schoolyearId,
                 $now,
                 $stagingTable,
+                $studentOverviewService,
             );
             $report['counts']['processed_rows'] = $stagingCounts['processed_rows'];
             $report['counts']['seen_students'] = $stagingCounts['seen_students'];
 
             if ($stagingCounts['seen_students'] === 0) {
-                $message = 'Import 116 fehlgeschlagen: Die Datei enthält keine gültigen Schülerdaten. Bestehende Daten wurden nicht verändert.';
+                $details = $stagingCounts['invalid_examples'] === []
+                    ? ''
+                    : ' '.collect($stagingCounts['invalid_examples'])->join(' ');
+                $message = 'Import 116 fehlgeschlagen: Die Datei enthält keine gültigen Schülerdaten.'.$details.' Bestehende Daten wurden nicht verändert.';
+                $this->markRunFailed($run, $message);
+                broadcast(new Import116FinishedEvent(
+                    422,
+                    $this->user->id,
+                    $message,
+                    ['run_id' => $run?->id, 'counts' => $report['counts']],
+                ));
+
+                return;
+            }
+
+            if ($stagingCounts['invalid_rows'] > 0) {
+                $message = 'Import 116 fehlgeschlagen: '.$stagingCounts['invalid_rows'].' Datenzeilen sind semantisch unvollständig oder ungültig. '.collect($stagingCounts['invalid_examples'])->join(' ').' Bestehende Daten wurden nicht verändert.';
                 $this->markRunFailed($run, $message);
                 broadcast(new Import116FinishedEvent(
                     422,
@@ -188,17 +255,17 @@ class Import116Job implements ShouldQueue
                     $studySelectionRefreshService->refreshForUser($this->user, (int) $schoolyearId);
                 }
             }, attempts: 3);
-        } catch (\Throwable $e) {
-            $this->markRunFailed($run, 'Import 116 fehlgeschlagen: '.$e->getMessage());
+        } catch (Throwable $exception) {
+            $this->markRunFailed($run, self::UNEXPECTED_FAILURE_MESSAGE);
 
             broadcast(new Import116FinishedEvent(
                 500,
                 $this->user->id,
                 'Import 116 fehlgeschlagen.',
-                ['error' => $e->getMessage(), 'run_id' => $run?->id]
+                ['run_id' => $run?->id],
             ));
 
-            throw $e;
+            throw $exception;
         } finally {
             if ($stagingTableCreated) {
                 Schema::dropIfExists($stagingTable);
@@ -219,10 +286,47 @@ class Import116Job implements ShouldQueue
         ));
     }
 
+    public function failed(?Throwable $exception): void
+    {
+        try {
+            if (! $this->isRunTrackingAvailable()) {
+                return;
+            }
+
+            $schoolId = (int) ($this->user->school_id ?? 0);
+            $schoolyearId = $this->schoolyearId ?? $this->user->schoolyear_id ?? null;
+            $userId = $this->user->id ?? null;
+
+            $run = Import116Run::query()
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('user_id', $userId)
+                ->where('source_path', $this->normalizedSourcePath())
+                ->where('status', 'running')
+                ->latest('id')
+                ->first();
+
+            if (! $run) {
+                return;
+            }
+
+            $this->markRunFailed($run, self::UNEXPECTED_FAILURE_MESSAGE);
+
+            broadcast(new Import116FinishedEvent(
+                500,
+                $userId,
+                'Import 116 fehlgeschlagen.',
+                ['run_id' => $run->id],
+            ));
+        } catch (Throwable $failureHandlerException) {
+            report($failureHandlerException);
+        }
+    }
+
     /**
      * @param  iterable<int, array<string, mixed>>  $rows
      * @param  array<string, string>  $headerMapping
-     * @return array{processed_rows: int, seen_students: int}
+     * @return array{processed_rows: int, seen_students: int, invalid_rows: int, invalid_examples: list<string>}
      */
     private function stageStudentRows(
         iterable $rows,
@@ -231,13 +335,37 @@ class Import116Job implements ShouldQueue
         ?int $schoolyearId,
         Carbon $now,
         string $stagingTable,
+        ?StudentTimetablesStudentOverviewService $studentOverviewService,
     ): array {
         $batch = [];
         $processedRows = 0;
+        $invalidRows = 0;
+        $invalidExamples = [];
+        $excelRowNumber = 1;
 
         foreach ($rows as $row) {
+            $excelRowNumber++;
+            if (! $this->rowHasValues($row)) {
+                continue;
+            }
+
             $data = $this->mappedStudentRow($row, $headerMapping, $schoolId, $schoolyearId, $now);
             if ($data === null) {
+                $invalidRows++;
+                if (count($invalidExamples) < 10) {
+                    $invalidExamples[] = "Excel-Zeile {$excelRowNumber}: Klasse, Schülerkennzahl, Familienname oder Vorname fehlt.";
+                }
+
+                continue;
+            }
+
+            $studentTimetableIssues = $this->studentTimetableDataIssues($data, $studentOverviewService);
+            if ($studentTimetableIssues !== []) {
+                $invalidRows++;
+                if (count($invalidExamples) < 10) {
+                    $invalidExamples[] = "Excel-Zeile {$excelRowNumber}: ".collect($studentTimetableIssues)->join(' ');
+                }
+
                 continue;
             }
 
@@ -261,7 +389,44 @@ class Import116Job implements ShouldQueue
         return [
             'processed_rows' => $processedRows,
             'seen_students' => DB::table($stagingTable)->distinct()->count('student_code'),
+            'invalid_rows' => $invalidRows,
+            'invalid_examples' => $invalidExamples,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function rowHasValues(array $row): bool
+    {
+        return collect($row)->contains(function (mixed $value): bool {
+            if ($value instanceof \DateTimeInterface) {
+                return true;
+            }
+
+            return trim((string) $value) !== '';
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function studentTimetableDataIssues(
+        array $data,
+        ?StudentTimetablesStudentOverviewService $studentOverviewService,
+    ): array {
+        if (! $this->requiresStudentTimetableData || ! $studentOverviewService) {
+            return [];
+        }
+
+        $student = new Import116;
+        $student->forceFill($data);
+        $studyProgram = $studentOverviewService->instructionTypeForStudent($student) === 'Kompaktunterricht'
+            ? StudentTimetableStudyProgram::Kompaktstudium
+            : StudentTimetableStudyProgram::Normalstudium;
+
+        return $studentOverviewService->dataQualityIssuesForStudent($student, $studyProgram);
     }
 
     /**
@@ -654,7 +819,7 @@ class Import116Job implements ShouldQueue
                 'status' => 'running',
                 'started_at' => now(),
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return null;
         }
     }
@@ -855,7 +1020,7 @@ class Import116Job implements ShouldQueue
 
         try {
             return $this->availableTables[$table] = Schema::hasTable($table);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $this->availableTables[$table] = false;
         }
     }
@@ -1268,13 +1433,6 @@ class Import116Job implements ShouldQueue
 
     private function mapHeaders(array $headers): array|false
     {
-        $required = [
-            'class' => ['klasse', 'class', 'klasse/bezeichnung'],
-            'student_code' => ['schülerkennzahl', 'schuelerkennzahl', 'student_code', 'schueler_kennzahl'],
-            'last_name' => ['familienname', 'nachname', 'last_name'],
-            'first_name' => ['vorname', 'first_name'],
-        ];
-
         $optional = [
             'school_level' => ['schulstufe', 'school_level', 'school level'],
             'attendance_year' => ['besuchsjahr', 'attendance_year', 'attendance year'],
@@ -1291,10 +1449,10 @@ class Import116Job implements ShouldQueue
         $normalized = array_map(fn ($h) => trim(mb_strtolower($h)), $headers);
         $mapping = [];
 
-        foreach ($required as $field => $variants) {
+        foreach (self::REQUIRED_HEADERS as $field => $header) {
             $found = false;
             foreach ($normalized as $index => $name) {
-                if (in_array($name, $variants, true)) {
+                if (in_array($name, $header['variants'], true)) {
                     $mapping[$headers[$index]] = $field;
                     $found = true;
                     break;
@@ -1315,6 +1473,20 @@ class Import116Job implements ShouldQueue
         }
 
         return $mapping;
+    }
+
+    /** @return list<string> */
+    private function missingRequiredHeaderLabels(array $headers): array
+    {
+        $normalizedHeaders = collect($headers)
+            ->map(fn (mixed $header): string => trim(mb_strtolower((string) $header)))
+            ->all();
+
+        return collect(self::REQUIRED_HEADERS)
+            ->reject(fn (array $header): bool => collect($normalizedHeaders)->intersect($header['variants'])->isNotEmpty())
+            ->pluck('label')
+            ->values()
+            ->all();
     }
 
     private function parseDate(?string $value): ?string
@@ -1341,7 +1513,7 @@ class Import116Job implements ShouldQueue
 
         try {
             return Carbon::parse($trimmed)->toDateString();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return null;
         }
     }

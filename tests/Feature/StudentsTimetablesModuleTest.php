@@ -32,6 +32,7 @@ use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableRecognitionIdentityService;
 use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
 use App\Services\StudentsTimetables\StudentTimetableSubjectRuleService;
+use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -4831,6 +4832,11 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonMissingPath('data.completed_courses')
         ->assertJsonMissingPath('data.course_sections');
 
+    app(StudentTimetableStudySelectionRefreshService::class)->refreshForUser($user, (int) $schoolyear->id);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
     $v3StudentInformationBatchResponse = $this->postJson(
         '/api/admin/students-timetables/timetable-v3/student-information',
         ['student_codes' => ['100', '101']],
@@ -4841,6 +4847,22 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.1.student_code', '101')
         ->assertJsonPath('data.0.module_selection_groups.0.modules.0.courses', [])
         ->assertJsonMissingPath('data.0.main_module_selection_groups');
+    $batchQueries = collect(DB::getQueryLog());
+
+    DB::disableQueryLog();
+    DB::flushQueryLog();
+
+    $completedCourseSubjectRowQueries = $batchQueries->filter(
+        fn (array $query): bool => str_contains($query['query'], 'student_timetable_subject_rows')
+            && str_contains($query['query'], 'json_subject'),
+    );
+    $completedCourseRecognitionRowQueries = $batchQueries->filter(
+        fn (array $query): bool => str_contains($query['query'], 'student_timetable_recognition_rows')
+            && str_contains($query['query'], 'row_number'),
+    );
+
+    expect($completedCourseSubjectRowQueries)->toHaveCount(1)
+        ->and($completedCourseRecognitionRowQueries)->toHaveCount(1);
 
     $moduleGroupMembership = fn (array $groups): array => collect($groups)
         ->map(fn (array $group): array => [
@@ -8086,6 +8108,216 @@ it('denies the dummy dashboard without a school licence', function () {
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables')
         ->assertForbidden();
+});
+
+it('blocks Test V3 and reports every missing imported dataset', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/tests-v3/readiness')
+        ->assertSuccessful()
+        ->assertJsonPath('data.ready', false)
+        ->assertJsonFragment(['code' => 'import116_missing'])
+        ->assertJsonFragment(['code' => 'recognition_import_missing']);
+
+    $this->postJson('/api/admin/students-timetables/timetable-v3/student-information', [
+        'student_codes' => ['100'],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('tests_v3');
+});
+
+it('marks Test V3 ready only after all required imported datasets are complete', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '1A',
+        'school_level' => '09_1',
+        'attendance_year' => '1',
+        'student_code' => '100',
+        'exists_date' => now(),
+        'study_selection' => [
+            'semester' => 1,
+            'religion' => 'ETH',
+            'language' => null,
+            'branch' => null,
+            'arts_subject' => null,
+        ],
+        'course_results' => [
+            'completed' => [],
+            'negative' => [],
+        ],
+    ]);
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => 1,
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch 1',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'anrechnungen.csv',
+        'stored_filename' => 'anrechnungen.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/anrechnungen.csv",
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/tests-v3/readiness')
+        ->assertSuccessful()
+        ->assertJsonPath('data.ready', true)
+        ->assertJsonCount(0, 'data.issues');
+
+    StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'fehlerhaft.csv',
+        'stored_filename' => 'fehlerhaft.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/fehlerhaft.csv",
+        'total_rows' => 1,
+        'imported_rows' => 0,
+        'skipped_rows' => 1,
+        'import_status' => 'failed',
+        'import_message' => 'Erwartete Spalten fehlen.',
+        'imported_at' => now()->addMinute(),
+    ]);
+
+    $this->getJson('/api/admin/students-timetables/tests-v3/readiness')
+        ->assertSuccessful()
+        ->assertJsonPath('data.ready', false)
+        ->assertJsonFragment(['code' => 'recognition_import_failed']);
+});
+
+it('rejects semantically invalid recognition files before queueing an import', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $recognitionDirectory = storage_path("app/private/{$user->school_id}/recognition-imports");
+
+    File::deleteDirectory($recognitionDirectory);
+    Queue::fake([ProcessRecognitionCsvImportJob::class]);
+
+    $csv = "Studierende;Note\nMax Muster;1\n";
+    $uploadId = $this->actingAs($user)
+        ->withHeader('Upload-Name', 'ungueltig.csv')
+        ->post('/api/admin/students-timetables/recognitions-csv')
+        ->assertSuccessful()
+        ->getContent();
+
+    $response = $this->actingAs($user)
+        ->call('PATCH', "/api/admin/students-timetables/recognitions-csv?patch={$uploadId}", [], [], [], [
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_UPLOAD_NAME' => 'ungueltig.csv',
+            'HTTP_UPLOAD_LENGTH' => strlen($csv),
+        ], $csv);
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('file');
+
+    expect(StudentTimetableRecognitionImport::query()->exists())->toBeFalse();
+    Queue::assertNothingPushed();
+
+    $legacyRelativePath = "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/legacy-ungueltig.csv";
+    $legacyStoredPath = storage_path($legacyRelativePath);
+    File::ensureDirectoryExists(dirname($legacyStoredPath));
+    File::put($legacyStoredPath, $csv);
+    $legacyImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'legacy-ungueltig.csv',
+        'stored_filename' => 'legacy-ungueltig.csv',
+        'file_path' => $legacyRelativePath,
+        'import_status' => 'pending',
+        'imported_at' => now(),
+    ]);
+    $existingRow = StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $legacyImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => 'KEEP-ROW',
+        'subject' => 'D1',
+        'grade' => '1',
+        'note' => '1',
+        'raw_data' => [],
+    ]);
+
+    app(RecognitionImportService::class)->processImport($legacyImport);
+
+    expect($legacyImport->refresh()->import_status)->toBe('failed');
+    $this->assertDatabaseHas('student_timetable_recognition_rows', ['id' => $existingRow->id]);
+    File::deleteDirectory($recognitionDirectory);
+});
+
+it('rejects a timetable preview containing malformed TT records before import', function () {
+    Queue::fake([ProcessTimetableImportJob::class]);
+
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-01',
+        'until' => '2027-07-15',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $relativePath = "app/private/{$user->school_id}/timetable-imports/{$schoolyear->id}/semantisch-ungueltig.txt";
+    $storedPath = storage_path($relativePath);
+    File::ensureDirectoryExists(dirname($storedPath));
+    File::put($storedPath, implode("\n", [
+        "TT\t100\t20260907\t1\t08:00\t08:45\t1A\tMATH1-1A-TT\tMATH",
+        "TT\tBROKEN",
+    ]));
+
+    $preview = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'file_path' => $relativePath,
+        'import_status' => 'preview',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/imports/{$preview->id}/confirm")
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('file');
+
+    expect($preview->refresh()->import_status)->toBe('preview');
+    Queue::assertNothingPushed();
+
+    $activeEntry = StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
+    $preview->update(['import_status' => 'pending']);
+
+    app(TimetableImportService::class)->processImport($preview);
+
+    expect($preview->refresh()->import_status)->toBe('failed')
+        ->and($preview->import_error)->toContain('Semantische Prüfung fehlgeschlagen');
+    $this->assertDatabaseHas('student_timetable_entries', ['id' => $activeEntry->id]);
+    File::delete($storedPath);
 });
 
 function createStudentsTimetablesUserWithLicence(bool $withLicence = true, string $roleName = 'admin'): User

@@ -12,6 +12,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 class RecognitionImportService
@@ -22,6 +23,117 @@ class RecognitionImportService
         private StudentTimetableRecognitionIdentityService $identityService,
         private ?StudentTimetableStudySelectionRefreshService $studySelectionRefreshService = null,
     ) {}
+
+    /**
+     * @return array{total_rows: int, importable_rows: int}
+     */
+    public function validateBeforeQueue(string $path): array
+    {
+        $input = fopen($path, 'rb');
+        if ($input === false) {
+            throw ValidationException::withMessages([
+                'file' => 'Die CSV-Datei konnte für die semantische Prüfung nicht gelesen werden.',
+            ]);
+        }
+
+        try {
+            $headerLine = fgets($input);
+            if ($headerLine === false) {
+                throw ValidationException::withMessages([
+                    'file' => 'Semantische Prüfung fehlgeschlagen: Die CSV-Datei ist leer.',
+                ]);
+            }
+
+            $headerLine = preg_replace('/^\xEF\xBB\xBF/u', '', $headerLine) ?? $headerLine;
+            $delimiter = $this->detectDelimiter($headerLine);
+            rewind($input);
+            $headers = fgetcsv($input, null, $delimiter, '"', '') ?: [];
+            if (isset($headers[0])) {
+                $headers[0] = preg_replace('/^\xEF\xBB\xBF/u', '', (string) $headers[0]) ?? $headers[0];
+            }
+
+            $normalizedHeaders = collect($headers)
+                ->map(fn (mixed $header): string => $this->normalizeHeader($header))
+                ->filter()
+                ->values();
+            $requiredHeaderGroups = [
+                'Gegenstand/Fach' => ['gegenstand', 'fach', 'faecher'],
+                'Studierenden- oder Lehrkraftkennung' => [
+                    'schuelerinnenkennzahl',
+                    'studierende',
+                    'schueler',
+                    'schuelerin',
+                    'student',
+                    'lehrerkuerzel',
+                ],
+                'Anrechnungswert' => ['note', 'kolloquien', 'modulwiederholungen', 'lehrerkuerzel'],
+            ];
+            $missingHeaders = collect($requiredHeaderGroups)
+                ->reject(fn (array $variants): bool => $normalizedHeaders->intersect($variants)->isNotEmpty())
+                ->keys();
+
+            if ($missingHeaders->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'file' => 'Semantische Prüfung fehlgeschlagen: Erwartete Spalten fehlen: '.$missingHeaders->join(', ', ' und ').'.',
+                ]);
+            }
+
+            $totalRows = 0;
+            $importableRows = 0;
+            $invalidRowNumbers = [];
+            $rowNumber = 1;
+
+            while (($row = fgetcsv($input, null, $delimiter, '"', '')) !== false) {
+                $rowNumber++;
+                if ($this->isEmptyCsvRow($row)) {
+                    continue;
+                }
+
+                $totalRows++;
+                $record = $this->recordFromRow($headers, $row);
+                if (! $this->recognitionRecordShouldBeImported($record)) {
+                    continue;
+                }
+
+                $importableRows++;
+                $hasSubject = $this->hasValue($record, ['gegenstand', 'fach', 'faecher']);
+                $hasIdentity = $this->hasValue($record, [
+                    'schuelerinnenkennzahl',
+                    'studierende',
+                    'schueler',
+                    'schuelerin',
+                    'student',
+                    'lehrerkuerzel',
+                    'lehrerkurzel',
+                    'lehrerkürzel',
+                    'lehrerkã¼rzel',
+                ]);
+
+                if (! $hasSubject || ! $hasIdentity) {
+                    $invalidRowNumbers[] = $rowNumber;
+                }
+            }
+
+            if ($importableRows === 0) {
+                throw ValidationException::withMessages([
+                    'file' => 'Semantische Prüfung fehlgeschlagen: Die CSV-Datei enthält keine gültigen Anrechnungsdaten. Bestehende Daten wurden nicht verändert.',
+                ]);
+            }
+
+            if ($invalidRowNumbers !== []) {
+                throw ValidationException::withMessages([
+                    'file' => 'Semantische Prüfung fehlgeschlagen: '.count($invalidRowNumbers).' importrelevante Zeilen enthalten kein Fach oder keine Studierenden-/Lehrkraftkennung. Betroffene CSV-Zeilen: '.collect($invalidRowNumbers)->take(10)->join(', ').'.',
+                ]);
+            }
+
+            return [
+                'total_rows' => $totalRows,
+                'importable_rows' => $importableRows,
+            ];
+        } finally {
+            fclose($input);
+        }
+    }
 
     public function createQueuedImport(
         User $user,
@@ -65,6 +177,22 @@ class RecognitionImportService
 
         if (! is_file($storedPath)) {
             $this->markFailed($import, 'Die CSV-Datei konnte nicht gelesen werden.');
+
+            return $import->refresh();
+        }
+
+        try {
+            $this->validateBeforeQueue($storedPath);
+        } catch (ValidationException $exception) {
+            $message = collect($exception->errors())
+                ->flatten()
+                ->first();
+            $this->markFailed(
+                $import,
+                is_string($message) && $message !== ''
+                    ? $message
+                    : 'Die semantische Prüfung der CSV-Datei ist fehlgeschlagen.',
+            );
 
             return $import->refresh();
         }

@@ -5,19 +5,25 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\SchoolyearService;
+use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableV3StudentInformationService;
+use App\Services\StudentsTimetables\StudentTimetableV3TestReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StudentTimetableV3StudentInformationController extends Controller
 {
+    private const TEST_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
 
     public function store(
         Request $request,
         StudentTimetableV3StudentInformationService $service,
+        StudentTimetableV3TestReadinessService $readinessService,
+        StudentTimetablesStudentOverviewService $studentOverviewService,
     ): JsonResponse {
-        $authUser = $this->studentsTimetablesUser();
+        $authUser = $this->studentsTimetablesTestUser();
         $validated = $request->validate([
             'student_codes' => ['required', 'array', 'min:1', 'max:100'],
             'student_codes.*' => ['required', 'string', 'max:255', 'distinct:strict'],
@@ -25,6 +31,7 @@ class StudentTimetableV3StudentInformationController extends Controller
         $studentCodes = collect($validated['student_codes'])
             ->map(fn (string $studentCode): string => trim($studentCode))
             ->values();
+        $readinessService->ensureReady($authUser, $studentOverviewService);
         $moduleSelectionGroupsByStudentCode = $service->moduleSelectionGroupsForStudents(
             $authUser,
             $studentCodes->all(),
@@ -92,6 +99,17 @@ class StudentTimetableV3StudentInformationController extends Controller
     private function studentsTimetablesUser(): User
     {
         if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        app(SchoolyearService::class)->ensureActualSchoolyearForUser($authUser);
+
+        return $authUser;
+    }
+
+    private function studentsTimetablesTestUser(): User
+    {
+        if (! $authUser = $this->userHasRole(self::TEST_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 

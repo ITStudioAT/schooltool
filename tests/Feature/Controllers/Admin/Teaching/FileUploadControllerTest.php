@@ -301,14 +301,29 @@ describe('file type validation', function () {
         $response->assertStatus(200);
     });
 
-    test('accepts xls file', function () {
+    test('rejects legacy xls files for import 116', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $response = $this->postJson('/api/admin/teaching_upload/116', [], [
             'Upload-Name' => 'import.xls',
         ]);
 
-        $response->assertStatus(200);
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Import 116 unterstützt nur XLSX-Dateien. Alte XLS-Dateien müssen zuerst als XLSX gespeichert werden.',
+            );
+    });
+
+    test('keeps legacy xls support for import 166', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching_upload/166', [], [
+            'Upload-Name' => 'import.xls',
+        ]);
+
+        $response->assertOk();
     });
 
     test('file extension check is case insensitive', function () {
@@ -396,6 +411,34 @@ describe('import 116 job dispatch', function () {
                 && is_file(storage_path($job->path))
                 && file_get_contents(storage_path($job->path)) === $content;
         });
+    });
+
+    test('marks Import116 jobs from the students timetables upload for Test V3 semantic validation', function () {
+        enableSchoolToolModuleForTests($this->school, 'students_timetables');
+        $licence = Licence::firstOrCreate(
+            ['name' => 'StudentsTimetables'],
+            ['long_name' => 'Tool zum Verwalten von Schülerstundenplänen', 'is_selectable' => true],
+        );
+        $this->school->licences()->syncWithoutDetaching([
+            $licence->id => ['valid_until' => now()->addYear()->toDateString()],
+        ]);
+        $this->actingAs($this->admin, 'sanctum');
+
+        $uploadId = $this->post('/api/admin/students-timetables/import116-upload/116')
+            ->assertSuccessful()
+            ->getContent();
+        $content = validTeachingXlsxContents();
+
+        $this->call('PATCH', "/api/admin/students-timetables/import116-upload/116?patch={$uploadId}", [], [], [], [
+            'HTTP_Upload-Name' => '116.xlsx',
+            'HTTP_Upload-Length' => strlen($content),
+            'CONTENT_TYPE' => 'application/octet-stream',
+        ], $content)->assertSuccessful();
+
+        Queue::assertPushed(
+            Import116Job::class,
+            fn (Import116Job $job): bool => $job->requiresStudentTimetableData,
+        );
     });
 
     test('does not dispatch Import116Job for 166 upload', function () {

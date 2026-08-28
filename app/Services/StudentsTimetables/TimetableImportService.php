@@ -180,6 +180,12 @@ class TimetableImportService
             ]);
         }
 
+        if ($analysis['tt_skipped_invalid'] > 0) {
+            throw ValidationException::withMessages([
+                'file' => 'Semantische Prüfung fehlgeschlagen: '.$analysis['tt_skipped_invalid'].' TT-Datensätze entsprechen nicht dem erwarteten Format. Korrigieren Sie die Quelldatei; bestehende Daten wurden nicht verändert.',
+            ]);
+        }
+
         $schoolyear = Schoolyear::query()
             ->where('school_id', $import->school_id)
             ->find($import->schoolyear_id);
@@ -273,6 +279,17 @@ class TimetableImportService
             $this->markFailed(
                 $import,
                 'Die TXT-Datei enthält keine gültigen Stundenplan-Einträge. Bestehende Daten wurden nicht verändert.',
+                $analysis,
+            );
+
+            return $import->refresh();
+        }
+
+        if ($analysis['tt_skipped_invalid'] > 0) {
+            $this->markFailed(
+                $import,
+                'Semantische Prüfung fehlgeschlagen: '.$analysis['tt_skipped_invalid'].' TT-Datensätze entsprechen nicht dem erwarteten Format. Bestehende Daten wurden nicht verändert.',
+                $analysis,
             );
 
             return $import->refresh();
@@ -285,7 +302,7 @@ class TimetableImportService
         );
 
         if (! $datePlausibility['is_plausible']) {
-            $this->markFailed($import, $datePlausibility['message']);
+            $this->markFailed($import, $datePlausibility['message'], $analysis);
 
             return $import->refresh();
         }
@@ -962,9 +979,11 @@ class TimetableImportService
         ]);
     }
 
-    private function markFailed(TimetableImport $import, string $message): void
+    /** @param  array<string, mixed>  $context */
+    private function markFailed(TimetableImport $import, string $message, array $context = []): void
     {
         $import->update([
+            ...$context,
             'import_status' => 'failed',
             'import_message' => $message,
             'import_error' => $message,

@@ -15,6 +15,7 @@ use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -24,6 +25,8 @@ uses(TestCase::class, RefreshDatabase::class);
 function createTestExcelFile(array $headers, array $rows): string
 {
     $tempDirectory = storage_path('framework/testing');
+    File::ensureDirectoryExists($tempDirectory);
+
     $tempFile = tempnam($tempDirectory, 'teachers-import-');
     if ($tempFile === false) {
         throw new RuntimeException('Could not create temporary teacher import file.');

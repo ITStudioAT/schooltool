@@ -611,7 +611,6 @@ class AbaLocalDocumentTextExtractor
 
         $commands = [
             ['mammoth', '--output-format=markdown', $absolutePath],
-            ['npx', '--yes', 'mammoth', '--output-format=markdown', $absolutePath],
         ];
 
         $markdown = '';

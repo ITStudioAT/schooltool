@@ -10,6 +10,19 @@
                         <div>Alle auswählen > Ausführen ➜ Exportieren (XLSX)</div>
                     </v-alert>
 
+                    <v-alert
+                        type="warning"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Voraussetzung vor dem Import"
+                        class="mt-3 mb-3">
+                        Wählen Sie zuerst das persönliche Schuljahr. Verwenden Sie ausschließlich die unveränderte
+                        Sokrates-Abfrage 116. Pflichtspalten und mindestens ein vollständiger Studierendendatensatz
+                        werden vor jeder Änderung geprüft; bei Abweichungen bleibt der bestehende Datenbestand erhalten.
+                        Für Test V3 ist zusätzlich bei jeder Person eine zur Studienform passende Schulstufe erforderlich.
+                    </v-alert>
+
                     <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
                     <div v-if="lastImportDisplay" class="text-caption">
                         Letzter Import: {{ lastImportDisplay }}
@@ -33,7 +46,16 @@
                             <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
                         </div>
                     </v-alert>
-                    <v-alert v-if="is_upload_error" type="error" class="mt-2">Upload fehlgeschlagen.</v-alert>
+                    <v-alert
+                        v-if="is_upload_error"
+                        type="error"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Semantische Prüfung fehlgeschlagen"
+                        class="mt-2">
+                        {{ upload_error_message || 'Die Importdatei entspricht nicht den erwarteten Daten. Bestehende Daten wurden nicht verändert.' }}
+                    </v-alert>
                     <v-btn v-if="is_upload_finished || is_upload_error" color="warning" flat tile class="mt-2" :disabled="is_importing" @click="resetUpload">Neu hochladen</v-btn>
 
                     <v-divider class="my-4" />
@@ -44,7 +66,16 @@
                     </div>
 
                     <v-alert v-if="run_action_message" type="success" class="mt-2" density="compact">{{ run_action_message }}</v-alert>
-                    <v-alert v-if="run_action_error" type="error" class="mt-2" density="compact">{{ run_action_error }}</v-alert>
+                    <v-alert
+                        v-if="run_action_error"
+                        type="error"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Import 116 nicht übernommen"
+                        class="mt-2">
+                        {{ run_action_error }} Bestehende Daten wurden nicht verändert, wenn die fachliche Vorprüfung fehlgeschlagen ist.
+                    </v-alert>
                     <v-alert v-if="run_tracking_error" type="warning" class="mt-2" density="compact">{{ run_tracking_error }}</v-alert>
 
                     <div v-if="!run_tracking_error" class="mt-2">
@@ -210,6 +241,7 @@ export default {
         return {
             is_upload_finished: false,
             is_upload_error: false,
+            upload_error_message: '',
             refresh_file_pond: false,
             is_importing: false,
             import_poll_timeout_id: null,
@@ -490,6 +522,7 @@ export default {
             this.is_upload_error = false
             this.run_action_message = ''
             this.run_action_error = ''
+            this.upload_error_message = ''
             this.import_run_baseline_id = Math.max(0, ...(this.runs || []).map((run) => Number(run?.id || 0)))
             this.active_import_run_id = null
             this.is_importing = true
@@ -499,9 +532,10 @@ export default {
             this.is_upload_finished = true
             this.startImportStatusPolling()
         },
-        uploadError() {
+        uploadError(message) {
             this.stopImportStatusPolling()
             this.is_upload_error = true
+            this.upload_error_message = typeof message === 'string' ? message.trim() : ''
             this.refresh_file_pond = !this.refresh_file_pond
             this.is_importing = false
         },
@@ -509,6 +543,7 @@ export default {
             this.stopImportStatusPolling()
             this.is_upload_finished = false
             this.is_upload_error = false
+            this.upload_error_message = ''
             this.refresh_file_pond = !this.refresh_file_pond
             this.is_importing = false
         },

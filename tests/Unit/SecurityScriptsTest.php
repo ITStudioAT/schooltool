@@ -111,14 +111,16 @@ it('scans every commit in the CI range for Laravel application keys', function (
     expect($process->getOutput())->toContain('No Laravel APP_KEY was introduced');
 });
 
-it('runs one cancellable CI workflow per feature branch revision', function () {
+it('cancels superseded CI workflows per event and branch revision with bounded job timeouts', function () {
     $workflow = file_get_contents(dirname(__DIR__, 2).'/.github/workflows/ci.yml');
 
     expect($workflow)
         ->toMatch('/push:\s+branches:\s+- main/')
-        ->toContain('group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}')
+        ->toContain('group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}')
         ->toContain('cancel-in-progress: true')
-        ->toContain('timeout-minutes: 40');
+        ->toContain('timeout-minutes: 10')
+        ->toContain('timeout-minutes: 15')
+        ->toContain('timeout-minutes: 20');
 });
 
 it('detects a Laravel application key that was removed in a later commit', function () {

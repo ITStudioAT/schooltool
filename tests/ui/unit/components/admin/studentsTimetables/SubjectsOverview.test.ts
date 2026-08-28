@@ -821,7 +821,7 @@ describe('Students timetable subjects overview', () => {
         expect(grandTotals.map(total => total.value)).toEqual(['2'])
     })
 
-    it('keeps the module shell navigation focused on the configured timetable version', () => {
+    it('keeps the module shell navigation focused on timetable v3', () => {
         const computed = (StudentsTimetables as any).computed
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
@@ -840,11 +840,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("roles: ['super_admin', 'admin', 'studentstimetables_admin']")
         expect(componentSource).toContain('canAccessNavigationItem(item)')
         expect(componentSource).not.toContain("meta: 'Center'")
-        expect(componentSource).toContain("label: 'Stundenplan v2'")
+        expect(componentSource).not.toContain("label: 'Stundenplan v2'")
         expect(componentSource).toContain("label: 'Stundenplan v3'")
         expect(componentSource).toContain("label: 'Tests v3'")
         expect(testsV3Source).toContain('Tests für Stundenplan Version 3')
-        expect(componentSource).toContain("meta: 'Stabil'")
+        expect(componentSource).not.toContain("meta: 'Stabil'")
         expect(componentSource).toContain("meta: 'Entwicklung'")
         expect(componentSource).toContain("label: 'TT-Einträge'")
         expect(componentSource).toContain("meta: 'Kurse'")
@@ -860,9 +860,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('st-nav__automatic-button')
         expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan-v2')
-        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']")
+        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
-        expect(componentSource).toContain("const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'")
+        expect(componentSource).not.toContain('TIMETABLE_V2_OVERVIEW_PATH')
         expect(componentSource).toContain("const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'")
         expect(componentSource).toContain("const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'")
         expect(componentSource).toContain("const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'")
@@ -875,20 +875,20 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('this.$router.replace({ path: AUTOMATIC_TIMETABLE_OVERVIEW_PATH })')
         expect(componentSource).toContain("activeNavigationKey === item.key")
         expect(componentSource).toContain('timetable: TIMETABLE_OVERVIEW_PATH')
-        expect(componentSource).toContain("'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH")
+        expect(componentSource).not.toContain("'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH")
         expect(componentSource).toContain("'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH")
         expect(componentSource).toContain("'tt-entries': TT_ENTRIES_OVERVIEW_PATH")
         expect(componentSource).toContain("'tests-v3': TESTS_V3_STUDENTS_PATH")
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
-        expect(componentSource).toContain("import('./timetableV2/TimetableV2.vue')")
+        expect(componentSource).not.toContain("import('./timetableV2/TimetableV2.vue')")
         expect(componentSource).toContain("import('./timetableV3/TimetableV3.vue')")
         expect(componentSource).toContain("import('./testsV3/TestsV3.vue')")
         expect(componentSource).toContain("import('./ttEntries/TtEntries.vue')")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
         expect(componentSource).not.toContain("import('./robot/RobotTimetable.vue')")
-        expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v2'\" cols=\"12\">")
-        expect(componentSource).toContain('<TimetableV2 />')
+        expect(componentSource).not.toContain("<v-col v-if=\"main_action === 'timetable-v2'\" cols=\"12\">")
+        expect(componentSource).not.toContain('<TimetableV2 />')
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v3'\" cols=\"12\">")
         expect(componentSource).toContain('<TimetableV3 />')
         expect(componentSource).toContain("<TestsV3 v-if=\"main_action === 'tests-v3'\" />")
@@ -909,16 +909,14 @@ describe('Students timetable subjects overview', () => {
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
-        expect(componentSource.indexOf("key: 'subjects-overview'"))
-            .toBeLessThan(componentSource.indexOf("key: 'timetable-v2'"))
         expect(computed.allNavigationItems.call({}).at(-1)).toMatchObject({
-            key: 'timetable-v2',
-            label: 'Stundenplan v2',
+            key: 'subjects-overview',
+            label: 'Fächer',
         })
         expect(componentSource).not.toContain('st-nav__button--legacy')
     })
 
-    it('uses timetable v3 when no school-specific default is configured', () => {
+    it('uses timetable v3 even when the legacy default is configured', () => {
         const computed = (StudentsTimetables as any).computed
         const data = (StudentsTimetables as any).data()
         const ctx: any = {
@@ -932,7 +930,7 @@ describe('Students timetable subjects overview', () => {
 
         ctx.config.students_timetables.admin_version = 'v2'
 
-        expect(computed.activeTimetableVersion.call(ctx)).toBe('v2')
+        expect(computed.activeTimetableVersion.call(ctx)).toBe('v3')
     })
 
     it('keeps all automatic timetable steps in the focused automatic shell route', () => {
@@ -990,20 +988,20 @@ describe('Students timetable subjects overview', () => {
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
     })
 
-    it('opens the standalone timetable v2 page from the module navigation', () => {
+    it('redirects the legacy timetable v2 route to timetable v3', () => {
         const methods = (StudentsTimetables as any).methods
-        const push = vi.fn()
+        const replace = vi.fn()
         const ctx: any = {
             $router: {
-                push,
+                replace,
             },
             main_action: 'timetable',
         }
 
-        methods.handleNavigation.call(ctx, 'timetable-v2')
+        expect(methods.redirectLegacySection.call(ctx, 'timetable-v2')).toBe(true)
 
-        expect(ctx.main_action).toBe('timetable-v2')
-        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
     })
 
     it('opens the standalone timetable v3 page from the module navigation', () => {
@@ -1013,7 +1011,7 @@ describe('Students timetable subjects overview', () => {
             $router: {
                 push,
             },
-            main_action: 'timetable-v2',
+            main_action: 'timetable-v3',
         }
 
         methods.handleNavigation.call(ctx, 'timetable-v3')
@@ -1108,6 +1106,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('Ausgewählte Studierende')
         expect(componentSource).toContain('{{ selectedStudents.length }} Studierende für die Tests übernommen')
         expect(componentSource).toContain('v-for="student in selectedStudents"')
+        expect(componentSource).toContain('v-memo="[studentV3TestResult(student)]"')
         expect(componentSource).toContain('class="tests-v3-students__table tests-v3-selection__table"')
         const selectedStudentsTableClassIndex = componentSource.indexOf(
             'class="tests-v3-students__table tests-v3-selection__table"',
@@ -1156,7 +1155,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('<th class="tests-v3-selection__module-test-column">')
         expect(componentSource).toContain('runV3StudentModuleTests')
         expect(componentSource).toContain('axios.post(runV3StudentModuleTests.url()')
-        expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 10')
+        expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 25')
         expect(componentSource).toContain(':model-value="studentV3TestProgressPercentage"')
         expect(componentSource).toContain('{{ runningStudentV3TestCount }} in Bearbeitung')
         expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
@@ -1166,7 +1165,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain(
             "const STUDENT_V3_TEST_COMPARISON_GROUP_KEYS = ['finished', 'negative', 'previous', 'current', 'additional']",
         )
-        expect(componentSource).toContain("studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL'")
+        expect(componentSource).toContain("group.comparison.matches ? 'OK' : 'FAIL'")
         expect(componentSource).toContain('class="tests-v3-selection__module-match"')
         expect(componentSource).toContain('class="tests-v3-selection__module-comparison"')
         expect(componentSource).toContain('class="tests-v3-selection__module-comparison-divider"')
@@ -1174,10 +1173,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('Soll-Module')
         expect(componentSource).toContain('Abweichende Module')
         expect(componentSource).toContain(
-            '<template v-if="studentModuleGroupMismatches(student, group.key).length">',
+            '<template v-if="group.comparison.mismatches.length">',
         )
         expect(componentSource).not.toContain(
-            'v-if="!studentModuleGroupMismatches(student, group.key).length"',
+            'v-if="!group.comparison.mismatches.length"',
         )
         expect(componentSource)
             .toMatch(/\.tests-v3-selection__module-group\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s)
@@ -1188,7 +1187,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("'tests-v3-students__course-result-grade--completed'")
         expect(componentSource).toContain("'tests-v3-students__course-result-grade--negative'")
         expect(componentSource).toContain('{{ module.grade }}</strong>)</template>')
-        expect(componentSource).toContain('studentModuleGroupMismatches(student, group.key)')
+        expect(componentSource).toContain('v-for="module in group.comparison.mismatches"')
         expect(componentSource.indexOf('class="tests-v3-selection__module-comparison-divider"'))
             .toBeLessThan(componentSource.indexOf('class="tests-v3-selection__module-comparison-result"'))
         expect(componentSource).toContain("{ key: 'negative', label: 'Negative', color: 'error' }")
@@ -1199,6 +1198,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('Keine auswählen')
         expect(componentSource).toContain('v-for="studentClass in studentClasses"')
         expect(componentSource).toContain('@click="toggleStudentClassSelection(studentClass)"')
+        expect(componentSource).toContain('v-for="studentSemester in studentSemesters"')
+        expect(componentSource).toContain('@click="toggleStudentSemesterSelection(studentSemester)"')
+        expect(componentSource).toContain('{{ studentSemester.label }}')
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('<th class="tests-v3-students__class-column">Klasse</th>')
         expect(componentSource).toContain('<th class="tests-v3-students__name-column">Name</th>')
@@ -1396,7 +1398,17 @@ describe('Students timetable subjects overview', () => {
             studentV3TestResults: {},
             studentV3TestsRunning: false,
             studentV3TestSummaryDialog: true,
+            testReadinessReady: true,
+            loadTestReadiness: vi.fn().mockResolvedValue(undefined),
         }
+        const setStudentV3TestResults = vi.fn((resultsByStudentKey) => {
+            context.studentV3TestResults = {
+                ...context.studentV3TestResults,
+                ...resultsByStudentKey,
+            }
+        })
+
+        context.setStudentV3TestResults = setStudentV3TestResults
 
         vi.stubGlobal('axios', { post })
 
@@ -1407,6 +1419,9 @@ describe('Students timetable subjects overview', () => {
             expect(context.studentV3TestResults['1001'].status).toBe('running')
             expect(context.studentV3TestResults['2002'].status).toBe('running')
             expect(context.studentV3TestSummaryDialog).toBe(false)
+            expect(setStudentV3TestResults).toHaveBeenCalledTimes(1)
+            expect(Object.values(setStudentV3TestResults.mock.calls[0][0]))
+                .toEqual([expect.objectContaining({ status: 'running' }), expect.objectContaining({ status: 'running' })])
 
             resolveBatchRequest({
                 data: {
@@ -1431,6 +1446,16 @@ describe('Students timetable subjects overview', () => {
                 ['current', 1, ['D2']],
                 ['additional', 1, ['PH1']],
             ])
+            expect(setStudentV3TestResults).toHaveBeenCalledTimes(2)
+            expect(context.studentV3TestResults['1001']).toMatchObject({
+                isValid: true,
+                failedGroupLabels: [],
+            })
+            expect(context.studentV3TestResults['1001'].groups[3].comparison).toMatchObject({
+                matches: true,
+                mismatches: [],
+                expectedModules: [expect.objectContaining({ code: 'D2' })],
+            })
             expect(methods.studentFinishedModulesMatch.call(context, students[0])).toBe(true)
             expect(methods.studentNegativeModulesMatch.call(context, students[0])).toBe(true)
             expect(methods.studentModuleGroupExpectedModules.call(context, students[0], 'finished')).toEqual([
@@ -1600,10 +1625,33 @@ describe('Students timetable subjects overview', () => {
         ])
     })
 
-    it('updates progress between small sequential timetable v3 test batches', async () => {
+    it('does not start timetable v3 tests while imported datasets are incomplete', async () => {
+        const methods = (TestsV3 as any).methods
+        const post = vi.fn()
+        const context: any = {
+            ...methods,
+            selectedStudents: [{ student_code: '1001' }],
+            studentV3TestsRunning: false,
+            testReadinessReady: false,
+            loadTestReadiness: vi.fn().mockResolvedValue(undefined),
+        }
+
+        vi.stubGlobal('axios', { post })
+
+        try {
+            await methods.runTests.call(context)
+
+            expect(context.loadTestReadiness).toHaveBeenCalledWith(true)
+            expect(post).not.toHaveBeenCalled()
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('updates progress between sequential timetable v3 test batches', async () => {
         const computed = (TestsV3 as any).computed
         const methods = (TestsV3 as any).methods
-        const students = Array.from({ length: 21 }, (_, index) => ({
+        const students = Array.from({ length: 51 }, (_, index) => ({
             student_code: String(index + 1).padStart(4, '0'),
         }))
         const emptyGroups = [
@@ -1621,6 +1669,8 @@ describe('Students timetable subjects overview', () => {
             studentV3TestResults: {},
             studentV3TestsRunning: false,
             studentV3TestSummaryDialog: true,
+            testReadinessReady: true,
+            loadTestReadiness: vi.fn().mockResolvedValue(undefined),
         }
         const resolveBatch = (batchIndex: number, batchStudents: any[]) => {
             batchResolvers[batchIndex]({
@@ -1644,31 +1694,31 @@ describe('Students timetable subjects overview', () => {
 
             await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1))
             updateProgressCounts()
-            expect(post.mock.calls[0][1].student_codes).toHaveLength(10)
+            expect(post.mock.calls[0][1].student_codes).toHaveLength(25)
             expect(context.completedStudentV3TestCount).toBe(0)
-            expect(context.runningStudentV3TestCount).toBe(10)
+            expect(context.runningStudentV3TestCount).toBe(25)
             expect(computed.studentV3TestProgressPercentage.call(context)).toBe(0)
 
-            resolveBatch(0, students.slice(0, 10))
+            resolveBatch(0, students.slice(0, 25))
             await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2))
             updateProgressCounts()
-            expect(post.mock.calls[1][1].student_codes).toHaveLength(10)
-            expect(context.completedStudentV3TestCount).toBe(10)
-            expect(context.runningStudentV3TestCount).toBe(10)
-            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(48)
+            expect(post.mock.calls[1][1].student_codes).toHaveLength(25)
+            expect(context.completedStudentV3TestCount).toBe(25)
+            expect(context.runningStudentV3TestCount).toBe(25)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(49)
 
-            resolveBatch(1, students.slice(10, 20))
+            resolveBatch(1, students.slice(25, 50))
             await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(3))
             updateProgressCounts()
             expect(post.mock.calls[2][1].student_codes).toHaveLength(1)
-            expect(context.completedStudentV3TestCount).toBe(20)
+            expect(context.completedStudentV3TestCount).toBe(50)
             expect(context.runningStudentV3TestCount).toBe(1)
-            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(95)
+            expect(computed.studentV3TestProgressPercentage.call(context)).toBe(98)
 
-            resolveBatch(2, students.slice(20))
+            resolveBatch(2, students.slice(50))
             await testsPromise
             updateProgressCounts()
-            expect(context.completedStudentV3TestCount).toBe(21)
+            expect(context.completedStudentV3TestCount).toBe(51)
             expect(context.runningStudentV3TestCount).toBe(0)
             expect(computed.studentV3TestProgressPercentage.call(context)).toBe(100)
         } finally {
@@ -1909,6 +1959,7 @@ describe('Students timetable subjects overview', () => {
                 id: 3,
                 student_code: '3003',
                 class: '2A',
+                semester: 2,
                 last_name: 'Zeller',
                 first_name: 'Anna',
             },
@@ -1916,6 +1967,7 @@ describe('Students timetable subjects overview', () => {
                 id: 2,
                 student_code: '2002',
                 class: '1B',
+                semester: 1,
                 last_name: 'Zorn',
                 first_name: 'Berta',
             },
@@ -1923,6 +1975,7 @@ describe('Students timetable subjects overview', () => {
                 id: 1,
                 student_code: '1001',
                 class: '1B',
+                semester: 1,
                 last_name: 'Auer',
                 first_name: 'Clara',
             },
@@ -1957,6 +2010,7 @@ describe('Students timetable subjects overview', () => {
         selectionContext.sortedStudents = computed.sortedStudents.call(selectionContext)
         selectionContext.studentSelectionKeys = computed.studentSelectionKeys.call(selectionContext)
         selectionContext.studentClasses = computed.studentClasses.call(selectionContext)
+        selectionContext.studentSemesters = computed.studentSemesters.call(selectionContext)
 
         expect(selectionContext.sortedStudents.map((student: { student_code: string }) => student.student_code))
             .toEqual(['1001', '2002', '3003'])
@@ -1972,6 +2026,22 @@ describe('Students timetable subjects overview', () => {
                 studentKeys: ['3003'],
             },
         ])
+        expect(selectionContext.studentSemesters).toHaveLength(8)
+        expect(selectionContext.studentSemesters[0]).toEqual({
+            key: 1,
+            label: '1. Semester',
+            studentKeys: ['1001', '2002'],
+        })
+        expect(selectionContext.studentSemesters[1]).toEqual({
+            key: 2,
+            label: '2. Semester',
+            studentKeys: ['3003'],
+        })
+        expect(selectionContext.studentSemesters[7]).toEqual({
+            key: 8,
+            label: '8. Semester',
+            studentKeys: [],
+        })
         expect(methods.studentSexPresentation({ sex: ' M ' })).toEqual({
             icon: 'mdi-gender-male',
             color: 'blue',
@@ -2063,6 +2133,16 @@ describe('Students timetable subjects overview', () => {
 
         expect(selectionContext.selectedStudentKeys).toEqual([])
 
+        methods.toggleStudentSemesterSelection.call(selectionContext, selectionContext.studentSemesters[0])
+
+        expect(selectionContext.selectedStudentKeys).toEqual(['1001', '2002'])
+        expect(methods.isStudentSemesterSelected.call(selectionContext, selectionContext.studentSemesters[0]))
+            .toBe(true)
+
+        methods.toggleStudentSemesterSelection.call(selectionContext, selectionContext.studentSemesters[0])
+
+        expect(selectionContext.selectedStudentKeys).toEqual([])
+
         methods.selectAllStudents.call(selectionContext)
 
         expect(selectionContext.selectedStudentKeys).toEqual(['1001', '2002', '3003'])
@@ -2132,6 +2212,7 @@ describe('Students timetable subjects overview', () => {
             testsV3Action: 'tests',
             redirectInvalidTestsV3Route: vi.fn().mockReturnValue(false),
             restoreStudentSelection: vi.fn(),
+            loadTestReadiness: vi.fn(),
             loadStudents: vi.fn(),
             loadStudyPlans: vi.fn(),
         }
@@ -2140,6 +2221,7 @@ describe('Students timetable subjects overview', () => {
         mounted.call(mountedContext)
 
         expect(mountedContext.restoreStudentSelection).toHaveBeenCalledOnce()
+        expect(mountedContext.loadTestReadiness).toHaveBeenCalledOnce()
         expect(mountedContext.loadStudents).toHaveBeenCalledOnce()
         expect(mountedContext.loadStudyPlans).toHaveBeenCalledOnce()
     })
@@ -2151,7 +2233,7 @@ describe('Students timetable subjects overview', () => {
             $router: {
                 push,
             },
-            main_action: 'timetable-v2',
+            main_action: 'timetable-v3',
         }
 
         methods.handleNavigation.call(ctx, 'tt-entries')
@@ -2160,14 +2242,14 @@ describe('Students timetable subjects overview', () => {
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/tt-entries/overview' })
     })
 
-    it('shows TT entries navigation only to timetable admins', () => {
+    it('shows restricted navigation only to timetable admins', () => {
         const computed = (StudentsTimetables as any).computed
         const methods = (StudentsTimetables as any).methods
         const ctx: any = {
             ...methods,
             configuredRoleNames: ['studentstimetables_admin'],
-            activeTimetableKey: 'timetable-v2',
-            activeTimetableVersion: 'v2',
+            activeTimetableKey: 'timetable-v3',
+            activeTimetableVersion: 'v3',
         }
 
         Object.defineProperty(ctx, 'allNavigationItems', {
@@ -2184,9 +2266,9 @@ describe('Students timetable subjects overview', () => {
 
         expect(adminNavigationKeys).toContain('tt-entries')
         expect(moderatorNavigationKeys).not.toContain('tt-entries')
-        expect(moderatorNavigationKeys).toContain('timetable-v2')
+        expect(moderatorNavigationKeys).not.toContain('timetable-v2')
         expect(moderatorNavigationKeys).toContain('timetable-v3')
-        expect(moderatorNavigationKeys).toContain('tests-v3')
+        expect(moderatorNavigationKeys).not.toContain('tests-v3')
         expect(moderatorNavigationKeys).toContain('subjects-overview')
     })
 
@@ -2204,14 +2286,38 @@ describe('Students timetable subjects overview', () => {
             },
             canManageStudentsTimetables: false,
             main_action: 'tt-entries',
-            activeTimetableKey: 'timetable-v2',
-            activeTimetablePath: '/admin/students-timetables/timetable-v2/overview',
+            activeTimetableKey: 'timetable-v3',
+            activeTimetablePath: '/admin/students-timetables/timetable-v3/overview',
         }
 
         methods.redirectUnauthorizedSection.call(ctx)
 
-        expect(ctx.main_action).toBe('timetable-v2')
-        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
+    })
+
+    it('redirects timetable moderators away from the Tests V3 route', () => {
+        const methods = (StudentsTimetables as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    section: 'tests-v3',
+                },
+            },
+            $router: {
+                replace,
+            },
+            canManageStudentsTimetables: false,
+            main_action: 'tests-v3',
+            activeTimetableKey: 'timetable-v3',
+            activeTimetablePath: '/admin/students-timetables/timetable-v3/overview',
+        }
+
+        methods.redirectUnauthorizedSection.call(ctx)
+
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
     })
 
     it('groups TT entries meta-courses in one selectable card', () => {

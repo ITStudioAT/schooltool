@@ -45,7 +45,7 @@
                             <div class="subject-plan-carry-forward-warning__copy">
                                 <strong>Der Soll-/Fachplan für {{ personalSchoolyearLabel }} fehlt.</strong>
                                 <span>
-                                    Ohne diesen Plan können Stundenplan v2/v3, Tests, TT-Einträge und
+                                    Ohne diesen Plan können Stundenplan v3, Tests, TT-Einträge und
                                     Fächerdaten unvollständig sein. Aus {{ subjectPlanPreviousSchoolyear.name }}
                                     können {{ subjectPlanPreviousSchoolyear.subject_rows_count }} Fachzeilen
                                     ({{ subjectPlanPreviousSchoolyear.normal_subject_rows_count }} Normalstudium,
@@ -84,9 +84,6 @@
                 </v-col>
 
                 <Timetable v-if="main_action === 'timetable'" />
-                <v-col v-if="main_action === 'timetable-v2'" cols="12">
-                    <TimetableV2 />
-                </v-col>
                 <v-col v-if="main_action === 'timetable-v3'" cols="12">
                     <TimetableV3 />
                 </v-col>
@@ -158,7 +155,6 @@ import {
 } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
-const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
 const TimetableV3 = defineAsyncComponent(() => import('./timetableV3/TimetableV3.vue'))
 const TestsV3 = defineAsyncComponent(() => import('./testsV3/TestsV3.vue'))
 const TtEntries = defineAsyncComponent(() => import('./ttEntries/TtEntries.vue'))
@@ -166,19 +162,17 @@ const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
-const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
 const PERSONAL_SCHOOLYEAR_SCOPE = 'personal'
-const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']
+const mainSectionKeys = ['timetable', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
-        TimetableV2,
         TimetableV3,
         TestsV3,
         TtEntries,
@@ -232,7 +226,7 @@ export default {
                     label: 'Tests v3',
                     meta: 'Stundenplan v3',
                     icon: 'mdi-test-tube',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
                 {
                     key: 'tt-entries',
@@ -255,13 +249,6 @@ export default {
                     icon: 'mdi-book-open-page-variant-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
-                {
-                    key: 'timetable-v2',
-                    label: 'Stundenplan v2',
-                    meta: 'Stabil',
-                    icon: 'mdi-calendar-edit-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
-                },
             ]
         },
         activeNavigationKey() {
@@ -279,15 +266,13 @@ export default {
             return Array.isArray(this.config?.roles) ? this.config.roles : []
         },
         activeTimetableVersion() {
-            return this.config?.students_timetables?.admin_version === 'v2' ? 'v2' : 'v3'
+            return 'v3'
         },
         activeTimetableKey() {
             return `timetable-${this.activeTimetableVersion}`
         },
         activeTimetablePath() {
-            return this.activeTimetableVersion === 'v3'
-                ? TIMETABLE_V3_OVERVIEW_PATH
-                : TIMETABLE_V2_OVERVIEW_PATH
+            return TIMETABLE_V3_OVERVIEW_PATH
         },
         canManageStudentsTimetables() {
             return this.hasAnyRole(['super_admin', 'admin', 'studentstimetables_admin'])
@@ -318,11 +303,6 @@ export default {
                     label: 'Importe',
                     icon: 'mdi-import',
                     note: 'Stundenplan-Importe.',
-                },
-                'timetable-v2': {
-                    label: 'Stundenplan v2',
-                    icon: 'mdi-calendar-edit-outline',
-                    note: 'Neue Stundenplan-Version.',
                 },
                 'timetable-v3': {
                     label: 'Stundenplan v3',
@@ -397,11 +377,6 @@ export default {
         },
         '$route.params.subsection'() {
             this.redirectUnauthorizedSection()
-        },
-        activeTimetableVersion() {
-            if (!this.$route.params.section) {
-                this.redirectMissingSection()
-            }
         },
     },
     methods: {
@@ -500,6 +475,7 @@ export default {
                         && this.$route.params.subsection === 'imports'
                     )
                     || this.$route.params.section === 'tt-entries'
+                    || this.$route.params.section === 'tests-v3'
                 )
                 && !this.canManageStudentsTimetables
             ) {
@@ -508,6 +484,13 @@ export default {
             }
         },
         redirectLegacySection(section) {
+            if (section === 'timetable-v2') {
+                this.main_action = 'timetable-v3'
+                this.$router.replace({ path: TIMETABLE_V3_OVERVIEW_PATH })
+
+                return true
+            }
+
             if (section === 'overview') {
                 this.main_action = 'timetable'
                 this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
@@ -528,7 +511,6 @@ export default {
             this.main_action = ['automatic-timetable', 'imports'].includes(key) ? 'timetable' : key
             const paths = {
                 timetable: TIMETABLE_OVERVIEW_PATH,
-                'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
                 'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH,
                 'tt-entries': TT_ENTRIES_OVERVIEW_PATH,
                 'tests-v3': TESTS_V3_STUDENTS_PATH,

@@ -60,6 +60,18 @@
                         <div>Alle auswählen > Ausführen ➜ Exportieren (XLSX)</div>
                         <div class="mt-2">Vor der Übernahme wird geprüft, ob die Datei gültige Schülerdaten enthält. Ohne gültige Datensätze bleibt der bestehende Datenbestand unverändert.</div>
                     </v-alert>
+                    <v-alert
+                        type="warning"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Voraussetzung vor dem Import"
+                        class="mb-3">
+                        Wählen Sie zuerst das persönliche Schuljahr und verwenden Sie ausschließlich die unveränderte
+                        Sokrates-Abfrage 116. Pflichtspalten und mindestens ein vollständiger Studierendendatensatz
+                        werden vor jeder Änderung geprüft. Für Test V3 muss außerdem bei jeder Person eine zur
+                        Studienform passende Schulstufe vorhanden sein.
+                    </v-alert>
 
                     <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
                     <div v-if="import116LastImportDisplay" class="text-caption">
@@ -84,7 +96,16 @@
                             <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
                         </div>
                     </v-alert>
-                    <v-alert v-if="import116UploadHasError" type="error" variant="tonal" class="mt-2">{{ import116UploadErrorMessage }}</v-alert>
+                    <v-alert
+                        v-if="import116UploadHasError"
+                        type="error"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Semantische Prüfung fehlgeschlagen"
+                        class="mt-2">
+                        {{ import116UploadErrorMessage }}
+                    </v-alert>
                     <v-btn v-if="import116UploadFinished || import116UploadHasError" color="warning" variant="flat" class="mt-2" @click="import116ResetUpload">Neu hochladen</v-btn>
 
                     <v-divider class="my-4" />
@@ -95,7 +116,16 @@
                     </div>
 
                     <v-alert v-if="import116RunActionMessage" type="success" class="mt-2" density="compact">{{ import116RunActionMessage }}</v-alert>
-                    <v-alert v-if="import116RunActionError" type="error" class="mt-2" density="compact">{{ import116RunActionError }}</v-alert>
+                    <v-alert
+                        v-if="import116RunActionError"
+                        type="error"
+                        variant="tonal"
+                        prominent
+                        border="start"
+                        title="Import 116 nicht übernommen"
+                        class="mt-2">
+                        {{ import116RunActionError }} Bestehende Daten wurden bei einer fehlgeschlagenen Vorprüfung nicht verändert.
+                    </v-alert>
                     <v-alert v-if="import116RunTrackingError" type="warning" class="mt-2" density="compact">{{ import116RunTrackingError }}</v-alert>
 
                     <div v-if="!import116RunTrackingError" class="mt-2">
@@ -1081,7 +1111,14 @@
                 </v-btn>
             </v-card-title>
             <v-card-text class="px-4 pb-4">
-                <v-alert v-if="activeImportPage === 'stundenplan'" type="info" variant="tonal" class="mb-3">
+                <v-alert
+                    v-if="activeImportPage === 'stundenplan'"
+                    :type="semester2Start ? 'info' : 'error'"
+                    variant="tonal"
+                    :prominent="!semester2Start"
+                    :border="semester2Start ? false : 'start'"
+                    :title="semester2Start ? undefined : 'Voraussetzung fehlt'"
+                    class="mb-3">
                     <div class="d-flex align-center ga-2 mb-2">
                         <v-icon icon="mdi-calendar-range" />
                         <span>Schuljahr: <strong>{{ personalImportSchoolyearLabel }}</strong></span>
@@ -1096,12 +1133,24 @@
                         Schuljahr ändern
                     </a>
                 </v-alert>
+                <v-alert
+                    v-if="activeImportPage === 'anrechnungen'"
+                    type="warning"
+                    variant="tonal"
+                    prominent
+                    border="start"
+                    title="Voraussetzung vor dem Import"
+                    class="mb-3">
+                    Wählen Sie zuerst das persönliche Schuljahr. Die CSV-Datei muss ein Fach, eine Studierenden-
+                    oder Lehrkraftkennung und einen Anrechnungswert enthalten. Für einen gültigen Test V3 müssen
+                    davor außerdem Import 116 und die benötigten Fachpläne vollständig vorhanden sein.
+                </v-alert>
                 <v-alert type="info" variant="tonal" class="mb-3">
                     Die Datei wird vor jeder Datenänderung vollständig geprüft. Enthält sie keine gültigen
                     {{ activeImportPage === 'anrechnungen' ? 'Anrechnungsdaten' : 'Stundenplan-Einträge' }},
                     wird der Import abgebrochen und der bestehende Datenbestand bleibt unverändert.
                 </v-alert>
-                <v-alert v-if="uploadError" type="error" variant="tonal" class="mb-3">
+                <v-alert v-if="uploadError" type="error" variant="tonal" prominent border="start" title="Import nicht möglich" class="mb-3">
                     {{ uploadError }}
                 </v-alert>
                 <v-alert v-if="uploadedFilename" type="success" variant="tonal" class="mb-3">
@@ -1132,6 +1181,18 @@
                             class="mb-4">
                             <strong>Datumsprüfung:</strong>
                             {{ timetablePreview.date_plausibility.message }}
+                        </v-alert>
+
+                        <v-alert
+                            v-if="timetablePreviewHasSemanticErrors"
+                            type="error"
+                            variant="tonal"
+                            prominent
+                            border="start"
+                            title="Semantische Prüfung fehlgeschlagen"
+                            class="mb-4">
+                            {{ timetablePreview.tt_skipped_invalid }} TT-Datensätze entsprechen nicht dem erwarteten Format.
+                            Der Import bleibt gesperrt. Korrigieren Sie die Quelldatei und laden Sie sie erneut hoch.
                         </v-alert>
 
                         <div class="st-import-history-meta-grid mb-4">
@@ -1178,7 +1239,7 @@
                             </tbody>
                         </v-table>
 
-                        <v-alert v-if="previewActionError" type="error" variant="tonal" density="compact" class="mt-4">
+                        <v-alert v-if="previewActionError" type="error" variant="tonal" prominent border="start" class="mt-4">
                             {{ previewActionError }}
                         </v-alert>
                     </v-card-text>
@@ -1198,7 +1259,7 @@
                             variant="flat"
                             prepend-icon="mdi-database-import-outline"
                             :loading="confirmingPreview"
-                            :disabled="deletingPreview || !timetablePreviewDateIsPlausible"
+                            :disabled="deletingPreview || !timetablePreviewDateIsPlausible || timetablePreviewHasSemanticErrors"
                             @click="confirmTimetablePreview">
                             Jetzt importieren
                         </v-btn>
@@ -1454,6 +1515,9 @@ export default {
         },
         timetablePreviewDateIsPlausible() {
             return this.timetablePreview?.date_plausibility?.is_plausible === true
+        },
+        timetablePreviewHasSemanticErrors() {
+            return Number(this.timetablePreview?.tt_skipped_invalid || 0) > 0
         },
         import116LastImportDisplay() {
             const value = this.import116LastImportAt || this.config?.teaching?.last_import_116_at

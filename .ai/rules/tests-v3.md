@@ -109,3 +109,21 @@ Run selected-student V3 checks sequentially in batches of 10 so medium selection
 
 ## Skip Tests V3 for invalid student data
 When the backend reports data_quality_issues for a student, keep the record visible and label it clearly as Falsche Daten with every reason. Do not send that student's code to the V3 calculation endpoint; mark the run as skipped invalid data and report it separately from passed or failed tests.
+
+## Export the completion summary as PDF
+Keep a PDF action in the persistent Tests V3 completion dialog. Export the same checked, passed, failed, and invalid-data summary plus failed/invalid student details; derive school and schoolyear context server-side and use the timetable PDF visual language.
+
+## Keep large Tests V3 runs linear
+Memoize each selected-student result subtree by its result object. Build module comparisons once when a batch result arrives and merge each batch phase in one reactive update; do not recompute or diff every previously completed student after later batches.
+
+## Hide completed progress after closing summary
+Keep Tests V3 progress visible while a run is active and while its completion dialog is open. Closing the completion dialog hides the progress area without clearing the per-student test results.
+
+## Defer result-table rendering until tests finish
+While Tests V3 is running, keep the selected-student/V3 result table out of the DOM and render only the compact progress area. Continue storing batch results in state, then mount the complete result table once after the run finishes; this supersedes progressive row rendering during the run.
+
+## Use 25-student Tests V3 batches
+Run Tests V3 sequentially in batches of 25. This supersedes the earlier fixed batch sizes of 10 and 100: 25 keeps progress updates responsive for upper classes with large recognition histories while avoiding per-student request overhead.
+
+## Toggle Tests V3 students by semester
+In Tests V3 > Studierende, show fixed buttons for semesters 1 through 8 above the class chips. Group only by each student's backend-provided semester. Clicking a semester selects all students in it unless every student in that semester is already selected, in which case it deselects them; disable semesters without students.

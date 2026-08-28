@@ -54,9 +54,8 @@ class StudentTimetableV3StudentInformationService
             $schoolyearId,
             $studentCodes->all(),
         );
-        $this->completedCourseHistoryService->coursesForStudentCodes(
+        $this->studentOverviewService->prepareSelectionSummariesForStudentCodes(
             $user,
-            $schoolyearId,
             $studentCodes->all(),
         );
 

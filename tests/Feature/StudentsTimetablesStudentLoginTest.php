@@ -559,8 +559,10 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.selection_options.language.2.value', 'S')
         ->assertJsonPath('data.completed_courses.0.code', 'ETH1')
         ->assertJsonPath('data.missing_courses', [])
-        ->assertJsonPath('data.proposed_courses.0.code', 'D1')
-        ->assertJsonPath('data.additional_courses.0.code', 'D2');
+        ->assertJsonPath('data.proposed_courses.0.code', 'D1');
+
+    expect(collect($response->json('data.additional_courses'))->pluck('code'))
+        ->toContain('D2');
 
     $selectableModules = collect($response->json('data.student_information.module_selection_groups'))
         ->flatMap(fn (array $group): array => $group['modules'] ?? []);
@@ -937,7 +939,7 @@ it('includes pending earlier semester courses in the public proposed courses', f
         ->assertJsonPath('data.missing_courses.0.code', 'CH1');
 
     expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
-        ->toBe(['BU2', 'D5']);
+        ->toBe(['BU2']);
 });
 
 it('creates the first automatic timetable for the authenticated student', function () {

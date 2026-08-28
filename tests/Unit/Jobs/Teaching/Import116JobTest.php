@@ -197,6 +197,72 @@ describe('file not found handling', function () {
 
         expect(Import116::count())->toBe($initialCount);
     });
+
+    test('reports the exact required headers missing from an import file', function () {
+        $relativePath = "app/private/{$this->school->id}/excel/116-missing-headers.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '1A',
+            'Schülerkennzahl' => 'HEADER-001',
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116-missing-headers.xlsx'))->handle();
+
+        $errorMessage = (string) Import116Run::query()->latest('id')->value('error_message');
+
+        expect($errorMessage)
+            ->toContain('Pflichtspalten fehlen')
+            ->toContain('Familienname')
+            ->toContain('Vorname')
+            ->toContain('Bestehende Daten wurden nicht verändert');
+    });
+
+    test('finishes the run when the spreadsheet parser fails without exposing internals', function () {
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        file_put_contents(storage_path($relativePath), 'not a valid xlsx archive');
+        $job = new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx');
+        $parserFailed = false;
+
+        try {
+            $job->handle();
+        } catch (Throwable) {
+            $parserFailed = true;
+        }
+
+        $run = Import116Run::query()->latest('id')->firstOrFail();
+
+        expect($parserFailed)->toBeTrue()
+            ->and($run->status)->toBe('failed')
+            ->and($run->finished_at)->not->toBeNull()
+            ->and($run->error_message)->toBe('Import 116 fehlgeschlagen: Unerwarteter Verarbeitungsfehler.')
+            ->and($run->error_message)->not->toContain(storage_path());
+
+        Event::assertDispatched(Import116FinishedEvent::class, function (Import116FinishedEvent $event): bool {
+            return $event->status === 500
+                && $event->message === 'Import 116 fehlgeschlagen.'
+                && ! array_key_exists('error', $event->data);
+        });
+    });
+
+    test('marks a running import as failed when the queue worker terminates the job', function () {
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $run = Import116Run::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'source_path' => 'test/path',
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+
+        $job->failed(new RuntimeException('sensitive worker failure'));
+
+        expect($run->refresh()->status)->toBe('failed')
+            ->and($run->finished_at)->not->toBeNull()
+            ->and($run->error_message)->toBe('Import 116 fehlgeschlagen: Unerwarteter Verarbeitungsfehler.')
+            ->and($run->error_message)->not->toContain('sensitive worker failure');
+    });
 });
 
 // ============================================================================
@@ -1024,6 +1090,77 @@ describe('exists_date clearing', function () {
 
         Event::assertDispatched(Import116FinishedEvent::class, fn (Import116FinishedEvent $event): bool => $event->status === 422
             && str_contains($event->message, 'Bestehende Daten wurden nicht verändert'));
+    });
+
+    test('rejects the complete import when one student row is semantically incomplete', function () {
+        $existingRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'KEEP-SEMANTIC',
+            'exists_date' => now(),
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $relativePath = "app/private/{$this->school->id}/excel/116-mixed.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRows([
+            [
+                'Klasse' => '1A',
+                'Schülerkennzahl' => 'VALID-001',
+                'Familienname' => 'Gültig',
+                'Vorname' => 'Vera',
+            ],
+            [
+                'Klasse' => '1A',
+                'Schülerkennzahl' => 'INVALID-001',
+                'Familienname' => 'Ohne Vorname',
+                'Vorname' => '',
+            ],
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116-mixed.xlsx'))->handle();
+
+        expect($existingRecord->refresh()->exists_date)->not->toBeNull()
+            ->and(Import116::query()->where('student_code', 'VALID-001')->exists())->toBeFalse()
+            ->and(Import116Run::query()->latest('id')->value('status'))->toBe('failed')
+            ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('semantisch unvollständig')
+            ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('Excel-Zeile 3');
+    });
+
+    test('rejects invalid Test V3 school levels before importing student timetable data', function () {
+        $existingRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'KEEP-V3',
+            'exists_date' => now(),
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $relativePath = "app/private/{$this->school->id}/excel/116-v3-invalid.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '2U',
+            'Schülerkennzahl' => 'INVALID-V3-001',
+            'Familienname' => 'Falsche',
+            'Vorname' => 'Schulstufe',
+            'Schulstufe' => '10_1',
+        ]);
+        $writer->close();
+
+        $job = new Import116Job(
+            $this->admin,
+            $relativePath,
+            $this->schoolyear->id,
+            '116-v3-invalid.xlsx',
+            requiresStudentTimetableData: true,
+        );
+        $job->handle();
+
+        expect($existingRecord->refresh()->exists_date)->not->toBeNull()
+            ->and(Import116::query()->where('student_code', 'INVALID-V3-001')->exists())->toBeFalse()
+            ->and(Import116Run::query()->latest('id')->value('status'))->toBe('failed')
+            ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('Schulstufe 10_1 nicht zulässig');
     });
 
     test('only affects records from the same school', function () {

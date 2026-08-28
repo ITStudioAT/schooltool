@@ -6,6 +6,8 @@ paths:
   - 'app/Services/StudentsTimetables/*.php'
   - app/Services/StudentsTimetables/StudentTimetableExpectedModulesService.php
   - app/Services/StudentsTimetables/StudentTimetablesStudentOverviewService.php
+  - app/Services/StudentsTimetables/StudentTimetableCompletedCourseHistoryService.php
+  - app/Services/StudentsTimetables/RobotTimetableBackendSetupService.php
 ---
 
 # Services Students Timetables
@@ -87,3 +89,9 @@ A positive or exempt completion of numbered module N never implies that lower mo
 
 ## Keep every unfinished lower module in TT-V3
 A positive or exempt numbered module N opens N+1 and N+2 but never implies that lower modules in the same family are complete. Keep every lower subject-plan module selectable unless that exact module is completed or negative; apply this to every numbered family, not only D, ETH, or religion aliases. Negative modules remain unavailable and never advance progression.
+
+## Memoize recognition subject-plan resolution per scope
+Recognition history batches can contain thousands of rows from upper classes. Cache resolved subject labels, module label lists, and course names by school/schoolyear scope during the request; do not rescan the full subject-plan collection for every recognition row.
+
+## Accept stable and legacy timetable course keys
+Student overview course keys use the subject plan stable_key as their first segment. Robot setup must build stable keys, while still accepting legacy numeric-ID keys by matching the remaining six structured segments; diagnostics must return the exact requested key.

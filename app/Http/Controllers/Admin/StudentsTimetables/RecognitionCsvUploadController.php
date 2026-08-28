@@ -18,6 +18,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RecognitionCsvUploadController extends Controller
@@ -117,13 +118,22 @@ class RecognitionCsvUploadController extends Controller
         }
 
         $originalFilename = $request->header('Upload-Name') ?: $result;
-        $service->createQueuedImport(
-            $authUser,
-            $result,
-            is_string($originalFilename) ? $originalFilename : 'anrechnungen.csv',
-            "{$uploadPath}/{$result}",
-            storage_path("{$uploadPath}/{$result}"),
-        );
+        $storedPath = storage_path("{$uploadPath}/{$result}");
+
+        try {
+            $service->validateBeforeQueue($storedPath);
+            $service->createQueuedImport(
+                $authUser,
+                $result,
+                is_string($originalFilename) ? $originalFilename : 'anrechnungen.csv',
+                "{$uploadPath}/{$result}",
+                $storedPath,
+            );
+        } catch (ValidationException $exception) {
+            File::delete($storedPath);
+
+            throw $exception;
+        }
 
         return response($result, 200)->header('Content-Type', 'text/plain');
     }

@@ -6,10 +6,46 @@ use Illuminate\Support\Collection;
 
 class SubjectPlanRuleEvaluator
 {
+    /** @var list<array<string, mixed>> */
+    private array $activeRules;
+
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $rulesBySubjectKey = [];
+
+    /** @var array<string, array{eligible: bool, resolved_codes: list<string>, controlling_rule_keys: list<string>, selected_option_keys: list<string>}> */
+    private array $evaluationCache = [];
+
+    /** @var array<string, list<string>> */
+    private array $allResolvedCodesCache = [];
+
+    /** @var array<string, list<array{title: string, value: string}>>|null */
+    private ?array $selectionOptionsCache = null;
+
+    /** @var array<string, string>|null */
+    private ?array $selectionLabelsCache = null;
+
     /**
      * @param  list<array<string, mixed>>  $rules
      */
-    public function __construct(private readonly array $rules) {}
+    public function __construct(array $rules)
+    {
+        $this->activeRules = collect($rules)
+            ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
+            ->values()
+            ->all();
+
+        foreach ($this->activeRules as $rule) {
+            $subjectKeys = collect($rule['options'] ?? [])
+                ->flatMap(fn (array $option): array => $option['subject_keys'] ?? [])
+                ->map(fn (mixed $subjectKey): string => trim((string) $subjectKey))
+                ->filter()
+                ->unique();
+
+            foreach ($subjectKeys as $subjectKey) {
+                $this->rulesBySubjectKey[$subjectKey][] = $rule;
+            }
+        }
+    }
 
     /**
      * @param  array<string, mixed>|object  $subject
@@ -19,13 +55,16 @@ class SubjectPlanRuleEvaluator
     public function evaluate(array|object $subject, array $selection): array
     {
         $subjectKey = trim((string) data_get($subject, 'stable_key', ''));
-        $controllingRules = collect($this->rules)
-            ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
-            ->filter(fn (array $rule): bool => $this->ruleControlsSubject($rule, $subjectKey))
-            ->values();
+        $cacheKey = $this->subjectCacheKey($subject).'|'.md5(serialize($selection));
+
+        if (array_key_exists($cacheKey, $this->evaluationCache)) {
+            return $this->evaluationCache[$cacheKey];
+        }
+
+        $controllingRules = collect($this->rulesBySubjectKey[$subjectKey] ?? []);
 
         if ($controllingRules->isEmpty()) {
-            return [
+            return $this->evaluationCache[$cacheKey] = [
                 'eligible' => true,
                 'resolved_codes' => [],
                 'controlling_rule_keys' => [],
@@ -76,7 +115,7 @@ class SubjectPlanRuleEvaluator
             return true;
         });
 
-        return [
+        return $this->evaluationCache[$cacheKey] = [
             'eligible' => $eligible,
             'resolved_codes' => $resolvedCodes->unique()->values()->all(),
             'controlling_rule_keys' => $controllingRules
@@ -95,9 +134,9 @@ class SubjectPlanRuleEvaluator
     public function allResolvedCodes(array|object $subject): array
     {
         $subjectKey = trim((string) data_get($subject, 'stable_key', ''));
+        $cacheKey = $this->subjectCacheKey($subject);
 
-        return collect($this->rules)
-            ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
+        return $this->allResolvedCodesCache[$cacheKey] ??= collect($this->rulesBySubjectKey[$subjectKey] ?? [])
             ->flatMap(fn (array $rule): Collection => collect($rule['options'] ?? [])
                 ->filter(fn (array $option): bool => in_array($subjectKey, $option['subject_keys'] ?? [], true))
                 ->map(fn (array $option): ?string => $this->resolvedCode($subject, $option['course_code_prefix'] ?? null)))
@@ -110,8 +149,7 @@ class SubjectPlanRuleEvaluator
     /** @return array<string, list<array{title: string, value: string}>> */
     public function selectionOptions(): array
     {
-        return collect($this->rules)
-            ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
+        return $this->selectionOptionsCache ??= collect($this->activeRules)
             ->groupBy(fn (array $rule): string => (string) ($rule['selection_key'] ?? ''))
             ->map(fn (Collection $rules): array => $rules
                 ->flatMap(fn (array $rule): array => $rule['options'] ?? [])
@@ -129,8 +167,7 @@ class SubjectPlanRuleEvaluator
     /** @return array<string, string> */
     public function selectionLabels(): array
     {
-        return collect($this->rules)
-            ->filter(fn (array $rule): bool => ($rule['is_active'] ?? false) === true)
+        return $this->selectionLabelsCache ??= collect($this->activeRules)
             ->groupBy(fn (array $rule): string => (string) ($rule['selection_key'] ?? ''))
             ->map(fn (Collection $rules, string $selectionKey): string => (string) (
                 $rules->first()['label'] ?? $rules->first()['name'] ?? $selectionKey
@@ -139,11 +176,13 @@ class SubjectPlanRuleEvaluator
             ->all();
     }
 
-    /** @param  array<string, mixed>  $rule */
-    private function ruleControlsSubject(array $rule, string $subjectKey): bool
+    private function subjectCacheKey(array|object $subject): string
     {
-        return collect($rule['options'] ?? [])
-            ->contains(fn (array $option): bool => in_array($subjectKey, $option['subject_keys'] ?? [], true));
+        return implode('|', [
+            trim((string) data_get($subject, 'stable_key', '')),
+            trim((string) data_get($subject, 'json_code', '')),
+            trim((string) data_get($subject, 'json_subject', '')),
+        ]);
     }
 
     /**

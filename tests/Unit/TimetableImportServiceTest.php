@@ -244,7 +244,7 @@ it('extracts module codes from real Untis class names for matching subject overv
     expect($moduleCodes)->toBe(['INF2', 'INF3', 'INF1']);
 });
 
-it('skips TT rows without an importable source id and course assignment', function () {
+it('rejects the complete import when TT rows have no importable source id or course assignment', function () {
     $filePath = "{$this->storageDirectory}/missing-course-assignment.txt";
     File::put($filePath, implode(PHP_EOL, [
         'TT	0	20260427	8	15:30	16:15	M			MAL	2	 	-1',
@@ -268,8 +268,10 @@ it('skips TT rows without an importable source id and course assignment', functi
         $this->schoolyear->id,
     );
 
-    expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(1);
-    expect($import->tt_skipped_invalid)->toBe(2);
+    expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(0)
+        ->and($import->import_status)->toBe('failed')
+        ->and($import->tt_skipped_invalid)->toBe(2)
+        ->and($import->import_error)->toContain('Semantische Prüfung fehlgeschlagen');
 
     $this->assertDatabaseMissing('student_timetable_entries', [
         'timetable_import_id' => $import->id,
@@ -283,7 +285,7 @@ it('skips TT rows without an importable source id and course assignment', functi
         'class_name' => 'PH2-6A-ALT',
     ]);
 
-    $this->assertDatabaseHas('student_timetable_entries', [
+    $this->assertDatabaseMissing('student_timetable_entries', [
         'timetable_import_id' => $import->id,
         'source_identifier' => '82',
         'date' => '2026-04-28',

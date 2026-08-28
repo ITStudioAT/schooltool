@@ -59,6 +59,8 @@ use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableDataRefreshController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StateController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StudentInformationController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TestReadinessController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TestSummaryPdfController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TimetableController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableFileUploadController;
@@ -236,9 +238,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/timetable-v2-state', [StudentsTimetablesController::class, 'updateTimetableV2State']);
         Route::get('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'update']);
-        Route::post('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'store']);
+        Route::post('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'store'])
+            ->middleware('api-allowed:scope:students_timetables_tests_v3_access');
+        Route::get('/admin/students-timetables/tests-v3/readiness', StudentTimetableV3TestReadinessController::class)
+            ->middleware('api-allowed:scope:students_timetables_tests_v3_access');
         Route::get('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3/student-information/school-level', [StudentTimetableV3StudentInformationController::class, 'updateSchoolLevel']);
+        Route::post('/admin/students-timetables/tests-v3/summary/pdf', [StudentTimetableV3TestSummaryPdfController::class, '__invoke'])
+            ->middleware('api-allowed:scope:students_timetables_tests_v3_access');
         Route::get('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'update'])
             ->middleware('throttle:10,1');

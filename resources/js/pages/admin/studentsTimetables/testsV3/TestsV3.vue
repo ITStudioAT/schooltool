@@ -19,6 +19,57 @@
             </v-btn>
         </v-sheet>
 
+        <v-alert
+            v-if="testReadinessLoading"
+            type="info"
+            variant="tonal"
+            prominent
+            border="start"
+            class="mb-4 tests-v3-readiness">
+            Die Voraussetzungen für Test V3 werden geprüft.
+        </v-alert>
+
+        <v-alert
+            v-else-if="testReadinessError"
+            type="error"
+            variant="tonal"
+            prominent
+            border="start"
+            title="Voraussetzungen konnten nicht geprüft werden"
+            class="mb-4 tests-v3-readiness">
+            <div class="mb-3">
+                Test V3 bleibt gesperrt, weil die Vollständigkeit der Importdaten nicht bestätigt werden konnte.
+            </div>
+            <v-btn size="small" color="error" variant="outlined" @click="loadTestReadiness(true)">
+                Erneut prüfen
+            </v-btn>
+        </v-alert>
+
+        <v-alert
+            v-else-if="testReadiness && !testReadinessReady"
+            type="error"
+            variant="tonal"
+            prominent
+            border="start"
+            :title="testReadiness.title"
+            class="mb-4 tests-v3-readiness">
+            <p class="mb-3">{{ testReadiness.message }}</p>
+            <v-list bg-color="transparent" density="compact" class="pa-0 tests-v3-readiness__issues">
+                <v-list-item
+                    v-for="issue in testReadinessIssues"
+                    :key="issue.code"
+                    prepend-icon="mdi-alert-octagon-outline"
+                    class="px-0">
+                    <v-list-item-title class="font-weight-bold">{{ issue.title }}</v-list-item-title>
+                    <v-list-item-subtitle class="text-wrap">{{ issue.message }}</v-list-item-subtitle>
+                    <div class="text-body-2 mt-1"><strong>Nächster Schritt:</strong> {{ issue.next_step }}</div>
+                </v-list-item>
+            </v-list>
+            <v-btn class="mt-3" size="small" color="error" variant="outlined" @click="loadTestReadiness(true)">
+                Voraussetzungen neu prüfen
+            </v-btn>
+        </v-alert>
+
         <v-card
             v-if="testsV3Action === 'students'"
             rounded="lg"
@@ -55,25 +106,46 @@
             </v-card-title>
 
             <v-card-text
-                v-if="studentClasses.length"
+                v-if="sortedStudents.length"
                 class="tests-v3-students__classes">
-                <span class="tests-v3-students__classes-label">Klassen</span>
-                <div class="tests-v3-students__class-chips">
-                    <v-chip
-                        v-for="studentClass in studentClasses"
-                        :key="studentClass.key"
-                        :color="isStudentClassSelected(studentClass) ? 'primary' : 'secondary'"
-                        :variant="isStudentClassSelected(studentClass) ? 'flat' : 'tonal'"
-                        :prepend-icon="isStudentClassSelected(studentClass) ? 'mdi-check' : 'mdi-account-group-outline'"
-                        :disabled="!studentClass.studentKeys.length"
-                        :aria-pressed="isStudentClassSelected(studentClass)"
-                        :aria-label="`Klasse ${studentClass.label} ${isStudentClassSelected(studentClass) ? 'abwählen' : 'auswählen'}`"
-                        size="small"
-                        label
-                        class="tests-v3-students__class-chip"
-                        @click="toggleStudentClassSelection(studentClass)">
-                        {{ studentClass.label }}
-                    </v-chip>
+                <div class="tests-v3-students__selection-group">
+                    <span class="tests-v3-students__classes-label">Semester</span>
+                    <div class="tests-v3-students__semester-buttons">
+                        <v-btn
+                            v-for="studentSemester in studentSemesters"
+                            :key="studentSemester.key"
+                            :color="isStudentSemesterSelected(studentSemester) ? 'primary' : 'secondary'"
+                            :variant="isStudentSemesterSelected(studentSemester) ? 'flat' : 'tonal'"
+                            :prepend-icon="isStudentSemesterSelected(studentSemester) ? 'mdi-check' : 'mdi-calendar-range'"
+                            :disabled="!studentSemester.studentKeys.length"
+                            :aria-pressed="isStudentSemesterSelected(studentSemester)"
+                            :aria-label="`${studentSemester.label} ${isStudentSemesterSelected(studentSemester) ? 'abwählen' : 'auswählen'}`"
+                            size="small"
+                            class="tests-v3-students__semester-button"
+                            @click="toggleStudentSemesterSelection(studentSemester)">
+                            {{ studentSemester.label }}
+                        </v-btn>
+                    </div>
+                </div>
+                <div class="tests-v3-students__selection-group">
+                    <span class="tests-v3-students__classes-label">Klassen</span>
+                    <div class="tests-v3-students__class-chips">
+                        <v-chip
+                            v-for="studentClass in studentClasses"
+                            :key="studentClass.key"
+                            :color="isStudentClassSelected(studentClass) ? 'primary' : 'secondary'"
+                            :variant="isStudentClassSelected(studentClass) ? 'flat' : 'tonal'"
+                            :prepend-icon="isStudentClassSelected(studentClass) ? 'mdi-check' : 'mdi-account-group-outline'"
+                            :disabled="!studentClass.studentKeys.length"
+                            :aria-pressed="isStudentClassSelected(studentClass)"
+                            :aria-label="`Klasse ${studentClass.label} ${isStudentClassSelected(studentClass) ? 'abwählen' : 'auswählen'}`"
+                            size="small"
+                            label
+                            class="tests-v3-students__class-chip"
+                            @click="toggleStudentClassSelection(studentClass)">
+                            {{ studentClass.label }}
+                        </v-chip>
+                    </div>
                 </div>
             </v-card-text>
 
@@ -325,14 +397,14 @@
                     variant="flat"
                     prepend-icon="mdi-play-circle-outline"
                     :loading="studentV3TestsRunning"
-                    :disabled="studentV3TestsRunning || !selectedStudents.length"
+                    :disabled="studentV3TestsRunning || testReadinessLoading || !testReadinessReady || !selectedStudents.length"
                     @click="runTests"
                     class="tests-v3-selection__run-button">
                     Run Tests
                 </v-btn>
             </v-card-title>
             <div
-                v-if="studentV3TestsRunning || completedStudentV3TestCount"
+                v-if="showStudentV3TestProgress"
                 class="tests-v3-selection__progress">
                 <v-progress-linear
                     :model-value="studentV3TestProgressPercentage"
@@ -361,7 +433,7 @@
                 </v-alert>
             </v-card-text>
             <v-table
-                v-else
+                v-else-if="!studentV3TestsRunning"
                 fixed-header
                 hover
                 density="comfortable"
@@ -378,7 +450,8 @@
                 <tbody>
                     <template
                         v-for="student in selectedStudents"
-                        :key="studentSelectionKey(student)">
+                        :key="studentSelectionKey(student)"
+                        v-memo="[studentV3TestResult(student)]">
                         <tr :class="[
                             'tests-v3-students__row--selected',
                             { 'tests-v3-students__row--invalid-data': studentDataQualityIssues(student).length },
@@ -507,7 +580,7 @@
                                                 <span class="tests-v3-selection__module-comparison-label">Soll-Module</span>
                                                 <div class="tests-v3-selection__module-codes">
                                                     <span
-                                                        v-for="module in studentModuleGroupExpectedModules(student, group.key)"
+                                                        v-for="module in group.comparison.expectedModules"
                                                         :key="module.key"
                                                         :title="module.title"
                                                         class="tests-v3-selection__module-code">
@@ -517,17 +590,17 @@
                                                                 : 'tests-v3-students__course-result-grade--negative'">{{ module.grade }}</strong>)</template>
                                                     </span>
                                                     <span
-                                                        v-if="!studentModuleGroupExpectedModules(student, group.key).length"
+                                                        v-if="!group.comparison.expectedModules.length"
                                                         class="text-medium-emphasis">–</span>
                                                 </div>
                                             </div>
-                                            <template v-if="studentModuleGroupMismatches(student, group.key).length">
+                                            <template v-if="group.comparison.mismatches.length">
                                                 <v-divider class="tests-v3-selection__module-comparison-divider" />
                                                 <div class="tests-v3-selection__module-comparison-section">
                                                     <span class="tests-v3-selection__module-comparison-label">Abweichende Module</span>
                                                     <div class="tests-v3-selection__module-codes">
                                                         <span
-                                                            v-for="module in studentModuleGroupMismatches(student, group.key)"
+                                                            v-for="module in group.comparison.mismatches"
                                                             :key="module.key"
                                                             :title="module.title"
                                                             class="tests-v3-selection__module-code">
@@ -541,17 +614,17 @@
                                             </template>
                                             <div class="tests-v3-selection__module-comparison-result">
                                                 <v-chip
-                                                    v-if="studentModuleGroupMatches(student, group.key) !== null"
-                                                    :color="studentModuleGroupMatches(student, group.key) ? 'success' : 'error'"
-                                                    :prepend-icon="studentModuleGroupMatches(student, group.key) ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                                    :title="studentModuleGroupMatches(student, group.key)
+                                                    v-if="group.comparison.matches !== null"
+                                                    :color="group.comparison.matches ? 'success' : 'error'"
+                                                    :prepend-icon="group.comparison.matches ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                                    :title="group.comparison.matches
                                                         ? 'Soll-Module und V3-Ergebnis stimmen überein.'
                                                         : 'Soll-Module und V3-Ergebnis stimmen nicht überein.'"
                                                     size="x-small"
                                                     variant="flat"
                                                     label
                                                     class="tests-v3-selection__module-match">
-                                                    {{ studentModuleGroupMatches(student, group.key) ? 'OK' : 'FAIL' }}
+                                                    {{ group.comparison.matches ? 'OK' : 'FAIL' }}
                                                 </v-chip>
                                             </div>
                                         </div>
@@ -663,8 +736,18 @@
                     </template>
                 </v-card-text>
                 <v-divider />
-                <v-card-actions class="pa-4">
+                <v-card-actions class="pa-4 ga-2">
                     <v-spacer />
+                    <v-btn
+                        color="#c2410c"
+                        :disabled="studentV3TestSummaryPdfExporting || !completedStudentV3TestCount"
+                        :loading="studentV3TestSummaryPdfExporting"
+                        prepend-icon="mdi-file-pdf-box"
+                        type="button"
+                        variant="outlined"
+                        @click="downloadStudentV3TestSummaryPdf">
+                        PDF erstellen
+                    </v-btn>
                     <v-btn
                         color="primary"
                         variant="flat"
@@ -681,12 +764,14 @@
 import { mapWritableState } from 'pinia'
 import { settings as loadSubjectPlanSettings } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
 import { store as runV3StudentModuleTests } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3StudentInformationController'
+import { __invoke as downloadStudentV3TestSummaryPdf } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3TestSummaryPdfController'
+import loadStudentV3TestReadiness from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3TestReadinessController'
 import { robotStudents as loadRobotStudents } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const TESTS_V3_STUDENT_SELECTION_STORAGE_KEY_PREFIX = 'schooltool:students-timetables:tests-v3:selected-students'
-const STUDENT_V3_TEST_BATCH_SIZE = 10
+const STUDENT_V3_TEST_BATCH_SIZE = 25
 const STUDENT_V3_TEST_GROUPS = [
     { key: 'finished', label: 'Abgeschlossene', color: 'success' },
     { key: 'negative', label: 'Negative', color: 'error' },
@@ -764,6 +849,9 @@ export default {
             selectedStudentKeys: [],
             studentsLoading: false,
             studentsError: false,
+            testReadiness: null,
+            testReadinessLoading: false,
+            testReadinessError: false,
             studyPlanRows: {
                 normalstudium: [],
                 kompaktstudium: [],
@@ -775,6 +863,7 @@ export default {
             studentV3TestResults: {},
             studentV3TestsRunning: false,
             studentV3TestSummaryDialog: false,
+            studentV3TestSummaryPdfExporting: false,
         }
     },
     computed: {
@@ -797,6 +886,12 @@ export default {
                     icon: 'mdi-test-tube',
                 },
             ]
+        },
+        testReadinessReady() {
+            return this.testReadiness?.ready === true
+        },
+        testReadinessIssues() {
+            return Array.isArray(this.testReadiness?.issues) ? this.testReadiness.issues : []
         },
         sortedStudents() {
             return [...this.students].sort((firstStudent, secondStudent) => {
@@ -844,6 +939,21 @@ export default {
                 studentKeys: [...new Set(studentKeys)],
             }))
         },
+        studentSemesters() {
+            return Array.from({ length: 8 }, (_, index) => {
+                const semester = index + 1
+                const studentKeys = this.sortedStudents
+                    .filter(student => Number(student?.semester) === semester)
+                    .map(student => this.studentSelectionKey(student))
+                    .filter(Boolean)
+
+                return {
+                    key: semester,
+                    label: `${semester}. Semester`,
+                    studentKeys: [...new Set(studentKeys)],
+                }
+            })
+        },
         selectedStudentCount() {
             return this.selectedStudentKeys.length
         },
@@ -858,6 +968,10 @@ export default {
         },
         someStudentsSelected() {
             return this.selectedStudentCount > 0
+        },
+        showStudentV3TestProgress() {
+            return this.studentV3TestsRunning
+                || (this.studentV3TestSummaryDialog && this.completedStudentV3TestCount > 0)
         },
         completedStudentV3TestCount() {
             return this.selectedStudents.filter((student) => {
@@ -902,9 +1016,11 @@ export default {
                 )
                 .map((student) => {
                     const result = this.studentV3TestResult(student)
-                    const failedGroupLabels = STUDENT_V3_TEST_GROUPS
-                        .filter(group => this.studentModuleGroupMatches(student, group.key) === false)
-                        .map(group => group.label)
+                    const failedGroupLabels = Array.isArray(result?.failedGroupLabels)
+                        ? result.failedGroupLabels
+                        : STUDENT_V3_TEST_GROUPS
+                            .filter(group => this.studentModuleGroupMatches(student, group.key) === false)
+                            .map(group => group.label)
                     const message = result?.status === 'error'
                         ? result.message || 'V3-Modulberechnung fehlgeschlagen.'
                         : `Abweichungen: ${failedGroupLabels.join(', ') || 'unbekannt'}`
@@ -973,6 +1089,7 @@ export default {
         if (this.redirectInvalidTestsV3Route()) return
 
         this.restoreStudentSelection()
+        void this.loadTestReadiness()
         void this.loadStudents()
 
         if (this.testsV3Action === 'tests') {
@@ -992,6 +1109,7 @@ export default {
             }
 
             if (this.testsV3Action === 'tests') {
+                void this.loadTestReadiness(true)
                 void this.loadStudyPlans()
             }
         },
@@ -1205,22 +1323,34 @@ export default {
 
             this.selectedStudentKeys = this.selectedStudentKeys.filter(selectedKey => selectedKey !== studentKey)
         },
-        isStudentClassSelected(studentClass) {
-            return studentClass.studentKeys.length > 0
-                && studentClass.studentKeys.every(studentKey => this.selectedStudentKeys.includes(studentKey))
+        areStudentKeysSelected(studentKeys) {
+            return studentKeys.length > 0
+                && studentKeys.every(studentKey => this.selectedStudentKeys.includes(studentKey))
         },
-        toggleStudentClassSelection(studentClass) {
-            const classStudentKeys = new Set(studentClass.studentKeys)
+        toggleStudentKeysSelection(studentKeys) {
+            const selectedStudentKeys = new Set(studentKeys)
 
-            if (this.isStudentClassSelected(studentClass)) {
+            if (this.areStudentKeysSelected(studentKeys)) {
                 this.selectedStudentKeys = this.selectedStudentKeys.filter(
-                    studentKey => !classStudentKeys.has(studentKey),
+                    studentKey => !selectedStudentKeys.has(studentKey),
                 )
 
                 return
             }
 
-            this.selectedStudentKeys = [...new Set([...this.selectedStudentKeys, ...studentClass.studentKeys])]
+            this.selectedStudentKeys = [...new Set([...this.selectedStudentKeys, ...studentKeys])]
+        },
+        isStudentClassSelected(studentClass) {
+            return this.areStudentKeysSelected(studentClass.studentKeys)
+        },
+        toggleStudentClassSelection(studentClass) {
+            this.toggleStudentKeysSelection(studentClass.studentKeys)
+        },
+        isStudentSemesterSelected(studentSemester) {
+            return this.areStudentKeysSelected(studentSemester.studentKeys)
+        },
+        toggleStudentSemesterSelection(studentSemester) {
+            this.toggleStudentKeysSelection(studentSemester.studentKeys)
         },
         selectAllStudents() {
             this.selectedStudentKeys = [...this.studentSelectionKeys]
@@ -1251,9 +1381,11 @@ export default {
             if (result.status === 'invalid_data') return STUDENT_V3_TEST_STATUS_PRESENTATIONS.invalidData
 
             if (result.status === 'complete') {
-                const isValid = STUDENT_V3_TEST_COMPARISON_GROUP_KEYS.every(
-                    groupKey => this.studentModuleGroupMatches(student, groupKey) === true,
-                )
+                const isValid = typeof result.isValid === 'boolean'
+                    ? result.isValid
+                    : STUDENT_V3_TEST_COMPARISON_GROUP_KEYS.every(
+                        groupKey => this.studentModuleGroupMatches(student, groupKey) === true,
+                    )
 
                 return isValid
                     ? STUDENT_V3_TEST_STATUS_PRESENTATIONS.valid
@@ -1267,9 +1399,14 @@ export default {
 
             if (!studentKey) return
 
+            this.setStudentV3TestResults({ [studentKey]: result })
+        },
+        setStudentV3TestResults(resultsByStudentKey) {
+            if (!Object.keys(resultsByStudentKey).length) return
+
             this.studentV3TestResults = {
                 ...this.studentV3TestResults,
-                [studentKey]: result,
+                ...resultsByStudentKey,
             }
         },
         normalizedStudentV3TestGroups(moduleGroups) {
@@ -1341,13 +1478,10 @@ export default {
             }
 
             const moduleGroup = result.groups.find(group => group.key === moduleGroupKey)
-            const expectedCodes = this.normalizedStudentModuleCodes(
-                this.studentModuleGroupExpectedModules(student, moduleGroupKey),
-            )
-            const testResultCodes = this.normalizedStudentModuleCodes(moduleGroup?.modules)
 
-            return expectedCodes.length === testResultCodes.length
-                && expectedCodes.every((code, index) => code === testResultCodes[index])
+            return result.sourceStudent === student && typeof moduleGroup?.comparison?.matches === 'boolean'
+                ? moduleGroup.comparison.matches
+                : this.studentModuleGroupComparison(student, moduleGroup).matches
         },
         studentModuleGroupCanCompare(student, moduleGroupKey) {
             if (['finished', 'negative'].includes(moduleGroupKey)) return true
@@ -1439,7 +1573,20 @@ export default {
             }
 
             const moduleGroup = result.groups.find(group => group.key === moduleGroupKey)
+            const cachedMismatches = moduleGroup?.comparison?.mismatches
+
+            return result.sourceStudent === student && Array.isArray(cachedMismatches)
+                ? cachedMismatches
+                : this.studentModuleGroupComparison(student, moduleGroup).mismatches
+        },
+        studentModuleGroupComparison(student, moduleGroup) {
+            const moduleGroupKey = String(moduleGroup?.key || '').trim()
             const expectedModules = this.studentModuleGroupExpectedModules(student, moduleGroupKey)
+
+            if (!this.studentModuleGroupCanCompare(student, moduleGroupKey)) {
+                return { expectedModules, mismatches: [], matches: null }
+            }
+
             const expectedModuleCodes = new Set(expectedModules.map(module => module.normalizedCode))
             const testResultModulesByCode = new Map()
             const testResultModules = Array.isArray(moduleGroup?.modules) ? moduleGroup.modules : []
@@ -1469,12 +1616,35 @@ export default {
                 }))
             const additionalModules = [...testResultModulesByCode.values()]
                 .filter(module => !expectedModuleCodes.has(module.normalizedCode))
-
-            return [...missingModules, ...additionalModules]
+            const mismatches = [...missingModules, ...additionalModules]
                 .sort((leftModule, rightModule) => studentCollator.compare(
                     leftModule.normalizedCode,
                     rightModule.normalizedCode,
                 ))
+
+            return {
+                expectedModules,
+                mismatches,
+                matches: mismatches.length === 0,
+            }
+        },
+        completedStudentV3TestResult(student, groups) {
+            const groupsWithComparisons = groups.map(group => ({
+                ...group,
+                comparison: this.studentModuleGroupComparison(student, group),
+            }))
+            const failedGroupLabels = groupsWithComparisons
+                .filter(group => group.comparison.matches === false)
+                .map(group => group.label)
+
+            return {
+                status: 'complete',
+                message: '',
+                groups: groupsWithComparisons,
+                isValid: groupsWithComparisons.every(group => group.comparison.matches === true),
+                failedGroupLabels,
+                sourceStudent: student,
+            }
         },
         studentFinishedModulesMatch(student) {
             return this.studentModuleGroupMatches(student, 'finished')
@@ -1482,18 +1652,108 @@ export default {
         studentNegativeModulesMatch(student) {
             return this.studentModuleGroupMatches(student, 'negative')
         },
+        studentV3TestSummaryPdfPayload() {
+            const failedSummaries = new Map(
+                this.failedStudentV3TestSummaries.map(summary => [summary.key, summary]),
+            )
+            const invalidSummaries = new Map(
+                this.invalidStudentV3TestSummaries.map(summary => [summary.key, summary]),
+            )
+
+            return {
+                results: this.selectedStudents
+                    .map((student) => {
+                        const key = this.studentSelectionKey(student)
+                        const status = this.studentV3TestStatusPresentation(student)['data-test-status']
+                        const summary = status === 'invalid-data'
+                            ? invalidSummaries.get(key)
+                            : failedSummaries.get(key)
+
+                        if (!['valid', 'failed', 'invalid-data'].includes(status)) return null
+
+                        return {
+                            status: {
+                                valid: 'passed',
+                                failed: 'failed',
+                                'invalid-data': 'invalid_data',
+                            }[status],
+                            class_label: this.studentClassLabel(student),
+                            student_name: this.studentDisplayName(student),
+                            message: summary?.message || '',
+                        }
+                    })
+                    .filter(Boolean),
+            }
+        },
+        async downloadStudentV3TestSummaryPdf() {
+            if (this.studentV3TestSummaryPdfExporting || !this.completedStudentV3TestCount) return
+
+            this.studentV3TestSummaryPdfExporting = true
+
+            try {
+                const response = await axios.post(
+                    downloadStudentV3TestSummaryPdf.url(),
+                    this.studentV3TestSummaryPdfPayload(),
+                    { responseType: 'blob' },
+                )
+                const blob = response.data instanceof Blob
+                    ? response.data
+                    : new Blob([response.data], { type: 'application/pdf' })
+                const filename = this.fileNameFromContentDisposition(response?.headers?.['content-disposition'])
+                    || 'stundenplan-v3-testzusammenfassung.pdf'
+
+                this.downloadBlob(blob, filename)
+            } catch (error) {
+                console.error(error)
+                window.alert?.('Das PDF konnte nicht erstellt werden.')
+            } finally {
+                this.studentV3TestSummaryPdfExporting = false
+            }
+        },
+        downloadBlob(blob, filename) {
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+
+            link.href = objectUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
+        },
+        fileNameFromContentDisposition(headerValue) {
+            const normalizedHeader = String(headerValue || '').trim()
+            if (!normalizedHeader) return ''
+
+            const utf8Match = normalizedHeader.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).replace(/["']/g, '').trim()
+                } catch {
+                    return utf8Match[1].replace(/["']/g, '').trim()
+                }
+            }
+
+            const plainMatch = normalizedHeader.match(/filename\s*=\s*"?(?<file>[^";]+)"?/i)
+
+            return plainMatch?.groups?.file?.trim() || ''
+        },
         async runStudentV3TestBatch(students) {
             const studentsByCode = new Map()
+            const initialResultsByStudentKey = {}
 
             students.forEach((student) => {
+                const studentKey = this.studentSelectionKey(student)
                 const dataQualityIssues = this.studentDataQualityIssues(student)
 
                 if (dataQualityIssues.length) {
-                    this.setStudentV3TestResult(student, {
+                    if (!studentKey) return
+
+                    initialResultsByStudentKey[studentKey] = {
                         status: 'invalid_data',
                         message: dataQualityIssues.join(' '),
                         groups: [],
-                    })
+                    }
 
                     return
                 }
@@ -1501,18 +1761,22 @@ export default {
                 const studentCode = String(student?.student_code || student?.studentCode || '').trim()
 
                 if (!studentCode) {
-                    this.setStudentV3TestResult(student, {
+                    if (!studentKey) return
+
+                    initialResultsByStudentKey[studentKey] = {
                         status: 'error',
                         message: 'Keine Schülerkennzahl vorhanden.',
                         groups: [],
-                    })
+                    }
 
                     return
                 }
 
                 studentsByCode.set(studentCode, student)
-                this.setStudentV3TestResult(student, { status: 'running', message: '', groups: [] })
+                initialResultsByStudentKey[studentKey] = { status: 'running', message: '', groups: [] }
             })
+
+            this.setStudentV3TestResults(initialResultsByStudentKey)
 
             if (!studentsByCode.size) return
 
@@ -1525,8 +1789,13 @@ export default {
                     String(result?.student_code || '').trim(),
                     result,
                 ]))
+                const completedResultsByStudentKey = {}
 
                 studentsByCode.forEach((student, studentCode) => {
+                    const studentKey = this.studentSelectionKey(student)
+
+                    if (!studentKey) return
+
                     try {
                         const result = resultsByStudentCode.get(studentCode)
 
@@ -1534,27 +1803,40 @@ export default {
 
                         const groups = this.normalizedStudentV3TestGroups(result.module_selection_groups)
 
-                        this.setStudentV3TestResult(student, { status: 'complete', message: '', groups })
+                        completedResultsByStudentKey[studentKey] = this.completedStudentV3TestResult(student, groups)
                     } catch {
-                        this.setStudentV3TestResult(student, {
+                        completedResultsByStudentKey[studentKey] = {
                             status: 'error',
                             message: 'V3-Modulberechnung fehlgeschlagen.',
                             groups: [],
-                        })
+                        }
                     }
                 })
+
+                this.setStudentV3TestResults(completedResultsByStudentKey)
             } catch {
+                const failedResultsByStudentKey = {}
+
                 studentsByCode.forEach((student) => {
-                    this.setStudentV3TestResult(student, {
+                    const studentKey = this.studentSelectionKey(student)
+
+                    if (!studentKey) return
+
+                    failedResultsByStudentKey[studentKey] = {
                         status: 'error',
                         message: 'V3-Modulberechnung fehlgeschlagen.',
                         groups: [],
-                    })
+                    }
                 })
+
+                this.setStudentV3TestResults(failedResultsByStudentKey)
             }
         },
         async runTests() {
             if (this.studentV3TestsRunning || !this.selectedStudents.length) return
+
+            await this.loadTestReadiness(true)
+            if (!this.testReadinessReady) return
 
             const students = [...this.selectedStudents]
             this.studentV3TestSummaryDialog = false
@@ -1595,6 +1877,23 @@ export default {
                 this.studentsError = true
             } finally {
                 this.studentsLoading = false
+            }
+        },
+        async loadTestReadiness(force = false) {
+            if (this.testReadinessLoading || (!force && this.testReadiness)) return
+
+            this.testReadinessLoading = true
+            this.testReadinessError = false
+
+            try {
+                const response = await axios.get(loadStudentV3TestReadiness.url())
+                this.testReadiness = response.data?.data || null
+                this.testReadinessError = !this.testReadiness
+            } catch {
+                this.testReadiness = null
+                this.testReadinessError = true
+            } finally {
+                this.testReadinessLoading = false
             }
         },
         async loadStudyPlans() {
@@ -1785,11 +2084,18 @@ export default {
 
 .tests-v3-students__classes {
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.tests-v3-students__selection-group {
+    display: flex;
     flex-wrap: wrap;
     gap: 10px;
     align-items: center;
-    padding: 12px 20px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
 }
 
 .tests-v3-students__classes-label {
@@ -1800,13 +2106,15 @@ export default {
     text-transform: uppercase;
 }
 
-.tests-v3-students__class-chips {
+.tests-v3-students__class-chips,
+.tests-v3-students__semester-buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.tests-v3-students__class-chip {
+.tests-v3-students__class-chip,
+.tests-v3-students__semester-button {
     font-weight: 800;
 }
 
