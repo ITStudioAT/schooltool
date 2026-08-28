@@ -80,7 +80,6 @@ class StudentTimetableV3TestReadinessService
             ));
         }
 
-        $this->appendStudentDataIssues($issues, $students, $studentOverviewService);
         $this->appendSubjectPlanIssues($issues, $students, $user, $studentOverviewService);
         $this->appendRecognitionIssues($issues, $user, $students);
 
@@ -139,59 +138,6 @@ class StudentTimetableV3TestReadinessService
                 ->map(fn (array $issue): string => $issue['title'].': '.$issue['message'])
                 ->all(),
         ]);
-    }
-
-    /**
-     * @param  Collection<int, array{code: string, title: string, message: string, next_step: string}>  $issues
-     * @param  Collection<int, Import116>  $students
-     */
-    private function appendStudentDataIssues(
-        Collection $issues,
-        Collection $students,
-        StudentTimetablesStudentOverviewService $studentOverviewService,
-    ): void {
-        $invalidStudents = $students
-            ->map(function (Import116 $student) use ($studentOverviewService): ?array {
-                $studyProgram = $studentOverviewService->instructionTypeForStudent($student) === 'Kompaktunterricht'
-                    ? StudentTimetableStudyProgram::Kompaktstudium
-                    : StudentTimetableStudyProgram::Normalstudium;
-                $studentIssues = $studentOverviewService->dataQualityIssuesForStudent($student, $studyProgram);
-
-                if (trim((string) $student->student_code) === '') {
-                    $studentIssues[] = 'Die Schülerkennzahl fehlt.';
-                }
-
-                if (trim((string) $student->class) === '') {
-                    $studentIssues[] = 'Die Klasse fehlt.';
-                }
-
-                if ($studentIssues === []) {
-                    return null;
-                }
-
-                return [
-                    'label' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
-                    'issues' => $studentIssues,
-                ];
-            })
-            ->filter()
-            ->values();
-
-        if ($invalidStudents->isEmpty()) {
-            return;
-        }
-
-        $examples = $invalidStudents
-            ->take(3)
-            ->map(fn (array $student): string => $student['label'].': '.collect($student['issues'])->join(' '))
-            ->join(', ');
-
-        $issues->push($this->issue(
-            'invalid_student_data',
-            'Fehlerhafte Studierendendaten',
-            $invalidStudents->count().' Studierendendatensätze sind unvollständig oder passen nicht zur Studienform. Beispiele: '.$examples.'.',
-            'Korrigieren Sie die Quelldaten und importieren Sie Import 116 erneut, bevor Sie testen.',
-        ));
     }
 
     /**

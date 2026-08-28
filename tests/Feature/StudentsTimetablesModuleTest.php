@@ -8129,7 +8129,7 @@ it('blocks Test V3 and reports every missing imported dataset', function () {
         ->assertJsonValidationErrors('tests_v3');
 });
 
-it('marks Test V3 ready only after all required imported datasets are complete', function () {
+it('marks Test V3 ready after required imports despite individual student data issues', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
@@ -8155,10 +8155,42 @@ it('marks Test V3 ready only after all required imported datasets are complete',
         ],
     ]);
 
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '2U',
+        'school_level' => '10_1',
+        'attendance_year' => '6',
+        'student_code' => '200',
+        'exists_date' => now(),
+        'study_selection' => [
+            'semester' => null,
+            'religion' => 'ETH',
+            'language' => null,
+            'branch' => null,
+            'arts_subject' => null,
+        ],
+        'course_results' => [
+            'completed' => [],
+            'negative' => [],
+        ],
+    ]);
+
     StudentTimetableSubjectRow::query()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
         'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => 1,
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch 1',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
         'semester' => 1,
         'json_code' => 'D1',
         'json_subject' => 'D',

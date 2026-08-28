@@ -77,6 +77,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController.php,resources/js/pages/admin/studentsTimetables/subjectsOverview/**} | .ai/rules/subjects-overview.md |
 | {app/Services/StudentsTimetables/**,app/Jobs/Teaching/Import116Job.php,resources/js/pages/admin/studentsTimetables/**} | .ai/rules/teaching-js-pages-admin-students-timetables.md |
 | {resources/js/pages/admin/teaching/admin/import116/Import116.vue,tests/ui/unit/components/admin/teaching/Import116Page.test.ts} | .ai/rules/teaching.md |
+| {app/Services/StudentsTimetables/**,app/Http/Controllers/Admin/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/testsV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/tests-v3-feature.md |
 | resources/js/pages/admin/studentsTimetables/testsV3/** | .ai/rules/tests-v3.md |
 | {app/Http/Requests/Admin/UpdateStudentTimetableV3StateRequest.php,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/timetable-v3-feature.md |
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/js/pages/homepage/studentsTimetables/overviewV2/**} | .ai/rules/timetable-v3-js-pages-homepage-students-timetables-overview-v2.md |
