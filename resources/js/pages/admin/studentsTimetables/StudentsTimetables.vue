@@ -216,14 +216,14 @@ export default {
             return [
                 {
                     key: 'timetable-v3',
-                    label: 'Stundenplan v3',
+                    label: 'Stundenplan',
                     meta: 'Entwicklung',
                     icon: 'mdi-flask-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
                 {
                     key: 'tests-v3',
-                    label: 'Tests v3',
+                    label: 'Tests',
                     meta: 'Stundenplan v3',
                     icon: 'mdi-test-tube',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin'],
@@ -305,12 +305,12 @@ export default {
                     note: 'Stundenplan-Importe.',
                 },
                 'timetable-v3': {
-                    label: 'Stundenplan v3',
+                    label: 'Stundenplan',
                     icon: 'mdi-flask-outline',
                     note: 'Unabhängiger Entwicklungsbereich.',
                 },
                 'tests-v3': {
-                    label: 'Tests v3',
+                    label: 'Tests',
                     icon: 'mdi-test-tube',
                     note: 'Tests für Stundenplan Version 3.',
                 },

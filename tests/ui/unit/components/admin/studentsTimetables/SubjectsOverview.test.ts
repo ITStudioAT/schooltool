@@ -841,8 +841,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('canAccessNavigationItem(item)')
         expect(componentSource).not.toContain("meta: 'Center'")
         expect(componentSource).not.toContain("label: 'Stundenplan v2'")
-        expect(componentSource).toContain("label: 'Stundenplan v3'")
-        expect(componentSource).toContain("label: 'Tests v3'")
+        expect(componentSource).not.toContain("label: 'Stundenplan v3'")
+        expect(componentSource).not.toContain("label: 'Tests v3'")
+        expect(componentSource).toContain("label: 'Stundenplan'")
+        expect(componentSource).toContain("label: 'Tests'")
         expect(testsV3Source).toContain('Tests für Stundenplan Version 3')
         expect(componentSource).not.toContain("meta: 'Stabil'")
         expect(componentSource).toContain("meta: 'Entwicklung'")
@@ -1160,7 +1162,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('STUDENT_V3_TEST_BATCH_SIZE = 25')
         expect(componentSource).toContain(':model-value="studentV3TestProgressPercentage"')
         expect(componentSource).toContain('{{ runningStudentV3TestCount }} in Bearbeitung')
-        expect(componentSource).toContain("{ key: 'finished', label: 'Abgeschlossene', color: 'success' }")
+        expect(componentSource).toContain("{ key: 'finished', color: 'success' }")
         expect(componentSource).toContain(
             "v-if=\"['finished', 'negative', 'previous', 'current', 'additional'].includes(group.key)\"",
         )
@@ -1192,10 +1194,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('v-for="module in group.comparison.mismatches"')
         expect(componentSource.indexOf('class="tests-v3-selection__module-comparison-divider"'))
             .toBeLessThan(componentSource.indexOf('class="tests-v3-selection__module-comparison-result"'))
-        expect(componentSource).toContain("{ key: 'negative', label: 'Negative', color: 'error' }")
-        expect(componentSource).toContain("{ key: 'previous', label: 'Frühere', color: 'warning' }")
-        expect(componentSource).toContain("{ key: 'current', label: 'Aktuelle', color: 'primary' }")
-        expect(componentSource).toContain("{ key: 'additional', label: 'Zusätzliche', color: 'info' }")
+        expect(componentSource).toContain("{ key: 'negative', color: 'error' }")
+        expect(componentSource).toContain("{ key: 'previous', color: 'warning' }")
+        expect(componentSource).toContain("{ key: 'current', color: 'primary' }")
+        expect(componentSource).toContain("{ key: 'additional', color: 'info' }")
+        expect(componentSource).toContain("label: String(group?.label || groupDefinition.key).trim()")
         expect(componentSource).toContain('Alle auswählen')
         expect(componentSource).toContain('Keine auswählen')
         expect(componentSource).toContain('v-for="studentClass in studentClasses"')
@@ -1434,23 +1437,24 @@ describe('Students timetable subjects overview', () => {
         const firstStudentGroups = [
             {
                 key: 'finished',
+                label: 'Abgeschlossene',
                 count: 2,
                 modules: [
                     { code: 'D1', name: 'Deutsch 1' },
                     { code: 'M1', name: 'Mathematik 1' },
                 ],
             },
-            { key: 'negative', count: 1, modules: [{ code: 'E1', name: 'Englisch 1' }] },
-            { key: 'previous', count: 1, modules: [{ code: 'BU1', name: 'Biologie 1' }] },
-            { key: 'current', count: 1, modules: [{ code: 'D2', name: 'Deutsch 2' }] },
-            { key: 'additional', count: 1, modules: [{ code: 'PH1', name: 'Physik 1' }] },
+            { key: 'negative', label: 'Negative', count: 1, modules: [{ code: 'E1', name: 'Englisch 1' }] },
+            { key: 'previous', label: 'Fehlende', count: 1, modules: [{ code: 'BU1', name: 'Biologie 1' }] },
+            { key: 'current', label: 'Aktuelle', count: 1, modules: [{ code: 'D2', name: 'Deutsch 2' }] },
+            { key: 'additional', label: 'Vorziehen', count: 1, modules: [{ code: 'PH1', name: 'Physik 1' }] },
         ]
         const secondStudentGroups = [
-            { key: 'finished', count: 0, modules: [] },
-            { key: 'negative', count: 0, modules: [] },
-            { key: 'previous', count: 0, modules: [] },
-            { key: 'current', count: 1, modules: [{ code: 'D1', name: 'Deutsch 1' }] },
-            { key: 'additional', count: 0, modules: [] },
+            { key: 'finished', label: 'Abgeschlossene', count: 0, modules: [] },
+            { key: 'negative', label: 'Negative', count: 0, modules: [] },
+            { key: 'previous', label: 'Fehlende', count: 0, modules: [] },
+            { key: 'current', label: 'Aktuelle', count: 1, modules: [{ code: 'D1', name: 'Deutsch 1' }] },
+            { key: 'additional', label: 'Vorziehen', count: 0, modules: [] },
         ]
         let resolveBatchRequest: (value: unknown) => void = () => {}
         const batchRequest = new Promise((resolve) => {
@@ -1616,11 +1620,11 @@ describe('Students timetable subjects overview', () => {
         const computed = (TestsV3 as any).computed
         const methods = (TestsV3 as any).methods
         const emptyGroups = [
-            { key: 'finished', count: 0, modules: [] },
-            { key: 'negative', count: 0, modules: [] },
-            { key: 'previous', count: 0, modules: [] },
-            { key: 'current', count: 0, modules: [] },
-            { key: 'additional', count: 0, modules: [] },
+            { key: 'finished', label: 'Abgeschlossene', count: 0, modules: [] },
+            { key: 'negative', label: 'Negative', count: 0, modules: [] },
+            { key: 'previous', label: 'Fehlende', count: 0, modules: [] },
+            { key: 'current', label: 'Aktuelle', count: 0, modules: [] },
+            { key: 'additional', label: 'Vorziehen', count: 0, modules: [] },
         ]
         const selectedStudents = [
             {

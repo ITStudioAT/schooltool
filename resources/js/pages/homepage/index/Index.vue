@@ -19,15 +19,13 @@
 
                 <div class="cloud-hero-copy">
                     <h2 class="cloud-hero-title">
-                        <div>Mehr Zeit für das Wesentliche.</div>
-                        <div class="mt-4">
-                            Schulalltag?
-                            <span class="text-white">Organisiert!</span>
+                        <div>
+                            Mehr Zeit für das
+                            <span class="text-white">Wesentliche.</span>
                         </div>
                     </h2>
                     <p class="cloud-hero-description mt-8">
-                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher. Unsere modulare Plattform bringt Ordnung in den Schulalltag, und SchoolTool ist der beste
-                        Ort, um Schule digital zu organisieren.
+                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher.
                     </p>
                 </div>
 
@@ -101,13 +99,13 @@
 
                 <div class="cloud-hero-copy">
                     <h2 class="cloud-hero-title">
-                        <div>Schulalltag?
-                            <span class="text-white">Organisiert!</span>
+                        <div>
+                            Mehr Zeit für das
+                            <span class="text-white">Wesentliche.</span>
                         </div>
                     </h2>
                     <p class="cloud-hero-description mt-8">
-                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher. Unsere modulare Plattform bringt Ordnung in den Schulalltag, und SchoolTool ist der beste
-                        Ort, um Schule digital zu organisieren.
+                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher.
                     </p>
                 </div>
 

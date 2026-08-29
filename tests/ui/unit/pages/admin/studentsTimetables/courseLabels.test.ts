@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     canonicalTimetableCourseLabel,
     canonicalTimetableModuleName,
+    sortTimetableModuleCourses,
 } from '@/pages/admin/studentsTimetables/timetableV3/courseLabels'
 
 describe('canonicalTimetableCourseLabel', () => {
@@ -47,5 +48,24 @@ describe('canonicalTimetableCourseLabel', () => {
         expect(canonicalTimetableModuleName('Literarisches Praktikum', 'LPT2')).toBe(
             'Lern- und Präsentationstechniken 2',
         )
+    })
+
+    it('sorts module courses alphabetically and naturally without mutating the source', () => {
+        const courses = [
+            { key: 'course-b', title: 'E2-B' },
+            { key: 'course-a10', title: 'E2-A10' },
+            { key: 'course-a2', title: 'e2-a2' },
+        ]
+
+        expect(sortTimetableModuleCourses(courses, 'E2').map(course => course.key)).toEqual([
+            'course-a2',
+            'course-a10',
+            'course-b',
+        ])
+        expect(courses.map(course => course.key)).toEqual([
+            'course-b',
+            'course-a10',
+            'course-a2',
+        ])
     })
 })

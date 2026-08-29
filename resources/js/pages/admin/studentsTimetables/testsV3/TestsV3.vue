@@ -819,11 +819,11 @@ const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
 const TESTS_V3_STUDENT_SELECTION_STORAGE_KEY_PREFIX = 'schooltool:students-timetables:tests-v3:selected-students'
 const STUDENT_V3_TEST_BATCH_SIZE = 25
 const STUDENT_V3_TEST_GROUPS = [
-    { key: 'finished', label: 'Abgeschlossene', color: 'success' },
-    { key: 'negative', label: 'Negative', color: 'error' },
-    { key: 'previous', label: 'Frühere', color: 'warning' },
-    { key: 'current', label: 'Aktuelle', color: 'primary' },
-    { key: 'additional', label: 'Zusätzliche', color: 'info' },
+    { key: 'finished', color: 'success' },
+    { key: 'negative', color: 'error' },
+    { key: 'previous', color: 'warning' },
+    { key: 'current', color: 'primary' },
+    { key: 'additional', color: 'info' },
 ]
 const STUDENT_V3_TEST_COMPARISON_GROUP_KEYS = ['finished', 'negative', 'previous', 'current', 'additional']
 const STUDENT_V3_TEST_STATUS_PRESENTATIONS = {
@@ -1069,9 +1069,10 @@ export default {
                     const result = this.studentV3TestResult(student)
                     const failedGroupLabels = Array.isArray(result?.failedGroupLabels)
                         ? result.failedGroupLabels
-                        : STUDENT_V3_TEST_GROUPS
+                        : (Array.isArray(result?.groups) ? result.groups : [])
                             .filter(group => this.studentModuleGroupMatches(student, group.key) === false)
-                            .map(group => group.label)
+                            .map(group => String(group?.label || group?.key || '').trim())
+                            .filter(Boolean)
                     const message = result?.status === 'error'
                         ? result.message || 'V3-Modulberechnung fehlgeschlagen.'
                         : `Abweichungen: ${failedGroupLabels.join(', ') || 'unbekannt'}`
@@ -1547,6 +1548,7 @@ export default {
 
                 return {
                     ...groupDefinition,
+                    label: String(group?.label || groupDefinition.key).trim(),
                     count: modules.length,
                     modules,
                 }

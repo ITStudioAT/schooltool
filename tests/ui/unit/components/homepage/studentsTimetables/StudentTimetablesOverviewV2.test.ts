@@ -896,6 +896,7 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
         expect(source).toContain('@click="toggleDisplayedModuleCourse(course)"')
         expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
+        expect(source).toContain('sortTimetableModuleCourses(')
         expect(source).toContain('Bestätigen')
         expect(source).toContain('class="overview-v2-creation-mode-kickers"')
         expect(source).toMatch(

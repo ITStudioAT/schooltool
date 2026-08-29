@@ -23,6 +23,10 @@ const CANONICAL_MODULE_DISPLAY_NAMES = Object.freeze({
 })
 
 const LEADING_COURSE_CODE_PATTERN = /^([A-Za-zÄÖÜäöüß]+)(\d*)/u
+const TIMETABLE_MODULE_COURSE_COLLATOR = new Intl.Collator('de-AT', {
+    numeric: true,
+    sensitivity: 'base',
+})
 
 function canonicalCourseCodeParts(value) {
     const label = String(value || '').trim()
@@ -73,4 +77,32 @@ export function canonicalTimetableModuleName(value, moduleCode = '') {
     }
 
     return String(value || '').trim()
+}
+
+export function sortTimetableModuleCourses(courses, moduleCode = '') {
+    const courseList = Array.isArray(courses) ? courses : []
+
+    return [...courseList].sort((firstCourse, secondCourse) => {
+        const firstSortValues = [
+            canonicalTimetableCourseLabel(firstCourse?.title, moduleCode),
+            canonicalTimetableCourseLabel(firstCourse?.course_title, moduleCode),
+            String(firstCourse?.key || '').trim(),
+        ]
+        const secondSortValues = [
+            canonicalTimetableCourseLabel(secondCourse?.title, moduleCode),
+            canonicalTimetableCourseLabel(secondCourse?.course_title, moduleCode),
+            String(secondCourse?.key || '').trim(),
+        ]
+
+        for (let index = 0; index < firstSortValues.length; index += 1) {
+            const comparison = TIMETABLE_MODULE_COURSE_COLLATOR.compare(
+                firstSortValues[index],
+                secondSortValues[index],
+            )
+
+            if (comparison !== 0) return comparison
+        }
+
+        return 0
+    })
 }

@@ -14,3 +14,6 @@ During Cloudways deployment, exclude the terminating Horizon master IDs, recycle
 
 ## Retry atomic frontend release moves on Windows
 Keep frontend activation and rollback as same-parent atomic directory renames. On Windows, retry transient rename failures with a bounded delay because freshly extracted assets may briefly be held by Defender/indexers. Never replace this with a recursive copy fallback, and always check/report rollback failure while preserving the backup path.
+
+## Launch Windows command wrappers through cmd
+When proc_open receives array commands on Windows, resolve PATH/PATHEXT wrappers such as composer.bat and npm.cmd and invoke them through the Windows command shell. Optional runtime-version probes must fail silently when a tool is unavailable, while required deployment commands must continue surfacing failures.

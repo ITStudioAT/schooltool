@@ -37,6 +37,29 @@ describe('Admin app startup', () => {
         expect(source).not.toContain('<LoadingAnimation')
     })
 
+    it('provides the public Impressum and cookie preferences in the admin footer', () => {
+        const source = readFileSync('resources/js/pages/admin/App.vue', 'utf8')
+        const adminViewSource = readFileSync('resources/views/admin.blade.php', 'utf8')
+        const packagedAdminViewSource = readFileSync('resources/views/vendor/spa/admin.blade.php', 'utf8')
+
+        expect(source).toContain('href="/homepage/impressum"')
+        expect(source).toContain('@click="openCookiePrefs"')
+
+        for (const viewSource of [adminViewSource, packagedAdminViewSource]) {
+            expect(viewSource).toContain('CookieConsent::styles()')
+            expect(viewSource).toContain('CookieConsent::scripts(options: [')
+        }
+    })
+
+    it('opens the cookie preferences modal from the admin footer', () => {
+        const showCookiePreferences = vi.fn()
+        window.showHideToggleCookiePreferencesModal = showCookiePreferences
+
+        ;(AdminApp as any).methods.openCookiePrefs()
+
+        expect(showCookiePreferences).toHaveBeenCalledTimes(1)
+    })
+
     it('loads admin config without an eager csrf-cookie request', async () => {
         const adminStoreMock = {
             is_loading: 0,

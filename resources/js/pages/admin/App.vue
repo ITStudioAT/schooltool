@@ -42,7 +42,10 @@
 
         <v-footer app>
             <v-row justify="center" no-gutters>
-                <v-col cols="12" class="text-center">Fußzeile</v-col>
+                <v-col cols="12" class="text-center">
+                    <v-btn text variant="text" href="/homepage/impressum">Impressum</v-btn>
+                    <v-btn text variant="text" @click="openCookiePrefs">Cookie-Einstellungen</v-btn>
+                </v-col>
             </v-row>
         </v-footer>
     </v-app>
@@ -169,6 +172,23 @@ export default {
             if (!(await this.adminStore.stopImpersonation())) return
             await this.$nextTick()
             this.$router.replace('/admin')
+        },
+        openCookiePrefs() {
+            if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
+                window.showHideToggleCookiePreferencesModal()
+
+                return
+            }
+
+            setTimeout(() => {
+                if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
+                    window.showHideToggleCookiePreferencesModal()
+
+                    return
+                }
+
+                console.warn('Cookie consent function not loaded yet.')
+            }, 300)
         },
         async switchHopperAccount(item) {
             const targetUserId = Number(item?.target_user_id)

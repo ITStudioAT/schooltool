@@ -1727,6 +1727,7 @@ import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import {
     canonicalTimetableCourseLabel,
     canonicalTimetableModuleName,
+    sortTimetableModuleCourses,
 } from '@/pages/admin/studentsTimetables/timetableV3/courseLabels'
 import StudentTimetablesNavigationDrawer from '../components/StudentTimetablesNavigationDrawer.vue'
 import '../../../../../css/student.css'
@@ -3183,10 +3184,14 @@ export default {
             const courses = Array.isArray(this.moduleCourseDialogModule?.courses)
                 ? this.moduleCourseDialogModule.courses
                 : []
+            const sortedCourses = sortTimetableModuleCourses(
+                courses,
+                this.moduleCourseDialogModule?.code,
+            )
 
             return this.moduleCoursesDialogManual
-                ? courses.filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
-                : courses
+                ? sortedCourses.filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
+                : sortedCourses
         },
 
         selectedModuleCourseCount() {

@@ -4547,6 +4547,7 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="openModuleCoursesDialog(module)"')
         expect(source).toContain('v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable')
         expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
+        expect(source).toContain('sortTimetableModuleCourses(')
         expect(source).toContain(':is="moduleCoursesDialogInteractive ? \'button\' : \'article\'"')
         expect(source).toContain(':role="moduleCoursesDialogInteractive ? \'checkbox\' : null"')
         expect(source).toContain(':aria-checked="moduleCoursesDialogInteractive ? displayedModuleCourseSelected(course) : null"')

@@ -2,6 +2,7 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Enums\StudentTimetableModuleSelectionGroup;
 use App\Enums\StudentTimetableStudyProgram;
 use App\Models\Import116;
 use App\Models\SchoolTool;
@@ -2493,8 +2494,8 @@ class StudentTimetablesStudentOverviewService
 
         return [
             $this->moduleSelectionGroup(
-                'finished',
-                'Abgeschlossene',
+                StudentTimetableModuleSelectionGroup::Finished->value,
+                StudentTimetableModuleSelectionGroup::Finished->label(),
                 $finishedModules,
                 false,
                 $regularSubjectCourses,
@@ -2502,8 +2503,8 @@ class StudentTimetablesStudentOverviewService
                 includeCourses: $includeModuleCourses,
             ),
             $this->moduleSelectionGroup(
-                'negative',
-                'Negative',
+                StudentTimetableModuleSelectionGroup::Negative->value,
+                StudentTimetableModuleSelectionGroup::Negative->label(),
                 $negativeModules,
                 false,
                 $regularSubjectCourses,
@@ -2512,8 +2513,8 @@ class StudentTimetablesStudentOverviewService
                 includeCourses: $includeModuleCourses,
             ),
             $this->moduleSelectionGroup(
-                'previous',
-                'Frühere',
+                StudentTimetableModuleSelectionGroup::Previous->value,
+                StudentTimetableModuleSelectionGroup::Previous->label(),
                 $previousModules,
                 false,
                 $regularSubjectCourses,
@@ -2521,8 +2522,8 @@ class StudentTimetablesStudentOverviewService
                 includeCourses: $includeModuleCourses,
             ),
             $this->moduleSelectionGroup(
-                'current',
-                'Aktuelle',
+                StudentTimetableModuleSelectionGroup::Current->value,
+                StudentTimetableModuleSelectionGroup::Current->label(),
                 $currentModules,
                 true,
                 $regularSubjectCourses,
@@ -2530,8 +2531,8 @@ class StudentTimetablesStudentOverviewService
                 includeCourses: $includeModuleCourses,
             ),
             $this->moduleSelectionGroup(
-                'additional',
-                'Zusätzliche',
+                StudentTimetableModuleSelectionGroup::Additional->value,
+                StudentTimetableModuleSelectionGroup::Additional->label(),
                 $additionalModules,
                 false,
                 $regularSubjectCourses,

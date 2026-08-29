@@ -2,6 +2,7 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Enums\StudentTimetableModuleSelectionGroup;
 use App\Enums\StudentTimetableStudyProgram;
 use App\Models\Import116;
 use App\Models\User;
@@ -355,17 +356,10 @@ class StudentTimetableV3StudentInformationService
      */
     private function moduleSelectionGroups(array $groups): array
     {
-        $descriptions = [
-            'finished' => 'Bereits befreit oder bestanden',
-            'negative' => 'Noch einmal zu absolvieren',
-            'previous' => 'Aus früheren Semestern',
-            'current' => 'Für das aktuelle Semester',
-            'additional' => 'Frei zusätzlich wählbar',
-        ];
-
         return collect($groups)
-            ->map(function (array $group) use ($descriptions): array {
+            ->map(function (array $group): array {
                 $groupKey = (string) ($group['key'] ?? '');
+                $selectionGroup = StudentTimetableModuleSelectionGroup::tryFrom($groupKey);
                 $modules = collect($group['modules'] ?? [])
                     ->map(function (array $module) use ($groupKey): array {
                         $grade = mb_strtoupper(trim((string) ($module['grade'] ?? '')), 'UTF-8');
@@ -400,8 +394,8 @@ class StudentTimetableV3StudentInformationService
 
                 return [
                     'key' => $groupKey,
-                    'label' => (string) ($group['label'] ?? ''),
-                    'description' => $descriptions[$groupKey] ?? '',
+                    'label' => $selectionGroup?->label() ?? '',
+                    'description' => $selectionGroup?->description() ?? '',
                     'count' => count($modules),
                     'modules' => $modules,
                 ];

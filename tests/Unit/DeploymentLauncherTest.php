@@ -218,6 +218,76 @@ it('keeps the frontend release script executable after loading its helpers', fun
         ->and($process->getErrorOutput())->toContain('Usage: php scripts/frontend-release.php');
 });
 
+it('runs Windows command wrappers without proc open warnings', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('This regression test covers Windows command wrappers.');
+    }
+
+    $filesystem = new Filesystem;
+    $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-runtime-probe-'.bin2hex(random_bytes(6));
+    $commandPath = $directory.DIRECTORY_SEPARATOR.'schooltool-runtime-probe.cmd';
+    $originalPath = getenv('PATH');
+    $reportedErrors = [];
+    $errorHandlerInstalled = false;
+
+    try {
+        $filesystem->ensureDirectoryExists($directory);
+        file_put_contents($commandPath, "@echo off\r\necho Runtime probe 1.2.3\r\n");
+        putenv('PATH='.$directory.PATH_SEPARATOR.($originalPath ?: ''));
+        set_error_handler(function (int $severity, string $message) use (&$reportedErrors): bool {
+            if ((error_reporting() & $severity) !== 0) {
+                $reportedErrors[] = $message;
+            }
+
+            return true;
+        });
+        $errorHandlerInstalled = true;
+
+        $output = releaseCommandOutput(['schooltool-runtime-probe', '--version']);
+
+        expect($output)->toBe('Runtime probe 1.2.3')
+            ->and($reportedErrors)->toBe([]);
+    } finally {
+        if ($errorHandlerInstalled) {
+            restore_error_handler();
+        }
+
+        if (is_string($originalPath)) {
+            putenv("PATH={$originalPath}");
+        }
+
+        if (! is_string($originalPath)) {
+            putenv('PATH');
+        }
+
+        $filesystem->deleteDirectory($directory);
+    }
+});
+
+it('keeps unavailable optional release runtime probes silent', function (): void {
+    $reportedErrors = [];
+
+    set_error_handler(function (int $severity, string $message) use (&$reportedErrors): bool {
+        if ((error_reporting() & $severity) !== 0) {
+            $reportedErrors[] = $message;
+        }
+
+        return true;
+    });
+
+    try {
+        $version = releaseRuntimeVersion(
+            ['schooltool-runtime-that-does-not-exist-'.bin2hex(random_bytes(6)), '--version'],
+            '/(\d+\.\d+\.\d+)/',
+        );
+
+        expect($version)->toBeNull()
+            ->and($reportedErrors)->toBe([]);
+    } finally {
+        restore_error_handler();
+    }
+});
+
 it('retries transient frontend release directory move failures', function (): void {
     $moveAttempts = 0;
     $retryPauses = 0;

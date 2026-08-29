@@ -2247,6 +2247,7 @@ import { mapWritableState } from 'pinia'
 import {
     canonicalTimetableCourseLabel,
     canonicalTimetableModuleName,
+    sortTimetableModuleCourses,
 } from './courseLabels'
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import {
@@ -3881,10 +3882,14 @@ export default {
             const courses = Array.isArray(this.moduleCourseDialogModule?.courses)
                 ? this.moduleCourseDialogModule.courses
                 : []
+            const sortedCourses = sortTimetableModuleCourses(
+                courses,
+                this.moduleCourseDialogModule?.code,
+            )
 
-            if (!this.moduleCoursesDialogReadOnly) return courses
+            if (!this.moduleCoursesDialogReadOnly) return sortedCourses
 
-            return courses.filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
+            return sortedCourses.filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
         },
         moduleCoursesDialogInteractive() {
             return !this.moduleCoursesDialogReadOnly || this.currentStep === TIMETABLE_ADOPTION_STEP

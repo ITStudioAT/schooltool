@@ -1,10 +1,18 @@
 # UPDATES
 
-## 3.46.4 !!!
+## 3.46.4
+
+### Berufsreifeprüfung
+- DERZEIT NICHT IMPLEMENTIERT!
+
+### Schülerstundenpläne
+- Neue Benennungen für einige Module
+- Unterrichtssortierung in Module vereinheitlicht
 
 ### System
-
 - Updates-Bereitstellung beschleunigt
+- Fußzeile geändert: Impressum, Cookies
+
 
 ## 3.46.3
 

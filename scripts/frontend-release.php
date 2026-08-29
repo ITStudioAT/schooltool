@@ -20,6 +20,37 @@ function releaseProjectPath(string $relativePath = ''): string
 }
 
 /** @param array<int, string> $command */
+function releaseWindowsShellCommand(array $command): string
+{
+    $executable = $command[0];
+
+    if (! str_contains($executable, '/') && ! str_contains($executable, '\\')) {
+        $pathDirectories = explode(PATH_SEPARATOR, getenv('PATH') ?: '');
+        $extensions = explode(';', getenv('PATHEXT') ?: '.COM;.EXE;.BAT;.CMD');
+
+        foreach ($pathDirectories as $pathDirectory) {
+            $pathDirectory = trim($pathDirectory, " \t\n\r\0\x0B\"");
+
+            foreach ($extensions as $extension) {
+                $candidate = $pathDirectory.DIRECTORY_SEPARATOR.$executable.strtolower($extension);
+
+                if (is_file($candidate)) {
+                    $executable = $candidate;
+                    break 2;
+                }
+            }
+        }
+    }
+
+    $command[0] = $executable;
+
+    return 'call '.implode(' ', array_map(
+        fn (string $argument): string => '"'.str_replace(['%', '"'], ['%%', '""'], $argument).'"',
+        $command,
+    ));
+}
+
+/** @param array<int, string> $command */
 function runReleaseCommand(array $command): int
 {
     $process = proc_open($command, [STDIN, STDOUT, STDERR], $pipes, releaseProjectPath());
@@ -34,8 +65,8 @@ function runReleaseCommand(array $command): int
 /** @param array<int, string> $command */
 function releaseCommandOutput(array $command): string
 {
-    $process = proc_open(
-        $command,
+    $process = @proc_open(
+        PHP_OS_FAMILY === 'Windows' ? releaseWindowsShellCommand($command) : $command,
         [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
@@ -46,7 +77,7 @@ function releaseCommandOutput(array $command): string
     );
 
     if (! is_resource($process)) {
-        throw new RuntimeException('Could not inspect the release commit.');
+        throw new RuntimeException('Could not inspect the release runtime version.');
     }
 
     fclose($pipes[0]);
@@ -57,7 +88,7 @@ function releaseCommandOutput(array $command): string
     $exitCode = proc_close($process);
 
     if ($exitCode !== 0 || ! is_string($output)) {
-        throw new RuntimeException('Could not inspect the release commit: '.trim((string) $error));
+        throw new RuntimeException('Could not inspect the release runtime version: '.trim((string) $error));
     }
 
     return trim($output);
