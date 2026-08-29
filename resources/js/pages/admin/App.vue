@@ -40,7 +40,7 @@
             <its-notification />
         </v-main>
 
-        <v-footer app>
+        <v-footer>
             <v-row justify="center" no-gutters>
                 <v-col cols="12" class="text-center">
                     <v-btn text variant="text" href="/homepage/impressum">Impressum</v-btn>

@@ -44,6 +44,8 @@ describe('Admin app startup', () => {
 
         expect(source).toContain('href="/homepage/impressum"')
         expect(source).toContain('@click="openCookiePrefs"')
+        expect(source).toContain('<v-footer>')
+        expect(source).not.toContain('<v-footer app>')
 
         for (const viewSource of [adminViewSource, packagedAdminViewSource]) {
             expect(viewSource).toContain('CookieConsent::styles()')

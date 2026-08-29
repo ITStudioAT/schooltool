@@ -12,6 +12,7 @@
 ### System
 - Updates-Bereitstellung beschleunigt
 - Fußzeile geändert: Impressum, Cookies
+- Fußzeile nicht mehr fixiert
 
 
 ## 3.46.3
