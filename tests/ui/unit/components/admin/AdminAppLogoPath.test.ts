@@ -7,8 +7,8 @@ describe('Admin app school logo path', () => {
         expect(resolveSelectedSchoolLogoSrc('')).toBeNull()
     })
 
-    it('maps plain logo filenames to storage images directory', () => {
-        expect(resolveSelectedSchoolLogoSrc('logo_1.png')).toBe('/storage/images/logo_1.png')
+    it('maps plain logo filenames to the persisted school logo directory', () => {
+        expect(resolveSelectedSchoolLogoSrc('logo_1.png')).toBe('/storage/images/logos/logo_1.png')
     })
 
     it('supports prefixed image paths', () => {

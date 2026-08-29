@@ -23,5 +23,5 @@ export function resolveSelectedSchoolLogoSrc(logo) {
         return `/storage/images/${normalizedLogo}`
     }
 
-    return `/storage/images/${normalizedLogo}`
+    return `/storage/images/logos/${normalizedLogo}`
 }
