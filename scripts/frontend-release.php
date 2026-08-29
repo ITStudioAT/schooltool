@@ -7,6 +7,8 @@ const FRONTEND_RELEASE_ARCHIVE_HASH = 'deployment/frontend-build.sha256';
 const FRONTEND_RELEASE_SOURCE = 'deployment/source-commit';
 const FRONTEND_RELEASE_MANIFEST = 'deployment/source-manifest.sha256';
 const FRONTEND_ENVIRONMENT_VERSIONS = 'environment-versions.json';
+const WINDOWS_FRONTEND_RELEASE_MOVE_MAX_ATTEMPTS = 3;
+const WINDOWS_FRONTEND_RELEASE_MOVE_RETRY_DELAY_SECONDS = 2;
 
 function releaseProjectPath(string $relativePath = ''): string
 {
@@ -86,6 +88,46 @@ function removeReleaseDirectory(string $directory): void
     }
 
     rmdir($directory);
+}
+
+/**
+ * @param  (Closure(string, string): bool)|null  $renameDirectory
+ * @param  (Closure(): void)|null  $pauseBeforeRetry
+ */
+function moveReleaseDirectory(
+    string $sourceDirectory,
+    string $destinationDirectory,
+    ?int $attemptLimit = null,
+    ?Closure $renameDirectory = null,
+    ?Closure $pauseBeforeRetry = null,
+): bool {
+    $attemptLimit = max(
+        1,
+        $attemptLimit ?? (PHP_OS_FAMILY === 'Windows' ? WINDOWS_FRONTEND_RELEASE_MOVE_MAX_ATTEMPTS : 1),
+    );
+    $renameDirectory ??= static fn (string $source, string $destination): bool => @rename($source, $destination);
+    $pauseBeforeRetry ??= static function (): void {
+        sleep(WINDOWS_FRONTEND_RELEASE_MOVE_RETRY_DELAY_SECONDS);
+    };
+
+    for ($attempt = 1; $attempt <= $attemptLimit; $attempt++) {
+        clearstatcache(true, $sourceDirectory);
+        clearstatcache(true, $destinationDirectory);
+
+        if (file_exists($destinationDirectory) || is_link($destinationDirectory)) {
+            return false;
+        }
+
+        if ($renameDirectory($sourceDirectory, $destinationDirectory)) {
+            return true;
+        }
+
+        if ($attempt < $attemptLimit) {
+            $pauseBeforeRetry();
+        }
+    }
+
+    return false;
 }
 
 function validateReleaseSource(string $sourceCommit): void
@@ -333,18 +375,26 @@ function installFrontendRelease(): int
     $buildDirectory = releaseProjectPath('public/build');
     $backupDirectory = releaseProjectPath('public/.schooltool-build-backup.'.bin2hex(random_bytes(6)));
 
-    if (is_dir($buildDirectory) && ! rename($buildDirectory, $backupDirectory)) {
+    if (is_dir($buildDirectory) && ! moveReleaseDirectory($buildDirectory, $backupDirectory)) {
         removeReleaseDirectory($temporaryDirectory);
 
         throw new RuntimeException('The existing frontend build could not be moved aside.');
     }
 
-    if (! rename($temporaryDirectory, $buildDirectory)) {
+    if (! moveReleaseDirectory($temporaryDirectory, $buildDirectory)) {
+        $rollbackSucceeded = true;
+
         if (is_dir($backupDirectory)) {
-            rename($backupDirectory, $buildDirectory);
+            $rollbackSucceeded = moveReleaseDirectory($backupDirectory, $buildDirectory);
         }
 
         removeReleaseDirectory($temporaryDirectory);
+
+        if (! $rollbackSucceeded) {
+            throw new RuntimeException(
+                "The verified frontend release could not be installed. The previous frontend build could not be restored automatically and remains at {$backupDirectory}.",
+            );
+        }
 
         throw new RuntimeException('The verified frontend release could not be installed.');
     }
@@ -365,17 +415,32 @@ function frontendReleaseUsage(): int
     return 2;
 }
 
-try {
-    $command = $argv[1] ?? null;
+/** @param array<int, string> $arguments */
+function runFrontendRelease(array $arguments): int
+{
+    $command = $arguments[0] ?? null;
 
-    exit(match ($command) {
-        'create' => isset($argv[2]) ? createFrontendRelease($argv[2]) : frontendReleaseUsage(),
-        'verify' => verifyFrontendRelease($argv[2] ?? null),
+    return match ($command) {
+        'create' => isset($arguments[1]) ? createFrontendRelease($arguments[1]) : frontendReleaseUsage(),
+        'verify' => verifyFrontendRelease($arguments[1] ?? null),
         'install' => installFrontendRelease(),
         default => frontendReleaseUsage(),
-    });
-} catch (Throwable $throwable) {
-    fwrite(STDERR, $throwable->getMessage()."\n");
+    };
+}
 
-    exit(1);
+function isFrontendReleaseEntrypoint(): bool
+{
+    $scriptFilename = $_SERVER['SCRIPT_FILENAME'] ?? null;
+
+    return is_string($scriptFilename) && realpath($scriptFilename) === __FILE__;
+}
+
+if (isFrontendReleaseEntrypoint()) {
+    try {
+        exit(runFrontendRelease(array_slice($argv, 1)));
+    } catch (Throwable $throwable) {
+        fwrite(STDERR, $throwable->getMessage()."\n");
+
+        exit(1);
+    }
 }

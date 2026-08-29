@@ -3,6 +3,8 @@
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+require_once dirname(__DIR__, 2).'/scripts/frontend-release.php';
+
 function deploymentProjectPath(string $relativePath = ''): string
 {
     $projectDirectory = dirname(__DIR__, 2);
@@ -207,6 +209,67 @@ it('selects the Cloudways update plan explicitly', function (): void {
         ->and($process->getOutput())
         ->toContain('Update target: cloudways')
         ->toContain('guarded Cloudways production deployment');
+});
+
+it('keeps the frontend release script executable after loading its helpers', function (): void {
+    $process = runDeploymentScript(['scripts/frontend-release.php']);
+
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getErrorOutput())->toContain('Usage: php scripts/frontend-release.php');
+});
+
+it('retries transient frontend release directory move failures', function (): void {
+    $moveAttempts = 0;
+    $retryPauses = 0;
+
+    $moved = moveReleaseDirectory(
+        'source',
+        'destination',
+        attemptLimit: 3,
+        renameDirectory: function (string $source, string $destination) use (&$moveAttempts): bool {
+            $moveAttempts++;
+
+            return $moveAttempts === 3;
+        },
+        pauseBeforeRetry: function () use (&$retryPauses): void {
+            $retryPauses++;
+        },
+    );
+
+    expect($moved)->toBeTrue()
+        ->and($moveAttempts)->toBe(3)
+        ->and($retryPauses)->toBe(2);
+});
+
+it('stops retrying frontend release directory moves at the attempt limit', function (): void {
+    $moveAttempts = 0;
+    $retryPauses = 0;
+
+    $moved = moveReleaseDirectory(
+        'source',
+        'destination',
+        attemptLimit: 3,
+        renameDirectory: function (string $source, string $destination) use (&$moveAttempts): bool {
+            $moveAttempts++;
+
+            return false;
+        },
+        pauseBeforeRetry: function () use (&$retryPauses): void {
+            $retryPauses++;
+        },
+    );
+
+    expect($moved)->toBeFalse()
+        ->and($moveAttempts)->toBe(3)
+        ->and($retryPauses)->toBe(2);
+});
+
+it('checks frontend release rollback and reports the preserved backup path', function (): void {
+    $frontendRelease = file_get_contents(deploymentProjectPath('scripts/frontend-release.php'));
+
+    expect($frontendRelease)
+        ->toContain('$rollbackSucceeded = moveReleaseDirectory($backupDirectory, $buildDirectory);')
+        ->toContain('The previous frontend build could not be restored automatically and remains at {$backupDirectory}.');
 });
 
 it('uses the cross-platform update launcher for composer deploy', function (): void {
