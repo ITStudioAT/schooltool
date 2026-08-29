@@ -1106,7 +1106,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('Ausgewählte Studierende')
         expect(componentSource).toContain('{{ selectedStudents.length }} Studierende für die Tests übernommen')
         expect(componentSource).toContain('v-for="student in selectedStudents"')
-        expect(componentSource).toContain('v-memo="[studentV3TestResult(student)]"')
+        expect(componentSource).toContain(
+            'v-memo="[studentV3TestResult(student), studentEmailCopyStatus(student)]"',
+        )
         expect(componentSource).toContain('class="tests-v3-students__table tests-v3-selection__table"')
         const selectedStudentsTableClassIndex = componentSource.indexOf(
             'class="tests-v3-students__table tests-v3-selection__table"',
@@ -1231,12 +1233,75 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('robotStudents as loadRobotStudents')
         expect(componentSource).toContain('studentReligionLabel(student)')
         expect(componentSource).toContain('studentSexPresentation(student)')
+        expect(componentSource.match(/class="tests-v3-students__identity"/g)).toHaveLength(2)
+        expect(componentSource.match(/v-if="studentEmail\(student\)"/g)).toHaveLength(2)
+        expect(componentSource.match(/@click\.stop="copyStudentEmail\(student\)"/g)).toHaveLength(2)
+        expect(componentSource).toContain('{{ studentEmail(student) }}')
+        expect(componentSource).toContain(':aria-label="studentEmailCopyTitle(student)"')
+        expect(componentSource).toContain("'mdi-content-copy'")
+        expect(componentSource).toContain("'mdi-check'")
+        expect(componentSource)
+            .toMatch(/\.tests-v3-students__email\s*\{[^}]*font-weight:\s*400;/s)
         expect(componentSource).toContain('mdi-gender-male')
         expect(componentSource).toContain('mdi-gender-female')
         expect(componentSource).toContain('Falsche Daten – Test übersprungen')
         expect(componentSource).toContain('studentDataQualityIssues(student)')
         expect(componentSource).toContain("status: 'invalid_data'")
         expect(componentSource).toContain('Nicht getestete Datensätze')
+    })
+
+    it('shows and copies the imported student email below the Tests V3 name', async () => {
+        vi.useFakeTimers()
+
+        const methods = (TestsV3 as any).methods
+        const writeText = vi.fn().mockResolvedValue(undefined)
+        const context: any = {
+            ...methods,
+            studentEmailCopyFeedback: {
+                studentKey: '',
+                status: '',
+            },
+            studentEmailCopyResetTimeout: null,
+        }
+        const student = {
+            student_code: '1001',
+            email: ' anna.alpha@example.test ',
+        }
+        const otherStudent = {
+            student_code: '1002',
+            email: 'other@example.test',
+        }
+
+        vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+        try {
+            expect(methods.studentEmail.call(context, student)).toBe('anna.alpha@example.test')
+            await expect(methods.copyStudentEmail.call(context, student)).resolves.toBe(true)
+            expect(writeText).toHaveBeenCalledWith('anna.alpha@example.test')
+            expect(methods.studentEmailCopyStatus.call(context, student)).toBe('copied')
+            expect(methods.studentEmailCopyStatus.call(context, otherStudent)).toBe('')
+            expect(methods.studentEmailCopyTitle.call(context, student))
+                .toBe('E-Mail kopiert: anna.alpha@example.test')
+
+            vi.advanceTimersByTime(1500)
+
+            expect(context.studentEmailCopyFeedback).toEqual({
+                studentKey: '',
+                status: '',
+            })
+            expect(context.studentEmailCopyResetTimeout).toBeNull()
+
+            writeText.mockRejectedValueOnce(new Error('clipboard unavailable'))
+
+            await expect(methods.copyStudentEmail.call(context, student)).resolves.toBe(false)
+            expect(methods.studentEmailCopyStatus.call(context, student)).toBe('failed')
+            expect(methods.studentEmailCopyTitle.call(context, student))
+                .toBe('Kopieren fehlgeschlagen. E-Mail erneut kopieren: anna.alpha@example.test')
+        } finally {
+            methods.clearStudentEmailCopyResetTimeout.call(context)
+            vi.useRealTimers()
+            vi.unstubAllGlobals()
+        }
     })
 
     it('loads and groups both personal-schoolyear study plans by semester', async () => {

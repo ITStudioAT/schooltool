@@ -145,27 +145,53 @@ it('ships a production process monitor for Horizon', function (): void {
 it('recovers Cloudways Horizon before and after deployment', function (): void {
     $deploymentScript = file_get_contents(base_path('scripts/deploy_cloudways.sh'));
 
+    preg_match(
+        '/DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT:-(\d+)/',
+        $deploymentScript,
+        $monitorRestartTimeoutMatches,
+    );
+    preg_match(
+        '/DEPLOY_HORIZON_DIRECT_START_TIMEOUT:-(\d+)/',
+        $deploymentScript,
+        $directStartTimeoutMatches,
+    );
+
     expect($deploymentScript)
         ->toContain('verify_queue_runtime')
         ->toContain('wait_for_queue_runtime')
         ->toContain('ensure_queue_runtime')
         ->toContain('start_horizon_directly')
         ->toContain('php artisan queue:health-check')
-        ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-60')
-        ->toContain('attempt <= horizon_restart_timeout')
+        ->toContain('DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT:-10')
+        ->toContain('DEPLOY_HORIZON_DIRECT_START_TIMEOUT:-60')
+        ->toContain('DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT must be a positive number of seconds.')
+        ->toContain('DEPLOY_HORIZON_DIRECT_START_TIMEOUT must be a positive number of seconds.')
+        ->toContain('attempt <= horizon_monitor_restart_timeout')
+        ->toContain('attempt <= horizon_direct_start_timeout')
         ->toContain('nohup php artisan horizon 8>&- 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &')
         ->toContain('Recycling unhealthy Horizon master process(es):')
         ->toContain('kill -TERM "$process_id"')
         ->toContain('health_check_arguments+=("--exclude-master-pid=${process_id}")')
-        ->toContain('if wait_for_queue_runtime "$excluded_process_ids"; then')
+        ->toContain('combined_excluded_process_ids+="$existing_process_ids"')
+        ->toContain('if wait_for_queue_runtime "$combined_excluded_process_ids"; then')
         ->toContain('start_horizon_directly "$excluded_process_ids"')
-        ->toContain('if wait_for_queue_runtime "$existing_process_ids"; then')
-        ->toMatch('/kill -TERM "\$process_id".*?if wait_for_queue_runtime "\$existing_process_ids"; then\s+return\s+fi\s+fi\s+\s*if php artisan queue:health-check.*?nohup php artisan horizon/s')
+        ->toMatch('/start_horizon_directly\(\).*?if php artisan queue:health-check.*?existing_process_ids=.*?kill -TERM "\$process_id"/s')
+        ->toMatch('/kill -TERM "\$process_id".*?if wait_for_queue_runtime "\$combined_excluded_process_ids"; then\s+return\s+fi\s+\s*if php artisan queue:health-check.*?nohup php artisan horizon/s')
+        ->toMatch('/ensure_queue_runtime\(\).*?if \[ -n "\$excluded_process_ids" \]; then\s+start_horizon_directly "\$excluded_process_ids"\s+\s*return\s+fi\s+\s*if wait_for_queue_runtime/s')
         ->toMatch('/verify_queue_runtime\(\).*?php artisan queue:health-check.*?ensure_queue_runtime/s')
         ->toMatch('/verify_queue_runtime\s+.*?php artisan down.*?prune-unlisted.*?prepare_frontend_artifact/s')
         ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize.*?previous_horizon_process_ids=.*?php artisan horizon:terminate\s+ensure_queue_runtime "\$previous_horizon_process_ids"\s+\s*php artisan up/s')
         ->not->toContain('wait_for_previous_horizon_to_exit')
-        ->not->toContain('Horizon did not restart within 20 seconds.');
+        ->not->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT')
+        ->not->toContain('horizon_restart_timeout');
+
+    expect($monitorRestartTimeoutMatches)
+        ->toHaveKey(1)
+        ->and($directStartTimeoutMatches)
+        ->toHaveKey(1)
+        ->and((int) $monitorRestartTimeoutMatches[1])
+        ->toBeGreaterThan(0)
+        ->toBeLessThan((int) $directStartTimeoutMatches[1]);
 });
 
 it('validates the locally published frontend release in parallel CI', function (): void {

@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.46.4 !!!
+
+### System
+
+- Updates-Bereitstellung beschleunigt
+
 ## 3.46.3
 
 ### Schülerstundenpläne

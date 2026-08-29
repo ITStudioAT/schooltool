@@ -127,3 +127,6 @@ Run Tests V3 sequentially in batches of 25. This supersedes the earlier fixed ba
 
 ## Toggle Tests V3 students by semester
 In Tests V3 > Studierende, show fixed buttons for semesters 1 through 8 above the class chips. Group only by each student's backend-provided semester. Clicking a semester selects all students in it unless every student in that semester is already selected, in which case it deselects them; disable semesters without students.
+
+## Show copyable student emails under Tests V3 names
+In Tests V3 student tables, show a non-empty imported student email on its own line directly below the student's name. Render the whole email line as an accessible one-click copy control with brief success feedback, and omit it when the import email is empty.

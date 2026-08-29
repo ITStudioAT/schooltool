@@ -270,7 +270,7 @@ it('exposes a terminal Cloudways pull deployment workflow', function (): void {
 
 it('keeps both Cloudways shell entrypoints syntactically valid', function (): void {
     foreach (['scripts/deploy_cloudways.sh', 'scripts/pdeploy_cloudways.sh'] as $script) {
-        $process = new Process(['bash', '-n', $script], deploymentProjectPath());
+        $process = new Process([deploymentBashExecutable(), '-n', $script], deploymentProjectPath());
         $process->run();
 
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());

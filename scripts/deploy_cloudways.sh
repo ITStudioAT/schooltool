@@ -16,7 +16,8 @@ fi
 maintenance_mode_enabled=false
 backend_update_started=false
 maintenance_marker="${project_directory}/storage/framework/cloudways-deploy-maintenance"
-horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-60}"
+horizon_monitor_restart_timeout="${DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT:-10}"
+horizon_direct_start_timeout="${DEPLOY_HORIZON_DIRECT_START_TIMEOUT:-60}"
 frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"
 frontend_release_archive_hash="${project_directory}/deployment/frontend-build.sha256"
 frontend_release_marker="${project_directory}/deployment/source-commit"
@@ -25,8 +26,13 @@ frontend_release_manifest="${project_directory}/deployment/source-manifest.sha25
 frontend_artifact_directory=""
 frontend_backup_directory=""
 
-if [[ ! "$horizon_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
-    echo "DEPLOY_HORIZON_RESTART_TIMEOUT must be a positive number of seconds." >&2
+if [[ ! "$horizon_monitor_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
+    echo "DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT must be a positive number of seconds." >&2
+    exit 1
+fi
+
+if [[ ! "$horizon_direct_start_timeout" =~ ^[1-9][0-9]*$ ]]; then
+    echo "DEPLOY_HORIZON_DIRECT_START_TIMEOUT must be a positive number of seconds." >&2
     exit 1
 fi
 
@@ -86,6 +92,7 @@ verify_queue_runtime() {
 
 start_horizon_directly() {
     local excluded_process_ids="${1:-}"
+    local combined_excluded_process_ids="$excluded_process_ids"
     local health_check_arguments=()
     local existing_process_ids
 
@@ -94,6 +101,10 @@ start_horizon_directly() {
             health_check_arguments+=("--exclude-master-pid=${process_id}")
         fi
     done <<< "$excluded_process_ids"
+
+    if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
+        return
+    fi
 
     existing_process_ids="$(horizon_master_process_ids)"
 
@@ -107,9 +118,15 @@ start_horizon_directly() {
             fi
         done <<< "$existing_process_ids"
 
-        if wait_for_queue_runtime "$existing_process_ids"; then
-            return
+        if [ -n "$combined_excluded_process_ids" ]; then
+            combined_excluded_process_ids+=$'\n'
         fi
+
+        combined_excluded_process_ids+="$existing_process_ids"
+    fi
+
+    if wait_for_queue_runtime "$combined_excluded_process_ids"; then
+        return
     fi
 
     if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
@@ -121,7 +138,7 @@ start_horizon_directly() {
     nohup php artisan horizon 8>&- 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &
     local horizon_process_id=$!
 
-    for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
+    for ((attempt = 1; attempt <= horizon_direct_start_timeout; attempt++)); do
         if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
             echo "Horizon started successfully with process ${horizon_process_id}."
 
@@ -155,9 +172,9 @@ wait_for_queue_runtime() {
         fi
     done <<< "$excluded_process_ids"
 
-    echo "Waiting up to ${horizon_restart_timeout} seconds for the process monitor to restart Horizon..."
+    echo "Waiting up to ${horizon_monitor_restart_timeout} seconds for the process monitor to restart Horizon..."
 
-    for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
+    for ((attempt = 1; attempt <= horizon_monitor_restart_timeout; attempt++)); do
         if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
             echo "Horizon restarted successfully."
 
@@ -168,13 +185,19 @@ wait_for_queue_runtime() {
     done
 
     php artisan queue:health-check "${health_check_arguments[@]}" || true
-    echo "Horizon did not restart within ${horizon_restart_timeout} seconds." >&2
+    echo "Horizon did not restart within ${horizon_monitor_restart_timeout} seconds." >&2
 
     return 1
 }
 
 ensure_queue_runtime() {
     local excluded_process_ids="${1:-}"
+
+    if [ -n "$excluded_process_ids" ]; then
+        start_horizon_directly "$excluded_process_ids"
+
+        return
+    fi
 
     if wait_for_queue_runtime "$excluded_process_ids"; then
         return

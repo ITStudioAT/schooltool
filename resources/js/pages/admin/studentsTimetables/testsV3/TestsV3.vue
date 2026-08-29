@@ -213,21 +213,44 @@
                         </td>
                         <td class="font-weight-bold">{{ studentClassLabel(student) }}</td>
                         <td>
-                            <span class="tests-v3-students__name">
-                                <span>{{ studentDisplayName(student) }}</span>
-                                <span
-                                    v-if="studentReligionLabel(student)"
-                                    class="tests-v3-students__religion">
-                                    {{ studentReligionLabel(student) }}
+                            <div class="tests-v3-students__identity">
+                                <span class="tests-v3-students__name">
+                                    <span>{{ studentDisplayName(student) }}</span>
+                                    <span
+                                        v-if="studentReligionLabel(student)"
+                                        class="tests-v3-students__religion">
+                                        {{ studentReligionLabel(student) }}
+                                    </span>
+                                    <v-icon
+                                        v-if="studentSexPresentation(student)"
+                                        :icon="studentSexPresentation(student).icon"
+                                        :color="studentSexPresentation(student).color"
+                                        :title="studentSexPresentation(student).label"
+                                        :aria-label="studentSexPresentation(student).label"
+                                        size="21" />
                                 </span>
-                                <v-icon
-                                    v-if="studentSexPresentation(student)"
-                                    :icon="studentSexPresentation(student).icon"
-                                    :color="studentSexPresentation(student).color"
-                                    :title="studentSexPresentation(student).label"
-                                    :aria-label="studentSexPresentation(student).label"
-                                    size="21" />
-                            </span>
+                                <button
+                                    v-if="studentEmail(student)"
+                                    type="button"
+                                    class="tests-v3-students__email"
+                                    :class="{
+                                        'tests-v3-students__email--copied': studentEmailCopyStatus(student) === 'copied',
+                                        'tests-v3-students__email--failed': studentEmailCopyStatus(student) === 'failed',
+                                    }"
+                                    :title="studentEmailCopyTitle(student)"
+                                    :aria-label="studentEmailCopyTitle(student)"
+                                    @click.stop="copyStudentEmail(student)">
+                                    <v-icon icon="mdi-email-outline" size="14" />
+                                    <span>{{ studentEmail(student) }}</span>
+                                    <v-icon
+                                        :icon="studentEmailCopyStatus(student) === 'copied'
+                                            ? 'mdi-check'
+                                            : studentEmailCopyStatus(student) === 'failed'
+                                                ? 'mdi-alert-circle-outline'
+                                                : 'mdi-content-copy'"
+                                        size="13" />
+                                </button>
+                            </div>
                         </td>
                         <td>
                             <div
@@ -451,7 +474,7 @@
                     <template
                         v-for="student in selectedStudents"
                         :key="studentSelectionKey(student)"
-                        v-memo="[studentV3TestResult(student)]">
+                        v-memo="[studentV3TestResult(student), studentEmailCopyStatus(student)]">
                         <tr :class="[
                             'tests-v3-students__row--selected',
                             { 'tests-v3-students__row--invalid-data': studentDataQualityIssues(student).length },
@@ -464,21 +487,44 @@
                         </td>
                         <td class="font-weight-bold">{{ studentClassLabel(student) }}</td>
                         <td>
-                            <span class="tests-v3-students__name">
-                                <span>{{ studentDisplayName(student) }}</span>
-                                <span
-                                    v-if="studentReligionLabel(student)"
-                                    class="tests-v3-students__religion">
-                                    {{ studentReligionLabel(student) }}
+                            <div class="tests-v3-students__identity">
+                                <span class="tests-v3-students__name">
+                                    <span>{{ studentDisplayName(student) }}</span>
+                                    <span
+                                        v-if="studentReligionLabel(student)"
+                                        class="tests-v3-students__religion">
+                                        {{ studentReligionLabel(student) }}
+                                    </span>
+                                    <v-icon
+                                        v-if="studentSexPresentation(student)"
+                                        :icon="studentSexPresentation(student).icon"
+                                        :color="studentSexPresentation(student).color"
+                                        :title="studentSexPresentation(student).label"
+                                        :aria-label="studentSexPresentation(student).label"
+                                        size="21" />
                                 </span>
-                                <v-icon
-                                    v-if="studentSexPresentation(student)"
-                                    :icon="studentSexPresentation(student).icon"
-                                    :color="studentSexPresentation(student).color"
-                                    :title="studentSexPresentation(student).label"
-                                    :aria-label="studentSexPresentation(student).label"
-                                    size="21" />
-                            </span>
+                                <button
+                                    v-if="studentEmail(student)"
+                                    type="button"
+                                    class="tests-v3-students__email"
+                                    :class="{
+                                        'tests-v3-students__email--copied': studentEmailCopyStatus(student) === 'copied',
+                                        'tests-v3-students__email--failed': studentEmailCopyStatus(student) === 'failed',
+                                    }"
+                                    :title="studentEmailCopyTitle(student)"
+                                    :aria-label="studentEmailCopyTitle(student)"
+                                    @click.stop="copyStudentEmail(student)">
+                                    <v-icon icon="mdi-email-outline" size="14" />
+                                    <span>{{ studentEmail(student) }}</span>
+                                    <v-icon
+                                        :icon="studentEmailCopyStatus(student) === 'copied'
+                                            ? 'mdi-check'
+                                            : studentEmailCopyStatus(student) === 'failed'
+                                                ? 'mdi-alert-circle-outline'
+                                                : 'mdi-content-copy'"
+                                        size="13" />
+                                </button>
+                            </div>
                         </td>
                         <td>
                             <div
@@ -864,6 +910,11 @@ export default {
             studentV3TestsRunning: false,
             studentV3TestSummaryDialog: false,
             studentV3TestSummaryPdfExporting: false,
+            studentEmailCopyFeedback: {
+                studentKey: '',
+                status: '',
+            },
+            studentEmailCopyResetTimeout: null,
         }
     },
     computed: {
@@ -1096,6 +1147,9 @@ export default {
             void this.loadStudyPlans()
         }
     },
+    beforeUnmount() {
+        this.clearStudentEmailCopyResetTimeout()
+    },
     watch: {
         selectedStudentKeys() {
             this.persistStudentSelection()
@@ -1180,6 +1234,63 @@ export default {
             const firstName = String(student?.first_name || student?.firstName || '').trim()
 
             return [lastName, firstName].filter(Boolean).join(' ') || 'Unbekannt'
+        },
+        studentEmail(student) {
+            return String(student?.email || '').trim()
+        },
+        studentEmailCopyStatus(student) {
+            if (this.studentEmailCopyFeedback.studentKey !== this.studentSelectionKey(student)) return ''
+
+            return this.studentEmailCopyFeedback.status
+        },
+        studentEmailCopyTitle(student) {
+            const email = this.studentEmail(student)
+            const status = this.studentEmailCopyStatus(student)
+
+            if (status === 'copied') return `E-Mail kopiert: ${email}`
+            if (status === 'failed') return `Kopieren fehlgeschlagen. E-Mail erneut kopieren: ${email}`
+
+            return `E-Mail kopieren: ${email}`
+        },
+        async copyStudentEmail(student) {
+            const email = this.studentEmail(student)
+            const clipboard = globalThis.navigator?.clipboard
+
+            if (!email || !clipboard?.writeText) {
+                this.setStudentEmailCopyFeedback(student, 'failed')
+                return false
+            }
+
+            try {
+                await clipboard.writeText(email)
+                this.setStudentEmailCopyFeedback(student, 'copied')
+
+                return true
+            } catch {
+                this.setStudentEmailCopyFeedback(student, 'failed')
+
+                return false
+            }
+        },
+        setStudentEmailCopyFeedback(student, status) {
+            this.clearStudentEmailCopyResetTimeout()
+            this.studentEmailCopyFeedback = {
+                studentKey: this.studentSelectionKey(student),
+                status,
+            }
+            this.studentEmailCopyResetTimeout = globalThis.setTimeout(() => {
+                this.studentEmailCopyFeedback = {
+                    studentKey: '',
+                    status: '',
+                }
+                this.studentEmailCopyResetTimeout = null
+            }, 1500)
+        },
+        clearStudentEmailCopyResetTimeout() {
+            if (this.studentEmailCopyResetTimeout === null) return
+
+            globalThis.clearTimeout(this.studentEmailCopyResetTimeout)
+            this.studentEmailCopyResetTimeout = null
         },
         studentReligionLabel(student) {
             return String(student?.religion || '').trim()
@@ -2208,6 +2319,49 @@ export default {
     gap: 7px;
     align-items: center;
     max-width: 100%;
+}
+
+.tests-v3-students__identity {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.tests-v3-students__email {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+}
+
+.tests-v3-students__email span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tests-v3-students__email:hover,
+.tests-v3-students__email:focus-visible {
+    color: rgb(var(--v-theme-primary));
+}
+
+.tests-v3-students__email--copied {
+    color: rgb(var(--v-theme-success));
+}
+
+.tests-v3-students__email--failed {
+    color: rgb(var(--v-theme-error));
 }
 
 .tests-v3-students__religion {
