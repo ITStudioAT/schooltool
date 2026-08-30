@@ -1,5 +1,6 @@
 import {
     deleteTeachers,
+    importStatus,
     index,
     store,
     update,
@@ -11,5 +12,6 @@ export const teachersListApi = Object.freeze({
     store: () => store.url(),
     update: (teacher) => update.url(teacher),
     deleteTeachers: () => deleteTeachers.url(),
+    importStatus: () => importStatus.url(),
     upload: () => upload.url(),
 })

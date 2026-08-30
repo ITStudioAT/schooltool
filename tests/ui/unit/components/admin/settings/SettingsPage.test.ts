@@ -218,9 +218,49 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['admins', 'moderators'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Admins', 'Moderatoren'])
-        expect(items.map((item: { meta: string }) => item.meta)).toEqual(['verwalten', 'verwalten'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['admins', 'moderators', 'teachers'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Admins', 'Moderatoren', 'Lehrerliste'])
+        expect(items.map((item: { meta: string }) => item.meta)).toEqual(['verwalten', 'verwalten', 'verwalten'])
+    })
+
+    it('shows active controls and teacher roles in the teachers panel', () => {
+        const componentSource = readFileSync('resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue', 'utf8')
+        const storeSource = readFileSync('resources/js/stores/admin/studentsTimetables/TeachersListStore.js', 'utf8')
+
+        expect(componentSource).toContain('Lehrerliste')
+        expect(componentSource).toContain('v-for="teacher in teachers"')
+        expect(componentSource).toContain("teacher.is_active ? 'Aktiv' : 'Inaktiv'")
+        expect(componentSource).toContain('Alle aktiv')
+        expect(componentSource).toContain('Alle inaktiv')
+        expect(componentSource).toContain('@click="setAllTeachersActive(true)"')
+        expect(componentSource).toContain('@click="setAllTeachersActive(false)"')
+        expect(componentSource).not.toContain('Lehrer: Ja')
+        expect(componentSource).toContain('readonly')
+        expect(componentSource).not.toContain('Keine TT-Rolle')
+        expect(componentSource).toContain('TT-Admin')
+        expect(componentSource).toContain('TT-Moderator')
+        expect(componentSource).toContain('const nextRole = this.isSelectedTimetableRole(teacher, role) ? null : role')
+        expect(componentSource).toContain('const activatedTeacher = await this.teachersListStore.activateTeacher')
+        expect(componentSource).toContain('userId = activatedTeacher.user_id')
+        expect(componentSource).toContain('@click.stop="toggleTeacherActive(teacher)"')
+        expect(componentSource).toContain('@click.stop="openEditDialog(teacher)"')
+        expect(componentSource).toContain('Lehrkraft bearbeiten')
+        expect(componentSource).toContain('label="Kürzel"')
+        expect(componentSource).toContain('label="Nachname"')
+        expect(componentSource).toContain('label="Vorname"')
+        expect(componentSource).toContain('label="E-Mail"')
+        expect(componentSource).toContain('async saveTeacher()')
+        expect(componentSource).not.toContain('@click.stop="toggleTeacherRole(teacher)"')
+        expect(storeSource).toContain("@/actions/App/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController")
+        expect(storeSource).toContain('activateTeacherAccount.url')
+        expect(storeSource).toContain('setTeacherAccountRole.url')
+        expect(storeSource).toContain('setTeacherAccountsActiveState.url')
+        expect(storeSource).toContain('async setAllActive(isActive)')
+        expect(storeSource).toContain('updateImportedTeacherAccount.url')
+        expect(storeSource).toContain('updateRegisteredTeacherAccount.url')
+        expect(storeSource).toContain('async updateTeacher(teacher, values)')
+        expect(storeSource).not.toContain('toggleTeacherAccountTeacherRole.url')
+        expect(storeSource).toContain('response.data.data')
     })
 
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
@@ -775,6 +815,7 @@ describe('Admin settings page', () => {
                         props: ['roleKey', 'title', 'singularTitle'],
                         template: '<div>StudentsTimetablesAdminUsers Component {{ roleKey }} {{ title }} {{ singularTitle }}</div>',
                     },
+                    StudentsTimetablesTeachers: { template: '<div>StudentsTimetablesTeachers Component</div>' },
                 },
             },
         })
@@ -782,6 +823,7 @@ describe('Admin settings page', () => {
         expect(screen.getByText('Schülerstundenpläne')).toBeInTheDocument()
         expect(screen.getByText('Admins')).toBeInTheDocument()
         expect(screen.getByText('Moderatoren')).toBeInTheDocument()
+        expect(screen.getByText('Lehrerliste')).toBeInTheDocument()
         expect(screen.queryByText('Bewertung')).not.toBeInTheDocument()
         expect(screen.queryByText('Fächer')).not.toBeInTheDocument()
         expect(screen.getByText('StudentsTimetablesAdminUsers Component admins Admins Admin')).toBeInTheDocument()
@@ -791,6 +833,12 @@ describe('Admin settings page', () => {
 
         await waitFor(() => {
             expect(screen.getByText('StudentsTimetablesAdminUsers Component moderators Moderatoren Moderator')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByText('Lehrerliste'))
+
+        await waitFor(() => {
+            expect(screen.getByText('StudentsTimetablesTeachers Component')).toBeInTheDocument()
         })
     })
 

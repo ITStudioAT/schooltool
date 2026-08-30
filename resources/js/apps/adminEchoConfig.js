@@ -2,10 +2,13 @@ const authEndpoint = '/broadcasting/auth'
 
 function value(environment, name) {
     const configuredValue = environment[name]
-
-    return typeof configuredValue === 'string'
+    const normalizedValue = typeof configuredValue === 'string'
         ? configuredValue.trim()
         : ''
+
+    return /^\$\{[^}]+\}$/.test(normalizedValue)
+        ? ''
+        : normalizedValue
 }
 
 function port(environment, name, fallback) {

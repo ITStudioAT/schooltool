@@ -158,6 +158,10 @@ class UserWithRoleController extends Controller
         $confirmed_at = $validated['confirmed_at'] ?? null;
         $email_verified_at = $validated['email_verified_at'] ?? null;
 
+        if ($has_is_active && ! $is_active && $user->hasRole('super_admin')) {
+            abort(403, 'Super-Admins können nicht deaktiviert werden.');
+        }
+
         unset($validated['is_active'], $validated['confirmed_at'], $validated['email_verified_at'], $validated['id']);
 
         // Update fillable fields first

@@ -263,6 +263,23 @@ test('admin can update user details', function () {
     $response->assertStatus(200);
 });
 
+test('admin cannot deactivate a super admin', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/users_with_roles/{$this->superAdmin->id}", [
+        'id' => $this->superAdmin->id,
+        'last_name' => $this->superAdmin->last_name,
+        'first_name' => $this->superAdmin->first_name,
+        'email' => $this->superAdmin->email,
+        'is_active' => false,
+        'is_confirmed' => true,
+        'is_verified' => true,
+        'is_2fa' => false,
+    ])->assertForbidden();
+
+    expect((bool) $this->superAdmin->fresh()->is_active)->toBeTrue();
+});
+
 test('admin cannot update a user from another school', function () {
     $otherSchool = School::factory()->create();
     $otherUser = User::factory()->create([

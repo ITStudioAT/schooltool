@@ -526,13 +526,13 @@ test('admin cannot toggle a user from another school via users20 endpoint', func
     ])->assertStatus(403);
 });
 
-test('users20 toggle_is_active blocks deactivating protected admin roles', function () {
+test('users20 toggle_is_active blocks deactivating protected admin roles', function (string $roleName) {
     $protectedAdmin = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'is_active' => true,
     ]);
-    $protectedAdmin->assignRole('admin');
+    $protectedAdmin->assignRole($roleName);
 
     $this->actingAs($this->superAdmin, 'sanctum');
 
@@ -542,6 +542,28 @@ test('users20 toggle_is_active blocks deactivating protected admin roles', funct
     ])->assertStatus(403);
 
     expect((bool) $protectedAdmin->fresh()->is_active)->toBeTrue();
+})->with(['admin', 'super_admin']);
+
+test('users20 toggle_is_active allows reactivating an inactive super admin', function () {
+    $protectedSuperAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => false,
+    ]);
+    $protectedSuperAdmin->assignRole('super_admin');
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_id' => $protectedSuperAdmin->id,
+        'is_active' => true,
+    ])->assertSuccessful()
+        ->assertJsonFragment([
+            'id' => $protectedSuperAdmin->id,
+            'is_active' => true,
+        ]);
+
+    expect((bool) $protectedSuperAdmin->fresh()->is_active)->toBeTrue();
 });
 
 test('guest is unauthorized from toggling users20 active state', function () {

@@ -4,7 +4,11 @@
 
 ### System
 
-- Farbauswahl untzer Profil
+- Farbauswahl unter Profil
+
+### Schülerstundenpläne
+
+- Import Lehrer
 
 ## 3.46.4
 

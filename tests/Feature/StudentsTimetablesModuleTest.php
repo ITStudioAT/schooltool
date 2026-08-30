@@ -22,6 +22,7 @@ use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\StudentTimetableV2State;
 use App\Models\StudentTimetableV3State;
+use App\Models\Teacher;
 use App\Models\TeachingSchoolHour;
 use App\Models\TimetableImport;
 use App\Models\User;
@@ -1243,6 +1244,296 @@ it('lists only students timetables admin users for the active school', function 
         ->assertJsonPath('data.0.roles.0', 'studentstimetables_admin');
 });
 
+it('lists imported and registered teachers from the active school for students timetables admins', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $teacherRole = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    $moderatorRole = Role::firstOrCreate(['name' => 'studentstimetables_moderator', 'guard_name' => 'web']);
+
+    $importedTeacher = Teacher::create([
+        'school_id' => $user->school_id,
+        'short' => 'ADA',
+        'first_name' => 'Ada',
+        'last_name' => 'Lehrerin',
+        'email' => 'ada.imported@example.test',
+    ]);
+
+    Teacher::create([
+        'school_id' => $user->school_id,
+        'short' => 'REG',
+        'first_name' => 'Bereits',
+        'last_name' => 'Registriert',
+        'email' => 'registered.teacher@example.test',
+    ]);
+    $registeredTeacher = User::factory()->create([
+        'school_id' => $user->school_id,
+        'short' => 'REG',
+        'first_name' => 'Bereits',
+        'last_name' => 'Registriert',
+        'email' => 'registered.teacher@example.test',
+        'is_active' => true,
+    ]);
+    $registeredTeacher->assignRole([$teacherRole, $moderatorRole]);
+
+    $inactiveTeacher = User::factory()->create([
+        'school_id' => $user->school_id,
+        'short' => 'INA',
+        'email' => 'inactive.teacher@example.test',
+        'is_active' => false,
+    ]);
+    $inactiveTeacher->assignRole($teacherRole);
+
+    $listedAccount = User::factory()->create([
+        'school_id' => $user->school_id,
+        'short' => 'LST',
+        'email' => 'listed.account@example.test',
+        'is_active' => true,
+    ]);
+    $listedAccount->students_timetables_teacher_listed = true;
+    $listedAccount->save();
+    $listedAccount->assignRole($teacherRole);
+
+    Teacher::create([
+        'school_id' => School::factory()->create()->id,
+        'short' => 'OTH',
+        'first_name' => 'Andere',
+        'last_name' => 'Schule',
+        'email' => 'other-school.imported@example.test',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/teacher-list')
+        ->assertSuccessful()
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('meta.total', 5)
+        ->assertJsonFragment([
+            'teacher_id' => $importedTeacher->id,
+            'user_id' => null,
+            'email' => 'ada.imported@example.test',
+            'is_active' => true,
+            'roles' => ['teacher'],
+        ])
+        ->assertJsonFragment([
+            'teacher_id' => null,
+            'user_id' => $registeredTeacher->id,
+            'email' => 'registered.teacher@example.test',
+            'is_active' => true,
+        ])
+        ->assertJsonFragment([
+            'user_id' => $inactiveTeacher->id,
+            'email' => 'inactive.teacher@example.test',
+            'is_active' => false,
+        ])
+        ->assertJsonFragment([
+            'user_id' => $listedAccount->id,
+            'email' => 'listed.account@example.test',
+            'roles' => ['teacher'],
+        ])
+        ->assertJsonMissing(['email' => 'other-school.imported@example.test']);
+});
+
+it('sorts the students timetables teacher list alphabetically by last and first name', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+
+    Teacher::create([
+        'school_id' => $user->school_id,
+        'short' => 'ZZZ',
+        'first_name' => 'Anna',
+        'last_name' => 'Abele',
+        'email' => 'anna.abele@example.test',
+    ]);
+
+    $mayr = User::factory()->create([
+        'school_id' => $user->school_id,
+        'short' => null,
+        'first_name' => 'Michaela',
+        'last_name' => 'Mayr',
+        'email' => 'michaela.mayr@example.test',
+    ]);
+    $mayr->students_timetables_teacher_listed = true;
+    $mayr->save();
+
+    $zeller = User::factory()->create([
+        'school_id' => $user->school_id,
+        'short' => 'AAA',
+        'first_name' => 'Zoe',
+        'last_name' => 'Zeller',
+        'email' => 'zoe.zeller@example.test',
+    ]);
+    $zeller->students_timetables_teacher_listed = true;
+    $zeller->save();
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/teacher-list')
+        ->assertSuccessful();
+
+    $sortedEmails = collect($response->json('data'))
+        ->pluck('email')
+        ->filter(fn (string $email): bool => in_array($email, [
+            'anna.abele@example.test',
+            'michaela.mayr@example.test',
+            'zoe.zeller@example.test',
+        ], true))
+        ->values()
+        ->all();
+
+    expect($sortedEmails)->toBe([
+        'anna.abele@example.test',
+        'michaela.mayr@example.test',
+        'zoe.zeller@example.test',
+    ]);
+});
+
+it('forbids students timetables moderators from listing teachers', function () {
+    $moderator = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+
+    $this->actingAs($moderator)
+        ->getJson('/api/admin/students-timetables/teacher-list')
+        ->assertForbidden();
+});
+
+it('activates an imported teacher as a registered teacher account', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $teacher = Teacher::create([
+        'school_id' => $user->school_id,
+        'short' => 'NEW',
+        'first_name' => 'Neue',
+        'last_name' => 'Lehrerin',
+        'email' => 'new.teacher@example.test',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/{$teacher->id}/activate")
+        ->assertSuccessful()
+        ->assertJsonPath('teacher_id', null)
+        ->assertJsonPath('email', 'new.teacher@example.test')
+        ->assertJsonPath('is_active', true)
+        ->assertJsonFragment(['roles' => ['teacher']]);
+
+    $createdUser = User::query()->where('email', 'new.teacher@example.test')->firstOrFail();
+
+    expect($createdUser->school_id)
+        ->toBe($user->school_id)
+        ->and($createdUser->hasRole('teacher'))->toBeTrue()
+        ->and($teacher->fresh())->toBeNull();
+});
+
+it('toggles teacher accounts and keeps changes scoped to the active school', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $teacherRole = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    $teacher = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+    ]);
+    $teacher->students_timetables_teacher_listed = true;
+    $teacher->save();
+    $otherSchoolTeacher = User::factory()->create([
+        'school_id' => School::factory()->create()->id,
+        'is_active' => true,
+    ]);
+    $otherSchoolTeacher->assignRole($teacherRole);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/users/{$teacher->id}/toggle-active")
+        ->assertSuccessful()
+        ->assertJsonPath('is_active', false);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/users/{$otherSchoolTeacher->id}/toggle-active")
+        ->assertForbidden();
+
+    expect((bool) $teacher->fresh()->is_active)->toBeFalse()
+        ->and($teacher->fresh()->hasRole('teacher'))->toBeTrue()
+        ->and((bool) $otherSchoolTeacher->fresh()->is_active)->toBeTrue();
+});
+
+it('does not deactivate super admins through the teacher roster', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $protectedSuperAdmin = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+    ]);
+    $protectedSuperAdmin->students_timetables_teacher_listed = true;
+    $protectedSuperAdmin->save();
+    $protectedSuperAdmin->assignRole(['teacher', 'super_admin']);
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/users/{$protectedSuperAdmin->id}/toggle-active")
+        ->assertForbidden();
+
+    expect((bool) $protectedSuperAdmin->fresh()->is_active)->toBeTrue();
+
+    $protectedSuperAdmin->is_active = false;
+    $protectedSuperAdmin->save();
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/users/{$protectedSuperAdmin->id}/toggle-active")
+        ->assertSuccessful()
+        ->assertJsonPath('is_active', true)
+        ->assertJsonPath('can_toggle_active', false);
+});
+
+it('keeps the teacher role fixed while changing the exclusive students timetables role', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $teacherRole = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    $moderatorRole = Role::firstOrCreate(['name' => 'studentstimetables_moderator', 'guard_name' => 'web']);
+    $teacher = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+    ]);
+    $teacher->assignRole([$teacherRole, $moderatorRole]);
+
+    $this->actingAs($user)
+        ->putJson("/api/admin/students-timetables/teacher-list/users/{$teacher->id}/role", [
+            'role' => 'studentstimetables_admin',
+        ])
+        ->assertSuccessful()
+        ->assertJsonFragment(['roles' => ['studentstimetables_admin', 'teacher']]);
+
+    $teacher->refresh();
+
+    expect($teacher->hasRole('teacher'))->toBeTrue()
+        ->and($teacher->hasRole('studentstimetables_admin'))->toBeTrue()
+        ->and($teacher->hasRole('studentstimetables_moderator'))->toBeFalse();
+
+    $this->actingAs($user)
+        ->postJson("/api/admin/students-timetables/teacher-list/users/{$teacher->id}/toggle-teacher-role")
+        ->assertStatus(409);
+
+    $teacher->refresh();
+
+    expect($teacher->hasRole('teacher'))->toBeTrue()
+        ->and($teacher->hasRole('studentstimetables_admin'))->toBeTrue()
+        ->and($teacher->hasRole('studentstimetables_moderator'))->toBeFalse();
+
+    $this->actingAs($user)
+        ->putJson("/api/admin/students-timetables/teacher-list/users/{$teacher->id}/role", [
+            'role' => null,
+        ])
+        ->assertSuccessful()
+        ->assertJsonFragment(['roles' => ['teacher']]);
+
+    $teacher->refresh();
+
+    expect($teacher->hasRole('teacher'))->toBeTrue()
+        ->and($teacher->students_timetables_teacher_listed)->toBeTrue();
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/teacher-list')
+        ->assertSuccessful()
+        ->assertJsonFragment(['user_id' => $teacher->id]);
+
+    $teacher->is_active = false;
+    $teacher->save();
+
+    $this->actingAs($user)
+        ->putJson("/api/admin/students-timetables/teacher-list/users/{$teacher->id}/role", [
+            'role' => 'studentstimetables_moderator',
+        ])
+        ->assertStatus(409);
+});
+
 it('creates students timetables admin users with the fixed admin role', function () {
     $user = createStudentsTimetablesUserWithLicence();
 
@@ -1452,6 +1743,26 @@ it('toggles active state only for students timetables moderator users', function
         ])
         ->assertForbidden();
 });
+
+it('does not deactivate super admins through students timetables role lists', function (string $roleName, string $endpoint) {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $protectedSuperAdmin = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+    ]);
+    $protectedSuperAdmin->assignRole([$roleName, 'super_admin']);
+
+    $this->actingAs($user)
+        ->postJson($endpoint, ['user_id' => $protectedSuperAdmin->id])
+        ->assertForbidden();
+
+    expect((bool) $protectedSuperAdmin->fresh()->is_active)->toBeTrue();
+})->with([
+    'TT admin' => ['studentstimetables_admin', '/api/admin/students-timetables/admin-users/toggle-active'],
+    'TT moderator' => ['studentstimetables_moderator', '/api/admin/students-timetables/moderator-users/toggle-active'],
+]);
 
 it('allows the studentstimetables admin role to list and select schoolyears', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');

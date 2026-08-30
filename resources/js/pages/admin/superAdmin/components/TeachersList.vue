@@ -313,6 +313,7 @@ export default {
 
     beforeUnmount() {
         window.removeEventListener('teachers-list-import-finished', this.handleImportFinished)
+        this.stopImportStatusPolling()
     },
 
     data() {
@@ -325,6 +326,8 @@ export default {
             is_import_finished: false,
             import_status: null,
             import_message: '',
+            import_status_poll_timer: null,
+            import_status_poll_in_flight: false,
         }
     },
 
@@ -363,6 +366,7 @@ export default {
         },
 
         importStarted() {
+            this.stopImportStatusPolling()
             this.is_import_running = true
             this.is_import_finished = false
             this.import_status = null
@@ -371,17 +375,61 @@ export default {
 
         fileUploadFinished() {
             this.is_upload_finished = true
+            this.startImportStatusPolling()
         },
 
         importUploadFailed() {
+            this.stopImportStatusPolling()
             this.is_import_running = false
             this.is_import_finished = false
         },
 
         async handleImportFinished(event) {
+            const payload = event.detail || {}
+            await this.applyImportCompletion(payload)
+        },
+
+        startImportStatusPolling() {
+            this.stopImportStatusPolling()
+
             if (!this.is_import_running) { return }
 
-            const payload = event.detail || {}
+            this.pollImportStatus()
+            this.import_status_poll_timer = window.setInterval(() => this.pollImportStatus(), 1000)
+        },
+
+        stopImportStatusPolling() {
+            if (this.import_status_poll_timer !== null) {
+                window.clearInterval(this.import_status_poll_timer)
+            }
+
+            this.import_status_poll_timer = null
+            this.import_status_poll_in_flight = false
+        },
+
+        async pollImportStatus() {
+            if (!this.is_import_running || this.import_status_poll_in_flight) { return }
+
+            this.import_status_poll_in_flight = true
+
+            try {
+                const response = await axios.get(teachersListApi.importStatus())
+
+                if (response.data?.state === 'finished') {
+                    await this.applyImportCompletion(response.data)
+                }
+            } catch {
+                return
+            } finally {
+                this.import_status_poll_in_flight = false
+            }
+        },
+
+        async applyImportCompletion(payload) {
+            if (!this.is_import_running) { return }
+
+            this.stopImportStatusPolling()
+            this.is_upload_finished = true
             this.is_import_running = false
             this.is_import_finished = true
             this.import_status = Number(payload.status)
@@ -393,6 +441,7 @@ export default {
         },
 
         uploadFinished() {
+            this.stopImportStatusPolling()
             this.is_upload_finished = false
             this.is_import_running = false
             this.is_import_finished = false

@@ -64,6 +64,7 @@ use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TestReadines
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TestSummaryPdfController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TimetableController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
+use App\Http\Controllers\Admin\StudentsTimetables\TeacherAccountController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableFileUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableImportController;
 use App\Http\Controllers\Admin\TeacherController;
@@ -213,6 +214,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->defaults('managedRole', 'studentstimetables_admin');
         Route::get('/admin/students-timetables/moderator-users', [StudentsTimetablesAdminUserController::class, 'index'])
             ->defaults('managedRole', 'studentstimetables_moderator');
+        Route::get('/admin/students-timetables/teacher-list', [TeacherAccountController::class, 'index']);
+        Route::put('/admin/students-timetables/teacher-list/active-state', [TeacherAccountController::class, 'setActiveState']);
+        Route::put('/admin/students-timetables/teacher-list/users/{teacherUser}', [TeacherAccountController::class, 'updateUser']);
+        Route::put('/admin/students-timetables/teacher-list/{teacher}', [TeacherAccountController::class, 'update']);
+        Route::post('/admin/students-timetables/teacher-list/{teacher}/activate', [TeacherAccountController::class, 'activate']);
+        Route::post('/admin/students-timetables/teacher-list/users/{teacherUser}/toggle-active', [TeacherAccountController::class, 'toggleActive']);
+        Route::post('/admin/students-timetables/teacher-list/users/{teacherUser}/toggle-teacher-role', [TeacherAccountController::class, 'toggleTeacherRole']);
+        Route::put('/admin/students-timetables/teacher-list/users/{teacherUser}/role', [TeacherAccountController::class, 'setRole']);
         Route::post('/admin/students-timetables/moderator-users', [StudentsTimetablesAdminUserController::class, 'store'])
             ->defaults('managedRole', 'studentstimetables_moderator');
         Route::put('/admin/students-timetables/moderator-users/{adminUser}', [StudentsTimetablesAdminUserController::class, 'update'])
@@ -463,6 +472,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->middleware('throttle:uploads');
         Route::patch('/admin/teachers_list_upload', [TeachersListController::class, 'uploadNext'])
             ->middleware('throttle:uploads');
+        Route::get('/admin/teachers_list_import_status', [TeachersListController::class, 'importStatus']);
 
         // SchoolTool - Active Schoolyear
         Route::post('/admin/school_tools/set_active_schoolyear', [SchoolToolController::class, 'setActiveSchoolyear']);

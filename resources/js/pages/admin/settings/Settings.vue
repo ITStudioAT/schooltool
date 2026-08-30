@@ -195,6 +195,10 @@
                             singular-title="Moderator" />
                     </div>
 
+                    <div v-else-if="isStudentsTimetablesTab && sub_action === 'teachers'" class="settings-students-timetables-wrap">
+                        <StudentsTimetablesTeachers />
+                    </div>
+
                     <div v-else-if="isSuperAdminTab && sub_action === 'school_switch'" class="settings-school-switch-wrap">
                         <ActiveSchool :hide-details="true" />
                     </div>
@@ -265,12 +269,13 @@ const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutori
 const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Users.vue'))
 const TeachingAdmin = defineAsyncComponent(() => import('@/pages/admin/teaching/admin/Admin.vue'))
 const StudentsTimetablesAdminUsers = defineAsyncComponent(() => import('@/pages/admin/studentsTimetables/settings/AdminUsers.vue'))
+const StudentsTimetablesTeachers = defineAsyncComponent(() => import('@/pages/admin/settings/components/StudentsTimetablesTeachers.vue'))
 const MaterialsSettingsView = defineAsyncComponent(() => import('@/pages/admin/materials/components/views/MaterialsSettingsView.vue'))
 const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
 const RestaurantSettings = defineAsyncComponent(() => import('@/pages/admin/restaurant/components/Settings.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, StudentsTimetablesAdminUsers, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, StudentsTimetablesAdminUsers, StudentsTimetablesTeachers, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -534,6 +539,7 @@ export default {
                 return [
                     { key: 'admins', label: 'Admins', meta: 'verwalten', icon: 'mdi-shield-account-outline' },
                     { key: 'moderators', label: 'Moderatoren', meta: 'verwalten', icon: 'mdi-account-multiple-check-outline' },
+                    { key: 'teachers', label: 'Lehrerliste', meta: 'verwalten', icon: 'mdi-account-tie-outline' },
                 ]
             }
 
@@ -760,7 +766,7 @@ export default {
                 keys = ['teachers', 'teaching_admin']
                 fallback = 'teachers'
             } else if (resolvedTab === 'students_timetables') {
-                keys = ['admins', 'moderators']
+                keys = ['admins', 'moderators', 'teachers']
                 fallback = 'admins'
             } else if (resolvedTab === 'groups') {
                 keys = ['groups_overview', 'groups_own']

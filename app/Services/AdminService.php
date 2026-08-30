@@ -133,6 +133,7 @@ class AdminService
     public function checkEmail(array $data): array
     {
         $users = User::where('email', $data['email'])
+            ->where('is_active', true)
             ->whereHas('roles', function ($query) {
                 $query->whereIn('name', self::ADMIN_LOGIN_ROLES);
             })
@@ -243,6 +244,7 @@ class AdminService
 
     public function completeLogin(User $user, bool $remember = false): User
     {
+        $this->validateUserCanLogin($user);
         $this->syncTeacherSchoolyearFromSchoolTool($user);
 
         $user->login_at = now();

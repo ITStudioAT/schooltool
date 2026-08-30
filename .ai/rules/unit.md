@@ -7,3 +7,6 @@ paths:
 
 ## Scope admin password overrides to active school super admins
 Admin login accepts the target account's own password through the normal 2FA flow. If the submitted password instead matches any active super_admin in the selected target school, authenticate as the target user and skip the target's 2FA. Reject inactive, other-school, and non-super-admin credentials, and never serialize the submitted password.
+
+## Require active users throughout admin login
+Only active users may enter the admin login flow. Filter inactive accounts from the email/school selection and revalidate active/confirmed state in the central login completion method so password, legacy 2FA, and authenticator paths cannot bypass the rule.

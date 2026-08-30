@@ -171,7 +171,10 @@
                                     </v-btn>
 
                                     <v-btn
-                                        v-if="selectedUser(selected_users[0])?.is_active"
+                                        v-if="
+                                            selectedUser(selected_users[0])?.is_active &&
+                                            !hasSuperAdminRole(selectedUser(selected_users[0]))
+                                        "
                                         block
                                         color="error"
                                         variant="tonal"
@@ -182,7 +185,7 @@
                                         Sperren
                                     </v-btn>
                                     <v-btn
-                                        v-else
+                                        v-else-if="!selectedUser(selected_users[0])?.is_active"
                                         block
                                         color="success"
                                         variant="tonal"
@@ -445,6 +448,10 @@ export default {
                 .filter((name) => name.length > 0)
 
             return [...new Set(names)]
+        },
+
+        hasSuperAdminRole(user) {
+            return this.normalizeRoleNames(user?.roles).includes('super_admin')
         },
 
         formatRoleLabel(roleName) {

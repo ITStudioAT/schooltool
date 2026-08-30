@@ -6,4 +6,4 @@ paths:
 # Components Admin
 
 ## Keep teacher-list import progress tied to backend completion
-Start the visible Lehrerliste import state when FileUpload emits uploadStart, keep it active after the file upload completes, and finish it only when TeachersListImportFinishedEvent is forwarded as teachers-list-import-finished. Do not expose the Fertig action while the queued import is still running.
+Start the visible Lehrerliste import state when FileUpload emits uploadStart, keep it active after the file upload completes, and finish it only when either TeachersListImportFinishedEvent or the authenticated status fallback confirms backend completion. Do not expose the Fertig action while the queued import is still running.

@@ -12,6 +12,7 @@ use App\Models\Teacher;
 use App\Services\FileUploadService;
 use App\Services\TeacherListService;
 use App\Traits\PaginationTrait;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -36,8 +37,9 @@ class TeachersListController extends Controller
                     ->whereColumn('users.school_id', 'teachers.school_id')
                     ->whereRaw('LOWER(TRIM(users.email)) = LOWER(TRIM(teachers.email))');
             })
-            ->orderBy('short')
-            ->orderBy('last_name');
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('short');
 
         if (! empty($search_string)) {
             $query->where(function ($q) use ($search_string) {
@@ -105,8 +107,21 @@ class TeachersListController extends Controller
         }
 
         $id = $fileUploadService->upload($request, 'teachers');
+        ImportTeachersListJob::markRunning((int) $auth_user->school_id, (int) $auth_user->id);
 
         return response($id, 200)->header('Content-Type', 'text/plain');
+    }
+
+    public function importStatus(): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return response()->json(ImportTeachersListJob::status(
+            (int) $authUser->school_id,
+            (int) $authUser->id,
+        ));
     }
 
     public function uploadNext(Request $request, FileUploadService $fileUploadService)

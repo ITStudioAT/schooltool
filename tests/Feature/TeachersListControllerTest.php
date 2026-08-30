@@ -11,11 +11,13 @@
  * All endpoints require admin role
  */
 
+use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -65,6 +67,8 @@ beforeEach(function () {
         'email_verified_at' => now(),
     ]);
     $this->normalUser->assignRole('user');
+
+    Cache::forget(ImportTeachersListJob::statusCacheKey($this->school->id, $this->adminUser->id));
 });
 
 // ============================================================================
@@ -91,6 +95,38 @@ test('guest cannot access index endpoint', function () {
     $response = $this->getJson('/api/admin/teachers_list');
 
     $response->assertStatus(401);
+});
+
+test('admin can poll the current teacher list import status', function () {
+    ImportTeachersListJob::markRunning($this->school->id, $this->adminUser->id);
+
+    $this->actingAs($this->adminUser, 'sanctum')
+        ->getJson('/api/admin/teachers_list_import_status')
+        ->assertSuccessful()
+        ->assertJsonPath('state', 'running')
+        ->assertJsonPath('status', null);
+
+    ImportTeachersListJob::markFinished(
+        $this->school->id,
+        $this->adminUser->id,
+        200,
+        'Lehrerliste importiert.',
+        ['created' => 2],
+    );
+
+    $this->actingAs($this->adminUser, 'sanctum')
+        ->getJson('/api/admin/teachers_list_import_status')
+        ->assertSuccessful()
+        ->assertJsonPath('state', 'finished')
+        ->assertJsonPath('status', 200)
+        ->assertJsonPath('message', 'Lehrerliste importiert.')
+        ->assertJsonPath('data.created', 2);
+});
+
+test('non-admin cannot poll the teacher list import status', function () {
+    $this->actingAs($this->normalUser, 'sanctum')
+        ->getJson('/api/admin/teachers_list_import_status')
+        ->assertForbidden();
 });
 
 // ============================================================================
@@ -123,8 +159,8 @@ test('index returns teachers from Teacher model', function () {
         ->assertJsonCount(2, 'items');
 
     $teachers = $response->json('items');
-    expect($teachers[0]['short'])->toBe('KRO')
-        ->and($teachers[1]['short'])->toBe('MUS');
+    expect($teachers[0]['short'])->toBe('MUS')
+        ->and($teachers[1]['short'])->toBe('KRO');
 });
 
 test('index filters by school_id', function () {
@@ -188,28 +224,35 @@ test('index excludes teacher list entries that already have a registered school 
         ->assertJsonPath('items.0.email', 'new@example.test');
 });
 
-test('index orders by short and last_name', function () {
+test('index orders alphabetically by last name first name and short', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     Teacher::create([
         'school_id' => $this->school->id,
-        'short' => 'MUS',
-        'first_name' => 'Maria',
-        'last_name' => 'Mueller',
-        'email' => 'maria@test.com',
+        'short' => 'ZZZ',
+        'first_name' => 'Anna',
+        'last_name' => 'Abele',
+        'email' => 'anna.abele@test.com',
     ]);
 
     Teacher::create([
         'school_id' => $this->school->id,
-        'short' => 'KRO',
-        'first_name' => 'Max',
-        'last_name' => 'Mustermann',
-        'email' => 'max@test.com',
+        'short' => 'MMM',
+        'first_name' => 'Michaela',
+        'last_name' => 'Mayr',
+        'email' => 'michaela.mayr@test.com',
+    ]);
+
+    Teacher::create([
+        'school_id' => $this->school->id,
+        'short' => 'AAA',
+        'first_name' => 'Zoe',
+        'last_name' => 'Zeller',
+        'email' => 'zoe.zeller@test.com',
     ]);
 
     $response = $this->getJson('/api/admin/teachers_list');
 
     $teachers = $response->json('items');
-    expect($teachers[0]['short'])->toBe('KRO')
-        ->and($teachers[1]['short'])->toBe('MUS');
+    expect(array_column($teachers, 'last_name'))->toBe(['Abele', 'Mayr', 'Zeller']);
 });

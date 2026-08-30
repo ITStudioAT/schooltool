@@ -7,3 +7,6 @@ paths:
 
 ## Normalize imported teacher emails to lowercase
 Treat teacher-list email matching case-insensitively and persist imported teacher emails in lowercase. Re-importing an uppercase address must update the existing user or preregistration record without creating a duplicate.
+
+## Assign teacher role to registered import matches
+When a teacher-list import matches an existing same-school user, update their imported name, short code, and email, mark the account active and roster-listed, and assign the teacher role even if it was previously absent. Omitted non-admin teacher users remain inactive.

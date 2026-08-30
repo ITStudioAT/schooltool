@@ -68,6 +68,22 @@ describe('admin Echo configuration', () => {
         })
     })
 
+    it('ignores an unresolved Pusher host placeholder and uses the configured cluster', () => {
+        expect(resolveAdminEchoConfig({
+            VITE_BROADCAST_CONNECTION: 'pusher',
+            VITE_PUSHER_APP_KEY: 'public-pusher-key',
+            VITE_PUSHER_APP_CLUSTER: 'eu',
+            VITE_PUSHER_HOST: '${PUSHER_HOST}',
+        })).toEqual({
+            broadcaster: 'pusher',
+            key: 'public-pusher-key',
+            cluster: 'eu',
+            forceTLS: true,
+            enabledTransports: ['ws', 'wss'],
+            authEndpoint: '/broadcasting/auth',
+        })
+    })
+
     it.each([
         {
             VITE_BROADCAST_CONNECTION: 'reverb',

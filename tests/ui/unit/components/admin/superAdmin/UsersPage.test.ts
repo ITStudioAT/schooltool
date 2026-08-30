@@ -134,6 +134,62 @@ describe('Users roles list item UI helpers', () => {
         expect(writeText).toHaveBeenCalledWith('anna@test.local')
     })
 
+    it('does not offer locking an active super admin', async () => {
+        render(Users, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        createSpy: vi.fn,
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                action: '',
+                                config: {
+                                    roles: ['super_admin'],
+                                    impersonation: { is_impersonating: false },
+                                },
+                            },
+                            AdminUser20Store: {
+                                users: [
+                                    {
+                                        id: 11,
+                                        first_name: 'Anna',
+                                        last_name: 'Muster',
+                                        email: 'anna@test.local',
+                                        is_active: true,
+                                        roles: ['super_admin'],
+                                    },
+                                ],
+                                selected_users: [11],
+                                meta: { total: 1, current_page: 1 },
+                                data: {},
+                                search_string: '',
+                                answer: null,
+                                role: '',
+                            },
+                            AdminRoleStore: {
+                                roles: [],
+                                selected_role: null,
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                    SearchField: { template: '<div />' },
+                    Pagination: { template: '<div />' },
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Ändern' })).toBeInTheDocument()
+        })
+
+        expect(screen.queryByRole('button', { name: 'Sperren' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Entsperren' })).not.toBeInTheDocument()
+    })
+
     it('marks selected user account status from the actions panel', async () => {
         const pinia = createTestingPinia({
             createSpy: vi.fn,

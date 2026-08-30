@@ -15,6 +15,7 @@ use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
@@ -93,8 +94,36 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    Cache::forget(ImportTeachersListJob::statusCacheKey($this->school->id, $this->user->id));
+
     // Clean up test files after each test
     cleanupTestFiles();
+});
+
+it('persists a scoped status for the polling fallback', function () {
+    ImportTeachersListJob::markRunning($this->school->id, $this->user->id);
+
+    expect(ImportTeachersListJob::status($this->school->id, $this->user->id))
+        ->toMatchArray([
+            'state' => 'running',
+            'status' => null,
+        ]);
+
+    ImportTeachersListJob::markFinished(
+        $this->school->id,
+        $this->user->id,
+        200,
+        'Lehrerliste importiert.',
+        ['created' => 1],
+    );
+
+    expect(ImportTeachersListJob::status($this->school->id, $this->user->id))
+        ->toMatchArray([
+            'state' => 'finished',
+            'status' => 200,
+            'message' => 'Lehrerliste importiert.',
+            'data' => ['created' => 1],
+        ]);
 });
 
 describe('handle - successful imports', function () {
@@ -114,7 +143,6 @@ describe('handle - successful imports', function () {
             'email' => 'EXISTING@EXAMPLE.TEST',
             'is_active' => false,
         ]);
-        $importedTeacher->assignRole('teacher');
 
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
@@ -129,10 +157,29 @@ describe('handle - successful imports', function () {
         expect((bool) $omittedTeacher->fresh()->is_active)->toBeFalse()
             ->and((bool) $importedTeacher->fresh()->is_active)->toBeTrue()
             ->and($importedTeacher->fresh()->email)->toBe('existing@example.test')
+            ->and($importedTeacher->fresh()->short)->toBe('EXI')
+            ->and($importedTeacher->fresh()->last_name)->toBe('Existing')
+            ->and($importedTeacher->fresh()->first_name)->toBe('Teacher')
+            ->and($importedTeacher->fresh()->hasRole('teacher'))->toBeTrue()
+            ->and($importedTeacher->fresh()->students_timetables_teacher_listed)->toBeTrue()
             ->and($omittedTeacher->fresh()->schoolyear_id)->toBe($firstSchoolyear->id)
             ->and($importedTeacher->fresh()->schoolyear_id)->toBe($secondSchoolyear->id)
             ->and(Teacher::where('email', 'existing@example.test')->exists())->toBeFalse()
             ->and(Teacher::where('email', 'new@example.test')->exists())->toBeTrue();
+
+        expect(ImportTeachersListJob::status($this->school->id, $this->user->id))
+            ->toMatchArray([
+                'state' => 'finished',
+                'status' => 200,
+                'data' => [
+                    'created' => 1,
+                    'activated' => 1,
+                    'inactive' => 1,
+                    'updated' => 0,
+                    'deleted' => 0,
+                    'skipped_existing' => 1,
+                ],
+            ]);
 
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
             return $event->status === 200
@@ -473,6 +520,12 @@ describe('handle - error handling', function () {
         $job->handle();
 
         expect(Teacher::count())->toBe(0);
+
+        expect(ImportTeachersListJob::status($this->school->id, $this->user->id))
+            ->toMatchArray([
+                'state' => 'finished',
+                'status' => 500,
+            ]);
 
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
             return $event->status === 500

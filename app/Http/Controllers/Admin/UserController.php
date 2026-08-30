@@ -611,12 +611,16 @@ class UserController extends Controller
             abort(403, 'Mindestens ein Benutzer wurde nicht gefunden oder gehört nicht zu deiner Schule.');
         }
 
-        $protectedUser = $users->first(fn ($user) => $user->hasRole(['super_admin', 'admin']));
+        $forceActive = array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null;
+        $protectedUser = $users->first(function (User $user) use ($forceActive): bool {
+            $newState = is_bool($forceActive) ? $forceActive : ! (bool) $user->is_active;
+
+            return ! $newState && $user->hasAnyRole(['super_admin', 'admin']);
+        });
         if ($protectedUser) {
             abort(403, 'Der Super-Admin oder Admin kann nicht deaktiviert werden');
         }
 
-        $forceActive = array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null;
         $changedCount = 0;
 
         foreach ($users as $user) {

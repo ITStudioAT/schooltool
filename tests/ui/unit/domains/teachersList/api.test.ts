@@ -7,6 +7,7 @@ describe('Teachers List Wayfinder API', () => {
         expect(teachersListApi.store()).toBe('/api/admin/teachers_list')
         expect(teachersListApi.update(17)).toBe('/api/admin/teachers_list/17')
         expect(teachersListApi.deleteTeachers()).toBe('/api/admin/teachers_list/delete_teachers')
+        expect(teachersListApi.importStatus()).toBe('/api/admin/teachers_list_import_status')
         expect(teachersListApi.upload()).toBe('/api/admin/teachers_list_upload')
     })
 })

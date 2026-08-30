@@ -331,6 +331,20 @@ describe('login', function () {
         expect($result->id)->toBe($user->id);
     });
 
+    it('does not authenticate an inactive user', function () {
+        $school = School::factory()->create();
+        User::factory()->create([
+            'email' => 'inactive@example.com',
+            'school_id' => $school->id,
+            'is_active' => false,
+        ]);
+
+        $this->service->login([
+            'email' => 'inactive@example.com',
+            'school' => ['id' => $school->id],
+        ]);
+    })->throws(HttpException::class, 'Benutzer ist gesperrt.');
+
     it('sets teacher schoolyear from school tool when schoolyear_id is null', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create([
@@ -539,6 +553,23 @@ describe('checkEmail', function () {
         expect($result['users_count'])->toBe(1)
             ->and($result['school_id'])->toBe($school->id)
             ->and($result['step'])->toBe('LOGIN_ENTER_PASSWORD');
+    });
+
+    it('does not offer inactive users during the email login step', function () {
+        Role::firstOrCreate(['name' => 'studentstimetables_moderator', 'guard_name' => 'web']);
+
+        $school = School::factory()->create(['long_name' => 'School A']);
+        $user = User::factory()->create([
+            'email' => 'inactive-moderator@example.com',
+            'school_id' => $school->id,
+            'is_active' => false,
+        ]);
+        $user->assignRole('studentstimetables_moderator');
+
+        $result = $this->service->checkEmail(['email' => 'inactive-moderator@example.com']);
+
+        expect($result['users_count'])->toBe(0)
+            ->and($result)->not->toHaveKeys(['school_id', 'school', 'schools']);
     });
 
     it('orders schools alphabetically by long_name', function () {

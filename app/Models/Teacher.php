@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $first_name
  * @property string $short
  * @property string $email
+ * @property bool $is_active
  * @property string|null $token
  * @property Carbon|null $token_expires_at
  * @property Carbon|null $created_at
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereEmail($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereFirstName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereIsActive($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereShort($value)
@@ -42,12 +44,18 @@ class Teacher extends Model
         'first_name',
         'last_name',
         'short',
+        'is_active',
         'token',
         'token_expires_at',
     ];
 
     protected $casts = [
+        'is_active' => 'boolean',
         'token_expires_at' => 'datetime',
+    ];
+
+    protected $attributes = [
+        'is_active' => true,
     ];
 
     public function setToken($minutes): string

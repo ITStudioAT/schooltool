@@ -488,6 +488,19 @@ test('login step email rejects non-existent email', function () {
     $response->assertStatus(401);
 });
 
+test('login step email rejects an inactive admin user', function () {
+    $this->user->forceFill(['is_active' => false])->save();
+
+    $this->postJson('/api/admin/login_step_email', [
+        'data' => [
+            'step' => 'LOGIN_ENTER_EMAIL',
+            'email' => $this->user->email,
+        ],
+    ])->assertUnauthorized();
+
+    $this->assertGuest('web');
+});
+
 test('login step 2 authenticates user with correct credentials', function () {
     $data = [
         'data' => [

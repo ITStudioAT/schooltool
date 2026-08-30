@@ -228,6 +228,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'teaching_student_grade_columns_by_schoolyear' => 'array',
             'restaurant_booking_defaults' => 'array',
             'hopper_account_ids' => 'array',
+            'students_timetables_teacher_listed' => 'boolean',
             'use_school_color_for_admin_ui' => 'boolean',
         ];
     }

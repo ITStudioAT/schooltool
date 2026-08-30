@@ -108,7 +108,12 @@ class AdminUserController extends Controller
         $user = User::findOrFail($validated['user_id']);
         $this->assertManageableUser($authUser, $user, $roleName);
 
-        $user->is_active = ! (bool) $user->is_active;
+        $newState = ! (bool) $user->is_active;
+        if (! $newState && $user->hasRole('super_admin')) {
+            abort(403, 'Super-Admins können nicht deaktiviert werden.');
+        }
+
+        $user->is_active = $newState;
         $user->save();
 
         return response()->json(new TeacherResource($user->fresh()->load('roles')), 200);

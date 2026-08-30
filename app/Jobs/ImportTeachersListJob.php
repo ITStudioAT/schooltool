@@ -9,16 +9,20 @@ use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use OpenSpout\Common\Exception\UnsupportedTypeException;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
+use Spatie\Permission\Models\Role;
 use Spatie\SimpleExcel\SimpleExcelReader;
 use Throwable;
 
 class ImportTeachersListJob implements ShouldQueue
 {
     use Queueable;
+
+    private const STATUS_CACHE_TTL_SECONDS = 7200;
 
     public int $schoolId;
 
@@ -71,15 +75,18 @@ class ImportTeachersListJob implements ShouldQueue
             }
 
             $counts = $this->synchronizeTeachers($importedTeachers);
+            $message = 'Die Lehrerliste wurde erfolgreich importiert ('
+                .$counts['created'].' neu, '
+                .$counts['updated'].' aktualisiert, '
+                .$counts['activated'].' bestehend aktiviert, '
+                .$counts['inactive'].' inaktiv)';
+
+            self::markFinished($this->schoolId, $this->userId, 200, $message, $counts);
 
             broadcast(new TeachersListImportFinishedEvent(
                 200,
                 $this->userId,
-                'Die Lehrerliste wurde erfolgreich importiert ('
-                    .$counts['created'].' neu, '
-                    .$counts['updated'].' aktualisiert, '
-                    .$counts['activated'].' bestehend aktiviert, '
-                    .$counts['inactive'].' inaktiv)',
+                $message,
                 $counts,
             ));
         } catch (Throwable $e) {
@@ -89,6 +96,63 @@ class ImportTeachersListJob implements ShouldQueue
                 : 'Die Lehrerliste konnte nicht importiert werden.';
             $this->broadcastFailed($message);
         }
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        self::markFinished(
+            $this->schoolId,
+            $this->userId,
+            500,
+            'Die Lehrerliste konnte nicht importiert werden.',
+        );
+    }
+
+    public static function statusCacheKey(int $schoolId, int $userId): string
+    {
+        return "teachers-list-import:status:{$schoolId}:{$userId}";
+    }
+
+    public static function markRunning(int $schoolId, int $userId): void
+    {
+        self::storeStatus($schoolId, $userId, [
+            'state' => 'running',
+            'status' => null,
+            'message' => 'Die Lehrerliste wird importiert.',
+            'data' => [],
+        ]);
+    }
+
+    /** @return array{state: string, status: ?int, message: string, data: array<string, mixed>} */
+    public static function status(int $schoolId, int $userId): array
+    {
+        return Cache::get(self::statusCacheKey($schoolId, $userId), [
+            'state' => 'idle',
+            'status' => null,
+            'message' => '',
+            'data' => [],
+        ]);
+    }
+
+    /** @param array<string, mixed> $data */
+    public static function markFinished(int $schoolId, int $userId, int $status, string $message, array $data = []): void
+    {
+        self::storeStatus($schoolId, $userId, [
+            'state' => 'finished',
+            'status' => $status,
+            'message' => $message,
+            'data' => $data,
+        ]);
+    }
+
+    /** @param array{state: string, status: ?int, message: string, data: array<string, mixed>} $status */
+    private static function storeStatus(int $schoolId, int $userId, array $status): void
+    {
+        Cache::put(
+            self::statusCacheKey($schoolId, $userId),
+            $status,
+            now()->addSeconds(self::STATUS_CACHE_TTL_SECONDS),
+        );
     }
 
     /**
@@ -148,6 +212,8 @@ class ImportTeachersListJob implements ShouldQueue
                 ->get()
                 ->keyBy(fn (User $user): string => mb_strtolower(trim((string) $user->email)));
 
+            Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
             $created = 0;
             $updated = 0;
             $activated = 0;
@@ -158,11 +224,18 @@ class ImportTeachersListJob implements ShouldQueue
                 if ($registeredUser) {
                     $skippedExisting++;
 
-                    if ($registeredUser->hasRole('teacher')) {
-                        $registeredUser->forceFill([
-                            'email' => $importedTeacher['email'],
-                            'is_active' => true,
-                        ])->save();
+                    $wasActive = (bool) $registeredUser->is_active;
+                    $registeredUser->forceFill([
+                        'email' => $importedTeacher['email'],
+                        'short' => $importedTeacher['short'],
+                        'last_name' => $importedTeacher['last_name'],
+                        'first_name' => $importedTeacher['first_name'],
+                        'is_active' => true,
+                        'students_timetables_teacher_listed' => true,
+                    ])->save();
+                    $registeredUser->assignRole('teacher');
+
+                    if (! $wasActive) {
                         $activated++;
                     }
 
@@ -179,6 +252,7 @@ class ImportTeachersListJob implements ShouldQueue
                     'short' => $importedTeacher['short'],
                     'last_name' => $importedTeacher['last_name'],
                     'first_name' => $importedTeacher['first_name'],
+                    'is_active' => true,
                 ])->save();
 
                 $teacher->wasRecentlyCreated ? $created++ : $updated++;
@@ -334,6 +408,8 @@ class ImportTeachersListJob implements ShouldQueue
 
     private function broadcastFailed(string $message): void
     {
+        self::markFinished($this->schoolId, $this->userId, 500, $message);
+
         broadcast(new TeachersListImportFinishedEvent(
             500,
             $this->userId,
