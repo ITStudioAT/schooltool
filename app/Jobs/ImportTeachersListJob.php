@@ -3,9 +3,13 @@
 namespace App\Jobs;
 
 use App\Events\TeachersListImportFinishedEvent;
+use App\Models\School;
 use App\Models\Teacher;
+use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\DB;
 use OpenSpout\Common\Exception\UnsupportedTypeException;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
@@ -16,12 +20,29 @@ class ImportTeachersListJob implements ShouldQueue
 {
     use Queueable;
 
+    public int $schoolId;
+
+    public int $userId;
+
     /**
      * Create a new job instance.
      */
     public function __construct(public $user, public string $path)
     {
+        $this->schoolId = (int) $user->school_id;
+        $this->userId = (int) $user->id;
         $this->onQueue('imports');
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping("teachers-list-import:{$this->schoolId}"))
+                ->expireAfter(3600),
+        ];
     }
 
     /**
@@ -37,52 +58,29 @@ class ImportTeachersListJob implements ShouldQueue
             $headerMapping = $this->validateAndMapHeaders($headers);
 
             if ($headerMapping === false) {
-                $this->broadcastFailed('Die Überschriften der Excel-Datei sind nicht korrekt! (Kurz, Nachname, Vorname, Email)');
+                $this->broadcastFailed('Die Überschriften der Datei sind nicht korrekt! (Kurz/Kürzel, Nachname/Familienname, Vorname, Email)');
 
                 return;
             }
 
-            $school_id = $this->user->school_id;
+            $importedTeachers = $this->mapImportedTeachers($rows, $headerMapping);
+            if ($importedTeachers === []) {
+                $this->broadcastFailed('Die Datei enthält keine importierbaren Lehrer:innen mit E-Mail-Adresse.');
 
-            $created = 0;
-            $updated = 0;
-            foreach ($rows as $row) {
-                $mappedRow = [];
-                foreach ($headerMapping as $originalHeader => $standardHeader) {
-                    $mappedRow[$standardHeader] = $row[$originalHeader] ?? null;
-                }
-
-                $email = trim((string) ($mappedRow['Email'] ?? ''));
-                if ($email === '') {
-                    continue;
-                }
-
-                $teacher = Teacher::updateOrCreate(
-                    [
-                        'school_id' => $school_id,
-                        'email' => $email,
-                    ],
-                    [
-                        'short' => strtoupper(trim((string) ($mappedRow['Kurz'] ?? ''))),
-                        'last_name' => trim((string) ($mappedRow['Nachname'] ?? '')),
-                        'first_name' => trim((string) ($mappedRow['Vorname'] ?? '')) ?: null,
-                    ]
-                );
-
-                if ($teacher->wasRecentlyCreated) {
-                    $created++;
-                } else {
-                    $updated++;
-                }
+                return;
             }
 
-            $deleted = 0;
+            $counts = $this->synchronizeTeachers($importedTeachers);
 
             broadcast(new TeachersListImportFinishedEvent(
                 200,
-                $this->user->id,
-                'Die Lehrerliste (Excel) wurde erfolgreich importiert ('.$created.' neu, '.$updated.' geprüft, '.$deleted.' gelöscht)',
-                ['created' => $created, 'updated' => $updated, 'deleted' => $deleted]
+                $this->userId,
+                'Die Lehrerliste wurde erfolgreich importiert ('
+                    .$counts['created'].' neu, '
+                    .$counts['updated'].' aktualisiert, '
+                    .$counts['activated'].' bestehend aktiviert, '
+                    .$counts['inactive'].' inaktiv)',
+                $counts,
             ));
         } catch (Throwable $e) {
             report($e);
@@ -94,12 +92,124 @@ class ImportTeachersListJob implements ShouldQueue
     }
 
     /**
+     * @param  iterable<int, array<string, mixed>>  $rows
+     * @param  array<string, string>  $headerMapping
+     * @return array<string, array{email: string, short: string, last_name: string, first_name: ?string}>
+     */
+    private function mapImportedTeachers(iterable $rows, array $headerMapping): array
+    {
+        $importedTeachers = [];
+
+        foreach ($rows as $row) {
+            $mappedRow = [];
+            foreach ($headerMapping as $originalHeader => $standardHeader) {
+                $mappedRow[$standardHeader] = $row[$originalHeader] ?? null;
+            }
+
+            $email = trim((string) ($mappedRow['Email'] ?? ''));
+            if ($email === '') {
+                continue;
+            }
+
+            $normalizedEmail = mb_strtolower($email);
+            $importedTeachers[$normalizedEmail] = [
+                'email' => $normalizedEmail,
+                'short' => strtoupper(trim((string) ($mappedRow['Kurz'] ?? ''))),
+                'last_name' => trim((string) ($mappedRow['Nachname'] ?? '')),
+                'first_name' => trim((string) ($mappedRow['Vorname'] ?? '')) ?: null,
+            ];
+        }
+
+        return $importedTeachers;
+    }
+
+    /**
+     * @param  array<string, array{email: string, short: string, last_name: string, first_name: ?string}>  $importedTeachers
+     * @return array{created: int, updated: int, deleted: int, activated: int, inactive: int, skipped_existing: int}
+     */
+    private function synchronizeTeachers(array $importedTeachers): array
+    {
+        return DB::transaction(function () use ($importedTeachers): array {
+            School::query()
+                ->whereKey($this->schoolId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            User::teachers($this->schoolId)
+                ->whereDoesntHave('roles', fn ($query) => $query->whereIn('name', ['admin', 'super_admin']))
+                ->update(['is_active' => false]);
+
+            $registeredUsersByEmail = User::query()
+                ->where('school_id', $this->schoolId)
+                ->whereNotNull('email')
+                ->whereIn(DB::raw('LOWER(TRIM(email))'), array_keys($importedTeachers))
+                ->with('roles')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (User $user): string => mb_strtolower(trim((string) $user->email)));
+
+            $created = 0;
+            $updated = 0;
+            $activated = 0;
+            $skippedExisting = 0;
+
+            foreach ($importedTeachers as $normalizedEmail => $importedTeacher) {
+                $registeredUser = $registeredUsersByEmail->get($normalizedEmail);
+                if ($registeredUser) {
+                    $skippedExisting++;
+
+                    if ($registeredUser->hasRole('teacher')) {
+                        $registeredUser->forceFill([
+                            'email' => $importedTeacher['email'],
+                            'is_active' => true,
+                        ])->save();
+                        $activated++;
+                    }
+
+                    continue;
+                }
+
+                $teacher = Teacher::query()
+                    ->where('school_id', $this->schoolId)
+                    ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
+                    ->first() ?? new Teacher(['school_id' => $this->schoolId]);
+
+                $teacher->fill([
+                    'email' => $importedTeacher['email'],
+                    'short' => $importedTeacher['short'],
+                    'last_name' => $importedTeacher['last_name'],
+                    'first_name' => $importedTeacher['first_name'],
+                ])->save();
+
+                $teacher->wasRecentlyCreated ? $created++ : $updated++;
+            }
+
+            $inactive = User::teachers($this->schoolId)
+                ->where('is_active', false)
+                ->count();
+
+            return [
+                'created' => $created,
+                'updated' => $updated,
+                'deleted' => 0,
+                'activated' => $activated,
+                'inactive' => $inactive,
+                'skipped_existing' => $skippedExisting,
+            ];
+        }, attempts: 3);
+    }
+
+    /**
      * @return array{0: array<int, string>, 1: iterable<int, array<string, mixed>>}
      */
     private function readRowsWithHeaders(string $fullPath): array
     {
         try {
             $reader = SimpleExcelReader::create($fullPath);
+            if (strtolower((string) pathinfo($fullPath, PATHINFO_EXTENSION)) === 'csv') {
+                $reader->useDelimiter($this->detectCsvDelimiter($fullPath));
+            }
+
             $headers = $reader->getHeaders();
             $rows = $reader->getRows();
 
@@ -112,6 +222,36 @@ class ImportTeachersListJob implements ShouldQueue
 
             return $this->readLegacyXls($fullPath);
         }
+    }
+
+    private function detectCsvDelimiter(string $fullPath): string
+    {
+        $handle = fopen($fullPath, 'rb');
+        if ($handle === false) {
+            return ',';
+        }
+
+        $headerLine = fgets($handle);
+        fclose($handle);
+
+        if (! is_string($headerLine)) {
+            return ',';
+        }
+
+        $detectedDelimiter = ',';
+        $detectedColumnCount = 1;
+
+        foreach ([',', ';', "\t"] as $delimiter) {
+            $columnCount = count(str_getcsv($headerLine, $delimiter, '"', ''));
+            if ($columnCount <= $detectedColumnCount) {
+                continue;
+            }
+
+            $detectedDelimiter = $delimiter;
+            $detectedColumnCount = $columnCount;
+        }
+
+        return $detectedDelimiter;
     }
 
     /**
@@ -196,7 +336,7 @@ class ImportTeachersListJob implements ShouldQueue
     {
         broadcast(new TeachersListImportFinishedEvent(
             500,
-            $this->user->id,
+            $this->userId,
             $message,
             []
         ));
@@ -211,7 +351,7 @@ class ImportTeachersListJob implements ShouldQueue
     {
         $requiredColumns = [
             'Kurz' => ['kurz', 'short', 'kurzbezeichnung', 'kürzel', 'kuerzel'],
-            'Nachname' => ['nachname', 'last_name', 'lastname', 'name', 'surname'],
+            'Nachname' => ['nachname', 'familienname', 'last_name', 'lastname', 'name', 'surname'],
             'Vorname' => ['vorname', 'first_name', 'firstname', 'givenname'],
             'Email' => ['email', 'e-mail', 'mail', 'e_mail'],
         ];

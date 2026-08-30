@@ -159,6 +159,35 @@ test('index filters by school_id', function () {
     expect($teachers[0]['short'])->toBe('KRO');
 });
 
+test('index excludes teacher list entries that already have a registered school user', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    Teacher::create([
+        'school_id' => $this->school->id,
+        'short' => 'REG',
+        'first_name' => 'Registered',
+        'last_name' => 'Teacher',
+        'email' => 'registered@example.test',
+    ]);
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'email' => 'registered@example.test',
+    ]);
+    Teacher::create([
+        'school_id' => $this->school->id,
+        'short' => 'NEW',
+        'first_name' => 'New',
+        'last_name' => 'Teacher',
+        'email' => 'new@example.test',
+    ]);
+
+    $response = $this->getJson('/api/admin/teachers_list');
+
+    $response->assertOk()
+        ->assertJsonCount(1, 'items')
+        ->assertJsonPath('items.0.email', 'new@example.test');
+});
+
 test('index orders by short and last_name', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 

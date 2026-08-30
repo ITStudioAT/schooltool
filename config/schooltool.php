@@ -33,7 +33,7 @@ return [
             ],
             'teachers' => [
                 'max_size_kb' => 102400,
-                'allowed_extensions' => ['xlsx', 'xls'],
+                'allowed_extensions' => ['xlsx', 'xls', 'csv'],
             ],
             'teaching-import' => [
                 'max_size_kb' => 102400,

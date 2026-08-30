@@ -32,7 +32,10 @@ export default defineComponent({
         useEcho<ImportCompletionPayload>(
             channelName,
             'TeachersListImportFinishedEvent',
-            notifyImportCompletion,
+            (payload) => {
+                notifyImportCompletion(payload)
+                window.dispatchEvent(new CustomEvent('teachers-list-import-finished', { detail: payload }))
+            },
         )
 
         useEcho<ImportCompletionPayload>(

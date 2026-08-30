@@ -23,28 +23,63 @@
                             <div class="admin-card-eyebrow">Import</div>
                             <h3 class="admin-card-title" style="margin-top: 4px">Lehrer-Liste importieren</h3>
                             <div class="kpi-sub mt-2">
-                                Es muss sich um eine Excel-Datei (*.xlsx) handeln. Benötigte Spaltenüberschriften:
-                                <strong>Kurz, Nachname, Vorname, Email</strong>
+                                Es muss sich um eine Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv) handeln. Benötigte Spalten:
+                                <strong>Kurz/Kürzel, Nachname/Familienname, Vorname, Email/EMail</strong>
                             </div>
                         </div>
 
                         <template v-if="!is_upload_finished">
                             <FileUpload
                                 :path="teachersListUploadPath"
+                                fileLabel
+                                @uploadStart="importStarted"
                                 @fileUploadFinished="fileUploadFinished"
+                                @error="importUploadFailed"
                                 class="mt-2" />
+                            <v-alert
+                                v-if="is_import_running"
+                                type="info"
+                                variant="tonal"
+                                rounded="lg"
+                                title="Import läuft"
+                                class="mt-4">
+                                Die Lehrerliste wird hochgeladen und anschließend importiert. Bitte warten Sie.
+                                <v-progress-linear color="primary" indeterminate rounded height="6" class="mt-3" />
+                            </v-alert>
                             <div class="mt-4">
-                                <v-btn color="warning" variant="tonal" rounded="lg" prepend-icon="mdi-close" @click="is_upload = false">
+                                <v-btn
+                                    color="warning"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-close"
+                                    :disabled="is_import_running"
+                                    @click="is_upload = false">
                                     Abbruch
                                 </v-btn>
                             </div>
                         </template>
 
                         <template v-else>
-                            <div class="empty-state crud-form-section">
-                                <div class="kpi-sub">Die Datei wurde hochgeladen und wird jetzt verarbeitet.</div>
-                            </div>
-                            <div class="mt-4">
+                            <v-alert
+                                v-if="is_import_running"
+                                type="info"
+                                variant="tonal"
+                                rounded="lg"
+                                title="Import läuft">
+                                Die Lehrerliste wird importiert. Bitte warten Sie, bis die Verarbeitung abgeschlossen ist.
+                                <v-progress-linear color="primary" indeterminate rounded height="6" class="mt-3" />
+                            </v-alert>
+
+                            <v-alert
+                                v-else-if="is_import_finished"
+                                :type="import_status === 200 ? 'success' : 'error'"
+                                variant="tonal"
+                                rounded="lg"
+                                :title="import_status === 200 ? 'Import abgeschlossen' : 'Import fehlgeschlagen'">
+                                {{ import_message }}
+                            </v-alert>
+
+                            <div class="mt-4" v-if="is_import_finished">
                                 <v-btn color="success" variant="flat" rounded="lg" prepend-icon="mdi-check" @click="uploadFinished">
                                     Fertig
                                 </v-btn>
@@ -272,12 +307,24 @@ export default {
         await this.teachersListStore.index()
     },
 
+    mounted() {
+        window.addEventListener('teachers-list-import-finished', this.handleImportFinished)
+    },
+
+    beforeUnmount() {
+        window.removeEventListener('teachers-list-import-finished', this.handleImportFinished)
+    },
+
     data() {
         return {
             teachersListStore: null,
             is_valid: false,
             is_upload: false,
             is_upload_finished: false,
+            is_import_running: false,
+            is_import_finished: false,
+            import_status: null,
+            import_message: '',
         }
     },
 
@@ -315,12 +362,42 @@ export default {
             await this.teachersListStore.index()
         },
 
+        importStarted() {
+            this.is_import_running = true
+            this.is_import_finished = false
+            this.import_status = null
+            this.import_message = ''
+        },
+
         fileUploadFinished() {
             this.is_upload_finished = true
         },
 
+        importUploadFailed() {
+            this.is_import_running = false
+            this.is_import_finished = false
+        },
+
+        async handleImportFinished(event) {
+            if (!this.is_import_running) { return }
+
+            const payload = event.detail || {}
+            this.is_import_running = false
+            this.is_import_finished = true
+            this.import_status = Number(payload.status)
+            this.import_message = payload.message || 'Die Verarbeitung der Lehrerliste wurde abgeschlossen.'
+
+            if (this.import_status === 200) {
+                await this.teachersListStore.index()
+            }
+        },
+
         uploadFinished() {
             this.is_upload_finished = false
+            this.is_import_running = false
+            this.is_import_finished = false
+            this.import_status = null
+            this.import_message = ''
             this.is_upload = false
         },
 

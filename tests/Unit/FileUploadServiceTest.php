@@ -657,6 +657,27 @@ describe('upload security boundaries', function () {
         );
     })->throws(ValidationException::class);
 
+    it('accepts a safe CSV file for the teachers profile', function () {
+        $content = "Kürzel;Familienname;Vorname;EMail\nMUE;Müller;Anna;anna.mueller@example.test\n";
+        $startRequest = Request::create('/teachers-list-upload', 'POST');
+        $startRequest->headers->set('Upload-Name', 'Lehrerliste.csv');
+        $startRequest->headers->set('Upload-Length', (string) strlen($content));
+        $id = $this->service->upload($startRequest, 'teachers');
+
+        $patchRequest = Request::create("/teachers-list-upload?patch={$id}", 'PATCH', [], [], [], [], $content);
+        $patchRequest->headers->set('Upload-Name', 'Lehrerliste.csv');
+        $patchRequest->headers->set('Upload-Length', (string) strlen($content));
+        $result = $this->service->uploadNext(
+            $patchRequest,
+            'app/test-uploads',
+            'teachers_list',
+            profile: 'teachers',
+        );
+
+        expect($result)->toBe('teachers_list.csv')
+            ->and(file_get_contents(storage_path('app/test-uploads/teachers_list.csv')))->toBe($content);
+    });
+
     it('accepts a normal multi-chunk upload within its bound profile and limit', function () {
         $startRequest = Request::create('/secure-upload', 'POST');
         $startRequest->headers->set('Upload-Name', 'notes.txt');

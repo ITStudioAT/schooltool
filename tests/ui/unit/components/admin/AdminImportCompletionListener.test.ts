@@ -46,8 +46,10 @@ describe('Admin import completion listener', () => {
         )
     })
 
-    it('notifies for both events and forwards Import116 completion to polling consumers', () => {
+    it('notifies for both events and forwards completions to their consumers', () => {
+        const teachersListFinishedListener = vi.fn()
         const importFinishedListener = vi.fn()
+        window.addEventListener('teachers-list-import-finished', teachersListFinishedListener)
         window.addEventListener('import116-finished', importFinishedListener)
 
         shallowMount(AdminImportCompletionListener, {
@@ -82,9 +84,12 @@ describe('Admin import completion listener', () => {
             type: 'error',
             persistent: true,
         })
+        expect(teachersListFinishedListener).toHaveBeenCalledTimes(1)
+        expect((teachersListFinishedListener.mock.calls[0][0] as CustomEvent).detail).toEqual(teachersListPayload)
         expect(importFinishedListener).toHaveBeenCalledTimes(1)
         expect((importFinishedListener.mock.calls[0][0] as CustomEvent).detail).toEqual(import116Payload)
 
+        window.removeEventListener('teachers-list-import-finished', teachersListFinishedListener)
         window.removeEventListener('import116-finished', importFinishedListener)
     })
 

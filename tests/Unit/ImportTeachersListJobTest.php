@@ -10,6 +10,7 @@
 use App\Events\TeachersListImportFinishedEvent;
 use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
+use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,7 +23,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 // Helper function to create test Excel file
-function createTestExcelFile(array $headers, array $rows): string
+function createTestExcelFile(array $headers, array $rows, string $delimiter = ','): string
 {
     $tempDirectory = storage_path('framework/testing');
     File::ensureDirectoryExists($tempDirectory);
@@ -41,11 +42,11 @@ function createTestExcelFile(array $headers, array $rows): string
     }
 
     // Write headers
-    fputcsv($handle, $headers);
+    fputcsv($handle, $headers, $delimiter, '"', '');
 
     // Write rows
     foreach ($rows as $row) {
-        fputcsv($handle, $row);
+        fputcsv($handle, $row, $delimiter, '"', '');
     }
 
     fclose($handle);
@@ -73,6 +74,7 @@ beforeEach(function () {
 
     // Create required roles
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
     // Create school
     $this->school = School::factory()->create([
@@ -96,6 +98,97 @@ afterEach(function () {
 });
 
 describe('handle - successful imports', function () {
+    it('deactivates omitted teacher users and activates imported existing teacher users without staging duplicates', function () {
+        $firstSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+        $secondSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+        $omittedTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $firstSchoolyear->id,
+            'email' => 'omitted@example.test',
+            'is_active' => true,
+        ]);
+        $omittedTeacher->assignRole('teacher');
+        $importedTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $secondSchoolyear->id,
+            'email' => 'EXISTING@EXAMPLE.TEST',
+            'is_active' => false,
+        ]);
+        $importedTeacher->assignRole('teacher');
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['EXI', 'Existing', 'Teacher', 'EXISTING@EXAMPLE.TEST'],
+                ['NEW', 'New', 'Teacher', 'NEW@EXAMPLE.TEST'],
+            ],
+        );
+
+        (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+        expect((bool) $omittedTeacher->fresh()->is_active)->toBeFalse()
+            ->and((bool) $importedTeacher->fresh()->is_active)->toBeTrue()
+            ->and($importedTeacher->fresh()->email)->toBe('existing@example.test')
+            ->and($omittedTeacher->fresh()->schoolyear_id)->toBe($firstSchoolyear->id)
+            ->and($importedTeacher->fresh()->schoolyear_id)->toBe($secondSchoolyear->id)
+            ->and(Teacher::where('email', 'existing@example.test')->exists())->toBeFalse()
+            ->and(Teacher::where('email', 'new@example.test')->exists())->toBeTrue();
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200
+                && $event->data['created'] === 1
+                && $event->data['activated'] === 1
+                && $event->data['inactive'] === 1
+                && $event->data['skipped_existing'] === 1;
+        });
+    });
+
+    it('keeps omitted admin teachers active', function () {
+        $protectedTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'protected@example.test',
+            'is_active' => true,
+        ]);
+        $protectedTeacher->assignRole(['admin', 'teacher']);
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['NEW', 'New', 'Teacher', 'new@example.test'],
+            ],
+        );
+
+        (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+        expect((bool) $protectedTeacher->fresh()->is_active)->toBeTrue();
+    });
+
+    it('imports the supplied semicolon CSV format', function () {
+        $filePath = createTestExcelFile(
+            ['#', 'Kürzel', 'Amtstitel', 'Familienname', 'Vorname', 'EMail', 'Schule'],
+            [
+                ['1', 'MÜL', 'Prof.', 'Müller', 'Anna', 'ANNA.MUELLER@EXAMPLE.TEST', 'Testschule'],
+            ],
+            ';',
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        $teacher = Teacher::where('email', 'anna.mueller@example.test')->first();
+
+        expect($teacher)->not->toBeNull()
+            ->and($teacher->school_id)->toBe($this->school->id)
+            ->and($teacher->short)->toBe('MÜL')
+            ->and($teacher->last_name)->toBe('Müller')
+            ->and($teacher->first_name)->toBe('Anna');
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200
+                && $event->data['created'] === 1;
+        });
+    });
+
     it('keeps CSV rows lazy instead of materializing the complete import', function () {
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
@@ -165,7 +258,7 @@ describe('handle - successful imports', function () {
         // Create existing teacher
         Teacher::create([
             'school_id' => $this->school->id,
-            'email' => 'existing@test.de',
+            'email' => 'EXISTING@TEST.DE',
             'short' => 'OLD',
             'last_name' => 'OldName',
             'first_name' => 'OldFirst',
@@ -174,7 +267,7 @@ describe('handle - successful imports', function () {
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
             [
-                ['NEW', 'NewName', 'NewFirst', 'existing@test.de'],
+                ['NEW', 'NewName', 'NewFirst', 'EXISTING@TEST.DE'],
             ]
         );
 
@@ -184,7 +277,9 @@ describe('handle - successful imports', function () {
         expect(Teacher::count())->toBe(1);
 
         $teacher = Teacher::where('email', 'existing@test.de')->first();
-        expect($teacher->short)->toBe('NEW')
+        expect($teacher)->not->toBeNull()
+            ->and($teacher->email)->toBe('existing@test.de')
+            ->and($teacher->short)->toBe('NEW')
             ->and($teacher->last_name)->toBe('NewName')
             ->and($teacher->first_name)->toBe('NewFirst');
 
@@ -428,6 +523,12 @@ describe('handle - multi-school isolation', function () {
     it('only imports teachers for the user school', function () {
         // Create another school with existing teacher
         $otherSchool = School::factory()->create(['short_name' => 'OTHER']);
+        $otherRegisteredTeacher = User::factory()->create([
+            'school_id' => $otherSchool->id,
+            'email' => 'registered@other.example',
+            'is_active' => true,
+        ]);
+        $otherRegisteredTeacher->assignRole('teacher');
         Teacher::create([
             'school_id' => $otherSchool->id,
             'email' => 'other@school.de',
@@ -448,7 +549,8 @@ describe('handle - multi-school isolation', function () {
 
         expect(Teacher::count())->toBe(2)
             ->and(Teacher::where('school_id', $this->school->id)->count())->toBe(1)
-            ->and(Teacher::where('school_id', $otherSchool->id)->count())->toBe(1);
+            ->and(Teacher::where('school_id', $otherSchool->id)->count())->toBe(1)
+            ->and((bool) $otherRegisteredTeacher->fresh()->is_active)->toBeTrue();
     });
 
     it('does not update teachers from other schools with same email', function () {
@@ -488,7 +590,14 @@ describe('handle - multi-school isolation', function () {
 });
 
 describe('handle - edge cases', function () {
-    it('handles empty Excel file with only headers', function () {
+    it('rejects an empty file without changing registered teacher states', function () {
+        $registeredTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'registered@example.test',
+            'is_active' => true,
+        ]);
+        $registeredTeacher->assignRole('teacher');
+
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
             []
@@ -497,12 +606,39 @@ describe('handle - edge cases', function () {
         $job = new ImportTeachersListJob($this->user, $filePath);
         $job->handle();
 
-        expect(Teacher::count())->toBe(0);
+        expect(Teacher::count())->toBe(0)
+            ->and((bool) $registeredTeacher->fresh()->is_active)->toBeTrue();
 
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
-            return $event->status === 200
-                && $event->data['created'] === 0
-                && $event->data['updated'] === 0;
+            return $event->status === 500
+                && str_contains($event->message, 'keine importierbaren');
+        });
+    });
+
+    it('rolls back all changes when a teacher row cannot be stored', function () {
+        $registeredTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'registered@example.test',
+            'is_active' => true,
+        ]);
+        $registeredTeacher->assignRole('teacher');
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['NEW', 'Valid', 'Teacher', 'valid@example.test'],
+                ['BAD', str_repeat('X', 256), 'Teacher', 'invalid@example.test'],
+            ],
+        );
+
+        (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+        expect((bool) $registeredTeacher->fresh()->is_active)->toBeTrue()
+            ->and(Teacher::whereIn('email', ['valid@example.test', 'invalid@example.test'])->exists())->toBeFalse();
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 500
+                && $event->data === [];
         });
     });
 

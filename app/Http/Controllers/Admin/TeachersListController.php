@@ -29,7 +29,15 @@ class TeachersListController extends Controller
         }
 
         $search_string = $request->get('search_string');
-        $query = Teacher::where('school_id', $auth_user->school_id)->orderBy('short')->orderBy('last_name');
+        $query = Teacher::where('school_id', $auth_user->school_id)
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('users')
+                    ->whereColumn('users.school_id', 'teachers.school_id')
+                    ->whereRaw('LOWER(TRIM(users.email)) = LOWER(TRIM(teachers.email))');
+            })
+            ->orderBy('short')
+            ->orderBy('last_name');
 
         if (! empty($search_string)) {
             $query->where(function ($q) use ($search_string) {
