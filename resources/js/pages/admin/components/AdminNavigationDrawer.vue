@@ -1,6 +1,12 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" color="primary" v-if="isVisible">
-        <v-toolbar color="appbar">
+    <v-navigation-drawer
+        v-if="isVisible"
+        v-model="isOpen"
+        :color="shellColor"
+        :style="shellTextColor ? { color: shellTextColor } : undefined">
+        <v-toolbar
+            :color="shellColor"
+            :style="shellTextColor ? { color: shellTextColor } : undefined">
             <v-toolbar-title>
                 <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
             </v-toolbar-title>
@@ -101,6 +107,14 @@ export default {
         },
         config: {
             type: Object,
+            default: null,
+        },
+        shellColor: {
+            type: String,
+            default: 'primary',
+        },
+        shellTextColor: {
+            type: String,
             default: null,
         },
         isLoading: {

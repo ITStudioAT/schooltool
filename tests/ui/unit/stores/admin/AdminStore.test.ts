@@ -13,6 +13,7 @@ describe('Admin store config loading', () => {
         setActivePinia(createPinia())
         globalThis.axios = {
             get: vi.fn(),
+            put: vi.fn(),
         } as never
     })
 
@@ -81,5 +82,32 @@ describe('Admin store config loading', () => {
         await expect(secondRequest).resolves.toEqual(payload)
         expect(store.config).toEqual(payload)
         expect(store.config_request_promise).toBeNull()
+    })
+
+    it('keeps the saved personal shell color preference when the config reload is stale', async () => {
+        const store = useAdminStore()
+        const payload = {
+            is_auth: true,
+            user: { use_school_color_for_admin_ui: true },
+            selected_school: { id: 7, color: '#336699' },
+            selected_schoolyear: { id: 3 },
+            selected_register: null,
+        }
+
+        vi.mocked(globalThis.axios.put).mockResolvedValueOnce({
+            data: { use_school_color_for_admin_ui: false },
+        } as never)
+        vi.mocked(globalThis.axios.get).mockResolvedValueOnce({
+            data: JSON.parse(JSON.stringify(payload)),
+        } as never)
+
+        const result = await store.saveAdminShellColorPreference(false)
+
+        expect(globalThis.axios.put).toHaveBeenCalledWith('/api/admin/user-preferences/admin-shell-color', {
+            use_school_color_for_admin_ui: false,
+        })
+        expect(globalThis.axios.get).toHaveBeenCalledWith('/api/admin/config', {})
+        expect(store.config?.user.use_school_color_for_admin_ui).toBe(false)
+        expect(result).toBe(true)
     })
 })

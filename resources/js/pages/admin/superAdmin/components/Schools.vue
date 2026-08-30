@@ -4,7 +4,7 @@
             <div class="admin-card-head crud-head mb-4">
                 <div>
                     <div class="admin-card-eyebrow">Verwaltung</div>
-                    <h2 class="admin-card-title crud-title">Schulen</h2>
+                    <h2 class="admin-card-title crud-title">{{ schoolsHeading }}</h2>
                 </div>
 
                 <div class="admin-kpi-grid crud-kpis">
@@ -17,7 +17,7 @@
 
             <div class="crud-content-grid">
                 <section class="admin-card ai-glass-panel crud-main-card pa-3">
-                    <div class="d-grid ga-3 mb-3">
+                    <div v-if="canManageAllSchools" class="d-grid ga-3 mb-3">
                         <div class="empty-state crud-search-panel">
                             <SearchField :store="schoolStore" selected_field="selected_schools" />
                         </div>
@@ -49,9 +49,17 @@
                                 :class="{ 'is-selected': isSelectedSchool(item.id) }">
                                 <template #title>
                                     <div class="person-row crud-item-row">
-                                        <div class="d-flex align-start" style="min-width: 0">
+                                        <div class="d-flex align-center ga-3" style="min-width: 0">
+                                            <div v-if="item.logo" class="school-list-logo">
+                                                <img
+                                                    :src="'/storage/images/logos/' + item.logo"
+                                                    :alt="`Logo von ${item.long_name}`" />
+                                            </div>
                                             <div class="person-body" style="min-width: 0">
-                                                <div class="person-name">{{ item.long_name }}</div>
+                                                <div class="d-flex align-center ga-2">
+                                                    <span class="school-color-swatch" :style="{ backgroundColor: item.color }" aria-hidden="true"></span>
+                                                    <div class="person-name">{{ item.long_name }}</div>
+                                                </div>
                                                 <div class="person-roles">{{ item.short_name || '-' }}</div>
                                                 <div class="person-email" style="max-width: 280px">{{ item.email || 'Keine E-Mail hinterlegt' }}</div>
                                             </div>
@@ -62,7 +70,7 @@
                         </v-list>
                     </div>
 
-                    <div class="empty-state crud-pagination mt-3 pa-3">
+                    <div v-if="canManageAllSchools" class="empty-state crud-pagination mt-3 pa-3">
                         <Pagination :meta="safeMeta" :store="schoolStore" selected_field="selected_schools" />
                     </div>
                 </section>
@@ -72,12 +80,12 @@
                         <div class="admin-card-head mb-2">
                             <div>
                                 <div class="admin-card-eyebrow">Aktionen</div>
-                                <h3 class="admin-card-title">Schulen verwalten</h3>
+                                <h3 class="admin-card-title">{{ schoolActionsHeading }}</h3>
                             </div>
                         </div>
                         <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
 
-                        <div class="crud-actions-primary">
+                        <div v-if="canManageAllSchools" class="crud-actions-primary">
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createSchool">
                                 Hinzufügen
                             </v-btn>
@@ -94,11 +102,11 @@
                                     rounded="lg"
                                     prepend-icon="mdi-pencil"
                                     @click="editSchool(selected_schools[0])">
-                                    Ändern
+                                    {{ canManageAllSchools ? 'Ändern' : 'Farbe ändern' }}
                                 </v-btn>
 
                                 <v-btn
-                                    v-if="selected_schools.length === 1"
+                                    v-if="canManageAllSchools"
                                     block
                                     color="info"
                                     variant="tonal"
@@ -110,6 +118,7 @@
                                 </v-btn>
 
                                 <v-btn
+                                    v-if="canManageAllSchools"
                                     block
                                     color="warning"
                                     variant="tonal"
@@ -145,7 +154,7 @@
                 <template v-if="action == 'create_school' || action == 'edit_school'">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-2 crud-form">
                         <div class="empty-state crud-form-section">
-                            <v-row dense>
+                            <v-row v-if="canManageAllSchools" dense>
                                 <v-col cols="12">
                                     <v-text-field autofocus v-model="data.long_name" label="Schule (langer Name)" :rules="[required(), maxLength(255)]" />
                                 </v-col>
@@ -161,9 +170,24 @@
                                     <v-checkbox hide-details v-model="data.is_selectable" label="Auswählbar" />
                                 </v-col>
                             </v-row>
+
+                            <div class="school-color-field" :class="{ 'mt-4': canManageAllSchools }">
+                                <div class="admin-card-eyebrow">Schulfarbe</div>
+                                <div class="kpi-sub mt-1">Diese Farbe kennzeichnet die Schule in der Anwendung.</div>
+                                <div class="school-color-picker-wrap mt-3">
+                                    <v-color-picker
+                                        v-model="data.color"
+                                        mode="hex"
+                                        :modes="['hex']"
+                                        :swatches="schoolColorSwatches"
+                                        show-swatches
+                                        hide-eye-dropper
+                                        width="100%" />
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="empty-state crud-form-section mt-3" v-if="data.id">
+                        <div class="empty-state crud-form-section mt-3" v-if="canManageAllSchools && data.id">
                             <div class="admin-card-eyebrow">Logo</div>
                             <div class="d-grid ga-2 mt-2">
                                 <div v-if="data.upload_file" class="schools-logo-preview">
@@ -320,7 +344,13 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
-        await this.schoolStore.index()
+
+        if (this.canManageAllSchools) {
+            await this.schoolStore.index()
+            return
+        }
+
+        this.loadOwnSchool()
     },
 
     unmounted() {},
@@ -356,9 +386,28 @@ export default {
         },
         schoolDialogTitle() {
             if (this.action == 'create_school') return 'Neue Schule'
-            if (this.action == 'edit_school') return 'Schule ändern'
+            if (this.action == 'edit_school') return this.canManageAllSchools ? 'Schule ändern' : 'Schulfarbe ändern'
             if (this.action == 'delete_school') return 'Löschen bestätigen'
             return 'Schule'
+        },
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
+        },
+        canManageAllSchools() {
+            return this.configuredRoleNames.includes('super_admin')
+        },
+        schoolsHeading() {
+            return this.canManageAllSchools ? 'Schulen' : 'Schule'
+        },
+        schoolActionsHeading() {
+            return this.canManageAllSchools ? 'Schulen verwalten' : 'Schulfarbe verwalten'
+        },
+        schoolColorSwatches() {
+            return [
+                ['#1976D2', '#673AB7', '#E91E63', '#D32F2F'],
+                ['#F57C00', '#FBC02D', '#388E3C', '#00796B'],
+                ['#0288D1', '#455A64', '#5D4037', '#7B1FA2'],
+            ]
         },
         schoolsMainXlCols() {
             return 11
@@ -407,6 +456,8 @@ export default {
             await this.$refs.form.validate()
             if (!this.is_valid) return
 
+            data.color = typeof data.color === 'string' ? data.color.toUpperCase() : '#1976D2'
+
             if (data.id) {
                 if (!(await this.schoolStore.update(data))) return
             } else {
@@ -414,14 +465,23 @@ export default {
             }
 
             this.selected_schools = []
-            // await this.adminStore.loadConfig()
-            await this.schoolStore.index()
+
+            if (this.canManageAllSchools) {
+                await this.schoolStore.index()
+            }
+
+            await this.adminStore.loadConfig()
+
+            if (!this.canManageAllSchools) {
+                this.loadOwnSchool()
+            }
+
             this.data = {}
             this.action = ''
         },
 
         createSchool() {
-            this.data = { is_selectable: true }
+            this.data = { color: '#1976D2', is_selectable: true }
             this.action = 'create_school'
         },
 
@@ -440,6 +500,18 @@ export default {
             const school = this.schools.find((s) => s.id === school_id)
             this.data = JSON.parse(JSON.stringify(school))
             this.action = 'edit_school'
+        },
+        loadOwnSchool() {
+            const school = this.config?.selected_school
+            this.schools = school ? [JSON.parse(JSON.stringify(school))] : []
+            this.selected_schools = school ? [school.id] : []
+            this.meta = {
+                from: school ? 1 : 0,
+                to: school ? 1 : 0,
+                total: school ? 1 : 0,
+                current_page: 1,
+                last_page: 1,
+            }
         },
         async openCloudwaysSyncDialog() {
             if (!this.selectedSchool) return
@@ -523,5 +595,42 @@ export default {
     background-size: 16px 16px;
     background-position: 0 0, 0 8px, 8px -8px, -8px 0;
     padding: 6px 10px;
+}
+
+.school-color-swatch {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(16, 38, 58, 0.18);
+}
+
+.school-list-logo {
+    display: flex;
+    width: 54px;
+    height: 44px;
+    flex: 0 0 54px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.86);
+    padding: 4px;
+}
+
+.school-list-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.school-color-picker-wrap {
+    max-width: 420px;
+    overflow: hidden;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 14px;
 }
 </style>

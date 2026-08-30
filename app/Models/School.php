@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $short_name
  * @property string|null $email
  * @property string|null $logo
+ * @property string $color
  * @property int $is_selectable
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -55,6 +56,7 @@ class School extends Model
         'short_name',
         'email',
         'logo',
+        'color',
         'is_selectable',
     ];
 

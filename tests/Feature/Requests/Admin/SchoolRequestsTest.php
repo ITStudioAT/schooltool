@@ -84,10 +84,24 @@ describe('SchoolStoreRequest', function () {
             'short_name' => 'NSN',
             'email' => 'newschool@example.com',
             'upload_file' => null,
+            'color' => '#336699',
             'is_selectable' => true,
         ]);
 
         expect($validator->passes())->toBeTrue();
+    });
+
+    it('rejects an invalid color', function () {
+        $validator = validateSchoolRequest(SchoolStoreRequest::class, [
+            'long_name' => 'New School Name',
+            'short_name' => 'NSN',
+            'email' => 'newschool@example.com',
+            'color' => 'red',
+            'is_selectable' => true,
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('color'))->toBeTrue();
     });
 
     it('fails when long_name is missing', function () {

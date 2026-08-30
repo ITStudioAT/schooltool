@@ -32,6 +32,19 @@
 
                 <v-btn
                     rounded="xl"
+                    :color="step === 'APPEARANCE' ? 'primary' : 'secondary'"
+                    :variant="step === 'APPEARANCE' ? 'flat' : 'tonal'"
+                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'APPEARANCE', 'profile-nav__button--idle': step !== 'APPEARANCE' }]"
+                    @click="openAppearance">
+                    <v-icon size="18" icon="mdi-palette-outline" class="mr-2" />
+                    <span class="profile-nav__button-copy">
+                        <span class="profile-nav__button-title">Darstellung</span>
+                        <span class="profile-nav__button-meta">{{ usesSchoolColorForAdminUi ? 'Schulfarbe' : 'Standard (Primary)' }}</span>
+                    </span>
+                </v-btn>
+
+                <v-btn
+                    rounded="xl"
                     :color="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'primary' : 'secondary'"
                     :variant="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'flat' : 'tonal'"
                     :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN', 'profile-nav__button--idle': !(step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN') }]"
@@ -191,6 +204,59 @@
                     </v-card-actions>
                 </v-card>
 
+                <v-card v-if="step === 'APPEARANCE'" rounded="xl" class="profile-card" flat>
+                    <v-card-text class="pa-5">
+                        <div class="profile-card__header mb-5">
+                            <div class="profile-card__header-icon-wrap">
+                                <v-icon size="20" icon="mdi-palette-outline" />
+                            </div>
+                            <div>
+                                <div class="profile-card__header-title">Farbdarstellung</div>
+                                <div class="profile-card__header-sub">Wählen Sie Schulfarbe oder Standardfarbe (Primary). Diese Auswahl gilt nur für Ihr Benutzerkonto.</div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid ga-3">
+                            <v-btn
+                                block
+                                rounded="lg"
+                                size="large"
+                                prepend-icon="mdi-school-outline"
+                                :append-icon="usesSchoolColorForAdminUi ? 'mdi-check-circle' : undefined"
+                                :color="schoolAppearanceColor"
+                                variant="flat"
+                                :loading="appearanceSaving"
+                                :aria-pressed="usesSchoolColorForAdminUi"
+                                :style="schoolAppearanceTextColor ? { color: schoolAppearanceTextColor } : undefined"
+                                :class="[
+                                    'appearance-color-option text-none justify-start',
+                                    { 'appearance-color-option--selected': usesSchoolColorForAdminUi },
+                                ]"
+                                @click="saveAppearance(true)">
+                                Schulfarbe verwenden
+                            </v-btn>
+
+                            <v-btn
+                                block
+                                rounded="lg"
+                                size="large"
+                                prepend-icon="mdi-palette-outline"
+                                :append-icon="!usesSchoolColorForAdminUi ? 'mdi-check-circle' : undefined"
+                                color="primary"
+                                variant="flat"
+                                :loading="appearanceSaving"
+                                :aria-pressed="!usesSchoolColorForAdminUi"
+                                :class="[
+                                    'appearance-color-option text-none justify-start',
+                                    { 'appearance-color-option--selected': !usesSchoolColorForAdminUi },
+                                ]"
+                                @click="saveAppearance(false)">
+                                Standardfarbe (Primary) verwenden
+                            </v-btn>
+                        </div>
+                    </v-card-text>
+                </v-card>
+
                 <!-- KENNWORT ÄNDERN -->
                 <v-card v-if="step === 'CHANGE_PASSWORD'" rounded="xl" class="profile-card" flat>
                     <v-card-text class="pa-5">
@@ -286,6 +352,7 @@
 </template>
 
 <script>
+import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -332,6 +399,7 @@ export default {
             step: '',
             is_password_visible: false,
             is_password_visible_repeat: false,
+            appearanceSaving: false,
         }
     },
 
@@ -341,6 +409,20 @@ export default {
 
         is2FaStep() {
             return this.step === 'CHANGE_2FA'
+        },
+
+        usesSchoolColorForAdminUi() {
+            return this.config?.user?.use_school_color_for_admin_ui === true
+        },
+
+        schoolAppearanceColor() {
+            return resolveAdminShellColor(this.config?.selected_school, {
+                use_school_color_for_admin_ui: true,
+            })
+        },
+
+        schoolAppearanceTextColor() {
+            return resolveAdminShellTextColor(this.schoolAppearanceColor)
         },
 
         heroChips() {
@@ -364,6 +446,7 @@ export default {
                 INPUT_CODE: { icon: 'mdi-email-check-outline', label: 'E-Mail bestätigen', note: 'Änderung per Code verifizieren.' },
                 CHANGE_PASSWORD: { icon: 'mdi-lock-outline', label: 'Kennwort ändern', note: 'Neues Kennwort festlegen.' },
                 PASSWORD_ENTER_TOKEN: { icon: 'mdi-lock-check-outline', label: 'Kennwort bestätigen', note: 'Änderung per Code verifizieren.' },
+                APPEARANCE: { icon: 'mdi-palette-outline', label: 'Darstellung', note: 'Persönliche Farben für Kopfzeile und Menü wählen.' },
                 HOPPER_SCHOOLS: { icon: 'mdi-account-switch-outline', label: 'Hopper Schulen', note: 'Gespeicherte Konten für den Schnellwechsel verwalten.' },
                 CHANGE_2FA: { icon: 'mdi-shield-key-outline', label: '2-Faktor-Auth', note: 'Zwei-Faktor-Authentifizierung konfigurieren.' },
             }
@@ -382,6 +465,23 @@ export default {
             this.abort()
             this.data = {}
             this.step = 'CHANGE_PASSWORD'
+        },
+
+        openAppearance() {
+            this.abort()
+            this.step = 'APPEARANCE'
+        },
+
+        async saveAppearance(useSchoolColorForAdminUi) {
+            if (this.appearanceSaving || useSchoolColorForAdminUi === this.usesSchoolColorForAdminUi) return
+
+            this.appearanceSaving = true
+
+            try {
+                await this.adminStore.saveAdminShellColorPreference(useSchoolColorForAdminUi)
+            } finally {
+                this.appearanceSaving = false
+            }
         },
 
         wantToChange2Fa() {
@@ -533,6 +633,16 @@ export default {
     box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
     backdrop-filter: blur(10px);
     color: #112536 !important;
+}
+
+.appearance-color-option {
+    border: 2px solid rgba(255, 255, 255, 0.46);
+    box-shadow: 0 7px 18px rgba(16, 38, 58, 0.18);
+}
+
+.appearance-color-option--selected {
+    border-color: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 0 0 2px rgba(16, 38, 58, 0.34), 0 9px 22px rgba(16, 38, 58, 0.24);
 }
 
 .profile-card__header {

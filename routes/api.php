@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ABA\AbaExtractionController;
 use App\Http\Controllers\Admin\ABA\AbaKnowledgeQueryController;
 use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\AdminShellColorPreferenceController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
@@ -422,6 +423,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin shell profile */
     Route::middleware(['auth:sanctum'])->group(function () {
+        Route::put('/admin/user-preferences/admin-shell-color', [AdminShellColorPreferenceController::class, 'update']);
         Route::put('/admin/users/update_profile/{user}', [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code', [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password', [UserController::class, 'savePassword']);

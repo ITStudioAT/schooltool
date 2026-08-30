@@ -42,6 +42,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $two_factor_confirmed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property bool $use_school_color_for_admin_ui
  * @property string|null $last_name
  * @property string|null $first_name
  * @property string|null $phone
@@ -227,6 +228,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'teaching_student_grade_columns_by_schoolyear' => 'array',
             'restaurant_booking_defaults' => 'array',
             'hopper_account_ids' => 'array',
+            'use_school_color_for_admin_ui' => 'boolean',
         ];
     }
 

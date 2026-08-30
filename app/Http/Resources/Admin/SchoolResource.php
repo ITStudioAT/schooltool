@@ -30,6 +30,7 @@ class SchoolResource extends JsonResource
             'long_name' => $this->long_name,
             'short_name' => $this->short_name,
             'logo' => $this->logo,
+            'color' => $this->color,
             'email' => $this->email,
             'licences' => $this->relationLoaded('licences')
                 ? $this->licences->map(function ($licence) use ($schoolLicenceRows, $userLicenceAssignments) {

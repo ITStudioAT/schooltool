@@ -14,6 +14,7 @@ use App\Http\Resources\Admin\TeacherResource;
 use App\Http\Resources\Admin\TeachersListResource;
 use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Http\Resources\Admin\Tutoring\OfferResource as AdminTutoringOfferResource;
+use App\Http\Resources\Admin\UserResource as AdminUserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\Import116;
 use App\Models\Licence;
@@ -223,12 +224,16 @@ test('role resource returns id, name, and is_admin', function () {
     ]);
 });
 
-test('admin school resource casts selectable flag', function () {
-    $school = School::factory()->create(['is_selectable' => 0]);
+test('admin school resource exposes its color and selectable state as their expected types', function () {
+    $school = School::factory()->create([
+        'color' => '#336699',
+        'is_selectable' => 0,
+    ]);
 
     $data = (new AdminSchoolResource($school))->toArray(request());
 
-    expect($data['is_selectable'])->toBeFalse();
+    expect($data['color'])->toBe('#336699')
+        ->and($data['is_selectable'])->toBeFalse();
 });
 
 test('admin school resource exposes structured licence role names for assignment dialogs', function () {
@@ -511,6 +516,7 @@ test('user with role resource formats date flags and role list', function () {
         'login_at' => '2024-01-03 10:00:00',
         'is_active' => 1,
         'is_2fa' => 1,
+        'use_school_color_for_admin_ui' => false,
     ]);
     $user->assignRole('admin');
     $user->load('roles');
@@ -521,7 +527,17 @@ test('user with role resource formats date flags and role list', function () {
         ->and($data['confirmed_at'])->toBe('01.01.2024')
         ->and($data['is_verified'])->toBeTrue()
         ->and($data['email_verified_at'])->toBe('02.01.2024')
+        ->and($data['use_school_color_for_admin_ui'])->toBeFalse()
         ->and($data['roles']->values()->all())->toBe(['admin']);
+});
+
+test('admin user resource exposes the personal admin shell color preference', function () {
+    $user = User::factory()->create(['use_school_color_for_admin_ui' => false]);
+    $user->load('roles');
+
+    $data = (new AdminUserResource($user))->toArray(request());
+
+    expect($data['use_school_color_for_admin_ui'])->toBeFalse();
 });
 
 test('admin teaching import116 resource exposes school level attendance year and religion', function () {

@@ -24,6 +24,7 @@ class UserResource extends JsonResource
             'schoolclass' => $this->schoolclass,
             'email' => $this->email,
             'phone' => $this->phone,
+            'use_school_color_for_admin_ui' => (bool) $this->use_school_color_for_admin_ui,
             'import116_id' => $this->import116_id ? (int) $this->import116_id : null,
             'import116_children' => collect($this->import116_children ?? [])
                 ->map(function (array $child): array {

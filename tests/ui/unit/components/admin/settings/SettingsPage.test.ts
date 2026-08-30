@@ -100,13 +100,57 @@ describe('Admin settings page', () => {
         })
     })
 
-    it('builds the admin sub navigation with schoolyears and remaining placeholders', () => {
+    it('builds the admin sub navigation with own-school appearance settings', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isAdminTab: true,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'users', 'school_groups', 'log'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Benutzer', 'Schulgruppen', 'Log'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'schools', 'users', 'school_groups', 'log'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Schule', 'Benutzer', 'Schulgruppen', 'Log'])
+    })
+
+    it('opens the supplied schools panel URL for an admin', async () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['admin'],
+                                    selected_school: { id: 7, long_name: 'Testschule', color: '#1976D2' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?panel=schools',
+                        query: {
+                            panel: 'schools',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Schools: { template: '<div>Schools Component</div>' },
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText('Schools Component')).toBeInTheDocument()
+        })
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=admin&panel=schools')
     })
 
     it('builds the register sub navigation with users only', () => {

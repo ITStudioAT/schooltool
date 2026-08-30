@@ -1,5 +1,9 @@
 <template>
-    <v-app-bar flat color="primary" v-if="isVisible">
+    <v-app-bar
+        v-if="isVisible"
+        flat
+        :color="shellColor"
+        :style="shellTextColor ? { color: shellTextColor } : undefined">
         <template #prepend>
             <v-btn icon="mdi-menu-open" v-if="!isDrawerOpen" @click="isDrawerOpen = true" />
             <img
@@ -147,6 +151,14 @@ export default {
             required: true,
         },
         selectedSchoolLogoSrc: {
+            type: String,
+            default: null,
+        },
+        shellColor: {
+            type: String,
+            default: 'primary',
+        },
+        shellTextColor: {
             type: String,
             default: null,
         },

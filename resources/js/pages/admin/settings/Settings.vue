@@ -113,7 +113,7 @@
                         <Licences v-else-if="general_action === 'licences'" />
                     </div>
 
-                    <div v-else-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
+                    <div v-else-if="(isSuperAdminTab || isAdminTab) && sub_action === 'schools'" class="settings-schools-wrap">
                         <Schools />
                     </div>
 
@@ -567,6 +567,7 @@ export default {
             if (this.isAdminTab) {
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
+                    { key: 'schools', label: 'Schule', meta: 'Darstellung', icon: 'mdi-palette-outline' },
                     { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
                     { key: 'school_groups', label: 'Schulgruppen', meta: 'Gruppen', icon: 'mdi-account-multiple-outline' },
                     { key: 'log', label: 'Log', meta: 'System', icon: 'mdi-file-document-outline' },
@@ -744,7 +745,7 @@ export default {
                 : availableTabs[0]
             let keys, fallback
             if (resolvedTab === 'admin') {
-                keys = ['schoolyears', 'users', 'school_groups', 'log']
+                keys = ['schoolyears', 'schools', 'users', 'school_groups', 'log']
                 fallback = 'schoolyears'
             } else if (resolvedTab === 'tutoring') {
                 keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']

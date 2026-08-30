@@ -408,14 +408,23 @@ test('authenticated config resolves dashboard licences with a bulk query', funct
 });
 
 test('config returns selected school when user has one', function () {
+    $this->school->update([
+        'color' => '#336699',
+    ]);
+    $this->user->use_school_color_for_admin_ui = false;
+    $this->user->save();
+
     $this->actingAs($this->user);
 
     $response = $this->getJson('/api/admin/config');
 
     $response->assertStatus(200)
         ->assertJsonStructure([
-            'selected_school' => ['id', 'long_name'],
-        ]);
+            'selected_school' => ['id', 'long_name', 'color'],
+            'user' => ['use_school_color_for_admin_ui'],
+        ])
+        ->assertJsonPath('selected_school.color', '#336699')
+        ->assertJsonPath('user.use_school_color_for_admin_ui', false);
 });
 
 test('config returns empty menu for unauthenticated user', function () {

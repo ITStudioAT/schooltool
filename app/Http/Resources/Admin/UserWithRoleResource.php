@@ -21,6 +21,7 @@ class UserWithRoleResource extends JsonResource
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'email' => $this->email,
+            'use_school_color_for_admin_ui' => (bool) $this->use_school_color_for_admin_ui,
             'is_2fa' => $this->is_2fa ? true : false,
             'is_active' => $this->is_active ? true : false,
             'is_confirmed' => $this->confirmed_at ? true : false,

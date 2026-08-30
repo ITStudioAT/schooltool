@@ -82,7 +82,7 @@ test('super admin can list schools ordered by long_name and filter by search', f
     $response->assertStatus(200)
         ->assertJsonStructure([
             'data' => [
-                ['id', 'long_name', 'short_name', 'logo', 'email', 'is_selectable'],
+                ['id', 'long_name', 'short_name', 'logo', 'color', 'email', 'is_selectable'],
             ],
             'meta' => ['per_page', 'current_page', 'last_page'],
         ]);
@@ -381,6 +381,115 @@ test('update requires valid payload', function () {
         'long_name' => 'Missing ID',
     ])->assertStatus(422);
 });
+
+test('admin can persist the color of their own school', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/schools/{$this->school->id}", [
+        'id' => $this->school->id,
+        'long_name' => $this->school->long_name,
+        'short_name' => $this->school->short_name,
+        'email' => $this->school->email,
+        'color' => '#336699',
+        'is_selectable' => true,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('color', '#336699');
+
+    expect($this->school->fresh()->color)->toBe('#336699');
+});
+
+test('super admin can persist the color of another school', function () {
+    $otherSchool = School::factory()->create(['color' => '#1976D2']);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/schools/{$otherSchool->id}", [
+        'id' => $otherSchool->id,
+        'long_name' => $otherSchool->long_name,
+        'short_name' => $otherSchool->short_name,
+        'email' => $otherSchool->email,
+        'color' => '#AA33CC',
+        'is_selectable' => (bool) $otherSchool->is_selectable,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('color', '#AA33CC');
+
+    expect($otherSchool->fresh()->color)->toBe('#AA33CC');
+});
+
+test('admin cannot change the color of another school', function () {
+    $otherSchool = School::factory()->create(['color' => '#1976D2']);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/schools/{$otherSchool->id}", [
+        'id' => $otherSchool->id,
+        'long_name' => $otherSchool->long_name,
+        'short_name' => $otherSchool->short_name,
+        'email' => $otherSchool->email,
+        'color' => '#AA33CC',
+        'is_selectable' => (bool) $otherSchool->is_selectable,
+    ])->assertForbidden();
+
+    expect($otherSchool->fresh()->color)->toBe('#1976D2');
+});
+
+test('non admin cannot change their school color', function () {
+    $this->school->update(['color' => '#1976D2']);
+
+    $this->actingAs($this->registerAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/schools/{$this->school->id}", [
+        'id' => $this->school->id,
+        'long_name' => $this->school->long_name,
+        'short_name' => $this->school->short_name,
+        'email' => $this->school->email,
+        'color' => '#AA33CC',
+        'is_selectable' => true,
+    ])->assertForbidden();
+
+    expect($this->school->fresh()->color)->toBe('#1976D2');
+});
+
+test('guest cannot change a school color', function () {
+    $this->school->update(['color' => '#1976D2']);
+
+    $this->putJson("/api/admin/schools/{$this->school->id}", [
+        'id' => $this->school->id,
+        'long_name' => $this->school->long_name,
+        'short_name' => $this->school->short_name,
+        'email' => $this->school->email,
+        'color' => '#AA33CC',
+        'is_selectable' => true,
+    ])->assertUnauthorized();
+
+    expect($this->school->fresh()->color)->toBe('#1976D2');
+});
+
+test('school color must be a six digit hex value', function (string $color) {
+    $this->school->update(['color' => '#1976D2']);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/schools/{$this->school->id}", [
+        'id' => $this->school->id,
+        'long_name' => $this->school->long_name,
+        'short_name' => $this->school->short_name,
+        'email' => $this->school->email,
+        'color' => $color,
+        'is_selectable' => true,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('color');
+
+    expect($this->school->fresh()->color)->toBe('#1976D2');
+})->with([
+    'named color' => 'red',
+    'short hex' => '#123',
+    'alpha hex' => '#12345678',
+    'css injection' => '#123456; background: red',
+]);
 
 // ============================================================================
 // deleteSchools

@@ -7,7 +7,8 @@ import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 
 const vuetifyStubs = {
     'v-app-bar': {
-        template: '<header><slot name="prepend" /><slot name="title" /><slot name="append" /></header>',
+        props: ['color'],
+        template: '<header :data-color="color"><slot name="prepend" /><slot name="title" /><slot name="append" /></header>',
     },
     'v-btn': {
         props: ['disabled', 'loading'],
@@ -76,6 +77,12 @@ function renderAppBar(overrides = {}) {
 }
 
 describe('AdminAppBar', () => {
+    it('uses the resolved admin shell color', () => {
+        renderAppBar({ shellColor: '#336699' })
+
+        expect(screen.getByRole('banner')).toHaveAttribute('data-color', '#336699')
+    })
+
     it('always shows the schoolwide and personal schoolyears', () => {
         renderAppBar()
 

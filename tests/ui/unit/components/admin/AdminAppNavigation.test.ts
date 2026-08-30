@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminApp from '@/pages/admin/App.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
+import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
 
 describe('Admin app navigation', () => {
     afterEach(() => {
@@ -15,6 +16,43 @@ describe('Admin app navigation', () => {
 
         expect(source).toContain('<v-menu')
         expect(source).not.toContain('<v-list-group')
+    })
+
+    it('resolves the school color with a semantic primary fallback', () => {
+        expect(resolveAdminShellColor({ color: '#336699' }, { use_school_color_for_admin_ui: true })).toBe('#336699')
+        expect(resolveAdminShellColor({ color: '#336699' }, { use_school_color_for_admin_ui: false })).toBe('primary')
+        expect(resolveAdminShellColor({ color: 'red' }, { use_school_color_for_admin_ui: true })).toBe('primary')
+        expect(resolveAdminShellColor(null)).toBe('primary')
+    })
+
+    it('resolves the same school differently for each user preference', () => {
+        const adminShellColor = (AdminApp as any).computed.adminShellColor
+        const selectedSchool = { color: '#336699' }
+
+        expect(adminShellColor.call({
+            config: {
+                selected_school: selectedSchool,
+                user: { use_school_color_for_admin_ui: true },
+            },
+        })).toBe('#336699')
+        expect(adminShellColor.call({
+            config: {
+                selected_school: selectedSchool,
+                user: { use_school_color_for_admin_ui: false },
+            },
+        })).toBe('primary')
+    })
+
+    it('chooses readable text for stored school colors and lets Vuetify handle primary', () => {
+        expect(resolveAdminShellTextColor('#10263A')).toBe('#FFFFFF')
+        expect(resolveAdminShellTextColor('#FBC02D')).toBe('#10263A')
+        expect(resolveAdminShellTextColor('primary')).toBeNull()
+    })
+
+    it('applies the resolved color to both drawer surfaces', () => {
+        const source = readFileSync(join(process.cwd(), 'resources/js/pages/admin/components/AdminNavigationDrawer.vue'), 'utf8')
+
+        expect(source.match(/:color="shellColor"/g)).toHaveLength(2)
     })
 
     it('treats students timetables moderators as admin shell users', () => {

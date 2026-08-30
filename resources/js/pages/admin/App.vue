@@ -4,6 +4,8 @@
             v-model="show_navigation_drawer"
             :is-visible="isAdminShellVisible"
             :config="config"
+            :shell-color="adminShellColor"
+            :shell-text-color="adminShellTextColor"
             :is-loading="is_loading"
             :is-menu-interaction-disabled="isMenuInteractionDisabled"
             @navigate-menu-route="navigateMenuRoute"
@@ -13,6 +15,8 @@
             v-model="show_navigation_drawer"
             :is-visible="isAdminShellVisible"
             :selected-school-logo-src="selectedSchoolLogoSrc"
+            :shell-color="adminShellColor"
+            :shell-text-color="adminShellTextColor"
             :schoolwide-active-schoolyear="config?.schoolwide_active_schoolyear"
             :selected-schoolyear="config?.selected_schoolyear"
             :can-manage-schoolwide-schoolyear="canManageSchoolwideSchoolyear"
@@ -59,6 +63,7 @@ import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawe
 import ItsNotification from '@/pages/components/ItsNotification.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
+import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { resolveAdminRouteAccess } from '../../../routes/admin.js'
@@ -86,6 +91,12 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'is_struktur_modus', 'load_config']),
         selectedSchoolLogoSrc() {
             return resolveSelectedSchoolLogoSrc(this.config?.selected_school?.logo)
+        },
+        adminShellColor() {
+            return resolveAdminShellColor(this.config?.selected_school, this.config?.user)
+        },
+        adminShellTextColor() {
+            return resolveAdminShellTextColor(this.adminShellColor)
         },
         canManageSchoolwideSchoolyear() {
             const roles = this.config?.roles || []

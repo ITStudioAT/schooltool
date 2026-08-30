@@ -1,19 +1,27 @@
 # UPDATES
 
+## 3.46.5 !!!
+
+### System
+
+- Farbauswahl untzer Profil
+
 ## 3.46.4
 
 ### Berufsreifeprüfung
+
 - DERZEIT NICHT IMPLEMENTIERT!
 
 ### Schülerstundenpläne
+
 - Neue Benennungen für einige Module
 - Unterrichtssortierung in Module vereinheitlicht
 
 ### System
+
 - Updates-Bereitstellung beschleunigt
 - Fußzeile geändert: Impressum, Cookies
 - Fußzeile nicht mehr fixiert
-
 
 ## 3.46.3
 

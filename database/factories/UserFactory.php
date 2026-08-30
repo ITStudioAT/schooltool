@@ -35,6 +35,7 @@ class UserFactory extends Factory
             'confirmed_at' => now(),
             'school_id' => 1,
             'schoolyear_id' => 1,
+            'use_school_color_for_admin_ui' => true,
         ];
     }
 

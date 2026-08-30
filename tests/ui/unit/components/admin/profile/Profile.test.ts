@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import Profile from '@/pages/admin/profile/Profile.vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const vuetifyStubs = {
     'v-container': { template: '<div><slot /></div>' },
@@ -64,6 +65,7 @@ describe('Admin profile page', () => {
                                         last_name: 'Teacher',
                                         first_name: 'Anna',
                                         email: 'anna@example.com',
+                                        use_school_color_for_admin_ui: true,
                                     },
                                 },
                             },
@@ -74,6 +76,7 @@ describe('Admin profile page', () => {
                                     first_name: 'Anna',
                                     email: 'anna@example.com',
                                     is_2fa: false,
+                                    use_school_color_for_admin_ui: true,
                                 },
                                 api_answer: null,
                             },
@@ -102,6 +105,81 @@ describe('Admin profile page', () => {
 
         await waitFor(() => {
             expect(screen.getByText('HopperSchools Component')).toBeInTheDocument()
+        })
+    })
+
+    it('lets the logged-in user select the semantic primary color for their own admin view', async () => {
+        render(Profile, {
+            props: {
+                embedded: true,
+            },
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    user: {
+                                        id: 1,
+                                        last_name: 'Teacher',
+                                        first_name: 'Anna',
+                                        email: 'anna@example.com',
+                                        use_school_color_for_admin_ui: true,
+                                    },
+                                    selected_school: {
+                                        color: '#F57C00',
+                                    },
+                                },
+                            },
+                            AdminUserStore: {
+                                item: {
+                                    id: 1,
+                                    last_name: 'Teacher',
+                                    first_name: 'Anna',
+                                    email: 'anna@example.com',
+                                    is_2fa: false,
+                                    use_school_color_for_admin_ui: true,
+                                },
+                                api_answer: null,
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $router: {
+                        replace: vi.fn(),
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    HopperSchools: { template: '<div>HopperSchools Component</div>' },
+                },
+            },
+        })
+
+        const adminStore = useAdminStore()
+        vi.mocked(adminStore.saveAdminShellColorPreference).mockImplementation(async (useSchoolColorForAdminUi) => {
+            adminStore.config.user.use_school_color_for_admin_ui = useSchoolColorForAdminUi
+
+            return true
+        })
+
+        await fireEvent.click(screen.getByText('Darstellung'))
+        const schoolColorButton = (await screen.findByText('Schulfarbe verwenden')).closest('button')
+        const primaryColorButton = (await screen.findByText('Standardfarbe (Primary) verwenden')).closest('button')
+
+        expect(schoolColorButton).toHaveAttribute('color', '#F57C00')
+        expect(schoolColorButton).toHaveAttribute('variant', 'flat')
+        expect(primaryColorButton).toHaveAttribute('color', 'primary')
+        expect(primaryColorButton).toHaveAttribute('variant', 'flat')
+
+        await fireEvent.click(primaryColorButton as HTMLButtonElement)
+
+        expect(adminStore.saveAdminShellColorPreference).toHaveBeenCalledWith(false)
+        await waitFor(() => {
+            expect(screen.getByText('Standard (Primary)')).toBeInTheDocument()
         })
     })
 })

@@ -37,6 +37,7 @@ class SchoolUpdateRequest extends FormRequest
                 Rule::unique('schools', 'email')->ignore($this->route('school')),
             ],
             'upload_file' => ['nullable', 'string', 'max:255'],
+            'color' => ['sometimes', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'is_selectable' => ['boolean'],
         ];
     }

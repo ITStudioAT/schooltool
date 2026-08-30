@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { update as updateAdminShellColorPreference } from '@/actions/App/Http/Controllers/Admin/AdminShellColorPreferenceController'
 import { createResourceStore } from './ResourceStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
@@ -86,6 +87,45 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 return await requestPromise
             } finally {
                 this.config_request_promise = null
+            }
+        },
+
+        async saveAdminShellColorPreference(useSchoolColorForAdminUi) {
+            const notification = useNotificationStore()
+            this.is_loading++
+
+            try {
+                const response = await axios.put(updateAdminShellColorPreference.url(), {
+                    use_school_color_for_admin_ui: useSchoolColorForAdminUi,
+                })
+                await this.loadConfig()
+
+                const savedPreference = typeof response.data?.use_school_color_for_admin_ui === 'boolean'
+                    ? response.data.use_school_color_for_admin_ui
+                    : useSchoolColorForAdminUi
+
+                if (this.config?.user) {
+                    this.config.user.use_school_color_for_admin_ui = savedPreference
+                }
+
+                notification.notify({
+                    message: 'Darstellung wurde gespeichert.',
+                    type: 'success',
+                    timeout: this.config?.timeout,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+
+                return false
+            } finally {
+                this.is_loading--
             }
         },
 

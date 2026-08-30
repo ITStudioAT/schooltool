@@ -22,6 +22,7 @@ class SchoolFactory extends Factory
             'short_name' => strtoupper(substr(md5(uniqid()), 0, 3)),
             'email' => 'school'.rand(1000, 9999).'@test.local',
             'logo' => null,
+            'color' => '#1976D2',
             'is_selectable' => rand(0, 10) > 1, // 90% true
         ];
     }
