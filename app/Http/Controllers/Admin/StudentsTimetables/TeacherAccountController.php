@@ -8,8 +8,11 @@ use App\Http\Requests\Admin\StudentsTimetables\StoreTeacherRosterEntryRequest;
 use App\Http\Requests\Admin\StudentsTimetables\UpdateTeacherRosterEntryRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\Role;
+use App\Models\School;
 use App\Models\Teacher;
+use App\Models\TeachingCourse;
 use App\Models\User;
+use App\Models\UserGroupMember;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -318,6 +321,90 @@ class TeacherAccountController extends Controller
         return response()->json($this->userListItem($teacherUser->fresh()->load('roles'), $authUser));
     }
 
+    public function destroy(Teacher $teacher): JsonResponse
+    {
+        $authUser = $this->authorizedUser();
+        $this->assertSameSchool($authUser, $teacher->school_id);
+
+        DB::transaction(function () use ($authUser, $teacher): void {
+            $this->lockSchool($authUser->school_id);
+
+            $lockedTeacher = Teacher::query()
+                ->whereKey($teacher->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertSameSchool($authUser, $lockedTeacher->school_id);
+            $this->assertNoTeacherDependencies(
+                $this->teacherGroupDependencyCount($authUser->school_id, [$lockedTeacher->id]),
+            );
+
+            $lockedTeacher->delete();
+        }, attempts: 3);
+
+        return response()->json([
+            'message' => 'Die Lehrkraft wurde aus der Lehrerliste entfernt.',
+        ]);
+    }
+
+    public function destroyUser(User $teacherUser): JsonResponse
+    {
+        $authUser = $this->authorizedUser();
+        $this->assertManageableRosterUser($authUser, $teacherUser);
+
+        if ($teacherUser->is($authUser)) {
+            abort(403, 'Sie können sich nicht selbst aus der Lehrerliste entfernen.');
+        }
+
+        DB::transaction(function () use ($authUser, $teacherUser): void {
+            $this->lockSchool($authUser->school_id);
+
+            $lockedUser = User::query()
+                ->whereKey($teacherUser->id)
+                ->with('roles')
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertManageableRosterUser($authUser, $lockedUser);
+
+            if ($lockedUser->is($authUser)) {
+                abort(403, 'Sie können sich nicht selbst aus der Lehrerliste entfernen.');
+            }
+
+            $matchingTeachers = Teacher::query()
+                ->where('school_id', $authUser->school_id)
+                ->whereRaw('LOWER(TRIM(email)) = ?', [mb_strtolower(trim($lockedUser->email))])
+                ->lockForUpdate()
+                ->get();
+            $teacherIds = $matchingTeachers->pluck('id')->map(fn ($id): int => (int) $id)->all();
+
+            $courseDependencyCount = TeachingCourse::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('user_id', $lockedUser->id)
+                ->lockForUpdate()
+                ->pluck('id')
+                ->count();
+
+            $this->assertNoTeacherDependencies(
+                $this->teacherGroupDependencyCount($authUser->school_id, $teacherIds),
+                $courseDependencyCount,
+            );
+
+            Teacher::query()->whereKey($teacherIds)->delete();
+
+            $lockedUser->students_timetables_teacher_listed = false;
+            $lockedUser->save();
+
+            foreach (self::ROSTER_ROLES as $roleName) {
+                if ($lockedUser->hasRole($roleName)) {
+                    $lockedUser->removeRole($roleName);
+                }
+            }
+        }, attempts: 3);
+
+        return response()->json([
+            'message' => 'Die Lehrkraft wurde aus der Lehrerliste entfernt. Das Benutzerkonto bleibt erhalten.',
+        ]);
+    }
+
     private function authorizedUser(): User
     {
         if (! $authUser = $this->userHasRole(self::MANAGER_ROLES)) {
@@ -366,6 +453,61 @@ class TeacherAccountController extends Controller
         if ($authUser->school_id !== $schoolId) {
             abort(403, 'Diese Änderung kann nicht durchgeführt werden.');
         }
+    }
+
+    private function lockSchool(int $schoolId): void
+    {
+        School::query()
+            ->whereKey($schoolId)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    /** @param array<int, int> $teacherIds */
+    private function teacherGroupDependencyCount(int $schoolId, array $teacherIds): int
+    {
+        if ($teacherIds === []) {
+            return 0;
+        }
+
+        $memberReferences = array_map(
+            fn (int $teacherId): string => 'teacher_list.teacher:'.$teacherId,
+            $teacherIds,
+        );
+
+        return UserGroupMember::query()
+            ->where('member_provider', UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER)
+            ->whereIn('member_ref', $memberReferences)
+            ->whereHas('group', fn (Builder $query): Builder => $query->where('school_id', $schoolId))
+            ->lockForUpdate()
+            ->pluck('id')
+            ->count();
+    }
+
+    private function assertNoTeacherDependencies(int $groupCount, int $courseCount = 0): void
+    {
+        if ($groupCount === 0 && $courseCount === 0) {
+            return;
+        }
+
+        $dependencies = [];
+
+        if ($groupCount > 0) {
+            $dependencies[] = $groupCount === 1
+                ? '1 Gruppenmitgliedschaft'
+                : "{$groupCount} Gruppenmitgliedschaften";
+        }
+
+        if ($courseCount > 0) {
+            $dependencies[] = $courseCount === 1
+                ? '1 Unterrichtskurs'
+                : "{$courseCount} Unterrichtskurse";
+        }
+
+        abort(
+            409,
+            'Die Lehrkraft kann nicht entfernt werden. Abhängigkeiten: '.implode(' und ', $dependencies).'.',
+        );
     }
 
     private function assertTeacherEmailAvailable(
@@ -423,6 +565,7 @@ class TeacherAccountController extends Controller
             'is_active' => (bool) $teacher->is_active,
             'can_toggle_active' => false,
             'can_manage_timetable_role' => true,
+            'can_remove' => true,
             'roles' => ['teacher'],
         ];
     }
@@ -444,6 +587,7 @@ class TeacherAccountController extends Controller
             'can_toggle_active' => ! $user->is($authUser)
                 && (! $user->is_active || $roles->intersect(['admin', 'super_admin'])->isEmpty()),
             'can_manage_timetable_role' => ! $user->is($authUser),
+            'can_remove' => ! $user->is($authUser),
             'roles' => $roles,
         ];
     }

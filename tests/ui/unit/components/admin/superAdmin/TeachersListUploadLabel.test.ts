@@ -16,6 +16,9 @@ describe('Teachers list upload label', () => {
 
         expect(teachersListSource).toMatch(/<FileUpload[\s\S]*?:path="teachersListUploadPath"[\s\S]*?fileLabel[\s\S]*?\/>/)
         expect(teachersListSource).toContain('Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv)')
+        expect(teachersListSource).toContain('Nachname/Familienname, Vorname, Email/EMail')
+        expect(teachersListSource).toContain('Optional:')
+        expect(teachersListSource).toContain('Kurz/Kürzel')
         expect(fileUploadSource).toContain('Ziehen Sie eine Datei hierher oder <i>klicken Sie hier.</i>')
     })
 

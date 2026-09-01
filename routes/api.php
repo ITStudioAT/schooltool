@@ -219,6 +219,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/teacher-list/active-state', [TeacherAccountController::class, 'setActiveState']);
         Route::put('/admin/students-timetables/teacher-list/users/{teacherUser}', [TeacherAccountController::class, 'updateUser']);
         Route::put('/admin/students-timetables/teacher-list/{teacher}', [TeacherAccountController::class, 'update']);
+        Route::delete('/admin/students-timetables/teacher-list/users/{teacherUser}', [TeacherAccountController::class, 'destroyUser']);
+        Route::delete('/admin/students-timetables/teacher-list/{teacher}', [TeacherAccountController::class, 'destroy']);
         Route::post('/admin/students-timetables/teacher-list/{teacher}/activate', [TeacherAccountController::class, 'activate']);
         Route::post('/admin/students-timetables/teacher-list/users/{teacherUser}/toggle-active', [TeacherAccountController::class, 'toggleActive']);
         Route::post('/admin/students-timetables/teacher-list/users/{teacherUser}/toggle-teacher-role', [TeacherAccountController::class, 'toggleTeacherRole']);

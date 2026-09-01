@@ -24,7 +24,8 @@
                             <h3 class="admin-card-title" style="margin-top: 4px">Lehrer-Liste importieren</h3>
                             <div class="kpi-sub mt-2">
                                 Es muss sich um eine Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv) handeln. Benötigte Spalten:
-                                <strong>Kurz/Kürzel, Nachname/Familienname, Vorname, Email/EMail</strong>
+                                <strong>Nachname/Familienname, Vorname, Email/EMail</strong>. Optional:
+                                <strong>Kurz/Kürzel</strong>
                             </div>
                         </div>
 

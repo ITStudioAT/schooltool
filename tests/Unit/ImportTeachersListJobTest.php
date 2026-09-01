@@ -18,6 +18,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -51,6 +53,27 @@ function createTestExcelFile(array $headers, array $rows, string $delimiter = ',
     }
 
     fclose($handle);
+
+    return str_replace('\\', '/', substr($filePath, strlen(storage_path()) + 1));
+}
+
+function createTestXlsxFile(array $headers, array $rows): string
+{
+    $tempDirectory = storage_path('framework/testing');
+    File::ensureDirectoryExists($tempDirectory);
+
+    $tempFile = tempnam($tempDirectory, 'teachers-import-');
+    if ($tempFile === false) {
+        throw new RuntimeException('Could not create temporary teacher import file.');
+    }
+
+    $filePath = $tempFile.'.xlsx';
+    rename($tempFile, $filePath);
+
+    $spreadsheet = new Spreadsheet;
+    $spreadsheet->getActiveSheet()->fromArray([$headers, ...$rows]);
+    (new Xlsx($spreadsheet))->save($filePath);
+    $spreadsheet->disconnectWorksheets();
 
     return str_replace('\\', '/', substr($filePath, strlen(storage_path()) + 1));
 }
@@ -234,6 +257,59 @@ describe('handle - successful imports', function () {
             return $event->status === 200
                 && $event->data['created'] === 1;
         });
+    });
+
+    it('imports an XLSX teacher list without short codes while preserving existing values', function () {
+        $existingTeacher = Teacher::create([
+            'school_id' => $this->school->id,
+            'short' => 'OLD',
+            'last_name' => 'Old',
+            'first_name' => 'Teacher',
+            'email' => 'existing.teacher@example.test',
+        ]);
+        $existingUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'short' => 'USR',
+            'last_name' => 'Old',
+            'first_name' => 'User',
+            'email' => 'existing.user@example.test',
+        ]);
+        $existingUser->assignRole('teacher');
+
+        $filePath = createTestXlsxFile(
+            ['Familienname', 'Vorname', 'EMail'],
+            [
+                ['Updated', 'Teacher', 'existing.teacher@example.test'],
+                ['Updated', 'User', 'existing.user@example.test'],
+                ['Müller', 'Anna', 'ANNA.MUELLER@EXAMPLE.TEST'],
+            ],
+        );
+
+        (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+        $anna = Teacher::where('email', 'anna.mueller@example.test')->first();
+
+        expect($anna)->not->toBeNull()
+            ->and($anna->short)->toBeNull()
+            ->and($anna->last_name)->toBe('Müller')
+            ->and($anna->first_name)->toBe('Anna')
+            ->and($existingTeacher->fresh()->short)->toBe('OLD')
+            ->and($existingTeacher->fresh()->last_name)->toBe('Updated')
+            ->and($existingUser->fresh()->short)->toBe('USR')
+            ->and($existingUser->fresh()->last_name)->toBe('Updated')
+            ->and(ImportTeachersListJob::status($this->school->id, $this->user->id))
+            ->toMatchArray([
+                'state' => 'finished',
+                'status' => 200,
+                'data' => [
+                    'created' => 1,
+                    'updated' => 1,
+                    'deleted' => 0,
+                    'activated' => 1,
+                    'inactive' => 0,
+                    'skipped_existing' => 1,
+                ],
+            ]);
     });
 
     it('keeps CSV rows lazy instead of materializing the complete import', function () {
@@ -826,6 +902,23 @@ describe('validateAndMapHeaders', function () {
         $mapping = $method->invoke($job, $headers);
 
         expect($mapping)->toBeFalse();
+    });
+
+    it('accepts headers without the optional short column', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['Familienname', 'Vorname', 'EMail'];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBe([
+            'Familienname' => 'Nachname',
+            'Vorname' => 'Vorname',
+            'EMail' => 'Email',
+        ]);
     });
 
     it('handles case-insensitive header matching', function () {

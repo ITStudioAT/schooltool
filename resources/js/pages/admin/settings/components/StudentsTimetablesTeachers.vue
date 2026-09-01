@@ -93,6 +93,18 @@
                                                     :aria-label="`Lehrkraft bearbeiten: ${teacher.last_name} ${teacher.first_name}`"
                                                     :title="`Lehrkraft bearbeiten: ${teacher.last_name} ${teacher.first_name}`"
                                                     @click.stop="openEditDialog(teacher)" />
+                                                <v-btn
+                                                    icon="mdi-delete-outline"
+                                                    color="error"
+                                                    variant="text"
+                                                    density="compact"
+                                                    size="x-small"
+                                                    class="teacher-name-edit"
+                                                    :loading="isTeacherActionPending(teacher, 'remove')"
+                                                    :disabled="!teacher.can_remove"
+                                                    :aria-label="`Lehrkraft aus der Liste entfernen: ${teacher.last_name} ${teacher.first_name}`"
+                                                    :title="teacher.can_remove ? `Lehrkraft aus der Liste entfernen: ${teacher.last_name} ${teacher.first_name}` : 'Sie können sich nicht selbst entfernen.'"
+                                                    @click.stop="openRemoveDialog(teacher)" />
                                             </div>
                                             <div class="person-email-row">
                                                 <span class="person-email">{{ teacher.email || '-' }}</span>
@@ -192,7 +204,8 @@
                         <div class="kpi-sub">
                             Es muss sich um eine Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv) handeln.
                             Benötigte Spalten:
-                            <strong>Kurz/Kürzel, Nachname/Familienname, Vorname, Email/EMail</strong>
+                            <strong>Nachname/Familienname, Vorname, Email/EMail</strong>. Optional:
+                            <strong>Kurz/Kürzel</strong>
                         </div>
                     </div>
 
@@ -316,6 +329,58 @@
                 </v-card-text>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="removeDialog" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="d-flex align-center ga-2 pa-5 pb-2">
+                    <v-icon icon="mdi-account-remove-outline" color="error" />
+                    Aus Lehrerliste entfernen
+                </v-card-title>
+
+                <v-card-text class="pa-5 pt-3">
+                    <p v-if="removingTeacher" class="mb-4">
+                        Soll <strong>{{ removingTeacher.last_name }} {{ removingTeacher.first_name }}</strong>
+                        wirklich aus der Lehrerliste entfernt werden?
+                    </p>
+
+                    <v-alert type="warning" variant="tonal" rounded="lg">
+                        <template v-if="removingTeacher?.user_id !== null">
+                            Das Benutzerkonto bleibt erhalten. Die Lehrer- und TT-Rollen werden entfernt.
+                        </template>
+                        <template v-else>
+                            Der importierte Eintrag wird gelöscht.
+                        </template>
+                        Ein späterer Lehrerliste-Import kann die Lehrkraft erneut hinzufügen.
+                    </v-alert>
+
+                    <v-alert
+                        v-if="action_message"
+                        type="error"
+                        variant="tonal"
+                        rounded="lg"
+                        class="mt-4">
+                        {{ action_message }}
+                    </v-alert>
+                </v-card-text>
+
+                <v-card-actions class="justify-end px-5 pb-5">
+                    <v-btn
+                        variant="text"
+                        :disabled="isRemovePending"
+                        @click="closeRemoveDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-delete-outline"
+                        :loading="isRemovePending"
+                        @click="removeTeacher">
+                        Entfernen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-col>
 </template>
 
@@ -348,6 +413,8 @@ export default {
             importStatusPollInFlight: false,
             editDialog: false,
             editingTeacher: null,
+            removeDialog: false,
+            removingTeacher: null,
             copiedEmailId: null,
             copyEmailResetTimeout: null,
             editForm: {
@@ -373,7 +440,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useStudentsTimetablesTeachersListStore, ['teachers', 'meta', 'pending_action', 'action_errors']),
+        ...mapWritableState(useStudentsTimetablesTeachersListStore, ['teachers', 'meta', 'pending_action', 'action_errors', 'action_message']),
         totalTeachersCount() {
             const total = Number(this.meta?.total)
 
@@ -389,6 +456,9 @@ export default {
         },
         canSaveTeacher() {
             return this.editForm.last_name.trim() !== '' && this.editForm.email.trim() !== ''
+        },
+        isRemovePending() {
+            return this.removingTeacher !== null && this.pending_action === `remove:${this.removingTeacher.id}`
         },
         teachersListUploadPath() {
             return teachersListApi.upload()
@@ -515,6 +585,10 @@ export default {
                 actionKey = `edit:${teacher.id}`
             }
 
+            if (action === 'remove') {
+                actionKey = `remove:${teacher.id}`
+            }
+
             return this.pending_action === actionKey
         },
 
@@ -626,6 +700,32 @@ export default {
             this.editDialog = false
             this.editingTeacher = null
             this.action_errors = {}
+        },
+
+        openRemoveDialog(teacher) {
+            if (!teacher.can_remove) { return }
+
+            this.removingTeacher = teacher
+            this.action_message = ''
+            this.removeDialog = true
+        },
+
+        closeRemoveDialog() {
+            if (this.isRemovePending) { return }
+
+            this.removeDialog = false
+            this.removingTeacher = null
+            this.action_message = ''
+        },
+
+        async removeTeacher() {
+            if (!this.removingTeacher) { return }
+
+            const removed = await this.teachersListStore.removeTeacher(this.removingTeacher)
+
+            if (removed) {
+                this.closeRemoveDialog()
+            }
         },
 
         async saveTeacher() {

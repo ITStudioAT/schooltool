@@ -62,7 +62,7 @@ class ImportTeachersListJob implements ShouldQueue
             $headerMapping = $this->validateAndMapHeaders($headers);
 
             if ($headerMapping === false) {
-                $this->broadcastFailed('Die Überschriften der Datei sind nicht korrekt! (Kurz/Kürzel, Nachname/Familienname, Vorname, Email)');
+                $this->broadcastFailed('Die Überschriften der Datei sind nicht korrekt! (Erforderlich: Nachname/Familienname, Vorname, Email/EMail; optional: Kurz/Kürzel)');
 
                 return;
             }
@@ -158,11 +158,12 @@ class ImportTeachersListJob implements ShouldQueue
     /**
      * @param  iterable<int, array<string, mixed>>  $rows
      * @param  array<string, string>  $headerMapping
-     * @return array<string, array{email: string, short: string, last_name: string, first_name: ?string}>
+     * @return array<string, array{email: string, short: ?string, last_name: string, first_name: ?string}>
      */
     private function mapImportedTeachers(iterable $rows, array $headerMapping): array
     {
         $importedTeachers = [];
+        $hasShortColumn = in_array('Kurz', $headerMapping, true);
 
         foreach ($rows as $row) {
             $mappedRow = [];
@@ -178,7 +179,9 @@ class ImportTeachersListJob implements ShouldQueue
             $normalizedEmail = mb_strtolower($email);
             $importedTeachers[$normalizedEmail] = [
                 'email' => $normalizedEmail,
-                'short' => strtoupper(trim((string) ($mappedRow['Kurz'] ?? ''))),
+                'short' => $hasShortColumn
+                    ? strtoupper(trim((string) ($mappedRow['Kurz'] ?? '')))
+                    : null,
                 'last_name' => trim((string) ($mappedRow['Nachname'] ?? '')),
                 'first_name' => trim((string) ($mappedRow['Vorname'] ?? '')) ?: null,
             ];
@@ -188,7 +191,7 @@ class ImportTeachersListJob implements ShouldQueue
     }
 
     /**
-     * @param  array<string, array{email: string, short: string, last_name: string, first_name: ?string}>  $importedTeachers
+     * @param  array<string, array{email: string, short: ?string, last_name: string, first_name: ?string}>  $importedTeachers
      * @return array{created: int, updated: int, deleted: int, activated: int, inactive: int, skipped_existing: int}
      */
     private function synchronizeTeachers(array $importedTeachers): array
@@ -225,14 +228,18 @@ class ImportTeachersListJob implements ShouldQueue
                     $skippedExisting++;
 
                     $wasActive = (bool) $registeredUser->is_active;
-                    $registeredUser->forceFill([
+                    $userAttributes = [
                         'email' => $importedTeacher['email'],
-                        'short' => $importedTeacher['short'],
                         'last_name' => $importedTeacher['last_name'],
                         'first_name' => $importedTeacher['first_name'],
                         'is_active' => true,
                         'students_timetables_teacher_listed' => true,
-                    ])->save();
+                    ];
+                    if ($importedTeacher['short'] !== null) {
+                        $userAttributes['short'] = $importedTeacher['short'];
+                    }
+
+                    $registeredUser->forceFill($userAttributes)->save();
                     $registeredUser->assignRole('teacher');
 
                     if (! $wasActive) {
@@ -245,15 +252,20 @@ class ImportTeachersListJob implements ShouldQueue
                 $teacher = Teacher::query()
                     ->where('school_id', $this->schoolId)
                     ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
-                    ->first() ?? new Teacher(['school_id' => $this->schoolId]);
+                    ->first();
+                $teacher ??= new Teacher(['school_id' => $this->schoolId]);
 
-                $teacher->fill([
+                $teacherAttributes = [
                     'email' => $importedTeacher['email'],
-                    'short' => $importedTeacher['short'],
                     'last_name' => $importedTeacher['last_name'],
                     'first_name' => $importedTeacher['first_name'],
                     'is_active' => true,
-                ])->save();
+                ];
+                if ($importedTeacher['short'] !== null || ! $teacher->exists) {
+                    $teacherAttributes['short'] = $importedTeacher['short'];
+                }
+
+                $teacher->fill($teacherAttributes)->save();
 
                 $teacher->wasRecentlyCreated ? $created++ : $updated++;
             }
@@ -425,17 +437,18 @@ class ImportTeachersListJob implements ShouldQueue
      */
     protected function validateAndMapHeaders(array $headers): array|false
     {
-        $requiredColumns = [
+        $columnVariations = [
             'Kurz' => ['kurz', 'short', 'kurzbezeichnung', 'kürzel', 'kuerzel'],
             'Nachname' => ['nachname', 'familienname', 'last_name', 'lastname', 'name', 'surname'],
             'Vorname' => ['vorname', 'first_name', 'firstname', 'givenname'],
             'Email' => ['email', 'e-mail', 'mail', 'e_mail'],
         ];
+        $requiredColumns = ['Nachname', 'Vorname', 'Email'];
 
         $normalizedHeaders = array_map(fn ($header) => $this->normalizeHeader((string) $header), $headers);
-        $normalizedRequiredColumns = [];
-        foreach ($requiredColumns as $standardName => $variations) {
-            $normalizedRequiredColumns[$standardName] = array_values(array_unique(array_map(
+        $normalizedColumnVariations = [];
+        foreach ($columnVariations as $standardName => $variations) {
+            $normalizedColumnVariations[$standardName] = array_values(array_unique(array_map(
                 fn ($variation) => $this->normalizeHeader((string) $variation),
                 $variations
             )));
@@ -446,7 +459,7 @@ class ImportTeachersListJob implements ShouldQueue
         $usedHeaderIndexes = [];
 
         // Phase 1: exact header matching against known variants
-        foreach ($normalizedRequiredColumns as $standardName => $variations) {
+        foreach ($normalizedColumnVariations as $standardName => $variations) {
             $exactMatchIndex = $this->findExactHeaderIndex($normalizedHeaders, $variations, $usedHeaderIndexes);
             if ($exactMatchIndex === null) {
                 continue;
@@ -457,15 +470,19 @@ class ImportTeachersListJob implements ShouldQueue
             $headerMapping[$headers[$exactMatchIndex]] = $standardName;
         }
 
-        // Phase 2: fuzzy matching for minor typos in remaining required headers
-        foreach ($normalizedRequiredColumns as $standardName => $variations) {
+        // Phase 2: fuzzy matching for minor typos in remaining headers
+        foreach ($normalizedColumnVariations as $standardName => $variations) {
             if (in_array($standardName, $matchedStandardColumns, true)) {
                 continue;
             }
 
             $fuzzyMatchIndex = $this->findFuzzyHeaderIndex($normalizedHeaders, $variations, $usedHeaderIndexes);
             if ($fuzzyMatchIndex === null) {
-                return false;
+                if (in_array($standardName, $requiredColumns, true)) {
+                    return false;
+                }
+
+                continue;
             }
 
             $usedHeaderIndexes[] = $fuzzyMatchIndex;

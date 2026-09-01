@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import {
     activate as activateTeacherAccount,
+    destroy as removeImportedTeacherAccount,
+    destroyUser as removeRegisteredTeacherAccount,
     index as teacherAccountsIndex,
     setActiveState as setTeacherAccountsActiveState,
     setRole as setTeacherAccountRole,
@@ -19,6 +21,7 @@ export const useStudentsTimetablesTeachersListStore = defineStore('AdminStudents
         search_string: '',
         pending_action: null,
         action_errors: {},
+        action_message: '',
         meta: {
             current_page: 1,
             per_page: 0,
@@ -112,11 +115,24 @@ export const useStudentsTimetablesTeachersListStore = defineStore('AdminStudents
             )
         },
 
+        async removeTeacher(teacher) {
+            const request = teacher.user_id === null
+                ? () => axios.delete(removeImportedTeacherAccount.url(teacher.teacher_id))
+                : () => axios.delete(removeRegisteredTeacherAccount.url(teacher.user_id))
+
+            return this.runTeacherAction(
+                `remove:${teacher.id}`,
+                request,
+                'Lehrkraft wurde aus der Lehrerliste entfernt.',
+            )
+        },
+
         async runTeacherAction(actionKey, request, successMessage) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             this.pending_action = actionKey
             this.action_errors = {}
+            this.action_message = ''
             adminStore.is_loading++
 
             try {
@@ -132,9 +148,10 @@ export const useStudentsTimetablesTeachersListStore = defineStore('AdminStudents
                 return response.data ?? true
             } catch (error) {
                 this.action_errors = error.response?.data?.errors ?? {}
+                this.action_message = error.response?.data?.message || 'Fehler passiert.'
                 notification.notify({
                     status: error.response?.status ?? 500,
-                    message: error.response?.data?.message || 'Fehler passiert.',
+                    message: this.action_message,
                     type: 'error',
                     timeout: 3000,
                 })

@@ -222,6 +222,9 @@ describe('Admin settings page', () => {
         expect(componentSource).toContain('Hinzufügen')
         expect(componentSource).toContain('@click="openImportDialog"')
         expect(componentSource).toContain('Importieren')
+        expect(componentSource).toContain('Nachname/Familienname, Vorname, Email/EMail')
+        expect(componentSource).toContain('Optional:')
+        expect(componentSource).toContain('Kurz/Kürzel')
         expect(componentSource).toContain('<FileUpload')
         expect(componentSource).toContain(':path="teachersListUploadPath"')
         expect(componentSource).toContain('teachersListApi.upload()')
@@ -242,6 +245,12 @@ describe('Admin settings page', () => {
         expect(componentSource).toContain('@click.stop="toggleTeacherActive(teacher)"')
         expect(componentSource).toContain('@click.stop="openEditDialog(teacher)"')
         expect(componentSource).toContain('icon="mdi-pencil-outline"')
+        expect(componentSource).toContain('@click.stop="openRemoveDialog(teacher)"')
+        expect(componentSource).toContain('icon="mdi-delete-outline"')
+        expect(componentSource).toContain('Aus Lehrerliste entfernen')
+        expect(componentSource).toContain('Das Benutzerkonto bleibt erhalten. Die Lehrer- und TT-Rollen werden entfernt.')
+        expect(componentSource).toContain('Ein späterer Lehrerliste-Import kann die Lehrkraft erneut hinzufügen.')
+        expect(componentSource).toContain('v-if="action_message"')
         expect(componentSource).not.toContain('prepend-icon="mdi-pencil-outline"')
         expect(componentSource).not.toMatch(/>\s*Bearbeiten\s*<\/v-btn>/u)
         expect(componentSource).toContain('@click.stop="copyEmail(teacher)"')
@@ -265,6 +274,11 @@ describe('Admin settings page', () => {
         expect(storeSource).toContain('async setAllActive(isActive)')
         expect(storeSource).toContain('updateImportedTeacherAccount.url')
         expect(storeSource).toContain('updateRegisteredTeacherAccount.url')
+        expect(storeSource).toContain('destroy as removeImportedTeacherAccount')
+        expect(storeSource).toContain('destroyUser as removeRegisteredTeacherAccount')
+        expect(storeSource).toContain('axios.delete(removeImportedTeacherAccount.url(teacher.teacher_id))')
+        expect(storeSource).toContain('axios.delete(removeRegisteredTeacherAccount.url(teacher.user_id))')
+        expect(storeSource).toContain('async removeTeacher(teacher)')
         expect(storeSource).toContain('store as storeTeacherAccount')
         expect(storeSource).toContain('async createTeacher(values)')
         expect(storeSource).toContain('axios.post(storeTeacherAccount.url(), values)')
@@ -321,6 +335,34 @@ describe('Admin settings page', () => {
         expect(context.teachersListStore.createTeacher).toHaveBeenCalledWith(context.editForm)
         expect(context.teachersListStore.updateTeacher).not.toHaveBeenCalled()
         expect(context.closeEditDialog).toHaveBeenCalledOnce()
+    })
+
+    it('closes the removal dialog only after a successful removal', async () => {
+        const teacher = { id: 'teacher-42', teacher_id: 42, user_id: null }
+        const successContext = {
+            removingTeacher: teacher,
+            teachersListStore: {
+                removeTeacher: vi.fn().mockResolvedValue(true),
+            },
+            closeRemoveDialog: vi.fn(),
+        }
+
+        await (StudentsTimetablesTeachers as any).methods.removeTeacher.call(successContext)
+
+        expect(successContext.teachersListStore.removeTeacher).toHaveBeenCalledWith(teacher)
+        expect(successContext.closeRemoveDialog).toHaveBeenCalledOnce()
+
+        const failureContext = {
+            removingTeacher: teacher,
+            teachersListStore: {
+                removeTeacher: vi.fn().mockResolvedValue(false),
+            },
+            closeRemoveDialog: vi.fn(),
+        }
+
+        await (StudentsTimetablesTeachers as any).methods.removeTeacher.call(failureContext)
+
+        expect(failureContext.closeRemoveDialog).not.toHaveBeenCalled()
     })
 
     it('keeps teacher short codes uppercase while editing', () => {

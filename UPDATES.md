@@ -8,7 +8,9 @@
 
 ### Schülerstundenpläne
 
-- Import Lehrer adaptiert
+- Import Lehrer adaptiert, Import auch ohne Kürzel möglich
+- Ändern, Löschen von Lehrer:innen auf Lehrerliste
+- Anzeige der verplanten Unterrichte
 
 ## 3.46.4
 
