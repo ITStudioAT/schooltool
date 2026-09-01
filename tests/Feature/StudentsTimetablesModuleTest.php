@@ -238,6 +238,69 @@ it('starts the session for students timetables API requests', function (string $
     'student overview' => '/api/homepage/students-timetables/overview',
 ]);
 
+it('uses only the timetable role when licensing an impersonated student', function () {
+    $admin = createStudentsTimetablesUserWithLicence(roleName: 'super_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $admin->school_id,
+    ]);
+    SchoolTool::query()
+        ->where('school_id', $admin->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+    $admin->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $licence = Licence::query()->where('name', 'StudentsTimetables')->firstOrFail();
+    SchoolLicence::query()
+        ->where('school_id', $admin->school_id)
+        ->where('licence_id', $licence->id)
+        ->firstOrFail()
+        ->forceFill([
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['student'],
+                'user_licence_required_by_role' => [
+                    'student' => true,
+                ],
+            ],
+            'user_licence_assignments' => [],
+        ])
+        ->save();
+
+    $studentImport = Import116::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'licensed-student-view',
+        'email' => 'licensed-student-view@example.test',
+        'exists_date' => now(),
+    ]);
+    $studentUser = User::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import116_id' => $studentImport->id,
+        'email' => $studentImport->email,
+        'is_active' => true,
+    ]);
+    $studentUser->assignRole([
+        Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'studentstimetables_user', 'guard_name' => 'web']),
+    ]);
+    $studentImport->forceFill(['user_id' => $studentUser->id])->save();
+
+    $this->actingAs($admin)
+        ->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+            'student_code' => $studentImport->student_code,
+        ])
+        ->assertSuccessful();
+
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/homepage/students-timetables/user')
+        ->assertSuccessful()
+        ->assertJsonPath('user.id', $studentUser->id);
+
+    $this->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+});
+
 it('lets every timetable staff role open the students timetables account', function (string $roleName) {
     $staffUser = createStudentsTimetablesUserWithLicence(roleName: $roleName);
     $schoolyear = Schoolyear::factory()->create([
