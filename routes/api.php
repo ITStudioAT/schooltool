@@ -178,28 +178,30 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /***** STUDENTS TIMETABLES STUDENT ROUTES *****/
-    Route::get('/homepage/students-timetables/config', [StudentsTimetablesStudentController::class, 'config']);
-    Route::post('/homepage/students-timetables/login_step_email', [StudentsTimetablesStudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
-    Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
-    Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
-    Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
-    Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::post('/homepage/students-timetables/overview/pdf', [StudentsTimetablesStudentController::class, 'overviewPdf'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::post('/homepage/students-timetables/automatic-timetable-availability', [StudentsTimetablesStudentController::class, 'automaticTimetableAvailability'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::get('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::put('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'update'])
-        ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:60,1']);
-    Route::get('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
-    Route::put('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'update'])
-        ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:10,1']);
-    Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::middleware(StartSession::class)->group(function () {
+        Route::get('/homepage/students-timetables/config', [StudentsTimetablesStudentController::class, 'config']);
+        Route::post('/homepage/students-timetables/login_step_email', [StudentsTimetablesStudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
+        Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
+        Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
+        Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
+        Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::post('/homepage/students-timetables/overview/pdf', [StudentsTimetablesStudentController::class, 'overviewPdf'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::post('/homepage/students-timetables/automatic-timetable-availability', [StudentsTimetablesStudentController::class, 'automaticTimetableAvailability'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::get('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::put('/homepage/students-timetables/timetable-v3/state', [HomepageStudentTimetableV3StateController::class, 'update'])
+            ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:60,1']);
+        Route::get('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'show'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+        Route::put('/homepage/students-timetables/timetable-v3/timetable', [HomepageStudentTimetableV3TimetableController::class, 'update'])
+            ->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables', 'throttle:10,1']);
+        Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    });
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);

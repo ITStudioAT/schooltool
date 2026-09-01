@@ -36,6 +36,8 @@ use App\Services\StudentsTimetables\StudentTimetableSubjectRuleService;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -184,6 +186,12 @@ it('lets timetable admins open the linked students timetables account', function
         ->assertJsonPath('is_students_timetables_restricted', true)
         ->assertJsonPath('current_user.id', $studentUser->id);
 
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/homepage/students-timetables/user')
+        ->assertSuccessful()
+        ->assertJsonPath('user.id', $studentUser->id);
+
     $this->get('/student/overview')
         ->assertRedirect('/students-timetables/overview');
 
@@ -220,6 +228,15 @@ it('lets timetable admins open the linked students timetables account', function
         ->assertSuccessful()
         ->assertJsonPath('redirect', '/admin/students-timetables/timetable-v3/overview');
 });
+
+it('starts the session for students timetables API requests', function (string $path) {
+    $route = app('router')->getRoutes()->match(Request::create($path));
+
+    expect($route->gatherMiddleware())->toContain(StartSession::class);
+})->with([
+    'current student' => '/api/homepage/students-timetables/user',
+    'student overview' => '/api/homepage/students-timetables/overview',
+]);
 
 it('lets every timetable staff role open the students timetables account', function (string $roleName) {
     $staffUser = createStudentsTimetablesUserWithLicence(roleName: $roleName);
