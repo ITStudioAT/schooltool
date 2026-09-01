@@ -280,10 +280,12 @@ describe('Student timetables overview V2 preparation', () => {
         const savedCourse = {
             key: 'course-d1',
             keys: ['course-d1'],
+            title: 'D1 - 3R - MAY',
             timetable_entries: [{
                 key: 'entry-d1',
                 weekday: 1,
                 hour: 3,
+                display_label: 'D1 - 3R - MAY',
                 module_code: 'D1',
             }],
         }
@@ -372,6 +374,98 @@ describe('Student timetables overview V2 preparation', () => {
         })).toEqual([savedModule])
 
         expect(source).toContain('if (initialized) await this.restoreManualTimetableDraft()')
+    })
+
+    it('marks only the Unterricht that exists in the serialized published timetable as planned', () => {
+        const d3Course3A = {
+            key: 'course-d3-3a',
+            keys: ['course-d3-3a'],
+            title: 'D3 - 3A - ENNS',
+            timetable_entries: [{
+                key: 'entry-d3-3a',
+                weekday: 3,
+                hour: 12,
+                display_label: 'D3 - 3A - ENNS',
+                module_code: 'D3',
+            }],
+        }
+        const d3Course3F = {
+            key: 'course-d3-3f',
+            keys: ['course-d3-3f'],
+            title: 'D3 - 3F - ENNS',
+            timetable_entries: [{
+                key: 'entry-d3-3f',
+                weekday: 1,
+                hour: 13,
+                display_label: 'D3 - 3F - ENNS',
+                module_code: 'D3',
+            }],
+        }
+        const d3Module = {
+            code: 'D3',
+            selection_key: 'negative:D3',
+            courses: [d3Course3A, d3Course3F],
+        }
+        const context = {
+            activeManualModuleGroupKey: 'negative',
+            adoptionRemovedCourseKeys: [],
+            mainModuleSelectionGroups: [],
+            manualCatalogCourses: [d3Course3A, d3Course3F],
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: [],
+            moduleSelectionGroups: [{ modules: [d3Module] }],
+            overview: {
+                published_timetable: {
+                    id: 42,
+                    active_course_group_keys: [],
+                    state: {
+                        moduleSelection: {
+                            selectedCourseKeys: ['course-d3-3a', 'course-d3-3f'],
+                            selectedKeys: ['negative:D3'],
+                        },
+                        manualTimetableDraft: {
+                            removedCourseKeys: [],
+                            selectedCourseKeys: [],
+                        },
+                    },
+                    timetable: {
+                        weekdays: [{ label: 'Montag' }],
+                        semesters: [{
+                            weeks: [{
+                                hours: [{
+                                    hour: 13,
+                                    from: '19:30',
+                                    until: '20:15',
+                                    cells: [{
+                                        courses: [{
+                                            identifier: 'D3-3F-ENNS',
+                                            label: 'DEUTSCH 3',
+                                        }],
+                                    }],
+                                }],
+                            }],
+                        }],
+                    },
+                },
+            },
+            savedTimetableAdoptionBase: null,
+            savedTimetableAdoptionCourseKeys: [],
+            savedTimetableAdoptionModuleKeys: [],
+            timetableCalculationError: '',
+            timetableCalculationStatus: 'idle',
+        }
+
+        expect(OverviewV2.methods.initializeSavedTimetableAdoption.call(context, 'published')).toBe(true)
+        expect(context.savedTimetableAdoptionCourseKeys).toEqual(['course-d3-3f'])
+        expect(context.savedTimetableAdoptionModuleKeys).toEqual(['negative:D3'])
+
+        const plannedCourseContext = {
+            adoptionPlacedCourseKeys: context.savedTimetableAdoptionCourseKeys,
+            moduleCoursesDialogManual: true,
+        }
+
+        expect(OverviewV2.methods.moduleCourseAlreadyPlanned.call(plannedCourseContext, d3Course3A)).toBe(false)
+        expect(OverviewV2.methods.moduleCourseAlreadyPlanned.call(plannedCourseContext, d3Course3F)).toBe(true)
     })
 
     it('uses the published timetable identity to persist additional courses across reloads', async () => {
@@ -894,7 +988,10 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('@click="openModuleCoursesDialog(module)"')
         expect(source).toContain('<v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>')
         expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
-        expect(source).toContain('@click="toggleDisplayedModuleCourse(course)"')
+        expect(source).toContain("'overview-v2-module-course--planned': moduleCourseAlreadyPlanned(course)")
+        expect(source).toContain(':disabled="moduleCourseAlreadyPlanned(course)"')
+        expect(source).toContain('class="overview-v2-module-course-planned"')
+        expect(source).toContain('Verplant')
         expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
         expect(source).toContain('sortTimetableModuleCourses(')
         expect(source).toContain('Bestätigen')
@@ -974,6 +1071,7 @@ describe('Student timetables overview V2 preparation', () => {
             timetable_entries: [{ key: 'entry-d1', weekday: 1, hour: 3 }],
         }
         const context = {
+            adoptionPlacedCourseKeys: [] as string[],
             manualPendingCourseKeys: ['course-d1'],
             manualSelectedCourseKeys: [] as string[],
             moduleCourseDialogCourses: [course],
@@ -995,21 +1093,82 @@ describe('Student timetables overview V2 preparation', () => {
         expect(context.saveManualTimetableDraft).toHaveBeenCalledOnce()
     })
 
+    it('shows planned manual courses as unavailable and rejects duplicate placement', async () => {
+        const plannedCourse = {
+            key: 'course-planned',
+            title: 'D1 - 1A - HUB',
+            timetable_entries: [{ key: 'entry-planned', weekday: 1, hour: 3 }],
+        }
+        const availableCourse = {
+            key: 'course-available',
+            title: 'D1 - 2B - HUB',
+            timetable_entries: [{ key: 'entry-available', weekday: 2, hour: 4 }],
+        }
+        const module = {
+            code: 'D1',
+            courses: [plannedCourse, availableCourse],
+        }
+        const context: any = {
+            adoptionPlacedCourseKeys: ['course-planned'],
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: ['course-planned'],
+            moduleCourseDialogCourses: [],
+            moduleCoursesDialogManual: true,
+            moduleCourseDialogModule: module,
+            moduleCoursesDialogOpen: true,
+            saveManualTimetableDraft: vi.fn().mockResolvedValue(true),
+            closeModuleCoursesDialog() {
+                this.manualPendingCourseKeys = []
+                this.moduleCoursesDialogOpen = false
+            },
+        }
+        context.manualPendingCourseSelected = course => (
+            OverviewV2.methods.manualPendingCourseSelected.call(context, course)
+        )
+        context.moduleCourseDialogCourses = OverviewV2.computed.moduleCourseDialogCourses.call(context)
+
+        expect(context.moduleCourseDialogCourses).toEqual([plannedCourse, availableCourse])
+        expect(OverviewV2.methods.manualModuleCourseCount.call(context, module)).toBe(2)
+        expect(OverviewV2.methods.moduleCourseAlreadyPlanned.call(context, plannedCourse)).toBe(true)
+        expect(OverviewV2.methods.moduleCourseAlreadyPlanned.call(context, availableCourse)).toBe(false)
+
+        OverviewV2.methods.toggleDisplayedModuleCourse.call(context, plannedCourse)
+        expect(context.manualPendingCourseKeys).toEqual([])
+
+        OverviewV2.methods.toggleDisplayedModuleCourse.call(context, availableCourse)
+        expect(context.manualPendingCourseKeys).toEqual(['course-available'])
+
+        context.manualPendingCourseKeys = ['course-planned', 'course-available']
+        await OverviewV2.methods.planManualModuleCourses.call(context)
+
+        expect(context.manualSelectedCourseKeys).toEqual(['course-planned', 'course-available'])
+        expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.saveManualTimetableDraft).toHaveBeenCalledOnce()
+    })
+
     it('removes and persists a complete module from the displayed manual timetable', async () => {
         const removedModule = {
             selection_key: 'previous:Rev2',
+            code: 'Rev2',
             courses: [
                 { key: 'course-rev2', keys: ['course-rev2', 'course-rev2-alias'] },
             ],
         }
+        const duplicateCatalogModule = {
+            ...removedModule,
+            selection_key: 'all:Rev2',
+        }
         const context = {
             adoptionRemovedCourseKeys: ['course-existing'],
+            mainModuleSelectionGroups: [{ modules: [duplicateCatalogModule] }],
             manualPendingCourseKeys: ['course-rev2'],
             manualSelectedCourseKeys: ['course-rev2', 'course-keep'],
+            moduleSelectionGroups: [{ modules: [removedModule] }],
             savedTimetableAdoptionBase: { slots: {} },
             savedTimetableAdoptionCourseKeys: [],
-            savedTimetableAdoptionModuleKeys: [],
+            savedTimetableAdoptionModuleKeys: ['previous:Rev2', 'all:Rev2'],
             savedTimetableEntryKeysForModule: OverviewV2.methods.savedTimetableEntryKeysForModule,
+            savedTimetableModuleKeysForModule: OverviewV2.methods.savedTimetableModuleKeysForModule,
             saveManualTimetableDraft: vi.fn().mockResolvedValue(true),
         }
 
@@ -1017,6 +1176,7 @@ describe('Student timetables overview V2 preparation', () => {
 
         expect(context.manualSelectedCourseKeys).toEqual(['course-keep'])
         expect(context.manualPendingCourseKeys).toEqual([])
+        expect(context.savedTimetableAdoptionModuleKeys).toEqual([])
         expect(context.adoptionRemovedCourseKeys).toEqual([
             'course-existing',
             'course-rev2',
@@ -1095,6 +1255,83 @@ describe('Student timetables overview V2 preparation', () => {
         expect(context.manualSelectedCourseKeys).toEqual(['course-rev2', 'course-rev2-alias'])
         expect(context.manualPendingCourseKeys).toEqual([])
         expect(context.adoptionRemovedCourseKeys).toEqual(['course-d1'])
+
+        get.mockRestore()
+    })
+
+    it('keeps a removed published module hidden across duplicate catalogs and reloads', async () => {
+        const fingerprint = 'f'.repeat(64)
+        const publishedCourse = {
+            key: 'course-bu1',
+            keys: ['course-bu1'],
+            timetable_entries: [{
+                key: 'course-bu1',
+                weekday: 3,
+                hour: 14,
+                module_code: 'BU1',
+            }],
+        }
+        const studentModule = {
+            selection_key: 'negative:BU1',
+            code: 'BU1',
+            courses: [publishedCourse],
+        }
+        const mainModule = {
+            ...studentModule,
+            selection_key: 'all:BU1',
+        }
+        const get = vi.spyOn(axios, 'get').mockResolvedValueOnce({
+            data: {
+                data: {
+                    manual_timetable_draft: {
+                        source: 'automatic',
+                        fingerprint,
+                        timetableKey: 'saved-published-timetable',
+                        timetableIndex: 0,
+                        selectedCourseKeys: [],
+                        removedCourseKeys: ['course-bu1', 'saved-published-1'],
+                    },
+                },
+            },
+        })
+        const context = {
+            adoptionRemovedCourseKeys: [],
+            isTimetableAdoptionPage: true,
+            mainModuleSelectionGroups: [{ modules: [mainModule] }],
+            manualCatalogCourses: [publishedCourse],
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: [],
+            moduleSelectionGroups: [{ modules: [studentModule] }],
+            savedTimetableAdoptionBase: {
+                key: 'saved-published-timetable',
+                slots: {
+                    '3-14': {
+                        key: 'saved-published-1',
+                        code: 'BU1',
+                        courseGroup: {
+                            key: 'saved-published-1',
+                            module_code: 'BU1',
+                            weekday: 3,
+                            hour: 14,
+                        },
+                    },
+                },
+            },
+            savedTimetableAdoptionCourseKeys: ['course-bu1'],
+            savedTimetableAdoptionModuleKeys: ['negative:BU1', 'all:BU1'],
+            savedTimetableEntryKeysForModule: OverviewV2.methods.savedTimetableEntryKeysForModule,
+            manualTimetableDraftRouteSelection: vi.fn().mockReturnValue({
+                fingerprint,
+                timetableIndex: 0,
+                timetableKey: 'saved-published-timetable',
+                workspaceId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+            }),
+        }
+
+        expect(await OverviewV2.methods.restoreManualTimetableDraft.call(context)).toBe(true)
+        expect(context.adoptionRemovedCourseKeys).toEqual(['course-bu1', 'saved-published-1'])
+        expect(context.savedTimetableAdoptionCourseKeys).toEqual([])
+        expect(context.savedTimetableAdoptionModuleKeys).toEqual([])
 
         get.mockRestore()
     })

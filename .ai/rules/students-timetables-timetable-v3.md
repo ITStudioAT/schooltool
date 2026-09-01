@@ -238,8 +238,8 @@ On manual page 3B, clicking a concrete Unterricht toggles all of that course's s
 ## Show adoption module summary and catalogs
 On every V3 adoption page, show Studierenden Module/Hauptmodule catalog cards when student details are available. The manual timetable card always contains a read-only Ausgewählte Module summary: page 3A derives it from the transferred automatic module selection, while page 3B derives it from transient manually placed course keys. Keep 3A catalog course details browse-only; manual placement remains limited to page 3B.
 
-## Hide placed manual courses across catalogs
-On manual timetable page 3B, once an Unterricht is placed, hide it from both Studierenden Module and Hauptmodule course dialogs using any overlapping canonical course key. Reject repeat placement at the mutation boundary as well; catalog switching must not make a placed course selectable again.
+## Show placed manual courses across catalogs
+This supersedes the earlier hide-after-placement behavior. On manual timetable adoption pages, keep every Unterricht visible in both Studierenden Module and Hauptmodule course dialogs. Mark an already placed Unterricht as “Verplant”, keep it non-selectable using any overlapping canonical course key, and reject repeat placement again at the mutation boundary.
 
 ## Allow manual placement on adoption page 3A
 This supersedes the earlier rule that kept page 3A catalog details browse-only. Studierenden Module and Hauptmodule must allow manual Unterricht placement on both 3A and 3B. On 3A, overlay transient manual entries on the transferred timetable without mutating it, and treat transferred plus manually added course-group keys as already placed so neither catalog permits duplicates.

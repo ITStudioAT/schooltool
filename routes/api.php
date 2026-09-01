@@ -215,6 +215,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/moderator-users', [StudentsTimetablesAdminUserController::class, 'index'])
             ->defaults('managedRole', 'studentstimetables_moderator');
         Route::get('/admin/students-timetables/teacher-list', [TeacherAccountController::class, 'index']);
+        Route::post('/admin/students-timetables/teacher-list', [TeacherAccountController::class, 'store']);
         Route::put('/admin/students-timetables/teacher-list/active-state', [TeacherAccountController::class, 'setActiveState']);
         Route::put('/admin/students-timetables/teacher-list/users/{teacherUser}', [TeacherAccountController::class, 'updateUser']);
         Route::put('/admin/students-timetables/teacher-list/{teacher}', [TeacherAccountController::class, 'update']);

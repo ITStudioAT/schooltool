@@ -20,8 +20,8 @@ Grafik v2 for Kompaktstudium renders only semester and subject/module cells. Do 
 ## Do not show the compact hours explanatory alert
 Do not render the former Kompaktstudium alert about school teaching units and excluded self-study in the subject overview graphics.
 
-## Keep Grafik v2 first and Grafik last
-In the subjects-overview submenu, Grafik v2 is always the first item. For admins, Fächer, Regeln, and Zuordnung follow, and the legacy Grafik item is always last.
-
 ## Open Fächer on Grafik v2 by default
 The main Fächer navigation target and a direct subjects-overview route without a subsection resolve to subject-plan-v2. Removed or unauthorized subject subpages also return to Grafik v2; the embedded legacy graphic remains unchanged.
+
+## Expose one Grafik submenu with role-scoped subject settings
+Label subject-plan-v2 as Grafik and expose it as the only Fächer submenu item for studentstimetables_moderator. Admin roles additionally see Fächer, Regeln, and Zuordnung. Do not expose the legacy subject-plan menu item; direct legacy or unauthorized subject subroutes redirect to subject-plan-v2, while embedded legacy rendering may remain for compatibility.

@@ -24,15 +24,6 @@
                         </span>
                     </v-btn>
                 </div>
-
-                <v-btn
-                    class="st-nav__settings-button"
-                    icon="mdi-cog"
-                    size="small"
-                    variant="text"
-                    title="Einstellungen"
-                    aria-label="Einstellungen"
-                    to="/admin/settings?tab=students_timetables" />
             </v-sheet>
 
             <v-row :key="subjectPlanRevision" class="students-timetables-content w-100" dense>
@@ -93,6 +84,7 @@
                 <TestsV3 v-if="main_action === 'tests-v3'" />
                 <Import v-if="main_action === 'import'" />
                 <SubjectsOverview v-if="main_action === 'subjects-overview'" />
+                <StudentsTimetablesTeachers v-if="main_action === 'teachers'" />
             </v-row>
 
             <v-dialog
@@ -160,14 +152,26 @@ const TestsV3 = defineAsyncComponent(() => import('./testsV3/TestsV3.vue'))
 const TtEntries = defineAsyncComponent(() => import('./ttEntries/TtEntries.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
+const StudentsTimetablesTeachers = defineAsyncComponent(
+    () => import('@/pages/admin/settings/components/StudentsTimetablesTeachers.vue'),
+)
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
 const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
 const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'
+const TEACHERS_OVERVIEW_PATH = '/admin/students-timetables/teachers/overview'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
 const PERSONAL_SCHOOLYEAR_SCOPE = 'personal'
-const mainSectionKeys = ['timetable', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']
+const mainSectionKeys = [
+    'timetable',
+    'timetable-v3',
+    'tt-entries',
+    'tests-v3',
+    'subjects-overview',
+    'teachers',
+    'import',
+]
 
 export default {
     components: {
@@ -178,6 +182,7 @@ export default {
         TtEntries,
         Import,
         SubjectsOverview,
+        StudentsTimetablesTeachers,
     },
     data() {
         return {
@@ -248,6 +253,13 @@ export default {
                     meta: 'Überblick',
                     icon: 'mdi-book-open-page-variant-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
+                {
+                    key: 'teachers',
+                    label: 'Lehrer:innen',
+                    meta: 'Verwaltung',
+                    icon: 'mdi-account-tie-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
             ]
         },
@@ -328,6 +340,11 @@ export default {
                     label: 'Fächer',
                     icon: 'mdi-book-open-page-variant-outline',
                     note: 'Fächer, Import und Zuordnung.',
+                },
+                teachers: {
+                    label: 'Lehrer:innen',
+                    icon: 'mdi-account-tie-outline',
+                    note: 'Lehrerliste verwalten.',
                 },
             }
             return sections[this.activeNavigationKey] || sections[this.activeTimetableKey]
@@ -476,6 +493,7 @@ export default {
                     )
                     || this.$route.params.section === 'tt-entries'
                     || this.$route.params.section === 'tests-v3'
+                    || this.$route.params.section === 'teachers'
                 )
                 && !this.canManageStudentsTimetables
             ) {
@@ -514,6 +532,7 @@ export default {
                 'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH,
                 'tt-entries': TT_ENTRIES_OVERVIEW_PATH,
                 'tests-v3': TESTS_V3_STUDENTS_PATH,
+                teachers: TEACHERS_OVERVIEW_PATH,
                 'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
@@ -606,12 +625,6 @@ export default {
     flex-wrap: wrap;
     gap: 8px;
     flex: 1;
-}
-
-.st-nav__settings-button {
-    flex: 0 0 auto;
-    margin-bottom: 7px;
-    color: #5b6472 !important;
 }
 
 .st-nav__button {
@@ -722,10 +735,6 @@ export default {
         flex: 1 1 auto;
         min-height: 38px !important;
         padding: 0 12px;
-    }
-
-    .st-nav__settings-button {
-        align-self: flex-start;
     }
 
     .st-nav__button-title {

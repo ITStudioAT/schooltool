@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StudentsTimetables\AdminUserIndexRequest;
+use App\Http\Requests\Admin\StudentsTimetables\StoreTeacherRosterEntryRequest;
 use App\Http\Requests\Admin\StudentsTimetables\UpdateTeacherRosterEntryRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\Role;
@@ -81,6 +82,24 @@ class TeacherAccountController extends Controller
             'data' => $paginator->items(),
             'meta' => new PaginateResource($paginator),
         ]);
+    }
+
+    public function store(StoreTeacherRosterEntryRequest $request): JsonResponse
+    {
+        $authUser = $this->authorizedUser();
+        $validated = $request->validated();
+        $this->assertTeacherEmailAvailable($authUser->school_id, $validated['email']);
+
+        $teacher = Teacher::query()->create([
+            'school_id' => $authUser->school_id,
+            'short' => $validated['short'] ?? '',
+            'last_name' => $validated['last_name'],
+            'first_name' => $validated['first_name'] ?? null,
+            'email' => $validated['email'],
+            'is_active' => true,
+        ]);
+
+        return response()->json($this->teacherListItem($teacher), 201);
     }
 
     public function setActiveState(Request $request): JsonResponse

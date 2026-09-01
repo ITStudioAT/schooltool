@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { defineComponent, h, inject, provide } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import Settings from '@/pages/admin/settings/Settings.vue'
+import StudentsTimetablesTeachers from '@/pages/admin/settings/components/StudentsTimetablesTeachers.vue'
 
 const VBtnToggleStub = defineComponent({
     props: ['modelValue'],
@@ -206,23 +207,6 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'SEPA', 'Online'])
     })
 
-    it('builds the students timetables settings sub navigation', () => {
-        const items = (Settings as any).computed.subNavigationItems.call({
-            isStudentsTimetablesTab: true,
-            isRestaurantTab: false,
-            isAdminTab: false,
-            isRegisterTab: false,
-            isTeachingTab: false,
-            isMaterialsTab: false,
-            isGroupsTab: false,
-            isTutoringTab: false,
-        })
-
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['admins', 'moderators', 'teachers'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Admins', 'Moderatoren', 'Lehrerliste'])
-        expect(items.map((item: { meta: string }) => item.meta)).toEqual(['verwalten', 'verwalten', 'verwalten'])
-    })
-
     it('shows active controls and teacher roles in the teachers panel', () => {
         const componentSource = readFileSync('resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue', 'utf8')
         const storeSource = readFileSync('resources/js/stores/admin/studentsTimetables/TeachersListStore.js', 'utf8')
@@ -234,6 +218,19 @@ describe('Admin settings page', () => {
         expect(componentSource).toContain('Alle inaktiv')
         expect(componentSource).toContain('@click="setAllTeachersActive(true)"')
         expect(componentSource).toContain('@click="setAllTeachersActive(false)"')
+        expect(componentSource).toContain('@click="openCreateDialog"')
+        expect(componentSource).toContain('Hinzufügen')
+        expect(componentSource).toContain('@click="openImportDialog"')
+        expect(componentSource).toContain('Importieren')
+        expect(componentSource).toContain('<FileUpload')
+        expect(componentSource).toContain(':path="teachersListUploadPath"')
+        expect(componentSource).toContain('teachersListApi.upload()')
+        expect(componentSource).toContain('teachersListApi.importStatus()')
+        expect(componentSource).toContain("window.addEventListener('teachers-list-import-finished'")
+        expect(componentSource).toContain("window.removeEventListener('teachers-list-import-finished'")
+        expect(componentSource).toContain('cols="12" md="10" lg="8" xl="7"')
+        expect(componentSource).not.toContain('class="mx-auto"')
+        expect(componentSource).toContain("'Lehrkraft hinzufügen'")
         expect(componentSource).not.toContain('Lehrer: Ja')
         expect(componentSource).toContain('readonly')
         expect(componentSource).not.toContain('Keine TT-Rolle')
@@ -244,8 +241,18 @@ describe('Admin settings page', () => {
         expect(componentSource).toContain('userId = activatedTeacher.user_id')
         expect(componentSource).toContain('@click.stop="toggleTeacherActive(teacher)"')
         expect(componentSource).toContain('@click.stop="openEditDialog(teacher)"')
+        expect(componentSource).toContain('icon="mdi-pencil-outline"')
+        expect(componentSource).not.toContain('prepend-icon="mdi-pencil-outline"')
+        expect(componentSource).not.toMatch(/>\s*Bearbeiten\s*<\/v-btn>/u)
+        expect(componentSource).toContain('@click.stop="copyEmail(teacher)"')
+        expect(componentSource).toContain("'mdi-content-copy'")
+        expect(componentSource).toContain('E-Mail-Adresse kopieren: ${teacher.email}')
+        expect(componentSource).toContain('async copyTextToClipboard(text)')
+        expect(componentSource).toContain('await navigator.clipboard.writeText(text)')
         expect(componentSource).toContain('Lehrkraft bearbeiten')
         expect(componentSource).toContain('label="Kürzel"')
+        expect(componentSource).toContain('@update:model-value="updateTeacherShort"')
+        expect(componentSource).toContain("short: this.editForm.short.trim().toUpperCase()")
         expect(componentSource).toContain('label="Nachname"')
         expect(componentSource).toContain('label="Vorname"')
         expect(componentSource).toContain('label="E-Mail"')
@@ -258,9 +265,101 @@ describe('Admin settings page', () => {
         expect(storeSource).toContain('async setAllActive(isActive)')
         expect(storeSource).toContain('updateImportedTeacherAccount.url')
         expect(storeSource).toContain('updateRegisteredTeacherAccount.url')
+        expect(storeSource).toContain('store as storeTeacherAccount')
+        expect(storeSource).toContain('async createTeacher(values)')
+        expect(storeSource).toContain('axios.post(storeTeacherAccount.url(), values)')
         expect(storeSource).toContain('async updateTeacher(teacher, values)')
         expect(storeSource).not.toContain('toggleTeacherAccountTeacherRole.url')
         expect(storeSource).toContain('response.data.data')
+    })
+
+    it('copies a teacher email and resets the copied state', async () => {
+        vi.useFakeTimers()
+
+        try {
+            const context = {
+                copiedEmailId: null as number | null,
+                copyEmailResetTimeout: null as ReturnType<typeof setTimeout> | null,
+                copyTextToClipboard: vi.fn().mockResolvedValue(true),
+            }
+
+            await expect((StudentsTimetablesTeachers as any).methods.copyEmail.call(context, {
+                id: 42,
+                email: ' teacher@example.com ',
+            })).resolves.toBe(true)
+            expect(context.copyTextToClipboard).toHaveBeenCalledWith('teacher@example.com')
+            expect(context.copiedEmailId).toBe(42)
+
+            vi.advanceTimersByTime(1500)
+
+            expect(context.copiedEmailId).toBeNull()
+            expect(context.copyEmailResetTimeout).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('creates a teacher through the shared teacher form', async () => {
+        const context = {
+            editingTeacher: null,
+            canSaveTeacher: true,
+            editForm: {
+                short: 'NN',
+                last_name: 'Neumann',
+                first_name: 'Nora',
+                email: 'nora@example.test',
+            },
+            teachersListStore: {
+                createTeacher: vi.fn().mockResolvedValue({ id: 'teacher-42' }),
+                updateTeacher: vi.fn(),
+            },
+            closeEditDialog: vi.fn(),
+        }
+
+        await (StudentsTimetablesTeachers as any).methods.saveTeacher.call(context)
+
+        expect(context.teachersListStore.createTeacher).toHaveBeenCalledWith(context.editForm)
+        expect(context.teachersListStore.updateTeacher).not.toHaveBeenCalled()
+        expect(context.closeEditDialog).toHaveBeenCalledOnce()
+    })
+
+    it('keeps teacher short codes uppercase while editing', () => {
+        const context = {
+            editForm: {
+                short: '',
+            },
+        }
+
+        ;(StudentsTimetablesTeachers as any).methods.updateTeacherShort.call(context, 'ab-12')
+
+        expect(context.editForm.short).toBe('AB-12')
+    })
+
+    it('refreshes the teachers page after a successful list import', async () => {
+        const context = {
+            importRunning: true,
+            importUploadFinished: false,
+            importFinished: false,
+            importStatus: null as number | null,
+            importMessage: '',
+            stopImportStatusPolling: vi.fn(),
+            teachersListStore: {
+                index: vi.fn().mockResolvedValue(undefined),
+            },
+        }
+
+        await (StudentsTimetablesTeachers as any).methods.applyImportCompletion.call(context, {
+            status: 200,
+            message: 'Import abgeschlossen.',
+        })
+
+        expect(context.stopImportStatusPolling).toHaveBeenCalledOnce()
+        expect(context.importRunning).toBe(false)
+        expect(context.importUploadFinished).toBe(true)
+        expect(context.importFinished).toBe(true)
+        expect(context.importStatus).toBe(200)
+        expect(context.importMessage).toBe('Import abgeschlossen.')
+        expect(context.teachersListStore.index).toHaveBeenCalledOnce()
     })
 
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
@@ -355,11 +454,28 @@ describe('Admin settings page', () => {
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, false, true)).not.toContain('restaurant')
     })
 
-    it('includes the students timetables settings tab in available tabs only when allowed', () => {
+    it('does not expose students timetables management in Settings', () => {
         const methods = (Settings as any).methods
+        const computed = (Settings as any).computed
+        const componentSource = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
+        const navigationItems = computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: true,
+            canAccessAdminSettingsTab: true,
+            canAccessRegisterSettingsTab: true,
+            canAccessTutoringSettingsTab: true,
+            canAccessTeachingSettingsTab: true,
+            canAccessMaterialsSettingsTab: true,
+            canAccessGroupsSettingsTab: true,
+            canAccessRestaurantSettingsTab: true,
+            canAccessProfileTab: true,
+        })
 
-        expect(methods.availableTabKeys(false, false, false, false, false, false, false, false, true, true)).toContain('students_timetables')
-        expect(methods.availableTabKeys(false, false, false, false, false, false, false, false, true, false)).not.toContain('students_timetables')
+        expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('students_timetables')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true))
+            .not.toContain('students_timetables')
+        expect(componentSource).not.toContain("label: 'Schülerstundenpläne'")
+        expect(componentSource).not.toContain('StudentsTimetablesTeachers')
+        expect(componentSource).not.toContain("main_action === 'students_timetables'")
     })
 
     it('uses the restaurant capability before falling back to restaurant roles', () => {
@@ -371,19 +487,7 @@ describe('Admin settings page', () => {
         expect(methods.canAccessRestaurantSettings(['lunch_admin'], {})).toBe(true)
     })
 
-    it('requires both a students timetables role and the licence capability', () => {
-        const methods = (Settings as any).methods
-
-        expect(methods.canAccessStudentsTimetablesSettings(['super_admin'])).toBe(true)
-        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'])).toBe(true)
-        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_moderator'])).toBe(false)
-        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { students_timetables: true })).toBe(true)
-        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { students_timetables: false })).toBe(false)
-        expect(methods.canAccessStudentsTimetablesSettings(['super_admin'], { students_timetables: false })).toBe(false)
-        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { profile: true })).toBe(false)
-    })
-
-    it('hides and redirects away from students timetables settings when the licence capability is unavailable', () => {
+    it('redirects the removed students timetables settings URL to the profile', () => {
         const replace = vi.fn()
 
         render(Settings, {
@@ -397,7 +501,7 @@ describe('Admin settings page', () => {
                                     is_auth: true,
                                     roles: ['studentstimetables_admin'],
                                     capabilities: {
-                                        students_timetables: false,
+                                        students_timetables: true,
                                         profile: true,
                                     },
                                     selected_school: { long_name: 'Testschule' },
@@ -426,7 +530,7 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
-        expect(screen.queryByText(/StudentsTimetablesAdminUsers Component/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
     })
 
@@ -777,72 +881,7 @@ describe('Admin settings page', () => {
         })
     })
 
-    it('renders the students timetables settings tab for students timetables admins', async () => {
-        const { container } = render(Settings, {
-            global: {
-                plugins: [
-                    createTestingPinia({
-                        stubActions: true,
-                        initialState: {
-                            AdminAdminStore: {
-                                config: {
-                                    is_auth: true,
-                                    roles: ['studentstimetables_admin'],
-                                    capabilities: {
-                                        students_timetables: true,
-                                    },
-                                    selected_school: { long_name: 'Testschule' },
-                                },
-                            },
-                        },
-                    }),
-                ],
-                mocks: {
-                    $route: {
-                        fullPath: '/admin/settings?tab=students_timetables',
-                        query: {
-                            tab: 'students_timetables',
-                        },
-                    },
-                    $router: {
-                        replace: () => {},
-                    },
-                },
-                stubs: {
-                    ...vuetifyStubs,
-                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
-                    StudentsTimetablesAdminUsers: {
-                        props: ['roleKey', 'title', 'singularTitle'],
-                        template: '<div>StudentsTimetablesAdminUsers Component {{ roleKey }} {{ title }} {{ singularTitle }}</div>',
-                    },
-                    StudentsTimetablesTeachers: { template: '<div>StudentsTimetablesTeachers Component</div>' },
-                },
-            },
-        })
-
-        expect(screen.getByText('Schülerstundenpläne')).toBeInTheDocument()
-        expect(screen.getByText('Admins')).toBeInTheDocument()
-        expect(screen.getByText('Moderatoren')).toBeInTheDocument()
-        expect(screen.getByText('Lehrerliste')).toBeInTheDocument()
-        expect(screen.queryByText('Bewertung')).not.toBeInTheDocument()
-        expect(screen.queryByText('Fächer')).not.toBeInTheDocument()
-        expect(screen.getByText('StudentsTimetablesAdminUsers Component admins Admins Admin')).toBeInTheDocument()
-        expect(container.querySelector('.settings-subnav')).not.toBeNull()
-
-        await fireEvent.click(screen.getByText('Moderatoren'))
-
-        await waitFor(() => {
-            expect(screen.getByText('StudentsTimetablesAdminUsers Component moderators Moderatoren Moderator')).toBeInTheDocument()
-        })
-
-        await fireEvent.click(screen.getByText('Lehrerliste'))
-
-        await waitFor(() => {
-            expect(screen.getByText('StudentsTimetablesTeachers Component')).toBeInTheDocument()
-        })
-    })
-
-    it('redirects away from students timetables settings for students timetables moderators', () => {
+    it('redirects the removed students timetables settings URL for students timetables moderators', () => {
         const replace = vi.fn()
 
         render(Settings, {
@@ -885,7 +924,7 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
-        expect(screen.queryByText(/StudentsTimetablesAdminUsers Component/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
     })
 

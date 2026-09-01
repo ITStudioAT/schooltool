@@ -940,7 +940,7 @@ export default {
             return [
                 {
                     key: 'subject-plan-v2',
-                    label: 'Grafik v2',
+                    label: 'Grafik',
                     icon: 'mdi-view-dashboard-outline',
                 },
                 {
@@ -958,12 +958,7 @@ export default {
                     label: 'Zuordnung',
                     icon: 'mdi-transit-connection-variant',
                 },
-                {
-                    key: 'subject-plan',
-                    label: 'Grafik',
-                    icon: 'mdi-table-large',
-                },
-            ].filter(item => ['subject-plan', 'subject-plan-v2'].includes(item.key) || this.canManageSubjectSettings)
+            ].filter(item => item.key === 'subject-plan-v2' || this.canManageSubjectSettings)
         },
         sortedSubjectRows() {
             const directionMultiplier = this.subjectSort.direction === 'desc' ? -1 : 1
@@ -1435,8 +1430,8 @@ export default {
         },
         normalizedSubjectAction(subsection) {
             const allowedActions = this.canManageSubjectSettings
-                ? ['subject-plan', 'subject-plan-v2', 'subjects', 'rules', 'mapping']
-                : ['subject-plan', 'subject-plan-v2']
+                ? ['subject-plan-v2', 'subjects', 'rules', 'mapping']
+                : ['subject-plan-v2']
 
             return allowedActions.includes(subsection) ? subsection : 'subject-plan-v2'
         },
@@ -1480,8 +1475,10 @@ export default {
             return true
         },
         redirectUnauthorizedSubjectRoute() {
-            if (this.embedded || this.canManageSubjectSettings) return
-            if (!['subjects', 'mapping'].includes(this.$route.params.subsection)) return
+            if (this.embedded) return
+
+            const subsection = this.$route.params.subsection
+            if (!subsection || this.normalizedSubjectAction(subsection) === subsection) return
 
             this.subject_action = 'subject-plan-v2'
             this.$router.replace({

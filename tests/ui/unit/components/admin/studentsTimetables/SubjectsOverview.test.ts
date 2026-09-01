@@ -854,6 +854,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("meta: 'Stundenplan'")
         expect(componentSource).toContain("label: 'Fächer'")
         expect(componentSource).toContain("meta: 'Überblick'")
+        expect(componentSource).toContain("key: 'teachers'")
+        expect(componentSource).toContain("label: 'Lehrer:innen'")
+        expect(componentSource).not.toContain('to="/admin/settings?tab=students_timetables"')
+        expect(componentSource).not.toContain('icon="mdi-cog"')
+        expect(componentSource).not.toContain('st-nav__settings-button')
         expect(componentSource).not.toContain("meta: 'Import'")
         expect(componentSource).not.toContain("meta: 'Tagesansicht'")
         expect(componentSource).toContain("'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH")
@@ -862,12 +867,14 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('st-nav__automatic-button')
         expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan-v2')
-        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v3', 'tt-entries', 'tests-v3', 'subjects-overview', 'import']")
+        expect(componentSource).toContain('const mainSectionKeys = [')
+        expect(componentSource).toContain("    'teachers',")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
         expect(componentSource).not.toContain('TIMETABLE_V2_OVERVIEW_PATH')
         expect(componentSource).toContain("const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'")
         expect(componentSource).toContain("const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'")
         expect(componentSource).toContain("const TESTS_V3_STUDENTS_PATH = '/admin/students-timetables/tests-v3/students'")
+        expect(componentSource).toContain("const TEACHERS_OVERVIEW_PATH = '/admin/students-timetables/teachers/overview'")
         expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
@@ -881,12 +888,14 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH")
         expect(componentSource).toContain("'tt-entries': TT_ENTRIES_OVERVIEW_PATH")
         expect(componentSource).toContain("'tests-v3': TESTS_V3_STUDENTS_PATH")
+        expect(componentSource).toContain('teachers: TEACHERS_OVERVIEW_PATH')
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
         expect(componentSource).not.toContain("import('./timetableV2/TimetableV2.vue')")
         expect(componentSource).toContain("import('./timetableV3/TimetableV3.vue')")
         expect(componentSource).toContain("import('./testsV3/TestsV3.vue')")
         expect(componentSource).toContain("import('./ttEntries/TtEntries.vue')")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
+        expect(componentSource).toContain("import('@/pages/admin/settings/components/StudentsTimetablesTeachers.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
         expect(componentSource).not.toContain("import('./robot/RobotTimetable.vue')")
         expect(componentSource).not.toContain("<v-col v-if=\"main_action === 'timetable-v2'\" cols=\"12\">")
@@ -899,6 +908,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("Import v-if=\"main_action === 'import'\"")
         expect(componentSource).not.toContain("RobotTimetable v-if=\"main_action === 'robot'\"")
         expect(componentSource).toContain("SubjectsOverview v-if=\"main_action === 'subjects-overview'\"")
+        expect(componentSource).toContain("StudentsTimetablesTeachers v-if=\"main_action === 'teachers'\"")
         expect(componentSource).not.toContain("Overview v-if=\"main_action === 'overview'\"")
         expect(componentSource).not.toContain('students-timetables-hero__schoolyear')
         expect(componentSource).not.toContain('useSchoolyearStore')
@@ -911,9 +921,11 @@ describe('Students timetable subjects overview', () => {
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
+        expect(componentSource.indexOf("key: 'subjects-overview'"))
+            .toBeLessThan(componentSource.indexOf("key: 'teachers'"))
         expect(computed.allNavigationItems.call({}).at(-1)).toMatchObject({
-            key: 'subjects-overview',
-            label: 'Fächer',
+            key: 'teachers',
+            label: 'Lehrer:innen',
         })
         expect(componentSource).not.toContain('st-nav__button--legacy')
     })
@@ -2311,6 +2323,22 @@ describe('Students timetable subjects overview', () => {
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/tt-entries/overview' })
     })
 
+    it('opens the teachers page inside the module navigation', () => {
+        const methods = (StudentsTimetables as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            $router: {
+                push,
+            },
+            main_action: 'timetable-v3',
+        }
+
+        methods.handleNavigation.call(ctx, 'teachers')
+
+        expect(ctx.main_action).toBe('teachers')
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/teachers/overview' })
+    })
+
     it('shows restricted navigation only to timetable admins', () => {
         const computed = (StudentsTimetables as any).computed
         const methods = (StudentsTimetables as any).methods
@@ -2333,12 +2361,18 @@ describe('Students timetable subjects overview', () => {
 
         const moderatorNavigationKeys = computed.navigationItems.call(ctx).map(item => item.key)
 
-        expect(adminNavigationKeys).toContain('tt-entries')
-        expect(moderatorNavigationKeys).not.toContain('tt-entries')
-        expect(moderatorNavigationKeys).not.toContain('timetable-v2')
-        expect(moderatorNavigationKeys).toContain('timetable-v3')
-        expect(moderatorNavigationKeys).not.toContain('tests-v3')
-        expect(moderatorNavigationKeys).toContain('subjects-overview')
+        expect(adminNavigationKeys).toEqual([
+            'timetable-v3',
+            'tests-v3',
+            'tt-entries',
+            'imports',
+            'subjects-overview',
+            'teachers',
+        ])
+        expect(moderatorNavigationKeys).toEqual([
+            'timetable-v3',
+            'subjects-overview',
+        ])
     })
 
     it('redirects non-admins away from the TT entries route', () => {
@@ -2379,6 +2413,30 @@ describe('Students timetable subjects overview', () => {
             },
             canManageStudentsTimetables: false,
             main_action: 'tests-v3',
+            activeTimetableKey: 'timetable-v3',
+            activeTimetablePath: '/admin/students-timetables/timetable-v3/overview',
+        }
+
+        methods.redirectUnauthorizedSection.call(ctx)
+
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
+    })
+
+    it('redirects timetable moderators away from the teachers route', () => {
+        const methods = (StudentsTimetables as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    section: 'teachers',
+                },
+            },
+            $router: {
+                replace,
+            },
+            canManageStudentsTimetables: false,
+            main_action: 'teachers',
             activeTimetableKey: 'timetable-v3',
             activeTimetablePath: '/admin/students-timetables/timetable-v3/overview',
         }
@@ -4417,7 +4475,7 @@ describe('Students timetable subjects overview', () => {
         })
     })
 
-    it('splits the subjects area into two graphics, subjects, rules, and mapping pages', () => {
+    it('shows one graphic to moderators and all subject settings to timetable admins', () => {
         const methods = (SubjectsOverview as any).methods
         const computed = (SubjectsOverview as any).computed
         const componentSource = readFileSync(
@@ -4425,20 +4483,26 @@ describe('Students timetable subjects overview', () => {
             'utf8',
         )
 
-        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: false }))
-            .toMatchObject([
-                { key: 'subject-plan-v2', label: 'Grafik v2' },
-                { key: 'subject-plan', label: 'Grafik' },
+        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: false })
+            .map(({ key, label }: { key: string, label: string }) => ({ key, label })))
+            .toEqual([
+                { key: 'subject-plan-v2', label: 'Grafik' },
             ])
-        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: true }))
-            .toMatchObject([
-                { key: 'subject-plan-v2', label: 'Grafik v2' },
+        expect(computed.subjectNavigationItems.call({ canManageSubjectSettings: true })
+            .map(({ key, label }: { key: string, label: string }) => ({ key, label })))
+            .toEqual([
+                { key: 'subject-plan-v2', label: 'Grafik' },
                 { key: 'subjects', label: 'Fächer' },
                 { key: 'rules', label: 'Regeln' },
                 { key: 'mapping', label: 'Zuordnung' },
-                { key: 'subject-plan', label: 'Grafik' },
             ])
         expect(methods.normalizedSubjectAction.call({ canManageSubjectSettings: false }, 'subject-plan-v2'))
+            .toBe('subject-plan-v2')
+        expect(methods.normalizedSubjectAction.call({ canManageSubjectSettings: false }, 'subjects'))
+            .toBe('subject-plan-v2')
+        expect(methods.normalizedSubjectAction.call({ canManageSubjectSettings: true }, 'subjects'))
+            .toBe('subjects')
+        expect(methods.normalizedSubjectAction.call({ canManageSubjectSettings: true }, 'subject-plan'))
             .toBe('subject-plan-v2')
         expect(computed.studyProgramLabel.call({ studyProgram: 'normalstudium' })).toBe('Normalstudium')
         expect(computed.studyProgramLabel.call({ studyProgram: 'kompaktstudium' })).toBe('Kompaktstudium')
@@ -4524,10 +4588,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subjectNavigationItems()')
         expect(componentSource).not.toContain("key: 'overview'")
         expect(componentSource).not.toContain("label: 'Übersicht'")
-        expect(componentSource).toContain("key: 'subject-plan'")
-        expect(componentSource).toContain("label: 'Grafik'")
         expect(componentSource).toContain("key: 'subject-plan-v2'")
-        expect(componentSource).toContain("label: 'Grafik v2'")
+        expect(componentSource).toContain("label: 'Grafik'")
+        expect(componentSource).not.toContain("label: 'Grafik v2'")
         expect(componentSource).not.toContain("key: 'import'")
         expect(componentSource).not.toContain("label: 'Import'")
         expect(componentSource).toContain("label: 'Fächer'")
@@ -4542,8 +4605,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("v-if=\"subject_action === 'mapping'\"")
         expect(componentSource).toContain("'subject-plan'")
         expect(componentSource).toContain('canManageSubjectSettings()')
-        expect(componentSource).toContain("['subject-plan', 'subject-plan-v2', 'subjects', 'rules', 'mapping']")
-        expect(componentSource).toContain("['subject-plan', 'subject-plan-v2']")
+        expect(componentSource).toContain("['subject-plan-v2', 'subjects', 'rules', 'mapping']")
+        expect(componentSource).toContain("? ['subject-plan-v2', 'subjects', 'rules', 'mapping']")
+        expect(componentSource).toContain(": ['subject-plan-v2']")
         expect(componentSource).toContain('Fächerübersicht v2 · {{ studyProgramLabel }}')
         expect(componentSource).toContain('subject-overview-v2-card__canvas')
         expect(componentSource).toContain('subject-overview-v2-card__footer')
@@ -4568,6 +4632,44 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection)")
         expect(componentSource).toContain('if (this.embedded) {')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/${this.subject_action}')
+    })
+
+    it('redirects removed and moderator-only subject routes to Grafik', () => {
+        const methods = (SubjectsOverview as any).methods
+        const replace = vi.fn()
+        const context: any = {
+            ...methods,
+            embedded: false,
+            canManageSubjectSettings: false,
+            studyProgram: 'normalstudium',
+            subject_action: 'rules',
+            $route: {
+                params: { subsection: 'rules' },
+                query: {},
+            },
+            $router: { replace },
+        }
+
+        methods.redirectUnauthorizedSubjectRoute.call(context)
+
+        expect(context.subject_action).toBe('subject-plan-v2')
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
+            query: { study_program: 'normalstudium' },
+        })
+
+        replace.mockClear()
+        context.canManageSubjectSettings = true
+        context.subject_action = 'subject-plan'
+        context.$route.params.subsection = 'subject-plan'
+
+        methods.redirectUnauthorizedSubjectRoute.call(context)
+
+        expect(context.subject_action).toBe('subject-plan-v2')
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/subjects-overview/subject-plan-v2',
+            query: { study_program: 'normalstudium' },
+        })
     })
 
     it('keeps the rule editor focused on one admin-facing rule type', () => {

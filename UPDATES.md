@@ -8,7 +8,7 @@
 
 ### Schülerstundenpläne
 
-- Import Lehrer
+- Import Lehrer adaptiert
 
 ## 3.46.4
 

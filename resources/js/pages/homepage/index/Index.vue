@@ -45,7 +45,7 @@
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon school-select-icon" :class="[school.logo ? 'school-select-icon--has-logo' : 'school-select-icon--no-logo', schoolLogoDarkFlags[school.id] ? 'school-select-icon--dark-logo' : '']">
-                                    <img v-if="school.logo" :src="'/storage/images/' + school.logo" :alt="school.long_name" class="school-select-logo-img" crossorigin="anonymous" @load="analyzeSchoolCardLogo($event, school.id)" />
+                                    <img v-if="school.logo" :src="schoolLogoSrc(school.logo)" :alt="school.long_name" class="school-select-logo-img" crossorigin="anonymous" @load="analyzeSchoolCardLogo($event, school.id)" />
                                     <v-icon v-else size="40">mdi-school</v-icon>
                                 </div>
                                 <h3 class="card-title school-card-title">{{ school.long_name }}</h3>
@@ -112,7 +112,7 @@
                 <div class="school-logo-banner" v-if="selected_login_school?.logo">
                     <div class="school-logo-box" :class="{ 'school-logo-box--dark': logoNeedsDarkBg }">
                         <img
-                            :src="'/storage/images/' + selected_login_school.logo"
+                            :src="schoolLogoSrc(selected_login_school.logo)"
                             :alt="selected_login_school.long_name"
                             class="school-logo-img"
                             crossorigin="anonymous"
@@ -353,6 +353,7 @@
 
 <script>
 import { nextTick } from 'vue'
+import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
@@ -538,6 +539,9 @@ export default {
     },
 
     methods: {
+        schoolLogoSrc(logo) {
+            return resolveSelectedSchoolLogoSrc(logo)
+        },
         async loadLoginSchools() {
             const result = await this.homepageStore.loadLoginSchools()
             if (result) {

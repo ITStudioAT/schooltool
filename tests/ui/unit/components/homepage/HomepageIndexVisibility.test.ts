@@ -34,6 +34,18 @@ describe('homepage index visibility', () => {
         expect(source).toContain('school-select-icon--dark-logo')
     })
 
+    it('resolves school logos from the shared logos directory', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'")
+        expect(source).toContain(':src="schoolLogoSrc(school.logo)"')
+        expect(source).toContain(':src="schoolLogoSrc(selected_login_school.logo)"')
+        expect(source).toContain('return resolveSelectedSchoolLogoSrc(logo)')
+        expect(source).not.toContain("'/storage/images/' + school.logo")
+        expect(source).not.toContain("'/storage/images/' + selected_login_school.logo")
+    })
+
     it('routes public apps to their app login pages so code login remains available', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')

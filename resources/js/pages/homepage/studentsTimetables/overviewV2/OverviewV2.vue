@@ -1495,17 +1495,31 @@
                             :key="course.key"
                             type="button"
                             class="overview-v2-module-course"
-                            :class="{ 'overview-v2-module-course--selected': displayedModuleCourseSelected(course) }"
+                            :class="{
+                                'overview-v2-module-course--planned': moduleCourseAlreadyPlanned(course),
+                                'overview-v2-module-course--selected': displayedModuleCourseSelected(course),
+                            }"
+                            :disabled="moduleCourseAlreadyPlanned(course)"
                             role="checkbox"
-                            :aria-checked="displayedModuleCourseSelected(course)"
-                            @click="toggleDisplayedModuleCourse(course)">
+                            :aria-checked="moduleCourseAlreadyPlanned(course) || displayedModuleCourseSelected(course)"
+                            :aria-disabled="moduleCourseAlreadyPlanned(course) ? 'true' : null"
+                            @click="!moduleCourseAlreadyPlanned(course) && toggleDisplayedModuleCourse(course)">
                             <span class="overview-v2-module-course-check">
                                 <v-icon
-                                    :icon="displayedModuleCourseSelected(course) ? 'mdi-check' : 'mdi-checkbox-blank-outline'"
+                                    :icon="moduleCourseAlreadyPlanned(course)
+                                        ? 'mdi-check-circle'
+                                        : displayedModuleCourseSelected(course)
+                                            ? 'mdi-check'
+                                            : 'mdi-checkbox-blank-outline'"
                                     size="18" />
                             </span>
                             <span class="overview-v2-module-course-copy">
                                 <span class="overview-v2-module-course-title">{{ moduleCourseTitle(course) }}</span>
+                                <span
+                                    v-if="moduleCourseAlreadyPlanned(course)"
+                                    class="overview-v2-module-course-planned">
+                                    Verplant
+                                </span>
                                 <span
                                     v-if="moduleCourseSubtitle(course)"
                                     class="overview-v2-module-course-subtitle">
@@ -1544,12 +1558,7 @@
                         </button>
                     </div>
                     <div v-else class="overview-v2-module-course-empty mt-4">
-                        <template v-if="moduleCoursesDialogManual && moduleCourseCount(moduleCourseDialogModule) > 0">
-                            Alle Unterrichte dieses Moduls sind bereits im Stundenplan.
-                        </template>
-                        <template v-else>
-                            Für dieses Modul sind keine Unterrichte im importierten Stundenplan vorhanden.
-                        </template>
+                        Für dieses Modul sind keine Unterrichte im importierten Stundenplan vorhanden.
                     </div>
                 </v-card-text>
 
@@ -2239,6 +2248,30 @@ function normalizedCourseTimetableKeys(course) {
         ...normalizedCourseSelectionKeys(course),
         ...normalizedCourseTimetableEntries(course).map(entry => String(entry.key || '').trim()),
     ].filter(Boolean))]
+}
+
+function normalizedTimetableCourseIdentity(value) {
+    return canonicalTimetableCourseLabel(value)
+        .replace(/[^\p{L}\p{N}]+/gu, '')
+        .toLocaleLowerCase('de-AT')
+}
+
+function catalogCourseTimetableIdentities(course) {
+    return [...new Set([
+        course?.title,
+        ...(Array.isArray(course?.timetable_entries) ? course.timetable_entries : [])
+            .map(entry => entry?.display_label),
+    ].map(normalizedTimetableCourseIdentity).filter(Boolean))]
+}
+
+function savedTimetableCourseIdentities(timetable) {
+    return new Set((Array.isArray(timetable?.semesters) ? timetable.semesters : [])
+        .flatMap(semester => Array.isArray(semester?.weeks) ? semester.weeks : [])
+        .flatMap(week => Array.isArray(week?.hours) ? week.hours : [])
+        .flatMap(hour => Array.isArray(hour?.cells) ? hour.cells : [])
+        .flatMap(cell => Array.isArray(cell?.courses) ? cell.courses : [])
+        .map(course => normalizedTimetableCourseIdentity(course?.identifier))
+        .filter(Boolean))
 }
 
 function normalizedTimetableModuleCode(value) {
@@ -3184,14 +3217,11 @@ export default {
             const courses = Array.isArray(this.moduleCourseDialogModule?.courses)
                 ? this.moduleCourseDialogModule.courses
                 : []
-            const sortedCourses = sortTimetableModuleCourses(
+
+            return sortTimetableModuleCourses(
                 courses,
                 this.moduleCourseDialogModule?.code,
             )
-
-            return this.moduleCoursesDialogManual
-                ? sortedCourses.filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
-                : sortedCourses
         },
 
         selectedModuleCourseCount() {
@@ -3610,9 +3640,14 @@ export default {
         },
 
         manualModuleCourseCount(module) {
-            return (Array.isArray(module?.courses) ? module.courses : [])
-                .filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
-                .length
+            return Array.isArray(module?.courses) ? module.courses.length : 0
+        },
+
+        moduleCourseAlreadyPlanned(course) {
+            return Boolean(
+                this.moduleCoursesDialogManual
+                && courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys),
+            )
         },
 
         manualModuleAlreadyPlanned(module) {
@@ -3821,6 +3856,7 @@ export default {
         async planManualModuleCourses() {
             const pendingKeys = new Set(this.manualPendingCourseKeys)
             const plannedCourseKeys = this.moduleCourseDialogCourses
+                .filter(course => !courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys))
                 .filter(course => normalizedCourseTimetableEntries(course).length > 0)
                 .filter((course) => {
                     const courseKeys = normalizedCourseSelectionKeys(course)
@@ -3843,6 +3879,7 @@ export default {
             const courseKeys = (Array.isArray(module?.courses) ? module.courses : [])
                 .flatMap(course => normalizedCourseSelectionKeys(course))
             const savedTimetableEntryKeys = this.savedTimetableEntryKeysForModule(module)
+            const savedTimetableModuleKeys = this.savedTimetableModuleKeysForModule(module)
             if (!courseKeys.length && !savedTimetableEntryKeys.length) return
 
             this.manualSelectedCourseKeys = this.manualSelectedCourseKeys
@@ -3850,7 +3887,7 @@ export default {
             this.savedTimetableAdoptionCourseKeys = this.savedTimetableAdoptionCourseKeys
                 .filter(courseKey => !courseKeys.includes(courseKey))
             this.savedTimetableAdoptionModuleKeys = this.savedTimetableAdoptionModuleKeys
-                .filter(moduleKey => moduleKey !== String(module?.selection_key || '').trim())
+                .filter(moduleKey => !savedTimetableModuleKeys.includes(moduleKey))
             this.manualPendingCourseKeys = []
             this.adoptionRemovedCourseKeys = [...new Set([
                 ...this.adoptionRemovedCourseKeys,
@@ -3858,6 +3895,39 @@ export default {
                 ...savedTimetableEntryKeys,
             ])]
             await this.saveManualTimetableDraft()
+        },
+
+        savedTimetableModuleKeysForModule(module) {
+            const courseKeys = new Set((Array.isArray(module?.courses) ? module.courses : [])
+                .flatMap(course => normalizedCourseSelectionKeys(course)))
+            const moduleCodes = new Set([
+                module?.code,
+                ...(Array.isArray(module?.courses) ? module.courses : [])
+                    .flatMap(course => normalizedCourseTimetableEntries(course))
+                    .flatMap(entry => [entry?.module_code, entry?.subject]),
+            ].map(normalizedTimetableModuleCode).filter(Boolean))
+
+            return [...new Set([...this.moduleSelectionGroups, ...this.mainModuleSelectionGroups]
+                .flatMap(group => Array.isArray(group?.modules) ? group.modules : [])
+                .filter((candidateModule) => {
+                    const candidateModuleCodes = new Set([
+                        candidateModule?.code,
+                        ...(Array.isArray(candidateModule?.courses) ? candidateModule.courses : [])
+                            .flatMap(course => normalizedCourseTimetableEntries(course))
+                            .flatMap(entry => [entry?.module_code, entry?.subject]),
+                    ].map(normalizedTimetableModuleCode).filter(Boolean))
+                    const hasMatchingModuleCode = [...candidateModuleCodes]
+                        .some(moduleCode => moduleCodes.has(moduleCode))
+                    const hasMatchingCourseKey = (Array.isArray(candidateModule?.courses)
+                        ? candidateModule.courses
+                        : [])
+                        .flatMap(course => normalizedCourseSelectionKeys(course))
+                        .some(courseKey => courseKeys.has(courseKey))
+
+                    return hasMatchingModuleCode || hasMatchingCourseKey
+                })
+                .map(candidateModule => String(candidateModule?.selection_key || '').trim())
+                .filter(Boolean))]
         },
 
         savedTimetableEntryKeysForModule(module) {
@@ -3936,7 +4006,10 @@ export default {
                 ) return false
 
                 const courses = Array.isArray(this.manualCatalogCourses) ? this.manualCatalogCourses : []
-                const validCourseKeys = new Set(courses.flatMap(course => normalizedCourseSelectionKeys(course)))
+                const validCourseKeys = new Set([
+                    ...courses.flatMap(course => normalizedCourseSelectionKeys(course)),
+                    ...timetableCourseKeys(this.savedTimetableAdoptionBase),
+                ])
                 const storedSelectedCourseKeys = new Set(
                     normalizedCourseKeyList(storedDraft.selectedCourseKeys)
                         .filter(courseKey => validCourseKeys.has(courseKey)),
@@ -3948,6 +4021,32 @@ export default {
                     .flatMap(course => normalizedCourseSelectionKeys(course)))]
                 this.adoptionRemovedCourseKeys = normalizedCourseKeyList(storedDraft.removedCourseKeys)
                     .filter(courseKey => validCourseKeys.has(courseKey))
+
+                if (this.savedTimetableAdoptionBase) {
+                    const removedCourseKeys = new Set(this.adoptionRemovedCourseKeys)
+                    const catalogModules = [...this.moduleSelectionGroups, ...this.mainModuleSelectionGroups]
+                        .flatMap(group => Array.isArray(group?.modules) ? group.modules : [])
+
+                    this.savedTimetableAdoptionCourseKeys = this.savedTimetableAdoptionCourseKeys
+                        .filter(courseKey => !removedCourseKeys.has(courseKey))
+                    this.savedTimetableAdoptionModuleKeys = this.savedTimetableAdoptionModuleKeys
+                        .filter((moduleKey) => {
+                            const module = catalogModules.find(
+                                candidate => String(candidate?.selection_key || '').trim() === moduleKey,
+                            )
+                            if (!module) return false
+
+                            const savedEntryKeys = this.savedTimetableEntryKeysForModule(module)
+                            const catalogCourseKeys = (Array.isArray(module?.courses) ? module.courses : [])
+                                .flatMap(course => normalizedCourseSelectionKeys(course))
+
+                            return savedEntryKeys.some(courseKey => !removedCourseKeys.has(courseKey))
+                                || catalogCourseKeys.some(courseKey => (
+                                    this.savedTimetableAdoptionCourseKeys.includes(courseKey)
+                                    && !removedCourseKeys.has(courseKey)
+                                ))
+                        })
+                }
 
                 return true
             } catch {
@@ -4298,21 +4397,28 @@ export default {
                 ? savedState.manualTimetableDraft
                 : {}
             const removedSavedCourseKeys = new Set(normalizedCourseKeyList(savedManualDraft.removedCourseKeys))
-            const savedCourseKeys = normalizedCourseKeyList([
+            const explicitSavedCourseKeys = new Set(normalizedCourseKeyList([
                 ...(Array.isArray(savedTimetable.active_course_group_keys)
                     ? savedTimetable.active_course_group_keys
                     : []),
-                ...(Array.isArray(savedModuleSelection.selectedCourseKeys)
-                    ? savedModuleSelection.selectedCourseKeys
+                ...(Array.isArray(savedState.activeCourseGroupFilterKeys)
+                    ? savedState.activeCourseGroupFilterKeys
                     : []),
                 ...(Array.isArray(savedManualDraft.selectedCourseKeys)
                     ? savedManualDraft.selectedCourseKeys
                     : []),
-            ]).filter(courseKey => !removedSavedCourseKeys.has(courseKey))
+            ]).filter(courseKey => !removedSavedCourseKeys.has(courseKey)))
+            const savedCourseIdentities = savedTimetableCourseIdentities(savedTimetable.timetable)
             const matchingCourses = this.manualCatalogCourses.filter((course) => {
                 const courseKeys = new Set(normalizedCourseTimetableKeys(course))
+                const matchesExplicitCourseKey = [...courseKeys]
+                    .some(courseKey => explicitSavedCourseKeys.has(courseKey))
+                const matchesSavedCourse = catalogCourseTimetableIdentities(course)
+                    .some(courseIdentity => savedCourseIdentities.has(courseIdentity))
 
-                return savedCourseKeys.some(courseKey => courseKeys.has(courseKey))
+                return savedCourseIdentities.size
+                    ? matchesSavedCourse
+                    : matchesExplicitCourseKey
             })
             const matchingCourseKeys = new Set(matchingCourses.flatMap(normalizedCourseTimetableKeys))
             const catalogModules = [...this.moduleSelectionGroups, ...this.mainModuleSelectionGroups]
@@ -5666,6 +5772,17 @@ export default {
     box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.1);
 }
 
+.overview-v2-module-course--planned,
+.overview-v2-module-course--planned:hover,
+.overview-v2-module-course--planned:focus-visible {
+    color: #475569;
+    cursor: not-allowed;
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    box-shadow: none;
+    transform: none;
+}
+
 .overview-v2-module-course-check {
     display: inline-flex;
     align-items: center;
@@ -5684,6 +5801,12 @@ export default {
     border-color: #4f46e5;
 }
 
+.overview-v2-module-course--planned .overview-v2-module-course-check {
+    color: #475569;
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+}
+
 .overview-v2-module-course-copy {
     display: grid;
     min-width: 0;
@@ -5694,6 +5817,20 @@ export default {
     font-size: 0.9rem;
     font-weight: 850;
     overflow-wrap: anywhere;
+}
+
+.overview-v2-module-course-planned {
+    justify-self: start;
+    margin-top: 5px;
+    padding: 2px 7px;
+    color: #475569;
+    font-size: 0.65rem;
+    font-weight: 850;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: #e2e8f0;
+    border-radius: 999px;
 }
 
 .overview-v2-module-course-subtitle {

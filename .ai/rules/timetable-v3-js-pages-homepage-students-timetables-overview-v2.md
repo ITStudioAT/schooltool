@@ -7,3 +7,6 @@ paths:
 
 ## Preserve module numbers in canonical display names
 Student V2 and admin V3 must use canonicalTimetableModuleName for visible module names. When a canonical mapped code contains a number, preserve it after the expanded name: Rev2 → Religion evangelisch 2, ET1 → Ethik 1, RIS/RK/ROR likewise. Unnumbered codes and ordinary backend names remain unchanged.
+
+## Show planned manual courses without allowing duplicates
+Manual-adoption Unterricht dialogs keep all course options visible. Mark already planned courses as “Verplant”, render them non-selectable, and reject their keys again at the placement method boundary so free courses remain selectable without duplicate planning.

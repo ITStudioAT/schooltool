@@ -4,6 +4,7 @@ import {
     index as teacherAccountsIndex,
     setActiveState as setTeacherAccountsActiveState,
     setRole as setTeacherAccountRole,
+    store as storeTeacherAccount,
     toggleActive as toggleTeacherAccountActive,
     update as updateImportedTeacherAccount,
     updateUser as updateRegisteredTeacherAccount,
@@ -80,6 +81,14 @@ export const useStudentsTimetablesTeachersListStore = defineStore('AdminStudents
                 `bulk:${isActive ? 'active' : 'inactive'}`,
                 () => axios.put(setTeacherAccountsActiveState.url(), { is_active: isActive }),
                 isActive ? 'Alle Lehrkräfte wurden aktiviert.' : 'Alle deaktivierbaren Lehrkräfte wurden deaktiviert.',
+            )
+        },
+
+        async createTeacher(values) {
+            return this.runTeacherAction(
+                'create',
+                () => axios.post(storeTeacherAccount.url(), values),
+                'Lehrkraft wurde hinzugefügt.',
             )
         },
 
