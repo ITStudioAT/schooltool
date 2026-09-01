@@ -10,6 +10,8 @@ const overviewV2Path = resolve(
     'resources/js/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue',
 )
 const homepageRoutesPath = resolve(process.cwd(), 'resources/routes/homepage.js')
+const homepageAppPath = resolve(process.cwd(), 'resources/js/pages/homepage/App.vue')
+const homepageStorePath = resolve(process.cwd(), 'resources/js/stores/homepage/HomepageStore.js')
 
 describe('Student timetables overview V2 preparation', () => {
     it('does not show the homepage loading dots over student timetable routes', () => {
@@ -58,6 +60,25 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('return { left: 0, top: 0 }')
     })
 
+    it('redirects timetable-only impersonations away from the general student area', () => {
+        const source = readFileSync(homepageRoutesPath, 'utf8')
+
+        expect(source).toContain("const isStudentArea = to.path === '/student'")
+        expect(source).toContain("axios.get('/api/admin/impersonation/status')")
+        expect(source).toContain('response.data?.is_students_timetables_restricted === true')
+        expect(source).toContain("next('/students-timetables/overview')")
+    })
+
+    it('returns from student view to the exact saved admin timetable URL', () => {
+        const appSource = readFileSync(homepageAppPath, 'utf8')
+        const storeSource = readFileSync(homepageStorePath, 'utf8')
+
+        expect(storeSource).toContain("const response = await axios.post('/api/admin/impersonation/stop')")
+        expect(storeSource).toContain("return response.data?.redirect || '/admin'")
+        expect(appSource).toContain('const returnUrl = await this.homepageStore.stopImpersonation()')
+        expect(appSource).toContain('window.location.href = returnUrl')
+    })
+
     it('keeps the V2 page behind the existing student timetable authentication flow', () => {
         const source = readFileSync(overviewV2Path, 'utf8')
 
@@ -66,6 +87,37 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('const isAuthenticated = await this.studentTimetablesStore.getCurrentUser()')
         expect(source).toContain("this.$router.push('/homepage/students-timetables')")
         expect(source).toContain('await this.studentTimetablesStore.loadOverview()')
+    })
+
+    it('reloads the teacher timetable before a reused planning component returns to the overview', async () => {
+        const loadingStates: boolean[] = []
+        const context = {
+            pageLoading: false,
+            studentTimetablesStore: {
+                async loadOverview() {
+                    loadingStates.push(context.pageLoading)
+
+                    return true
+                },
+            },
+        }
+
+        await OverviewV2.beforeRouteUpdate.call(
+            context,
+            { path: '/students-timetables/overview' },
+            { path: '/students-timetables/create/adoption' },
+        )
+
+        expect(loadingStates).toEqual([true])
+        expect(context.pageLoading).toBe(false)
+
+        await OverviewV2.beforeRouteUpdate.call(
+            context,
+            { path: '/students-timetables/create/results' },
+            { path: '/students-timetables/create' },
+        )
+
+        expect(loadingStates).toHaveLength(1)
     })
 
     it('shows the admin-style student information card below the welcome header', () => {
@@ -1482,6 +1534,10 @@ describe('Student timetables overview V2 preparation', () => {
             .toEqual(['GW2-5CK-HOA'])
         expect(methods.courseScheduleRowOverlapLabels.call(context, candidateCourse, scheduleRows[1]))
             .toEqual([])
+        expect(methods.courseScheduleRowOverlapLabels.call({
+            ...context,
+            adoptionPlacedCourseKeys: [...context.adoptionPlacedCourseKeys, 'd1-a'],
+        }, candidateCourse, scheduleRows[0])).toEqual([])
     })
 
     it('marks a complete all-modules group as not intended only when every module is excluded', () => {

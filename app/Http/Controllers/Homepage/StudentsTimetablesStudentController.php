@@ -225,8 +225,11 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
-    public function adoptPublishedTimetable(Request $request, StudentTimetablesStudentOverviewService $overviewService): JsonResponse
-    {
+    public function adoptPublishedTimetable(
+        Request $request,
+        StudentTimetablesStudentOverviewService $overviewService,
+        StudentTimetableV3StudentInformationService $studentInformationService,
+    ): JsonResponse {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -239,20 +242,22 @@ class StudentsTimetablesStudentController extends Controller
             'state' => ['sometimes', 'array'],
         ]);
 
-        if (array_key_exists('timetable', $validated)) {
-            return response()->json([
-                'message' => 'Stundenplan wurde übernommen.',
-                'data' => $overviewService->savePersonalTimetableForUser(
-                    $authUser,
-                    $validated['timetable'],
-                    $validated['state'] ?? [],
-                ),
-            ]);
-        }
+        $summary = array_key_exists('timetable', $validated)
+            ? $overviewService->savePersonalTimetableForUser(
+                $authUser,
+                $validated['timetable'],
+                $validated['state'] ?? [],
+            )
+            : $overviewService->adoptPublishedTimetableForUser($authUser);
 
         return response()->json([
             'message' => 'Stundenplan wurde übernommen.',
-            'data' => $overviewService->adoptPublishedTimetableForUser($authUser),
+            'data' => $this->studentOverviewSummary(
+                $authUser,
+                $overviewService,
+                $studentInformationService,
+                summary: $summary,
+            ),
         ]);
     }
 
@@ -796,8 +801,9 @@ class StudentsTimetablesStudentController extends Controller
         StudentTimetablesStudentOverviewService $overviewService,
         StudentTimetableV3StudentInformationService $studentInformationService,
         array $selectionOverride = [],
+        ?array $summary = null,
     ): array {
-        $summary = $overviewService->summaryForUser($user, $selectionOverride);
+        $summary ??= $overviewService->summaryForUser($user, $selectionOverride);
         $studentCode = trim((string) data_get($summary, 'student.student_code', ''));
         $studentInformation = $studentCode === ''
             ? null

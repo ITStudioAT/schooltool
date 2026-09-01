@@ -1247,7 +1247,15 @@ it('lets the authenticated student adopt and delete the published timetable for 
         ->assertJsonPath('data.personal_timetable.student_label', 'Mustermann Max')
         ->assertJsonPath('data.personal_timetable.timetable.title', 'Stundenplan')
         ->assertJsonPath('data.personal_timetable.state.manualPanelOpen', true)
-        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'saved-group');
+        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'saved-group')
+        ->assertJsonStructure([
+            'data' => [
+                'student_information' => [
+                    'module_selection_groups',
+                    'main_module_selection_groups',
+                ],
+            ],
+        ]);
 
     $personalTimetable = StudentTimetablePersonalTimetable::query()->firstOrFail();
 
@@ -1350,7 +1358,15 @@ it('lets the authenticated student save a generated timetable as their personal 
         ->assertJsonPath('data.personal_timetable.student_code', $import116->student_code)
         ->assertJsonPath('data.personal_timetable.timetable.title', 'Stundenplan')
         ->assertJsonPath('data.personal_timetable.state.source', 'automatic-timetable')
-        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'generated-group');
+        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'generated-group')
+        ->assertJsonStructure([
+            'data' => [
+                'student_information' => [
+                    'module_selection_groups',
+                    'main_module_selection_groups',
+                ],
+            ],
+        ]);
 
     $personalTimetable = StudentTimetablePersonalTimetable::query()->firstOrFail();
 

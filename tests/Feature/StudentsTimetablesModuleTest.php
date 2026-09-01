@@ -126,6 +126,173 @@ it('allows students timetables moderators to call the permitted module areas', f
         ->assertUnprocessable();
 });
 
+it('lets timetable admins open the linked students timetables account', function () {
+    $admin = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $admin->school_id,
+    ]);
+    SchoolTool::query()
+        ->where('school_id', $admin->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+    $admin->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $studentImport = Import116::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'student-view-1001',
+        'email' => 'student-view@example.test',
+        'exists_date' => now(),
+    ]);
+    $studentRole = Role::firstOrCreate([
+        'name' => 'studentstimetables_user',
+        'guard_name' => 'web',
+    ]);
+    $studentUser = User::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import116_id' => $studentImport->id,
+        'email' => $studentImport->email,
+        'is_active' => true,
+    ]);
+    $studentUser->assignRole($studentRole);
+    $studentUser->assignRole(Role::firstOrCreate([
+        'name' => 'student',
+        'guard_name' => 'web',
+    ]));
+    $studentImport->forceFill(['user_id' => $studentUser->id])->save();
+
+    $this->actingAs($admin)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.student_code', 'student-view-1001')
+        ->assertJsonPath('data.0.can_open_student_view', true);
+
+    $returnUrl = '/admin/students-timetables/timetable-v3/adoption?workspace_id=workspace-123&planning_mode=with_student&student_code=student-view-1001&timetable_index=2';
+
+    $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+        'student_code' => 'student-view-1001',
+        'return_url' => $returnUrl,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('redirect', '/students-timetables/overview');
+
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/admin/impersonation/status')
+        ->assertSuccessful()
+        ->assertJsonPath('is_impersonating', true)
+        ->assertJsonPath('is_students_timetables_restricted', true)
+        ->assertJsonPath('current_user.id', $studentUser->id);
+
+    $this->get('/student/overview')
+        ->assertRedirect('/students-timetables/overview');
+
+    $this->getJson('/api/homepage/student/user')
+        ->assertForbidden()
+        ->assertJsonPath('message', 'Diese Benutzer-Übernahme ist auf Schülerstundenpläne beschränkt.');
+
+    $this->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+
+    $this->getJson('/api/admin/students-timetables')
+        ->assertForbidden();
+
+    $this->postJson('/api/admin/impersonation/stop')
+        ->assertSuccessful()
+        ->assertJsonPath('redirect', $returnUrl);
+
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/admin/impersonation/status')
+        ->assertSuccessful()
+        ->assertJsonPath('is_impersonating', false)
+        ->assertJsonPath('is_students_timetables_restricted', false)
+        ->assertJsonPath('current_user.id', $admin->id);
+
+    $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+        'student_code' => 'student-view-1001',
+        'return_url' => '//evil.example/admin/students-timetables/timetable-v3/adoption',
+    ])->assertSuccessful();
+
+    $this->app['auth']->forgetGuards();
+
+    $this->postJson('/api/admin/impersonation/stop')
+        ->assertSuccessful()
+        ->assertJsonPath('redirect', '/admin/students-timetables/timetable-v3/overview');
+});
+
+it('does not offer student view impersonation to moderators', function () {
+    $moderator = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $moderator->school_id,
+    ]);
+    $moderator->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $studentImport = Import116::factory()->create([
+        'school_id' => $moderator->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'moderator-student-view',
+        'exists_date' => now(),
+    ]);
+    $studentUser = User::factory()->create([
+        'school_id' => $moderator->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import116_id' => $studentImport->id,
+        'is_active' => true,
+    ]);
+    $studentUser->assignRole(Role::firstOrCreate([
+        'name' => 'studentstimetables_user',
+        'guard_name' => 'web',
+    ]));
+    $studentImport->forceFill(['user_id' => $studentUser->id])->save();
+
+    $this->actingAs($moderator)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.can_open_student_view', false);
+
+    $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+        'student_code' => 'moderator-student-view',
+    ])->assertForbidden();
+});
+
+it('rejects a linked student account that has access outside students timetables', function () {
+    $admin = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $admin->school_id,
+    ]);
+    $admin->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $studentImport = Import116::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'mixed-role-student-view',
+        'exists_date' => now(),
+    ]);
+    $studentUser = User::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'import116_id' => $studentImport->id,
+        'is_active' => true,
+    ]);
+    $studentUser->assignRole([
+        Role::firstOrCreate(['name' => 'studentstimetables_user', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']),
+    ]);
+    $studentImport->forceFill(['user_id' => $studentUser->id])->save();
+
+    $this->actingAs($admin)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.can_open_student_view', false);
+
+    $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+        'student_code' => 'mixed-role-student-view',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('message', 'Für diesen Studierenden ist kein ausschließliches Stundenplan-Benutzerkonto verfügbar.');
+});
+
 it('returns a backend ready setup for the new robot timetable logic', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([

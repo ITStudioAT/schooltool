@@ -18,3 +18,6 @@ On V3 adoption/manual timetable pages, label the main-module catalog selector an
 
 ## Use short dates in the V3 overlap summary
 Render dates in the Überschneidungen list as zero-padded dd.mm. without a year, for example 24.02. Keep full localized dates in timetable lesson cards unchanged.
+
+## Show hours in manual adoption summary
+The V3 manual adoption card's Ausgewählte Module summary always shows both the selected module count and total canonical module hours. Do not hide the hours on blank/manual adoption page 3B.

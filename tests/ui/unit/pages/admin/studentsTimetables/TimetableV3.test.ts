@@ -257,6 +257,12 @@ describe('TimetableV3', () => {
         expect(source).toContain('icon="mdi-school-outline"')
         expect(source).toContain('color="teal-darken-1"')
         expect(source).toContain('aria-label="Informationen zum Studium anzeigen"')
+        expect(source.match(/v-if="canOpenSelectedStudentView"/g)).toHaveLength(2)
+        expect(source.match(/icon="mdi-account-switch"/g)).toHaveLength(2)
+        expect(source.match(/aria-label="Studierendenansicht öffnen"/g)).toHaveLength(2)
+        expect(source.match(/@click="openSelectedStudentView"/g)).toHaveLength(2)
+        expect(source).toContain('impersonateStudent as openStudentTimetableView')
+        expect(source).toContain('openStudentTimetableView.url()')
         expect(source).toContain('v-model="studentInfoDialogOpen" max-width="620" persistent')
         expect(source).toContain('v-model="studyInfoDialogOpen" max-width="960" persistent scrollable')
         expect(source).toContain('Studierenden-Information')
@@ -354,6 +360,46 @@ describe('TimetableV3', () => {
         expect(context.studentInfoDialogOpen).toBe(false)
     })
 
+    it('opens the selected student timetable through the scoped impersonation action', async () => {
+        const methods = (TimetableV3 as any).methods
+        const canOpenStudentView = (TimetableV3 as any).computed.canOpenSelectedStudentView
+        const post = vi.fn().mockResolvedValue({
+            data: { redirect: '/students-timetables/overview' },
+        })
+        const context = {
+            canOpenSelectedStudentView: true,
+            selectedStudentCode: 'student-1001',
+            studentViewOpening: false,
+            studentViewOpenError: 'old error',
+            redirectToStudentTimetable: vi.fn(),
+        }
+        vi.stubGlobal('axios', { post })
+
+        expect(canOpenStudentView.call({
+            planningMode: 'with_student',
+            selectedStudent: { canOpenStudentView: true },
+            selectedStudentCode: 'student-1001',
+        })).toBe(true)
+        expect(canOpenStudentView.call({
+            planningMode: 'with_student',
+            selectedStudent: { canOpenStudentView: false },
+            selectedStudentCode: 'student-1001',
+        })).toBe(false)
+
+        await methods.openSelectedStudentView.call(context)
+
+        expect(post).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/robot/students/impersonate',
+            {
+                student_code: 'student-1001',
+                return_url: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+            },
+        )
+        expect(context.redirectToStudentTimetable).toHaveBeenCalledWith('/students-timetables/overview')
+        expect(context.studentViewOpening).toBe(false)
+        expect(context.studentViewOpenError).toBe('')
+    })
+
     it('opens and closes the persistent study information dialog', () => {
         const methods = (TimetableV3 as any).methods
         const context = {
@@ -415,7 +461,7 @@ describe('TimetableV3', () => {
     it('hydrates imported details for an older persisted student selection', async () => {
         const methods = (TimetableV3 as any).methods
         const context = {
-            selectedStudent: { studentCode: '1001', firstName: 'Mia' },
+            selectedStudent: { studentCode: '1001', firstName: 'Mia', canOpenStudentView: false },
             students: [{
                 student_code: '1001',
                 sex: 'w',
@@ -423,6 +469,7 @@ describe('TimetableV3', () => {
                 instruction_type: 'Kompaktunterricht',
                 semester: 5,
                 school_level: '10_2',
+                can_open_student_view: true,
             }],
             loadStudents: vi.fn().mockResolvedValue(undefined),
             normalizedStudentSex: methods.normalizedStudentSex,
@@ -440,6 +487,7 @@ describe('TimetableV3', () => {
             instructionType: 'Kompaktunterricht',
             semester: 5,
             schoolLevel: '10_2',
+            canOpenStudentView: true,
         })
         expect(context.saveState).toHaveBeenCalledOnce()
     })
@@ -1734,8 +1782,8 @@ describe('TimetableV3', () => {
         expect(manualCardSource).toContain('v-for="module in adoptionSelectedModules"')
         expect(manualCardSource).toContain('Keine Module ausgewählt.')
         expect(manualCardSource).toContain('{{ adoptionSelectedModuleCount }}')
-        expect(manualCardSource).toContain('v-if="!isManualTimetableAdoption"')
-        expect(manualCardSource).toContain('{{ adoptionSelectedModuleHoursLabel }} Std.')
+        expect(manualCardSource).not.toContain('v-if="!isManualTimetableAdoption"')
+        expect(manualCardSource).toContain('· {{ adoptionSelectedModuleHoursLabel }} Std.')
         expect(manualCardSource).toContain('class="timetable-v3__selected-module-chip"')
         expect(manualCardSource).toContain('closable')
         expect(manualCardSource).toContain('close-icon="mdi-close-circle"')
@@ -5302,6 +5350,7 @@ describe('TimetableV3', () => {
             first_name: 'Mia',
             school_level: '12',
             attendance_year: '6',
+            can_open_student_view: true,
         })
 
         expect(label).toBe('5A · Muster Mia')
@@ -5340,6 +5389,7 @@ describe('TimetableV3', () => {
             semester: 5,
             school_level: '12',
             attendance_year: '6',
+            can_open_student_view: true,
         })
 
         expect(context.planningMode).toBe('with_student')
@@ -5355,6 +5405,7 @@ describe('TimetableV3', () => {
             instructionType: 'Normalunterricht',
             semester: 5,
             schoolLevel: '12',
+            canOpenStudentView: true,
         })
         expect(context.closeStudentDialog).toHaveBeenCalledOnce()
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()

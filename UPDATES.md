@@ -1,16 +1,18 @@
 # UPDATES
 
-## 3.46.5 !!!
+## 3.46.5
 
 ### System
 
 - Farbauswahl unter Profil
+- Wechseln in die Studierenden-Ansicht möglich
 
 ### Schülerstundenpläne
 
 - Import Lehrer adaptiert, Import auch ohne Kürzel möglich
 - Ändern, Löschen von Lehrer:innen auf Lehrerliste
 - Anzeige der verplanten Unterrichte
+- Admin und Student abgeglichen
 
 ## 3.46.4
 

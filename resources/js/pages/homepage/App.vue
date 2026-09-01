@@ -91,8 +91,9 @@ export default {
     },
     methods: {
         async stopImpersonationAndReturn() {
-            if (!(await this.homepageStore.stopImpersonation())) return
-            window.location.href = '/admin'
+            const returnUrl = await this.homepageStore.stopImpersonation()
+            if (!returnUrl) return
+            window.location.href = returnUrl
         },
         openCookiePrefs() {
             if (typeof window.showHideToggleCookiePreferencesModal === 'function') {

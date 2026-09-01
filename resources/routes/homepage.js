@@ -69,8 +69,23 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
+    const isStudentArea = to.path === '/student'
+        || to.path.startsWith('/student/')
+        || to.path === '/homepage/student'
+
+    if (isStudentArea) {
+        try {
+            const response = await axios.get('/api/admin/impersonation/status')
+            if (response.data?.is_students_timetables_restricted === true) {
+                next('/students-timetables/overview')
+                return
+            }
+        } catch {
+            // The server-side route and API middleware remain authoritative.
+        }
+    }
+
     next()
-    return
 })
 
 export default router

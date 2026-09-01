@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AbaAccess;
 use App\Http\Middleware\ApiAllowed;
+use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Middleware\ToolLicensed;
 use App\Http\Middleware\WebAllowed;
 use Illuminate\Foundation\Application;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'aba-access' => AbaAccess::class,
             'web-allowed' => WebAllowed::class,
             'api-allowed' => ApiAllowed::class,
+            'students-timetables-impersonation' => RestrictStudentsTimetablesImpersonation::class,
             'tool-licensed' => ToolLicensed::class,
         ]);
     })

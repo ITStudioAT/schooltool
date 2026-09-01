@@ -181,7 +181,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     Route::get('/student/{any?}', function () {
         return view('homepage');
-    })->where('any', '.*');
+    })->where('any', '.*')->middleware('students-timetables-impersonation');
 
     Route::get('/students-timetables/{any?}', function () {
         return view('homepage');

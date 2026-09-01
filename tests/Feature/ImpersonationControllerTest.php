@@ -54,7 +54,8 @@ test('super admin can impersonate and leave impersonation', function () {
         ->and((string) data_get($configDuring, 'impersonation.impersonator.school_name'))->toBe($superAdminSchoolName);
 
     $this->postJson('/api/admin/impersonation/stop')
-        ->assertStatus(200);
+        ->assertStatus(200)
+        ->assertJsonPath('redirect', '/admin');
 
     $configAfter = $this->getJson('/api/admin/config')
         ->assertStatus(200)

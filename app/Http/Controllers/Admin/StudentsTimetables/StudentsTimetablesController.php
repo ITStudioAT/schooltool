@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Enums\StudentTimetableStudyProgram;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Models\Import116;
 use App\Models\StudentTimetablePublishedTimetable;
@@ -23,10 +24,13 @@ use App\Services\StudentsTimetables\StudentTimetablePublishedTimetableService;
 use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableV2StateService;
+use App\Services\StudentsTimetablesStudentService;
 use Illuminate\Contracts\Support\Responsable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Lab404\Impersonate\Services\ImpersonateManager;
 use Spatie\LaravelPdf\Enums\Format;
 
 use function Spatie\LaravelPdf\Support\pdf;
@@ -36,6 +40,8 @@ class StudentsTimetablesController extends Controller
     private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
 
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
+
+    private const STUDENT_VIEW_ROLES = ['student', StudentsTimetablesStudentService::ROLE_NAME];
 
     public function index(StudentsTimetablesService $service): JsonResponse
     {
@@ -82,7 +88,20 @@ class StudentsTimetablesController extends Controller
             ->orderBy('class')
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex', 'study_selection', 'course_results']);
+            ->get(['id', 'user_id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex', 'study_selection', 'course_results']);
+
+        $canOpenStudentViews = $authUser->hasAnyRole(self::ADMIN_ROLES);
+        $studentUsers = $canOpenStudentViews
+            ? $this->studentTimetableUserQuery($authUser)
+                ->where(function (Builder $query) use ($students): void {
+                    $query->whereIn('id', $students->pluck('user_id')->filter()->values())
+                        ->orWhereIn('import116_id', $students->pluck('id')->values());
+                })
+                ->get(['id', 'import116_id'])
+            : collect();
+        $studentUsersById = $studentUsers->keyBy('id');
+        $studentUsersByImportId = $studentUsers->filter(fn (User $user): bool => (int) $user->import116_id > 0)
+            ->keyBy('import116_id');
 
         $publishedTimetables = StudentTimetablePublishedTimetable::query()
             ->where('school_id', $authUser->school_id)
@@ -91,7 +110,7 @@ class StudentsTimetablesController extends Controller
             ->get(['id', 'student_code', 'published_at'])
             ->keyBy(fn (StudentTimetablePublishedTimetable $publishedTimetable): string => (string) $publishedTimetable->student_code);
         $students = $students
-            ->map(function (Import116 $student) use ($authUser, $expectedModulesService, $publishedTimetables, $studentOverviewService): array {
+            ->map(function (Import116 $student) use ($authUser, $canOpenStudentViews, $expectedModulesService, $publishedTimetables, $studentOverviewService, $studentUsersById, $studentUsersByImportId): array {
                 $instructionType = $studentOverviewService->instructionTypeForStudent($student);
                 $studyProgram = $instructionType === 'Kompaktunterricht'
                     ? StudentTimetableStudyProgram::Kompaktstudium
@@ -143,12 +162,91 @@ class StudentsTimetablesController extends Controller
                     'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
                     'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
                     'published_timetable_at' => optional($publishedTimetables->get((string) $student->student_code)?->published_at)->toIso8601String(),
+                    'can_open_student_view' => $canOpenStudentViews && (
+                        $studentUsersById->has((int) $student->user_id)
+                        || $studentUsersByImportId->has((int) $student->id)
+                    ),
                 ];
             })
             ->values();
 
         return response()->json([
             'data' => $students,
+        ]);
+    }
+
+    public function impersonateStudent(Request $request, ImpersonateManager $manager): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        if (! $authUser->hasAnyRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:255'],
+            'return_url' => ['nullable', 'string', 'max:4096'],
+        ]);
+
+        if ($manager->isImpersonating()) {
+            abort(409, 'Es läuft bereits eine Benutzer-Übernahme.');
+        }
+
+        $student = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->whereNotNull('exists_date')
+            ->first(['id', 'user_id']);
+
+        if (! $student) {
+            abort(422, 'Der ausgewählte Studierende wurde nicht gefunden.');
+        }
+
+        $studentUsers = $this->studentTimetableUserQuery($authUser)
+            ->where(function (Builder $query) use ($student): void {
+                $query->where('import116_id', $student->id);
+
+                if ((int) $student->user_id > 0) {
+                    $query->orWhere('id', $student->user_id);
+                }
+            })
+            ->get();
+        $studentUser = $studentUsers->firstWhere('id', (int) $student->user_id)
+            ?? $studentUsers->firstWhere('import116_id', (int) $student->id);
+
+        if (! $studentUser) {
+            abort(422, 'Für diesen Studierenden ist kein ausschließliches Stundenplan-Benutzerkonto verfügbar.');
+        }
+
+        if (! $studentUser->canBeImpersonated()) {
+            abort(422, 'Dieses Benutzerkonto kann nicht übernommen werden.');
+        }
+
+        if (! $manager->take($authUser, $studentUser, 'web')) {
+            $manager->clear();
+            abort(500, 'Studierendenansicht konnte nicht geöffnet werden.');
+        }
+
+        $request->session()->put(RestrictStudentsTimetablesImpersonation::SESSION_KEY, true);
+        $request->session()->put(
+            RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
+            $this->studentViewReturnUrl($validated['return_url'] ?? null),
+        );
+        $request->session()->forget([
+            'auth.password_confirmed_at',
+            'login.id',
+            'login.remember',
+            'login.two_factor_started_at',
+            'login.context',
+            'two_factor_empty_at',
+            'two_factor_confirming_at',
+        ]);
+        $request->session()->regenerate();
+
+        return response()->json([
+            'message' => 'Studierendenansicht wurde geöffnet.',
+            'redirect' => '/students-timetables/overview',
         ]);
     }
 
@@ -837,6 +935,49 @@ class StudentsTimetablesController extends Controller
             ->filter(fn (array $item): bool => $item['code'] !== '' && $item['grade'] !== '')
             ->values()
             ->all();
+    }
+
+    private function studentTimetableUserQuery(User $authUser): Builder
+    {
+        return User::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('is_active', true)
+            ->whereHas('roles', fn (Builder $query): Builder => $query->where('name', StudentsTimetablesStudentService::ROLE_NAME))
+            ->whereDoesntHave('roles', fn (Builder $query): Builder => $query->whereNotIn('name', self::STUDENT_VIEW_ROLES));
+    }
+
+    private function studentViewReturnUrl(?string $returnUrl): string
+    {
+        $fallbackUrl = '/admin/students-timetables/timetable-v3/overview';
+        $returnUrl = trim((string) $returnUrl);
+
+        if ($returnUrl === '' || preg_match('/[\x00-\x1F\x7F]/', $returnUrl) === 1) {
+            return $fallbackUrl;
+        }
+
+        $parts = parse_url($returnUrl);
+        if (
+            ! is_array($parts)
+            || isset($parts['scheme'])
+            || isset($parts['host'])
+            || isset($parts['user'])
+            || isset($parts['pass'])
+        ) {
+            return $fallbackUrl;
+        }
+
+        $allowedPath = '/admin/students-timetables/timetable-v3';
+        $path = (string) ($parts['path'] ?? '');
+        if ($path !== $allowedPath && ! str_starts_with($path, "{$allowedPath}/")) {
+            return $fallbackUrl;
+        }
+
+        if (preg_match('#(?:^|/)\.\.(?:/|$)#', rawurldecode($path)) === 1) {
+            return $fallbackUrl;
+        }
+
+        return $returnUrl;
     }
 
     private function studentsTimetablesUser(): User

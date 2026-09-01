@@ -2841,6 +2841,23 @@ export default {
         }
     },
 
+    async beforeRouteUpdate(to, from) {
+        const overviewPaths = [
+            '/students-timetables/overview',
+            '/students-timetables/overview-v2',
+        ]
+
+        if (!overviewPaths.includes(to.path) || to.path === from.path) return
+
+        this.pageLoading = true
+
+        try {
+            await this.studentTimetablesStore.loadOverview()
+        } finally {
+            this.pageLoading = false
+        }
+    },
+
     data() {
         return {
             activeModuleGroupKey: '',
@@ -3769,6 +3786,8 @@ export default {
         },
 
         courseScheduleRowOverlapLabels(course, scheduleRow) {
+            if (this.moduleCoursesDialogManual && courseUsesSelectedKey(course, this.adoptionPlacedCourseKeys)) return []
+
             const scheduleEntryKeys = new Set(Array.isArray(scheduleRow?.entryKeys) ? scheduleRow.entryKeys : [])
             const scheduleEntries = normalizedCourseTimetableEntries(course)
                 .filter(entry => !scheduleEntryKeys.size || scheduleEntryKeys.has(String(entry.key || '').trim()))

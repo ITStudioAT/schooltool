@@ -28,3 +28,6 @@ When the student manual editor is opened with manual_timetable=published, show t
 
 ## Derive planned saved courses from serialized timetable identities
 For personal or teacher-published manual adoption, determine per-Unterricht “Verplant” state from the concrete identifiers in the serialized saved timetable. Do not treat moduleSelection.selectedCourseKeys as placed-course evidence because automatic selection metadata may contain alternatives that were not stored; use explicit course keys only as a legacy fallback when the timetable contains no identifiers.
+
+## Hide self-overlaps for planned manual courses
+In the student manual-adoption Unterricht dialog, an already placed course marked “Verplant” must not show red overlap labels. Its matching serialized timetable entries are the course itself, not conflicting courses.

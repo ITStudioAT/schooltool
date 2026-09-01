@@ -161,19 +161,21 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/
-    Route::get('/homepage/student/config', [StudentController::class, 'config']);
-    Route::post('/homepage/student/login_step_email', [StudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
-    Route::post('/homepage/student/login_step_code', [StudentController::class, 'loginStepCode'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
-    Route::post('/homepage/student/login_step_password', [StudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
-    Route::post('/homepage/student/login_step_parent_student', [StudentController::class, 'loginStepParentStudent'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
-    Route::get('/homepage/student/parent_students', [StudentController::class, 'parentStudents'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
-    Route::get('/homepage/student/user', [StudentController::class, 'user'])->middleware('tool-licensed:Lehrertool');
-    Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool']);
-    Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
-    Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
-    Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
-    Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
-    Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
+    Route::middleware([StartSession::class, 'students-timetables-impersonation'])->group(function () {
+        Route::get('/homepage/student/config', [StudentController::class, 'config']);
+        Route::post('/homepage/student/login_step_email', [StudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+        Route::post('/homepage/student/login_step_code', [StudentController::class, 'loginStepCode'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+        Route::post('/homepage/student/login_step_password', [StudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+        Route::post('/homepage/student/login_step_parent_student', [StudentController::class, 'loginStepParentStudent'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+        Route::get('/homepage/student/parent_students', [StudentController::class, 'parentStudents'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+        Route::get('/homepage/student/user', [StudentController::class, 'user'])->middleware('tool-licensed:Lehrertool');
+        Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool']);
+        Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
+    });
 
     /***** STUDENTS TIMETABLES STUDENT ROUTES *****/
     Route::get('/homepage/students-timetables/config', [StudentsTimetablesStudentController::class, 'config']);
@@ -234,6 +236,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/school-hours', [StudentsTimetablesController::class, 'schoolHours']);
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
         Route::get('/admin/students-timetables/robot/students', [StudentsTimetablesController::class, 'robotStudents']);
+        Route::post('/admin/students-timetables/robot/students/impersonate', [StudentsTimetablesController::class, 'impersonateStudent'])
+            ->middleware(['api-allowed:scope:students_timetables_tests_v3_access', StartSession::class]);
         Route::get('/admin/students-timetables/robot/student-completed-courses', [StudentsTimetablesController::class, 'robotStudentCompletedCourses']);
         Route::get('/admin/students-timetables/robot/student-overview', [StudentsTimetablesController::class, 'robotStudentOverview']);
         Route::post('/admin/students-timetables/robot/backend-timetable', [StudentsTimetablesController::class, 'robotBackendTimetable']);

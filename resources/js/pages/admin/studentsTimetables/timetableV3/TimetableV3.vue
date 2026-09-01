@@ -271,6 +271,23 @@
                         </v-card>
                     </v-menu>
                     <v-btn
+                        v-if="canOpenSelectedStudentView"
+                        class="timetable-v3__student-view-button"
+                        icon="mdi-account-switch"
+                        size="large"
+                        color="deep-purple"
+                        variant="tonal"
+                        :loading="studentViewOpening"
+                        :disabled="studentViewOpening"
+                        aria-label="Studierendenansicht öffnen"
+                        @click="openSelectedStudentView" />
+                    <span
+                        v-if="studentViewOpenError"
+                        class="timetable-v3__student-view-error"
+                        role="alert">
+                        {{ studentViewOpenError }}
+                    </span>
+                    <v-btn
                         v-if="publishedStudentTimetableOpenVisible"
                         class="timetable-v3__published-timetable-open-button"
                         prepend-icon="mdi-calendar-edit-outline"
@@ -591,6 +608,23 @@
                             </v-card-text>
                         </v-card>
                     </v-menu>
+                    <v-btn
+                        v-if="canOpenSelectedStudentView"
+                        class="timetable-v3__student-view-button"
+                        icon="mdi-account-switch"
+                        size="large"
+                        color="deep-purple"
+                        variant="tonal"
+                        :loading="studentViewOpening"
+                        :disabled="studentViewOpening"
+                        aria-label="Studierendenansicht öffnen"
+                        @click="openSelectedStudentView" />
+                    <span
+                        v-if="studentViewOpenError"
+                        class="timetable-v3__student-view-error"
+                        role="alert">
+                        {{ studentViewOpenError }}
+                    </span>
                 </div>
             </div>
 
@@ -1517,9 +1551,7 @@
                                 <span class="timetable-v3__selected-modules-summary">
                                     {{ adoptionSelectedModuleCount }}
                                     {{ adoptionSelectedModuleCount === 1 ? 'Modul' : 'Module' }}
-                                    <template v-if="!isManualTimetableAdoption">
-                                        · {{ adoptionSelectedModuleHoursLabel }} Std.
-                                    </template>
+                                    · {{ adoptionSelectedModuleHoursLabel }} Std.
                                 </span>
                             </div>
                             <div
@@ -2282,6 +2314,7 @@ import {
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import {
     overviewPdf as downloadStudentTimetableOverviewPdf,
+    impersonateStudent as openStudentTimetableView,
     publishedStudentTimetable as loadPublishedStudentTimetable,
     publishStudentTimetable,
     robotStudents as loadRobotStudents,
@@ -3473,6 +3506,8 @@ export default {
             planningSelectionFields: [],
             planningSelectionValues: {},
             emailCopyStatus: 'idle',
+            studentViewOpening: false,
+            studentViewOpenError: '',
             pdfExporting: false,
             publishedTimetableSaving: false,
             publishedTimetableName: '',
@@ -3577,6 +3612,11 @@ export default {
             return String(
                 this.selectedStudent?.studentCode || this.selectedStudent?.student_code || '',
             ).trim()
+        },
+        canOpenSelectedStudentView() {
+            return this.planningMode === WITH_STUDENT
+                && this.selectedStudent?.canOpenStudentView === true
+                && Boolean(this.selectedStudentCode)
         },
         hasPlanningSelectionContext() {
             return this.planningMode === WITHOUT_STUDENT
@@ -6695,8 +6735,6 @@ export default {
             const hasSchoolLevel = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'schoolLevel')
                 || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'school_level')
 
-            if (hasSex && hasReligion && hasSemester && hasInstructionType && hasSchoolLevel) return
-
             await this.loadStudents()
 
             const selectedStudentCode = String(
@@ -6707,6 +6745,16 @@ export default {
             ).trim() === selectedStudentCode)
 
             if (!student) return
+
+            const canOpenStudentView = student.can_open_student_view === true
+            if (
+                hasSex
+                && hasReligion
+                && hasSemester
+                && hasInstructionType
+                && hasSchoolLevel
+                && this.selectedStudent.canOpenStudentView === canOpenStudentView
+            ) return
 
             this.selectedStudent = {
                 ...this.selectedStudent,
@@ -6719,6 +6767,7 @@ export default {
                 ...(!hasSchoolLevel
                     ? { schoolLevel: String(student.school_level || '').trim() }
                     : {}),
+                canOpenStudentView,
             }
             await this.saveState()
         },
@@ -6766,6 +6815,7 @@ export default {
             this.resetPublishedTimetableAdoption()
             this.publishedTimetableOpenError = ''
             this.emailCopyStatus = 'idle'
+            this.studentViewOpenError = ''
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             this.resetSelectedStudentSelectionDetails()
@@ -6781,12 +6831,36 @@ export default {
                 instructionType: String(student.instruction_type || '').trim(),
                 semester: this.normalizedStudentSemester(student),
                 schoolLevel: String(student.school_level || '').trim(),
+                canOpenStudentView: student.can_open_student_view === true,
             }
             this.closeStudentDialog()
             await this.saveState()
             this.replaceRoutePlanningContext(normalizedPlanningContext(this.planningMode, this.selectedStudentCode))
             void this.loadSelectedStudentSelection()
             void this.loadPublishedStudentTimetableName()
+        },
+        async openSelectedStudentView() {
+            if (!this.canOpenSelectedStudentView || this.studentViewOpening) return
+
+            this.studentViewOpening = true
+            this.studentViewOpenError = ''
+
+            try {
+                const response = await axios.post(openStudentTimetableView.url(), {
+                    student_code: this.selectedStudentCode,
+                    return_url: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+                })
+
+                this.redirectToStudentTimetable(response.data?.redirect)
+            } catch (error) {
+                this.studentViewOpenError = error?.response?.data?.message
+                    || 'Studierendenansicht konnte nicht geöffnet werden.'
+            } finally {
+                this.studentViewOpening = false
+            }
+        },
+        redirectToStudentTimetable(path) {
+            window.location.href = String(path || '/students-timetables/overview')
         },
         async copySelectedStudentEmail() {
             const email = this.selectedStudentEmail
@@ -9093,8 +9167,17 @@ button.timetable-v3__student-data-field:focus-visible {
 }
 
 .timetable-v3__student-info-button,
-.timetable-v3__study-info-button {
+.timetable-v3__study-info-button,
+.timetable-v3__student-view-button {
     flex: 0 0 auto;
+}
+
+.timetable-v3__student-view-error {
+    flex: 1 0 100%;
+    max-width: 320px;
+    color: #b42318;
+    font-size: 0.78rem;
+    text-align: center;
 }
 
 .timetable-v3__published-timetable-open-button,

@@ -21,6 +21,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
             selected_school: null,
             impersonation: {
                 is_impersonating: false,
+                is_students_timetables_restricted: false,
                 impersonator: null,
                 current_user: null,
             },
@@ -165,6 +166,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
                 this.response = await axios.post('/api/homepage/logout', {})
                 this.impersonation = {
                     is_impersonating: false,
+                    is_students_timetables_restricted: false,
                     impersonator: null,
                     current_user: null,
                 }
@@ -189,6 +191,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
                 const response = await axios.get('/api/admin/impersonation/status')
                 this.impersonation = {
                     is_impersonating: !!response.data?.is_impersonating,
+                    is_students_timetables_restricted: !!response.data?.is_students_timetables_restricted,
                     impersonator: response.data?.impersonator || null,
                     current_user: response.data?.current_user || null,
                 }
@@ -197,6 +200,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
                 if (error.response?.status === 401) {
                     this.impersonation = {
                         is_impersonating: false,
+                        is_students_timetables_restricted: false,
                         impersonator: null,
                         current_user: null,
                     }
@@ -218,9 +222,10 @@ export const useHomepageStore = defineStore('HomepageStore', {
             const notification = useNotificationStore()
             this.is_loading++
             try {
-                await axios.post('/api/admin/impersonation/stop')
+                const response = await axios.post('/api/admin/impersonation/stop')
                 this.impersonation = {
                     is_impersonating: false,
+                    is_students_timetables_restricted: false,
                     impersonator: null,
                     current_user: null,
                 }
@@ -229,7 +234,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
                     type: 'success',
                     timeout: 3000,
                 })
-                return true
+                return response.data?.redirect || '/admin'
             } catch (error) {
                 notification.notify({
                     status: error.response?.status || 500,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\School;
 use App\Models\User;
@@ -20,6 +21,7 @@ class ImpersonationController extends Controller
         if (! Auth::check()) {
             return response()->json([
                 'is_impersonating' => false,
+                'is_students_timetables_restricted' => false,
                 'impersonator' => null,
                 'current_user' => null,
             ], 200);
@@ -41,6 +43,8 @@ class ImpersonationController extends Controller
 
         return response()->json([
             'is_impersonating' => $isImpersonating,
+            'is_students_timetables_restricted' => $isImpersonating
+                && (bool) $request->session()->get(RestrictStudentsTimetablesImpersonation::SESSION_KEY, false),
             'impersonator' => $impersonator ? [
                 'id' => $impersonator->id,
                 'last_name' => $impersonator->last_name,
@@ -195,6 +199,10 @@ class ImpersonationController extends Controller
         }
 
         $request->session()->forget([
+            RestrictStudentsTimetablesImpersonation::SESSION_KEY,
+            RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
+        ]);
+        $request->session()->forget([
             'auth.password_confirmed_at',
             'login.id',
             'login.remember',
@@ -220,11 +228,24 @@ class ImpersonationController extends Controller
             abort(409, 'Es läuft aktuell keine Benutzer-Übernahme.');
         }
 
+        $returnUrl = (string) $request->session()->get(
+            RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
+            '/admin',
+        );
+
         if (! $manager->leave()) {
             $manager->clear();
+            $request->session()->forget([
+                RestrictStudentsTimetablesImpersonation::SESSION_KEY,
+                RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
+            ]);
             abort(500, 'Benutzer-Übernahme konnte nicht beendet werden.');
         }
 
+        $request->session()->forget([
+            RestrictStudentsTimetablesImpersonation::SESSION_KEY,
+            RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
+        ]);
         $request->session()->forget([
             'auth.password_confirmed_at',
             'login.id',
@@ -238,6 +259,7 @@ class ImpersonationController extends Controller
 
         return response()->json([
             'message' => 'Benutzer-Übernahme beendet.',
+            'redirect' => $returnUrl,
         ], 200);
     }
 }
