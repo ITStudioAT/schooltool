@@ -163,6 +163,15 @@ it('lets timetable admins open the linked students timetables account', function
     ]));
     $studentImport->forceFill(['user_id' => $studentUser->id])->save();
 
+    SchoolTool::query()
+        ->where('school_id', $admin->school_id)
+        ->update(['students_timetables_visible_user' => false]);
+
+    $this->actingAs($studentUser)
+        ->getJson('/api/homepage/students-timetables/user')
+        ->assertForbidden()
+        ->assertJsonPath('message', 'Dieses Modul ist derzeit nicht verfügbar.');
+
     $this->actingAs($admin)
         ->getJson('/api/admin/students-timetables/robot/students')
         ->assertSuccessful()

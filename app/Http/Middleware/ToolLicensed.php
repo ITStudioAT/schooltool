@@ -7,13 +7,17 @@ use App\Services\AccessScopeService;
 use App\Services\LicenceService;
 use App\Services\ParentStudentAccessService;
 use App\Services\SchoolToolModuleStatusService;
+use App\Services\StudentsTimetablesStudentService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Lab404\Impersonate\Services\ImpersonateManager;
 use Symfony\Component\HttpFoundation\Response;
 
 class ToolLicensed
 {
+    public function __construct(private readonly ImpersonateManager $impersonateManager) {}
+
     public function handle(Request $request, Closure $next, string $licenceName, string $schoolSource = 'auto', ...$candidateRoleNames): Response
     {
         $licenceService = app(LicenceService::class);
@@ -22,7 +26,11 @@ class ToolLicensed
         $school = $this->resolveSchool($request, $schoolSource);
         $moduleKey = $moduleStatusService->moduleKeyForLicence($licenceName);
         if ($moduleKey) {
-            if ($request->is('admin/*') || $request->is('api/admin/*')) {
+            $usesAdminModuleVisibility = $request->is('admin/*')
+                || $request->is('api/admin/*')
+                || $this->isRestrictedStudentsTimetablesPreview($request, $licenceName);
+
+            if ($usesAdminModuleVisibility) {
                 if (! $moduleStatusService->adminVisibleForModule($moduleKey, $school)) {
                     return $this->deny($request, SchoolToolModuleStatusService::INACTIVE);
                 }
@@ -113,6 +121,31 @@ class ToolLicensed
         }
 
         return redirect('/');
+    }
+
+    private function isRestrictedStudentsTimetablesPreview(Request $request, string $licenceName): bool
+    {
+        if ($licenceName !== 'StudentsTimetables') {
+            return false;
+        }
+
+        if (! $request->is('api/homepage/students-timetables/*')) {
+            return false;
+        }
+
+        if (! $request->hasSession()) {
+            return false;
+        }
+
+        if (! (bool) $request->session()->get(RestrictStudentsTimetablesImpersonation::SESSION_KEY, false)) {
+            return false;
+        }
+
+        if (! $this->impersonateManager->isImpersonating()) {
+            return false;
+        }
+
+        return Auth::user()?->hasRole(StudentsTimetablesStudentService::ROLE_NAME) === true;
     }
 
     private function normalizeCandidateRoleNames(array $candidateRoleNames): array
