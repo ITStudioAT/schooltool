@@ -5648,6 +5648,12 @@ export default {
                     query: { workspace_id: this.workspaceId },
                 }))
                 this.storedState = response.data?.data?.state ?? null
+            } catch {
+                this.storedState = null
+                this.stateLoadFailed = true
+            }
+
+            try {
                 this.restoreCreationOptions()
                 this.restoreAdoptionReturnStep()
                 await this.restoreEntrySelection()
@@ -5771,6 +5777,29 @@ export default {
         },
         async restoreEntrySelection() {
             const entrySelection = this.storedState?.entrySelection
+            const routePlanningContext = normalizedPlanningContext(
+                this.$route?.query?.planning_mode,
+                this.$route?.query?.student_code,
+            )
+            const storedStudentCode = String(
+                entrySelection?.student?.studentCode || entrySelection?.student?.student_code || '',
+            ).trim()
+
+            if (
+                routePlanningContext?.planning_mode === WITH_STUDENT
+                && (
+                    entrySelection?.mode !== WITH_STUDENT
+                    || storedStudentCode !== routePlanningContext.student_code
+                )
+            ) {
+                this.planningMode = WITH_STUDENT
+                this.selectedStudent = { studentCode: routePlanningContext.student_code }
+                this.resetSelectedStudentSelectionDetails()
+                await this.loadSelectedStudentSelection()
+                await this.hydrateSelectedStudentDetails()
+                this.restoreCreationScheduleMode()
+                return
+            }
 
             if (entrySelection?.mode === WITH_STUDENT && entrySelection.student) {
                 this.planningMode = WITH_STUDENT
@@ -6727,6 +6756,14 @@ export default {
         async hydrateSelectedStudentDetails() {
             if (!this.selectedStudent) return
 
+            const hasId = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'id')
+            const hasClassName = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'className')
+                || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'class')
+            const hasLastName = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'lastName')
+                || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'last_name')
+            const hasFirstName = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'firstName')
+                || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'first_name')
+            const hasEmail = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'email')
             const hasSex = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'sex')
             const hasReligion = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'religion')
             const hasSemester = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'semester')
@@ -6748,7 +6785,12 @@ export default {
 
             const canOpenStudentView = student.can_open_student_view === true
             if (
-                hasSex
+                hasId
+                && hasClassName
+                && hasLastName
+                && hasFirstName
+                && hasEmail
+                && hasSex
                 && hasReligion
                 && hasSemester
                 && hasInstructionType
@@ -6758,6 +6800,11 @@ export default {
 
             this.selectedStudent = {
                 ...this.selectedStudent,
+                ...(!hasId ? { id: Number(student.id) || null } : {}),
+                ...(!hasClassName ? { className: String(student.class || '') } : {}),
+                ...(!hasLastName ? { lastName: String(student.last_name || '') } : {}),
+                ...(!hasFirstName ? { firstName: String(student.first_name || '') } : {}),
+                ...(!hasEmail ? { email: String(student.email || '') } : {}),
                 ...(!hasSex ? { sex: this.normalizedStudentSex(student) } : {}),
                 ...(!hasReligion ? { religion: String(student.religion || '').trim() } : {}),
                 ...(!hasSemester ? { semester: this.normalizedStudentSemester(student) } : {}),

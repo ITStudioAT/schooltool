@@ -10,3 +10,6 @@ The admin student-card switch may be used only by super_admin, admin, and studen
 
 ## Allow the standard base student role during student-view switching
 This supersedes the exact-single-role part of the earlier student-view rule. A valid target must have studentstimetables_user and may additionally have the standard student role, because imported student accounts normally carry both. Reject every other role, including user and all admin roles; keep the existing school, personal-schoolyear, active-account, and linkage checks.
+
+## Allow timetable staff to open the scoped student view
+This supersedes the launcher-role and pre-existing-link requirements in the earlier student-view rule. The Timetable V3 student-card switch is available to super_admin, admin, studentstimetables_admin, and studentstimetables_moderator. Do not hide it merely because the imported student account has not been linked or assigned studentstimetables_user yet; safely resolve or provision that account from the selected current-school/current-personal-year Import 116 row on click. Reject inactive accounts and any target with roles outside student and studentstimetables_user, and keep the resulting impersonation timetable-only.

@@ -37,9 +37,9 @@ use function Spatie\LaravelPdf\Support\pdf;
 
 class StudentsTimetablesController extends Controller
 {
-    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
-
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
+
+    private const STUDENT_VIEW_LAUNCHER_ROLES = self::MODERATOR_ROLES;
 
     private const STUDENT_VIEW_ROLES = ['student', StudentsTimetablesStudentService::ROLE_NAME];
 
@@ -90,18 +90,7 @@ class StudentsTimetablesController extends Controller
             ->orderBy('first_name')
             ->get(['id', 'user_id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex', 'study_selection', 'course_results']);
 
-        $canOpenStudentViews = $authUser->hasAnyRole(self::ADMIN_ROLES);
-        $studentUsers = $canOpenStudentViews
-            ? $this->studentTimetableUserQuery($authUser)
-                ->where(function (Builder $query) use ($students): void {
-                    $query->whereIn('id', $students->pluck('user_id')->filter()->values())
-                        ->orWhereIn('import116_id', $students->pluck('id')->values());
-                })
-                ->get(['id', 'import116_id'])
-            : collect();
-        $studentUsersById = $studentUsers->keyBy('id');
-        $studentUsersByImportId = $studentUsers->filter(fn (User $user): bool => (int) $user->import116_id > 0)
-            ->keyBy('import116_id');
+        $canOpenStudentViews = $authUser->hasAnyRole(self::STUDENT_VIEW_LAUNCHER_ROLES);
 
         $publishedTimetables = StudentTimetablePublishedTimetable::query()
             ->where('school_id', $authUser->school_id)
@@ -110,7 +99,7 @@ class StudentsTimetablesController extends Controller
             ->get(['id', 'student_code', 'published_at'])
             ->keyBy(fn (StudentTimetablePublishedTimetable $publishedTimetable): string => (string) $publishedTimetable->student_code);
         $students = $students
-            ->map(function (Import116 $student) use ($authUser, $canOpenStudentViews, $expectedModulesService, $publishedTimetables, $studentOverviewService, $studentUsersById, $studentUsersByImportId): array {
+            ->map(function (Import116 $student) use ($authUser, $canOpenStudentViews, $expectedModulesService, $publishedTimetables, $studentOverviewService): array {
                 $instructionType = $studentOverviewService->instructionTypeForStudent($student);
                 $studyProgram = $instructionType === 'Kompaktunterricht'
                     ? StudentTimetableStudyProgram::Kompaktstudium
@@ -162,10 +151,7 @@ class StudentsTimetablesController extends Controller
                     'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
                     'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
                     'published_timetable_at' => optional($publishedTimetables->get((string) $student->student_code)?->published_at)->toIso8601String(),
-                    'can_open_student_view' => $canOpenStudentViews && (
-                        $studentUsersById->has((int) $student->user_id)
-                        || $studentUsersByImportId->has((int) $student->id)
-                    ),
+                    'can_open_student_view' => $canOpenStudentViews,
                 ];
             })
             ->values();
@@ -175,11 +161,14 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
-    public function impersonateStudent(Request $request, ImpersonateManager $manager): JsonResponse
-    {
+    public function impersonateStudent(
+        Request $request,
+        ImpersonateManager $manager,
+        StudentsTimetablesStudentService $studentService,
+    ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
-        if (! $authUser->hasAnyRole(self::ADMIN_ROLES)) {
+        if (! $authUser->hasAnyRole(self::STUDENT_VIEW_LAUNCHER_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
@@ -197,23 +186,26 @@ class StudentsTimetablesController extends Controller
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->where('student_code', $validated['student_code'])
             ->whereNotNull('exists_date')
-            ->first(['id', 'user_id']);
+            ->first();
 
         if (! $student) {
             abort(422, 'Der ausgewählte Studierende wurde nicht gefunden.');
         }
 
-        $studentUsers = $this->studentTimetableUserQuery($authUser)
-            ->where(function (Builder $query) use ($student): void {
-                $query->where('import116_id', $student->id);
+        $existingStudentUser = $this->existingStudentViewUser($student, $authUser);
 
-                if ((int) $student->user_id > 0) {
-                    $query->orWhere('id', $student->user_id);
-                }
-            })
-            ->get();
-        $studentUser = $studentUsers->firstWhere('id', (int) $student->user_id)
-            ?? $studentUsers->firstWhere('import116_id', (int) $student->id);
+        if ($existingStudentUser && ! $existingStudentUser->is_active) {
+            abort(422, 'Das Stundenplan-Benutzerkonto dieses Studierenden ist inaktiv.');
+        }
+
+        if ($existingStudentUser && $existingStudentUser->roles()->whereNotIn('name', self::STUDENT_VIEW_ROLES)->exists()) {
+            abort(422, 'Für diesen Studierenden ist kein ausschließliches Stundenplan-Benutzerkonto verfügbar.');
+        }
+
+        $provisionedStudentUser = $studentService->createOrUpdateUserFromImport116($student);
+        $studentUser = $this->studentTimetableUserQuery($authUser)
+            ->whereKey($provisionedStudentUser->getKey())
+            ->first();
 
         if (! $studentUser) {
             abort(422, 'Für diesen Studierenden ist kein ausschließliches Stundenplan-Benutzerkonto verfügbar.');
@@ -945,6 +937,41 @@ class StudentsTimetablesController extends Controller
             ->where('is_active', true)
             ->whereHas('roles', fn (Builder $query): Builder => $query->where('name', StudentsTimetablesStudentService::ROLE_NAME))
             ->whereDoesntHave('roles', fn (Builder $query): Builder => $query->whereNotIn('name', self::STUDENT_VIEW_ROLES));
+    }
+
+    private function existingStudentViewUser(Import116 $student, User $authUser): ?User
+    {
+        if ((int) $student->user_id > 0) {
+            $directUser = User::query()
+                ->where('school_id', $authUser->school_id)
+                ->whereKey((int) $student->user_id)
+                ->first();
+
+            if ($directUser) {
+                return $directUser;
+            }
+        }
+
+        $linkedUser = User::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('import116_id', $student->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($linkedUser) {
+            return $linkedUser;
+        }
+
+        $studentEmail = trim((string) $student->email);
+
+        if ($studentEmail === '') {
+            return null;
+        }
+
+        return User::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('email', $studentEmail)
+            ->first();
     }
 
     private function studentViewReturnUrl(?string $returnUrl): string

@@ -237,7 +237,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
         Route::get('/admin/students-timetables/robot/students', [StudentsTimetablesController::class, 'robotStudents']);
         Route::post('/admin/students-timetables/robot/students/impersonate', [StudentsTimetablesController::class, 'impersonateStudent'])
-            ->middleware(['api-allowed:scope:students_timetables_tests_v3_access', StartSession::class]);
+            ->middleware(StartSession::class);
         Route::get('/admin/students-timetables/robot/student-completed-courses', [StudentsTimetablesController::class, 'robotStudentCompletedCourses']);
         Route::get('/admin/students-timetables/robot/student-overview', [StudentsTimetablesController::class, 'robotStudentOverview']);
         Route::post('/admin/students-timetables/robot/backend-timetable', [StudentsTimetablesController::class, 'robotBackendTimetable']);

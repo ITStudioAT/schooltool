@@ -463,7 +463,12 @@ describe('TimetableV3', () => {
         const context = {
             selectedStudent: { studentCode: '1001', firstName: 'Mia', canOpenStudentView: false },
             students: [{
+                id: 7,
                 student_code: '1001',
+                class: '5A',
+                last_name: 'Muster',
+                first_name: 'Maria',
+                email: 'mia@example.test',
                 sex: 'w',
                 religion: 'Rk',
                 instruction_type: 'Kompaktunterricht',
@@ -481,7 +486,11 @@ describe('TimetableV3', () => {
 
         expect(context.selectedStudent).toEqual({
             studentCode: '1001',
+            id: 7,
+            className: '5A',
+            lastName: 'Muster',
             firstName: 'Mia',
+            email: 'mia@example.test',
             sex: 'w',
             religion: 'Rk',
             instructionType: 'Kompaktunterricht',
@@ -4446,6 +4455,46 @@ describe('TimetableV3', () => {
         expect(loadingStates).toEqual([true, true, true, true])
         expect(context.isLoadingState).toBe(false)
         expect(context.storedState).toEqual({ draft: true })
+    })
+
+    it('restores the selected student from the URL when the workspace draft cannot be loaded', async () => {
+        const methods = (TimetableV3 as any).methods
+        const context: any = {
+            isLoadingState: false,
+            stateLoadFailed: false,
+            storedState: null,
+            workspaceId: WORKSPACE_ID,
+            planningMode: null,
+            selectedStudent: null,
+            $route: {
+                query: {
+                    planning_mode: 'with_student',
+                    student_code: 'student-03',
+                },
+            },
+            restoreCreationOptions: vi.fn(),
+            restoreAdoptionReturnStep: vi.fn(),
+            restoreManualTimetableDraft: vi.fn(),
+            resetSelectedStudentSelectionDetails: vi.fn(),
+            loadSelectedStudentSelection: vi.fn().mockResolvedValue(undefined),
+            hydrateSelectedStudentDetails: vi.fn().mockResolvedValue(undefined),
+            restoreCreationScheduleMode: vi.fn(),
+            ensureValidCurrentStep: vi.fn().mockResolvedValue(undefined),
+            restorePersistedTimetableCalculation: vi.fn().mockResolvedValue(undefined),
+        }
+        context.restoreEntrySelection = () => methods.restoreEntrySelection.call(context)
+        vi.stubGlobal('axios', {
+            get: vi.fn().mockRejectedValue(new Error('workspace unavailable')),
+        })
+
+        await methods.loadState.call(context)
+
+        expect(context.stateLoadFailed).toBe(true)
+        expect(context.planningMode).toBe('with_student')
+        expect(context.selectedStudent).toEqual({ studentCode: 'student-03' })
+        expect(context.loadSelectedStudentSelection).toHaveBeenCalledOnce()
+        expect(context.hydrateSelectedStudentDetails).toHaveBeenCalledOnce()
+        expect(context.isLoadingState).toBe(false)
     })
 
     it('assigns a stable workspace to a tab before loading its draft', async () => {

@@ -221,21 +221,21 @@ it('lets timetable admins open the linked students timetables account', function
         ->assertJsonPath('redirect', '/admin/students-timetables/timetable-v3/overview');
 });
 
-it('does not offer student view impersonation to moderators', function () {
-    $moderator = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+it('lets every timetable staff role open the students timetables account', function (string $roleName) {
+    $staffUser = createStudentsTimetablesUserWithLicence(roleName: $roleName);
     $schoolyear = Schoolyear::factory()->create([
-        'school_id' => $moderator->school_id,
+        'school_id' => $staffUser->school_id,
     ]);
-    $moderator->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $staffUser->forceFill(['schoolyear_id' => $schoolyear->id])->save();
 
     $studentImport = Import116::factory()->create([
-        'school_id' => $moderator->school_id,
+        'school_id' => $staffUser->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'student_code' => 'moderator-student-view',
+        'student_code' => "{$roleName}-student-view",
         'exists_date' => now(),
     ]);
     $studentUser = User::factory()->create([
-        'school_id' => $moderator->school_id,
+        'school_id' => $staffUser->school_id,
         'schoolyear_id' => $schoolyear->id,
         'import116_id' => $studentImport->id,
         'is_active' => true,
@@ -246,14 +246,66 @@ it('does not offer student view impersonation to moderators', function () {
     ]));
     $studentImport->forceFill(['user_id' => $studentUser->id])->save();
 
-    $this->actingAs($moderator)
+    $this->actingAs($staffUser)
         ->getJson('/api/admin/students-timetables/robot/students')
         ->assertSuccessful()
-        ->assertJsonPath('data.0.can_open_student_view', false);
+        ->assertJsonPath('data.0.can_open_student_view', true);
 
     $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
-        'student_code' => 'moderator-student-view',
-    ])->assertForbidden();
+        'student_code' => "{$roleName}-student-view",
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('redirect', '/students-timetables/overview');
+
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/admin/impersonation/status')
+        ->assertSuccessful()
+        ->assertJsonPath('is_students_timetables_restricted', true)
+        ->assertJsonPath('current_user.id', $studentUser->id);
+})->with([
+    'super admin' => 'super_admin',
+    'admin' => 'admin',
+    'students timetables admin' => 'studentstimetables_admin',
+    'students timetables moderator' => 'studentstimetables_moderator',
+]);
+
+it('offers the student view before the timetable account exists and provisions it on click', function () {
+    $admin = createStudentsTimetablesUserWithLicence(roleName: 'super_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $admin->school_id,
+    ]);
+    $admin->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $studentImport = Import116::factory()->create([
+        'school_id' => $admin->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'unlinked-student-view',
+        'email' => 'unlinked-student-view@example.test',
+        'exists_date' => now(),
+        'user_id' => null,
+    ]);
+
+    $this->actingAs($admin)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.can_open_student_view', true);
+
+    $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
+        'student_code' => 'unlinked-student-view',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('redirect', '/students-timetables/overview');
+
+    $studentUser = User::query()
+        ->where('import116_id', $studentImport->id)
+        ->firstOrFail();
+
+    expect($studentImport->refresh()->user_id)->toBe($studentUser->id)
+        ->and($studentUser->school_id)->toBe($admin->school_id)
+        ->and($studentUser->schoolyear_id)->toBe($schoolyear->id)
+        ->and($studentUser->is_active)->toBeTruthy()
+        ->and($studentUser->hasRole('studentstimetables_user'))->toBeTrue();
 });
 
 it('rejects a linked student account that has access outside students timetables', function () {
@@ -284,7 +336,7 @@ it('rejects a linked student account that has access outside students timetables
     $this->actingAs($admin)
         ->getJson('/api/admin/students-timetables/robot/students')
         ->assertSuccessful()
-        ->assertJsonPath('data.0.can_open_student_view', false);
+        ->assertJsonPath('data.0.can_open_student_view', true);
 
     $this->postJson('/api/admin/students-timetables/robot/students/impersonate', [
         'student_code' => 'mixed-role-student-view',
