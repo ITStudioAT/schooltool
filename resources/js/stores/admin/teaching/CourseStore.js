@@ -15,6 +15,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             courses: [],
             classes: [],
             class_head_emails: [],
+            class_head_teachers: [],
             entry_areas: [],
             uses_entry_areas_for_grading_schema: false,
             selected_course: null,
@@ -150,6 +151,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                     this.courses.forEach((course) => this.ensureCourseStudentCollections(course))
                     this.classes = response.data.classes
                     this.class_head_emails = Array.isArray(response.data.class_head_emails) ? response.data.class_head_emails : []
+                    this.class_head_teachers = Array.isArray(response.data.class_head_teachers) ? response.data.class_head_teachers : []
                     this.entry_areas = response.data.entry_areas || []
                     this.uses_entry_areas_for_grading_schema = Boolean(response.data.uses_entry_areas_for_grading_schema)
                     if (selectedId) {

@@ -16,6 +16,7 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\Teacher;
 use App\Models\TeachingClassHeadEmail;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
@@ -504,6 +505,31 @@ describe('index', function () {
     test('returns only the logged-in users class head emails for the current schoolyear', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $firstClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Head',
+            'first_name' => 'One',
+            'short' => 'H1',
+            'email' => 'head.one@example.test',
+            'is_active' => true,
+        ]);
+        $secondClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Head',
+            'first_name' => 'Two',
+            'short' => 'H2',
+            'email' => 'head.two@example.test',
+            'is_active' => true,
+        ]);
+        Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Inactive',
+            'first_name' => 'Teacher',
+            'short' => 'IN',
+            'email' => 'inactive@example.test',
+            'is_active' => false,
+        ]);
+
         TeachingClassHeadEmail::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -530,8 +556,13 @@ describe('index', function () {
             ->assertOk()
             ->assertJsonCount(1, 'class_head_emails')
             ->assertJsonPath('class_head_emails.0.class_name', '1A')
-            ->assertJsonPath('class_head_emails.0.email_1', 'head.one@example.test')
-            ->assertJsonPath('class_head_emails.0.email_2', 'head.two@example.test');
+            ->assertJsonPath('class_head_emails.0.teacher_1_id', $firstClassHead->id)
+            ->assertJsonPath('class_head_emails.0.teacher_2_id', $secondClassHead->id)
+            ->assertJsonMissingPath('class_head_emails.0.email_1')
+            ->assertJsonCount(2, 'class_head_teachers')
+            ->assertJsonPath('class_head_teachers.0.id', $firstClassHead->id)
+            ->assertJsonPath('class_head_teachers.1.id', $secondClassHead->id)
+            ->assertJsonMissingPath('class_head_teachers.0.email');
     });
 
     test('returns courses ordered by title', function () {
@@ -1773,8 +1804,33 @@ describe('store', function () {
         ]);
     });
 
-    test('stores up to two class head emails for each selected class', function () {
+    test('stores up to two selected class head teachers for each selected class', function () {
         $this->actingAs($this->admin, 'sanctum');
+
+        $firstClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'First',
+            'first_name' => 'Class Head',
+            'short' => 'F1',
+            'email' => 'first.1a@example.test',
+            'is_active' => true,
+        ]);
+        $secondClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Second',
+            'first_name' => 'Class Head',
+            'short' => 'S1',
+            'email' => 'second.1a@example.test',
+            'is_active' => true,
+        ]);
+        $thirdClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Third',
+            'first_name' => 'Class Head',
+            'short' => 'T1',
+            'email' => 'first.1b@example.test',
+            'is_active' => true,
+        ]);
 
         $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
@@ -1783,13 +1839,13 @@ describe('store', function () {
             'class_head_emails' => [
                 [
                     'class_name' => '1A',
-                    'email_1' => 'first.1a@example.test',
-                    'email_2' => 'second.1a@example.test',
+                    'teacher_1_id' => $firstClassHead->id,
+                    'teacher_2_id' => $secondClassHead->id,
                 ],
                 [
                     'class_name' => '1B',
-                    'email_1' => 'first.1b@example.test',
-                    'email_2' => null,
+                    'teacher_1_id' => $thirdClassHead->id,
+                    'teacher_2_id' => null,
                 ],
             ],
         ])->assertCreated();
@@ -1812,19 +1868,33 @@ describe('store', function () {
         ]);
     });
 
-    test('rejects invalid class head emails and rows for unselected classes', function () {
+    test('rejects arbitrary class head emails, teachers outside the school, and rows for unselected classes', function () {
         $this->actingAs($this->admin, 'sanctum');
+
+        $otherSchoolTeacher = Teacher::query()->create([
+            'school_id' => $this->otherSchool->id,
+            'last_name' => 'Other',
+            'first_name' => 'Teacher',
+            'short' => 'OT',
+            'email' => 'other.teacher@example.test',
+            'is_active' => true,
+        ]);
 
         $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
             'classes' => ['1A'],
             'teaching_schema_id' => $this->schemaId,
             'class_head_emails' => [
-                ['class_name' => '1A', 'email_1' => 'not-an-email'],
-                ['class_name' => '2A', 'email_1' => 'head@example.test'],
+                [
+                    'class_name' => '1A',
+                    'teacher_1_id' => $otherSchoolTeacher->id,
+                    'email_1' => 'arbitrary@example.test',
+                ],
+                ['class_name' => '2A'],
             ],
         ])->assertInvalid([
             'class_head_emails.0.email_1',
+            'class_head_emails.0.teacher_1_id',
             'class_head_emails.1.class_name',
         ]);
 
@@ -2154,6 +2224,15 @@ describe('update', function () {
     test('updates the logged-in users remembered class head emails without deleting other classes', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $updatedClassHead = Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Updated',
+            'first_name' => 'Class Head',
+            'short' => 'UP',
+            'email' => 'updated@example.test',
+            'is_active' => true,
+        ]);
+
         $course = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -2191,8 +2270,8 @@ describe('update', function () {
             'teaching_schema_id' => $this->schemaId,
             'class_head_emails' => [[
                 'class_name' => '1A',
-                'email_1' => 'updated@example.test',
-                'email_2' => null,
+                'teacher_1_id' => $updatedClassHead->id,
+                'teacher_2_id' => null,
             ]],
         ])->assertOk();
 

@@ -152,29 +152,29 @@ describe('MyCourses counts', () => {
         ).toBe(true)
     })
 
-    it('builds one class head row per selected class and restores remembered emails', () => {
+    it('builds one class head row per selected class and restores remembered teachers', () => {
         const syncClassHeadEmailRows = (MyCourses as any).methods.syncClassHeadEmailRows
         const context = {
             data: { class_head_emails: [] },
             class_head_email_drafts: {},
             class_head_emails: [
-                { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+                { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
             ],
         }
 
         syncClassHeadEmailRows.call(context, ['1A', '1B'])
 
         expect(context.data.class_head_emails).toEqual([
-            { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
-            { class_name: '1B', email_1: '', email_2: '' },
+            { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
+            { class_name: '1B', teacher_1_id: null, teacher_2_id: null },
         ])
     })
 
-    it('preserves class head email drafts when a class is removed and reselected', () => {
+    it('preserves class head teacher drafts when a class is removed and reselected', () => {
         const syncClassHeadEmailRows = (MyCourses as any).methods.syncClassHeadEmailRows
         const context = {
             data: {
-                class_head_emails: [{ class_name: '1A', email_1: 'draft@example.test', email_2: '' }],
+                class_head_emails: [{ class_name: '1A', teacher_1_id: 9, teacher_2_id: null }],
             },
             class_head_email_drafts: {},
             class_head_emails: [],
@@ -184,18 +184,34 @@ describe('MyCourses counts', () => {
         syncClassHeadEmailRows.call(context, ['1A'])
 
         expect(context.data.class_head_emails).toEqual([
-            { class_name: '1A', email_1: 'draft@example.test', email_2: '' },
+            { class_name: '1A', teacher_1_id: 9, teacher_2_id: null },
         ])
     })
 
-    it('renders exactly two email inputs for every selected class head row', () => {
+    it('renders exactly two teacher selectors for every selected class head row', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('v-for="classHeadEmail in data.class_head_emails"')
-        expect(source.match(/v-model="classHeadEmail\.email_[12]"/g)).toHaveLength(2)
+        expect(source.match(/v-model="classHeadEmail\.teacher_[12]_id"/g)).toHaveLength(2)
+        expect(source.match(/<v-autocomplete/g)).toHaveLength(2)
         expect(source).toContain('Klassenvorstand')
-        expect(source).toContain(':rules="[mailOrNull(), maxLength(255)]"')
+        expect(source).not.toContain('v-model="classHeadEmail.email_1"')
+        expect(source).not.toContain('v-model="classHeadEmail.email_2"')
+    })
+
+    it('excludes the teacher selected in the other class head selector', () => {
+        const classHeadTeacherItemsFor = (MyCourses as any).methods.classHeadTeacherItemsFor
+        const context = {
+            classHeadTeacherItems: [
+                { title: 'Huber, Anna (HA)', value: 4 },
+                { title: 'Moser, Paul (MP)', value: 7 },
+            ],
+        }
+
+        expect(classHeadTeacherItemsFor.call(context, { teacher_1_id: 4, teacher_2_id: 7 }, 1)).toEqual([
+            { title: 'Huber, Anna (HA)', value: 4 },
+        ])
     })
 
     it('renders legacy schemas through 2025/26 and Bereiche afterward', () => {

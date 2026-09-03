@@ -2972,6 +2972,20 @@ describe('CourseTable', () => {
         expect(ctx.entryFormOpen).toBe(false)
     })
 
+    it('does not change the type of an existing entry', async () => {
+        const methods = (CourseTable as any).methods
+        const loadDraftEntryNotificationRecipients = vi.fn()
+        const ctx = {
+            entryForm: { grade: '+', id: 12, type: 'M' },
+            loadDraftEntryNotificationRecipients,
+        }
+
+        await methods.selectCellEntryType.call(ctx, 'P')
+
+        expect(ctx.entryForm).toEqual({ grade: '+', id: 12, type: 'M' })
+        expect(loadDraftEntryNotificationRecipients).not.toHaveBeenCalled()
+    })
+
     it('selects entry cards and opens manual entries in edit mode', () => {
         const methods = (CourseTable as any).methods
         const manualEntry = {
@@ -3470,13 +3484,19 @@ describe('CourseTable', () => {
             status: [],
             attendance: { 2098: false },
         })
+        const entryDialogCourseDate = { id: 7, date: '2026-03-09', status: [], attendance: {} }
         const ctx: Record<string, unknown> = {
             courseDateStore: { updateStatus },
+            entryDialog: {
+                courseDate: entryDialogCourseDate,
+                open: true,
+                student: { id: 2098 },
+            },
             savingAttendanceCells: {},
             selected_course: {
                 id: 20,
                 course_dates: [
-                    { id: 7, date: '2026-03-09', status: [], attendance: {} },
+                    entryDialogCourseDate,
                 ],
             },
             selected_courseDate: null,
@@ -3497,7 +3517,26 @@ describe('CourseTable', () => {
             attendance_checked: false,
         })
         expect((ctx.selected_course as any).course_dates[0].attendance).toEqual({ 2098: false })
+        expect((ctx.entryDialog as any).courseDate.attendance).toEqual({ 2098: false })
         expect(ctx.savingAttendanceCells).toEqual({})
+    })
+
+    it('selects attendance from the entry dialog without toggling the active choice', async () => {
+        const methods = (CourseTable as any).methods
+        const toggleStudentAttendance = vi.fn().mockResolvedValue(undefined)
+        const student = { id: 2098 }
+        const courseDate = { id: 7, attendance: {} }
+        const ctx = {
+            entryDialog: { student, courseDate },
+            isStudentPresentForCourseDate: vi.fn().mockReturnValue(true),
+            toggleStudentAttendance,
+        }
+
+        await methods.setEntryDialogAttendance.call(ctx, true)
+        expect(toggleStudentAttendance).not.toHaveBeenCalled()
+
+        await methods.setEntryDialogAttendance.call(ctx, false)
+        expect(toggleStudentAttendance).toHaveBeenCalledWith(student, courseDate)
     })
 
     it('targets today, the next upcoming date, or the last date for initial horizontal scrolling', () => {
@@ -3878,6 +3917,18 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="openEntryDialog(student, courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openEntryDialog(student, courseDate)"')
         expect(source).toContain('<v-dialog v-model="entryDialog.open" persistent max-width="860">')
+        expect(source).toContain('data-testid="course-table-entry-dialog-meta"')
+        expect(source).toContain('<strong>Schüler:in:</strong> {{ studentName(entryDialog.student) }}')
+        expect(source).toContain('<strong>Termin:</strong> {{ compactCourseDateTitle(entryDialog.courseDate) }}')
+        expect(source).toContain('aria-label="Anwesenheit auswählen"')
+        expect(source).toContain('data-testid="course-table-entry-attendance-status"')
+        expect(source).toContain("? 'anwesend'")
+        expect(source).toContain(": 'abwesend' }}")
+        expect(source).toContain('<span class="text-caption text-medium-emphasis mr-1">Ändern:</span>')
+        expect(source).toContain("? 'flat' : 'outlined'")
+        expect(source).toContain("? 'outlined' : 'flat'")
+        expect(source).toContain('@click="setEntryDialogAttendance(true)"')
+        expect(source).toContain('@click="setEntryDialogAttendance(false)"')
         expect(source).not.toContain('data-testid="course-table-cell-entry-work-periods"')
         expect(source).toContain('course-table-cell-entry-work-period-${entry.uid}')
         expect(source).toContain("v-if=\"entry.source === 'course_work' && courseWorkEntryPeriod(entry)\"")
@@ -3914,12 +3965,20 @@ describe('CourseTable', () => {
         expect(source).not.toContain('course-table-cell-edit-entry-${entry.uid}')
         expect(source).not.toContain('icon="mdi-pencil"')
         expect(source).toContain('course-table-cell-delete-entry-${entry.uid}')
-        expect(source).toContain('@click="openDeleteEntryDialog(entry)"')
+        expect(source).toContain('@click.stop="openDeleteEntryDialog(entry)"')
         expect(source.indexOf('course-table-cell-delete-entry-${entry.uid}')).toBeGreaterThan(
+            source.indexOf('course-table-cell-entry-card-${entry.uid}'),
+        )
+        expect(source.indexOf('course-table-cell-delete-entry-${entry.uid}')).toBeLessThan(
             source.indexOf('course-table-cell-entry-edit-form-${entry.uid}'),
         )
+        expect(source).toContain(':disabled="!canModifyCellEntry(entry) || entryDeleting"')
+        expect(source).toContain('Einträge aus Arbeiten können nur über die Arbeit gelöscht werden.')
         expect(source).toContain('course-table-cell-entry-card-${entry.uid}')
         expect(source).toContain('course-table-cell-entry-edit-form-${entry.uid}')
+        expect(source).toContain('data-testid="course-table-cell-entry-edit-type"')
+        expect(source).toContain('<v-chip size="small" :color="cellEntryColor(entry)" variant="tonal">')
+        expect(source.match(/@click="selectCellEntryType\(item.value\)"/gu)).toHaveLength(1)
         expect(source).toContain('v-if="cellEntryListComment(entry)"')
         expect(source).toContain('mdi-comment-text-outline')
         expect(source).toContain('.course-table-cell-entry-list-comment {')
@@ -4053,6 +4112,7 @@ describe('CourseTable', () => {
         const recipients = [
             { key: 'class-head', available: true },
             { key: 'mother', available: true },
+            { key: 'formerly-available', available: false, informed_at: '2026-03-09T10:00:00+00:00' },
             { key: 'missing', available: false },
         ]
         const ctx: any = {
@@ -4070,7 +4130,7 @@ describe('CourseTable', () => {
         await methods.loadEntryNotificationRecipients.call(ctx, { id: 42 })
 
         expect(ctx.entryNotificationRecipients).toEqual(recipients)
-        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual(['class-head', 'mother'])
+        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual(['class-head', 'mother', 'formerly-available'])
         expect(ctx.entryNotificationLoading).toBe(false)
     })
 
@@ -4119,6 +4179,7 @@ describe('CourseTable', () => {
 
         expect(source).toContain('v-if="entryHasNotificationWorkflow(entry)"')
         expect(source).toContain('v-model="selectedEntryNotificationRecipientKeys"')
+        expect(source).toContain(':disabled="!recipient.available || Boolean(recipient.informed_at) || entryNotificationSending"')
         expect(source).toContain('Alle verfügbaren Personen sind standardmäßig ausgewählt.')
         expect(source).toContain('Informiert: {{ formatNotificationDateTime(recipient.informed_at) }}')
         expect(source).toContain('E-Mail geöffnet: {{ formatNotificationDateTime(recipient.opened_at) }}')

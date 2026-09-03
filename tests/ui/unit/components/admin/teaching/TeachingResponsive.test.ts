@@ -37,15 +37,11 @@ describe('Teaching handset responsiveness', () => {
         expect(overview).toContain('.curriculum-sync-entry-actions :deep(.v-btn)')
     })
 
-    it('stacks school-hour and test-environment actions on phones', () => {
+    it('stacks school-hour actions on phones', () => {
         const schoolHours = componentSource('resources/js/pages/admin/teaching/admin/schoolhours/SchoolHours.vue')
-        const testEnvironment = componentSource('resources/js/pages/admin/teaching/testEnvironment/TestEnvironment.vue')
 
         expect(schoolHours).toContain('class="school-hour-actions d-flex align-center ga-1"')
         expect(schoolHours).toContain('.school-hour-row {\n        align-items: stretch;\n        flex-direction: column;')
-        expect(testEnvironment).toContain('class="test-environment-action"')
-        expect(testEnvironment).toContain('.test-environment-dialog-actions')
-        expect(testEnvironment).toContain('width: 100%;')
     })
 
     it('keeps backup and curriculum actions reachable on narrow screens', () => {

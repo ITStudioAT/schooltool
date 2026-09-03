@@ -167,7 +167,11 @@ describe('Admin Teaching CourseStore', () => {
                 data: [],
                 classes: ['1A'],
                 class_head_emails: [
-                    { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+                    { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
+                ],
+                class_head_teachers: [
+                    { id: 4, first_name: 'Anna', last_name: 'Huber', short: 'HA' },
+                    { id: 7, first_name: 'Paul', last_name: 'Moser', short: 'MP' },
                 ],
                 entry_areas: [
                     { id: 11, name: 'DGB' },
@@ -185,7 +189,11 @@ describe('Admin Teaching CourseStore', () => {
             { id: 4, name: 'INF' },
         ])
         expect(store.class_head_emails).toEqual([
-            { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+            { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
+        ])
+        expect(store.class_head_teachers).toEqual([
+            { id: 4, first_name: 'Anna', last_name: 'Huber', short: 'HA' },
+            { id: 7, first_name: 'Paul', last_name: 'Moser', short: 'MP' },
         ])
         expect(store.uses_entry_areas_for_grading_schema).toBe(true)
     })

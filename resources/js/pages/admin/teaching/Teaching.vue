@@ -35,17 +35,6 @@
                     </span>
                 </v-btn>
             </div>
-            <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="grey"
-                class="teaching-nav__settings-btn"
-                title="Unterricht-Einstellungen"
-                :disabled="isNavigationLocked"
-                @click="openSettings">
-                <v-icon size="20">mdi-cog-outline</v-icon>
-            </v-btn>
         </v-sheet>
 
         <v-sheet
@@ -140,7 +129,6 @@
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
             <DataBackup v-if="main_action === 'datensicherung'" />
-            <TestEnvironment v-if="main_action === 'testumgebung'" />
             <Curricula v-if="main_action === 'curricula'" />
         </v-row>
     </v-container>
@@ -167,16 +155,15 @@ const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
 const Search = defineAsyncComponent(() => import('./search/Search.vue'))
 const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vue'))
 const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))
-const TestEnvironment = defineAsyncComponent(() => import('./testEnvironment/TestEnvironment.vue'))
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
-const teachingSections = ['overview', 'settings', 'admin', 'search', 'schoolyear', 'datensicherung', 'testumgebung', 'curricula']
+const teachingSections = ['overview', 'settings', 'admin', 'search', 'schoolyear', 'datensicherung', 'curricula']
 
 function normalizeTeachingSection(section) {
     return teachingSections.includes(section) ? section : 'overview'
 }
 
 export default {
-    components: { AdminCompactSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, TestEnvironment, Curricula },
+    components: { AdminCompactSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, Curricula },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -521,11 +508,6 @@ export default {
                     icon: 'mdi-database-arrow-down-outline',
                     note: 'Sicherungen vorbereiten und verwalten.',
                 },
-                testumgebung: {
-                    label: 'Test-Umgebung 2026/27',
-                    icon: 'mdi-flask-outline',
-                    note: 'Temporäre Import-116-Testdaten einrichten oder vollständig löschen.',
-                },
                 curricula: {
                     label: 'Curricula',
                     icon: 'mdi-book-education-outline',
@@ -551,13 +533,6 @@ export default {
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {
-                    key: 'settings',
-                    label: 'Einstellungen',
-                    meta: 'Schemas & Einträge',
-                    icon: 'mdi-cog-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
-                },
-                {
                     key: 'curricula',
                     label: 'Curricula',
                     meta: 'Lehrpläne & Raster',
@@ -572,11 +547,11 @@ export default {
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
                 },
                 {
-                    key: 'testumgebung',
-                    label: 'Test-Umgebung 26/27',
-                    meta: 'Temporäre Testdaten',
-                    icon: 'mdi-flask-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
+                    key: 'settings',
+                    label: 'Einstellungen',
+                    meta: 'Schemas & Einträge',
+                    icon: 'mdi-cog-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
             ].filter((item) => item.visible)
         },
@@ -850,16 +825,6 @@ export default {
     flex: 1;
 }
 
-.teaching-nav__settings-btn {
-    flex-shrink: 0;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-}
-
-.teaching-nav__settings-btn:hover {
-    opacity: 1;
-}
-
 .teaching-nav__button {
     min-height: 44px !important;
     height: auto !important;
@@ -1074,11 +1039,6 @@ export default {
         white-space: nowrap;
     }
 
-    .teaching-nav__settings-btn {
-        align-self: flex-end;
-        min-height: 44px;
-        min-width: 44px;
-    }
 }
 
 @media (max-width: 480px) {

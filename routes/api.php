@@ -95,7 +95,6 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
-use App\Http\Controllers\Admin\Teaching\TeachingTestEnvironmentController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -615,9 +614,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/backups/{backup}/restore-full', [TeachingBackupController::class, 'restoreFull']);
         Route::delete('/admin/teaching/backups/{backup}', [TeachingBackupController::class, 'destroy']);
         Route::get('/admin/teaching/backups/{backup}/download', [TeachingBackupController::class, 'download']);
-        Route::get('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'index']);
-        Route::post('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'store']);
-        Route::delete('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'destroy']);
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/overview_pdf', [TeachingCourseController::class, 'courseOverviewPdf']);
@@ -675,7 +671,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/entry_grading_parts/{entryGradingPart}/entries', [TeachingEntryGradingPartEntryController::class, 'store']);
         Route::delete('/admin/teaching/entry_grading_parts/{entryGradingPart}/entries/{entryDefinition}', [TeachingEntryGradingPartEntryController::class, 'destroy']);
         Route::apiResource('/admin/teaching/entry_grading_parts', TeachingEntryGradingPartController::class)
-            ->only(['index', 'store', 'destroy'])
+            ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['entry_grading_parts' => 'entryGradingPart']);
         Route::post('/admin/teaching/entry-area-imports', [TeachingEntryAreaImportsController::class, 'store']);
         Route::post('/admin/teaching/entry_areas/{entryArea}/entry-copies', [TeachingEntryAreaEntryCopiesController::class, 'store']);

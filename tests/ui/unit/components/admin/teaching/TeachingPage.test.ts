@@ -145,8 +145,8 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual([
             'overview',
             'search',
-            'settings',
             'curricula',
+            'settings',
         ])
         expect(items.slice(0, 2).map((item: { label: string }) => item.label)).toEqual(['Unterricht', 'Suche'])
         expect(items.find((item: { key: string }) => item.key === 'settings')).toMatchObject({
@@ -173,10 +173,9 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual([
             'overview',
             'search',
-            'settings',
             'curricula',
             'datensicherung',
-            'testumgebung',
+            'settings',
         ])
     })
 
@@ -363,15 +362,15 @@ describe('Teaching page navigation', () => {
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/settings', query: {} })
     })
 
-    it('routes the settings shortcut through the teaching settings method', () => {
+    it('does not render a redundant settings cog shortcut', () => {
         const source = readFileSync(
             resolve(process.cwd(), 'resources/js/pages/admin/teaching/Teaching.vue'),
             'utf8',
         )
 
-        expect(source).toContain('title="Unterricht-Einstellungen"')
-        expect(source).toContain('@click="openSettings"')
-        expect(source).not.toContain("$router.push('/admin/settings?tab=teaching')")
+        expect(source).not.toContain('class="teaching-nav__settings-btn"')
+        expect(source).not.toContain('title="Unterricht-Einstellungen"')
+        expect(source).toContain('@click="handleNavigation(item.key)"')
     })
 
     it('does not navigate when controls are locked', () => {

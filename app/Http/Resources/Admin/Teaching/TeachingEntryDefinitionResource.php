@@ -20,6 +20,7 @@ class TeachingEntryDefinitionResource extends JsonResource
             'teaching_entry_grading_part_id' => $this->teaching_entry_grading_part_id,
             'short_name' => $this->short_name,
             'name' => $this->name,
+            'description' => $this->description,
             'category' => $this->category,
             'has_properties' => $this->has_properties,
             'properties_mode' => $this->properties_mode,

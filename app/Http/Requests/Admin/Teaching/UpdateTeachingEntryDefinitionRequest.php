@@ -29,10 +29,17 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             $tableMarkingColor = Str::of($tableMarkingColor)->trim()->lower()->toString() ?: null;
         }
 
+        $description = $this->input('description');
+
+        if (is_string($description)) {
+            $description = Str::of($description)->trim()->toString() ?: null;
+        }
+
         $this->merge([
             'teaching_entry_area_id' => (int) $this->input('teaching_entry_area_id'),
             'short_name' => Str::of((string) $this->input('short_name'))->trim()->upper()->toString(),
             'name' => Str::of((string) $this->input('name'))->trim()->toString(),
+            'description' => $description,
             'fixed_properties' => $fixedProperties,
             'has_notifications' => $this->input('has_notifications', false),
             'notification_recipients' => $notificationRecipients,
@@ -81,6 +88,7 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
                     ->ignore($entryDefinition),
             ],
             'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:1024'],
             'category' => ['required', 'string', Rule::in(['Benotung', 'Verhalten', 'Weitere'])],
             'has_properties' => ['required', 'boolean'],
             'properties_mode' => ['required', 'string', Rule::in(['fixed', 'free'])],

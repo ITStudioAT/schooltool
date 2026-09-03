@@ -28,7 +28,7 @@ test('all teaching menu selections stay reachable on a handset', async ({ page }
     await page.goto('/admin/teaching')
     await hideObstructiveUi(page)
 
-    const topLevelSections = ['search', 'schoolyear', 'settings', 'curricula', 'datensicherung', 'testumgebung', 'overview']
+    const topLevelSections = ['search', 'schoolyear', 'settings', 'curricula', 'datensicherung', 'overview']
 
     for (const section of topLevelSections) {
         const menuButton = page.getByTestId(`teaching-nav-${section}`)

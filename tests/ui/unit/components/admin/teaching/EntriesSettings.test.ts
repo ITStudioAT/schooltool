@@ -10,6 +10,7 @@ function entryFixture(overrides = {}) {
         teaching_entry_grading_part_id: null,
         short_name: 'M',
         name: 'Mitarbeit',
+        description: null,
         category: 'Benotung',
         has_properties: true,
         properties_mode: 'fixed',
@@ -31,6 +32,117 @@ describe('Teaching entries settings', () => {
         }
 
         expect((Entries as any).computed.filteredEntries.call(ctx).map((entry: any) => entry.id)).toEqual([2])
+    })
+
+    it('sorts overview entries by short name without changing the source order', () => {
+        const entries = [
+            entryFixture({ id: 1, short_name: 'Z', name: 'Erste Mitarbeit' }),
+            entryFixture({ id: 2, short_name: 'A', name: 'Zweite Mitarbeit' }),
+            entryFixture({ id: 3, category: 'Verhalten', name: 'Andere Kategorie' }),
+        ]
+        const ctx = {
+            activeAreaId: 10,
+            activeCategory: 'Benotung',
+            entries,
+        }
+
+        expect((Entries as any).computed.filteredEntries.call(ctx).map((entry: any) => entry.id)).toEqual([2, 1])
+        expect(entries.map((entry) => entry.id)).toEqual([1, 2, 3])
+    })
+
+    it('restores the selected entry category from the URL', () => {
+        const methods = (Entries as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            activeCategory: 'Benotung',
+            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
+            $route: { query: { panel: 'entries', entry_category: 'Verhalten' } },
+            $router: { replace },
+            normalizeCategoryQuery: methods.normalizeCategoryQuery,
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+            syncCategoryQuery: methods.syncCategoryQuery,
+        }
+
+        methods.restoreCategoryFromRoute.call(ctx)
+
+        expect(ctx.activeCategory).toBe('Verhalten')
+        expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('writes the selected entry category to the URL and preserves the settings panel', () => {
+        const methods = (Entries as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
+            $route: { query: { panel: 'entries', existing: 'value' } },
+            $router: { replace },
+            normalizeCategoryQuery: methods.normalizeCategoryQuery,
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+        }
+
+        methods.syncCategoryQuery.call(ctx, 'Weitere')
+
+        expect(replace).toHaveBeenCalledWith({
+            query: {
+                panel: 'entries',
+                existing: 'value',
+                entry_category: 'Weitere',
+            },
+        })
+    })
+
+    it('replaces an invalid entry category with Benotung', () => {
+        const methods = (Entries as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            activeCategory: 'Weitere',
+            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
+            $route: { query: { panel: 'entries', entry_category: 'Unbekannt' } },
+            $router: { replace },
+            normalizeCategoryQuery: methods.normalizeCategoryQuery,
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+            syncCategoryQuery: methods.syncCategoryQuery,
+        }
+
+        methods.restoreCategoryFromRoute.call(ctx)
+
+        expect(ctx.activeCategory).toBe('Benotung')
+        expect(replace).toHaveBeenCalledWith({
+            query: { panel: 'entries', entry_category: 'Benotung' },
+        })
+    })
+
+    it('does not restore the entry category after leaving the entries panel', () => {
+        const methods = (Entries as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            activeCategory: 'Benotung',
+            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
+            $route: { query: { panel: 'basic' } },
+            $router: { replace },
+            normalizeCategoryQuery: methods.normalizeCategoryQuery,
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+            syncCategoryQuery: methods.syncCategoryQuery,
+        }
+
+        methods.restoreCategoryFromRoute.call(ctx)
+
+        expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('restores the current category when returning to the entries panel', () => {
+        const methods = (Entries as any).methods
+        const restoreCategoryFromRoute = vi.fn()
+        const ctx: any = {
+            activeCategory: 'Berechnung',
+            $route: { query: { panel: 'entries' } },
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+            restoreCategoryFromRoute,
+        }
+
+        ;(Entries as any).watch['$route.query.panel'].call(ctx, 'entries')
+
+        expect(restoreCategoryFromRoute).toHaveBeenCalledWith('Berechnung')
     })
 
     it('shows calculation entries only for the selected area', () => {
@@ -84,17 +196,21 @@ describe('Teaching entries settings', () => {
         }])
     })
 
-    it('offers only unassigned grading entries from the active area', () => {
-        const ctx = {
+    it('preselects the entries already assigned to the selected grading part', () => {
+        const methods = (Entries as any).methods
+        const ctx: any = {
             calculationEntries: [
                 entryFixture({ id: 1, short_name: 'M', name: 'Mitarbeit' }),
                 entryFixture({ id: 2, short_name: 'S', name: 'Schularbeit', teaching_entry_grading_part_id: 100 }),
+                entryFixture({ id: 3, short_name: 'P', name: 'Prüfung', teaching_entry_grading_part_id: 200 }),
             ],
+            assignGradingPartId: null,
+            selectedGradingEntryIds: [],
         }
 
-        expect((Entries as any).computed.unassignedGradingEntries.call(ctx)).toEqual([
-            expect.objectContaining({ id: 1, name: 'Mitarbeit' }),
-        ])
+        methods.toggleGradingEntryAssignment.call(ctx, { gradingPartId: 100 })
+
+        expect(ctx.selectedGradingEntryIds).toEqual([2])
     })
 
     it('shows the possible values for every calculation entry type', () => {
@@ -112,6 +228,8 @@ describe('Teaching entries settings', () => {
 
     it('opens a blank entry in the selected area', () => {
         const methods = (Entries as any).methods
+        expect((Entries as any).data().entryForm.description).toBe('')
+
         const ctx: any = {
             areas: [{ id: 10, name: 'Unterstufe' }],
             activeAreaId: 10,
@@ -127,9 +245,48 @@ describe('Teaching entries settings', () => {
 
         expect(ctx.entryForm.teaching_entry_area_id).toBe(10)
         expect(ctx.entryForm.category).toBe('Weitere')
+        expect(ctx.entryForm.description).toBe('')
         expect(ctx.entryForm.has_table_marking).toBe(false)
         expect(ctx.entryForm.table_marking_color).toBeNull()
         expect(ctx.editDialogOpen).toBe(true)
+    })
+
+    it('loads an existing description when editing an entry', () => {
+        const methods = (Entries as any).methods
+        const ctx: any = {
+            selectedEntryId: null,
+            entryForm: null,
+            formErrors: { description: ['Veraltet'] },
+            editDialogOpen: false,
+        }
+
+        methods.openEditDialog.call(ctx, entryFixture({ description: 'Hinweise zur Verwendung' }))
+
+        expect(ctx.selectedEntryId).toBe(1)
+        expect(ctx.entryForm.description).toBe('Hinweise zur Verwendung')
+        expect(ctx.formErrors).toEqual({})
+        expect(ctx.editDialogOpen).toBe(true)
+    })
+
+    it('shows an entry description below its title in the overview', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
+        const titleIndex = source.indexOf('<span class="entry-name"')
+        const descriptionIndex = source.indexOf('class="entry-description"')
+
+        expect(titleIndex).toBeGreaterThan(-1)
+        expect(descriptionIndex).toBeGreaterThan(titleIndex)
+        expect(source).toContain('{{ formatEntryDescription(entry.description) }}')
+        expect(source).toContain('font-size: 0.78rem')
+        expect(source).toContain('white-space: pre-line')
+    })
+
+    it('renders line feeds and br markers as description line breaks', () => {
+        const formatEntryDescription = (Entries as any).methods.formatEntryDescription
+
+        expect(formatEntryDescription('Erste Zeile\nZweite Zeile')).toBe('Erste Zeile\nZweite Zeile')
+        expect(formatEntryDescription('Erste Zeile<br>Zweite Zeile<BR />Dritte Zeile')).toBe(
+            'Erste Zeile\nZweite Zeile\nDritte Zeile',
+        )
     })
 
     it('saves notifications instead of properties for behaviour and other entries', async () => {
@@ -184,6 +341,7 @@ describe('Teaching entries settings', () => {
             areas: [{ id: 10, name: 'Unterstufe' }],
             entries: [],
             entryForm: entryFixture({
+                description: '  Für Wiederholungen.  ',
                 has_notifications: true,
                 notification_recipients: ['student'],
                 has_table_marking: true,
@@ -210,6 +368,7 @@ describe('Teaching entries settings', () => {
                 notification_recipients: [],
                 has_table_marking: true,
                 table_marking_color: 'purple',
+                description: 'Für Wiederholungen.',
             }),
         )
         expect(syncEntryDefinition).toHaveBeenCalledWith(expect.objectContaining({
@@ -298,6 +457,42 @@ describe('Teaching entries settings', () => {
         })
     })
 
+    it('prefills and updates an existing grading part', async () => {
+        const methods = (Entries as any).methods
+        const updatedGradingPart = { id: 20, teaching_entry_area_id: 10, name: 'Mitarbeit' }
+        const put = vi.fn().mockResolvedValue({ data: { data: updatedGradingPart } })
+        ;(globalThis as any).axios = { put }
+        const ctx: any = {
+            gradingParts: [{ id: 20, teaching_entry_area_id: 10, name: 'Mündlich' }],
+            activeAreaId: 10,
+            editingGradingPartId: null,
+            gradingPartForm: { name: '' },
+            gradingPartFormErrors: {},
+            gradingPartDialogOpen: false,
+            isSavingGradingPart: false,
+            closeGradingPartDialog: methods.closeGradingPartDialog,
+            notifyError: vi.fn(),
+        }
+
+        methods.openEditGradingPartDialog.call(ctx, {
+            gradingPartId: 20,
+            name: 'Mündlich',
+        })
+
+        expect(ctx.editingGradingPartId).toBe(20)
+        expect(ctx.gradingPartForm.name).toBe('Mündlich')
+        expect(ctx.gradingPartDialogOpen).toBe(true)
+
+        ctx.gradingPartForm.name = 'Mitarbeit'
+        await methods.saveGradingPart.call(ctx)
+
+        expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20', {
+            name: 'Mitarbeit',
+        })
+        expect(ctx.gradingParts).toEqual([updatedGradingPart])
+        expect(ctx.editingGradingPartId).toBeNull()
+    })
+
     it('deletes a grading part without removing entries', async () => {
         const methods = (Entries as any).methods
         const deleteRequest = vi.fn().mockResolvedValue({})
@@ -320,43 +515,75 @@ describe('Teaching entries settings', () => {
         expect(ctx.entries).toEqual(entries)
     })
 
-    it('assigns a clicked grading entry and closes inline selection mode', async () => {
+    it('loads all grading entries and saves selected and deselected assignments', async () => {
         const methods = (Entries as any).methods
-        const assignedEntry = entryFixture({ teaching_entry_grading_part_id: 20 })
-        const post = vi.fn().mockResolvedValue({ data: { data: assignedEntry } })
-        ;(globalThis as any).axios = { post }
+        const entries = [
+            entryFixture({ id: 1, name: 'Mitarbeit' }),
+            entryFixture({ id: 2, name: 'Prüfung', teaching_entry_grading_part_id: 20 }),
+            entryFixture({ id: 3, name: 'Auftrag', teaching_entry_grading_part_id: 30 }),
+        ]
+        const post = vi.fn().mockImplementation((_url, payload) => Promise.resolve({
+            data: {
+                data: {
+                    ...entries.find((entry) => entry.id === payload.teaching_entry_definition_id),
+                    teaching_entry_grading_part_id: 20,
+                },
+            },
+        }))
+        const deleteRequest = vi.fn().mockResolvedValue({})
+        ;(globalThis as any).axios = { delete: deleteRequest, post }
         const ctx: any = {
-            entries: [entryFixture()],
-            assignGradingPartId: 20,
+            entries,
+            calculationEntries: entries,
+            gradingParts: [
+                { id: 20, name: 'Mündlich' },
+                { id: 30, name: 'Schriftlich' },
+            ],
+            assignGradingPartId: null,
+            selectedGradingEntryIds: [],
             isAssigningGradingEntry: false,
             cancelGradingEntryAssignment: methods.cancelGradingEntryAssignment,
+            replaceGradingEntry: methods.replaceGradingEntry,
             notifyError: vi.fn(),
         }
 
-        await methods.assignGradingEntry.call(ctx, entryFixture())
+        methods.toggleGradingEntryAssignment.call(ctx, { gradingPartId: 20 })
+        expect(ctx.selectedGradingEntryIds).toEqual([2])
 
-        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20/entries', {
+        methods.toggleGradingEntrySelection.call(ctx, entries[0])
+        methods.toggleGradingEntrySelection.call(ctx, entries[1])
+        methods.toggleGradingEntrySelection.call(ctx, entries[2])
+        expect(ctx.selectedGradingEntryIds).toEqual([1, 3])
+
+        await methods.saveGradingEntryAssignments.call(ctx)
+
+        expect(post).toHaveBeenNthCalledWith(1, '/api/admin/teaching/entry_grading_parts/20/entries', {
             teaching_entry_definition_id: 1,
         })
-        expect(ctx.entries).toEqual([assignedEntry])
+        expect(post).toHaveBeenNthCalledWith(2, '/api/admin/teaching/entry_grading_parts/20/entries', {
+            teaching_entry_definition_id: 3,
+        })
+        expect(deleteRequest).toHaveBeenNthCalledWith(1, '/api/admin/teaching/entry_grading_parts/20/entries/2')
+        expect(deleteRequest).toHaveBeenNthCalledWith(2, '/api/admin/teaching/entry_grading_parts/30/entries/3')
+        expect(ctx.entries).toEqual([
+            expect.objectContaining({ id: 1, teaching_entry_grading_part_id: 20 }),
+            expect.objectContaining({ id: 2, teaching_entry_grading_part_id: null }),
+            expect.objectContaining({ id: 3, teaching_entry_grading_part_id: 20 }),
+        ])
         expect(ctx.assignGradingPartId).toBeNull()
+        expect(ctx.selectedGradingEntryIds).toEqual([])
     })
 
-    it('removes an entry assignment without deleting the entry', async () => {
-        const methods = (Entries as any).methods
-        const assignedEntry = entryFixture({ teaching_entry_grading_part_id: 20 })
-        const deleteRequest = vi.fn().mockResolvedValue({})
-        ;(globalThis as any).axios = { delete: deleteRequest }
+    it('allows saving an empty selection to remove every assignment', () => {
+        const hasChanges = (Entries as any).computed.hasGradingEntryAssignmentChanges
         const ctx: any = {
-            entries: [assignedEntry],
-            isUnassigningGradingEntryId: null,
-            notifyError: vi.fn(),
+            assignGradingPartId: 20,
+            isAssigningGradingEntry: false,
+            calculationEntries: [entryFixture({ teaching_entry_grading_part_id: 20 })],
+            selectedGradingEntryIds: [],
         }
 
-        await methods.unassignGradingEntry.call(ctx, { gradingPartId: 20 }, assignedEntry)
-
-        expect(deleteRequest).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20/entries/1')
-        expect(ctx.entries).toEqual([expect.objectContaining({ id: 1, teaching_entry_grading_part_id: null })])
+        expect(hasChanges.call(ctx)).toBe(true)
     })
 
     it('removes only empty areas after confirmation', async () => {
@@ -484,16 +711,35 @@ describe('Teaching entries settings', () => {
     it('renders all area cards in a wrapping grid and persistent CRUD dialogs without dropdowns', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         const areasTitleIndex = source.indexOf('title="Bereiche"')
-        const entriesTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">Einträge</div>')
+        const selectedAreaTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">{{ activeAreaName }}</div>')
+        const entryListIndex = source.indexOf('<v-list class="bg-transparent pa-0 mt-2">')
+        const addEntryButtonIndex = source.indexOf('@click="openCreateDialog"')
         const designationCardIndex = source.indexOf('<strong>Bezeichnung</strong>')
+        const descriptionFieldIndex = source.indexOf('v-model="entryForm.description"')
         const tableMarkingCardIndex = source.indexOf('<strong>Markierung in Tabelle</strong>')
         const propertiesCardIndex = source.indexOf('<strong>Eigenschaften</strong>')
+        const calculationPageIndex = source.indexOf('<template v-if="activeCategory === \'Berechnung\'">')
+        const semesterGradeTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">Semesternote</div>')
+        const calculationAreaListIndex = source.indexOf('class="calculation-area-list mt-3"')
+        const addGradingPartButtonIndex = source.indexOf('Benotungsteil hinzufügen')
+        const assignGradingPartButtonIndex = source.indexOf('@click="toggleGradingEntryAssignment(area)"')
+        const editGradingPartButtonIndex = source.indexOf('@click="openEditGradingPartDialog(area)"')
+        const deleteGradingPartButtonIndex = source.indexOf('@click="openDeleteGradingPartDialog(area)"')
 
         expect(areasTitleIndex).toBeGreaterThanOrEqual(0)
-        expect(entriesTitleIndex).toBeGreaterThan(areasTitleIndex)
-        expect(tableMarkingCardIndex).toBeGreaterThan(designationCardIndex)
+        expect(selectedAreaTitleIndex).toBeGreaterThan(areasTitleIndex)
+        expect(addEntryButtonIndex).toBeGreaterThan(entryListIndex)
+        expect(descriptionFieldIndex).toBeGreaterThan(designationCardIndex)
+        expect(tableMarkingCardIndex).toBeGreaterThan(descriptionFieldIndex)
         expect(propertiesCardIndex).toBeGreaterThan(tableMarkingCardIndex)
-        expect(source).toContain('Aktiver Bereich: {{ activeAreaName }}')
+        expect(semesterGradeTitleIndex).toBeGreaterThan(calculationPageIndex)
+        expect(addGradingPartButtonIndex).toBeGreaterThan(calculationAreaListIndex)
+        expect(editGradingPartButtonIndex).toBeGreaterThan(assignGradingPartButtonIndex)
+        expect(deleteGradingPartButtonIndex).toBeGreaterThan(editGradingPartButtonIndex)
+        expect(source).toContain('label="Beschreibung"')
+        expect(source).toContain(':error-messages="formErrors.description"')
+        expect(source).not.toContain('Aktiver Bereich: {{ activeAreaName }}')
+        expect(source).toContain('class="entry-list-actions mt-4"')
         expect(source).toContain('@click="openEntryCopyDialog"')
         expect(source).toContain('v-if="entryCountForArea(activeAreaId) === 0"')
         expect(source).toContain('v-model="entryCopyDialogOpen"')
@@ -505,14 +751,26 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('v-for="area in calculationAreas"')
         expect(source).toContain('v-for="entry in area.entries"')
         expect(source).toContain('class="calculation-area-list mt-3"')
-        expect(source).toContain('class="calculation-entry-list"')
+        expect(source).toContain('class="calculation-entry-selection-grid"')
+        expect(source).toContain('<section v-if="assignGradingPartId" class="calculation-area-card mt-3">')
+        expect(source).toContain('v-for="entry in calculationEntries"')
+        expect(source).toContain('class="calculation-entry-selection-card"')
+        expect(source).toContain("'calculation-entry-selection-card--selected': selectedGradingEntryIds.includes(entry.id)")
+        expect(source).toContain(':aria-pressed="selectedGradingEntryIds.includes(entry.id)"')
+        expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))')
         expect(source).toContain('@click="toggleGradingEntryAssignment(area)"')
-        expect(source).toContain('@click="assignGradingEntry(entry)"')
-        expect(source).toContain('calculation-entry-item--selectable')
-        expect(source).toContain('.calculation-entry-item--selectable:hover')
+        expect(source).toContain('title="Benotungsteil bearbeiten"')
+        expect(source).toContain('@click="openEditGradingPartDialog(area)"')
+        expect(source).toContain('@click="toggleGradingEntrySelection(entry)"')
+        expect(source).toContain('@click="saveGradingEntryAssignments"')
+        expect(source).toContain('Zuordnung speichern')
+        expect(source).toContain("{{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnung' }}")
+        expect(source).not.toContain('@click="assignGradingEntry(entry)"')
+        expect(source).not.toContain('calculation-entry-list--source')
         expect(source).not.toContain('v-model="assignGradingEntryDialogOpen"')
         expect(source).not.toContain('v-model="selectedGradingEntryId"')
-        expect(source).toContain('@click="unassignGradingEntry(area, entry)"')
+        expect(source).not.toContain('mdi-link-off')
+        expect(source).not.toContain('@click="unassignGradingEntry(area, entry)"')
         expect(source).toContain('title="Benotungsteil löschen"')
         expect(source).toContain('class="calculation-area-card calculation-part-card"')
         expect(source).toContain('@click="openDeleteGradingPartDialog(area)"')
@@ -522,6 +780,7 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
         expect(source).toContain('class="entry-area-card"')
         expect(source).toContain('@click="activeAreaId = area.id"')
+        expect(source).not.toContain('class="entry-area-count"')
         expect(source).not.toContain('<v-slide-group')
         expect(source).toContain('@click="openCreateAreaDialog"')
         expect(source).toContain('class="entry-area-actions"')
@@ -558,11 +817,16 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('label="Klassenvorstand"')
         expect(source).toContain('label="Eltern"')
         expect(source).toContain('label="Schüler:in"')
-        expect(source).toContain('<div v-if="entry.category === \'Benotung\'" class="entry-properties">')
+        expect(source).toContain('<span class="entry-short">{{ entry.short_name }}</span>')
+        expect(source).not.toContain('<v-chip class="entry-short-chip"')
+        expect(source).toContain('<div v-if="entry.category === \'Benotung\' && entry.has_properties" class="entry-properties">')
+        expect(source).not.toContain('<span>Eigenschaften:</span>')
+        expect(source).toContain('v-for="property in entry.fixed_properties"')
         expect(source).toContain('class="entry-property-chip"')
-        expect(source).toContain("entry.has_properties && entry.properties_mode === 'free'")
-        expect(source).toContain('class="entry-property-chip entry-free-input-chip"')
-        expect(source).toContain('Freie Eingabe')
+        expect(source).toContain('size="x-small"')
+        expect(source).toContain('class="entry-property-chip entry-property-chip--free"')
+        expect(source).toContain('.entry-property-chip--free {')
+        expect(source).toContain('font-size: 0.65rem')
         expect(source).not.toContain('mdi-tag-outline')
         expect(source).toContain('class="entry-properties-combobox mt-4"')
         expect(source).toContain('.entry-properties-combobox :deep(.v-chip)')

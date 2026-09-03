@@ -1472,9 +1472,51 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="d-flex flex-column ga-3">
-                    <div class="d-flex flex-wrap ga-3 text-body-2">
+                    <div class="d-flex flex-wrap align-center ga-3 text-body-2" data-testid="course-table-entry-dialog-meta">
                         <div><strong>Schüler:in:</strong> {{ studentName(entryDialog.student) }}</div>
                         <div><strong>Termin:</strong> {{ compactCourseDateTitle(entryDialog.courseDate) }}</div>
+                        <div
+                            v-if="isAttendanceToggleable(entryDialog.courseDate)"
+                            class="d-flex flex-wrap align-center ga-1"
+                            role="group"
+                            aria-label="Anwesenheit auswählen">
+                            <strong class="mr-1">Anwesenheit:</strong>
+                            <v-chip
+                                class="font-weight-bold mr-2"
+                                :color="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'success' : 'error'"
+                                data-testid="course-table-entry-attendance-status"
+                                :prepend-icon="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                role="status"
+                                size="small"
+                                variant="flat">
+                                Aktuell {{ isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate)
+                                    ? 'anwesend'
+                                    : 'abwesend' }}
+                            </v-chip>
+                            <span class="text-caption text-medium-emphasis mr-1">Ändern:</span>
+                            <v-btn
+                                color="success"
+                                density="compact"
+                                prepend-icon="mdi-check"
+                                size="small"
+                                :variant="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'flat' : 'outlined'"
+                                :aria-pressed="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate)"
+                                :disabled="isAttendanceCellSaving(entryDialog.student, entryDialog.courseDate)"
+                                @click="setEntryDialogAttendance(true)">
+                                Anwesend
+                            </v-btn>
+                            <v-btn
+                                color="error"
+                                density="compact"
+                                prepend-icon="mdi-close"
+                                size="small"
+                                :variant="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'outlined' : 'flat'"
+                                :aria-pressed="!isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate)"
+                                :disabled="isAttendanceCellSaving(entryDialog.student, entryDialog.courseDate)"
+                                @click="setEntryDialogAttendance(false)">
+                                Abwesend
+                            </v-btn>
+                        </div>
                     </div>
 
                     <section>
@@ -1518,6 +1560,21 @@
                                         variant="tonal">
                                         {{ courseWorkEntryModeTitle(entry) }}
                                     </v-chip>
+                                    <span class="ml-auto" @click.stop @keydown.stop>
+                                        <v-btn
+                                            :aria-label="canModifyCellEntry(entry) ? 'Eintrag löschen' : 'Eintrag kann hier nicht gelöscht werden'"
+                                            color="error"
+                                            :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
+                                            density="compact"
+                                            icon="mdi-delete"
+                                            size="small"
+                                            :title="canModifyCellEntry(entry)
+                                                ? 'Eintrag löschen'
+                                                : 'Einträge aus Arbeiten können nur über die Arbeit gelöscht werden.'"
+                                            variant="text"
+                                            :disabled="!canModifyCellEntry(entry) || entryDeleting"
+                                            @click.stop="openDeleteEntryDialog(entry)" />
+                                    </span>
                                 </div>
                                 <div
                                     v-if="entry.source === 'course_work' && courseWorkEntryPeriod(entry)"
@@ -1700,25 +1757,10 @@
                                     @click.stop>
                                     <div class="text-subtitle-2 font-weight-bold mb-3">Eintrag bearbeiten</div>
                                     <div class="text-caption text-medium-emphasis mb-1">Typ</div>
-                                    <div class="course-table-entry-type-rows mb-3">
-                                        <div
-                                            v-for="group in visibleEntryTypeGroups"
-                                            :key="group.category"
-                                            class="course-table-entry-type-row"
-                                            :data-category="group.category">
-                                            <div class="course-table-entry-type-category">{{ group.category }}</div>
-                                            <div class="d-flex flex-wrap ga-1">
-                                                <v-btn
-                                                    v-for="item in group.items"
-                                                    :key="item.value"
-                                                    size="small"
-                                                    :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
-                                                    :color="entryTypeCategoryColor(group.category)"
-                                                    @click="selectCellEntryType(item.value)">
-                                                    {{ item.title }}
-                                                </v-btn>
-                                            </div>
-                                        </div>
+                                    <div class="mb-3" data-testid="course-table-cell-entry-edit-type">
+                                        <v-chip size="small" :color="cellEntryColor(entry)" variant="tonal">
+                                            {{ cellEntryTypeLabel(entry) }}
+                                        </v-chip>
                                     </div>
 
                                     <template v-if="selectedEntryTypeCategory === 'Benotung'">
@@ -1787,7 +1829,7 @@
                                                     color="primary"
                                                     density="compact"
                                                     hide-details
-                                                    :disabled="!recipient.available || entryNotificationSending">
+                                                    :disabled="!recipient.available || Boolean(recipient.informed_at) || entryNotificationSending">
                                                     <template #label>
                                                         <div class="course-table-entry-notification-label py-1">
                                                             <div class="d-flex align-center flex-wrap ga-2">
@@ -1864,15 +1906,6 @@
                                     </section>
 
                                     <div class="d-flex align-center ga-2">
-                                        <v-btn
-                                            :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
-                                            color="error"
-                                            prepend-icon="mdi-delete"
-                                            variant="text"
-                                            :disabled="entrySaving"
-                                            @click="openDeleteEntryDialog(entry)">
-                                            Löschen
-                                        </v-btn>
                                         <v-spacer />
                                         <v-btn variant="text" :disabled="entrySaving" @click="toggleCellEntry(entry)">Abbrechen</v-btn>
                                         <v-btn
@@ -4362,7 +4395,7 @@ export default {
 
                 this.entryNotificationRecipients = recipients
                 this.selectedEntryNotificationRecipientKeys = recipients
-                    .filter((recipient) => recipient.available)
+                    .filter((recipient) => recipient.available || recipient.informed_at)
                     .map((recipient) => recipient.key)
             } finally {
                 if (requestId === this.entryNotificationRequestId) {
@@ -4395,7 +4428,7 @@ export default {
 
                 this.entryNotificationRecipients = recipients
                 this.selectedEntryNotificationRecipientKeys = recipients
-                    .filter((recipient) => recipient.available)
+                    .filter((recipient) => recipient.available || recipient.informed_at)
                     .map((recipient) => recipient.key)
             } finally {
                 if (requestId === this.entryNotificationRequestId) {
@@ -4432,7 +4465,7 @@ export default {
 
                 this.entryNotificationRecipients = recipients
                 this.selectedEntryNotificationRecipientKeys = recipients
-                    .filter((item) => item.available)
+                    .filter((item) => item.available || item.informed_at)
                     .map((item) => item.key)
             } finally {
                 this.entryNotificationConfirmingId = null
@@ -4902,6 +4935,8 @@ export default {
             this.selectCellEntry(entry)
         },
         async selectCellEntryType(type) {
+            if (this.entryForm.id) return
+
             this.entryForm.type = this.entryForm.type === type ? '' : type
             this.entryForm.grade = ''
 
@@ -5185,6 +5220,20 @@ export default {
             if (String(this.selected_courseDate?.id) === String(updatedDate.id)) {
                 this.selected_courseDate = { ...this.selected_courseDate, ...updatedDate }
             }
+
+            if (String(this.entryDialog?.courseDate?.id) === String(updatedDate.id)) {
+                this.entryDialog = {
+                    ...this.entryDialog,
+                    courseDate: { ...this.entryDialog.courseDate, ...updatedDate },
+                }
+            }
+        },
+        async setEntryDialogAttendance(present) {
+            const { student, courseDate } = this.entryDialog
+            if (!student || !courseDate) return
+            if (this.isStudentPresentForCourseDate(student, courseDate) === present) return
+
+            await this.toggleStudentAttendance(student, courseDate)
         },
         async toggleStudentAttendance(student, courseDate) {
             if (!student?.id || !this.isAttendanceToggleable(courseDate) || this.isAttendanceCellSaving(student, courseDate)) return

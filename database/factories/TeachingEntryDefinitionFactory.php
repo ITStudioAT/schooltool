@@ -45,6 +45,7 @@ class TeachingEntryDefinitionFactory extends Factory
             },
             'short_name' => $this->faker->unique()->bothify('?'),
             'name' => $this->faker->words(2, true),
+            'description' => null,
             'category' => $this->faker->randomElement(['Benotung', 'Verhalten', 'Weitere']),
             'has_properties' => false,
             'properties_mode' => 'free',

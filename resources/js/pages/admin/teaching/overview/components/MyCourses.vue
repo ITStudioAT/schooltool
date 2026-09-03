@@ -204,20 +204,20 @@
                                     <v-chip color="primary" variant="tonal">{{ classHeadEmail.class_name }}</v-chip>
                                 </v-col>
                                 <v-col cols="12" sm="5">
-                                    <v-text-field
-                                        v-model="classHeadEmail.email_1"
-                                        type="email"
-                                        label="E-Mail 1"
-                                        autocomplete="email"
-                                        :rules="[mailOrNull(), maxLength(255)]" />
+                                    <v-autocomplete
+                                        v-model="classHeadEmail.teacher_1_id"
+                                        :items="classHeadTeacherItemsFor(classHeadEmail, 1)"
+                                        label="Klassenvorstand 1"
+                                        clearable
+                                        autocomplete="off" />
                                 </v-col>
                                 <v-col cols="12" sm="5">
-                                    <v-text-field
-                                        v-model="classHeadEmail.email_2"
-                                        type="email"
-                                        label="E-Mail 2"
-                                        autocomplete="email"
-                                        :rules="[mailOrNull(), maxLength(255)]" />
+                                    <v-autocomplete
+                                        v-model="classHeadEmail.teacher_2_id"
+                                        :items="classHeadTeacherItemsFor(classHeadEmail, 2)"
+                                        label="Klassenvorstand 2"
+                                        clearable
+                                        autocomplete="off" />
                                 </v-col>
                             </v-row>
                         </v-card-text>
@@ -447,6 +447,7 @@ export default {
             'courses',
             'classes',
             'class_head_emails',
+            'class_head_teachers',
             'entry_areas',
             'uses_entry_areas_for_grading_schema',
             'selected_course',
@@ -468,6 +469,17 @@ export default {
         },
         hasSelectedGradingSchema() {
             return this.uses_entry_areas_for_grading_schema ? Boolean(this.data?.teaching_entry_area_id) : Boolean(this.data?.teaching_schema_id)
+        },
+        classHeadTeacherItems() {
+            return (this.class_head_teachers || []).map((teacher) => {
+                const name = [teacher.last_name, teacher.first_name].filter(Boolean).join(', ')
+                const short = teacher.short ? ` (${teacher.short})` : ''
+
+                return {
+                    title: `${name}${short}`,
+                    value: Number(teacher.id),
+                }
+            })
         },
         filteredImport116Students() {
             const list = this.import116_students_local || []
@@ -552,6 +564,13 @@ export default {
     },
 
     methods: {
+        classHeadTeacherItemsFor(classHeadEmail, position) {
+            const otherTeacherId = Number(position === 1 ? classHeadEmail.teacher_2_id : classHeadEmail.teacher_1_id)
+
+            if (!otherTeacherId) return this.classHeadTeacherItems
+
+            return this.classHeadTeacherItems.filter((teacher) => teacher.value !== otherTeacherId)
+        },
         syncClassHeadEmailRows(selectedClasses) {
             const currentRows = Array.isArray(this.data?.class_head_emails) ? this.data.class_head_emails : []
 
@@ -566,8 +585,8 @@ export default {
                 const source = draft || remembered || {}
                 const classHeadEmail = {
                     class_name: className,
-                    email_1: source.email_1 || '',
-                    email_2: source.email_2 || '',
+                    teacher_1_id: source.teacher_1_id || null,
+                    teacher_2_id: source.teacher_2_id || null,
                 }
 
                 this.class_head_email_drafts[className] = { ...classHeadEmail }
@@ -583,8 +602,8 @@ export default {
                 if (!classHeadEmail?.class_name) return
                 this.class_head_email_drafts[classHeadEmail.class_name] = {
                     class_name: classHeadEmail.class_name,
-                    email_1: classHeadEmail.email_1 || '',
-                    email_2: classHeadEmail.email_2 || '',
+                    teacher_1_id: classHeadEmail.teacher_1_id || null,
+                    teacher_2_id: classHeadEmail.teacher_2_id || null,
                 }
             })
 

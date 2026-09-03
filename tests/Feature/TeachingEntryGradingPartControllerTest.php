@@ -124,6 +124,53 @@ test('store rejects an area owned by another teacher', function () {
         ->assertJsonValidationErrors('teaching_entry_area_id');
 });
 
+test('update trims the name and keeps uniqueness scoped to the selected area', function () {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'name' => 'Mündlich',
+    ]);
+    TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'name' => 'Schriftlich',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}", [
+            'name' => '  Mitarbeit  ',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Mitarbeit');
+
+    expect($gradingPart->refresh()->name)->toBe('Mitarbeit');
+
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}", [
+        'name' => 'Schriftlich',
+    ])->assertUnprocessable()->assertJsonValidationErrors('name');
+});
+
+test('update rejects a grading part owned by another teacher', function () {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'Mündlich',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}", [
+            'name' => 'Geändert',
+        ])
+        ->assertForbidden();
+
+    expect($gradingPart->refresh()->name)->toBe('Mündlich');
+});
+
 test('destroy removes only the grading part and keeps grading entries', function () {
     $gradingPart = TeachingEntryGradingPart::factory()->create([
         'school_id' => $this->school->id,

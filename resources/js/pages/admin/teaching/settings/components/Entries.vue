@@ -15,7 +15,6 @@
                         <span class="entry-area-icon"><v-icon icon="mdi-layers-triple-outline" size="24" /></span>
                         <span class="entry-area-content">
                             <span class="entry-area-name">{{ area.name }}</span>
-                            <span class="entry-area-count">{{ entryCountForArea(area.id) }} {{ entryCountForArea(area.id) === 1 ? 'Eintrag' : 'Einträge' }}</span>
                         </span>
                         <v-icon v-if="activeAreaId === area.id" class="entry-area-check" icon="mdi-check-circle" color="primary" size="21" />
                     </button>
@@ -112,9 +111,7 @@
         <template v-if="areas.length">
             <div class="entry-section-header mt-7">
                 <div>
-                    <div class="text-h6 font-weight-bold">Einträge</div>
-                    <div v-if="activeCategory === 'Berechnung'" class="text-body-2 text-medium-emphasis">Benotungseinträge im aktiven Bereich: {{ activeAreaName }}</div>
-                    <div v-else class="text-body-2 text-medium-emphasis">Aktiver Bereich: {{ activeAreaName }}</div>
+                    <div class="text-h6 font-weight-bold">{{ activeAreaName }}</div>
                 </div>
                 <div v-if="activeCategory !== 'Berechnung'" class="entry-section-actions">
                     <v-btn
@@ -127,12 +124,6 @@
                         @click="openEntryCopyDialog">
                         Übernehmen
                     </v-btn>
-                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" :disabled="isLoading" @click="openCreateDialog">Eintrag</v-btn>
-                </div>
-                <div v-else class="entry-section-actions">
-                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-shape-square-plus" :disabled="isLoading" @click="openCreateGradingPartDialog">
-                        Benotungsteil hinzufügen
-                    </v-btn>
                 </div>
             </div>
 
@@ -141,70 +132,91 @@
             </v-tabs>
 
             <template v-if="activeCategory === 'Berechnung'">
-                <section class="calculation-area-card mt-3">
+                <header class="calculation-semester-grade-header mt-4">
+                    <div class="text-h6 font-weight-bold">Semesternote</div>
+                </header>
+
+                <section v-if="assignGradingPartId" class="calculation-area-card mt-3">
                     <header class="calculation-area-header">
                         <span class="calculation-area-icon"><v-icon icon="mdi-format-list-checks" size="20" /></span>
                         <div class="calculation-area-heading">
-                            <div class="calculation-area-name">Benotung</div>
+                            <div class="calculation-area-name">Zuordnung: {{ gradingPartPendingAssignment?.name }}</div>
                             <div class="text-caption text-medium-emphasis">
-                                {{ calculationEntries.length }} {{ calculationEntries.length === 1 ? 'Benotungseintrag' : 'Benotungseinträge' }}
+                                {{ calculationEntries.length }}
+                                {{ calculationEntries.length === 1 ? 'Benotungseintrag verfügbar' : 'Benotungseinträge verfügbar' }}
                             </div>
                         </div>
                     </header>
 
-                    <div v-if="assignGradingPartId" class="calculation-assignment-hint">
+                    <div class="calculation-assignment-hint">
                         <v-icon icon="mdi-cursor-default-click-outline" size="20" />
                         <span>
-                            Benotungseintrag für
-                            <strong>{{ gradingPartPendingAssignment?.name }}</strong>
-                            anklicken.
+                            Wählen Sie alle Einträge aus, die diesem Benotungsteil zugeordnet sein sollen.
+                            Bestehende Zuordnungen sind vorausgewählt.
                         </span>
-                        <v-btn variant="text" size="small" @click="cancelGradingEntryAssignment">Abbrechen</v-btn>
                     </div>
 
-                    <ul v-if="calculationEntries.length" class="calculation-entry-list">
-                        <li
+                    <div v-if="calculationEntries.length" class="calculation-entry-selection-grid">
+                        <button
                             v-for="entry in calculationEntries"
                             :key="entry.id"
-                            class="calculation-entry-item calculation-entry-item--source"
-                            :class="{
-                                'calculation-entry-item--selectable': assignGradingPartId && !entry.teaching_entry_grading_part_id,
-                                'calculation-entry-item--unavailable': assignGradingPartId && entry.teaching_entry_grading_part_id,
-                            }">
-                            <button
-                                type="button"
-                                class="calculation-entry-select"
-                                :disabled="!assignGradingPartId || Boolean(entry.teaching_entry_grading_part_id) || isAssigningGradingEntry"
-                                :aria-label="assignGradingPartId ? `${entry.name} dem Benotungsteil ${gradingPartPendingAssignment?.name} zuordnen` : undefined"
-                                @click="assignGradingEntry(entry)">
+                            type="button"
+                            class="calculation-entry-selection-card"
+                            :class="{ 'calculation-entry-selection-card--selected': selectedGradingEntryIds.includes(entry.id) }"
+                            :aria-pressed="selectedGradingEntryIds.includes(entry.id)"
+                            :disabled="isAssigningGradingEntry"
+                            @click="toggleGradingEntrySelection(entry)">
+                            <span class="calculation-entry-selection-card-header">
                                 <v-chip class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
-                                <div class="calculation-entry-details">
-                                    <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
-                                    <div class="calculation-entry-values">
-                                        <v-chip
-                                            v-if="entry.has_properties && entry.properties_mode === 'free'"
-                                            class="calculation-entry-value"
-                                            color="info"
-                                            variant="tonal"
-                                            size="x-small">
-                                            Freie Eingabe
-                                        </v-chip>
-                                        <v-chip
-                                            v-for="property in entry.fixed_properties"
-                                            v-else-if="entry.has_properties"
-                                            :key="property"
-                                            class="calculation-entry-value"
-                                            variant="tonal"
-                                            size="x-small">
-                                            {{ property }}
-                                        </v-chip>
-                                        <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
-                                    </div>
+                                <v-icon
+                                    :icon="selectedGradingEntryIds.includes(entry.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
+                                    :color="selectedGradingEntryIds.includes(entry.id) ? 'primary' : undefined"
+                                    size="22" />
+                            </span>
+                            <div class="calculation-entry-details">
+                                <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
+                                <div class="calculation-entry-values">
+                                    <v-chip
+                                        v-if="entry.has_properties && entry.properties_mode === 'free'"
+                                        class="calculation-entry-value"
+                                        color="info"
+                                        variant="tonal"
+                                        size="x-small">
+                                        Freie Eingabe
+                                    </v-chip>
+                                    <v-chip
+                                        v-for="property in entry.fixed_properties"
+                                        v-else-if="entry.has_properties"
+                                        :key="property"
+                                        class="calculation-entry-value"
+                                        variant="tonal"
+                                        size="x-small">
+                                        {{ property }}
+                                    </v-chip>
+                                    <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
                                 </div>
-                            </button>
-                        </li>
-                    </ul>
-                    <div v-else class="text-body-2 text-medium-emphasis">Noch keine Benotungseinträge in diesem Bereich.</div>
+                                <span
+                                    v-if="entry.teaching_entry_grading_part_id && entry.teaching_entry_grading_part_id !== assignGradingPartId"
+                                    class="calculation-entry-current-assignment">
+                                    Aktuell: {{ gradingPartName(entry.teaching_entry_grading_part_id) }}
+                                </span>
+                            </div>
+                        </button>
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">Keine Benotungseinträge verfügbar.</div>
+
+                    <div class="calculation-assignment-actions">
+                        <v-btn variant="text" :disabled="isAssigningGradingEntry" @click="cancelGradingEntryAssignment">Abbrechen</v-btn>
+                        <v-btn
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-content-save-outline"
+                            :disabled="!hasGradingEntryAssignmentChanges"
+                            :loading="isAssigningGradingEntry"
+                            @click="saveGradingEntryAssignments">
+                            Zuordnung speichern
+                        </v-btn>
+                    </div>
                 </section>
 
                 <div v-if="calculationAreas.length" class="calculation-area-list mt-3">
@@ -224,10 +236,17 @@
                                     variant="tonal"
                                     size="small"
                                     :prepend-icon="assignGradingPartId === area.gradingPartId ? 'mdi-close' : 'mdi-link-plus'"
-                                    :disabled="isAssigningGradingEntry || (!unassignedGradingEntries.length && assignGradingPartId !== area.gradingPartId)"
+                                    :disabled="isAssigningGradingEntry || (!calculationEntries.length && assignGradingPartId !== area.gradingPartId)"
                                     @click="toggleGradingEntryAssignment(area)">
-                                    {{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnen' }}
+                                    {{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnung' }}
                                 </v-btn>
+                                <v-btn
+                                    icon="mdi-pencil-outline"
+                                    color="primary"
+                                    variant="tonal"
+                                    size="x-small"
+                                    title="Benotungsteil bearbeiten"
+                                    @click="openEditGradingPartDialog(area)" />
                                 <v-btn
                                     icon="mdi-delete-outline"
                                     color="error"
@@ -264,18 +283,21 @@
                                         <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
                                     </div>
                                 </div>
-                                <v-btn
-                                    class="calculation-entry-remove"
-                                    icon="mdi-link-off"
-                                    color="error"
-                                    variant="text"
-                                    size="x-small"
-                                    title="Zuordnung entfernen"
-                                    :loading="isUnassigningGradingEntryId === entry.id"
-                                    @click="unassignGradingEntry(area, entry)" />
                             </li>
                         </ul>
                     </section>
+                </div>
+
+                <div class="entry-list-actions mt-4">
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        rounded="lg"
+                        prepend-icon="mdi-shape-square-plus"
+                        :disabled="isLoading"
+                        @click="openCreateGradingPartDialog">
+                        Benotungsteil hinzufügen
+                    </v-btn>
                 </div>
             </template>
 
@@ -283,19 +305,42 @@
                 <v-list class="bg-transparent pa-0 mt-2">
                     <v-list-item v-for="entry in filteredEntries" :key="entry.id" class="entry-row mb-2">
                         <div class="entry-row-content">
-                            <v-chip class="entry-short-chip" color="primary" variant="flat">{{ entry.short_name }}</v-chip>
-                            <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
-                            <div v-if="entry.category === 'Benotung'" class="entry-properties">
-                                <v-chip v-if="entry.has_properties && entry.properties_mode === 'free'" class="entry-property-chip entry-free-input-chip" color="info" variant="tonal">
+                            <div class="entry-main-row">
+                                <span class="entry-short">{{ entry.short_name }}</span>
+                                <div class="entry-title">
+                                    <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
+                                    <span
+                                        v-if="entry.description"
+                                        class="entry-description"
+                                        :title="formatEntryDescription(entry.description)">
+                                        {{ formatEntryDescription(entry.description) }}
+                                    </span>
+                                </div>
+                                <div class="entry-actions">
+                                    <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" @click="openEditDialog(entry)" />
+                                    <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" @click="openDeleteDialog(entry)" />
+                                </div>
+                            </div>
+                            <div v-if="entry.category === 'Benotung' && entry.has_properties" class="entry-properties">
+                                <v-chip
+                                    v-if="entry.properties_mode === 'free'"
+                                    class="entry-property-chip entry-property-chip--free"
+                                    color="primary"
+                                    variant="tonal"
+                                    size="x-small">
                                     Freie Eingabe
                                 </v-chip>
-                                <v-chip v-for="property in entry.fixed_properties" :key="property" class="entry-property-chip" variant="tonal">
-                                    {{ property }}
-                                </v-chip>
-                            </div>
-                            <div class="entry-actions">
-                                <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" @click="openEditDialog(entry)" />
-                                <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" @click="openDeleteDialog(entry)" />
+                                <template v-else>
+                                    <v-chip
+                                        v-for="property in entry.fixed_properties"
+                                        :key="property"
+                                        class="entry-property-chip"
+                                        color="primary"
+                                        variant="tonal"
+                                        size="x-small">
+                                        {{ property }}
+                                    </v-chip>
+                                </template>
                             </div>
                         </div>
                     </v-list-item>
@@ -304,6 +349,10 @@
                 <v-alert v-if="!isLoading && !filteredEntries.length" type="info" variant="tonal" class="mt-3">
                     In diesem Bereich gibt es noch keine Einträge der Kategorie {{ activeCategory }}.
                 </v-alert>
+
+                <div class="entry-list-actions mt-4">
+                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" :disabled="isLoading" @click="openCreateDialog">Eintrag</v-btn>
+                </div>
             </template>
         </template>
 
@@ -412,10 +461,12 @@
             <v-card tag="form" rounded="xl" @submit.prevent="saveGradingPart">
                 <v-card-title class="dialog-header">
                     <div class="dialog-title-group">
-                        <span class="dialog-icon"><v-icon icon="mdi-folder-plus-outline" /></span>
+                        <span class="dialog-icon">
+                            <v-icon :icon="editingGradingPartId ? 'mdi-folder-edit-outline' : 'mdi-folder-plus-outline'" />
+                        </span>
                         <div>
                             <div class="dialog-eyebrow">Berechnung</div>
-                            <div>Benotungsteil hinzufügen</div>
+                            <div>{{ editingGradingPartId ? 'Benotungsteil bearbeiten' : 'Benotungsteil hinzufügen' }}</div>
                         </div>
                     </div>
                     <v-btn icon="mdi-close" variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog" />
@@ -496,6 +547,15 @@
                                 <v-text-field v-model="entryForm.name" label="Name" maxlength="255" variant="outlined" :error-messages="formErrors.name" />
                             </v-col>
                         </v-row>
+                        <v-textarea
+                            v-model="entryForm.description"
+                            label="Beschreibung"
+                            rows="3"
+                            auto-grow
+                            :maxlength="1024"
+                            :counter="1024"
+                            variant="outlined"
+                            :error-messages="formErrors.description" />
                     </section>
 
                     <section v-if="entryForm.category === 'Benotung'" class="form-section">
@@ -638,6 +698,11 @@
 </template>
 
 <script>
+import {
+    destroy as removeGradingEntryAssignment,
+    store as storeGradingEntryAssignment,
+} from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryGradingPartEntryController'
+import { update as updateGradingPart } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryGradingPartController'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
@@ -680,15 +745,16 @@ export default {
             isSavingGradingPart: false,
             isDeletingGradingPart: false,
             isAssigningGradingEntry: false,
-            isUnassigningGradingEntryId: null,
             isCopyingEntries: false,
             isImportingPreviousYear: false,
             selectedEntryId: null,
             deleteEntryId: null,
             editingAreaId: null,
+            editingGradingPartId: null,
             deleteAreaId: null,
             deleteGradingPartId: null,
             assignGradingPartId: null,
+            selectedGradingEntryIds: [],
             selectedSourceAreaId: null,
             formErrors: {},
             areaFormErrors: {},
@@ -700,6 +766,7 @@ export default {
                 teaching_entry_area_id: null,
                 short_name: '',
                 name: '',
+                description: '',
                 category: 'Benotung',
                 has_properties: false,
                 properties_mode: 'free',
@@ -726,11 +793,34 @@ export default {
                     entries: this.calculationEntries.filter((entry) => entry.teaching_entry_grading_part_id === gradingPart.id),
                 }))
         },
-        unassignedGradingEntries() {
-            return this.calculationEntries.filter((entry) => !entry.teaching_entry_grading_part_id)
+        hasGradingEntryAssignmentChanges() {
+            if (!this.assignGradingPartId || this.isAssigningGradingEntry) return false
+
+            const assignedEntryIds = this.calculationEntries
+                .filter((entry) => entry.teaching_entry_grading_part_id === this.assignGradingPartId)
+                .map((entry) => entry.id)
+
+            return assignedEntryIds.length !== this.selectedGradingEntryIds.length
+                || assignedEntryIds.some((entryId) => !this.selectedGradingEntryIds.includes(entryId))
         },
         filteredEntries() {
-            return this.entries.filter((entry) => entry.teaching_entry_area_id === this.activeAreaId && entry.category === this.activeCategory)
+            const entries = this.entries.filter(
+                (entry) => entry.teaching_entry_area_id === this.activeAreaId && entry.category === this.activeCategory,
+            )
+
+            return entries.sort((firstEntry, secondEntry) => {
+                const shortNameComparison = String(firstEntry.short_name).localeCompare(String(secondEntry.short_name), 'de', {
+                    numeric: true,
+                    sensitivity: 'base',
+                })
+
+                if (shortNameComparison !== 0) return shortNameComparison
+
+                return String(firstEntry.name).localeCompare(String(secondEntry.name), 'de', {
+                    numeric: true,
+                    sensitivity: 'base',
+                })
+            })
         },
         entryDialogTitle() {
             return this.selectedEntryId ? 'Eintrag bearbeiten' : 'Eintrag hinzufügen'
@@ -772,12 +862,63 @@ export default {
         },
     },
 
+    watch: {
+        activeCategory(category) {
+            this.syncCategoryQuery(category)
+        },
+        '$route.query.entry_category'(category) {
+            this.restoreCategoryFromRoute(category)
+        },
+        '$route.query.panel'(panel) {
+            if (!this.isEntriesPanelActive(panel)) return
+
+            const routeCategory = this.$route?.query?.entry_category
+            this.restoreCategoryFromRoute(routeCategory ?? this.activeCategory)
+        },
+    },
+
     beforeMount() {
         this.courseStore = useCourseStore()
+        this.restoreCategoryFromRoute()
         this.loadData()
     },
 
     methods: {
+        formatEntryDescription(description) {
+            return String(description || '').replace(/<br\s*\/?>/gi, '\n')
+        },
+
+        normalizeCategoryQuery(category) {
+            const categoryValue = Array.isArray(category) ? category[0] : category
+
+            return this.categoryOptions.includes(categoryValue) ? categoryValue : 'Benotung'
+        },
+        isEntriesPanelActive(panel = this.$route?.query?.panel) {
+            const panelValue = Array.isArray(panel) ? panel[0] : panel
+
+            return panelValue === 'entries'
+        },
+        restoreCategoryFromRoute(category = this.$route?.query?.entry_category) {
+            if (!this.isEntriesPanelActive()) return
+
+            const normalizedCategory = this.normalizeCategoryQuery(category)
+
+            if (this.activeCategory !== normalizedCategory) this.activeCategory = normalizedCategory
+            this.syncCategoryQuery(normalizedCategory)
+        },
+        syncCategoryQuery(category) {
+            if (!this.$router || !this.$route || !this.isEntriesPanelActive()) return
+
+            const normalizedCategory = this.normalizeCategoryQuery(category)
+            if (this.$route.query?.entry_category === normalizedCategory) return
+
+            this.$router.replace({
+                query: {
+                    ...this.$route.query,
+                    entry_category: normalizedCategory,
+                },
+            }).catch(() => {})
+        },
         async loadData() {
             this.isLoading = true
             try {
@@ -811,6 +952,7 @@ export default {
                 teaching_entry_area_id: this.activeAreaId || this.areas[0]?.id || null,
                 short_name: '',
                 name: '',
+                description: '',
                 category: this.activeCategory,
                 has_properties: false,
                 properties_mode: 'free',
@@ -831,6 +973,7 @@ export default {
             this.selectedEntryId = entry.id
             this.entryForm = {
                 ...entry,
+                description: String(entry.description || ''),
                 fixed_properties: [...entry.fixed_properties],
                 notification_recipients: [...(entry.notification_recipients || [])],
                 has_table_marking: Boolean(entry.has_table_marking),
@@ -855,6 +998,7 @@ export default {
             const payload = {
                 ...this.entryForm,
                 name: this.entryForm.name.trim(),
+                description: String(this.entryForm.description || '').trim() || null,
                 has_properties: hasProperties,
                 fixed_properties:
                     hasProperties && this.entryForm.properties_mode === 'fixed'
@@ -982,12 +1126,20 @@ export default {
         openCreateGradingPartDialog() {
             if (!this.activeAreaId) return
 
+            this.editingGradingPartId = null
             this.gradingPartForm = { name: '' }
+            this.gradingPartFormErrors = {}
+            this.gradingPartDialogOpen = true
+        },
+        openEditGradingPartDialog(gradingPartArea) {
+            this.editingGradingPartId = gradingPartArea.gradingPartId
+            this.gradingPartForm = { name: gradingPartArea.name }
             this.gradingPartFormErrors = {}
             this.gradingPartDialogOpen = true
         },
         closeGradingPartDialog() {
             this.gradingPartDialogOpen = false
+            this.editingGradingPartId = null
             this.gradingPartForm = { name: '' }
             this.gradingPartFormErrors = {}
         },
@@ -997,11 +1149,22 @@ export default {
             this.isSavingGradingPart = true
             this.gradingPartFormErrors = {}
             try {
-                const response = await axios.post('/api/admin/teaching/entry_grading_parts', {
-                    teaching_entry_area_id: this.activeAreaId,
-                    name: this.gradingPartForm.name.trim(),
-                })
-                this.gradingParts.push(response.data.data)
+                const name = this.gradingPartForm.name.trim()
+                const response = this.editingGradingPartId
+                    ? await axios.put(updateGradingPart.url(this.editingGradingPartId), { name })
+                    : await axios.post('/api/admin/teaching/entry_grading_parts', {
+                        teaching_entry_area_id: this.activeAreaId,
+                        name,
+                    })
+
+                const gradingPartIndex = this.gradingParts.findIndex((gradingPart) => gradingPart.id === response.data.data.id)
+
+                if (gradingPartIndex >= 0) {
+                    this.gradingParts.splice(gradingPartIndex, 1, response.data.data)
+                } else {
+                    this.gradingParts.push(response.data.data)
+                }
+
                 this.gradingParts.sort((a, b) => a.name.localeCompare(b.name, 'de'))
                 this.closeGradingPartDialog()
             } catch (error) {
@@ -1044,21 +1207,63 @@ export default {
             }
 
             this.assignGradingPartId = gradingPartArea.gradingPartId
+            this.selectedGradingEntryIds = this.calculationEntries
+                .filter((entry) => entry.teaching_entry_grading_part_id === gradingPartArea.gradingPartId)
+                .map((entry) => entry.id)
         },
         cancelGradingEntryAssignment() {
             this.assignGradingPartId = null
+            this.selectedGradingEntryIds = []
         },
-        async assignGradingEntry(entry) {
-            if (!this.assignGradingPartId || !entry?.id || entry.teaching_entry_grading_part_id || this.isAssigningGradingEntry) return
+        toggleGradingEntrySelection(entry) {
+            if (!entry?.id || this.isAssigningGradingEntry) return
+
+            if (this.selectedGradingEntryIds.includes(entry.id)) {
+                this.selectedGradingEntryIds = this.selectedGradingEntryIds.filter((entryId) => entryId !== entry.id)
+                return
+            }
+
+            this.selectedGradingEntryIds.push(entry.id)
+        },
+        gradingPartName(gradingPartId) {
+            const gradingPart = this.gradingParts.find((part) => part.id === gradingPartId)
+
+            return gradingPart?.name || 'anderer Benotungsteil'
+        },
+        async saveGradingEntryAssignments() {
+            if (!this.assignGradingPartId || this.isAssigningGradingEntry) return
+
+            const gradingPartId = this.assignGradingPartId
+            const selectedEntryIds = new Set(this.selectedGradingEntryIds)
+            const changedEntries = this.calculationEntries.filter(
+                (entry) => selectedEntryIds.has(entry.id)
+                    ? entry.teaching_entry_grading_part_id !== gradingPartId
+                    : entry.teaching_entry_grading_part_id === gradingPartId,
+            )
+            if (!changedEntries.length) return
 
             this.isAssigningGradingEntry = true
             try {
-                const response = await axios.post(`/api/admin/teaching/entry_grading_parts/${this.assignGradingPartId}/entries`, {
-                    teaching_entry_definition_id: entry.id,
-                })
-                const assignedEntry = response.data.data
-                const entryIndex = this.entries.findIndex((entry) => entry.id === assignedEntry.id)
-                if (entryIndex !== -1) this.entries.splice(entryIndex, 1, assignedEntry)
+                for (const entry of changedEntries) {
+                    const shouldBeAssigned = selectedEntryIds.has(entry.id)
+                    const currentGradingPartId = entry.teaching_entry_grading_part_id
+
+                    if (currentGradingPartId) {
+                        await axios.delete(removeGradingEntryAssignment.url({
+                            entryGradingPart: currentGradingPartId,
+                            entryDefinition: entry.id,
+                        }))
+                        this.replaceGradingEntry({ ...entry, teaching_entry_grading_part_id: null })
+                    }
+
+                    if (!shouldBeAssigned) continue
+
+                    const response = await axios.post(storeGradingEntryAssignment.url(gradingPartId), {
+                        teaching_entry_definition_id: entry.id,
+                    })
+                    this.replaceGradingEntry(response.data.data)
+                }
+
                 this.cancelGradingEntryAssignment()
             } catch (error) {
                 this.notifyError(error)
@@ -1066,21 +1271,9 @@ export default {
                 this.isAssigningGradingEntry = false
             }
         },
-        async unassignGradingEntry(gradingPartArea, entry) {
-            if (!gradingPartArea?.gradingPartId || !entry?.id) return
-
-            this.isUnassigningGradingEntryId = entry.id
-            try {
-                await axios.delete(`/api/admin/teaching/entry_grading_parts/${gradingPartArea.gradingPartId}/entries/${entry.id}`)
-                const entryIndex = this.entries.findIndex((existingEntry) => existingEntry.id === entry.id)
-                if (entryIndex !== -1) {
-                    this.entries.splice(entryIndex, 1, { ...entry, teaching_entry_grading_part_id: null })
-                }
-            } catch (error) {
-                this.notifyError(error)
-            } finally {
-                this.isUnassigningGradingEntryId = null
-            }
+        replaceGradingEntry(entry) {
+            const entryIndex = this.entries.findIndex((existingEntry) => existingEntry.id === entry.id)
+            if (entryIndex !== -1) this.entries.splice(entryIndex, 1, entry)
         },
         openEditAreaDialog(area) {
             this.editingAreaId = area.id
@@ -1171,6 +1364,16 @@ export default {
 .entry-section-actions {
     gap: 8px;
 }
+.entry-list-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+.calculation-semester-grade-header {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+}
 .entry-area-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1235,10 +1438,6 @@ export default {
 .entry-area-name {
     font-weight: 750;
     font-size: 0.98rem;
-}
-.entry-area-count {
-    color: rgba(var(--v-theme-on-surface), 0.62);
-    font-size: 0.78rem;
 }
 .entry-area-actions {
     display: grid;
@@ -1385,45 +1584,61 @@ export default {
         box-shadow 150ms ease,
         opacity 150ms ease;
 }
-.calculation-entry-item--source {
-    padding: 0;
+.calculation-entry-selection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
 }
-.calculation-entry-select {
+.calculation-entry-selection-card {
     display: flex;
-    align-items: flex-start;
-    width: 100%;
+    flex-direction: column;
     min-width: 0;
-    gap: 8px;
-    padding: 10px;
-    border: 0;
-    background: transparent;
+    gap: 10px;
+    padding: 12px;
     color: inherit;
+    border: 1px solid rgba(var(--v-border-color), 0.2);
+    border-radius: 12px;
+    background: rgb(var(--v-theme-surface));
     text-align: left;
-}
-.calculation-entry-select:disabled {
-    cursor: default;
-}
-.calculation-entry-item--selectable {
-    border-color: rgba(var(--v-theme-primary), 0.55);
-    background: rgba(var(--v-theme-primary), 0.11);
-    box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.08);
-}
-.calculation-entry-item--selectable .calculation-entry-select {
     cursor: pointer;
+    transition:
+        transform 150ms ease,
+        border-color 150ms ease,
+        background-color 150ms ease,
+        box-shadow 150ms ease;
 }
-.calculation-entry-item--selectable:hover,
-.calculation-entry-item--selectable:focus-within {
+.calculation-entry-selection-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.calculation-entry-selection-card:hover,
+.calculation-entry-selection-card:focus-visible {
     transform: translateY(-2px);
     border-color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), 0.22);
-    box-shadow: 0 8px 20px rgba(var(--v-theme-primary), 0.18);
+    box-shadow: 0 8px 20px rgba(var(--v-theme-primary), 0.14);
 }
-.calculation-entry-item--selectable:focus-within {
+.calculation-entry-selection-card--selected {
+    border-color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.12);
+    box-shadow: 0 6px 16px rgba(var(--v-theme-primary), 0.12);
+}
+.calculation-entry-selection-card:focus-visible {
     outline: 2px solid rgba(var(--v-theme-primary), 0.5);
     outline-offset: 2px;
 }
-.calculation-entry-item--unavailable {
-    opacity: 0.5;
+.calculation-entry-selection-card:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+.calculation-assignment-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
 }
 .calculation-entry-code {
     min-width: 34px;
@@ -1441,10 +1656,6 @@ export default {
     min-width: 0;
     gap: 6px;
 }
-.calculation-entry-remove {
-    flex: 0 0 auto;
-    margin-left: auto;
-}
 .calculation-entry-name {
     min-width: 0;
     overflow: hidden;
@@ -1452,6 +1663,10 @@ export default {
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.calculation-entry-current-assignment {
+    color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+    font-size: 0.72rem;
 }
 .calculation-entry-values {
     display: flex;
@@ -1476,15 +1691,26 @@ export default {
 .entry-row-content {
     width: 100%;
     min-width: 0;
-    gap: 14px;
-    flex-wrap: nowrap;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
 }
-.entry-short-chip {
+.entry-main-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 14px;
+}
+.entry-short {
     min-width: 50px;
-    height: 38px !important;
-    justify-content: center;
     font-size: 0.95rem;
-    font-weight: 800;
+    font-weight: 400;
+}
+.entry-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
 }
 .entry-name {
     min-width: 150px;
@@ -1494,20 +1720,27 @@ export default {
     white-space: nowrap;
     font-weight: 650;
 }
+.entry-description {
+    max-width: 420px;
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.25;
+    white-space: pre-line;
+}
 .entry-properties {
     display: flex;
-    gap: 8px;
-    flex: 1;
+    align-items: center;
+    flex-wrap: wrap;
     min-width: 0;
-    overflow-x: auto;
-}
-.entry-property-chip {
-    height: 36px !important;
+    margin-left: 64px;
+    gap: 6px;
+    color: rgba(var(--v-theme-on-surface), 0.72);
     font-size: 0.9rem;
-    font-weight: 650;
+    font-weight: 400;
 }
-.entry-free-input-chip {
-    letter-spacing: 0.01em;
+.entry-property-chip--free {
+    font-size: 0.65rem;
 }
 .entry-copy-area-grid {
     display: grid;
@@ -1685,9 +1918,6 @@ export default {
     }
     .entry-name {
         min-width: 100px;
-    }
-    .entry-properties {
-        display: none;
     }
     .choice-grid,
     .notification-options,

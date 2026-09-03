@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Teaching\StoreTeachingEntryGradingPartRequest;
+use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryGradingPartRequest;
 use App\Http\Resources\Admin\Teaching\TeachingEntryGradingPartResource;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
@@ -38,6 +39,16 @@ class TeachingEntryGradingPartController extends Controller
         ]);
 
         return (new TeachingEntryGradingPartResource($gradingPart))->response()->setStatusCode(201);
+    }
+
+    public function update(
+        UpdateTeachingEntryGradingPartRequest $request,
+        TeachingEntryGradingPart $entryGradingPart
+    ): TeachingEntryGradingPartResource {
+        $this->ensureGradingPartBelongsToUser($entryGradingPart, $this->authorizedUser());
+        $entryGradingPart->update(['name' => $request->validated('name')]);
+
+        return new TeachingEntryGradingPartResource($entryGradingPart->refresh());
     }
 
     public function destroy(TeachingEntryGradingPart $entryGradingPart): Response

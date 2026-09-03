@@ -17,137 +17,63 @@
 
             <div class="crud-content-grid">
                 <section class="admin-card ai-glass-panel crud-main-card pa-3">
-                    <!-- Upload mode -->
-                    <template v-if="is_upload">
-                        <div class="empty-state crud-form-section mb-3">
-                            <div class="admin-card-eyebrow">Import</div>
-                            <h3 class="admin-card-title" style="margin-top: 4px">Lehrer-Liste importieren</h3>
-                            <div class="kpi-sub mt-2">
-                                Es muss sich um eine Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv) handeln. Benötigte Spalten:
-                                <strong>Nachname/Familienname, Vorname, Email/EMail</strong>. Optional:
-                                <strong>Kurz/Kürzel</strong>
-                            </div>
+                    <div class="empty-state crud-form-section mb-3">
+                        <div class="kpi-sub">
+                            Diese Liste legt fest, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
+                            Das entspricht nicht unbedingt den tatsächlich registrierten Benutzeraccounts.
+                        </div>
+                    </div>
+
+                    <div class="d-grid ga-3 mb-3">
+                        <div class="empty-state crud-search-panel">
+                            <SearchField :store="teachersListStore" selected_field="selected_teachers" />
                         </div>
 
-                        <template v-if="!is_upload_finished">
-                            <FileUpload
-                                :path="teachersListUploadPath"
-                                fileLabel
-                                @uploadStart="importStarted"
-                                @fileUploadFinished="fileUploadFinished"
-                                @error="importUploadFailed"
-                                class="mt-2" />
-                            <v-alert
-                                v-if="is_import_running"
-                                type="info"
-                                variant="tonal"
-                                rounded="lg"
-                                title="Import läuft"
-                                class="mt-4">
-                                Die Lehrerliste wird hochgeladen und anschließend importiert. Bitte warten Sie.
-                                <v-progress-linear color="primary" indeterminate rounded height="6" class="mt-3" />
-                            </v-alert>
-                            <div class="mt-4">
-                                <v-btn
-                                    color="warning"
-                                    variant="tonal"
-                                    rounded="lg"
-                                    prepend-icon="mdi-close"
-                                    :disabled="is_import_running"
-                                    @click="is_upload = false">
-                                    Abbruch
-                                </v-btn>
-                            </div>
-                        </template>
-
-                        <template v-else>
-                            <v-alert
-                                v-if="is_import_running"
-                                type="info"
-                                variant="tonal"
-                                rounded="lg"
-                                title="Import läuft">
-                                Die Lehrerliste wird importiert. Bitte warten Sie, bis die Verarbeitung abgeschlossen ist.
-                                <v-progress-linear color="primary" indeterminate rounded height="6" class="mt-3" />
-                            </v-alert>
-
-                            <v-alert
-                                v-else-if="is_import_finished"
-                                :type="import_status === 200 ? 'success' : 'error'"
-                                variant="tonal"
-                                rounded="lg"
-                                :title="import_status === 200 ? 'Import abgeschlossen' : 'Import fehlgeschlagen'">
-                                {{ import_message }}
-                            </v-alert>
-
-                            <div class="mt-4" v-if="is_import_finished">
-                                <v-btn color="success" variant="flat" rounded="lg" prepend-icon="mdi-check" @click="uploadFinished">
-                                    Fertig
-                                </v-btn>
-                            </div>
-                        </template>
-                    </template>
-
-                    <!-- List mode -->
-                    <template v-else>
-                        <div class="empty-state crud-form-section mb-3">
-                            <div class="kpi-sub">
-                                Diese Liste legt fest, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
-                                Das entspricht nicht unbedingt den tatsächlich registrierten Benutzeraccounts.
-                            </div>
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
+                                Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
+                            </v-btn>
+                            <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
+                                Alle abwählen [{{ selected_teachers.length }}]
+                            </v-btn>
                         </div>
+                    </div>
 
-                        <div class="d-grid ga-3 mb-3">
-                            <div class="empty-state crud-search-panel">
-                                <SearchField :store="teachersListStore" selected_field="selected_teachers" />
-                            </div>
-
-                            <div class="d-flex flex-wrap ga-2">
-                                <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
-                                    Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
-                                </v-btn>
-                                <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                    Alle abwählen [{{ selected_teachers.length }}]
-                                </v-btn>
-                            </div>
-                        </div>
-
-                        <div class="empty-state pa-2" v-if="teachers.length === 0">
-                            <v-alert type="info" variant="tonal" rounded="lg" text="Die Liste ist leer. Sie können jederzeit eine Liste importieren." />
-                        </div>
-                        <div class="empty-state pa-2" v-else>
-                            <v-list
-                                dense
-                                variant="flat"
-                                class="crud-list"
-                                select-strategy="leaf"
-                                v-model:selected="selected_teachers"
-                                color="success-lighten-2">
-                                <v-list-item
-                                    v-for="item in teachers"
-                                    :key="item.id"
-                                    :value="item.id"
-                                    class="crud-list-item"
-                                    :class="{ 'is-selected': isSelectedTeacher(item.id) }">
-                                    <template #title>
-                                        <div class="person-row crud-item-row">
-                                            <div class="d-flex align-start" style="min-width: 0">
-                                                <div class="person-body" style="min-width: 0">
-                                                    <div class="person-name">
-                                                        {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
-                                                    </div>
-                                                    <div class="person-roles">{{ item.email || '-' }}</div>
+                    <div class="empty-state pa-2" v-if="teachers.length === 0">
+                        <v-alert type="info" variant="tonal" rounded="lg" text="Die Liste ist leer. Importieren Sie Lehrer:innen im Bereich „Lehrer“." />
+                    </div>
+                    <div class="empty-state pa-2" v-else>
+                        <v-list
+                            dense
+                            variant="flat"
+                            class="crud-list"
+                            select-strategy="leaf"
+                            v-model:selected="selected_teachers"
+                            color="success-lighten-2">
+                            <v-list-item
+                                v-for="item in teachers"
+                                :key="item.id"
+                                :value="item.id"
+                                class="crud-list-item"
+                                :class="{ 'is-selected': isSelectedTeacher(item.id) }">
+                                <template #title>
+                                    <div class="person-row crud-item-row">
+                                        <div class="d-flex align-start" style="min-width: 0">
+                                            <div class="person-body" style="min-width: 0">
+                                                <div class="person-name">
+                                                    {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
                                                 </div>
+                                                <div class="person-roles">{{ item.email || '-' }}</div>
                                             </div>
                                         </div>
-                                    </template>
-                                </v-list-item>
-                            </v-list>
-                        </div>
+                                    </div>
+                                </template>
+                            </v-list-item>
+                        </v-list>
+                    </div>
                     <div class="empty-state crud-pagination mt-3 pa-3">
                         <Pagination :meta="meta" :store="teachersListStore" selected_field="selected_teachers" />
                     </div>
-                    </template>
                 </section>
 
                 <aside class="crud-side-stack">
@@ -160,45 +86,40 @@
                         </div>
                         <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
 
-                        <template v-if="!is_upload">
-                            <div class="crud-actions-primary">
-                                <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-refresh" @click="refresh">
-                                    Aktualisieren
+                        <div class="crud-actions-primary">
+                            <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-refresh" @click="refresh">
+                                Aktualisieren
+                            </v-btn>
+                            <v-btn block color="primary" variant="tonal" rounded="lg" class="crud-action-btn-offset" prepend-icon="mdi-plus" @click="createTeacher">
+                                Hinzufügen
+                            </v-btn>
+                        </div>
+
+                        <template v-if="selected_teachers.length >= 1">
+                            <v-divider class="crud-actions-divider" />
+                            <div class="crud-actions-secondary">
+                                <v-btn
+                                    v-if="selected_teachers.length == 1"
+                                    block
+                                    color="primary"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-pencil"
+                                    @click="editTeacher(selected_teachers[0])">
+                                    Ändern
                                 </v-btn>
-                                <v-btn block color="primary" variant="tonal" rounded="lg" class="crud-action-btn-offset" prepend-icon="mdi-import" @click="is_upload = true">
-                                    Importieren
-                                </v-btn>
-                                <v-btn block color="primary" variant="tonal" rounded="lg" class="crud-action-btn-offset" prepend-icon="mdi-plus" @click="createTeacher">
-                                    Hinzufügen
+
+                                <v-btn
+                                    block
+                                    color="warning"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    class="crud-action-btn-offset"
+                                    prepend-icon="mdi-delete"
+                                    @click="deleteTeacher">
+                                    Löschen
                                 </v-btn>
                             </div>
-
-                            <template v-if="selected_teachers.length >= 1">
-                                <v-divider class="crud-actions-divider" />
-                                <div class="crud-actions-secondary">
-                                    <v-btn
-                                        v-if="selected_teachers.length == 1"
-                                        block
-                                        color="primary"
-                                        variant="tonal"
-                                        rounded="lg"
-                                        prepend-icon="mdi-pencil"
-                                        @click="editTeacher(selected_teachers[0])">
-                                        Ändern
-                                    </v-btn>
-
-                                    <v-btn
-                                        block
-                                        color="warning"
-                                        variant="tonal"
-                                        rounded="lg"
-                                        class="crud-action-btn-offset"
-                                        prepend-icon="mdi-delete"
-                                        @click="deleteTeacher">
-                                        Löschen
-                                    </v-btn>
-                                </div>
-                            </template>
                         </template>
 
                         <template v-if="!hideBackButton">
@@ -280,11 +201,9 @@
 </template>
 
 <script>
-import { teachersListApi } from '@/domains/teachersList/api'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import FileUpload from '@/pages/components/FileUpload.vue'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
@@ -301,43 +220,23 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { FileUpload, SearchField, Pagination },
+    components: { SearchField, Pagination },
 
     async beforeMount() {
         this.teachersListStore = useTeachersListStore()
         await this.teachersListStore.index()
     },
 
-    mounted() {
-        window.addEventListener('teachers-list-import-finished', this.handleImportFinished)
-    },
-
-    beforeUnmount() {
-        window.removeEventListener('teachers-list-import-finished', this.handleImportFinished)
-        this.stopImportStatusPolling()
-    },
-
     data() {
         return {
             teachersListStore: null,
             is_valid: false,
-            is_upload: false,
-            is_upload_finished: false,
-            is_import_running: false,
-            is_import_finished: false,
-            import_status: null,
-            import_message: '',
-            import_status_poll_timer: null,
-            import_status_poll_in_flight: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'main_action']),
         ...mapWritableState(useTeachersListStore, ['teachers', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
-        teachersListUploadPath() {
-            return teachersListApi.upload()
-        },
         teacherDialogOpen: {
             get() {
                 return ['create_teacher', 'edit_teacher', 'delete_teacher'].includes(this.action)
@@ -364,91 +263,6 @@ export default {
     methods: {
         async refresh() {
             await this.teachersListStore.index()
-        },
-
-        importStarted() {
-            this.stopImportStatusPolling()
-            this.is_import_running = true
-            this.is_import_finished = false
-            this.import_status = null
-            this.import_message = ''
-        },
-
-        fileUploadFinished() {
-            this.is_upload_finished = true
-            this.startImportStatusPolling()
-        },
-
-        importUploadFailed() {
-            this.stopImportStatusPolling()
-            this.is_import_running = false
-            this.is_import_finished = false
-        },
-
-        async handleImportFinished(event) {
-            const payload = event.detail || {}
-            await this.applyImportCompletion(payload)
-        },
-
-        startImportStatusPolling() {
-            this.stopImportStatusPolling()
-
-            if (!this.is_import_running) { return }
-
-            this.pollImportStatus()
-            this.import_status_poll_timer = window.setInterval(() => this.pollImportStatus(), 1000)
-        },
-
-        stopImportStatusPolling() {
-            if (this.import_status_poll_timer !== null) {
-                window.clearInterval(this.import_status_poll_timer)
-            }
-
-            this.import_status_poll_timer = null
-            this.import_status_poll_in_flight = false
-        },
-
-        async pollImportStatus() {
-            if (!this.is_import_running || this.import_status_poll_in_flight) { return }
-
-            this.import_status_poll_in_flight = true
-
-            try {
-                const response = await axios.get(teachersListApi.importStatus())
-
-                if (response.data?.state === 'finished') {
-                    await this.applyImportCompletion(response.data)
-                }
-            } catch {
-                return
-            } finally {
-                this.import_status_poll_in_flight = false
-            }
-        },
-
-        async applyImportCompletion(payload) {
-            if (!this.is_import_running) { return }
-
-            this.stopImportStatusPolling()
-            this.is_upload_finished = true
-            this.is_import_running = false
-            this.is_import_finished = true
-            this.import_status = Number(payload.status)
-            this.import_message = payload.message || 'Die Verarbeitung der Lehrerliste wurde abgeschlossen.'
-
-            if (this.import_status === 200) {
-                await this.teachersListStore.index()
-            }
-        },
-
-        uploadFinished() {
-            this.stopImportStatusPolling()
-            this.is_upload_finished = false
-            this.is_import_running = false
-            this.is_import_finished = false
-            this.import_status = null
-            this.import_message = ''
-            this.is_upload = false
         },
 
         abortReturn() {

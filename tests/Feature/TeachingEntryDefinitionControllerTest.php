@@ -53,6 +53,7 @@ function teachingEntryFor(User $user, Schoolyear $year, TeachingEntryArea $area,
         'teaching_entry_area_id' => $area->id,
         'short_name' => 'M',
         'name' => 'Mitarbeit',
+        'description' => null,
         'category' => 'Benotung',
         'has_properties' => true,
         'properties_mode' => 'fixed',
@@ -71,6 +72,7 @@ function validEntryPayload(TeachingEntryArea $area, array $attributes = []): arr
         'teaching_entry_area_id' => $area->id,
         'short_name' => 'A',
         'name' => 'Abfrage',
+        'description' => null,
         'category' => 'Benotung',
         'has_properties' => true,
         'properties_mode' => 'fixed',
@@ -107,13 +109,42 @@ test('index returns only owned definitions', function () {
 test('store creates and normalizes a definition', function () {
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
         '/api/admin/teaching/entry_definitions',
-        validEntryPayload($this->area, ['short_name' => 'ab', 'name' => '  Kurze Abfrage  '])
+        validEntryPayload($this->area, [
+            'short_name' => 'ab',
+            'name' => '  Kurze Abfrage  ',
+            'description' => '  Wiederholt die Grundlagen.  ',
+        ])
     );
 
     $response->assertCreated()
         ->assertJsonPath('data.short_name', 'AB')
         ->assertJsonPath('data.name', 'Kurze Abfrage')
+        ->assertJsonPath('data.description', 'Wiederholt die Grundlagen.')
         ->assertJsonPath('data.teaching_entry_area_id', $this->area->id);
+
+    expect(TeachingEntryDefinition::query()->findOrFail($response->json('data.id'))->description)
+        ->toBe('Wiederholt die Grundlagen.');
+});
+
+test('update clears a blank description and descriptions are limited to 1024 characters', function () {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, [
+        'description' => 'Bisherige Beschreibung',
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->area, ['short_name' => 'M', 'description' => '   '])
+    )->assertOk()
+        ->assertJsonPath('data.description', null);
+
+    expect($entry->refresh()->description)->toBeNull();
+
+    $this->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, ['description' => str_repeat('a', 1025)])
+    )->assertUnprocessable()
+        ->assertJsonValidationErrors('description');
 });
 
 test('store and update preserve zero as a fixed property', function () {

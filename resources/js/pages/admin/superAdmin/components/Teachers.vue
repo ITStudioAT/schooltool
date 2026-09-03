@@ -85,6 +85,16 @@
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createTeacher">
                                 Hinzufügen
                             </v-btn>
+                            <v-btn
+                                block
+                                color="primary"
+                                variant="tonal"
+                                rounded="lg"
+                                class="crud-action-btn-offset"
+                                prepend-icon="mdi-import"
+                                @click="importDialog = true">
+                                Importieren
+                            </v-btn>
                         </div>
 
                         <template v-if="selected_teachers.length >= 1">
@@ -151,6 +161,8 @@
             </div>
         </section>
     </v-col>
+
+    <TeachersListImportDialog v-model="importDialog" @imported="refreshAfterImport" />
 
     <v-dialog v-model="teacherDialogOpen" persistent :max-width="teacherDialogMaxWidth" scrollable>
         <v-card class="crud-dialog-card ai-glass-panel">
@@ -227,6 +239,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
+import TeachersListImportDialog from '@/pages/admin/superAdmin/components/TeachersListImportDialog.vue'
 import { useTeacherStore } from '@/stores/admin/TeacherStore'
 
 export default {
@@ -241,7 +254,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { Pagination, SearchField },
+    components: { Pagination, SearchField, TeachersListImportDialog },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -254,6 +267,7 @@ export default {
             adminStore: null,
             teacherStore: null,
             is_valid: false,
+            importDialog: false,
         }
     },
 
@@ -284,6 +298,11 @@ export default {
     },
 
     methods: {
+        async refreshAfterImport() {
+            this.selected_teachers = []
+            await this.teacherStore.index()
+        },
+
         async abortReturn() {
             await this.teacherStore.index()
             this.main_action = 'teachers'

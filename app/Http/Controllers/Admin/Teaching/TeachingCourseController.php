@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\Teaching\CourseSummaryResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\Schoolyear;
+use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
@@ -103,6 +104,7 @@ class TeachingCourseController extends Controller
             'data' => CourseSummaryResource::collection($courses),
             'classes' => $classes,
             'class_head_emails' => $classHeadEmailService->listForUser($auth_user),
+            'class_head_teachers' => $classHeadEmailService->teacherOptionsForUser($auth_user),
             'entry_areas' => $authEntryAreas,
             'uses_entry_areas_for_grading_schema' => $this->usesEntryAreasForSchoolyear($auth_user->schoolyear_id),
         ]);
@@ -488,8 +490,10 @@ class TeachingCourseController extends Controller
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'class_head_emails' => ['sometimes', 'array'],
             'class_head_emails.*.class_name' => ['required', 'string', 'max:255', 'distinct:strict', Rule::in($selectedClasses)],
-            'class_head_emails.*.email_1' => ['nullable', 'string', 'email:rfc', 'max:255'],
-            'class_head_emails.*.email_2' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'class_head_emails.*.teacher_1_id' => ['nullable', 'integer', $this->classHeadTeacherRuleForSchool((int) $auth_user->school_id)],
+            'class_head_emails.*.teacher_2_id' => ['nullable', 'integer', 'different:class_head_emails.*.teacher_1_id', $this->classHeadTeacherRuleForSchool((int) $auth_user->school_id)],
+            'class_head_emails.*.email_1' => ['prohibited'],
+            'class_head_emails.*.email_2' => ['prohibited'],
             'students' => 'nullable|array',
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
@@ -747,8 +751,10 @@ class TeachingCourseController extends Controller
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'class_head_emails' => ['sometimes', 'array'],
             'class_head_emails.*.class_name' => ['required', 'string', 'max:255', 'distinct:strict', Rule::in($selectedClasses)],
-            'class_head_emails.*.email_1' => ['nullable', 'string', 'email:rfc', 'max:255'],
-            'class_head_emails.*.email_2' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'class_head_emails.*.teacher_1_id' => ['nullable', 'integer', $this->classHeadTeacherRuleForSchool((int) $course->school_id)],
+            'class_head_emails.*.teacher_2_id' => ['nullable', 'integer', 'different:class_head_emails.*.teacher_1_id', $this->classHeadTeacherRuleForSchool((int) $course->school_id)],
+            'class_head_emails.*.email_1' => ['prohibited'],
+            'class_head_emails.*.email_2' => ['prohibited'],
             'students' => 'nullable|array',
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
@@ -938,6 +944,14 @@ class TeachingCourseController extends Controller
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $schoolId)
                 ->where('schoolyear_id', $schoolyearId));
+    }
+
+    private function classHeadTeacherRuleForSchool(int $schoolId): Exists
+    {
+        return Rule::exists((new Teacher)->getTable(), 'id')
+            ->where(fn (Builder $query) => $query
+                ->where('school_id', $schoolId)
+                ->where('is_active', true));
     }
 
     private function usesEntryAreasForSchoolyear(?int $schoolyearId): bool

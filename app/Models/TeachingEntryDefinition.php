@@ -22,6 +22,7 @@ class TeachingEntryDefinition extends Model
         'teaching_entry_grading_part_id',
         'short_name',
         'name',
+        'description',
         'category',
         'has_properties',
         'properties_mode',
