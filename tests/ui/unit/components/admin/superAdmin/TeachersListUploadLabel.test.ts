@@ -32,6 +32,7 @@ describe('Teachers list upload label', () => {
             import_message: '',
             startImportStatusPolling: vi.fn(),
             stopImportStatusPolling: vi.fn(),
+            teacherStore: { index: vi.fn().mockResolvedValue(true) },
             teachersListStore: { index },
             $emit: vi.fn(),
         }
@@ -72,6 +73,7 @@ describe('Teachers list upload label', () => {
 
         const context = {
             is_import_running: true,
+            import_status: null,
             import_status_poll_in_flight: false,
             applyImportCompletion,
         }

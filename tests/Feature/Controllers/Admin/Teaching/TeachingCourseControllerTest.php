@@ -504,30 +504,55 @@ describe('index', function () {
 
     test('returns only the logged-in users class head emails for the current schoolyear', function () {
         $this->actingAs($this->admin, 'sanctum');
+        $this->teacher->update(['last_name' => 'Zulu']);
 
-        $firstClassHead = Teacher::query()->create([
+        $firstClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Head',
             'first_name' => 'One',
             'short' => 'H1',
             'email' => 'head.one@example.test',
             'is_active' => true,
         ]);
-        $secondClassHead = Teacher::query()->create([
+        $firstClassHead->assignRole('teacher');
+        $secondClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Head',
             'first_name' => 'Two',
             'short' => 'H2',
             'email' => 'head.two@example.test',
             'is_active' => true,
         ]);
-        Teacher::query()->create([
+        $secondClassHead->assignRole(['teacher', 'admin']);
+        $inactiveTeacher = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Inactive',
             'first_name' => 'Teacher',
             'short' => 'IN',
             'email' => 'inactive@example.test',
             'is_active' => false,
+        ]);
+        $inactiveTeacher->assignRole('teacher');
+        $otherSchoolTeacher = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+            'is_active' => true,
+        ]);
+        $otherSchoolTeacher->assignRole('teacher');
+        Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Roster Head',
+            'email' => $firstClassHead->email,
+            'is_active' => true,
+        ]);
+        Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Unregistered',
+            'email' => 'unregistered@example.test',
+            'is_active' => true,
         ]);
 
         TeachingClassHeadEmail::factory()->create([
@@ -535,7 +560,7 @@ describe('index', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'user_id' => $this->admin->id,
             'class_name' => '1A',
-            'email_1' => 'head.one@example.test',
+            'email_1' => ' HEAD.ONE@EXAMPLE.TEST ',
             'email_2' => 'head.two@example.test',
         ]);
         TeachingClassHeadEmail::factory()->create([
@@ -559,9 +584,10 @@ describe('index', function () {
             ->assertJsonPath('class_head_emails.0.teacher_1_id', $firstClassHead->id)
             ->assertJsonPath('class_head_emails.0.teacher_2_id', $secondClassHead->id)
             ->assertJsonMissingPath('class_head_emails.0.email_1')
-            ->assertJsonCount(2, 'class_head_teachers')
+            ->assertJsonCount(3, 'class_head_teachers')
             ->assertJsonPath('class_head_teachers.0.id', $firstClassHead->id)
             ->assertJsonPath('class_head_teachers.1.id', $secondClassHead->id)
+            ->assertJsonPath('class_head_teachers.2.id', $this->teacher->id)
             ->assertJsonMissingPath('class_head_teachers.0.email');
     });
 
@@ -1807,30 +1833,36 @@ describe('store', function () {
     test('stores up to two selected class head teachers for each selected class', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        $firstClassHead = Teacher::query()->create([
+        $firstClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'First',
             'first_name' => 'Class Head',
             'short' => 'F1',
             'email' => 'first.1a@example.test',
             'is_active' => true,
         ]);
-        $secondClassHead = Teacher::query()->create([
+        $firstClassHead->assignRole('teacher');
+        $secondClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Second',
             'first_name' => 'Class Head',
             'short' => 'S1',
             'email' => 'second.1a@example.test',
             'is_active' => true,
         ]);
-        $thirdClassHead = Teacher::query()->create([
+        $secondClassHead->assignRole('teacher');
+        $thirdClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Third',
             'first_name' => 'Class Head',
             'short' => 'T1',
             'email' => 'first.1b@example.test',
             'is_active' => true,
         ]);
+        $thirdClassHead->assignRole('teacher');
 
         $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
@@ -1871,14 +1903,16 @@ describe('store', function () {
     test('rejects arbitrary class head emails, teachers outside the school, and rows for unselected classes', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        $otherSchoolTeacher = Teacher::query()->create([
+        $otherSchoolTeacher = User::factory()->create([
             'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
             'last_name' => 'Other',
             'first_name' => 'Teacher',
             'short' => 'OT',
             'email' => 'other.teacher@example.test',
             'is_active' => true,
         ]);
+        $otherSchoolTeacher->assignRole('teacher');
 
         $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
@@ -1901,6 +1935,54 @@ describe('store', function () {
         expect(TeachingCourse::query()->where('title', 'Mathematik')->exists())->toBeFalse()
             ->and(TeachingClassHeadEmail::query()->exists())->toBeFalse();
     });
+
+    test('rejects ineligible class head accounts when saving courses', function (string $candidateType, string $method) {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $candidate = match ($candidateType) {
+            'without teacher role' => $this->regularUser,
+            'inactive teacher' => $this->teacher,
+            'roster only' => Teacher::query()->forceCreate([
+                'id' => User::query()->max('id') + 100000,
+                'school_id' => $this->school->id,
+                'last_name' => 'Unregistered',
+                'email' => 'roster.only@example.test',
+                'is_active' => true,
+            ]),
+        };
+
+        if ($candidateType === 'inactive teacher') {
+            $candidate->update(['is_active' => false]);
+        }
+
+        $url = '/api/admin/teaching/courses';
+
+        if ($method === 'PUT') {
+            $course = TeachingCourse::factory()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'user_id' => $this->admin->id,
+                'title' => 'Original',
+                'classes' => ['1A'],
+                'teaching_schema_id' => $this->schemaId,
+            ]);
+            $url = "{$url}/{$course->id}";
+        }
+
+        $this->json($method, $url, [
+            'title' => 'Rejected class head',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'class_head_emails' => [[
+                'class_name' => '1A',
+                'teacher_1_id' => null,
+                'teacher_2_id' => $candidate->id,
+            ]],
+        ])->assertInvalid(['class_head_emails.0.teacher_2_id']);
+
+        $this->assertDatabaseMissing('teaching_courses', ['title' => 'Rejected class head']);
+        $this->assertDatabaseCount('teaching_class_head_emails', 0);
+    })->with(['without teacher role', 'inactive teacher', 'roster only'])->with(['POST', 'PUT']);
 
     test('cannot import a student from another schoolyear into a course', function () {
         $this->actingAs($this->admin, 'sanctum');
@@ -2224,14 +2306,16 @@ describe('update', function () {
     test('updates the logged-in users remembered class head emails without deleting other classes', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        $updatedClassHead = Teacher::query()->create([
+        $updatedClassHead = User::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'last_name' => 'Updated',
             'first_name' => 'Class Head',
             'short' => 'UP',
             'email' => 'updated@example.test',
             'is_active' => true,
         ]);
+        $updatedClassHead->assignRole('teacher');
 
         $course = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,

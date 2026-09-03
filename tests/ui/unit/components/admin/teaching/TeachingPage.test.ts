@@ -158,6 +158,7 @@ describe('Teaching page navigation', () => {
 
     it('shows the teaching settings in admin navigation', () => {
         const ctx = {
+            canManageTeachingAdministration: true,
             config: {
                 roles: ['teaching_admin'],
                 selected_schoolyear: { name: '2025/26' },
@@ -176,7 +177,100 @@ describe('Teaching page navigation', () => {
             'curricula',
             'datensicherung',
             'settings',
+            'administration',
         ])
+    })
+
+    it.each([
+        ['admin', true],
+        ['super_admin', true],
+        ['teaching_admin', true],
+        ['teacher', false],
+        ['register_admin', false],
+    ])('restricts the Admin menu for role %s', (role, allowed) => {
+        const methods = (Teaching as any).methods
+        const computed = (Teaching as any).computed
+        const context = {
+            config: { roles: [role] },
+            hasAnyRole: methods.hasAnyRole,
+            canManageTeachingAdministration: false,
+        }
+        context.canManageTeachingAdministration = computed.canManageTeachingAdministration.call(context)
+        const items = computed.visibleNavigationItems.call(context)
+        const keys = items.map((item: { key: string }) => item.key)
+
+        expect(context.canManageTeachingAdministration).toBe(allowed)
+        expect(keys.includes('administration')).toBe(allowed)
+        if (allowed) {
+            expect(keys.slice(-2)).toEqual(['settings', 'administration'])
+        }
+    })
+
+    it.each(['initial', 'changed'])('rejects an unauthorized %s Admin URL', (navigation) => {
+        const methods = (Teaching as any).methods
+        const context = {
+            main_action: 'administration',
+            canManageTeachingAdministration: false,
+            $route: { params: { section: 'administration' } },
+            $router: { replace: vi.fn() },
+            normalizedSection: methods.normalizedSection,
+            syncSection: methods.syncSection,
+        }
+
+        if (navigation === 'initial') {
+            ;(Teaching as any).created.call(context)
+        } else {
+            ;(Teaching as any).watch['$route.params.section'].call(context, 'administration')
+        }
+
+        expect(context.main_action).toBe('overview')
+        expect(context.$router.replace).toHaveBeenCalledWith({ path: '/admin/teaching', query: { panel: 'table' } })
+    })
+
+    it('opens the Lehrer submenu with a clean panel query', () => {
+        const context = {
+            canManageTeachingAdministration: true,
+            main_action: 'settings',
+            $route: { query: { panel: 'basic' } },
+            $router: { replace: vi.fn() },
+        }
+
+        ;(Teaching as any).methods.navigateTo.call(context, 'administration')
+
+        expect(context.main_action).toBe('administration')
+        expect(context.$router.replace).toHaveBeenCalledWith({
+            path: '/admin/teaching/administration',
+            query: { panel: 'teachers' },
+        })
+    })
+
+    it('rejects Admin navigation when the role is missing', () => {
+        const context = {
+            canManageTeachingAdministration: false,
+            main_action: 'settings',
+            $router: { replace: vi.fn() },
+        }
+
+        ;(Teaching as any).methods.navigateTo.call(context, 'administration')
+
+        expect(context.main_action).toBe('settings')
+        expect(context.$router.replace).not.toHaveBeenCalled()
+    })
+
+    it('leaves Admin when its access role is removed', () => {
+        const methods = (Teaching as any).methods
+        const context = {
+            main_action: 'administration',
+            canManageTeachingAdministration: false,
+            normalizedSection: methods.normalizedSection,
+            syncSection: methods.syncSection,
+            $router: { replace: vi.fn() },
+        }
+
+        ;(Teaching as any).watch.canManageTeachingAdministration.call(context, false)
+
+        expect(context.main_action).toBe('overview')
+        expect(context.$router.replace).toHaveBeenCalledOnce()
     })
 
     it('opens the teaching table URL from the Unterricht navigation item', () => {

@@ -99,7 +99,7 @@
         ],
         "queues:local": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#f87171,#60a5fa,#fbbf24,#a78bfa\" \"php artisan queue:work redis --queue=critical,notifications --sleep=1 --tries=3 --timeout=60\" \"php artisan queue:work redis --queue=default --sleep=1 --tries=2 --timeout=1830\" \"php artisan queue:work redis --queue=imports --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work redis --queue=materials,maintenance --sleep=1 --tries=1 --timeout=1830\" --names='critical,default,imports,long-running'"
+            "npx concurrently -c \"#f87171,#60a5fa,#fbbf24,#a78bfa\" \"php artisan queue:work redis --queue=critical,notifications --sleep=1 --tries=3 --timeout=60\" \"php artisan queue:work redis --queue=default --sleep=1 --tries=2 --timeout=1830\" \"php artisan queue:listen redis --queue=imports --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work redis --queue=materials,maintenance --sleep=1 --tries=1 --timeout=1830\" --names='critical,default,imports,long-running'"
         ],
         "test": [
             "@php artisan config:clear --ansi",

@@ -28,15 +28,6 @@
                         <div class="empty-state crud-search-panel">
                             <SearchField :store="teachersListStore" selected_field="selected_teachers" />
                         </div>
-
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
-                                Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
-                            </v-btn>
-                            <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                Alle abwählen [{{ selected_teachers.length }}]
-                            </v-btn>
-                        </div>
                     </div>
 
                     <div class="empty-state pa-2" v-if="teachers.length === 0">
@@ -47,7 +38,7 @@
                             dense
                             variant="flat"
                             class="crud-list"
-                            select-strategy="leaf"
+                            select-strategy="single-leaf"
                             v-model:selected="selected_teachers"
                             color="success-lighten-2">
                             <v-list-item
@@ -61,9 +52,10 @@
                                         <div class="d-flex align-start" style="min-width: 0">
                                             <div class="person-body" style="min-width: 0">
                                                 <div class="person-name">
-                                                    {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
+                                                    {{ item.last_name }} {{ item.first_name }}
                                                 </div>
-                                                <div class="person-roles">{{ item.email || '-' }}</div>
+                                                <div v-if="item.short" class="person-roles">Kürzel: {{ item.short }}</div>
+                                                <div class="person-roles"><CopyEmailButton :email="item.email" /></div>
                                             </div>
                                         </div>
                                     </div>
@@ -207,6 +199,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
+import CopyEmailButton from '@/pages/admin/superAdmin/components/CopyEmailButton.vue'
 
 export default {
     props: {
@@ -220,10 +213,11 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { SearchField, Pagination },
+    components: { SearchField, Pagination, CopyEmailButton },
 
     async beforeMount() {
         this.teachersListStore = useTeachersListStore()
+        this.selected_teachers = []
         await this.teachersListStore.index()
     },
 
@@ -267,14 +261,6 @@ export default {
 
         abortReturn() {
             this.main_action = 'teachers'
-        },
-
-        selectAll() {
-            this.selected_teachers = this.teachers.map((item) => item.id)
-        },
-
-        unselectAll() {
-            this.selected_teachers = []
         },
 
         isSelectedTeacher(id) {

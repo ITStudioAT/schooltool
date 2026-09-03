@@ -49,6 +49,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'tool-licensed:Nachhilfetool,auth,scope:tool_web_access',
     ]);
 
+    Route::get('/admin/teaching/administration', function () {
+        return view('spa::admin');
+    })->middleware([
+        'auth:sanctum',
+        'web-allowed:admin,super_admin,teaching_admin',
+        'tool-licensed:Lehrertool,auth,scope:tool_web_access',
+    ])->name('admin.teaching.administration');
+
     Route::get('/admin/teaching/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([

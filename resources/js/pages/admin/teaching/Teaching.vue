@@ -125,6 +125,7 @@
         <v-row class="w-100 teaching-content" dense>
             <Overview v-if="main_action === 'overview'" />
             <Settings v-if="main_action === 'settings'" :key="`settings-${settings_view_key}`" />
+            <TeacherAdministration v-if="main_action === 'administration' && canManageTeachingAdministration" />
             <Admin v-if="main_action === 'admin'" />
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
@@ -143,6 +144,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
+import { administration as teachingAdministration } from '@/routes/admin/teaching'
 import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 
 function calendarDateValue(date) {
@@ -152,18 +154,23 @@ function calendarDateValue(date) {
 const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Settings = defineAsyncComponent(() => import('./settings/Settings.vue'))
 const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
+const TeacherAdministration = defineAsyncComponent(() => import('./admin/TeacherAdministration.vue'))
 const Search = defineAsyncComponent(() => import('./search/Search.vue'))
 const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vue'))
 const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
-const teachingSections = ['overview', 'settings', 'admin', 'search', 'schoolyear', 'datensicherung', 'curricula']
+const teachingSections = ['overview', 'settings', 'admin', 'administration', 'search', 'schoolyear', 'datensicherung', 'curricula']
 
 function normalizeTeachingSection(section) {
     return teachingSections.includes(section) ? section : 'overview'
 }
 
 export default {
-    components: { AdminCompactSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, Curricula },
+    components: { AdminCompactSectionHero, Overview, Settings, Admin, TeacherAdministration, Search, Schoolyear, DataBackup, Curricula },
+
+    created() {
+        this.syncSection(this.$route.params.section)
+    },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -217,6 +224,9 @@ export default {
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isNavigationLocked() {
             return this.action != '' || this.isStudentDetailActive
+        },
+        canManageTeachingAdministration() {
+            return this.hasAnyRole(['admin', 'super_admin', 'teaching_admin'])
         },
         isStudentDetailActive() {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
@@ -493,6 +503,11 @@ export default {
                     icon: 'mdi-shield-crown-outline',
                     note: 'Importe und Ferienverwaltung steuern.',
                 },
+                administration: {
+                    label: 'Admin',
+                    icon: 'mdi-shield-account-outline',
+                    note: '',
+                },
                 search: {
                     label: 'Suche',
                     icon: 'mdi-magnify',
@@ -553,13 +568,25 @@ export default {
                     icon: 'mdi-cog-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
+                {
+                    key: 'administration',
+                    label: 'Admin',
+                    meta: 'Lehrer',
+                    icon: 'mdi-shield-account-outline',
+                    visible: this.canManageTeachingAdministration,
+                },
             ].filter((item) => item.visible)
         },
     },
 
     watch: {
         '$route.params.section'(section) {
-            this.main_action = this.normalizedSection(section)
+            this.syncSection(section)
+        },
+        canManageTeachingAdministration(allowed) {
+            if (!allowed && this.main_action === 'administration') {
+                this.syncSection('administration')
+            }
         },
         courses: {
             immediate: true,
@@ -614,7 +641,17 @@ export default {
 
     methods: {
         normalizedSection(section) {
+            if (section === 'administration' && !this.canManageTeachingAdministration) {
+                return 'overview'
+            }
+
             return normalizeTeachingSection(section)
+        },
+        syncSection(section) {
+            this.main_action = this.normalizedSection(section)
+            if (section === 'administration' && this.main_action !== 'administration') {
+                this.$router.replace({ path: '/admin/teaching', query: { panel: 'table' } })
+            }
         },
         ensureCourseStore() {
             if (!this.courseStore) {
@@ -647,6 +684,16 @@ export default {
             this.$router.replace({ path: '/admin/teaching', query: { panel: 'table' } })
         },
         navigateTo(section) {
+            if (section === 'administration') {
+                if (!this.canManageTeachingAdministration) {
+                    return
+                }
+
+                this.main_action = section
+                this.$router.replace({ path: teachingAdministration.url(), query: { panel: 'teachers' } })
+                return
+            }
+
             this.main_action = section
             const path = section === 'overview' ? '/admin/teaching' : `/admin/teaching/${section}`
             this.$router.replace({ path, query: { ...this.$route.query } })

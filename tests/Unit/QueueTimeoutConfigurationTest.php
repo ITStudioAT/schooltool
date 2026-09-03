@@ -120,7 +120,8 @@ it('starts segmented queue workers and the scheduler in the local development wo
         ->and($localQueueCommand)
         ->toContain('--queue=critical,notifications')
         ->toContain('--queue=default')
-        ->toContain('--queue=imports')
+        ->toContain('queue:listen redis --queue=imports --sleep=1 --tries=1 --timeout=1830')
+        ->not->toContain('queue:work redis --queue=imports')
         ->toContain('--queue=materials,maintenance');
 });
 

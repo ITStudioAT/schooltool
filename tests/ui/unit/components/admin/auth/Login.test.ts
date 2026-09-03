@@ -84,6 +84,9 @@ describe('Admin login unknown password availability', () => {
         await flushPromises()
 
         expect(wrapper.get('[data-testid="admin-login-unknown-password"]').attributes('disabled')).toBeUndefined()
+        expect(wrapper.find('[data-testid="admin-login-continue-password"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="admin-login-new-teacher"]').exists()).toBe(false)
+        expect(wrapper.find('.alt-sep').exists()).toBe(false)
         expect(wrapper.text()).not.toContain(warningText)
     })
 })

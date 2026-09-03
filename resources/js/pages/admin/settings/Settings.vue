@@ -56,20 +56,6 @@
             </v-sheet>
 
             <v-sheet
-                v-if="showsTeacherSubNavigation"
-                rounded="xl"
-                class="settings-licence-subnav mb-2">
-                <v-btn-toggle v-model="teachers_action" mandatory class="settings-licence-subnav__switcher" color="primary" divided>
-                    <v-btn value="teachers" class="settings-teacher-subnav__button" prepend-icon="mdi-account-tie" size="small">
-                        Lehrer
-                    </v-btn>
-                    <v-btn value="teachers_list" class="settings-teacher-subnav__button" prepend-icon="mdi-view-list" size="small">
-                        Lehrerliste
-                    </v-btn>
-                </v-btn-toggle>
-            </v-sheet>
-
-            <v-sheet
                 v-if="showsLicenceSubNavigation"
                 rounded="xl"
                 class="settings-licence-subnav mb-2">
@@ -174,11 +160,6 @@
                         <TeachingAdmin />
                     </div>
 
-                    <div v-else-if="isTeachingTab && sub_action === 'teachers'" class="settings-teachers-wrap">
-                        <Teachers v-if="teachers_action === 'teachers'" :hide-back-button="true" />
-                        <TeachersList v-else-if="teachers_action === 'teachers_list'" :hide-back-button="true" />
-                    </div>
-
                     <div v-else-if="isSuperAdminTab && sub_action === 'school_switch'" class="settings-school-switch-wrap">
                         <ActiveSchool :hide-details="true" />
                     </div>
@@ -241,8 +222,6 @@ const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/sett
 const Profile = defineAsyncComponent(() => import('@/pages/admin/profile/Profile.vue'))
 const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/ActiveSchool.vue'))
 const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
-const Teachers = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Teachers.vue'))
-const TeachersList = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/TeachersList.vue'))
 const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))
 const TutoringSettings = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Settings.vue'))
 const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Subjects.vue'))
@@ -253,7 +232,7 @@ const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vu
 const RestaurantSettings = defineAsyncComponent(() => import('@/pages/admin/restaurant/components/Settings.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -265,7 +244,6 @@ export default {
             sub_action: this.initialSubAction(),
             licence_models_action: this.initialLicenceModelsAction(),
             general_action: this.initialGeneralAction(),
-            teachers_action: 'teachers',
         }
     },
 
@@ -420,7 +398,7 @@ export default {
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'register') return 'users'
-            if (this.main_action === 'teaching') return 'teachers'
+            if (this.main_action === 'teaching') return 'teaching_admin'
             if (this.main_action === 'tutoring') return 'tutoring_settings'
             if (this.main_action === 'materials') return 'material_settings'
             if (this.main_action === 'groups') return 'groups_overview'
@@ -453,9 +431,6 @@ export default {
         },
         isProfileTab() {
             return this.main_action === 'profile'
-        },
-        showsTeacherSubNavigation() {
-            return this.isTeachingTab && this.sub_action === 'teachers'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -500,7 +475,6 @@ export default {
 
             if (this.isTeachingTab) {
                 return [
-                    { key: 'teachers', label: 'Lehrer', meta: 'Lehrerliste', icon: 'mdi-account-tie' },
                     { key: 'teaching_admin', label: 'Admin', meta: 'Import, Ferien, Stunden', icon: 'mdi-import' },
                 ]
             }
@@ -705,8 +679,8 @@ export default {
                 keys = ['users']
                 fallback = 'users'
             } else if (resolvedTab === 'teaching') {
-                keys = ['teachers', 'teaching_admin']
-                fallback = 'teachers'
+                keys = ['teaching_admin']
+                fallback = 'teaching_admin'
             } else if (resolvedTab === 'groups') {
                 keys = ['groups_overview', 'groups_own']
                 fallback = 'groups_overview'
@@ -937,11 +911,6 @@ export default {
     max-width: 100%;
 }
 
-.settings-teachers-wrap {
-    width: 1000px;
-    max-width: 100%;
-}
-
 .settings-profile-wrap {
     width: 100%;
 }
@@ -1007,13 +976,6 @@ export default {
 .settings-licence-subnav__button {
     text-transform: none !important;
     letter-spacing: 0 !important;
-}
-
-.settings-teacher-subnav__button {
-    text-transform: none !important;
-    letter-spacing: 0 !important;
-    font-size: 0.78rem !important;
-    padding: 0 12px !important;
 }
 
 .settings-groups-wrap {

@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Hash;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Spatie\Permission\Models\Role;
@@ -198,9 +199,9 @@ describe('handle - successful imports', function () {
                     'created' => 1,
                     'activated' => 1,
                     'inactive' => 1,
-                    'updated' => 0,
+                    'updated' => 1,
                     'deleted' => 0,
-                    'skipped_existing' => 1,
+                    'skipped_existing' => 0,
                 ],
             ]);
 
@@ -209,8 +210,49 @@ describe('handle - successful imports', function () {
                 && $event->data['created'] === 1
                 && $event->data['activated'] === 1
                 && $event->data['inactive'] === 1
-                && $event->data['skipped_existing'] === 1;
+                && $event->data['updated'] === 1
+                && $event->data['skipped_existing'] === 0
+                && str_contains($event->message, '1 aktualisiert');
         });
+    });
+
+    it('updates the same registered teacher on repeated imports while preserving credentials and roles', function () {
+        $registeredTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'registered@example.test',
+            'short' => 'OLD',
+            'last_name' => 'Original',
+            'first_name' => 'Name',
+            'confirmed_at' => null,
+            'email_verified_at' => null,
+            'two_factor_secret' => 'existing-encrypted-secret',
+        ]);
+        $registeredTeacher->assignRole('admin');
+        $originalPassword = $registeredTeacher->password;
+
+        foreach (['FIRST', 'SECOND'] as $short) {
+            $filePath = createTestExcelFile(
+                ['Kurz', 'Nachname', 'Vorname', 'Email'],
+                [[$short, 'Updated', 'Teacher', 'REGISTERED@EXAMPLE.TEST']],
+            );
+
+            (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+            expect($registeredTeacher->fresh()->short)->toBe($short)
+                ->and($registeredTeacher->fresh()->last_name)->toBe('Updated')
+                ->and($registeredTeacher->fresh()->first_name)->toBe('Teacher')
+                ->and($registeredTeacher->fresh()->hasAllRoles(['admin', 'teacher']))->toBeTrue()
+                ->and($registeredTeacher->fresh()->password)->toBe($originalPassword)
+                ->and($registeredTeacher->fresh()->confirmed_at)->toBeNull()
+                ->and($registeredTeacher->fresh()->email_verified_at)->toBeNull()
+                ->and($registeredTeacher->fresh()->two_factor_secret)->toBe('existing-encrypted-secret')
+                ->and(User::where('email', 'registered@example.test')->count())->toBe(1)
+                ->and(Teacher::where('email', 'registered@example.test')->exists())->toBeFalse()
+                ->and(ImportTeachersListJob::status($this->school->id, $this->user->id)['data'])
+                ->toMatchArray(['created' => 0, 'updated' => 1, 'skipped_existing' => 0]);
+        }
+
+        Event::assertDispatchedTimes(TeachersListImportFinishedEvent::class, 2);
     });
 
     it('keeps omitted admin teachers active', function () {
@@ -297,17 +339,19 @@ describe('handle - successful imports', function () {
             ->and($existingTeacher->fresh()->last_name)->toBe('Updated')
             ->and($existingUser->fresh()->short)->toBe('USR')
             ->and($existingUser->fresh()->last_name)->toBe('Updated')
+            ->and(User::where('email', 'existing.teacher@example.test')->firstOrFail()->short)->toBe('OLD')
+            ->and(User::where('email', 'anna.mueller@example.test')->firstOrFail()->short)->toBeNull()
             ->and(ImportTeachersListJob::status($this->school->id, $this->user->id))
             ->toMatchArray([
                 'state' => 'finished',
                 'status' => 200,
                 'data' => [
-                    'created' => 1,
+                    'created' => 2,
                     'updated' => 1,
                     'deleted' => 0,
                     'activated' => 1,
                     'inactive' => 0,
-                    'skipped_existing' => 1,
+                    'skipped_existing' => 0,
                 ],
             ]);
     });
@@ -353,7 +397,7 @@ describe('handle - successful imports', function () {
             ->and($teacher->school_id)->toBe($this->school->id);
     });
 
-    it('creates new teachers and broadcasts success event', function () {
+    it('creates active teacher accounts with unique password hashes and broadcasts success', function () {
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
             [
@@ -367,6 +411,21 @@ describe('handle - successful imports', function () {
 
         expect(Teacher::count())->toBe(2);
 
+        $accounts = User::teachers($this->school->id)->get();
+        expect($accounts)->toHaveCount(2)
+            ->and($accounts->pluck('password')->unique())->toHaveCount(2);
+
+        foreach ($accounts as $account) {
+            expect((bool) $account->is_active)->toBeTrue()
+                ->and($account->confirmed_at)->not->toBeNull()
+                ->and($account->email_verified_at)->not->toBeNull()
+                ->and($account->students_timetables_teacher_listed)->toBeTrue()
+                ->and($account->schoolyear_id)->toBeNull()
+                ->and(Hash::needsRehash($account->password))->toBeFalse()
+                ->and(password_get_info($account->password)['algoName'])->not->toBe('unknown')
+                ->and($account->getRoleNames()->all())->toBe(['teacher']);
+        }
+
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
             return $event->status === 200
                 && $event->userId === $this->user->id
@@ -377,9 +436,9 @@ describe('handle - successful imports', function () {
         });
     });
 
-    it('updates existing teachers instead of creating duplicates', function () {
+    it('creates an account for an existing teacher source without duplicating the source', function () {
         // Create existing teacher
-        Teacher::create([
+        $existingTeacher = Teacher::create([
             'school_id' => $this->school->id,
             'email' => 'EXISTING@TEST.DE',
             'short' => 'OLD',
@@ -401,19 +460,64 @@ describe('handle - successful imports', function () {
 
         $teacher = Teacher::where('email', 'existing@test.de')->first();
         expect($teacher)->not->toBeNull()
+            ->and($teacher->id)->toBe($existingTeacher->id)
             ->and($teacher->email)->toBe('existing@test.de')
             ->and($teacher->short)->toBe('NEW')
             ->and($teacher->last_name)->toBe('NewName')
             ->and($teacher->first_name)->toBe('NewFirst');
 
+        $account = User::teachers($this->school->id)->where('email', 'existing@test.de')->firstOrFail();
+        expect($account->short)->toBe('NEW')
+            ->and($account->last_name)->toBe('NewName')
+            ->and($account->first_name)->toBe('NewFirst');
+
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
-            return $event->data['created'] === 0
-                && $event->data['updated'] === 1
+            return $event->data['created'] === 1
+                && $event->data['updated'] === 0
                 && $event->data['deleted'] === 0;
         });
     });
 
+    it('reimports a created account without changing its password or teacher source identity', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [['OLD', 'Original', 'Name', 'NEW@EXAMPLE.TEST']],
+        );
+        (new ImportTeachersListJob($this->user, $filePath))->handle();
+
+        $account = User::teachers($this->school->id)->where('email', 'new@example.test')->firstOrFail();
+        $source = Teacher::where('email', 'new@example.test')->firstOrFail();
+        $originalPassword = $account->password;
+
+        $updatedFilePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [['NEW', 'Updated', 'Teacher', ' new@example.test ']],
+        );
+        (new ImportTeachersListJob($this->user, $updatedFilePath))->handle();
+
+        expect(User::teachers($this->school->id)->count())->toBe(1)
+            ->and(Teacher::count())->toBe(1)
+            ->and($account->fresh()->password)->toBe($originalPassword);
+
+        foreach ([$account->fresh(), $source->fresh()] as $teacher) {
+            expect($teacher->short)->toBe('NEW')
+                ->and($teacher->last_name)->toBe('Updated')
+                ->and($teacher->first_name)->toBe('Teacher')
+                ->and((bool) $teacher->is_active)->toBeTrue();
+        }
+
+        expect(ImportTeachersListJob::status($this->school->id, $this->user->id))
+            ->toMatchArray(['status' => 200])
+            ->and(ImportTeachersListJob::status($this->school->id, $this->user->id)['data'])
+            ->toMatchArray(['created' => 0, 'updated' => 1, 'skipped_existing' => 0]);
+    });
+
     it('handles mix of new and existing teachers', function () {
+        User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'existing@test.de',
+        ])->assignRole('teacher');
+
         // Create existing teacher
         Teacher::create([
             'school_id' => $this->school->id,
@@ -685,6 +789,12 @@ describe('handle - multi-school isolation', function () {
     it('does not update teachers from other schools with same email', function () {
         // Create teacher in another school with same email
         $otherSchool = School::factory()->create(['short_name' => 'OTHER']);
+        $otherAccount = User::factory()->create([
+            'school_id' => $otherSchool->id,
+            'email' => 'shared@test.de',
+            'last_name' => 'Untouched',
+            'is_active' => false,
+        ]);
         $otherTeacher = Teacher::create([
             'school_id' => $otherSchool->id,
             'email' => 'shared@test.de',
@@ -715,6 +825,13 @@ describe('handle - multi-school isolation', function () {
         expect($myTeacher)->not->toBeNull()
             ->and($myTeacher->short)->toBe('MYS')
             ->and($myTeacher->last_name)->toBe('MySchool');
+
+        $myAccount = User::teachers($this->school->id)->where('email', 'shared@test.de')->firstOrFail();
+        expect($myAccount->id)->not->toBe($otherAccount->id)
+            ->and($myAccount->last_name)->toBe('MySchool')
+            ->and($otherAccount->fresh()->last_name)->toBe('Untouched')
+            ->and((bool) $otherAccount->fresh()->is_active)->toBeFalse()
+            ->and($otherAccount->fresh()->hasRole('teacher'))->toBeFalse();
     });
 });
 
@@ -763,6 +880,7 @@ describe('handle - edge cases', function () {
         (new ImportTeachersListJob($this->user, $filePath))->handle();
 
         expect((bool) $registeredTeacher->fresh()->is_active)->toBeTrue()
+            ->and(User::whereIn('email', ['valid@example.test', 'invalid@example.test'])->exists())->toBeFalse()
             ->and(Teacher::whereIn('email', ['valid@example.test', 'invalid@example.test'])->exists())->toBeFalse();
 
         Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {

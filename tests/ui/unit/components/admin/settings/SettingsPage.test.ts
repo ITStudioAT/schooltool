@@ -56,6 +56,45 @@ const vuetifyStubs = {
 }
 
 describe('Admin settings page', () => {
+    it.each([undefined, 'teachers', 'teaching_admin'])('keeps only the legacy teaching admin tools in settings for panel %s', async (panel) => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: {
+                                is_auth: true,
+                                roles: ['admin'],
+                                selected_school: { long_name: 'Testschule' },
+                            },
+                        },
+                    },
+                })],
+                mocks: {
+                    $route: {
+                        fullPath: `/admin/settings?tab=teaching${panel ? `&panel=${panel}` : ''}`,
+                        query: { tab: 'teaching', panel },
+                    },
+                    $router: { replace },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    TeachingAdmin: { template: '<div>Import, Ferien, Schulstunden</div>' },
+                    Teachers: { template: '<div>Teacher accounts</div>' },
+                },
+            },
+        })
+
+        await waitFor(() => expect(screen.getByText('Import, Ferien, Schulstunden')).toBeInTheDocument())
+        expect(screen.queryByText('Lehrer')).not.toBeInTheDocument()
+        expect(screen.queryByText('Teacher accounts')).not.toBeInTheDocument()
+        if (panel) {
+            expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
+        }
+    })
+
     it('builds the updated super-admin sub navigation with grundeinstellungen first', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isAdminTab: false,

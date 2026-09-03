@@ -8,7 +8,6 @@ use App\Http\Resources\Admin\Teaching\CourseSummaryResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\Schoolyear;
-use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
@@ -948,10 +947,11 @@ class TeachingCourseController extends Controller
 
     private function classHeadTeacherRuleForSchool(int $schoolId): Exists
     {
-        return Rule::exists((new Teacher)->getTable(), 'id')
+        return Rule::exists((new User)->getTable(), 'id')
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $schoolId)
-                ->where('is_active', true));
+                ->where('is_active', true)
+                ->whereIn('id', User::teachers($schoolId)->select('id')));
     }
 
     private function usesEntryAreasForSchoolyear(?int $schoolyearId): bool

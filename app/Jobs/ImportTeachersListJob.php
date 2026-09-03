@@ -11,6 +11,8 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use OpenSpout\Common\Exception\UnsupportedTypeException;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
@@ -62,7 +64,7 @@ class ImportTeachersListJob implements ShouldQueue
             $headerMapping = $this->validateAndMapHeaders($headers);
 
             if ($headerMapping === false) {
-                $this->broadcastFailed('Die Überschriften der Datei sind nicht korrekt! (Erforderlich: Nachname/Familienname, Vorname, Email/EMail; optional: Kurz/Kürzel)');
+                $this->broadcastFailed('Die Überschriften der Datei sind nicht korrekt! (Erforderlich: Nachname/Familienname, Vorname, Email/EMail; optional: Kurz/Kürzel/Kurzzeichen)');
 
                 return;
             }
@@ -215,59 +217,76 @@ class ImportTeachersListJob implements ShouldQueue
                 ->get()
                 ->keyBy(fn (User $user): string => mb_strtolower(trim((string) $user->email)));
 
+            $teacherSourcesByEmail = Teacher::query()
+                ->where('school_id', $this->schoolId)
+                ->whereIn(DB::raw('LOWER(TRIM(email))'), array_keys($importedTeachers))
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (Teacher $teacher): string => mb_strtolower(trim((string) $teacher->email)));
+
             Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
             $created = 0;
             $updated = 0;
             $activated = 0;
-            $skippedExisting = 0;
 
             foreach ($importedTeachers as $normalizedEmail => $importedTeacher) {
                 $registeredUser = $registeredUsersByEmail->get($normalizedEmail);
-                if ($registeredUser) {
-                    $skippedExisting++;
+                $teacher = $teacherSourcesByEmail->get($normalizedEmail);
 
-                    $wasActive = (bool) $registeredUser->is_active;
-                    $userAttributes = [
+                if (! $registeredUser || $teacher) {
+                    $teacher ??= new Teacher(['school_id' => $this->schoolId]);
+                    $teacherAttributes = [
                         'email' => $importedTeacher['email'],
                         'last_name' => $importedTeacher['last_name'],
                         'first_name' => $importedTeacher['first_name'],
                         'is_active' => true,
-                        'students_timetables_teacher_listed' => true,
                     ];
-                    if ($importedTeacher['short'] !== null) {
-                        $userAttributes['short'] = $importedTeacher['short'];
+                    if ($importedTeacher['short'] !== null || ! $teacher->exists) {
+                        $teacherAttributes['short'] = $importedTeacher['short'];
                     }
 
-                    $registeredUser->forceFill($userAttributes)->save();
-                    $registeredUser->assignRole('teacher');
-
-                    if (! $wasActive) {
-                        $activated++;
-                    }
-
-                    continue;
+                    $teacher->fill($teacherAttributes)->save();
                 }
 
-                $teacher = Teacher::query()
-                    ->where('school_id', $this->schoolId)
-                    ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
-                    ->first();
-                $teacher ??= new Teacher(['school_id' => $this->schoolId]);
+                $wasActive = (bool) $registeredUser?->is_active;
+                $isNewAccount = $registeredUser === null;
 
-                $teacherAttributes = [
+                if ($isNewAccount) {
+                    $registeredUser = new User;
+                    $registeredUser->forceFill([
+                        'school_id' => $this->schoolId,
+                        'short' => $teacher->short,
+                        'password' => Hash::make(Str::random(64)),
+                        'confirmed_at' => now(),
+                        'email_verified_at' => now(),
+                    ]);
+                }
+
+                $userAttributes = [
                     'email' => $importedTeacher['email'],
                     'last_name' => $importedTeacher['last_name'],
                     'first_name' => $importedTeacher['first_name'],
                     'is_active' => true,
+                    'students_timetables_teacher_listed' => true,
                 ];
-                if ($importedTeacher['short'] !== null || ! $teacher->exists) {
-                    $teacherAttributes['short'] = $importedTeacher['short'];
+                if ($importedTeacher['short'] !== null) {
+                    $userAttributes['short'] = $importedTeacher['short'];
                 }
 
-                $teacher->fill($teacherAttributes)->save();
+                $registeredUser->forceFill($userAttributes)->save();
+                $registeredUser->assignRole('teacher');
 
-                $teacher->wasRecentlyCreated ? $created++ : $updated++;
+                if ($isNewAccount) {
+                    $created++;
+
+                    continue;
+                }
+
+                $updated++;
+                if (! $wasActive) {
+                    $activated++;
+                }
             }
 
             $inactive = User::teachers($this->schoolId)
@@ -280,7 +299,7 @@ class ImportTeachersListJob implements ShouldQueue
                 'deleted' => 0,
                 'activated' => $activated,
                 'inactive' => $inactive,
-                'skipped_existing' => $skippedExisting,
+                'skipped_existing' => 0,
             ];
         }, attempts: 3);
     }
@@ -438,7 +457,7 @@ class ImportTeachersListJob implements ShouldQueue
     protected function validateAndMapHeaders(array $headers): array|false
     {
         $columnVariations = [
-            'Kurz' => ['kurz', 'short', 'kurzbezeichnung', 'kürzel', 'kuerzel'],
+            'Kurz' => ['kurz', 'short', 'kurzzeichen', 'kurzbezeichnung', 'kürzel', 'kuerzel'],
             'Nachname' => ['nachname', 'familienname', 'last_name', 'lastname', 'name', 'surname'],
             'Vorname' => ['vorname', 'first_name', 'firstname', 'givenname'],
             'Email' => ['email', 'e-mail', 'mail', 'e_mail'],

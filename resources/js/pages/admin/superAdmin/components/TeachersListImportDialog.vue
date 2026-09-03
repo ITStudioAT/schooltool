@@ -11,7 +11,7 @@
                     <div class="kpi-sub">
                         Es muss sich um eine Excel- oder CSV-Datei (*.xlsx, *.xls, *.csv) handeln. Benötigte Spalten:
                         <strong>Nachname/Familienname, Vorname, Email/EMail</strong>. Optional:
-                        <strong>Kurz/Kürzel</strong>
+                        <strong>Kurz/Kürzel/Kurzzeichen</strong>
                     </div>
                 </div>
 
@@ -74,6 +74,7 @@
 <script>
 import { teachersListApi } from '@/domains/teachersList/api'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import { useTeacherStore } from '@/stores/admin/TeacherStore'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
 
 export default {
@@ -89,6 +90,7 @@ export default {
     emits: ['imported', 'update:modelValue'],
 
     mounted() {
+        this.teacherStore = useTeacherStore()
         this.teachersListStore = useTeachersListStore()
         window.addEventListener('teachers-list-import-finished', this.handleImportFinished)
     },
@@ -100,6 +102,7 @@ export default {
 
     data() {
         return {
+            teacherStore: null,
             teachersListStore: null,
             is_upload_finished: false,
             is_import_running: false,
@@ -157,7 +160,7 @@ export default {
         startImportStatusPolling() {
             this.stopImportStatusPolling()
 
-            if (!this.is_import_running) { return }
+            if (!this.is_import_running || this.import_status !== null) { return }
 
             this.pollImportStatus()
             this.import_status_poll_timer = window.setInterval(() => this.pollImportStatus(), 1000)
@@ -173,7 +176,7 @@ export default {
         },
 
         async pollImportStatus() {
-            if (!this.is_import_running || this.import_status_poll_in_flight) { return }
+            if (!this.is_import_running || this.import_status !== null || this.import_status_poll_in_flight) { return }
 
             this.import_status_poll_in_flight = true
 
@@ -191,18 +194,31 @@ export default {
         },
 
         async applyImportCompletion(payload) {
-            if (!this.is_import_running) { return }
+            if (!this.is_import_running || this.import_status !== null) { return }
 
             this.stopImportStatusPolling()
             this.is_upload_finished = true
-            this.is_import_running = false
-            this.is_import_finished = true
             this.import_status = Number(payload.status)
             this.import_message = payload.message || 'Die Verarbeitung der Lehrerliste wurde abgeschlossen.'
 
-            if (this.import_status === 200) {
-                await this.teachersListStore.index()
-                this.$emit('imported')
+            try {
+                if (this.import_status === 200) {
+                    this.teacherStore.selected_teachers = []
+                    this.teachersListStore.selected_teachers = []
+                    const results = await Promise.allSettled([
+                        this.teacherStore.index(),
+                        this.teachersListStore.index(),
+                    ])
+
+                    if (results.some((result) => result.status === 'rejected' || result.value === false)) {
+                        this.import_message += ' Die Listen konnten nicht vollständig aktualisiert werden. Bitte laden Sie die Seite neu.'
+                    }
+
+                    this.$emit('imported')
+                }
+            } finally {
+                this.is_import_running = false
+                this.is_import_finished = true
             }
         },
 

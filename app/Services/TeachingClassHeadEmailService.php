@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\Teacher;
 use App\Models\TeachingClassHeadEmail;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -14,7 +13,7 @@ class TeachingClassHeadEmailService
     public function listForUser(User $user): array
     {
         $teacherIdsByEmail = $this->activeTeachersForUser($user)
-            ->mapWithKeys(fn (Teacher $teacher): array => [
+            ->mapWithKeys(fn (User $teacher): array => [
                 Str::lower(trim($teacher->email)) => (int) $teacher->id,
             ]);
 
@@ -36,7 +35,7 @@ class TeachingClassHeadEmailService
     public function teacherOptionsForUser(User $user): array
     {
         return $this->activeTeachersForUser($user)
-            ->map(fn (Teacher $teacher): array => [
+            ->map(fn (User $teacher): array => [
                 'id' => (int) $teacher->id,
                 'first_name' => $teacher->first_name,
                 'last_name' => $teacher->last_name,
@@ -86,11 +85,10 @@ class TeachingClassHeadEmailService
         );
     }
 
-    /** @return Collection<int, Teacher> */
+    /** @return Collection<int, User> */
     private function activeTeachersForUser(User $user): Collection
     {
-        return Teacher::query()
-            ->where('school_id', $user->school_id)
+        return User::teachers($user->school_id)
             ->where('is_active', true)
             ->orderBy('last_name')
             ->orderBy('first_name')
@@ -112,7 +110,7 @@ class TeachingClassHeadEmailService
         return $teacherId !== null ? (int) $teacherId : null;
     }
 
-    /** @param Collection<int, Teacher> $teachersById */
+    /** @param Collection<int, User> $teachersById */
     private function teacherEmail(Collection $teachersById, mixed $teacherId): ?string
     {
         if ($teacherId === null || $teacherId === '') {

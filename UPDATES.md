@@ -1,5 +1,12 @@
 # UPDATES
 
+## 3.47.0 !!!
+
+### Settings
+
+- Moved Teaching incl. Import to the Teaching-Menu-item
+- Updates Teachers impport: Imported teachers gets user-account with teacher role
+
 ## 3.46.5
 
 ### System

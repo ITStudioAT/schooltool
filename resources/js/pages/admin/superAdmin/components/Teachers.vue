@@ -21,15 +21,6 @@
                         <div class="empty-state crud-search-panel">
                             <SearchField :store="teacherStore" selected_field="selected_teachers" />
                         </div>
-
-                        <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
-                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
-                                Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
-                            </v-btn>
-                            <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                Alle abwählen [{{ selected_teachers.length }}]
-                            </v-btn>
-                        </div>
                     </div>
 
                     <div class="empty-state pa-2" v-if="teachers.length === 0">Keine Lehrer gefunden.</div>
@@ -38,7 +29,7 @@
                             dense
                             variant="flat"
                             class="crud-list"
-                            select-strategy="leaf"
+                            select-strategy="single-leaf"
                             v-model:selected="selected_teachers"
                             color="success-lighten-2">
                             <v-list-item
@@ -54,10 +45,11 @@
                                                     <div class="person-name d-flex align-center ga-1">
                                                         <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
                                                         <span>
-                                                            {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
+                                                            {{ item.last_name }} {{ item.first_name }}
                                                         </span>
                                                     </div>
-                                                    <div class="person-roles">{{ item.email || '-' }}</div>
+                                                    <div v-if="item.short" class="person-roles">{{ item.short }}</div>
+                                                    <div class="person-roles"><CopyEmailButton :email="item.email" /></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -162,7 +154,7 @@
         </section>
     </v-col>
 
-    <TeachersListImportDialog v-model="importDialog" @imported="refreshAfterImport" />
+    <TeachersListImportDialog v-model="importDialog" />
 
     <v-dialog v-model="teacherDialogOpen" persistent :max-width="teacherDialogMaxWidth" scrollable>
         <v-card class="crud-dialog-card ai-glass-panel">
@@ -240,6 +232,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 import TeachersListImportDialog from '@/pages/admin/superAdmin/components/TeachersListImportDialog.vue'
+import CopyEmailButton from '@/pages/admin/superAdmin/components/CopyEmailButton.vue'
 import { useTeacherStore } from '@/stores/admin/TeacherStore'
 
 export default {
@@ -254,11 +247,12 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { Pagination, SearchField, TeachersListImportDialog },
+    components: { Pagination, SearchField, TeachersListImportDialog, CopyEmailButton },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.teacherStore = useTeacherStore()
+        this.selected_teachers = []
         await this.teacherStore.index()
     },
 
@@ -298,11 +292,6 @@ export default {
     },
 
     methods: {
-        async refreshAfterImport() {
-            this.selected_teachers = []
-            await this.teacherStore.index()
-        },
-
         async abortReturn() {
             await this.teacherStore.index()
             this.main_action = 'teachers'
@@ -349,14 +338,6 @@ export default {
 
         abort() {
             this.action = ''
-        },
-
-        selectAll() {
-            this.selected_teachers = this.teachers.map((item) => item.id)
-        },
-
-        unselectAll() {
-            this.selected_teachers = []
         },
 
         isSelectedTeacher(id) {

@@ -51,8 +51,6 @@
                         <v-btn block color="success" flat size="large" data-testid="admin-login-continue-password" @click="loginStepEmail()" class="mb-4">Weiter</v-btn>
                         <div class="alt-actions">
                             <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-unknown-password" :disabled="!isPasswordUnknownAvailable" @click="passwordUnknown">Kennwort unbekannt</v-btn>
-                            <span class="alt-sep">·</span>
-                            <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-new-teacher" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
                             <template v-if="config.register_admin_allowed">
                                 <span class="alt-sep">·</span>
                                 <v-btn variant="text" size="small" color="success" data-testid="admin-login-register" @click="register">Neu registrieren</v-btn>
