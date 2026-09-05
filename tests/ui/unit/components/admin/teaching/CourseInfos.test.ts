@@ -3,6 +3,25 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import CourseInfos from '@/pages/admin/teaching/overview/components/CourseInfos.vue'
 
+it('completes a typeless reminder while preserving its scheduled date and time', async () => {
+    const update = vi.fn().mockResolvedValue(true)
+    const ctx = {
+        saving_notification_id: null,
+        behaviourEntryStore: { update },
+        runInfoMutation: async (_action: string, callback: () => Promise<void>) => callback(),
+        toDateString: () => '2026-09-10',
+    }
+    await (CourseInfos as any).methods.completeNotification.call(ctx, {
+        id: 7, type: null, description: 'Unterlagen',
+        due_date: '2026-09-10T00:00:00.000000Z', due_time: '14:30',
+    })
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+        id: 7, type: null, description: 'Unterlagen', due_date: '2026-09-10',
+        due_time: '14:30', is_done: true, done_date: '2026-09-10',
+    }))
+    expect(ctx.saving_notification_id).toBeNull()
+})
+
 describe('CourseInfos representative countdowns', () => {
     function toLocalDateString(value: Date): string {
         const year = value.getFullYear()

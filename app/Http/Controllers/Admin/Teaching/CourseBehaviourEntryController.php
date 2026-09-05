@@ -48,17 +48,22 @@ class CourseBehaviourEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $isReminder = $request->input('kind') === 'notification' && blank($request->input('type'));
+
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
             'user_id' => 'required|integer|exists:users,id',
             'kind' => ['nullable', 'string', Rule::in(['behaviour', 'notification'])],
-            'type' => ['required', 'string', 'max:255'],
+            'type' => [$isReminder ? 'nullable' : 'required', 'string', 'max:255'],
             'date' => 'nullable|date',
             'is_due' => 'nullable|boolean',
-            'due_date' => 'nullable|date',
+            'due_date' => $isReminder ? ['required', 'date_format:Y-m-d'] : ['nullable', 'date'],
+            'due_time' => ['nullable', 'date_format:H:i'],
+            'remind_student_by_email' => ['sometimes', 'boolean'],
+            'remind_teacher_by_email' => ['sometimes', 'boolean'],
             'is_done' => 'nullable|boolean',
             'done_date' => 'nullable|date',
-            'description' => 'nullable|string|max:1024',
+            'description' => [$isReminder ? 'required' : 'nullable', 'string', 'max:1024'],
         ]);
 
         $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
@@ -79,13 +84,13 @@ class CourseBehaviourEntryController extends Controller
 
         $kind = $validated['kind'] ?? 'behaviour';
         $allowedTypes = $kind === 'notification' ? $allowedNotificationTypes : $allowedBehaviourTypes;
-        if (! in_array($validated['type'], $allowedTypes, true)) {
+        if (! $isReminder && ! in_array($validated['type'], $allowedTypes, true)) {
             abort(422, 'Ungültiger Typ für die gewählte Eintragsart.');
         }
         if (($validated['is_due'] ?? false) && empty($validated['due_date'])) {
             abort(422, 'Bitte ein Fälligkeitsdatum angeben.');
         }
-        if (($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
+        if (($isReminder || ($validated['is_due'] ?? false)) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
             abort(422, 'Bitte ein Erledigt-Datum angeben.');
         }
 
@@ -97,12 +102,15 @@ class CourseBehaviourEntryController extends Controller
         $payload = [
             'teaching_course_id' => $validated['teaching_course_id'],
             'user_id' => $validated['user_id'],
-            'type' => $validated['type'],
+            'type' => $validated['type'] ?? null,
             'date' => $validated['date'] ?? null,
             'description' => $validated['description'] ?? null,
             'kind' => $kind,
-            'due_date' => ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
-            'done_date' => ($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
+            'due_date' => $isReminder || ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
+            'due_time' => $isReminder ? ($validated['due_time'] ?? null) : null,
+            'remind_student_by_email' => $isReminder && ($validated['remind_student_by_email'] ?? false),
+            'remind_teacher_by_email' => $isReminder && ($validated['remind_teacher_by_email'] ?? true),
+            'done_date' => ($isReminder || ($validated['is_due'] ?? false)) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
         ];
 
         $entry = TeachingCourseBehaviourEntry::create($payload);
@@ -136,26 +144,32 @@ class CourseBehaviourEntryController extends Controller
             ->values()
             ->all();
 
+        $kind = $request->input('kind') ?? ($course_behaviour_entry->kind ?: 'behaviour');
+        $isReminder = $kind === 'notification' && blank($request->input('type'));
+
         $validated = $request->validate([
             'kind' => ['nullable', 'string', Rule::in(['behaviour', 'notification'])],
-            'type' => ['required', 'string', 'max:255'],
+            'type' => [$isReminder ? 'nullable' : 'required', 'string', 'max:255'],
             'date' => 'nullable|date',
             'is_due' => 'nullable|boolean',
-            'due_date' => 'nullable|date',
+            'due_date' => $isReminder ? ['required', 'date_format:Y-m-d'] : ['nullable', 'date'],
+            'due_time' => ['nullable', 'date_format:H:i'],
+            'remind_student_by_email' => ['sometimes', 'boolean'],
+            'remind_teacher_by_email' => ['sometimes', 'boolean'],
             'is_done' => 'nullable|boolean',
             'done_date' => 'nullable|date',
-            'description' => 'nullable|string|max:1024',
+            'description' => [$isReminder ? 'required' : 'nullable', 'string', 'max:1024'],
         ]);
 
         $kind = $validated['kind'] ?? ($course_behaviour_entry->kind ?: 'behaviour');
         $allowedTypes = $kind === 'notification' ? $allowedNotificationTypes : $allowedBehaviourTypes;
-        if (! in_array($validated['type'], $allowedTypes, true)) {
+        if (! $isReminder && ! in_array($validated['type'], $allowedTypes, true)) {
             abort(422, 'Ungültiger Typ für die gewählte Eintragsart.');
         }
         if (($validated['is_due'] ?? false) && empty($validated['due_date'])) {
             abort(422, 'Bitte ein Fälligkeitsdatum angeben.');
         }
-        if (($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
+        if (($isReminder || ($validated['is_due'] ?? false)) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
             abort(422, 'Bitte ein Erledigt-Datum angeben.');
         }
 
@@ -166,14 +180,24 @@ class CourseBehaviourEntryController extends Controller
 
         $payload = [
             'kind' => $kind,
-            'type' => $validated['type'],
+            'type' => $validated['type'] ?? null,
             'date' => $validated['date'] ?? null,
             'description' => $validated['description'] ?? null,
-            'due_date' => ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
-            'done_date' => ($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
+            'due_date' => $isReminder || ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
+            'due_time' => $isReminder ? ($validated['due_time'] ?? null) : null,
+            'remind_student_by_email' => $isReminder && ($validated['remind_student_by_email'] ?? $course_behaviour_entry->remind_student_by_email),
+            'remind_teacher_by_email' => $isReminder && ($validated['remind_teacher_by_email'] ?? $course_behaviour_entry->remind_teacher_by_email),
+            'done_date' => ($isReminder || ($validated['is_due'] ?? false)) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
         ];
 
-        $course_behaviour_entry->update($payload);
+        $course_behaviour_entry->fill($payload);
+
+        if ($isReminder && $course_behaviour_entry->isDirty(['description', 'due_date', 'due_time'])) {
+            $course_behaviour_entry->reminder_email_sent_at = null;
+            $course_behaviour_entry->student_reminder_email_sent_at = null;
+        }
+
+        $course_behaviour_entry->save();
 
         return response()->json(['data' => $course_behaviour_entry]);
     }

@@ -189,6 +189,146 @@ describe('authorization and index', function () {
 });
 
 describe('store update destroy', function () {
+    test('stores a text reminder without configured notification types', function (?string $time) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->admin->forceFill(['teaching_notifications_by_schoolyear' => null])->save();
+
+        $response = $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'due_time' => $time,
+        ])->assertCreated()
+            ->assertJsonPath('data.type', null)
+            ->assertJsonPath('data.due_time', $time);
+
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $response->json('data.id'),
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'due_time' => $time,
+            'type' => null,
+        ]);
+    })->with([null, '08:30']);
+
+    test('validates text reminder fields on create and update', function (array $invalid, string $field) {
+        $this->actingAs($this->admin, 'sanctum');
+        $payload = [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'due_time' => '08:30',
+        ];
+        $entry = TeachingCourseBehaviourEntry::query()->create($payload);
+        $payload = array_replace($payload, $invalid);
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->putJson('/api/admin/teaching/course_behaviour_entries/'.$entry->id, $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+    })->with([
+        'missing text' => [['description' => null], 'description'],
+        'blank text' => [['description' => '   '], 'description'],
+        'missing date' => [['due_date' => null], 'due_date'],
+        'invalid date' => [['due_date' => '2026-02-30'], 'due_date'],
+        'invalid time' => [['due_time' => '25:00'], 'due_time'],
+        'seconds in time' => [['due_time' => '08:30:00'], 'due_time'],
+        'invalid student email option' => [['remind_student_by_email' => 'yes'], 'remind_student_by_email'],
+        'invalid teacher email option' => [['remind_teacher_by_email' => null], 'remind_teacher_by_email'],
+    ]);
+
+    test('updates text reminders and removes optional time', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $entry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'due_time' => '08:30',
+            'reminder_email_sent_at' => now(),
+        ]);
+
+        $this->putJson('/api/admin/teaching/course_behaviour_entries/'.$entry->id, [
+            'description' => 'Heft nachbringen',
+            'due_date' => '2026-09-16',
+            'due_time' => null,
+        ])->assertOk()->assertJsonPath('data.due_time', null);
+
+        expect($entry->refresh()->due_date->toDateString())->toBe('2026-09-16')
+            ->and($entry->description)->toBe('Heft nachbringen')
+            ->and($entry->due_time)->toBeNull()
+            ->and($entry->reminder_email_sent_at)->toBeNull();
+    });
+
+    test('completes reminders without resetting their email delivery marker', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $entry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'reminder_email_sent_at' => now(),
+            'remind_student_by_email' => true,
+            'remind_teacher_by_email' => false,
+            'student_reminder_email_sent_at' => now(),
+        ]);
+
+        $this->putJson('/api/admin/teaching/course_behaviour_entries/'.$entry->id, [
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+            'is_done' => true,
+            'done_date' => '2026-09-15',
+        ])->assertOk();
+
+        expect($entry->refresh()->done_date->toDateString())->toBe('2026-09-15')
+            ->and($entry->reminder_email_sent_at)->not->toBeNull();
+        expect($entry->remind_student_by_email)->toBeTrue()
+            ->and($entry->remind_teacher_by_email)->toBeFalse()
+            ->and($entry->student_reminder_email_sent_at)->not->toBeNull();
+    });
+
+    test('stores and updates independent reminder email options', function (bool $student, bool $teacher) {
+        $this->actingAs($this->admin, 'sanctum');
+        $payload = [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Heft nachbringen',
+            'due_date' => '2026-09-15',
+            'remind_student_by_email' => $student,
+            'remind_teacher_by_email' => $teacher,
+        ];
+        $response = $this->postJson('/api/admin/teaching/course_behaviour_entries', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.remind_student_by_email', $student)
+            ->assertJsonPath('data.remind_teacher_by_email', $teacher);
+
+        $payload['remind_student_by_email'] = ! $student;
+        $payload['remind_teacher_by_email'] = ! $teacher;
+        $this->putJson('/api/admin/teaching/course_behaviour_entries/'.$response->json('data.id'), $payload)
+            ->assertOk()
+            ->assertJsonPath('data.remind_student_by_email', ! $student)
+            ->assertJsonPath('data.remind_teacher_by_email', ! $teacher);
+    })->with([[false, false], [true, false], [false, true], [true, true]]);
+
+    test('denies creating reminders for another teachers course', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'description' => 'Unterschrift nachbringen',
+            'due_date' => '2026-09-15',
+        ])->assertForbidden();
+    });
+
     test('store creates behaviour entry with due and done dates', function () {
         $this->actingAs($this->admin, 'sanctum');
 

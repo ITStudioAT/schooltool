@@ -16,7 +16,7 @@
                     <v-card variant="outlined" v-if="openNotifications.length" class="course-info-card">
                         <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                             <v-icon size="18">mdi-bell-alert</v-icon>
-                            Offene Verständigungen
+                            Offene Erinnerungen und Verständigungen
                             <v-chip size="x-small" color="warning" variant="flat">{{ openNotifications.length }}</v-chip>
                         </v-card-title>
                         <v-divider />
@@ -28,7 +28,7 @@
                                             {{ studentLabel(entry.user_id) }}
                                         </div>
                                         <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
-                                        <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
+                                        <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">{{ entry.type ? 'Fällig bis' : 'Erinnern am' }} {{ formatDate(entry.due_date) }}<span v-if="entry.due_time">&nbsp;um {{ entry.due_time.slice(0, 5) }}</span></v-chip>
                                         <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
                                         <v-btn
                                             icon="mdi-check"
@@ -1024,7 +1024,7 @@ export default {
             return String(value).padStart(2, '0')
         },
         async completeNotification(entry) {
-            if (!entry?.id || !entry?.type) return
+            if (!entry?.id) return
             this.saving_notification_id = entry.id
 
             try {
@@ -1036,7 +1036,8 @@ export default {
                         date: entry.date || null,
                         description: entry.description || null,
                         is_due: !!entry.due_date,
-                        due_date: entry.due_date || null,
+                        due_date: entry.due_date?.slice(0, 10) || null,
+                        due_time: entry.due_time?.slice(0, 5) || null,
                         is_done: true,
                         done_date: this.toDateString(new Date()),
                     }

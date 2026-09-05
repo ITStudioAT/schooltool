@@ -5,9 +5,11 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CurriculumDetail from '@/pages/admin/teaching/curricula/CurriculumDetail.vue'
 
+const { notify } = vi.hoisted(() => ({ notify: vi.fn() }))
+
 vi.mock('@/stores/spa/NotificationStore', () => ({
     useNotificationStore: () => ({
-        notify: vi.fn(),
+        notify,
     }),
 }))
 
@@ -106,6 +108,93 @@ function mountCurriculumDetail(
 }
 
 describe('CurriculumDetail preview layout', () => {
+    it('keeps the export choice open and shows the server error when the download fails', async () => {
+        const originalAxios = (globalThis as any).axios
+        const data = new Blob()
+        Object.defineProperty(data, 'text', { value: async () => JSON.stringify({ message: 'Eine Materialdatei fehlt.' }) })
+        ;(globalThis as any).axios = { get: vi.fn().mockRejectedValue({ response: { status: 422, data } }) }
+        const context = { curriculum: buildCurriculum(), exportDialogOpen: true, isExportingCurriculum: false }
+
+        try {
+            await (CurriculumDetail as any).methods.exportCurriculum.call(context, true)
+            expect(context.exportDialogOpen).toBe(true)
+            expect(context.isExportingCurriculum).toBe(false)
+            expect(notify).toHaveBeenCalledWith(expect.objectContaining({ message: 'Eine Materialdatei fehlt.', type: 'error' }))
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('asks about materials before starting an export and can cancel', async () => {
+        const wrapper = mountCurriculumDetail()
+        const exportSpy = vi.spyOn(wrapper.vm as any, 'exportCurriculum')
+        const exportButton = wrapper.findAll('button').find(button => button.text() === 'Curriculum exportieren')!
+
+        await exportButton.trigger('click')
+
+        expect((wrapper.vm as any).exportDialogOpen).toBe(true)
+        expect(exportSpy).not.toHaveBeenCalled()
+        const cancel = wrapper.findAll('button').find(button => button.text() === 'Abbrechen' && button.element.closest('[max-width="560"]'))!
+        await cancel.trigger('click')
+        expect((wrapper.vm as any).exportDialogOpen).toBe(false)
+        expect(exportSpy).not.toHaveBeenCalled()
+        wrapper.unmount()
+    })
+
+    it('downloads a ZIP when materials are requested and prevents duplicate exports', async () => {
+        const originalAxios = (globalThis as any).axios
+        let finish: (response: unknown) => void = () => {}
+        const get = vi.fn(() => new Promise(resolve => { finish = resolve }))
+        ;(globalThis as any).axios = { get }
+        const context = {
+            curriculum: buildCurriculum(),
+            exportDialogOpen: true,
+            isExportingCurriculum: false,
+            downloadCurriculumResponse: vi.fn(),
+        }
+        try {
+            const pending = (CurriculumDetail as any).methods.exportCurriculum.call(context, true)
+            await (CurriculumDetail as any).methods.exportCurriculum.call(context, true)
+            expect(get).toHaveBeenCalledTimes(1)
+            expect(get).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/export/json?include_materials=1', { responseType: 'blob' })
+            const response = { data: new Blob(['zip']), headers: {} }
+            finish(response)
+            await pending
+            expect(context.downloadCurriculumResponse).toHaveBeenCalledWith(response, 'Curriculum_Deutsch.zip', 'application/zip')
+            expect(context.exportDialogOpen).toBe(false)
+            expect(context.isExportingCurriculum).toBe(false)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('returns to the overview even when the PDF preview cannot save its position', () => {
+        const emit = vi.fn()
+        ;(CurriculumDetail as any).methods.leaveCurriculum.call({
+            persistCurriculumDocumentIframePosition: vi.fn(),
+            $refs: { curriculumPdfPreview: { emitCurrentPosition: () => { throw new Error('Preview closed') } } },
+            $emit: emit,
+        })
+        expect(emit).toHaveBeenCalledWith('back')
+    })
+
+    it('unmounts even when a browser-managed iframe rejects access', () => {
+        const methods = (CurriculumDetail as any).methods
+        const context = {
+            $refs: { curriculumDocumentIframe: {
+                get contentWindow() { throw new DOMException('Blocked frame', 'SecurityError') },
+            } },
+            currentCurriculumDocumentIframePosition() {
+                return methods.currentCurriculumDocumentIframePosition.call({
+                    curriculumDocumentIframeScrollMetrics: () => methods.curriculumDocumentIframeScrollMetrics.call(this),
+                })
+            },
+            persistCurriculumDocumentIframePosition() { methods.persistCurriculumDocumentIframePosition.call(this) },
+            detachCurriculumDocumentIframeScrollListener() { methods.detachCurriculumDocumentIframeScrollListener.call(this) },
+        }
+        expect(() => (CurriculumDetail as any).beforeUnmount.call(context)).not.toThrow()
+    })
+
     it('persists the current PDF position before returning to the overview', () => {
         const methods = (CurriculumDetail as any).methods
         const calls: Array<string> = []
@@ -1170,8 +1259,8 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain(':disabled="!canApplyFreeWeeksTemplate"')
         expect(source).toContain('@click="applyFreeWeeksTemplate"')
         expect(source).toContain('Curriculum exportieren')
-        expect(source).toContain('@click="exportCurriculum"')
-        expect(source).toContain("/export/json")
+        expect(source).toContain('@click="exportDialogOpen = true"')
+        expect(source).toContain('curriculumExport.url')
         expect(source).toContain('PDF drucken')
         expect(source).toContain('@click="printCurriculumPdf"')
         expect(source).toContain("/export/pdf")

@@ -183,6 +183,8 @@
                                             <span class="student-name-text">
                                                 {{ student.last_name }}, {{ student.first_name }}
                                             </span>
+                                            <CourseStudentIndicators :student="student" :course-id="selected_course.id" stars-only
+                                                @select="$refs.studentNotes.open(student, $event)" />
                                             <v-icon
                                                 v-if="studentSexIcon(student)"
                                                 size="15"

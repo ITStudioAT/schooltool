@@ -82,6 +82,7 @@
             <v-col>
                 <CourseTable
                     view="entries"
+                    @manage-curriculum="startCurriculumEdit"
                     :active-semester="activeSemester"
                     :semester-two-start-date="sem2StartDate"
                     @update:active-semester="activeSemester = $event" />
@@ -137,6 +138,26 @@
         <MyCourses />
     </div>
 
+    <v-dialog v-model="curriculumEditMode" persistent max-width="560">
+        <v-card title="Curriculum zuordnen">
+            <v-card-text>
+                <v-autocomplete v-model="curriculumSelectionId" :items="curriculumOptions"
+                    label="Curriculum" :loading="curriculumLoading"
+                    :disabled="curriculumLoading || curriculumSaveLoading"
+                    no-data-text="Keine Curricula vorhanden" />
+                <p class="text-caption">Beim Entfernen der Zuordnung bleiben bereits übernommene Unterrichtsinhalte erhalten.</p>
+            </v-card-text>
+            <v-card-actions class="flex-wrap">
+                <v-btn :disabled="curriculumSaveLoading" @click="cancelCurriculumEdit">Abbrechen</v-btn>
+                <v-spacer />
+                <v-btn v-if="selectedCourseCurriculumId" color="error" :disabled="curriculumSaveLoading"
+                    @click="removeCurriculumAssignment">Zuordnung entfernen</v-btn>
+                <v-btn color="primary" variant="flat" :loading="curriculumSaveLoading"
+                    :disabled="curriculumLoading || curriculumSaveLoading || !normalizedCurriculumSelectionId || !hasCurriculumSelectionChanges"
+                    @click="saveCurriculumAssignment">Zuweisen</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -626,11 +647,12 @@ export default {
             }
         },
         async saveCurriculumAssignment() {
-            if (!this.selected_course?.id) {
+            if (!this.selected_course?.id || this.curriculumSaveLoading) {
                 return
             }
 
             this.curriculumSaveLoading = true
+            const courseId = this.selected_course.id
             try {
                 const payload = {
                     ...this.selected_course,
@@ -642,7 +664,8 @@ export default {
                     return
                 }
 
-                await this.courseStore.refreshCourseById(this.selected_course.id)
+                await this.courseStore.refreshCourseById(courseId)
+                if (this.selected_course?.id !== courseId) return
                 this.curriculumSelectionId = this.selectedCourseCurriculumId
                 this.curriculumEditMode = false
             } finally {
@@ -650,11 +673,15 @@ export default {
             }
         },
         async removeCurriculumAssignment() {
+            if (this.curriculumSaveLoading) return
             this.curriculumSelectionId = null
             await this.saveCurriculumAssignment()
         },
         async startCurriculumEdit() {
+            if (!this.selected_course?.id || this.curriculumSaveLoading) return
+            const courseId = this.selected_course.id
             await this.loadCurricula()
+            if (this.selected_course?.id !== courseId) return
             this.curriculumEditMode = true
             this.curriculumSelectionId = this.selectedCourseCurriculumId
         },

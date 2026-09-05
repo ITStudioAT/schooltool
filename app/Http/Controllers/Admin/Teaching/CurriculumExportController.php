@@ -4,13 +4,23 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeachingCurriculum;
+use App\Services\Teaching\CurriculumArchiveService;
 use App\Services\Teaching\CurriculumExportService;
+use Illuminate\Http\Request;
 
 class CurriculumExportController extends Controller
 {
-    public function json(TeachingCurriculum $curriculum, CurriculumExportService $service)
+    public function json(Request $request, TeachingCurriculum $curriculum, CurriculumExportService $service, CurriculumArchiveService $archiveService)
     {
         $this->authorizeCurriculum($curriculum);
+
+        $request->validate(['include_materials' => ['sometimes', 'boolean']]);
+        if ($request->boolean('include_materials')) {
+            return response()->download($archiveService->export($curriculum, $request->user()), $this->filename($curriculum, 'zip'), [
+                'Content-Type' => 'application/zip',
+                'Cache-Control' => 'private, no-store',
+            ])->deleteFileAfterSend();
+        }
 
         $payload = $service->transferPayload($curriculum);
 

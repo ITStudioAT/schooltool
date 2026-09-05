@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.46.6 !!!
+## 3.47.0
 
 ### Settings
 
@@ -17,7 +17,18 @@
 
 ### Unterricht
 
-- Weitere Einträge wie z. B. Stars für Schülerinnen möglich
+- Kommentare, Erinnerungen, Sterne und besondere Informationen für Schülerinnen und Schüler ergänzt.
+- Erinnerungen mit Datum, optionaler Uhrzeit und getrennten E-Mail-Optionen für Schülerinnen und Schüler sowie Lehrpersonen möglich.
+- Sterne erscheinen gemeinsam in einem Chip direkt neben dem Namen; Kommentare werden in der Übersicht als Symbol angezeigt.
+- Dialoge schließen sich nach erfolgreichem Speichern automatisch. Bestehende Erinnerungen und Sterne können direkt im Dialog entfernt werden.
+- Curricula können über die Curriculum-Zelle in der Unterrichtstabelle zugewiesen und Zuordnungen aufgehoben werden.
+
+### Curriculum
+
+- Beim Export kann zwischen einem JSON-Export ohne Materialien und einem ZIP-Export mit Materialien gewählt werden.
+- Dateien, Links und Materialzuordnungen werden beim Export mitgenommen und beim Import wiederhergestellt.
+- Navigation über „Zurück zur Übersicht“ korrigiert.
+- Buttons in der Curricula-Übersicht rechteckig gestaltet und „Curriculum importieren“ neben „Neues Curriculum“ platziert.
 
 ## 3.46.5
 

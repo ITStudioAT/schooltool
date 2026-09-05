@@ -96,6 +96,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
+use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -596,6 +597,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, teaching_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auto,scope:teaching_access'])->group(function () {
         Route::get('/admin/teaching/search116', [TeachingController::class, 'search116']);
+        Route::get('/admin/teaching/reminders/due', [TeachingReminderController::class, 'index'])->name('teaching.reminders.due');
         Route::get('/admin/teaching/load_settings', [TeachingController::class, 'loadSettings']);
         Route::post('/admin/teaching/save_settings', [TeachingController::class, 'saveSettings']);
         Route::post('/admin/teaching/import_behaviour', [TeachingController::class, 'importBehaviour']);

@@ -47,7 +47,7 @@ function mountCurriculaOverview(store = buildStore()) {
             global: {
                 plugins: [createPinia()],
                 stubs: {
-                    FilePond: { template: '<div />' },
+                    FilePond: { name: 'FilePond', props: ['acceptedFileTypes'], template: '<div />' },
                     'v-btn': { template: '<button @click="$emit(\'click\', $event)"><slot /></button>' },
                     'v-card': { template: '<div><slot /></div>' },
                     'v-card-actions': { template: '<div><slot /></div>' },
@@ -74,6 +74,27 @@ function mountCurriculaOverview(store = buildStore()) {
 }
 
 describe('Teaching curricula overview actions', () => {
+    it('places rectangular create and import buttons together in the toolbar', async () => {
+        const { wrapper } = mountCurriculaOverview()
+        const buttons = wrapper.findAll('.curricula-overview__toolbar-inner button')
+
+        expect(buttons.map(button => button.text())).toEqual(['Neues Curriculum', 'Curriculum importieren'])
+        expect(buttons.every(button => button.attributes('rounded') === '0')).toBe(true)
+        await buttons[1].trigger('click')
+        expect((wrapper.vm as any).importDialogOpen).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('accepts both curriculum JSON files and material ZIP archives', () => {
+        const { wrapper } = mountCurriculaOverview()
+        const acceptedTypes = wrapper.findComponent({ name: 'FilePond' }).props('acceptedFileTypes')
+
+        expect(acceptedTypes).toContain('application/json')
+        expect(acceptedTypes).toContain('application/zip')
+        expect(acceptedTypes).toContain('application/x-zip-compressed')
+        wrapper.unmount()
+    })
+
     beforeEach(() => {
         vi.mocked(useCurriculumStore).mockReset()
     })

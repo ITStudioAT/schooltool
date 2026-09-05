@@ -7,6 +7,8 @@ use App\Models\TeachingCurriculum;
 use App\Models\TeachingImportedCurriculum;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -32,7 +34,13 @@ class ImportedCurriculumService
 
         $payload = $this->normalizeImportPayload($decoded);
 
-        return TeachingImportedCurriculum::query()->updateOrCreate(
+        $previous = TeachingImportedCurriculum::query()
+            ->where('school_id', $user->school_id)
+            ->where('user_id', $user->id)
+            ->where('curriculum_key', $payload['curriculum_key'])
+            ->first();
+        $oldArchive = $previous?->materials['archive_path'] ?? null;
+        $imported = TeachingImportedCurriculum::query()->updateOrCreate(
             [
                 'school_id' => $user->school_id,
                 'user_id' => $user->id,
@@ -45,8 +53,14 @@ class ImportedCurriculumService
                 'source_schema_version' => $payload['schema_version'],
                 'source_exported_at' => $payload['exported_at'],
                 'imported_at' => now(),
+                'materials' => null,
             ]
         );
+        if (is_string($oldArchive)) {
+            DB::afterCommit(fn () => app(CurriculumArchiveService::class)->deleteStoredArchive($oldArchive));
+        }
+
+        return $imported;
     }
 
     public function adoptForUser(TeachingImportedCurriculum $importedCurriculum, User $user): TeachingCurriculum
@@ -57,20 +71,35 @@ class ImportedCurriculumService
             ]);
         }
 
-        $curriculum = TeachingCurriculum::query()->create([
-            'school_id' => $user->school_id,
-            'schoolyear_id' => $user->schoolyear_id,
-            'user_id' => $user->id,
-            'title' => (string) $importedCurriculum->title,
-            'description' => $importedCurriculum->description !== null ? (string) $importedCurriculum->description : null,
-            'topics' => is_array($importedCurriculum->topics) ? $importedCurriculum->topics : [],
-        ]);
+        $createdPaths = [];
+        try {
+            return DB::transaction(function () use ($importedCurriculum, $user, &$createdPaths): TeachingCurriculum {
+                $lockedImport = TeachingImportedCurriculum::query()->lockForUpdate()->findOrFail($importedCurriculum->id);
+                if ($this->hasAlreadyBeenAdopted($lockedImport, $user)) {
+                    throw ValidationException::withMessages(['curriculum' => 'Dieses importierte Curriculum wurde bereits übernommen.']);
+                }
+                $curriculum = TeachingCurriculum::query()->create([
+                    'school_id' => $user->school_id,
+                    'schoolyear_id' => $user->schoolyear_id,
+                    'user_id' => $user->id,
+                    'title' => (string) $lockedImport->title,
+                    'description' => $lockedImport->description !== null ? (string) $lockedImport->description : null,
+                    'topics' => is_array($lockedImport->topics) ? $lockedImport->topics : [],
+                ]);
 
-        $importedCurriculum->forceFill([
-            'adopted_curriculum_id' => $curriculum->id,
-        ])->save();
+                app(CurriculumArchiveService::class)->adopt($lockedImport, $curriculum, $user, $createdPaths);
+                $lockedImport->forceFill([
+                    'adopted_curriculum_id' => $curriculum->id,
+                ])->save();
 
-        return $curriculum;
+                return $curriculum;
+            });
+        } catch (\Throwable $exception) {
+            if ($createdPaths !== []) {
+                Storage::disk('local')->delete($createdPaths);
+            }
+            throw $exception;
+        }
     }
 
     private function hasAlreadyBeenAdopted(TeachingImportedCurriculum $importedCurriculum, User $user): bool
@@ -100,7 +129,7 @@ class ImportedCurriculumService
      *     }
      * }
      */
-    private function normalizeImportPayload(array $payload): array
+    public function normalizeImportPayload(array $payload): array
     {
         $validated = Validator::validate($payload, [
             'export_type' => 'required|string|in:teaching_curriculum',

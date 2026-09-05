@@ -1,5 +1,14 @@
 <template>
-    <span class="student-indicators d-inline-flex align-center ga-1">
+    <span v-if="starsOnly" class="student-star-badges d-inline-flex flex-nowrap flex-shrink-0 align-center ga-1">
+        <v-chip v-if="student.stars?.length"
+            size="x-small" color="amber-darken-2" variant="tonal"
+            :aria-label="`${student.stars.length} Sterne für besondere Leistungen`"
+            :title="student.stars.map(star => star.comment || 'Star für besondere Leistungen').join('\n')"
+            @click.stop="$emit('select', 'star')">
+            <v-icon v-for="(star, index) in student.stars" :key="star.id || index" size="14" icon="mdi-star" />
+        </v-chip>
+    </span>
+    <span v-else class="student-indicators d-inline-flex align-center ga-1">
         <v-btn v-for="indicator in indicators" :key="indicator.section" :color="indicator.color"
             size="x-small" variant="tonal" class="student-indicator" :aria-label="indicator.label"
             :title="indicator.label" @click.stop="$emit('select', indicator.section)">
@@ -16,13 +25,12 @@ export default {
     props: {
         student: { type: Object, required: true },
         courseId: { type: [Number, String], required: true },
+        starsOnly: { type: Boolean, default: false },
     },
     emits: ['select'],
     computed: {
         indicators() {
             const indicators = []
-            const stars = this.student.stars?.length || 0
-            if (stars) indicators.push({ section: 'star', icon: 'mdi-star', color: 'amber-darken-2', count: stars, label: `${stars} Star${stars === 1 ? '' : 's'} für besondere Leistungen` })
             const reminders = useCourseBehaviourEntryStore().courseEntries.filter((entry) =>
                 this.student.user_id && String(entry.teaching_course_id) === String(this.courseId)
                 && String(entry.user_id) === String(this.student.user_id) && entry.kind === 'notification' && !entry.done_date,
@@ -41,6 +49,10 @@ export default {
 </script>
 
 <style scoped>
+.student-star-badges {
+    transform: translateY(-7px);
+}
+
 .student-indicator {
     min-width: 26px;
     padding-inline: 5px;

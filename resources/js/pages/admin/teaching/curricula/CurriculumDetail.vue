@@ -48,7 +48,7 @@
                     class="text-none"
                     :loading="isExportingCurriculum"
                     :disabled="isExportingCurriculum || isPrintingCurriculum || isCopyingCurriculumContent"
-                    @click="exportCurriculum">
+                    @click="exportDialogOpen = true">
                     Curriculum exportieren
                 </v-btn>
             </div>
@@ -1694,6 +1694,22 @@
                     </v-card>
                 </v-dialog>
 
+                <v-dialog v-model="exportDialogOpen" max-width="560" :persistent="isExportingCurriculum">
+                    <v-card rounded="xl">
+                        <v-card-title>Curriculum exportieren</v-card-title>
+                        <v-card-text>
+                            Sollen die zugeordneten Materialien mit exportiert werden?
+                            <div class="text-body-2 mt-2">Mit Materialien werden auch Dateien und Links mitgenommen.</div>
+                        </v-card-text>
+                        <v-card-actions class="flex-wrap ga-2 px-4 pb-4">
+                            <v-btn variant="text" :disabled="isExportingCurriculum" @click="exportDialogOpen = false">Abbrechen</v-btn>
+                            <v-spacer />
+                            <v-btn variant="tonal" :disabled="isExportingCurriculum" @click="exportCurriculum(false)">Ohne Materialien</v-btn>
+                            <v-btn color="primary" variant="flat" :loading="isExportingCurriculum" :disabled="isExportingCurriculum" @click="exportCurriculum(true)">Mit Materialien</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+
                 <v-dialog v-model="documentDeleteDialogOpen" max-width="420" persistent>
                     <v-card rounded="xl">
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
@@ -1737,6 +1753,7 @@ import { mapState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import { json as curriculumExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CurriculumExportController'
 
 const CurriculumPdfPreview = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'))
 const CurriculumUnitFilesDialog = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumUnitFilesDialog.vue'))
@@ -1792,6 +1809,7 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             isExportingCurriculum: false,
+            exportDialogOpen: false,
             isPrintingCurriculum: false,
             curriculumStatusSaving: false,
             curriculumContentCopyDialogOpen: false,
@@ -2398,7 +2416,11 @@ export default {
     methods: {
         leaveCurriculum() {
             this.persistCurriculumDocumentIframePosition()
-            this.$refs.curriculumPdfPreview?.emitCurrentPosition?.()
+            try {
+                this.$refs.curriculumPdfPreview?.emitCurrentPosition?.()
+            } catch {
+                // Preview position is optional and must not prevent leaving the curriculum.
+            }
             this.$emit('back')
         },
         async openCurriculumContentCopyDialog() {
@@ -2625,10 +2647,14 @@ export default {
             }
         },
         persistCurriculumDocumentIframePosition() {
-            const position = this.currentCurriculumDocumentIframePosition()
-            if (!position || !this.previewDoc?.id) return
+            try {
+                const position = this.currentCurriculumDocumentIframePosition()
+                if (!position || !this.previewDoc?.id) return
 
-            this.persistCurriculumDocumentPreviewPosition(position, this.previewDoc.id)
+                this.persistCurriculumDocumentPreviewPosition(position, this.previewDoc.id)
+            } catch {
+                // A browser-managed or cross-origin preview may no longer be accessible.
+            }
         },
         restoreCurriculumDocumentIframePosition() {
             this.detachCurriculumDocumentIframeScrollListener()
@@ -2647,10 +2673,14 @@ export default {
             this.persistCurriculumDocumentIframePosition()
         },
         detachCurriculumDocumentIframeScrollListener() {
-            const iframeWindow = this.$refs.curriculumDocumentIframe?.contentWindow
-            if (!iframeWindow) return
+            try {
+                const iframeWindow = this.$refs.curriculumDocumentIframe?.contentWindow
+                if (!iframeWindow) return
 
-            iframeWindow.removeEventListener('scroll', this.handleCurriculumDocumentIframeScroll)
+                iframeWindow.removeEventListener('scroll', this.handleCurriculumDocumentIframeScroll)
+            } catch {
+                // Cross-origin frames cannot be inspected while their preview is closing.
+            }
         },
         restoreCurriculumDocumentPreviewPosition() {
             this.curriculumDocumentPreviewPosition = null
@@ -6135,7 +6165,7 @@ export default {
             return String(plainMatch?.[1] || '').trim()
         },
 
-        async exportCurriculum() {
+        async exportCurriculum(includeMaterials = false) {
             if (this.isExportingCurriculum) {
                 return
             }
@@ -6143,19 +6173,31 @@ export default {
             this.isExportingCurriculum = true
 
             try {
-                const response = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/export/json`, {
+                const response = await axios.get(curriculumExport.url(this.curriculum.id, includeMaterials ? {
+                    query: { include_materials: 1 },
+                } : undefined), {
                     responseType: 'blob',
                 })
 
                 this.downloadCurriculumResponse(
                     response,
-                    `Curriculum_${this.curriculum.title}.json`,
-                    'application/json',
+                    `Curriculum_${this.curriculum.title}.${includeMaterials ? 'zip' : 'json'}`,
+                    includeMaterials ? 'application/zip' : 'application/json',
                 )
+                this.exportDialogOpen = false
             } catch (error) {
+                let message = error?.response?.data?.message
+                if (error?.response?.data instanceof Blob) {
+                    try {
+                        const payload = JSON.parse(await error.response.data.text())
+                        message = payload.message
+                    } catch {
+                        // A failed download may return an HTML error page.
+                    }
+                }
                 useNotificationStore().notify({
                     status: error?.response?.status,
-                    message: error?.response?.data?.message || 'Curriculum konnte nicht exportiert werden.',
+                    message: message || 'Curriculum konnte nicht exportiert werden.',
                     type: 'error',
                     timeout: 3000,
                 })

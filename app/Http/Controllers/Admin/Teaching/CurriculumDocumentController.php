@@ -298,9 +298,13 @@ class CurriculumDocumentController extends Controller
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
         if ($document->source_type === 'upload' && $document->file_path) {
-            $fullPath = storage_path($document->file_path);
-            if (file_exists($fullPath)) {
-                unlink($fullPath);
+            if ($document->storage_disk) {
+                Storage::disk($document->storage_disk)->delete($document->file_path);
+            } else {
+                $fullPath = storage_path($document->file_path);
+                if (file_exists($fullPath)) {
+                    unlink($fullPath);
+                }
             }
         }
 
@@ -400,7 +404,9 @@ class CurriculumDocumentController extends Controller
             abort(404);
         }
 
-        $fullPath = storage_path($document->file_path);
+        $fullPath = $document->storage_disk
+            ? Storage::disk($document->storage_disk)->path($document->file_path)
+            : storage_path($document->file_path);
         if (! file_exists($fullPath)) {
             abort(404);
         }

@@ -83,7 +83,13 @@ describe('CourseTable', () => {
         expect(computed.courseDateScrollSignature.call(context)).not.toBe(initialSignature)
     })
 
-    it('shows the Curriculum row only when the selected course has an assigned curriculum', () => {
+    it('opens assignment management from a date cell when no curriculum is assigned', async () => {
+        const emit = vi.fn()
+        await (CourseTable as any).methods.openCurriculumDialog.call({ assignedCurriculumId: null, $emit: emit }, { id: 2 })
+        expect(emit).toHaveBeenCalledWith('manage-curriculum')
+    })
+
+    it('resolves the selected courses curriculum assignment', () => {
         const computed = (CourseTable as any).computed
 
         expect(computed.assignedCurriculumId.call({
@@ -3610,7 +3616,9 @@ describe('CourseTable', () => {
         expect(source).toContain('class="course-table-work-row"')
         expect(source).toContain('class="course-table-work-label-content"')
         expect(source).toContain('<span>Arbeiten</span>')
-        expect(source).toContain("v-if=\"tableView === 'entries' && hasAssignedCurriculum\"")
+        expect(source).not.toContain("v-if=\"tableView === 'entries' && hasAssignedCurriculum\"")
+        expect(source).toContain('aria-label="Curriculum zuweisen oder Zuordnung entfernen"')
+        expect(source).toContain('@click="$emit(\'manage-curriculum\')"')
         expect(source).toContain('class="course-table-curriculum-row"')
         expect(source).toContain('<span>Curriculum</span>')
         expect(source).toContain('v-for="(content, contentIndex) in displayedCurriculumContentForCourseDate(courseDate)"')
@@ -4009,7 +4017,10 @@ describe('CourseTable', () => {
         expect(source).toContain('class="course-table-student-name text-left cursor-pointer"')
         expect(source).toContain('@click="$refs.studentNotes.open(student)"')
         expect(source).toContain('<CourseStudentIndicators :student="student" :course-id="selected_course.id"')
-        expect(source).toContain('class="course-table-student-comment"')
+        expect(source).toContain('<CourseStudentIndicators :student="student" :course-id="selected_course.id" stars-only')
+        expect(source).toContain('class="course-table-name-badges d-inline-flex align-center ga-1 flex-nowrap"')
+        expect(source).toMatch(/\.course-table-name-badges \{\s*flex: 0 0 auto;\s*white-space: nowrap;/u)
+        expect(source).not.toContain('class="course-table-student-comment"')
         expect(source).toContain('{{ studentComment(student) }}')
         expect(source).toContain('content-class="course-table-student-tooltip"')
         expect(source).toContain('v-for="detail in studentTooltipDetails(student)"')

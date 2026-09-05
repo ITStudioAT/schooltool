@@ -15,6 +15,8 @@
             secondary-color="#1d4ed8"
             right-orb-color="#a5b4fc" />
 
+        <TeachingDueReminders />
+
         <v-sheet v-if="!selected_course" rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
             <div class="teaching-nav__buttons">
                 <v-btn
@@ -146,6 +148,7 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
 import { administration as teachingAdministration } from '@/routes/admin/teaching'
 import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
+import TeachingDueReminders from './overview/components/TeachingDueReminders.vue'
 
 function calendarDateValue(date) {
     return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
@@ -166,7 +169,7 @@ function normalizeTeachingSection(section) {
 }
 
 export default {
-    components: { AdminCompactSectionHero, Overview, Settings, Admin, TeacherAdministration, Search, Schoolyear, DataBackup, Curricula },
+    components: { AdminCompactSectionHero, TeachingDueReminders, Overview, Settings, Admin, TeacherAdministration, Search, Schoolyear, DataBackup, Curricula },
 
     created() {
         this.syncSection(this.$route.params.section)

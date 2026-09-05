@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeachingImportedCurriculum;
+use App\Services\Teaching\CurriculumArchiveService;
 use App\Services\Teaching\ImportedCurriculumService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\File;
@@ -26,20 +27,23 @@ class ImportedCurriculumController extends Controller
         ]);
     }
 
-    public function import(Request $request, ImportedCurriculumService $service)
+    public function import(Request $request, ImportedCurriculumService $service, CurriculumArchiveService $archiveService)
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $validated = $request->validate([
-            'file' => ['required', 'file', File::types(['json'])->max('2mb')],
+            'file' => ['required', 'file', File::types(['json', 'zip'])->max('100mb')],
         ]);
 
-        $importedCurriculum = $service->importFromJson(
-            $authUser,
-            (string) file_get_contents($validated['file']->getRealPath())
-        );
+        $file = $validated['file'];
+        if (strtolower($file->getClientOriginalExtension()) === 'zip') {
+            $importedCurriculum = $archiveService->import($authUser, $file);
+        } else {
+            $request->validate(['file' => ['file', File::types(['json'])->max('2mb')]]);
+            $importedCurriculum = $service->importFromJson($authUser, (string) file_get_contents($file->getRealPath()));
+        }
 
         return response()->json([
             'data' => $importedCurriculum->fresh(),
@@ -60,6 +64,10 @@ class ImportedCurriculumController extends Controller
         $this->authorizeImportedCurriculum($imported_curriculum);
 
         $imported_curriculum->delete();
+        $archivePath = $imported_curriculum->materials['archive_path'] ?? null;
+        if (is_string($archivePath)) {
+            app(CurriculumArchiveService::class)->deleteStoredArchive($archivePath);
+        }
 
         return response()->json(null, 204);
     }

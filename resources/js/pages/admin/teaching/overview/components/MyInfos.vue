@@ -8,7 +8,7 @@
                 <v-card variant="outlined" class="mt-2" v-if="openNotifications.length">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-bell-alert</v-icon>
-                        Offene Verständigungen (alle Fächer)
+                        Offene Erinnerungen und Verständigungen (alle Fächer)
                         <v-chip size="x-small" color="warning" variant="flat">{{ openNotifications.length }}</v-chip>
                     </v-card-title>
                     <v-divider />
@@ -19,7 +19,7 @@
                                     <v-chip v-if="classCourseLabel(entry)" size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ classCourseLabel(entry) }}</v-chip>
                                     <v-chip v-if="entry.student_label" size="x-small" variant="outlined" class="chip-truncate">{{ entry.student_label }}</v-chip>
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
-                                    <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
+                                    <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">{{ entry.type ? 'Fällig bis' : 'Erinnern am' }} {{ formatDate(entry.due_date) }}<span v-if="entry.due_time">&nbsp;um {{ entry.due_time.slice(0, 5) }}</span></v-chip>
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
                                     <v-btn
                                         icon="mdi-open-in-new"

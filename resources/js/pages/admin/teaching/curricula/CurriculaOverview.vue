@@ -5,10 +5,19 @@
                 <v-btn
                     color="success"
                     variant="flat"
-                    rounded="xl"
+                    rounded="0"
                     prepend-icon="mdi-plus"
                     @click="openCreateDialog">
                     Neues Curriculum
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    rounded="0"
+                    prepend-icon="mdi-import"
+                    class="curricula-overview__import-button"
+                    @click="openImportDialog">
+                    Curriculum importieren
                 </v-btn>
             </div>
         </v-sheet>
@@ -64,6 +73,7 @@
                                 <div class="curricula-overview__item-actions" @click.stop>
                                     <v-btn
                                         icon="mdi-pencil-outline"
+                                        rounded="0"
                                         variant="tonal"
                                         color="primary"
                                         size="x-small"
@@ -72,6 +82,7 @@
                                         @click.stop="openEditDialog(curriculum)" />
                                     <v-btn
                                         icon="mdi-delete-outline"
+                                        rounded="0"
                                         variant="tonal"
                                         color="warning"
                                         size="x-small"
@@ -87,7 +98,7 @@
                             v-model="currentPage"
                             :length="meta.last_page"
                             :total-visible="7"
-                            rounded="circle"
+                            rounded="0"
                             @update:modelValue="changePage" />
                     </div>
 
@@ -98,18 +109,6 @@
             </v-col>
 
             <v-col cols="12" md="6" class="pa-0 pl-md-2 pb-3">
-                <div class="d-flex justify-end mb-3">
-                    <v-btn
-                        color="primary"
-                        variant="flat"
-                        rounded="xl"
-                        prepend-icon="mdi-import"
-                        class="curricula-overview__import-button"
-                        @click="openImportDialog">
-                        Curriculum importieren
-                    </v-btn>
-                </div>
-
                 <v-sheet
                     v-if="imported_curricula.length"
                     rounded="xl"
@@ -129,6 +128,7 @@
                                 <v-list-item-subtitle class="text-caption">
                                     <span v-if="curriculum.description">{{ curriculum.description }} · </span>
                                     <span v-if="curriculum.imported_at">importiert am {{ formatDateTime(curriculum.imported_at) }}</span>
+                                    <span v-if="curriculum.has_materials"> · mit Materialien</span>
                                 </v-list-item-subtitle>
                                 <template #append>
                                     <div class="curricula-overview__import-actions">
@@ -136,7 +136,7 @@
                                             variant="text"
                                             color="primary"
                                             size="small"
-                                            rounded="lg"
+                                            rounded="0"
                                             :prepend-icon="expandedImportedId === curriculum.id ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
                                             @click.stop="toggleImportedPreview(curriculum.id)">
                                             {{ expandedImportedId === curriculum.id ? 'Ausblenden' : 'Vorschau' }}
@@ -146,7 +146,7 @@
                                             variant="tonal"
                                             color="warning"
                                             size="small"
-                                            rounded="lg"
+                                            rounded="0"
                                             title="Importiertes Curriculum löschen"
                                             :disabled="importedDeleteLoadingId === curriculum.id"
                                             @click.stop="askDeleteImportedCurriculum(curriculum)" />
@@ -154,7 +154,7 @@
                                             variant="tonal"
                                             color="primary"
                                             size="small"
-                                            rounded="lg"
+                                            rounded="0"
                                             prepend-icon="mdi-account-arrow-right-outline"
                                             :loading="takeoverLoadingId === curriculum.id"
                                             :disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"
@@ -251,7 +251,7 @@
                 </v-card-title>
                 <v-card-text class="px-4">
                     <div class="text-body-2 mb-3">
-                        Importiere eine exportierte Curriculum-JSON-Datei. Das Curriculum bleibt getrennt von deinen persönlichen Curricula.
+                        Importiere eine exportierte Curriculum-Datei, wahlweise mit Materialien (ZIP) oder ohne (JSON). Das Curriculum bleibt getrennt von deinen persönlichen Curricula.
                     </div>
                     <file-pond
                         ref="importPond"
@@ -262,9 +262,9 @@
                         :allow-revert="false"
                         :allow-remove="true"
                         :allow-file-type-validation="true"
-                        :accepted-file-types="['application/json', 'text/json', '.json']"
+                        :accepted-file-types="['application/json', 'text/json', '.json', 'application/zip', 'application/x-zip-compressed', '.zip']"
                         :max-files="1"
-                        :label-idle="'<strong>JSON-Datei hierher ziehen oder <i>klicken</i></strong>'"
+                        :label-idle="'<strong>JSON- oder ZIP-Datei hierher ziehen oder <i>klicken</i></strong>'"
                         :label-file-processing-complete="'Importiert'"
                         :server="{ process: importPondProcess }" />
                 </v-card-text>

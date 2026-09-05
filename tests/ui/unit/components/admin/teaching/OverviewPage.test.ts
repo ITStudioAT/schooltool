@@ -4,6 +4,45 @@ import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 
 describe('Teaching overview controls', () => {
+    it.each([7, null])('saves curriculum assignment %s without clearing adopted lesson content', async (curriculumId) => {
+        const course = { id: 18, teaching_curriculum_id: 4, course_dates: [{ id: 2, adopted_materials: [{ id: 9 }] }] }
+        const update = vi.fn().mockResolvedValue(true)
+        const refreshCourseById = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            selected_course: course, curriculumSaveLoading: false, curriculumEditMode: true,
+            normalizedCurriculumSelectionId: curriculumId, selectedCourseCurriculumId: curriculumId,
+            curriculumSelectionId: curriculumId, courseStore: { update, refreshCourseById },
+        }
+        await (Overview as any).methods.saveCurriculumAssignment.call(ctx)
+        expect(update).toHaveBeenCalledWith({ ...course, teaching_curriculum_id: curriculumId })
+        expect(refreshCourseById).toHaveBeenCalledWith(18)
+        expect(ctx.curriculumEditMode).toBe(false)
+        expect(ctx.curriculumSaveLoading).toBe(false)
+    })
+
+    it('keeps curriculum selection open when saving fails', async () => {
+        const ctx = {
+            selected_course: { id: 18 }, curriculumSaveLoading: false, curriculumEditMode: true,
+            normalizedCurriculumSelectionId: 7,
+            courseStore: { update: vi.fn().mockResolvedValue(false), refreshCourseById: vi.fn() },
+        }
+        await (Overview as any).methods.saveCurriculumAssignment.call(ctx)
+        expect(ctx.curriculumEditMode).toBe(true)
+        expect(ctx.courseStore.refreshCourseById).not.toHaveBeenCalled()
+    })
+
+    it('opens curriculum selection with the current assignment', async () => {
+        const ctx = {
+            selected_course: { id: 18 }, selectedCourseCurriculumId: 4,
+            loadCurricula: vi.fn().mockResolvedValue(true), curriculumEditMode: false,
+            curriculumSelectionId: null,
+        }
+        await (Overview as any).methods.startCurriculumEdit.call(ctx)
+        expect(ctx.loadCurricula).toHaveBeenCalledOnce()
+        expect(ctx.curriculumEditMode).toBe(true)
+        expect(ctx.curriculumSelectionId).toBe(4)
+    })
+
     it('lazy loads inactive panels and mounts the course editor only when opened', () => {
         const componentPath = resolve(
             process.cwd(),

@@ -25,16 +25,26 @@ class TeachingImportedCurriculum extends Model
         'source_schema_version',
         'source_exported_at',
         'imported_at',
+        'materials',
     ];
 
     protected $hidden = [
         'semester_count',
+        'materials',
     ];
+
+    protected $appends = ['has_materials'];
+
+    public function getHasMaterialsAttribute(): bool
+    {
+        return is_array($this->materials) && filled($this->materials['archive_path'] ?? null);
+    }
 
     protected function casts(): array
     {
         return [
             'topics' => 'array',
+            'materials' => 'array',
             'source_exported_at' => 'datetime',
             'imported_at' => 'datetime',
         ];

@@ -49,3 +49,8 @@ Schedule::command('teaching:backup-maintenance')
     ->everyFiveMinutes()
     ->onOneServer()
     ->withoutOverlapping(10);
+
+Schedule::command('teaching:send-reminders')
+    ->everyMinute()
+    ->onOneServer()
+    ->withoutOverlapping();

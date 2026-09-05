@@ -226,13 +226,16 @@
                                 </td>
                             </tr>
                             <tr
-                                v-if="tableView === 'entries' && hasAssignedCurriculum"
+                                v-if="tableView === 'entries'"
                                 class="course-table-curriculum-row">
-                                <th scope="row" class="course-table-curriculum-label">
-                                    <div class="course-table-curriculum-label-content">
+                                <th scope="row" class="course-table-curriculum-label cursor-pointer"
+                                    @click="$emit('manage-curriculum')">
+                                    <button type="button" class="course-table-curriculum-label-content cursor-pointer"
+                                        aria-label="Curriculum zuweisen oder Zuordnung entfernen"
+                                        @click.stop="$emit('manage-curriculum')">
                                         <v-icon color="deep-purple" size="18">mdi-book-education-outline</v-icon>
                                         <span>Curriculum</span>
-                                    </div>
+                                    </button>
                                 </th>
                                 <td
                                     v-for="courseDate in sortedCourseDates"
@@ -352,9 +355,13 @@
                                 class="course-table-row">
                                 <th scope="row" class="course-table-student-cell cursor-pointer" @click="$refs.studentNotes.open(student)">
                                     <div class="course-table-main-text">
-                                        <button type="button" class="course-table-student-name text-left cursor-pointer"
-                                            :aria-label="`Informationen zu ${studentName(student)} öffnen`"
-                                            @click.stop="$refs.studentNotes.open(student)">{{ studentLastName(student) }}</button>
+                                        <span class="course-table-name-badges d-inline-flex align-center ga-1 flex-nowrap">
+                                            <button type="button" class="course-table-student-name text-left cursor-pointer"
+                                                :aria-label="`Informationen zu ${studentName(student)} öffnen`"
+                                                @click.stop="$refs.studentNotes.open(student)">{{ studentLastName(student) }}</button>
+                                            <CourseStudentIndicators :student="student" :course-id="selected_course.id" stars-only
+                                                @select="$refs.studentNotes.open(student, $event)" />
+                                        </span>
                                         <span
                                             v-if="studentHasPendingNotificationConfirmation(student)"
                                             class="course-table-student-confirmation-warning"
@@ -379,15 +386,6 @@
                                         <span v-if="studentFirstName(student)">{{ studentFirstName(student) }}</span>
                                         <span v-if="studentClassValue(student)" class="course-table-student-class">
                                             {{ studentClassValue(student) }}
-                                        </span>
-                                    </div>
-                                    <div
-                                        v-if="studentComment(student)"
-                                        class="course-table-student-comment"
-                                        :title="studentComment(student)">
-                                        <v-icon aria-hidden="true" size="12">mdi-comment-text-outline</v-icon>
-                                        <span class="course-table-student-comment-text">
-                                            {{ studentComment(student) }}
                                         </span>
                                     </div>
                                     <CourseStudentIndicators :student="student" :course-id="selected_course.id"
@@ -2129,7 +2127,7 @@ const courseContentBlockedTags = new Set([
 export default {
     components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators },
 
-    emits: ['update:activeSemester'],
+    emits: ['update:activeSemester', 'manage-curriculum'],
 
     props: {
         activeSemester: {
@@ -2741,6 +2739,10 @@ export default {
         },
         async openCurriculumDialog(courseDate) {
             const curriculumId = this.assignedCurriculumId
+            if (!curriculumId) {
+                this.$emit('manage-curriculum')
+                return
+            }
             if (!curriculumId || !this.curriculumStore?.show) return
 
             const requestId = ++this.curriculumDialogRequestId
@@ -6289,6 +6291,11 @@ export default {
     line-height: 1.12;
     min-width: 0;
     width: 100%;
+}
+
+.course-table-name-badges {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .course-table-student-name {
