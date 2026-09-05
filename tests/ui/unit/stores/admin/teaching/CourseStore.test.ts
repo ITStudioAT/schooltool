@@ -47,6 +47,36 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.courseHasProblems({})).toBe(false)
     })
 
+    it('persists metadata in students_info and preserves classmates, deleted students and unrelated fields', async () => {
+        const store = useCourseStore()
+        const course = {
+            id: 18, teaching_schema_id: 1, title: '3B DGB1',
+            students: [12, 13],
+            students_info: [{ id: 12, comment: 'Before', stars: [], sem_grade: '1' }, { id: 13, comment: 'Other' }],
+            students_deleted: [99],
+        }
+        store.selected_course = course as never
+        store.courses = [course] as never
+        axiosMock.put.mockResolvedValue({ data: { data: {} } })
+
+        expect(await store.updateStudentMetadata(18, 12, { comment: 'After' })).toBeTruthy()
+        expect(axiosMock.put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+            students: [12, 13], students_deleted: [99],
+            students_info: [{ id: 12, comment: 'After', stars: [], sem_grade: '1' }, { id: 13, comment: 'Other' }],
+        }))
+        expect(store.selected_course?.students_info[0].comment).toBe('After')
+    })
+
+    it('does not apply failed edits or edits for a student not in the course', async () => {
+        const store = useCourseStore()
+        store.selected_course = { id: 18, students_info: [{ id: 12, comment: 'Before' }] } as never
+        const update = vi.spyOn(store, 'update').mockResolvedValue(false)
+        expect(await store.updateStudentMetadata(18, 12, { comment: 'After' })).toBe(false)
+        expect(store.selected_course?.students_info[0].comment).toBe('Before')
+        expect(await store.updateStudentMetadata(18, 99, { comment: 'Wrong' })).toBe(false)
+        expect(update).toHaveBeenCalledTimes(1)
+    })
+
     it('refreshCourseById reloads courses and updates selected course with normalized student collections', async () => {
         axiosMock.get.mockResolvedValueOnce({
             data: {

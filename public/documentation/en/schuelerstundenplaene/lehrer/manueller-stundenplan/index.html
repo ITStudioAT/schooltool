@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="de" dir="ltr" class="docs-wrapper student-docs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Manueller Stundenplan | Lehrer | Schülerstundenpläne | SchoolTool</title>
+    <meta name="description" content="Mit einem übernommenen oder leeren Stundenplan beginnen und Module sowie konkrete Unterrichte manuell auswählen und verplanen.">
+    <link rel="icon" href="/documentation/en/img/schooltool.ico">
+    <link rel="canonical" href="https://schooltool.at/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" crossorigin="anonymous">
+    <link rel="stylesheet" href="/documentation/en/assets/css/styles.73f24ed2.css">
+    <link rel="stylesheet" href="/documentation/assets/css/schuelerstundenplaene.css">
+    <script>
+        (() => {
+            let theme = 'system';
+            try {
+                theme = localStorage.getItem('theme') || theme;
+            } catch {}
+            document.documentElement.dataset.theme = theme === 'system'
+                ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : theme;
+            document.documentElement.dataset.themeChoice = theme;
+        })();
+    </script>
+    <script src="/documentation/assets/js/documentation-theme.js" defer></script>
+</head>
+<body>
+<div id="__docusaurus">
+    <div role="region" aria-label="Zum Hauptinhalt springen"><a class="skipToContent_fXgn" href="#documentation-content">Zum Hauptinhalt springen</a></div>
+    <nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top">
+        <div class="navbar__inner">
+            <div class="navbar__items">
+                <a class="navbar__brand" href="/documentation/en/"><div class="navbar__logo"><img src="/documentation/en/img/brand-mark.svg" alt=""></div><b class="navbar__title text--truncate">SchoolTool</b></a>
+                <a class="navbar__item navbar__link" href="/documentation/en/restauranttool/">Restauranttool</a>
+                <a class="navbar__item navbar__link navbar__link--active" href="/documentation/en/schuelerstundenplaene/">Schülerstundenpläne</a>
+            </div>
+            <div class="navbar__items navbar__items--right">
+                <a class="navbar__item navbar__link" href="/documentation/en/releases/">Changelog</a>
+                <button class="clean-btn navbar__link" type="button" data-documentation-theme-toggle>Dunkle Ansicht</button>
+            </div>
+        </div>
+    </nav>
+    <div class="theme-layout-main main-wrapper mainWrapper_z2l0">
+        <div class="docsWrapper_hBAB">
+            <div class="docRoot_UBD9">
+                <aside class="theme-doc-sidebar-container docSidebarContainer_YfHR">
+                    <div class="sidebarViewport_aRkj"><div class="sidebar_njMd">
+                        <nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG">
+                            <ul class="theme-doc-sidebar-menu menu__list">
+<li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item sidebar-section-title"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/"><span class="linkLabel_WmDU">Schülerstundenpläne</span></a></li>
+<li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item">
+    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/"><span class="categoryLinkLabel_W154">Lehrer</span></a></div>
+    <ul class="menu__list">
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/anmeldung/"><span class="linkLabel_WmDU">Anmeldung</span></a></li>
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/kennwort-aendern/"><span class="linkLabel_WmDU">Kennwort ändern</span></a></li>
+        <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item">
+            <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-mit-studierenden/"><span class="categoryLinkLabel_W154">Stundenplan mit Studierendem</span></a></div>
+            <ul class="menu__list">
+                <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-3 menu__list-item">
+                    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/"><span class="categoryLinkLabel_W154">Automatischer Stundenplan</span></a></div>
+                    <ul class="menu__list">
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/auswahl-von-modulen/"><span class="linkLabel_WmDU">Auswahl von Modulen</span></a></li>
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/ergebnisse-der-stundenplanberechnung/"><span class="linkLabel_WmDU">Ergebnisse der Stundenplanberechnung</span></a></li>
+                    </ul>
+                </li>
+                <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-3 menu__list-item">
+                    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--active" aria-current="page" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/"><span class="categoryLinkLabel_W154">Manueller Stundenplan</span></a></div>
+                    <ul class="menu__list">
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/speichern-fuer-studierende/"><span class="linkLabel_WmDU">Speichern für Studierende</span></a></li>
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/pdf/"><span class="linkLabel_WmDU">PDF</span></a></li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item">
+            <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-ohne-studierenden/"><span class="categoryLinkLabel_W154">Stundenplan ohne Studierenden</span></a></div>
+            <ul class="menu__list">
+                <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-ohne-studierenden/auswahl-der-module/"><span class="linkLabel_WmDU">Auswahl der Module</span></a></li>
+            </ul>
+        </li>
+    </ul>
+</li>
+<li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/studierende/"><span class="linkLabel_WmDU">Studierende</span></a></li>
+                            </ul>
+                        </nav>
+                    </div></div>
+                </aside>
+                <main class="docMainContainer_TBSr" id="documentation-content">
+                    <div class="container padding-top--md padding-bottom--lg">
+                        <details class="mobile-documentation-nav">
+                            <summary>Bereiche</summary>
+                            <nav aria-label="Dokumentationsbereiche"><ul class="menu__list">
+<li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item sidebar-section-title"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/"><span class="linkLabel_WmDU">Schülerstundenpläne</span></a></li>
+<li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item">
+    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/"><span class="categoryLinkLabel_W154">Lehrer</span></a></div>
+    <ul class="menu__list">
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/anmeldung/"><span class="linkLabel_WmDU">Anmeldung</span></a></li>
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/kennwort-aendern/"><span class="linkLabel_WmDU">Kennwort ändern</span></a></li>
+        <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item">
+            <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-mit-studierenden/"><span class="categoryLinkLabel_W154">Stundenplan mit Studierendem</span></a></div>
+            <ul class="menu__list">
+                <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-3 menu__list-item">
+                    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/"><span class="categoryLinkLabel_W154">Automatischer Stundenplan</span></a></div>
+                    <ul class="menu__list">
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/auswahl-von-modulen/"><span class="linkLabel_WmDU">Auswahl von Modulen</span></a></li>
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/ergebnisse-der-stundenplanberechnung/"><span class="linkLabel_WmDU">Ergebnisse der Stundenplanberechnung</span></a></li>
+                    </ul>
+                </li>
+                <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-3 menu__list-item">
+                    <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--active" aria-current="page" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/"><span class="categoryLinkLabel_W154">Manueller Stundenplan</span></a></div>
+                    <ul class="menu__list">
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/speichern-fuer-studierende/"><span class="linkLabel_WmDU">Speichern für Studierende</span></a></li>
+                        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-4 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/pdf/"><span class="linkLabel_WmDU">PDF</span></a></li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item">
+            <div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-ohne-studierenden/"><span class="categoryLinkLabel_W154">Stundenplan ohne Studierenden</span></a></div>
+            <ul class="menu__list">
+                <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/lehrer/stundenplan-ohne-studierenden/auswahl-der-module/"><span class="linkLabel_WmDU">Auswahl der Module</span></a></li>
+            </ul>
+        </li>
+    </ul>
+</li>
+<li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/documentation/en/schuelerstundenplaene/studierende/"><span class="linkLabel_WmDU">Studierende</span></a></li>
+                            </ul></nav>
+                        </details>
+                        <div class="row"><div class="col docItemCol_VOVn"><div class="docItemContainer_Djhp">
+                            <article>
+                                <nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label="Breadcrumbs">
+                                    <ul class="breadcrumbs">
+                                        <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/en/">Startseite</a></li>
+                                        <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/en/schuelerstundenplaene/">Schülerstundenpläne</a></li>
+                                        <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/en/schuelerstundenplaene/lehrer/">Lehrer</a></li>
+                                        <li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link" aria-current="page">Manueller Stundenplan</span></li>
+                                    </ul>
+                                </nav>
+                                <div class="theme-doc-markdown markdown">
+                                    <header><h1>Manueller Stundenplan</h1></header>
+                                    <p>Im manuellen Stundenplan können Sie die Unterrichte für die ausgewählte Person individuell zusammenstellen und einen bereits erstellten Stundenplan weiter anpassen.</p>
+                                    <h2>Mit einem bestehenden oder einem leeren Stundenplan beginnen</h2>
+                                    <ul>
+                                        <li><strong>Nach der automatischen Berechnung:</strong> Wenn Sie eine berechnete Variante mit <strong>Stundenplan übernehmen</strong> übernommen haben, sind deren Unterrichte bereits im Stundenplan eingetragen. Sie können diesen Stundenplan nun individuell weiterbearbeiten.</li>
+                                        <li><strong>Direkter Einstieg:</strong> Wenn Sie direkt <strong>Manueller Stundenplan</strong> gewählt haben, ohne zuvor einen automatisch erstellten Stundenplan zu übernehmen, beginnen Sie mit einem leeren Stundenplan.</li>
+                                    </ul>
+                                    <h2>Modultyp und Modul auswählen</h2>
+                                    <p>Die Suche nach Modulen funktioniert grundsätzlich wie im Abschnitt <a href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/auswahl-von-modulen/"><strong>Auswahl von Modulen</strong></a> beschrieben.</p>
+                                    <ol>
+                                        <li>Klicken Sie auf einen Modultyp, beispielsweise <strong>Aktuelle</strong> oder <strong>Vorziehen</strong>. Darunter erscheinen die zugehörigen Module der ausgewählten Person.</li>
+                                        <li>Klicken Sie auf das gewünschte Modul, beispielsweise <strong>Deutsch 2 (D2)</strong>. Es öffnet sich das Fenster mit den verfügbaren Unterrichten für dieses Modul.</li>
+                                        <li>Klicken Sie auf den Unterricht, den Sie in den Stundenplan aufnehmen möchten. Der Unterricht wird zunächst im Auswahlfenster markiert.</li>
+                                        <li>Klicken Sie anschließend auf <strong>Verplanen</strong>. Der gewählte Unterricht wird mit seinen Terminen direkt in den manuellen Stundenplan eingefügt.</li>
+                                    </ol>
+                                    <p>Wiederholen Sie diese Schritte für die weiteren gewünschten Module und Unterrichte. Bei der manuellen Planung wählen Sie die konkreten Unterrichte aus, die tatsächlich im Stundenplan stehen sollen. Eine automatische Berechnung von Unterrichtsalternativen findet dabei nicht statt.</p>
+                                    <p>Mit <strong>Abbrechen</strong> schließen Sie das Auswahlfenster, ohne die dort neu markierten Unterrichte in den Stundenplan einzufügen.</p>
+                                    <h2>Überschneidungen erkennen</h2>
+                                    <p>Wenn sich ein Unterricht mit einem bereits verplanten Unterricht zeitlich überschneiden würde, erscheint bei der Unterrichtsauswahl ein <strong>roter Hinweis in Klammern</strong>.</p>
+                                    <p>Sie können den Unterricht dennoch mit <strong>Verplanen</strong> in den Stundenplan aufnehmen. Die Überschneidung wird dann direkt im Stundenplan ausdrücklich gekennzeichnet.</p>
+                                    <p>Unterhalb des Stundenplans finden Sie zusätzlich eine Übersicht der Überschneidungen. Dort sehen Sie, <strong>an welchem Datum sich welche Unterrichte überschneiden</strong>.</p>
+                                    <h2>Verplante Unterrichte entfernen</h2>
+                                    <p>In der Karte <strong>Manueller Stundenplan</strong> finden Sie unter <strong>Ausgewählte Module</strong> die bereits verplanten Module. Klicken Sie beim gewünschten Modul auf das <strong>X</strong>, um die zugehörigen Unterrichte wieder aus dem Stundenplan zu entfernen.</p>
+                                    <p>Sind mehrere Unterrichte dieses Moduls verplant, werden sie gemeinsam entfernt.</p>
+                                </div>
+                            </article>
+<nav class="docusaurus-mt-lg pagination-nav" aria-label="Dokumentation Seiten">
+<a class="pagination-nav__link pagination-nav__link--prev" href="/documentation/en/schuelerstundenplaene/lehrer/automatischer-stundenplan/ergebnisse-der-stundenplanberechnung/"><div class="pagination-nav__sublabel">Zurück</div><div class="pagination-nav__label">Ergebnisse der Stundenplanberechnung</div></a>
+<a class="pagination-nav__link pagination-nav__link--next" href="/documentation/en/schuelerstundenplaene/lehrer/manueller-stundenplan/speichern-fuer-studierende/"><div class="pagination-nav__sublabel">Weiter</div><div class="pagination-nav__label">Speichern für Studierende</div></a>
+</nav>
+                        </div></div></div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+    <footer class="theme-layout-footer footer footer--dark">
+        <div class="container container-fluid"><div class="footer__bottom text--center">
+            <div class="footer__copyright">Copyright © 2025–2026 ITStudio.at by Günther Kron.</div>
+        </div></div>
+    </footer>
+</div>
+</body>
+</html>

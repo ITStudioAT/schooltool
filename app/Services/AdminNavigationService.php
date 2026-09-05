@@ -184,6 +184,10 @@ class AdminNavigationService
         // DOKUMENTATION
         $menu[] = ['title' => 'Dokumentation', 'icon' => 'mdi-book-open-variant', 'href' => '/documentation/index.html', 'is_active' => true];
 
+        if ($user->hasAdminShellAccess()) {
+            $menu[] = ['title' => 'Profil', 'icon' => 'mdi-account-circle', 'to' => '/admin/profile', 'active_paths' => ['/admin/profile'], 'is_active' => true];
+        }
+
         // ABMELDEN
         $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
         $hopperDashboardMenu = $this->hopperDashboardMenu($user);

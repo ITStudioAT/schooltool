@@ -9,6 +9,7 @@ use App\Models\SchoolTool;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Fortify\Events\TwoFactorAuthenticationChallenged;
@@ -162,10 +163,46 @@ class AdminService
     public function passwordUnkownSendToken(array $data): array
     {
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
+        $this->validateAdminCanLogin($user);
         $data['school'] = $user->selectedSchool;
-        $this->setToken2Fa($user, $data, 'Code zum Neusetzen des Kennwortes');
+        $this->setToken2Fa($user, $data, 'Code für Login');
 
         return $data;
+    }
+
+    public function loginWithEmailCode(array $data): array
+    {
+        $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
+        $this->validateAdminCanLogin($user);
+        $this->validateToken($user->token_2fa, $data['token_2fa'], $user->token_2fa_expires_at);
+
+        if ($user->is_2fa && $data['step'] === 'PASSWORD_UNKNOWN_ENTER_TOKEN') {
+            $data['school'] = new SchoolResource($user->selectedSchool);
+            $this->setToken2FaEmail2Fa($user, $data, 'Code für Login');
+            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN_2';
+
+            return $data;
+        }
+
+        DB::transaction(function () use ($user, $data): void {
+            if (! $user->consumeToken2Fa($data['token_2fa'])) {
+                abort(401, 'Token falsch oder abgelaufen');
+            }
+
+            if ($user->is_2fa && ! $user->consumeToken2Fa2($data['token_2fa_2'] ?? null)) {
+                abort(401, 'Token falsch oder abgelaufen');
+            }
+        });
+
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            $this->startTwoFactorChallenge($user);
+
+            return ['step' => 'LOGIN_ENTER_TWO_FACTOR', 'auth' => false];
+        }
+
+        $this->completeLogin($user);
+
+        return ['step' => 'LOGIN_SUCCESS', 'auth' => true, 'redirect_url' => '/admin'];
     }
 
     public function passwordUnkownCheckToken(array $data): array
@@ -223,14 +260,7 @@ class AdminService
             ->first();
 
         if ($user->hasEnabledTwoFactorAuthentication()) {
-            session()->put([
-                'login.id' => $user->getKey(),
-                'login.remember' => $this->resolveRemember($data),
-                'login.two_factor_started_at' => now()->timestamp,
-                'login.context' => 'admin',
-            ]);
-
-            event(new TwoFactorAuthenticationChallenged($user));
+            $this->startTwoFactorChallenge($user, $this->resolveRemember($data));
             $data['step'] = 'LOGIN_ENTER_TWO_FACTOR';
         } elseif ($user->is_2fa) {
             $this->setToken2FaSendingTo2FaEmail($user, $data, 'Code für Login');
@@ -395,6 +425,27 @@ class AdminService
         ];
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
+    }
+
+    private function startTwoFactorChallenge(User $user, bool $remember = false): void
+    {
+        session()->put([
+            'login.id' => $user->getKey(),
+            'login.remember' => $remember,
+            'login.two_factor_started_at' => now()->timestamp,
+            'login.context' => 'admin',
+        ]);
+
+        event(new TwoFactorAuthenticationChallenged($user));
+    }
+
+    private function validateAdminCanLogin(User $user): void
+    {
+        $this->validateUserCanLogin($user);
+
+        if (! $user->hasAnyRole(self::ADMIN_LOGIN_ROLES)) {
+            abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
+        }
     }
 
     private function validateUserCanLogin($user): void

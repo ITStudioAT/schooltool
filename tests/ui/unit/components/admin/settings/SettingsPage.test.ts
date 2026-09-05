@@ -535,7 +535,7 @@ describe('Admin settings page', () => {
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, false, true)).not.toContain('restaurant')
     })
 
-    it('does not expose students timetables management in Settings', () => {
+    it('does not expose profile or students timetables management in Settings', () => {
         const methods = (Settings as any).methods
         const computed = (Settings as any).computed
         const componentSource = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
@@ -552,6 +552,7 @@ describe('Admin settings page', () => {
         })
 
         expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('students_timetables')
+        expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('profile')
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true))
             .not.toContain('students_timetables')
         expect(componentSource).not.toContain("label: 'Schülerstundenpläne'")
@@ -612,7 +613,7 @@ describe('Admin settings page', () => {
 
         expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
         expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
@@ -1006,7 +1007,7 @@ describe('Admin settings page', () => {
 
         expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
         expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('renders the restaurant settings tab with overtaken settings sub navigation', async () => {
@@ -1108,7 +1109,7 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.getByText('Restaurant')).toBeInTheDocument()
-        expect(screen.getByText('Profil')).toBeInTheDocument()
+        expect(screen.queryByText('Profil')).not.toBeInTheDocument()
         expect(screen.queryByText('Nachhilfe')).not.toBeInTheDocument()
         expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
         expect(screen.getByText('RestaurantSettings embedded general')).toBeInTheDocument()
@@ -1163,8 +1164,8 @@ describe('Admin settings page', () => {
 
         expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
         expect(screen.queryByText('RestaurantSettings embedded general')).not.toBeInTheDocument()
-        expect(screen.getByText('Profile Component')).toBeInTheDocument()
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+        expect(screen.queryByText('Profile Component')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('redirects lunch_admin away from restaurant settings when restaurant capability is missing', () => {
@@ -1214,11 +1215,12 @@ describe('Admin settings page', () => {
 
         expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
         expect(screen.queryByText('RestaurantSettings embedded general')).not.toBeInTheDocument()
-        expect(screen.getByText('Profile Component')).toBeInTheDocument()
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+        expect(screen.queryByText('Profile Component')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
-    it('allows lunch_admin to open the profile settings tab directly', () => {
+    it('redirects the former profile settings tab to the standalone profile', () => {
+        const replace = vi.fn()
         render(Settings, {
             global: {
                 plugins: [
@@ -1246,7 +1248,7 @@ describe('Admin settings page', () => {
                         },
                     },
                     $router: {
-                        replace: vi.fn(),
+                        replace,
                     },
                 },
                 stubs: {
@@ -1257,7 +1259,9 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.getByText('Profile Component')).toBeInTheDocument()
+        expect(screen.queryByText('Profile Component')).not.toBeInTheDocument()
+        expect(screen.queryByText('Profil')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('redirects unauthorized users away from the admin settings tab and hides super-admin', () => {

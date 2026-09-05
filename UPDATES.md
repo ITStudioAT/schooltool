@@ -1,11 +1,23 @@
 # UPDATES
 
-## 3.47.0 !!!
+## 3.46.6 !!!
 
 ### Settings
 
-- Moved Teaching incl. Import to the Teaching-Menu-item
-- Updates Teachers impport: Imported teachers gets user-account with teacher role
+- Unterrichtseinstellungen inklusive Import in den Dashboard-Menüpunkt „Unterricht“ verschoben.
+- Importierte Lehrpersonen erhalten automatisch ein Konto mit der Rolle `teacher`.
+
+### Admin-Login
+
+- Lehrpersonen melden sich über den Admin-Login an.
+
+### Dokumentation
+
+- Dokumentation für Schülerstundenpläne für Lehrpersonen und Studierende ergänzt.
+
+### Unterricht
+
+- Weitere Einträge wie z. B. Stars für Schülerinnen möglich
 
 ## 3.46.5
 

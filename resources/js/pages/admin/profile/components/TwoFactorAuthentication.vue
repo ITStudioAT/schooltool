@@ -35,7 +35,8 @@
                     </v-col>
                     <v-col cols="12" md="7">
                         <v-alert type="info" variant="tonal" density="comfortable" rounded="lg" class="mb-4">
-                            Sie können jede RFC-6238-kompatible App verwenden, etwa Microsoft Authenticator, Google Authenticator, 2FAS, Bitwarden oder 1Password.
+                            Sie können zum Beispiel Microsoft Authenticator, Google Authenticator oder 2FAS Authenticator verwenden.
+                            Auch andere Apps für zeitbasierte Einmalcodes (TOTP) sind kompatibel.
                         </v-alert>
                         <div class="text-caption text-medium-emphasis mb-1">Manueller Einrichtungsschlüssel</div>
                         <code class="two-factor-key d-block pa-3 rounded-lg mb-4">{{ setup.manualKey }}</code>
@@ -93,8 +94,16 @@
                 <p class="text-body-1 mb-3">
                     Schützen Sie Ihr Benutzerkonto mit einem Code aus einer Authenticator-App. Nach dem Kennwort geben Sie zusätzlich einen sechsstelligen Code ein.
                 </p>
+                <p class="text-body-2 text-medium-emphasis mb-2">
+                    Sie können zum Beispiel eine der folgenden Authenticator-Apps verwenden:
+                </p>
+                <ul class="text-body-2 text-medium-emphasis pl-6 mb-3">
+                    <li>Microsoft Authenticator</li>
+                    <li>Google Authenticator</li>
+                    <li>2FAS Authenticator</li>
+                </ul>
                 <p class="text-body-2 text-medium-emphasis mb-5">
-                    Sie können jede kompatible Authenticator-App verwenden. SMS wird nicht verwendet.
+                    Auch andere Apps für zeitbasierte Einmalcodes (TOTP) sind kompatibel. SMS wird nicht verwendet.
                 </p>
                 <v-btn color="success" variant="flat" prepend-icon="mdi-shield-plus-outline" @click="requestPassword('enable')">
                     Zwei-Faktor-Authentifizierung aktivieren

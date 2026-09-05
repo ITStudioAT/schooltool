@@ -237,7 +237,7 @@ describe('dashboardMenu', function () {
             ->and($settingsItem['to'])->toBe('/admin/settings');
     });
 
-    it('does not add a profile menu item to the dashboard menu', function () {
+    it('does not add a profile menu item for users without admin shell access', function () {
         $user = User::factory()->create([
             'first_name' => 'VeryLongFirstName',
             'last_name' => 'VeryLongLastName',
@@ -271,11 +271,17 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(4)
+            ->toHaveCount(5)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Einstellungen', 'Dokumentation', 'Abmelden')
+            ->toBe(['Home', 'Einstellungen', 'Dokumentation', 'Profil', 'Abmelden'])
             ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA')
             ->not->toContain('Gruppen');
+
+        expect($result[3])->toMatchArray([
+            'to' => '/admin/profile',
+            'active_paths' => ['/admin/profile'],
+            'is_active' => true,
+        ]);
     });
 
     it('keeps module active when expired school licence is not required by model', function () {

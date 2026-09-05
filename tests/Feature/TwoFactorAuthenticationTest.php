@@ -227,6 +227,42 @@ test('users without confirmed two factor authentication continue to log in norma
     $this->assertAuthenticatedAs($this->user, 'web');
 });
 
+test('unknown password email code still requires the configured authenticator or recovery code', function (string $factor) {
+    confirmedTwoFactorUser($this->user);
+    $password = $this->user->password;
+    $this->user->forceFill(['token_2fa' => '123456', 'token_2fa_expires_at' => now()->addMinutes(10)])->save();
+    $data = ['data' => [
+        'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
+        'email' => $this->user->email,
+        'school_id' => $this->school->id,
+        'token_2fa' => '123456',
+    ]];
+
+    $this->postJson('/api/admin/password_unknown_step_token', $data)
+        ->assertOk()
+        ->assertExactJson(['step' => 'LOGIN_ENTER_TWO_FACTOR', 'auth' => false])
+        ->assertSessionHas('login.id', $this->user->id)
+        ->assertSessionHas('login.remember', false)
+        ->assertSessionHas('login.context', 'admin');
+    $this->assertGuest('web');
+    expect($this->user->fresh()->token_2fa)->toBeNull();
+    $this->postJson('/api/admin/password_unknown_step_token', $data)->assertUnauthorized();
+
+    fakeTwoFactorProvider(false);
+    $this->postJson('/api/admin/two-factor-challenge', ['code' => '111111'])->assertUnprocessable();
+    $this->assertGuest('web');
+
+    fakeTwoFactorProvider(true);
+    $this->postJson('/api/admin/two-factor-challenge', $factor === 'authenticator'
+        ? ['code' => '654321']
+        : ['recovery_code' => 'recovery-code-one'])
+        ->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS')
+        ->assertSessionMissing('login.id')
+        ->assertSessionMissing('auth.password_confirmed_at');
+    $this->assertAuthenticatedAs($this->user, 'web');
+    expect($this->user->fresh()->password)->toBe($password);
+})->with(['authenticator', 'recovery']);
+
 test('confirmed users are staged and must provide a valid authenticator code', function () {
     confirmedTwoFactorUser($this->user);
 

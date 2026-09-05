@@ -414,8 +414,7 @@ export default {
                 return
             }
 
-            await this.adminStore.loadConfig()
-            await this.$router.push(response.redirect_url || '/admin')
+            window.location.replace('/admin')
         },
 
         async loginStep3() {
@@ -429,8 +428,7 @@ export default {
             }
 
             if (this.data.step == 'LOGIN_SUCCESS') {
-                await this.adminStore.loadConfig()
-                this.$router.push('/admin')
+                window.location.replace('/admin')
             } else {
                 this.step = 'LOGIN_ENTER_TOKEN'
             }

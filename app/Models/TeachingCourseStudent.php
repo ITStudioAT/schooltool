@@ -30,10 +30,20 @@ class TeachingCourseStudent extends Model
     ];
 
     protected $casts = [
+        'special_information' => 'encrypted',
         'stars' => 'array',
         'canceled_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    protected $hidden = [
+        'special_information',
+    ];
+
+    public function hasSpecialInformation(): bool
+    {
+        return filled($this->getRawOriginal('special_information'));
+    }
 
     public function teachingCourse(): BelongsTo
     {

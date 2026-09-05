@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import MyTimetable from '@/pages/admin/teaching/overview/components/MyTimetable.vue'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 afterEach(() => {
     vi.useRealTimers()
@@ -152,20 +154,52 @@ describe('MyTimetable time range labels', () => {
         expect(source).toContain('.timetable-grid-item.timetable-item--exam.timetable-item--free')
     })
 
-    it('opens timetable courses on the dates panel without preselecting a date', () => {
-        const componentPath = resolve(
-            process.cwd(),
-            'resources/js/pages/admin/teaching/overview/components/MyTimetable.vue',
-        )
-        const source = readFileSync(componentPath, 'utf8')
+    it.each([
+        { selectedCourseId: null, panel: 'table', view: undefined },
+        { selectedCourseId: 16, panel: 'table', view: 'attendance' },
+        { selectedCourseId: 17, panel: 'works', view: undefined },
+    ])('opens timetable courses on the table panel from $panel with course $selectedCourseId', ({ selectedCourseId, panel, view }) => {
+        const pinia = createPinia()
+        setActivePinia(pinia)
+        const courseStore = useCourseStore()
+        const course = { id: 16, title: 'DGB1', classes: ['3B'], details_loaded: true }
+        courseStore.courses = [course]
+        courseStore.selected_course = selectedCourseId ? { id: selectedCourseId } : null
+        const inactivePanels = [
+            'show_students', 'show_infos', 'show_works', 'show_print', 'show_dates',
+            'show_curriculum', 'show_attendance', 'show_performances', 'show_performances_plus',
+        ]
+        inactivePanels.forEach((key) => { courseStore[key] = true })
+        courseStore.show_table = false
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const context: Record<string, any> = {
+            $pinia: pinia,
+            $route: { query: { course: '17', panel, view, date: '44', work: '55', grades: 'sem1' } },
+            $router: { replace },
+        }
+        Object.entries((MyTimetable as any).computed).forEach(([key, computed]: [string, any]) => {
+            if (computed.get && computed.set) {
+                Object.defineProperty(context, key, {
+                    get: computed.get.bind(context),
+                    set: computed.set.bind(context),
+                })
+            }
+        })
+        context.selected_courseDate = { id: 44 }
+        context.selected_course_student = { id: 3 }
+        context.action_2 = 'student_detail'
 
-        expect(source).toContain("'show_students'")
-        expect(source).toContain("'show_dates'")
-        expect(source).toContain('this.selected_courseDate = null')
-        expect(source).toContain('this.show_students = false')
-        expect(source).toContain('this.show_dates = true')
-        expect(source).toContain("panel: 'dates'")
-        expect(source).toContain('delete query.date')
-        expect(source).not.toContain('if (date?.id) query.date = String(date.id)')
+        ;(MyTimetable as any).methods.openCourse.call(context, { courseId: 16, dateId: 44 })
+
+        expect(courseStore.selected_course.id).toBe(16)
+        expect(courseStore.selected_course_id).toBe(16)
+        expect(courseStore.selected_course_student).toBeNull()
+        expect(context.selected_courseDate).toBeNull()
+        expect(context.action_2).toBe('')
+        expect(courseStore.show_table).toBe(true)
+        inactivePanels.forEach((key) => { expect(courseStore[key]).toBe(false) })
+        expect(replace).toHaveBeenCalledWith({
+            query: { course: '16', panel: 'table', grades: 'sem1' },
+        })
     })
 })

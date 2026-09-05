@@ -73,6 +73,7 @@ use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentEntryNotificationController;
+use App\Http\Controllers\Admin\Teaching\CourseStudentSpecialInformationController;
 use App\Http\Controllers\Admin\Teaching\CourseWorkController;
 use App\Http\Controllers\Admin\Teaching\CurriculumController;
 use App\Http\Controllers\Admin\Teaching\CurriculumDocumentController;
@@ -692,6 +693,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_student_entries', App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('/admin/teaching/courses/{course}/students/{courseStudent}/special-information', [CourseStudentSpecialInformationController::class, 'show']);
+        Route::put('/admin/teaching/courses/{course}/students/{courseStudent}/special-information', [CourseStudentSpecialInformationController::class, 'update']);
     });
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {

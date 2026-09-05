@@ -2,12 +2,16 @@
     <ItsGridBox variant="overview" color="primary" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != '' || isSavingMutation">
         <template #title>
             <div class="its-grid-box__title-text">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
+            <CourseStudentIndicators v-if="selected_course" :student="selected_course_student" :course-id="selected_course.id"
+                @select="$refs.studentNotes.open(selected_course_student, $event)" />
             <v-menu>
                 <template #activator="{ props }">
                     <v-btn v-bind="props" icon="mdi-menu" size="x-small" variant="tonal" color="primary" />
                 </template>
                 <v-list density="compact">
                     <v-list-item prepend-icon="mdi-pencil" title="Bemerkung" @click="editComment" />
+                    <v-list-item prepend-icon="mdi-shield-alert-outline" title="Besondere Informationen"
+                        @click="$refs.studentNotes.open(selected_course_student, 'special')" />
                     <v-list-item v-if="showBehaviourEnabled" prepend-icon="mdi-account-alert" title="Verhalten" @click="newBehaviourEntry" />
                     <v-list-item prepend-icon="mdi-star" title="Sterne" @click="newStarEntry" />
                     <v-list-item v-if="showBehaviourEnabled" prepend-icon="mdi-message-text" title="Verständigung" @click="newNotificationEntry" />
@@ -882,10 +886,13 @@
                 </v-dialog>
             </v-card-text>
         </v-card>
+        <CourseStudentNotes ref="studentNotes" :course="selected_course" />
     </ItsGridBox>
 </template>
 
 <script>
+import CourseStudentNotes from './CourseStudentNotes.vue'
+import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
@@ -902,7 +909,7 @@ const entryTypeBackgroundClassCount = 8
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
-    components: { ItsGridBox, ItsRichTextEditor },
+    components: { ItsGridBox, ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

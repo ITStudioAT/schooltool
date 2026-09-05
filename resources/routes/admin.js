@@ -24,6 +24,7 @@ const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const MenuPlansEntry = () => import('@/pages/admin/restaurant/components/MenuPlansEntry.vue')
 const StudentsTimetables = () => import('@/pages/admin/studentsTimetables/StudentsTimetables.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
+const Profile = () => import('@/pages/admin/profile/Profile.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
 
@@ -34,7 +35,7 @@ export const routes = [
     { path: '/admin/unknown_password', component: Auth_UnknownPassword, meta: { public: true } },
     { path: '/admin/register', component: Auth_Register, meta: { public: true } },
     { path: '/admin/email_verification', component: Auth_EmailVerification, meta: { public: true } },
-    { path: '/admin/profile', redirect: '/admin/settings?tab=profile' },
+    { path: '/admin/profile', component: Profile, meta: { capability: 'profile' } },
     { path: '/admin/users', component: Users, meta: { capability: 'users' } },
     { path: '/admin/users/all_users', component: Users_AllUsers, meta: { capability: 'users' } },
     { path: '/admin/users/roles', component: Users_Roles, meta: { capability: 'user_roles' } },

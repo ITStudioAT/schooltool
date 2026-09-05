@@ -494,6 +494,8 @@ class TeachingCourseController extends Controller
             'class_head_emails.*.email_1' => ['prohibited'],
             'class_head_emails.*.email_2' => ['prohibited'],
             'students' => 'nullable|array',
+            'students.*.comment' => ['nullable', 'string', 'max:65535'],
+            'students.*.special_information' => ['prohibited'],
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
             'students.*.stars.*.id' => 'nullable|string|max:64',
@@ -502,6 +504,13 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.date' => 'nullable|date',
             'students.*.canceled_at' => 'nullable|date',
             'students_info' => 'nullable|array',
+            'students_info.*.comment' => ['nullable', 'string', 'max:65535'],
+            'students_info.*.special_information' => ['prohibited'],
+            'students_info.*.stars' => ['nullable', 'array'],
+            'students_info.*.stars.*.id' => ['nullable', 'string', 'max:64'],
+            'students_info.*.stars.*.value' => ['nullable', 'integer', 'in:1'],
+            'students_info.*.stars.*.comment' => ['nullable', 'string', 'max:1024'],
+            'students_info.*.stars.*.date' => ['nullable', 'date'],
             'students_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
@@ -755,6 +764,8 @@ class TeachingCourseController extends Controller
             'class_head_emails.*.email_1' => ['prohibited'],
             'class_head_emails.*.email_2' => ['prohibited'],
             'students' => 'nullable|array',
+            'students.*.comment' => ['nullable', 'string', 'max:65535'],
+            'students.*.special_information' => ['prohibited'],
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
             'students.*.stars.*.id' => 'nullable|string|max:64',
@@ -763,6 +774,13 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.date' => 'nullable|date',
             'students.*.canceled_at' => 'nullable|date',
             'students_info' => 'nullable|array',
+            'students_info.*.comment' => ['nullable', 'string', 'max:65535'],
+            'students_info.*.special_information' => ['prohibited'],
+            'students_info.*.stars' => ['nullable', 'array'],
+            'students_info.*.stars.*.id' => ['nullable', 'string', 'max:64'],
+            'students_info.*.stars.*.value' => ['nullable', 'integer', 'in:1'],
+            'students_info.*.stars.*.comment' => ['nullable', 'string', 'max:1024'],
+            'students_info.*.stars.*.date' => ['nullable', 'date'],
             'students_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
@@ -1115,6 +1133,7 @@ class TeachingCourseController extends Controller
         $payload['user_id'] = $source === 'user' ? $courseStudent->user_id : null;
         $payload['import116_id'] = $courseStudent->import116_id;
         $payload['comment'] = $courseStudent->comment;
+        $payload['has_special_information'] = $courseStudent->hasSpecialInformation();
         $payload['sem_1_grade'] = $courseStudent->sem_1_grade;
         $payload['sem_2_grade'] = $courseStudent->sem_2_grade;
         $payload['sem_grade'] = $courseStudent->sem_grade;

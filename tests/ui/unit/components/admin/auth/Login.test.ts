@@ -1,6 +1,6 @@
 import { createTestingPinia } from '@pinia/testing'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from '@/pages/admin/auth/Login.vue'
 
 const VBtnStub = {
@@ -94,7 +94,13 @@ describe('Admin login unknown password availability', () => {
 describe('Admin two-factor challenge', () => {
     const methods = (Login as any).methods
 
-    it('sends only a normalized authenticator code and follows the server redirect', async () => {
+    beforeEach(() => {
+        vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    })
+
+    afterEach(() => vi.restoreAllMocks())
+
+    it('sends only a normalized authenticator code and immediately opens admin', async () => {
         const push = vi.fn()
         const loginTwoFactorChallenge = vi.fn().mockResolvedValue({
             step: 'LOGIN_SUCCESS',
@@ -116,7 +122,9 @@ describe('Admin two-factor challenge', () => {
         await methods.submitTwoFactorChallenge.call(context)
 
         expect(loginTwoFactorChallenge).toHaveBeenCalledWith({ code: '123456' })
-        expect(push).toHaveBeenCalledWith('/admin/teaching?panel=entries')
+        expect(push).not.toHaveBeenCalled()
+        expect(context.adminStore.loadConfig).not.toHaveBeenCalled()
+        expect(window.location.replace).toHaveBeenCalledWith('/admin')
         expect(context.twoFactorCode).toBe('')
         expect(context.recoveryCode).toBe('')
     })
@@ -136,5 +144,32 @@ describe('Admin two-factor challenge', () => {
 
         expect(loginTwoFactorChallenge).toHaveBeenCalledWith({ recovery_code: 'recovery-code' })
         expect(context.step).toBe('LOGIN_ENTER_TWO_FACTOR')
+        expect(window.location.replace).not.toHaveBeenCalled()
+    })
+
+    it.each([true, false])('opens admin after the email factor only when successful: %s', async success => {
+        const context: any = {
+            data: { token_2fa: '123456', remember: true },
+            step: 'LOGIN_ENTER_TOKEN',
+            adminStore: {
+                loginStep3: vi.fn().mockImplementation(async () => {
+                    context.data.step = success ? 'LOGIN_SUCCESS' : 'LOGIN_ENTER_TOKEN'
+                    return success
+                }),
+                loadConfig: vi.fn(() => new Promise(() => {})),
+            },
+            $router: { push: vi.fn() },
+        }
+
+        await methods.loginStep3.call(context)
+
+        expect(context.adminStore.loadConfig).not.toHaveBeenCalled()
+        expect(context.$router.push).not.toHaveBeenCalled()
+        if (success) {
+            expect(window.location.replace).toHaveBeenCalledWith('/admin')
+        } else {
+            expect(window.location.replace).not.toHaveBeenCalled()
+            expect(context.step).toBe('LOGIN_ENTER_TOKEN')
+        }
     })
 })

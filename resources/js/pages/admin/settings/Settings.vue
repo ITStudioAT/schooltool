@@ -180,10 +180,6 @@
                         <RestaurantSettings :embedded="true" :panel="sub_action" />
                     </div>
 
-                    <div v-else-if="isProfileTab" class="settings-profile-wrap">
-                        <Profile :embedded="true" />
-                    </div>
-
                     <v-col v-else cols="12">
                         <v-sheet rounded="xl" class="pa-6 settings-empty-card">
                             <div class="settings-empty-icon">
@@ -219,7 +215,6 @@ const Roles = defineAsyncComponent(() => import('@/pages/admin/superAdmin/compon
 const Log = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Log.vue'))
 const RegisterUsers = defineAsyncComponent(() => import('@/pages/admin/settings/components/RegisterUsers.vue'))
 const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/settings/components/ModuleStatusesCard.vue'))
-const Profile = defineAsyncComponent(() => import('@/pages/admin/profile/Profile.vue'))
 const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/ActiveSchool.vue'))
 const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
 const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))
@@ -232,7 +227,7 @@ const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vu
 const RestaurantSettings = defineAsyncComponent(() => import('@/pages/admin/restaurant/components/Settings.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -274,6 +269,10 @@ export default {
             }
         },
         '$route.query.tab'(val) {
+            if (val === 'profile') {
+                this.$router.replace('/admin/profile')
+                return
+            }
             const tab = val || 'super_admin'
             if (this.navigationItems.some((i) => i.key === tab)) {
                 this.main_action = tab
@@ -333,7 +332,6 @@ export default {
                 materials: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
                 groups: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
                 restaurant: ['super_admin', 'admin', 'lunch_admin'],
-                profile: ['Jede/r'],
             }
         },
         activeRoles() {
@@ -385,13 +383,6 @@ export default {
 
             return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
         },
-        canAccessProfileTab() {
-            if (typeof this.configuredCapabilities.profile === 'boolean') {
-                return this.configuredCapabilities.profile
-            }
-
-            return ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'].some((role) => this.configuredRoleNames.includes(role))
-        },
         showsSubNavigation() {
             return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups', 'restaurant'].includes(this.main_action)
         },
@@ -428,9 +419,6 @@ export default {
         },
         isRestaurantTab() {
             return this.main_action === 'restaurant'
-        },
-        isProfileTab() {
-            return this.main_action === 'profile'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -552,7 +540,6 @@ export default {
                 { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed', visible: this.canAccessMaterialsSettingsTab },
                 { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline', visible: this.canAccessGroupsSettingsTab },
                 { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife', visible: this.canAccessRestaurantSettingsTab },
-                { key: 'profile', label: 'Profil', icon: 'mdi-account-circle', visible: this.canAccessProfileTab },
             ].filter((item) => item.visible !== false)
         },
     },
@@ -567,7 +554,6 @@ export default {
             canAccessMaterialsTab,
             canAccessGroupsTab,
             canAccessRestaurantTab,
-            canAccessProfileTab,
         ) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
@@ -578,7 +564,6 @@ export default {
                 canAccessMaterialsTab ? 'materials' : null,
                 canAccessGroupsTab ? 'groups' : null,
                 canAccessRestaurantTab ? 'restaurant' : null,
-                canAccessProfileTab ? 'profile' : null,
             ].filter(Boolean)
         },
         canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities) {
@@ -611,9 +596,6 @@ export default {
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)
-            const canAccessProfileTab = typeof configuredCapabilities.profile === 'boolean'
-                ? configuredCapabilities.profile
-                : ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'].some((role) => configuredRoleNames.includes(role))
             const keys = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
@@ -623,7 +605,6 @@ export default {
                 canAccessMaterialsTab,
                 canAccessGroupsTab,
                 canAccessRestaurantTab,
-                canAccessProfileTab,
             )
 
             return keys.includes(tab) ? tab : keys[0]
@@ -648,9 +629,6 @@ export default {
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)
-            const canAccessProfileTab = typeof configuredCapabilities.profile === 'boolean'
-                ? configuredCapabilities.profile
-                : ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'].some((role) => configuredRoleNames.includes(role))
             const availableTabs = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
@@ -660,7 +638,6 @@ export default {
                 canAccessMaterialsTab,
                 canAccessGroupsTab,
                 canAccessRestaurantTab,
-                canAccessProfileTab,
             )
             const resolvedTab = availableTabs.includes(tab)
                 ? tab
@@ -706,6 +683,11 @@ export default {
             return keys.includes(panel) ? panel : 'module_visibility'
         },
         syncRouteQuery() {
+            if (this.$route.query?.tab === 'profile' || !this.main_action) {
+                this.$router.replace('/admin/profile')
+                return
+            }
+
             const query = {}
 
             if (this.main_action !== 'super_admin') {
@@ -909,10 +891,6 @@ export default {
 .settings-teaching-admin-wrap {
     width: 100%;
     max-width: 100%;
-}
-
-.settings-profile-wrap {
-    width: 100%;
 }
 
 .settings-licence-subnav {

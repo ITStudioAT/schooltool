@@ -838,8 +838,11 @@ test('load roles requires authentication', function () {
     $response->assertStatus(401);
 });
 
-// Password Reset - Token Validation
-test('password reset validates user exists and is active', function () {
+test('unknown password code logs in without changing the password and cannot be reused', function () {
+    $this->withHeader('Origin', config('app.url'));
+    $password = $this->user->password;
+    $this->withSession(['login-test' => true]);
+    $sessionId = session()->getId();
     $this->user->token_2fa = '123456';
     $this->user->token_2fa_expires_at = now()->addMinutes(10);
     $this->user->save();
@@ -855,7 +858,129 @@ test('password reset validates user exists and is active', function () {
 
     $response = $this->postJson('/api/admin/password_unknown_step_token', $data);
 
-    $response->assertStatus(200);
+    $response->assertOk()
+        ->assertExactJson(['step' => 'LOGIN_SUCCESS', 'auth' => true, 'redirect_url' => '/admin'])
+        ->assertSessionMissing('auth.password_confirmed_at');
+    $this->assertAuthenticatedAs($this->user, 'web');
+    expect(session()->getId())->not->toBe($sessionId);
+    expect($this->user->fresh()->password)->toBe($password)
+        ->and($this->user->fresh()->token_2fa)->toBeNull()
+        ->and($this->user->fresh()->token_2fa_expires_at)->toBeNull()
+        ->and($this->user->fresh()->login_at)->not->toBeNull();
+
+    Auth::guard('web')->logout();
+    $this->postJson('/api/admin/password_unknown_step_token', $data)->assertUnauthorized();
+    $this->assertGuest('web');
+});
+
+test('unknown password code rejects invalid expired and missing codes', function (string $case) {
+    $this->withHeader('Origin', config('app.url'));
+    $this->user->forceFill([
+        'token_2fa' => $case === 'missing' ? null : '123456',
+        'token_2fa_expires_at' => $case === 'expired' ? now()->subMinute() : now()->addMinutes(10),
+    ])->save();
+
+    $this->postJson('/api/admin/password_unknown_step_token', ['data' => [
+        'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
+        'email' => $this->user->email,
+        'school_id' => $this->school->id,
+        'token_2fa' => $case === 'invalid' ? '999999' : '123456',
+    ]])->assertUnauthorized();
+    $this->assertGuest('web');
+})->with(['invalid', 'expired', 'missing']);
+
+test('unknown password code enforces account access even when email selection is skipped', function (string $case) {
+    $this->withHeader('Origin', config('app.url'));
+    $this->user->forceFill([
+        'token_2fa' => '123456',
+        'token_2fa_expires_at' => now()->addMinutes(10),
+        'is_active' => $case !== 'inactive',
+        'confirmed_at' => $case === 'unconfirmed' ? null : now(),
+    ])->save();
+    if ($case === 'no admin role') {
+        $this->user->syncRoles([]);
+    }
+
+    $this->postJson('/api/admin/password_unknown_step_token', ['data' => [
+        'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
+        'email' => $this->user->email,
+        'school_id' => $this->school->id,
+        'token_2fa' => '123456',
+    ]])->assertStatus(423);
+    $this->assertGuest('web');
+})->with(['inactive', 'unconfirmed', 'no admin role']);
+
+test('unknown password code belongs to the selected school account', function () {
+    $this->withHeader('Origin', config('app.url'));
+    $this->user->forceFill(['token_2fa' => '123456', 'token_2fa_expires_at' => now()->addMinutes(10)])->save();
+    $otherSchool = School::factory()->create();
+    $otherUser = User::factory()->create([
+        'email' => $this->user->email,
+        'school_id' => $otherSchool->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+        'token_2fa' => '654321',
+        'token_2fa_expires_at' => now()->addMinutes(10),
+    ]);
+    $otherUser->assignRole('admin');
+
+    $this->postJson('/api/admin/password_unknown_step_token', ['data' => [
+        'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
+        'email' => $this->user->email,
+        'school_id' => $otherSchool->id,
+        'token_2fa' => '123456',
+    ]])->assertUnauthorized();
+    $this->assertGuest('web');
+    expect($this->user->fresh()->token_2fa)->toBe('123456');
+});
+
+test('unknown password code requires the second email factor before logging in', function () {
+    $this->withHeader('Origin', config('app.url'));
+    Notification::fake();
+    config(['schooltool.token_expire_time' => 10]);
+    $password = $this->user->password;
+    $this->user->forceFill([
+        'is_2fa' => true,
+        'email_2fa' => 'second@example.test',
+        'token_2fa' => '123456',
+        'token_2fa_expires_at' => now()->addMinutes(10),
+    ])->save();
+    $data = [
+        'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
+        'email' => $this->user->email,
+        'school_id' => $this->school->id,
+        'token_2fa' => '123456',
+    ];
+
+    $this->postJson('/api/admin/password_unknown_step_token', ['data' => $data])
+        ->assertOk()->assertJsonPath('step', 'PASSWORD_UNKNOWN_ENTER_TOKEN_2');
+    $this->assertGuest('web');
+    Notification::assertCount(1);
+    $secondCode = $this->user->fresh()->token_2fa_2;
+    expect($secondCode)->not->toBeNull();
+
+    $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN_2';
+    $data['token_2fa_2'] = '000000';
+    $this->postJson('/api/admin/password_unknown_step_token_2', ['data' => $data])->assertUnauthorized();
+    $this->assertGuest('web');
+    expect($this->user->fresh()->token_2fa)->toBe('123456');
+
+    $data['token_2fa_2'] = $secondCode;
+    $this->user->forceFill(['token_2fa_2_expires_at' => now()->subMinute()])->save();
+    $this->postJson('/api/admin/password_unknown_step_token_2', ['data' => $data])->assertUnauthorized();
+    $this->assertGuest('web');
+
+    $this->user->forceFill(['token_2fa_2_expires_at' => now()->addMinutes(10)])->save();
+    $this->postJson('/api/admin/password_unknown_step_token_2', ['data' => $data])
+        ->assertOk()->assertExactJson(['step' => 'LOGIN_SUCCESS', 'auth' => true, 'redirect_url' => '/admin']);
+    $this->assertAuthenticatedAs($this->user, 'web');
+    expect($this->user->fresh()->password)->toBe($password)
+        ->and($this->user->fresh()->token_2fa)->toBeNull()
+        ->and($this->user->fresh()->token_2fa_2)->toBeNull();
+
+    Auth::guard('web')->logout();
+    $this->postJson('/api/admin/password_unknown_step_token_2', ['data' => $data])->assertUnauthorized();
+    $this->assertGuest('web');
 });
 
 // Register Token Validation

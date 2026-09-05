@@ -49,6 +49,34 @@ export const useCourseStore = defineStore('AdminCourseStore', {
     },
 
     actions: {
+        applyStudentMetadata(courseId, studentId, changes) {
+            const courses = [...this.courses, this.selected_course].filter(Boolean)
+            for (const course of courses) {
+                if (String(course.id) !== String(courseId)) continue
+                course.students_info = (course.students_info || []).map((student) =>
+                    String(student.id) === String(studentId) ? { ...student, ...changes } : student,
+                )
+            }
+            if (String(this.selected_course?.id) === String(courseId)
+                && String(this.selected_course_student?.id) === String(studentId)) {
+                this.selected_course_student = { ...this.selected_course_student, ...changes }
+            }
+        },
+
+        async updateStudentMetadata(courseId, studentId, changes) {
+            const course = String(this.selected_course?.id) === String(courseId)
+                ? this.selected_course
+                : this.courses.find((item) => String(item.id) === String(courseId))
+            if (!course?.students_info?.some((student) => String(student.id) === String(studentId))) return false
+
+            const studentsInfo = course.students_info.map((student) =>
+                String(student.id) === String(studentId) ? { ...student, ...changes } : { ...student },
+            )
+            const result = await this.update({ ...course, students_info: studentsInfo, students: studentsInfo })
+            if (result) this.applyStudentMetadata(courseId, studentId, changes)
+            return result
+        },
+
         courseHasProblems(course) {
             return Array.isArray(course?.course_dates) && course.course_dates.length === 0
         },

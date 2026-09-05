@@ -1504,6 +1504,10 @@ class TeachingCourseService
 
     private function hasProtectedCourseStudentData(TeachingCourseStudent $courseStudent): bool
     {
+        if ($courseStudent->hasSpecialInformation()) {
+            return true;
+        }
+
         $fields = [
             $courseStudent->comment,
             $courseStudent->sem_1_grade,

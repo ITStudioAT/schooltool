@@ -452,33 +452,18 @@ class AdminController extends Controller
 
     public function passwordUnknownStepToken(AdminPasswordUnknownStepTokenRequest $request, AdminService $service)
     {
-
         $validated = $request->validated();
 
-        $data = $validated['data'];
-        $data = $service->passwordUnkownCheckToken($data);
-
-        if ($service->passwordUnkownIfUserIs2FaSendToken($data)) {
-            // Ist 2-FA-USER: Code wurde zur 2. E-Mail versandt
-            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN_2';
-        } else {
-            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_PASSWORD';
-        }
-
-        return response()->json($data, 200);
+        return response()->json($service->loginWithEmailCode($validated['data']))
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function passwordUnknownStepToken2(AdminPasswordUnknownStepToken2Request $request, AdminService $service)
     {
-
         $validated = $request->validated();
 
-        $data = $validated['data'];
-        $data = $service->passwordUnkownCheckToken($data);
-        $data = $service->passwordUnkownCheckToken2($data);
-        $data['step'] = 'PASSWORD_UNKNOWN_ENTER_PASSWORD';
-
-        return response()->json($data, 200);
+        return response()->json($service->loginWithEmailCode($validated['data']))
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function passwordUnknownStepPassword(AdminPasswordUnknownStepPasswordRequest $request, AdminService $service)

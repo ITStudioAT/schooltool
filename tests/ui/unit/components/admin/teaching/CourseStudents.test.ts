@@ -125,15 +125,17 @@ describe('CourseStudents sorting', () => {
         expect(source).toContain('studentLastLoginText(student)')
     })
 
-    it('renders the stars directly in the student name line', async () => {
+    it('renders clickable student indicators directly in the name line and day overview', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
         )
 
         expect(source).toContain('class="student-name-line"')
-        expect(source).toContain('class="student-stars-chip"')
-        expect(source.indexOf('class="student-stars-chip"')).toBeGreaterThan(source.indexOf('class="student-name-line"'))
-        expect(source.indexOf('class="student-stars-chip"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
+        expect(source).toContain('<CourseStudentIndicators :student="student"')
+        expect(source.indexOf('<CourseStudentIndicators :student="student"')).toBeGreaterThan(source.indexOf('class="student-name-line"'))
+        expect(source.indexOf('<CourseStudentIndicators :student="student"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
+        expect(source).toContain('<CourseStudentIndicators :student="item.student"')
+        expect(source).toContain('@select="$refs.studentNotes.open(student, $event)"')
     })
 
     it('opens student details from the complete student card outside bulk mode', async () => {

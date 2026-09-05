@@ -189,6 +189,7 @@ export default {
             'show_works',
             'show_print',
             'show_dates',
+            'show_table',
             'show_curriculum',
             'show_attendance',
             'show_performances',
@@ -549,7 +550,8 @@ export default {
             this.show_infos = false
             this.show_works = false
             this.show_print = false
-            this.show_dates = true
+            this.show_dates = false
+            this.show_table = true
             this.show_curriculum = false
             this.show_attendance = false
             this.show_performances = false
@@ -558,10 +560,11 @@ export default {
             const query = {
                 ...this.$route.query,
                 course: String(course.id),
-                panel: 'dates',
+                panel: 'table',
             }
             delete query.date
             delete query.work
+            delete query.view
             this.$router.replace({ query }).catch(() => {})
         },
         normalizeDateToString(date) {

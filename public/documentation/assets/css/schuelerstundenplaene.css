@@ -1,0 +1,97 @@
+.student-docs .navbar__items {
+    flex-wrap: wrap;
+    gap: 8px 20px;
+}
+.student-docs .navbar__item {
+    display: inline-flex;
+}
+.student-docs .navbar {
+    height: auto;
+    min-height: var(--ifm-navbar-height);
+}
+.student-docs .navbar__inner {
+    gap: 12px;
+}
+.student-docs .docItemCol_VOVn {
+    max-width: 100%;
+}
+.student-docs .documentation-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-top: 24px;
+}
+.student-docs .documentation-section {
+    display: block;
+    height: 100%;
+    padding: 24px;
+}
+.student-docs .documentation-section h2 {
+    margin-top: 0;
+}
+.student-docs .documentation-section p {
+    margin-bottom: 0;
+    color: var(--ifm-font-color-base);
+}
+.student-docs .mobile-documentation-nav {
+    display: none;
+}
+.student-docs .planning-screenshot-crop {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 924 / 310;
+}
+.student-docs .planning-screenshot-crop img {
+    position: absolute;
+    width: calc(1265 / 924 * 100%);
+    max-width: none;
+    height: auto;
+    left: calc(-290 / 924 * 100%);
+    top: calc(-148 / 310 * 100%);
+}
+.student-docs .module-flow-screenshot {
+    overflow: hidden;
+}
+.student-docs .module-flow-screenshot img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+@media (max-width: 996px) {
+    .student-docs .mobile-documentation-nav {
+        display: block;
+        margin-bottom: 24px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+    }
+    .student-docs .mobile-documentation-nav summary {
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .student-docs .mobile-documentation-nav .menu__list {
+        margin-top: 12px;
+    }
+}
+@media (max-width: 600px) {
+    .student-docs .navbar__inner {
+        display: block;
+    }
+    .student-docs .navbar__items {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .student-docs .navbar__items--right {
+        margin-top: 8px;
+    }
+    .student-docs .documentation-sections {
+        grid-template-columns: 1fr;
+    }
+    .student-docs .navbar__brand {
+        flex-basis: 100%;
+    }
+    .student-docs .theme-doc-markdown h1 {
+        font-size: 2rem;
+        overflow-wrap: anywhere;
+    }
+}

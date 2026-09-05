@@ -327,20 +327,20 @@ describe('Admin app navigation', () => {
         const result = (AdminApp as any).methods.resolvePostHopTarget.call(
             {
                 $router: {
-                    resolve: vi.fn().mockReturnValue({ path: '/admin/settings' }),
+                    resolve: vi.fn().mockReturnValue({ path: '/admin/profile' }),
                 },
                 adminStore: {
                     config: {
                         capabilities: {
-                            settings: true,
+                            profile: true,
                         },
                     },
                 },
             },
-            '/admin/settings?tab=profile',
+            '/admin/profile',
         )
 
-        expect(result).toBe('/admin/settings?tab=profile')
+        expect(result).toBe('/admin/profile')
     })
 
     it('falls back to the dashboard when the current route is no longer allowed after hopping', () => {

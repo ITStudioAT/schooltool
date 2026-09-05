@@ -4,10 +4,12 @@ Before planning or editing, find the row whose globs match the file's path and r
 
 | Applies to | Rule file |
 | --- | --- |
+| {resources/js/pages/admin/auth/Login.vue,resources/js/pages/admin/auth/UnknownPassword.vue} | .ai/rules/admin-auth.md |
 | {resources/js/pages/admin/App.vue,resources/js/pages/admin/components/AdminAppBar.vue} | .ai/rules/admin-components.md |
 | {app/Http/Controllers/Admin/SchoolToolController.php,resources/js/pages/admin/App.vue,tests/Feature/SchoolToolControllerTest.php} | .ai/rules/admin-feature.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,app/Http/Requests/Admin/*StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/admin-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Http/Requests/Admin/StudentsTimetables/UpdateTeacherRosterEntryRequest.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue}, {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Http/Requests/Admin/StudentsTimetables/*TeacherRosterEntryRequest.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue} | .ai/rules/admin-settings-components.md |
+| {app/Services/AdminNavigationService.php,resources/routes/admin.js,resources/js/pages/admin/settings/Settings.vue} | .ai/rules/admin-settings.md |
 | resources/views/pdfs/students-timetable-overview.blade.php,resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue,app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/TimetableV3.test.ts | .ai/rules/admin-students-timetables-feature-ui-unit-pages-admin-students-timetables.md |
 | resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,tests/ui/unit/pages/admin/studentsTimetables/**,tests/Feature/StudentsTimetablesModuleTest.php | .ai/rules/admin-students-timetables-feature.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3TimetableService.php,app/Services/StudentsTimetables/RobotTimetableBackendSetupService.php,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3TimetableController.php,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/admin-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |
@@ -20,6 +22,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Jobs/Teaching/Import116Job.php,app/Http/Controllers/Admin/Teaching/FileUploadController.php} | .ai/rules/admin-teaching.md |
 | {app/Jobs/ImportTeachersListJob.php,app/Http/Controllers/Admin/TeachersListController.php,tests/{Unit/ImportTeachersListJobTest.php,Feature/TeachersListControllerTest.php}} | .ai/rules/admin-unit.md |
 | resources/js/pages/admin/App.vue,tests/ui/unit/components/admin/AdminAppStartup.test.ts | .ai/rules/admin.md |
+| {app/Services/AdminService.php,app/Http/Controllers/Admin/AdminController.php,resources/js/pages/admin/auth/UnknownPassword.vue} | .ai/rules/auth.md |
 | {resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue,tests/ui/unit/components/admin/studentsTimetables/SubjectsOverview.test.ts} | .ai/rules/components-admin-students-timetables.md |
 | {resources/js/pages/admin/teaching/settings/components/Entries.vue,tests/ui/unit/components/admin/teaching/EntriesSettings.test.ts} | .ai/rules/components-admin-teaching.md |
 | resources/js/pages/admin/{components/AdminImportCompletionListener.vue,superAdmin/components/TeachersList.vue},tests/ui/unit/components/admin/**/*TeachersList* | .ai/rules/components-admin.md |
@@ -31,6 +34,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Http/Controllers/Admin/Teaching/FileUploadController.php | .ai/rules/controllers-admin-teaching.md |
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
+| public/documentation/** | .ai/rules/documentation.md |
 | {routes/api.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/feature-feature.md |
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/feature-ui-unit-pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/**,app/Services/StudentsTimetables/TimetableImportService.php,resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue,tests/{Feature,Unit,ui}/**} | .ai/rules/feature-unitui.md |
@@ -67,6 +71,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Services/StudentsTimetables/RobotTimetableBackendSetupService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**}, {app/Services/StudentsTimetables/StudentTimetableV3TimetableService.php,app/Services/StudentsTimetables/RobotTimetableBackendSetupService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/pages-admin-students-timetables-timetable-v3.md |
 | {app/Http/Controllers/Admin/StudentsTimetables,app/Models,app/Services/StudentsTimetables,resources/js/pages/admin/studentsTimetables}/** | .ai/rules/pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/{UserController.php,UserWithRoleController.php,StudentsTimetables/AdminUserController.php,StudentsTimetables/TeacherAccountController.php},resources/js/pages/admin/superAdmin/components/Users.vue,tests/**} | .ai/rules/pages-admin-super-admin-components.md |
+| {app/Models/TeachingCourseStudent.php,app/Http/Controllers/Admin/Teaching/**,resources/js/pages/admin/teaching/**} | .ai/rules/pages-admin-teaching.md |
 | {app/Services/StudentsTimetables/StudentTimetablesStudentOverviewService.php,resources/js/pages/homepage/studentsTimetables/overviewV2/**} | .ai/rules/pages-homepage-students-timetables-overview-v2.md |
 | resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php | .ai/rules/pdfs-feature.md |
 | resources/views/pdfs/students-timetable-overview.blade.php, resources/views/pdfs/** | .ai/rules/pdfs.md |

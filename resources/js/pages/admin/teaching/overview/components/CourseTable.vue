@@ -350,9 +350,11 @@
                                 v-for="(student, studentIndex) in sortedSelectedStudents"
                                 :key="`student-${student.id}`"
                                 class="course-table-row">
-                                <th scope="row" class="course-table-student-cell">
+                                <th scope="row" class="course-table-student-cell cursor-pointer" @click="$refs.studentNotes.open(student)">
                                     <div class="course-table-main-text">
-                                        <span class="course-table-student-name">{{ studentLastName(student) }}</span>
+                                        <button type="button" class="course-table-student-name text-left cursor-pointer"
+                                            :aria-label="`Informationen zu ${studentName(student)} öffnen`"
+                                            @click.stop="$refs.studentNotes.open(student)">{{ studentLastName(student) }}</button>
                                         <span
                                             v-if="studentHasPendingNotificationConfirmation(student)"
                                             class="course-table-student-confirmation-warning"
@@ -388,6 +390,8 @@
                                             {{ studentComment(student) }}
                                         </span>
                                     </div>
+                                    <CourseStudentIndicators :student="student" :course-id="selected_course.id"
+                                        @select="$refs.studentNotes.open(student, $event)" />
                                     <v-tooltip
                                         activator="parent"
                                         content-class="course-table-student-tooltip"
@@ -2091,11 +2095,14 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+        <CourseStudentNotes ref="studentNotes" :course="selected_course" />
     </ItsGridBox>
 </template>
 
 <script>
 import { defineAsyncComponent } from 'vue'
+import CourseStudentNotes from './CourseStudentNotes.vue'
+import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
@@ -2120,7 +2127,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators },
 
     emits: ['update:activeSemester'],
 

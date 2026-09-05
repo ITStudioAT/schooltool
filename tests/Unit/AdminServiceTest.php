@@ -604,7 +604,11 @@ describe('passwordUnkownSendToken', function () {
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
+            'is_active' => true,
+            'confirmed_at' => now(),
         ]);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole('admin');
 
         config(['schooltool.token_expire_time' => 10]);
 

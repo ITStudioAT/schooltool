@@ -190,10 +190,8 @@
                                                 :title="studentSexTitle(student)">
                                                 {{ studentSexIcon(student) }}
                                             </v-icon>
-                                            <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2" class="student-stars-chip">
-                                                <v-icon start size="14">mdi-star</v-icon>
-                                                {{ (student.stars || []).length }}
-                                            </v-chip>
+                                            <CourseStudentIndicators :student="student" :course-id="selected_course.id"
+                                                @select="$refs.studentNotes.open(student, $event)" />
                                         </div>
                                         <div v-if="studentEmailText(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
                                             {{ studentEmailText(student) }}
@@ -265,6 +263,8 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ item.student.last_name }}, {{ item.student.first_name }}
                                         </div>
+                                        <CourseStudentIndicators :student="item.student" :course-id="selected_course.id"
+                                            @select="$refs.studentNotes.open(item.student, $event)" />
                                         <v-chip size="x-small" variant="tonal" color="secondary">{{ item.entries.length }} Eintrag{{ item.entries.length === 1 ? '' : 'e' }}</v-chip>
                                     </div>
                                     <div class="d-flex flex-wrap ga-1">
@@ -295,6 +295,7 @@
                 </v-card>
             </v-card-text>
         </v-card>
+        <CourseStudentNotes ref="studentNotes" :course="selected_course" />
     </ItsGridBox>
 </template>
 <script>
@@ -311,13 +312,15 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
+import CourseStudentNotes from './CourseStudentNotes.vue'
+import CourseStudentIndicators from './CourseStudentIndicators.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { ItsGridBox, ItsMenuButton },
+    components: { ItsGridBox, ItsMenuButton, CourseStudentNotes, CourseStudentIndicators },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
