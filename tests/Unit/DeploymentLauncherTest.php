@@ -377,7 +377,7 @@ it('exposes a terminal Cloudways pull deployment workflow', function (): void {
             'Composer\\Config::disableProcessTimeout',
             '@php scripts/update.php --prepare',
         ])
-        ->and($composer['scripts']['pdeploy'])
+        ->and(array_slice($composer['scripts']['pdeploy'], 0, 2))
         ->toBe([
             'Composer\\Config::disableProcessTimeout',
             'bash scripts/pdeploy_cloudways.sh',
@@ -400,6 +400,23 @@ it('exposes a terminal Cloudways pull deployment workflow', function (): void {
         ->toContain("printf 'backend-started\\n' > \"\$maintenance_marker\"")
         ->toContain('php scripts/source-manifest.php prune-unlisted');
 });
+
+it('prints Vienna completion time after each composer deployment workflow', function (string $workflow): void {
+    $composer = json_decode(file_get_contents(deploymentProjectPath('composer.json')), true, flags: JSON_THROW_ON_ERROR);
+    $steps = $composer['scripts'][$workflow];
+    expect($steps)->toHaveCount(3);
+    $completion = $steps[array_key_last($steps)];
+    expect(preg_match('/^@php -r "(.+)"$/s', $completion, $matches))->toBe(1);
+
+    $before = time();
+    $process = runDeploymentScript(['-d', 'date.timezone=Pacific/Honolulu', '-r', $matches[1]]);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
+    $output = trim($process->getOutput());
+    expect($output)->toMatch('/^Abgeschlossen: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2} CE(?:S)?T \(Europe\/Vienna\)$/');
+    $timestamp = substr($output, strlen('Abgeschlossen: '), 19);
+    $finished = DateTimeImmutable::createFromFormat('!d.m.Y H:i:s', $timestamp, new DateTimeZone('Europe/Vienna'));
+    expect($finished->getTimestamp())->toBeGreaterThanOrEqual($before)->toBeLessThanOrEqual(time());
+})->with(['deploy', 'pdeploy']);
 
 it('keeps both Cloudways shell entrypoints syntactically valid', function (): void {
     foreach (['scripts/deploy_cloudways.sh', 'scripts/pdeploy_cloudways.sh'] as $script) {
