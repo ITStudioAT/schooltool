@@ -183,6 +183,22 @@ function Wait-SchooltoolCi {
     Write-Host "GitHub CI verified the release: $($run.url)" -ForegroundColor Green
 }
 
+function Write-SchooltoolCompletionTime {
+    $viennaTimeZone = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
+    $finishedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow, $viennaTimeZone)
+    Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f $finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
+}
+
+function gitpull {
+    git pull @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "git pull failed with exit code $LASTEXITCODE."
+    }
+    $viennaTimeZone = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
+    $finishedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow, $viennaTimeZone)
+    Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f $finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
+}
+
 function gitpush {
     [CmdletBinding()]
     param(
@@ -233,6 +249,7 @@ function gitpush {
         if (-not $sourceChanges) {
             if ($localHead -eq $remoteHead) {
                 Write-Host 'No source changes to publish.' -ForegroundColor Yellow
+                Write-SchooltoolCompletionTime
                 return
             }
 
@@ -371,6 +388,7 @@ function gitpush {
         if (-not $WaitForCI) {
             Write-Host 'GitHub is checking release integrity and dependency security in the background.' -ForegroundColor DarkGray
         }
+        Write-SchooltoolCompletionTime
     }
     catch {
         Write-Host $_.Exception.Message -ForegroundColor Red

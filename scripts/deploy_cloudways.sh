@@ -508,3 +508,6 @@ cleanup_frontend_artifact
 trap - EXIT
 
 echo "Cloudways deployment completed successfully."
+if [ "${SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED:-false}" != true ]; then
+    php -r 'echo "Abgeschlossen: ", (new DateTimeImmutable("now", new DateTimeZone("Europe/Vienna")))->format("d.m.Y H:i:s T"), " (Europe/Vienna)", PHP_EOL;'
+fi

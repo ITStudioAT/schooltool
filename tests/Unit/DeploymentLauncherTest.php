@@ -104,6 +104,11 @@ if [ "${1:-}" = artisan ] && [ "${2:-}" = up ]; then
     exit 0
 fi
 
+if [ "${1:-}" = -r ]; then
+    printf 'Abgeschlossen: fixture (Europe/Vienna)\n'
+    exit 0
+fi
+
 exit 1
 BASH);
     writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'bash', <<<'BASH'
@@ -401,15 +406,16 @@ it('exposes a terminal Cloudways pull deployment workflow', function (): void {
         ->toContain('php scripts/source-manifest.php prune-unlisted');
 });
 
-it('prints Vienna completion time after each composer deployment workflow', function (string $workflow): void {
+it('prints Vienna completion time inside each deployment entrypoint', function (string $workflow): void {
     $composer = json_decode(file_get_contents(deploymentProjectPath('composer.json')), true, flags: JSON_THROW_ON_ERROR);
     $steps = $composer['scripts'][$workflow];
-    expect($steps)->toHaveCount(3);
-    $completion = $steps[array_key_last($steps)];
-    expect(preg_match('/^@php -r "(.+)"$/s', $completion, $matches))->toBe(1);
+    expect($steps)->toHaveCount(2);
+    $script = file_get_contents(deploymentProjectPath("scripts/{$workflow}_cloudways.sh"));
+    expect(preg_match('/^\s*(php -r \'echo "Abgeschlossen:[^\r\n]+)$/m', $script, $matches))->toBe(1);
 
     $before = time();
-    $process = runDeploymentScript(['-d', 'date.timezone=Pacific/Honolulu', '-r', $matches[1]]);
+    $process = new Process([deploymentBashExecutable(), '-c', $matches[1]], deploymentProjectPath(), ['TZ' => 'Pacific/Honolulu']);
+    $process->run();
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
     $output = trim($process->getOutput());
     expect($output)->toMatch('/^Abgeschlossen: \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2} CE(?:S)?T \(Europe\/Vienna\)$/');
@@ -435,6 +441,7 @@ it('uses the Cloudways API and hands a no-Git terminal pull to deployment', func
         $process = runTerminalPullFixture($directory);
 
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and($process->getOutput())->toContain('Abgeschlossen:', '(Europe/Vienna)')
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-api-checked'))->toBeTrue()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-api-pulled'))->toBeTrue()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/full-deployment-ran'))->toBeTrue()
@@ -498,11 +505,31 @@ it('records environment versions before starting development services', function
         ->toContain("npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"php artisan serve\" \"composer run queues:local\" \"php artisan schedule:work\" \"npm run dev\" --names='server,queues,scheduler,vite'");
 });
 
+it('prints a Vienna timestamp only after successful PowerShell pulls', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows PowerShell helper verification.');
+    }
+
+    $command = <<<'POWERSHELL'
+. ./scripts/git_helpers.ps1
+function git { $global:LASTEXITCODE = 0 }
+gitpull
+function git { $global:LASTEXITCODE = 1 }
+try { gitpull; exit 2 } catch { Write-Output 'Failure preserved' }
+POWERSHELL;
+    $process = new Process(['powershell', '-NoProfile', '-Command', $command], deploymentProjectPath());
+    $process->run();
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and(substr_count($process->getOutput(), 'Abgeschlossen:'))->toBe(1)
+        ->and($process->getOutput())->toContain('(Europe/Vienna)', 'Failure preserved');
+});
+
 it('installs a trusted repository-aware gitpush dispatcher', function (): void {
     $installer = file_get_contents(deploymentProjectPath('scripts/install_powershell_helpers.ps1'));
     $entrypoint = file_get_contents(deploymentProjectPath('scripts/gitpush.ps1'));
 
     expect($installer)
+        ->toContain('function gitpull {')
         ->toContain('ITStudioAT/(?:schooltool|stocks)')
         ->toContain('remote get-url --all --push origin')
         ->toContain('Push-Location -LiteralPath `$repositoryRoot')

@@ -84,6 +84,7 @@ pull_with_cloudways_api() {
     trap - EXIT
 
     echo "Cloudways platform Pull and deployment completed successfully."
+    php -r 'echo "Abgeschlossen: ", (new DateTimeImmutable("now", new DateTimeZone("Europe/Vienna")))->format("d.m.Y H:i:s T"), " (Europe/Vienna)", PHP_EOL;'
     exit 0
 }
 
@@ -132,3 +133,4 @@ maintenance_prepared=false
 trap - EXIT
 
 echo "Cloudways pull and deployment completed successfully."
+php -r 'echo "Abgeschlossen: ", (new DateTimeImmutable("now", new DateTimeZone("Europe/Vienna")))->format("d.m.Y H:i:s T"), " (Europe/Vienna)", PHP_EOL;'

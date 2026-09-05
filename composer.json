@@ -73,8 +73,7 @@
     "scripts": {
         "deploy": [
             "Composer\\Config::disableProcessTimeout",
-            "@php scripts/update.php",
-            "@php -r \"echo 'Abgeschlossen: ', (new DateTimeImmutable('now', new DateTimeZone('Europe/Vienna')))->format('d.m.Y H:i:s T'), ' (Europe/Vienna)', PHP_EOL;\""
+            "@php scripts/update.php"
         ],
         "deploy:prepare": [
             "Composer\\Config::disableProcessTimeout",
@@ -82,8 +81,7 @@
         ],
         "pdeploy": [
             "Composer\\Config::disableProcessTimeout",
-            "bash scripts/pdeploy_cloudways.sh",
-            "@php -r \"echo 'Abgeschlossen: ', (new DateTimeImmutable('now', new DateTimeZone('Europe/Vienna')))->format('d.m.Y H:i:s T'), ' (Europe/Vienna)', PHP_EOL;\""
+            "bash scripts/pdeploy_cloudways.sh"
         ],
         "setup:powershell": [
             "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_powershell_helpers.ps1"

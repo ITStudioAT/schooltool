@@ -335,7 +335,11 @@ if ($dryRun) {
 }
 
 if ($target === 'local') {
-    exit(runLocalUpdate($prepareOnly));
+    $exitCode = runLocalUpdate($prepareOnly);
+    if ($exitCode === 0 && ! $prepareOnly) {
+        echo 'Abgeschlossen: ', (new DateTimeImmutable('now', new DateTimeZone('Europe/Vienna')))->format('d.m.Y H:i:s T'), ' (Europe/Vienna)', PHP_EOL;
+    }
+    exit($exitCode);
 }
 
 fwrite(STDOUT, "Update target: Cloudways production.\n");

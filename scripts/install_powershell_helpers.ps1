@@ -73,6 +73,16 @@ function gitpush {
         Pop-Location
     }
 }
+function gitpull {
+    git pull @args
+    if (`$LASTEXITCODE -ne 0) {
+        throw "git pull failed with exit code `$LASTEXITCODE."
+    }
+    `$viennaTimeZone = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
+    `$finishedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow, `$viennaTimeZone)
+    Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f `$finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
+}
+
 $endMarker
 "@
 
