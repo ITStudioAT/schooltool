@@ -139,7 +139,10 @@ test('curriculum archive preserves material links selected attachments and unit 
         ->assertCreated()->assertJsonPath('data.has_materials', true)
         ->assertJsonMissingPath('data.materials')->assertJsonMissingPath('data.archive_path');
     $adopt = $this->postJson('/api/admin/teaching/imported-curricula/'.$import->json('data.id').'/adopt')
-        ->assertCreated();
+        ->assertCreated()
+        ->assertJsonPath('data.unit_file_counts.topic-1.unit-1', 1);
+    $loaded = $this->getJson('/api/admin/teaching/curricula/'.$adopt->json('data.id'))->assertOk();
+    expect($adopt->json('data.unit_file_counts'))->toBe($loaded->json('data.unit_file_counts'));
     $copy = TeachingCurriculum::query()->findOrFail($adopt->json('data.id'));
     $documents = $copy->documents;
     $copiedMaterial = $documents->firstWhere('source_type', 'material');

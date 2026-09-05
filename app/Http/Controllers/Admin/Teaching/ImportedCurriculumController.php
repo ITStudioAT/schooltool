@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Models\TeachingImportedCurriculum;
 use App\Services\Teaching\CurriculumArchiveService;
+use App\Services\Teaching\CurriculumUnitFileService;
 use App\Services\Teaching\ImportedCurriculumService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\File;
@@ -50,12 +51,12 @@ class ImportedCurriculumController extends Controller
         ], $importedCurriculum->wasRecentlyCreated ? 201 : 200);
     }
 
-    public function adopt(TeachingImportedCurriculum $imported_curriculum, ImportedCurriculumService $service)
+    public function adopt(TeachingImportedCurriculum $imported_curriculum, ImportedCurriculumService $service, CurriculumUnitFileService $unitFileService)
     {
         $authUser = $this->authorizeImportedCurriculum($imported_curriculum);
 
         return response()->json([
-            'data' => $service->adoptForUser($imported_curriculum, $authUser),
+            'data' => $unitFileService->curriculumPayload($service->adoptForUser($imported_curriculum, $authUser)),
         ], 201);
     }
 

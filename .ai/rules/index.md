@@ -34,6 +34,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Http/Controllers/Admin/Teaching/FileUploadController.php | .ai/rules/controllers-admin-teaching.md |
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
+| {UPDATES.md,public/documentation/**} | .ai/rules/documentation-2.md |
 | public/documentation/** | .ai/rules/documentation.md |
 | {routes/api.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/feature-feature.md |
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/feature-ui-unit-pages-admin-students-timetables.md |
