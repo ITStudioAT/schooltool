@@ -96,6 +96,7 @@
                         :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="show_delete_confirm = true" />
                     <v-btn
+                        v-if="!selected_course"
                         icon="mdi-plus"
                         variant="tonal"
                         color="success"

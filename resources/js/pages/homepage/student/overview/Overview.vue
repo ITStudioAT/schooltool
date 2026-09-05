@@ -1,38 +1,38 @@
 <template>
-    <div class="lernportal-page">
-        <div class="bg-shape bg-shape-1"></div>
-        <div class="bg-shape bg-shape-2"></div>
-
-        <!-- Navigation Drawer -->
+    <div class="lernportal-page student-workspace">
         <StudentNavigationDrawer v-model="showDrawer" current-route="overview" />
 
         <section class="hero">
             <div class="hero-card">
                 <div class="hero-topline">
-                    <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/')">Zur Startseite</v-btn>
-                    <v-btn class="menu-btn" data-testid="student-overview-open-menu" variant="text" icon="mdi-menu" @click="showDrawer = true" />
+                    <span class="workspace-label"><v-icon size="20">mdi-school-outline</v-icon> Dein Lernraum</span>
+                    <div class="overview-actions">
+                        <v-btn class="logout-btn" data-testid="student-overview-logout" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
+                        <v-btn class="menu-btn" data-testid="student-overview-open-menu" variant="tonal" icon="mdi-menu" aria-label="Mein Menü öffnen" @click="showDrawer = true" />
+                    </div>
                 </div>
 
-                <h1 class="hero-title">Unterricht</h1>
-                <p class="hero-subtitle">Überblick bewahren. Inhalte kennen. Noten erfahren.</p>
+                <div class="overview-welcome">
+                    <div>
+                        <h1 class="hero-title">Hallo{{ user?.first_name ? `, ${user.first_name}` : '' }}!</h1>
+                        <p class="hero-subtitle">Deine Fächer. Dein Fortschritt. Alles an einem Ort.</p>
+                    </div>
+                    <div class="overview-date">
+                        <span>{{ weekdayLabel }}</span>
+                        <strong>{{ dateLabel }}</strong>
+                    </div>
+                </div>
 
                 <div class="hero-badges">
-                    <span class="hero-badge">{{ weekdayLabel }}</span>
-                    <span class="hero-badge dark">{{ dateLabel }}</span>
-                    <span v-if="user" class="hero-badge">{{ user.first_name }} {{ user.last_name }}</span>
-                    <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
+                    <span v-if="user?.schoolclass" class="hero-badge"><v-icon size="16">mdi-account-group-outline</v-icon> Klasse {{ user.schoolclass }}</span>
                 </div>
 
                 <ParentAccessPanel />
 
-                <div class="hero-logout-row">
-                    <v-btn class="logout-btn" data-testid="student-overview-logout" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
-                </div>
-
                 <div v-if="heroLiveTimer" class="hero-on-air">
                     <div class="on-air-badge">
                         <span class="on-air-dot"></span>
-                        <span class="on-air-label">{{ heroLiveTimer.isSimulated ? 'TESTMODUS' : 'ON AIR' }}</span>
+                        <span class="on-air-label">{{ heroLiveTimer.isSimulated ? 'Testmodus' : 'Gerade im Unterricht' }}</span>
                     </div>
                     <div class="on-air-title">{{ heroLiveTimer.title }}</div>
                     <div class="on-air-timer">endet in {{ heroLiveTimer.remainingLabel }}</div>
@@ -106,69 +106,112 @@ export default {
 </script>
 
 <style scoped>
-.logout-btn {
-    color: var(--charcoal);
-    font-weight: 700;
-    border-radius: 999px;
+.overview-actions,
+.workspace-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.hero-logout-row {
-    margin-top: 12px;
+.workspace-label {
+    color: #4056d6;
+    font-size: 0.85rem;
+    font-weight: 750;
+}
+
+.overview-welcome {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 24px;
+}
+
+.overview-date {
+    display: grid;
+    gap: 4px;
+    color: #647086;
+    font-size: 0.85rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.overview-date strong {
+    color: #18243b;
+    font-weight: 600;
+}
+
+.logout-btn {
+    color: #647086;
+    font-weight: 600;
+    border-radius: 12px;
+    text-transform: none;
 }
 
 .hero-on-air {
-    margin-top: 28px;
+    margin-top: 20px;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 20px 28px;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-    text-align: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: #ecf8f3;
+    border: 1px solid #d3ebe0;
+    color: #245d49;
 }
 
 .on-air-badge {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
-    background: #e53935;
-    color: #fff;
-    border-radius: 999px;
-    padding: 10px 32px;
-    font-size: 1.36rem;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .on-air-dot {
-    width: 20px;
-    height: 20px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #fff;
-    animation: on-air-pulse 1s ease-in-out infinite;
-}
-
-@keyframes on-air-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.3; transform: scale(0.7); }
+    background: #338866;
 }
 
 .on-air-title {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #1a1a1a;
-    line-height: 1.2;
-    margin-top: 4px;
+    font-size: 0.95rem;
+    font-weight: 700;
 }
 
 .on-air-timer {
-    font-size: 2rem;
+    margin-left: auto;
+    font-size: 0.85rem;
     font-weight: 600;
-    color: var(--primary, #fd802e);
+}
+
+@media (max-width: 600px) {
+    .overview-welcome {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .overview-date {
+        display: flex;
+        gap: 8px;
+        text-align: left;
+    }
+
+    .workspace-label {
+        font-size: 0.78rem;
+    }
+
+    .overview-actions {
+        gap: 2px;
+    }
+
+    .logout-btn {
+        font-size: 0.78rem;
+        padding: 0 8px;
+    }
 }
 </style>

@@ -459,7 +459,7 @@ class AdminService
         }
     }
 
-    private function activeSuperAdminPasswordIsValid(int $schoolId, string $password): bool
+    public function activeSuperAdminPasswordIsValid(int $schoolId, string $password): bool
     {
         return User::query()
             ->bySchoolAndRole($schoolId, 'super_admin')

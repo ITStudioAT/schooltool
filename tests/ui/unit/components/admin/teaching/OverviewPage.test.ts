@@ -35,12 +35,55 @@ describe('Teaching overview controls', () => {
         const ctx = {
             selected_course: { id: 18 }, selectedCourseCurriculumId: 4,
             loadCurricula: vi.fn().mockResolvedValue(true), curriculumEditMode: false,
+            loadCurriculumPreview: vi.fn().mockResolvedValue(undefined),
             curriculumSelectionId: null,
         }
         await (Overview as any).methods.startCurriculumEdit.call(ctx)
         expect(ctx.loadCurricula).toHaveBeenCalledOnce()
         expect(ctx.curriculumEditMode).toBe(true)
         expect(ctx.curriculumSelectionId).toBe(4)
+        expect(ctx.loadCurriculumPreview).toHaveBeenCalledOnce()
+    })
+
+    it('loads the full selected curriculum for the assignment dialog', async () => {
+        const curriculum = { id: 4, title: 'DGB 3', topics: [{ title: 'Topic', units: [{ title: 'Unit' }] }] }
+        const context = {
+            curriculumPreviewRequestId: 0, normalizedCurriculumSelectionId: 4,
+            selected_course: { id: 18 }, curriculumEditMode: true,
+            curriculumPreview: null, curriculumPreviewLoading: false,
+            curriculumStore: { show: vi.fn().mockResolvedValue(curriculum) },
+        }
+        await (Overview as any).methods.loadCurriculumPreview.call(context)
+        expect(context.curriculumStore.show).toHaveBeenCalledWith(4)
+        expect(context.curriculumPreview).toEqual(curriculum)
+        expect(context.curriculumPreviewLoading).toBe(false)
+    })
+
+    it('ignores a previous preview response after selecting another curriculum', async () => {
+        let resolveOld: (value: unknown) => void = () => {}
+        const context = {
+            curriculumPreviewRequestId: 0, normalizedCurriculumSelectionId: 4,
+            selected_course: { id: 18 }, curriculumEditMode: true,
+            curriculumPreview: null, curriculumPreviewLoading: false,
+            curriculumStore: { show: vi.fn()
+                .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+                .mockResolvedValueOnce({ id: 5, topics: [] }) },
+        }
+        const oldRequest = (Overview as any).methods.loadCurriculumPreview.call(context)
+        context.normalizedCurriculumSelectionId = 5
+        await (Overview as any).methods.loadCurriculumPreview.call(context)
+        resolveOld({ id: 4 })
+        await oldRequest
+        expect(context.curriculumPreview).toEqual({ id: 5, topics: [] })
+    })
+
+    it('renders all selected curriculum topics and units inside the scrollable dialog', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/Overview.vue'), 'utf8')
+        expect(source).toContain('persistent scrollable max-width="800"')
+        expect(source).toContain('@update:model-value="loadCurriculumPreview"')
+        expect(source).toContain('v-for="(topic, topicIndex) in curriculumPreview.topics || []"')
+        expect(source).toContain('v-for="(unit, unitIndex) in topic.units || []"')
+        expect(source).toContain('v-for="material in unit.materials || []"')
     })
 
     it('lazy loads inactive panels and mounts the course editor only when opened', () => {

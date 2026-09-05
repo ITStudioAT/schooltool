@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 describe('Student MyCourse required entry chip', () => {
-    it('renders the required-entry chip with dynamic grade color', () => {
+    it('omits the required-entry badge and keeps the grade chip', () => {
         const source = readFileSync('resources/js/pages/homepage/student/overview/myCourse/MyCourse.vue', 'utf8')
 
-        expect(source).toContain('v-if="entry.is_required_entry"')
+        expect(source).not.toContain('v-if="entry.is_required_entry"')
+        expect(source).toContain('class="entry-grade"')
         expect(source).toContain(':color="entryGradeChipColor(entry)"')
-        expect(source).toContain('Erforderlich')
+        expect(source).not.toContain('Erforderlich')
     })
 })

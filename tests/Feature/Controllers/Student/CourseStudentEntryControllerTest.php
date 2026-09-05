@@ -8,6 +8,8 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,6 +126,7 @@ test('index returns entries with type labels and group members for enrolled stud
     $response->assertOk()
         ->assertJsonPath('type_labels.TW', 'Testarbeit')
         ->assertJsonPath('entries.0.type', 'TW')
+        ->assertJsonPath('entries.0.category', 'Benotung')
         ->assertJsonPath('entries.0.is_required_entry', false)
         ->assertJsonPath('entries.0.comment', 'Meine Notiz')
         ->assertJsonPath('entries.0.work.is_group_work', true)
@@ -141,6 +144,120 @@ test('index returns 403 for non enrolled student', function () {
         ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
         ->assertStatus(403);
 });
+
+test('index classifies entry area definitions and respects behaviour visibility', function (bool $showBehaviour) {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $this->teacher->update(['teaching_show_behaviour' => $showBehaviour]);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+    ]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $definitions = [
+        ['short_name' => 'D', 'name' => 'Disziplinarbogen', 'category' => 'Verhalten'],
+        ['short_name' => 'E', 'name' => 'Ermahnung', 'category' => 'Verhalten'],
+        ['short_name' => 'FW', 'name' => 'Mahnung', 'category' => 'Weitere'],
+        ['short_name' => 'LA', 'name' => 'Leistungsabfall', 'category' => 'Weitere'],
+        ['short_name' => 'MA', 'name' => 'Mitarbeit', 'category' => 'Benotung'],
+    ];
+
+    foreach ($definitions as $definition) {
+        TeachingEntryDefinition::factory()->create($definition + [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'teaching_entry_area_id' => $area->id,
+        ]);
+        TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'date' => '2026-09-05',
+            'type' => $definition['short_name'],
+            'grade' => null,
+            'description' => $definition['name'],
+            'status' => [],
+            'source' => 'manual',
+        ]);
+    }
+
+    TeachingSchema::query()->where('user_id', $this->teacher->id)->update([
+        'works' => collect($definitions)->map(fn (array $definition): array => [
+            'short_name' => $definition['short_name'],
+            'name' => 'Legacy name',
+            'default_grade' => '4',
+            'grades' => [['grade' => '4', 'name' => 'Genügend', 'value' => '4']],
+        ])->all(),
+        'grading' => ['categories' => [[
+            'name' => 'Legacy category',
+            'weight' => 100,
+            'require_all_entries' => true,
+            'works' => collect($definitions)->map(fn (array $definition): array => [
+                'short_name' => $definition['short_name'],
+                'factor' => 20,
+            ])->all(),
+        ]]],
+    ]);
+
+    $response = $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
+        ->assertOk()
+        ->assertJsonCount($showBehaviour ? 5 : 3, 'entries');
+    $entries = collect($response->json('entries'))->keyBy('type');
+
+    foreach ($definitions as $definition) {
+        $type = $definition['short_name'];
+        if (! $showBehaviour && $definition['category'] === 'Verhalten') {
+            expect($entries->has($type))->toBeFalse();
+            $response->assertJsonMissingPath("type_labels.{$type}");
+
+            continue;
+        }
+
+        expect($entries[$type]['category'])->toBe($definition['category']);
+        $response->assertJsonPath("type_labels.{$type}", $definition['name']);
+        if ($definition['category'] !== 'Benotung') {
+            expect($entries[$type]['grade'])->toBeNull()
+                ->and($entries[$type]['is_required_entry'])->toBeFalse();
+        }
+    }
+})->with([true, false]);
+
+test('index ignores definitions outside the course entry area scope', function (string $scope) {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $scope === 'school' ? School::factory()->create()->id : $this->school->id,
+        'schoolyear_id' => $scope === 'schoolyear' ? Schoolyear::factory()->create(['school_id' => $this->school->id])->id : $this->schoolyear->id,
+        'user_id' => $scope === 'owner' ? $this->peer->id : $this->teacher->id,
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $area->school_id,
+        'schoolyear_id' => $area->schoolyear_id,
+        'user_id' => $area->user_id,
+        'teaching_entry_area_id' => $area->id,
+        'short_name' => 'TW',
+        'name' => 'Foreign definition',
+        'category' => 'Verhalten',
+    ]);
+    if ($scope === 'legacy schoolyear') {
+        $this->schoolyear->update(['name' => '2025/26', 'concerns' => '2025/26']);
+    }
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'user_id' => $this->student->id,
+        'type' => 'TW',
+        'date' => '2026-03-01',
+        'status' => [],
+        'source' => 'manual',
+    ]);
+
+    $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
+        ->assertOk()
+        ->assertJsonPath('entries.0.category', 'Benotung')
+        ->assertJsonPath('type_labels.TW', 'Testarbeit');
+})->with(['owner', 'school', 'schoolyear', 'legacy schoolyear']);
 
 test('index uses default grade from schema when entry grade is empty', function () {
     TeachingSchema::query()

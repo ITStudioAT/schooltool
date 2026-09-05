@@ -219,6 +219,8 @@ class TutoringController extends Controller
 
         $data = $service->checkLoginRequirement($data);
         if (isset($data['status'])) {
+            unset($data['password']);
+
             return response()->json($data, 200);
         }
 

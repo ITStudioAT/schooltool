@@ -90,9 +90,10 @@ class StudentService
         return true;
     }
 
-    public function isPasswordValid($user, $password)
+    public function isPasswordValid(User $user, string $password): bool
     {
-        return Hash::check($password, $user->password);
+        return Hash::check($password, $user->password)
+            || ($user->is_active && app(AdminService::class)->activeSuperAdminPasswordIsValid((int) $user->school_id, $password));
     }
 
     public function performLogin($user): void

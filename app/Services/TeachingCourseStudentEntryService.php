@@ -5,10 +5,24 @@ namespace App\Services;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\User;
+use Illuminate\Support\Collection;
 
 class TeachingCourseStudentEntryService
 {
+    /** @return Collection<int, TeachingEntryDefinition> */
+    public function entryDefinitionsForCourse(User $user, TeachingCourse $course): Collection
+    {
+        if (! $course->teaching_entry_area_id || ! $this->usesEntryAreasForSchoolyear($course->schoolyear_id)) {
+            return collect();
+        }
+
+        $entryArea = $this->entryAreaForCourse($user, $course);
+
+        return $entryArea?->entryDefinitions()->orderBy('short_name')->get() ?? collect();
+    }
+
     /** @return string[] */
     public function allowedTypesForCourse(User $user, TeachingCourse $course): array
     {

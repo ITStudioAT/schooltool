@@ -234,7 +234,13 @@
                                         aria-label="Curriculum zuweisen oder Zuordnung entfernen"
                                         @click.stop="$emit('manage-curriculum')">
                                         <v-icon color="deep-purple" size="18">mdi-book-education-outline</v-icon>
-                                        <span>Curriculum</span>
+                                        <span>
+                                            <span>Curriculum</span>
+                                            <template v-if="hasAssignedCurriculum">
+                                                <br>
+                                                <span>{{ assignedCurriculumTitle }}</span>
+                                            </template>
+                                        </span>
                                     </button>
                                 </th>
                                 <td
@@ -596,10 +602,13 @@
                                     <v-btn
                                         v-if="isCurriculumUnitLinkedToDialogDate(topic, unit)"
                                         color="error"
-                                        density="compact"
+                                        density="default"
                                         prepend-icon="mdi-link-variant-off"
-                                        size="x-small"
+                                        size="default"
                                         variant="tonal"
+                                        height="36"
+                                        min-width="100"
+                                        class="ml-3"
                                         :disabled="Boolean(curriculumUnitActionKey)"
                                         :loading="isCurriculumUnitActionPending(topic, unit)"
                                         @click.stop="unlinkCurriculumUnit(topic, unit)">
@@ -627,6 +636,20 @@
                     <div v-else class="course-table-curriculum-dialog-empty">
                         Dieses Curriculum enthält keine Themen.
                     </div>
+                    <v-list v-if="!curriculumDialog.loading && unmatchedCurriculumTitles.length"
+                        class="course-table-curriculum-dialog-list" density="compact"
+                        data-testid="course-table-old-curriculum-links">
+                        <v-list-subheader title="Weitere verknüpfte Inhalte" />
+                        <v-list-item v-for="title in unmatchedCurriculumTitles" :key="title" :title="title">
+                            <template #append>
+                                <v-btn color="error" density="default" prepend-icon="mdi-link-variant-off"
+                                    size="default" variant="tonal" height="36" min-width="100" class="ml-3"
+                                    :disabled="Boolean(curriculumUnitActionKey)"
+                                    :loading="isCurriculumUnitActionPending({}, { title })"
+                                    @click.stop="unlinkCurriculumUnit({}, { title })">Lösen</v-btn>
+                            </template>
+                        </v-list-item>
+                    </v-list>
                 </v-card-text>
                 <v-divider />
                 <v-card-actions class="course-table-curriculum-dialog-actions">
@@ -2377,6 +2400,9 @@ export default {
 
             return Number.isFinite(curriculumId) && curriculumId > 0 ? curriculumId : null
         },
+        assignedCurriculumTitle() {
+            return this.selected_course?.teaching_curriculum?.title || 'Curriculum'
+        },
         curriculumDialogTitle() {
             return this.curriculumDialog.curriculum?.title
                 || this.selected_course?.teaching_curriculum?.title
@@ -2417,6 +2443,16 @@ export default {
             })
 
             return destinationIndexes
+        },
+        unmatchedCurriculumTitles() {
+            const currentTitles = new Set(this.curriculumDialogTopics.flatMap((topic) =>
+                topic.units.map((unit) => this.curriculumUnitTitle(topic, unit)),
+            ))
+            const materials = this.curriculumDialog.courseDate?.adopted_materials
+
+            return [...new Set((Array.isArray(materials) ? materials : [])
+                .map((material) => String(material?.title || '').trim())
+                .filter((title) => title && !currentTitles.has(title)))]
         },
         curriculumDialogTopics() {
             const topics = Array.isArray(this.curriculumDialog.curriculum?.topics)
@@ -2739,11 +2775,11 @@ export default {
         },
         async openCurriculumDialog(courseDate) {
             const curriculumId = this.assignedCurriculumId
-            if (!curriculumId) {
+            if (!curriculumId && !courseDate?.adopted_materials?.length) {
                 this.$emit('manage-curriculum')
                 return
             }
-            if (!curriculumId || !this.curriculumStore?.show) return
+            if (curriculumId && !this.curriculumStore?.show) return
 
             const requestId = ++this.curriculumDialogRequestId
             this.curriculumDialog = {
@@ -2754,7 +2790,7 @@ export default {
             }
 
             try {
-                const curriculum = await this.curriculumStore.show(curriculumId)
+                const curriculum = curriculumId ? await this.curriculumStore.show(curriculumId) : null
                 if (requestId !== this.curriculumDialogRequestId) return
 
                 this.curriculumDialog.curriculum = curriculum || null

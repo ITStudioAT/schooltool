@@ -1,48 +1,62 @@
 <template>
-    <div class="content-card">
-        <div class="content-head">
-            <v-icon size="26">mdi-book-open-variant</v-icon>
-            <h2>Meine Fächer</h2>
-            <v-chip v-if="!loading" size="small" class="ml-auto">{{ courses.length }}</v-chip>
+    <div class="student-subjects">
+        <div class="subjects-heading">
+            <div>
+                <h2>Meine Fächer <span v-if="!loading" class="subjects-count">{{ courses.length }}</span></h2>
+                <p>Öffne ein Fach für Termine, Lerninhalte und Leistungen.</p>
+            </div>
+            <label v-if="courses.length > 1" class="subjects-search">
+                <v-icon size="21" aria-hidden="true">mdi-magnify</v-icon>
+                <input v-model="courseSearch" type="search" aria-label="Fächer suchen" placeholder="Fach suchen …" data-testid="student-course-search" />
+            </label>
         </div>
-        <p class="content-copy">Hier findest du alle deine Fächer.</p>
 
-        <!-- Loading State -->
-        <div v-if="loading" class="courses-loading">
-            <v-progress-circular indeterminate color="#fd802e" />
+        <div v-if="loading" class="subjects-empty" role="status">
+            <v-progress-circular indeterminate color="#4056d6" />
             <p>Lade Fächer...</p>
         </div>
 
-        <!-- Courses Grid -->
-        <div v-else-if="courses.length > 0" class="courses-grid">
-            <div v-for="course in courses" :key="course.id" class="course-card" @click="handleCourseClick(course)">
-                <div class="course-header">
-                    <v-icon size="24" color="#fd802e">mdi-school</v-icon>
-                </div>
-                <h3 class="course-title">{{ course.title }}</h3>
-                <p class="course-teacher">{{ course.teacher }}</p>
-                <div v-if="course.next_course_date" class="d-flex align-center ga-1 text-caption text-medium-emphasis mb-2">
-                    <v-icon size="16">mdi-calendar-clock</v-icon>
-                    <span>{{ formatNextCourseDate(course.next_course_date) }}</span>
-                </div>
-                <div class="course-footer">
-                    <span v-if="course.classes && course.classes.length > 0" class="course-info">
-                        <v-icon size="16">mdi-account-group</v-icon>
+        <div v-else-if="filteredCourses.length" class="subjects-grid">
+            <button
+                v-for="course in filteredCourses"
+                :key="course.id"
+                type="button"
+                class="subject-card"
+                :aria-label="`${course.title} öffnen`"
+                @click="handleCourseClick(course)">
+                <span class="subject-topline">
+                    <span class="subject-symbol"><v-icon size="25" aria-hidden="true">mdi-book-open-page-variant-outline</v-icon></span>
+                    <span class="subject-open"><v-icon size="21" aria-hidden="true">mdi-arrow-top-right</v-icon></span>
+                </span>
+                <span class="subject-title">{{ course.title }}</span>
+                <span v-if="course.teacher" class="subject-teacher">{{ course.teacher }}</span>
+                <span class="subject-next-date">
+                    <v-icon size="18" aria-hidden="true">mdi-calendar-outline</v-icon>
+                    <span>
+                        <span class="subject-date-label">Nächster Unterricht</span>
+                        <strong>{{ formatNextCourseDate(course.next_course_date) || 'Noch kein Termin geplant' }}</strong>
+                    </span>
+                </span>
+                <span class="subject-footer">
+                    <span v-if="course.classes && course.classes.length > 0">
                         {{ course.classes.join(', ') }}
                     </span>
-                    <span class="course-info">
-                        <v-icon size="16">mdi-account-multiple</v-icon>
-                        {{ course.students_count }} Schüler:innen
-                    </span>
-                </div>
-            </div>
+                    <span v-if="course.students_count !== undefined && course.students_count !== null">{{ course.students_count }} Schüler:innen</span>
+                    <span class="subject-action">Zum Fach <v-icon size="16" aria-hidden="true">mdi-arrow-right</v-icon></span>
+                </span>
+            </button>
         </div>
 
-        <!-- Empty State -->
-        <div v-else class="courses-empty">
-            <v-icon size="64" color="#fd802e">mdi-book-off-outline</v-icon>
-            <h3>Keine Fächer gefunden</h3>
-            <p>Du bist derzeit in keinen Fächern eingeschrieben.</p>
+        <div v-else-if="courses.length" class="subjects-empty" role="status">
+            <v-icon size="40" color="#4056d6">mdi-magnify</v-icon>
+            <h3>Kein passendes Fach gefunden</h3>
+            <p>Suche nach einem Fach, einer Lehrperson oder einer Klasse.</p>
+            <button type="button" class="subjects-reset" @click="courseSearch = ''">Alle Fächer anzeigen</button>
+        </div>
+        <div v-else class="subjects-empty">
+            <v-icon size="44" color="#4056d6">mdi-book-open-outline</v-icon>
+            <h3>Hier ist Platz für deine Fächer</h3>
+            <p>Sobald du einem Fach zugeordnet bist, findest du es hier.</p>
         </div>
     </div>
 </template>
@@ -72,6 +86,7 @@ export default {
         return {
             courseStore: useCourseStore(),
             courses: [],
+            courseSearch: '',
             loading: false,
             nowTs: Date.now(),
             nowTimer: null,
@@ -80,6 +95,18 @@ export default {
     },
 
     computed: {
+        filteredCourses() {
+            const query = this.courseSearch.trim().toLocaleLowerCase('de')
+            if (!query) {
+                return this.courses
+            }
+
+            return this.courses.filter((course) => {
+                const searchableText = [course.title, course.teacher, ...(course.classes || [])].join(' ')
+                return searchableText.toLocaleLowerCase('de').includes(query)
+            })
+        },
+
         activeHeaderTimer() {
             const list = Array.isArray(this.courses) ? this.courses : []
             for (const course of list) {
@@ -270,3 +297,252 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.student-subjects {
+    color: #18243b;
+}
+
+.subjects-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.subjects-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.3rem;
+    font-weight: 750;
+    letter-spacing: -0.03em;
+}
+
+.subjects-heading p {
+    margin: 6px 0 0;
+    color: #647086;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.subjects-count {
+    min-width: 28px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: #e9edfc;
+    color: #4056d6;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.subjects-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 270px;
+    min-width: 200px;
+    min-height: 46px;
+    padding: 0 14px;
+    border: 1px solid #dbe2ee;
+    border-radius: 12px;
+    background: #fff;
+    color: #647086;
+}
+
+.subjects-search input {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    color: #18243b;
+    font: inherit;
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.subjects-search:focus-within {
+    outline: 3px solid #c6cef8;
+    border-color: #4056d6;
+}
+
+.subjects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+    gap: 18px;
+}
+
+.subject-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 22px;
+    border: 1px solid #e0e6f0;
+    border-radius: 18px;
+    background: #fff;
+    color: #18243b;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(24, 36, 59, 0.025);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.subject-card:hover {
+    border-color: #aab6f0;
+    box-shadow: 0 8px 24px rgba(64, 86, 214, 0.08);
+}
+
+.subject-card:focus-visible,
+.subjects-reset:focus-visible {
+    outline: 3px solid #4056d6;
+    outline-offset: 3px;
+}
+
+.subject-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+
+.subject-symbol,
+.subject-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    color: #4056d6;
+    background: #eef0ff;
+}
+
+.subject-card:nth-child(3n + 2) .subject-symbol {
+    background: #e9f6f0;
+    color: #31715b;
+}
+
+.subject-card:nth-child(3n) .subject-symbol {
+    background: #f2f5dc;
+    color: #707b35;
+}
+
+.subject-open {
+    width: 32px;
+    height: 32px;
+    background: #f5f7fc;
+    color: #73809a;
+    border-radius: 50%;
+}
+
+.subject-title {
+    font-size: 1.15rem;
+    line-height: 1.4;
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    overflow-wrap: anywhere;
+}
+
+.subject-teacher {
+    margin-top: 4px;
+    color: #647086;
+    font-size: 0.88rem;
+    overflow-wrap: anywhere;
+}
+
+.subject-next-date {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0;
+    padding: 12px;
+    border-radius: 11px;
+    background: #f6f8fc;
+    color: #647086;
+}
+
+.subject-date-label {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 0.72rem;
+}
+
+.subject-next-date strong {
+    color: #384761;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.subject-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: auto;
+    color: #647086;
+    font-size: 0.74rem;
+}
+
+.subject-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    color: #4056d6;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.subjects-empty {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 12px;
+    padding: 44px 24px;
+    border: 1px solid #e0e6f0;
+    border-radius: 18px;
+    background: #fff;
+    text-align: center;
+}
+
+.subjects-empty h3 {
+    font-size: 1.05rem;
+}
+
+.subjects-empty p {
+    color: #647086;
+    font-size: 0.9rem;
+}
+
+.subjects-reset {
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #eef0ff;
+    color: #4056d6;
+    font-weight: 600;
+}
+
+@media (max-width: 600px) {
+    .subjects-heading {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .subjects-search {
+        flex-basis: auto;
+    }
+
+    .subject-card {
+        padding: 18px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .subject-card {
+        transition: none;
+    }
+}
+</style>

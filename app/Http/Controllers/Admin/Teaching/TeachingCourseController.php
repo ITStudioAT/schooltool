@@ -16,6 +16,7 @@ use App\Models\TeachingEntryArea;
 use App\Models\User;
 use App\Services\PdfTableGenerator;
 use App\Services\TeachingClassHeadEmailService;
+use App\Services\TeachingCourseDateService;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingHolidaySyncService;
@@ -720,7 +721,8 @@ class TeachingCourseController extends Controller
         TeachingCourse $course,
         TeachingCourseService $service,
         TeachingCourseWorkEntrySyncService $entrySyncService,
-        TeachingClassHeadEmailService $classHeadEmailService
+        TeachingClassHeadEmailService $classHeadEmailService,
+        TeachingCourseDateService $courseDateService
     ) {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -813,8 +815,14 @@ class TeachingCourseController extends Controller
             $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
 
+        $curriculumId = array_key_exists('teaching_curriculum_id', $validated)
+            ? $validated['teaching_curriculum_id']
+            : $course->teaching_curriculum_id;
+
         DB::transaction(function () use (
             $course,
+            $curriculumId,
+            $courseDateService,
             $validated,
             $sortedClasses,
             $schemaIds,
@@ -825,6 +833,10 @@ class TeachingCourseController extends Controller
             $studentsDeletedPayload,
             $entrySyncService
         ): void {
+            if ((int) $course->teaching_curriculum_id !== (int) $curriculumId) {
+                $courseDateService->removeCurriculumAssignment($course);
+            }
+
             $course->update([
                 'title' => $validated['title'],
                 'description' => $validated['description'] ?? null,
@@ -833,7 +845,7 @@ class TeachingCourseController extends Controller
                 'teaching_entry_area_id' => array_key_exists('teaching_entry_area_id', $validated)
                     ? $validated['teaching_entry_area_id']
                     : $course->teaching_entry_area_id,
-                'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
+                'teaching_curriculum_id' => $curriculumId,
                 'teaching_show_student_age' => $validated['teaching_show_student_age'] ?? $course->teaching_show_student_age,
                 'teaching_show_student_last_login' => $validated['teaching_show_student_last_login'] ?? $course->teaching_show_student_last_login,
             ]);
@@ -1030,16 +1042,21 @@ class TeachingCourseController extends Controller
     }
 
     /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool, show_semester_grade: bool, show_behaviour_grade: bool}
      */
     private function teachingStudentGradeColumnsForCourse(TeachingCourse $course, User $user): array
     {
+        $gradeVisibility = [
+            'show_semester_grade' => (bool) ($course->teaching_student_grade_columns['show_semester_grade'] ?? true),
+            'show_behaviour_grade' => (bool) ($course->teaching_student_grade_columns['show_behaviour_grade'] ?? true),
+        ];
+
         if (is_array($course->teaching_student_grade_columns)) {
             return [
                 'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
                 'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
                 'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
-            ];
+            ] + $gradeVisibility;
         }
 
         $bySchoolyear = $user->teaching_student_grade_columns_by_schoolyear;
@@ -1049,7 +1066,7 @@ class TeachingCourseController extends Controller
                 'show_sem1' => false,
                 'show_sem2' => false,
                 'show_year' => false,
-            ];
+            ] + $gradeVisibility;
         }
 
         $columns = $bySchoolyear[(string) $course->schoolyear_id] ?? null;
@@ -1059,14 +1076,14 @@ class TeachingCourseController extends Controller
                 'show_sem1' => false,
                 'show_sem2' => false,
                 'show_year' => false,
-            ];
+            ] + $gradeVisibility;
         }
 
         return [
             'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
             'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
             'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
+        ] + $gradeVisibility;
     }
 
     private function serializeCourseStudent(

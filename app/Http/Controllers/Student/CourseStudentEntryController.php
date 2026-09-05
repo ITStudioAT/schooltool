@@ -9,11 +9,12 @@ use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingService;
 
 class CourseStudentEntryController extends Controller
 {
-    public function index($courseId, ParentStudentAccessService $parentAccess)
+    public function index($courseId, ParentStudentAccessService $parentAccess, TeachingCourseStudentEntryService $entryService)
     {
         if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -24,7 +25,7 @@ class CourseStudentEntryController extends Controller
         $active_schoolyear_id = $schoolTool?->active_schoolyear_id ?? $auth_user->schoolyear_id;
 
         // Get the course
-        $course = TeachingCourse::with('user:id,school_id,schoolyear_id')
+        $course = TeachingCourse::with('user:id,school_id,schoolyear_id,teaching_show_behaviour')
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
@@ -47,6 +48,8 @@ class CourseStudentEntryController extends Controller
         // Get teaching schema for proper type labels
         $teachingService = new TeachingService;
         $schemaOwner = $course->user ?: $auth_user;
+        $entryDefinitions = $entryService->entryDefinitionsForCourse($schemaOwner, $course)->keyBy('short_name');
+        $showBehaviour = (bool) ($course->user?->teaching_show_behaviour ?? true);
         $teachingSchemas = $teachingService->schemasForUser($schemaOwner, $course->schoolyear_id)->all();
         $schemaForCourse = null;
         if ($course->teaching_schema_id) {
@@ -66,8 +69,12 @@ class CourseStudentEntryController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
+        $entries = $entries
+            ->filter(fn (TeachingCourseStudentEntry $entry): bool => $showBehaviour || $entryDefinitions->get($entry->type)?->category !== 'Verhalten')
+            ->values();
+
         // Format entries for response
-        $formattedEntries = $entries->map(function ($entry) use ($auth_user) {
+        $formattedEntries = $entries->map(function ($entry) use ($auth_user, $entryDefinitions) {
             // Use teachingCourseWork title and description, or entry description
             $title = null;
             $description = null;
@@ -153,6 +160,7 @@ class CourseStudentEntryController extends Controller
                 'description' => $description,
                 'comment' => $comment,
                 'type' => $entry->type ?? 'info',
+                'category' => $entryDefinitions->get($entry->type)?->category ?? 'Benotung',
                 'date' => $entry->date?->format('Y-m-d'),
                 'grade' => $entry->grade,
                 'status' => $entry->status,
@@ -188,6 +196,18 @@ class CourseStudentEntryController extends Controller
                     }
                 }
             }
+        }
+
+        foreach ($entryDefinitions as $definition) {
+            if (! $showBehaviour && $definition->category === 'Verhalten') {
+                unset($typeLabels[$definition->short_name]);
+
+                continue;
+            }
+
+            $typeLabels[$definition->short_name] = trim((string) $definition->name) !== ''
+                ? $definition->name
+                : $definition->short_name;
         }
 
         $requiredTypeSet = $this->buildRequireAllCategoryTypeSet($schemaForCourse);
@@ -247,6 +267,12 @@ class CourseStudentEntryController extends Controller
         $categoryEvaluationDefaultValue = trim((string) ($schemaForCourse['grading']['default_category_evaluation_value'] ?? ''));
 
         $formattedEntries = $formattedEntries->map(function (array $entry) use ($defaultGradesByType, $requiredTypeSet) {
+            if ($entry['category'] !== 'Benotung') {
+                $entry['is_required_entry'] = false;
+
+                return $entry;
+            }
+
             $raw = trim((string) ($entry['grade'] ?? ''));
             if ($raw !== '') {
                 $entry['grade'] = $raw;

@@ -207,6 +207,8 @@ class StudentController extends Controller
             $data['status'] = 'login_ok';
         }
 
+        unset($data['password']);
+
         return response()->json($data, 200);
     }
 

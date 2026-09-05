@@ -1673,6 +1673,84 @@ describe('settings and semester endpoints', function () {
         ])->and($this->admin->teaching_student_grade_columns_by_schoolyear)->toBeNull();
     });
 
+    test('save_settings preserves independent course grade visibility across partial saves', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'teaching_student_grade_columns' => ['show_sem1' => true, 'show_sem2' => false, 'show_year' => true],
+        ]);
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_student_grade_columns' => ['show_semester_grade' => false, 'show_behaviour_grade' => true],
+        ])->assertOk();
+
+        expect($course->fresh()->teaching_student_grade_columns)->toBe([
+            'show_sem1' => true,
+            'show_sem2' => false,
+            'show_year' => true,
+            'show_semester_grade' => false,
+            'show_behaviour_grade' => true,
+        ]);
+
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_student_grade_columns' => ['show_sem1' => false, 'show_sem2' => true, 'show_year' => false],
+        ])->assertOk();
+
+        expect($course->fresh()->teaching_student_grade_columns)->toBe([
+            'show_sem1' => false,
+            'show_sem2' => true,
+            'show_year' => false,
+            'show_semester_grade' => false,
+            'show_behaviour_grade' => true,
+        ])->and($otherCourse->fresh()->teaching_student_grade_columns)->toBeNull()
+            ->and($this->teacher->fresh()->teaching_student_grade_columns_by_schoolyear)->toBeNull();
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertOk()
+            ->assertJsonPath('data.teaching_student_grade_columns.show_semester_grade', false)
+            ->assertJsonPath('data.teaching_student_grade_columns.show_behaviour_grade', true);
+    });
+
+    test('save_settings rejects invalid assigned grade visibility', function (string $key) {
+        $this->actingAs($this->teacher, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_student_grade_columns' => [$key => 'invalid'],
+        ])->assertUnprocessable()->assertJsonValidationErrors("teaching_student_grade_columns.{$key}");
+        expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
+    })->with(['show_semester_grade', 'show_behaviour_grade']);
+
+    test('save_settings requires a course for assigned grade visibility and enforces ownership', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+        $payload = ['teaching_student_grade_columns' => ['show_semester_grade' => false]];
+        $this->postJson('/api/admin/teaching/save_settings', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('teaching_course_id');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+        ]);
+        $this->postJson('/api/admin/teaching/save_settings', $payload + ['teaching_course_id' => $course->id])
+            ->assertForbidden();
+        expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
+    });
+
     test('save_settings persists category evaluation values inside schema grading', function () {
         $this->actingAs($this->admin, 'sanctum');
 

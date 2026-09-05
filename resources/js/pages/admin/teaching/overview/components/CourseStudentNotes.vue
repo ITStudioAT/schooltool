@@ -2,7 +2,13 @@
     <v-dialog v-model="isOpen" persistent max-width="700" scrollable>
         <v-card v-if="student">
             <v-card-title class="d-flex align-center ga-2 flex-wrap">
-                <span>{{ student.last_name }}, {{ student.first_name }}</span>
+                <div class="d-flex flex-column align-start">
+                    <span>{{ student.last_name }}, {{ student.first_name }}</span>
+                    <v-btn v-if="studentEmail" variant="text" size="small" class="text-none px-0"
+                        append-icon="mdi-content-copy" :aria-label="`E-Mail-Adresse kopieren: ${studentEmail}`"
+                        data-testid="student-notes-email" @click="copyStudentEmail">{{ studentEmail }}</v-btn>
+                    <span v-if="emailCopyMessage" class="text-caption" role="status">{{ emailCopyMessage }}</span>
+                </div>
                 <v-spacer />
                 <v-btn icon="mdi-close" aria-label="Schließen" variant="text" size="small" :disabled="saving" @click="close" />
             </v-card-title>
@@ -99,6 +105,7 @@ export default {
             saving: false,
             error: '',
             success: '',
+            emailCopyMessage: '',
             comment: '',
             specialInformation: '',
             specialLoaded: false,
@@ -117,6 +124,9 @@ export default {
         }
     },
     computed: {
+        studentEmail() {
+            return typeof this.student?.email === 'string' ? this.student.email.trim() : ''
+        },
         student() {
             return this.course?.students_info?.find((student) => String(student.id) === String(this.selectedStudent?.id))
                 || this.selectedStudent
@@ -149,6 +159,17 @@ export default {
         this.reset()
     },
     methods: {
+        async copyStudentEmail() {
+            if (!this.studentEmail) return
+            const version = this.requestVersion
+            this.emailCopyMessage = ''
+            try {
+                await navigator.clipboard.writeText(this.studentEmail)
+                if (version === this.requestVersion) this.emailCopyMessage = 'E-Mail-Adresse kopiert.'
+            } catch {
+                if (version === this.requestVersion) this.emailCopyMessage = 'E-Mail-Adresse konnte nicht kopiert werden.'
+            }
+        },
         open(student, section = 'comment') {
             if (this.saving || !this.course?.id || !student) return
             this.reset()
@@ -163,6 +184,7 @@ export default {
         },
         reset() {
             this.requestVersion++
+            this.emailCopyMessage = ''
             this.isOpen = false
             this.selectedStudent = null
             this.specialInformation = ''

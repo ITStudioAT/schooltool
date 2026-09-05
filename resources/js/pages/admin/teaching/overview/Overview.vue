@@ -138,14 +138,37 @@
         <MyCourses />
     </div>
 
-    <v-dialog v-model="curriculumEditMode" persistent max-width="560">
+    <v-dialog v-model="curriculumEditMode" persistent scrollable max-width="800">
         <v-card title="Curriculum zuordnen">
             <v-card-text>
                 <v-autocomplete v-model="curriculumSelectionId" :items="curriculumOptions"
                     label="Curriculum" :loading="curriculumLoading"
                     :disabled="curriculumLoading || curriculumSaveLoading"
-                    no-data-text="Keine Curricula vorhanden" />
-                <p class="text-caption">Beim Entfernen der Zuordnung bleiben bereits übernommene Unterrichtsinhalte erhalten.</p>
+                    no-data-text="Keine Curricula vorhanden" @update:model-value="loadCurriculumPreview" />
+                <p class="text-caption mb-4">Beim Wechseln oder Entfernen der Zuordnung werden die bisherigen Curriculum-Verknüpfungen der Termine entfernt. Manuelle Unterrichtsinhalte bleiben erhalten.</p>
+                <div v-if="curriculumPreviewLoading" role="status">Curriculum wird geladen …</div>
+                <section v-else-if="curriculumPreview" data-testid="curriculum-assignment-preview">
+                    <h2 class="text-h6 mb-2">{{ curriculumPreview.title }}</h2>
+                    <p v-if="curriculumPreview.description" class="text-body-2 mb-4">{{ curriculumPreview.description }}</p>
+                    <section v-for="(topic, topicIndex) in curriculumPreview.topics || []"
+                        :key="topic.id || topicIndex" class="mb-4">
+                        <h3 class="text-subtitle-1 font-weight-bold">{{ topic.title }}</h3>
+                        <div v-for="material in topic.materials || []" :key="material.id" class="text-body-2 ml-3">
+                            {{ material.title }}
+                        </div>
+                        <div v-for="(unit, unitIndex) in topic.units || []" :key="unit.id || unitIndex" class="ml-3 mt-2">
+                            <div class="text-body-2 font-weight-medium">
+                                {{ unit.title }}<span v-if="unit.is_exam"> · Prüfung</span>
+                            </div>
+                            <div v-for="material in unit.materials || []" :key="material.id" class="text-body-2 ml-3">
+                                {{ material.title }}
+                            </div>
+                        </div>
+                        <p v-if="!topic.units?.length" class="text-body-2 text-medium-emphasis">Keine Einheiten</p>
+                    </section>
+                    <p v-if="!curriculumPreview.topics?.length">Dieses Curriculum enthält keine Themen.</p>
+                </section>
+                <p v-else-if="normalizedCurriculumSelectionId" role="status">Curriculum konnte nicht geladen werden.</p>
             </v-card-text>
             <v-card-actions class="flex-wrap">
                 <v-btn :disabled="curriculumSaveLoading" @click="cancelCurriculumEdit">Abbrechen</v-btn>
@@ -223,6 +246,9 @@ export default {
             curriculumSaveLoading: false,
             curriculumMoveSaving: false,
             curriculumEditMode: false,
+            curriculumPreview: null,
+            curriculumPreviewLoading: false,
+            curriculumPreviewRequestId: 0,
             selectedCurriculumDetail: null,
             selectedCurriculumDetailLoadingId: null,
         }
@@ -677,6 +703,24 @@ export default {
             this.curriculumSelectionId = null
             await this.saveCurriculumAssignment()
         },
+        async loadCurriculumPreview() {
+            const requestId = ++this.curriculumPreviewRequestId
+            const curriculumId = this.normalizedCurriculumSelectionId
+            const courseId = this.selected_course?.id
+            this.curriculumPreview = null
+            this.curriculumPreviewLoading = Boolean(curriculumId)
+            if (!curriculumId) return
+
+            try {
+                const curriculum = await this.curriculumStore.show(curriculumId)
+                if (requestId === this.curriculumPreviewRequestId && this.curriculumEditMode
+                    && this.selected_course?.id === courseId && this.normalizedCurriculumSelectionId === curriculumId) {
+                    this.curriculumPreview = curriculum || null
+                }
+            } finally {
+                if (requestId === this.curriculumPreviewRequestId) this.curriculumPreviewLoading = false
+            }
+        },
         async startCurriculumEdit() {
             if (!this.selected_course?.id || this.curriculumSaveLoading) return
             const courseId = this.selected_course.id
@@ -684,6 +728,7 @@ export default {
             if (this.selected_course?.id !== courseId) return
             this.curriculumEditMode = true
             this.curriculumSelectionId = this.selectedCourseCurriculumId
+            await this.loadCurriculumPreview()
         },
         cancelCurriculumEdit() {
             this.curriculumEditMode = false

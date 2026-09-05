@@ -2904,6 +2904,82 @@ describe('update', function () {
 });
 
 describe('curriculum assignment removal', function () {
+    test('clears date assignments only when the curriculum changes during course update', function (string $selection, bool $cleared) {
+        Storage::fake('local');
+        $this->actingAs($this->admin, 'sanctum');
+        $curricula = collect(['Old curriculum', 'New curriculum'])->map(fn (string $title) => TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => $title,
+            'semester_count' => 2,
+            'topics' => [],
+        ]));
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'teaching_curriculum_id' => $curricula[0]->id,
+        ]);
+        $date = TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-04-11',
+            'hours' => [2],
+            'content' => 'Manual lesson notes',
+            'attendance' => ['12' => true],
+            'status' => [],
+        ]);
+        $material = TeachingCourseDateMaterial::query()->create([
+            'teaching_course_date_id' => $date->id,
+            'title' => 'Old topic: Old unit',
+        ]);
+        $path = 'teaching/course_date_materials/old-curriculum.pdf';
+        Storage::disk('local')->put($path, 'content');
+        $attachment = $material->attachments()->create([
+            'name' => 'Old curriculum.pdf',
+            'file_path' => $path,
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 7,
+        ]);
+        $payload = [
+            'title' => $course->title,
+            'classes' => $course->classes,
+            'teaching_schema_id' => $course->teaching_schema_id,
+        ];
+        $expectedCurriculumId = match ($selection) {
+            'replacement' => $curricula[1]->id,
+            'remove' => null,
+            default => $curricula[0]->id,
+        };
+        if ($selection !== 'omitted') {
+            $payload['teaching_curriculum_id'] = $expectedCurriculumId === null ? null : (string) $expectedCurriculumId;
+        }
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", $payload)->assertOk();
+
+        expect($course->fresh()->teaching_curriculum_id)->toBe($expectedCurriculumId);
+        expect($date->fresh()->content)->toBe('Manual lesson notes')
+            ->and($date->fresh()->attendance)->toBe(['12' => true]);
+        $this->assertModelExists($curricula[0]);
+        $this->assertModelExists($curricula[1]);
+        if ($cleared) {
+            $this->assertModelMissing($material);
+            $this->assertModelMissing($attachment);
+            Storage::disk('local')->assertMissing($path);
+        } else {
+            $this->assertModelExists($material);
+            $this->assertModelExists($attachment);
+            Storage::disk('local')->assertExists($path);
+        }
+    })->with([
+        'replacement' => ['replacement', true],
+        'removal' => ['remove', true],
+        'same curriculum' => ['same', false],
+        'unrelated edit' => ['omitted', false],
+    ]);
+
     test('removes the curriculum assignment and adopted curriculum records while preserving course dates', function () {
         Storage::fake('local');
         $this->actingAs($this->admin, 'sanctum');

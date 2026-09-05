@@ -733,6 +733,38 @@ describe('loginWithToken', function () {
 });
 
 describe('loginWithPassword', function () {
+    it('rejects password login when the supplied identity does not match the user', function (string $field) {
+        $user = User::factory()->create(['school_id' => $this->school->id, 'password' => Hash::make('password123')]);
+        $data = ['user_id' => $user->id, 'password' => 'password123'];
+        $data[$field] = $field === 'email' ? 'wrong@example.test' : School::factory()->create()->id;
+
+        expect(fn () => $this->service->loginWithPassword($data))
+            ->toThrow(HttpException::class);
+        expect(Auth::check())->toBeFalse();
+    })->with(['email', 'school_id']);
+
+    it('scopes super admin password login to active admins in the target school', function (string $kind, bool $accepted) {
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create(['school_id' => $this->school->id, 'is_active' => true]);
+        $admin = User::factory()->create([
+            'school_id' => $kind === 'foreign' ? School::factory()->create()->id : $this->school->id,
+            'is_active' => $kind !== 'inactive',
+            'password' => Hash::make('school-admin-secret'),
+        ]);
+        $admin->assignRole($kind === 'ordinary' ? 'tutoring_user' : 'super_admin');
+
+        $result = $this->service->loginWithPassword(['user_id' => $user->id, 'password' => 'school-admin-secret']);
+
+        expect($result)->not->toHaveKey('password')
+            ->and($result['status'])->toBe($accepted ? 'LOGGED_IN' : 'RETRY_PASSWORD')
+            ->and(Auth::id())->toBe($accepted ? $user->id : null);
+    })->with([
+        'same school' => ['same', true],
+        'other school' => ['foreign', false],
+        'inactive admin' => ['inactive', false],
+        'ordinary user' => ['ordinary', false],
+    ]);
+
     it('logs in user with correct password', function () {
         $user = User::factory()->create([
             'school_id' => $this->school->id,

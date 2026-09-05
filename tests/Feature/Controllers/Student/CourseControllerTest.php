@@ -258,6 +258,64 @@ test('show returns free reason with teacher reason priority over school reason',
         ->assertJsonPath('course.active_course_end_at', null);
 });
 
+test('course grade visibility independently controls assigned grades in detail and overview', function (?bool $showSemesterGrade, ?bool $showBehaviourGrade, bool $showBehaviour) {
+    $this->teacher->update(['teaching_show_behaviour' => $showBehaviour]);
+    $gradeColumns = ['show_sem1' => true, 'show_sem2' => false, 'show_year' => false];
+    if ($showSemesterGrade !== null) {
+        $gradeColumns['show_semester_grade'] = $showSemesterGrade;
+    }
+    if ($showBehaviourGrade !== null) {
+        $gradeColumns['show_behaviour_grade'] = $showBehaviourGrade;
+    }
+    $grades = [
+        'sem_1_grade' => '2',
+        'sem_2_grade' => '3',
+        'sem_grade' => '2',
+        'behaviour_1_grade' => '1',
+        'behaviour_2_grade' => '2',
+        'behaviour_grade' => '1',
+    ];
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_student_grade_columns' => $gradeColumns,
+        'students' => [['id' => $this->studentA->id] + $grades],
+    ]);
+    TeachingCourseBehaviourEntry::query()->create([
+        'teaching_course_id' => $course->id,
+        'user_id' => $this->studentA->id,
+        'kind' => 'behaviour',
+        'type' => 'E',
+        'date' => '2026-09-05',
+        'description' => 'Verhaltenseintrag',
+    ]);
+
+    $detail = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_semester_grade', $showSemesterGrade ?? true)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_behaviour_grade', $showBehaviourGrade ?? true)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', true)
+        ->assertJsonPath('course.show_behaviour', $showBehaviour)
+        ->assertJsonCount($showBehaviour ? 1 : 0, 'course.behaviour_entries');
+    $overview = $this->getJson('/api/homepage/student/courses')->assertOk();
+
+    foreach ($grades as $key => $grade) {
+        $visible = str_starts_with($key, 'behaviour')
+            ? ($showBehaviourGrade ?? true) && $showBehaviour
+            : ($showSemesterGrade ?? true);
+        $detail->assertJsonPath("course.{$key}", $visible ? $grade : null);
+        $overview->assertJsonPath("courses.0.{$key}", $visible ? $grade : null);
+    }
+})->with([
+    'legacy defaults' => [null, null, true],
+    'semester hidden' => [false, true, true],
+    'behaviour grade hidden' => [true, false, true],
+    'both hidden' => [false, false, true],
+    'teacher behaviour override' => [true, true, false],
+]);
+
 test('show hides behaviour data when teacher disables behaviour visibility', function () {
     $this->teacher->forceFill([
         'teaching_show_behaviour' => false,

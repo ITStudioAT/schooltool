@@ -41,7 +41,7 @@ class CourseController extends Controller
                 $query->where('user_id', $auth_user->id)
                     ->whereNull('canceled_at');
             })
-            ->with('user:id,first_name,last_name,short,email')
+            ->with('user:id,first_name,last_name,short,email,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -61,6 +61,10 @@ class CourseController extends Controller
             ->map(function ($course) use ($schoolHoursByHour, $today) {
                 $studentData = $course->teachingCourseStudents->first();
                 $courseTimingMeta = $this->resolveCourseTimingMeta($course, $schoolHoursByHour, $today);
+                $studentGradeColumns = $this->teachingStudentGradeColumnsForCourse($course);
+                $showSemesterGrade = $studentGradeColumns['show_semester_grade'];
+                $showBehaviourGrade = $studentGradeColumns['show_behaviour_grade']
+                    && (bool) ($course->user?->teaching_show_behaviour ?? true);
 
                 return [
                     'id' => $course->id,
@@ -72,12 +76,12 @@ class CourseController extends Controller
                     'classes' => $course->classes,
                     'students_count' => (int) ($course->active_students_count ?? 0),
                     'stars' => $studentData?->stars ?? [],
-                    'sem_1_grade' => $studentData?->sem_1_grade,
-                    'sem_2_grade' => $studentData?->sem_2_grade,
-                    'sem_grade' => $studentData?->sem_grade,
-                    'behaviour_1_grade' => $studentData?->behaviour_1_grade,
-                    'behaviour_2_grade' => $studentData?->behaviour_2_grade,
-                    'behaviour_grade' => $studentData?->behaviour_grade,
+                    'sem_1_grade' => $showSemesterGrade ? $studentData?->sem_1_grade : null,
+                    'sem_2_grade' => $showSemesterGrade ? $studentData?->sem_2_grade : null,
+                    'sem_grade' => $showSemesterGrade ? $studentData?->sem_grade : null,
+                    'behaviour_1_grade' => $showBehaviourGrade ? $studentData?->behaviour_1_grade : null,
+                    'behaviour_2_grade' => $showBehaviourGrade ? $studentData?->behaviour_2_grade : null,
+                    'behaviour_grade' => $showBehaviourGrade ? $studentData?->behaviour_grade : null,
                     'next_course_date' => $courseTimingMeta['next_course_date'],
                     'active_course_end_at' => $courseTimingMeta['active_course_end_at'],
                 ];
@@ -233,6 +237,9 @@ class CourseController extends Controller
         }
 
         $showBehaviour = (bool) ($course->user?->teaching_show_behaviour ?? true);
+        $studentGradeColumns = $this->teachingStudentGradeColumnsForCourse($course);
+        $showSemesterGrade = $studentGradeColumns['show_semester_grade'];
+        $showBehaviourGrade = $showBehaviour && $studentGradeColumns['show_behaviour_grade'];
 
         // Get notifications (TeachingCourseBehaviourEntry where kind == 'notification')
         $notifications = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)
@@ -339,16 +346,16 @@ class CourseController extends Controller
             'teacher_teaching_notifications' => $this->teachingNotificationsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_behaviour' => $showBehaviour ? $this->teachingBehaviourForSchoolyear($course->user, $course->schoolyear_id) : [],
             'teacher_teaching_grade_columns' => $this->teachingGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
-            'teacher_teaching_student_grade_columns' => $this->teachingStudentGradeColumnsForCourse($course),
+            'teacher_teaching_student_grade_columns' => $studentGradeColumns,
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
             'stars' => $studentData->stars ?? [],
-            'sem_1_grade' => $studentData->sem_1_grade,
-            'sem_2_grade' => $studentData->sem_2_grade,
-            'sem_grade' => $studentData->sem_grade,
-            'behaviour_1_grade' => $showBehaviour ? $studentData->behaviour_1_grade : null,
-            'behaviour_2_grade' => $showBehaviour ? $studentData->behaviour_2_grade : null,
-            'behaviour_grade' => $showBehaviour ? $studentData->behaviour_grade : null,
+            'sem_1_grade' => $showSemesterGrade ? $studentData->sem_1_grade : null,
+            'sem_2_grade' => $showSemesterGrade ? $studentData->sem_2_grade : null,
+            'sem_grade' => $showSemesterGrade ? $studentData->sem_grade : null,
+            'behaviour_1_grade' => $showBehaviourGrade ? $studentData->behaviour_1_grade : null,
+            'behaviour_2_grade' => $showBehaviourGrade ? $studentData->behaviour_2_grade : null,
+            'behaviour_grade' => $showBehaviourGrade ? $studentData->behaviour_grade : null,
             'notifications' => $notifications,
             'behaviour_entries' => $behaviourEntries,
             'show_behaviour' => $showBehaviour,
@@ -589,18 +596,23 @@ class CourseController extends Controller
     }
 
     /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool, show_semester_grade: bool, show_behaviour_grade: bool}
      */
     private function teachingStudentGradeColumnsForCourse(TeachingCourse $course): array
     {
+        $gradeVisibility = [
+            'show_semester_grade' => (bool) ($course->teaching_student_grade_columns['show_semester_grade'] ?? true),
+            'show_behaviour_grade' => (bool) ($course->teaching_student_grade_columns['show_behaviour_grade'] ?? true),
+        ];
+
         if (is_array($course->teaching_student_grade_columns)) {
             return [
                 'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
                 'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
                 'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
-            ];
+            ] + $gradeVisibility;
         }
 
-        return $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id);
+        return $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id) + $gradeVisibility;
     }
 }

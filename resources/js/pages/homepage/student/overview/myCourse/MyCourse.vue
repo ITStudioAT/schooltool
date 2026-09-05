@@ -1,5 +1,5 @@
 <template>
-    <div class="lernportal-page">
+    <div class="lernportal-page student-workspace student-course-page">
         <div class="bg-shape bg-shape-1"></div>
         <div class="bg-shape bg-shape-2"></div>
 
@@ -9,16 +9,20 @@
         <section class="hero">
             <div class="hero-card">
                 <div class="hero-topline">
-                    <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/student/overview')">Zurück zur Übersicht</v-btn>
-                    <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
+                    <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/student/overview')">Meine Fächer</v-btn>
+                    <v-btn class="menu-btn" variant="text" icon="mdi-menu" aria-label="Menü öffnen" @click="showDrawer = true" />
                 </div>
 
-                <h1 class="hero-title">{{ course?.title || 'Fach wird geladen...' }}</h1>
-                <p class="hero-subtitle">Details zum Fach ansehen.</p>
+                <div class="course-identity">
+                    <div>
+                        <span class="course-eyebrow">DEIN LERNRAUM</span>
+                        <h1 class="hero-title">{{ course?.title || 'Fach wird geladen...' }}</h1>
+                        <p class="hero-subtitle">{{ course?.teacher || 'Dein Unterricht' }}<span v-if="course?.classes?.length"> · {{ course.classes.join(', ') }}</span></p>
+                    </div>
+                    <div class="course-emblem" aria-hidden="true"><v-icon size="44">mdi-lightning-bolt-outline</v-icon></div>
+                </div>
 
                 <div class="hero-badges">
-                    <span class="hero-badge">{{ weekdayLabel }}</span>
-                    <span class="hero-badge dark">{{ dateLabel }}</span>
                     <span v-if="user" class="hero-badge">
                         {{ user.first_name }} {{ user.last_name }}
                         <span v-if="courseStars.length" class="stars-inline">
@@ -29,10 +33,6 @@
                 </div>
 
                 <ParentAccessPanel />
-
-                <div class="hero-logout-row">
-                    <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
-                </div>
 
                 <div v-if="heroLiveTimer" class="hero-on-air">
                     <div class="on-air-badge">
@@ -48,11 +48,6 @@
         <section class="content-cover">
             <!-- Course Details Card -->
             <div class="content-card">
-                <div class="content-head">
-                    <v-icon size="26">mdi-book-open-variant</v-icon>
-                    <h2>Fach-Details</h2>
-                    <v-btn class="ml-auto" variant="text" icon="mdi-close" @click="$router.push('/student/overview')" />
-                </div>
                 <!-- Loading State -->
                 <div v-if="loading" class="courses-loading">
                     <v-progress-circular indeterminate color="#fd802e" />
@@ -61,52 +56,54 @@
 
                 <!-- Course Tabs -->
                 <div v-else-if="course">
-                    <div class="course-tabs-mobile">
-                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'overview' ? 'flat' : 'outlined'" :color="currentTab === 'overview' ? 'primary' : undefined" @click="currentTab = 'overview'">
+                    <nav class="student-course-nav" aria-label="Bereiche deines Fachs">
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'overview'" :variant="currentTab === 'overview' ? 'flat' : 'text'" :color="currentTab === 'overview' ? '#4056d6' : undefined" @click="currentTab = 'overview'">
                             <v-icon start>mdi-information-outline</v-icon>
                             Übersicht
                         </v-btn>
-                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'entries' ? 'flat' : 'outlined'" :color="currentTab === 'entries' ? 'primary' : undefined" @click="currentTab = 'entries'">
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'entries'" :variant="currentTab === 'entries' ? 'flat' : 'text'" :color="currentTab === 'entries' ? '#4056d6' : undefined" @click="currentTab = 'entries'">
                             <v-icon start>mdi-notebook-outline</v-icon>
-                            Leistungen
+                            <span>Leistungen<span v-if="showBehaviourEnabled" class="course-nav-secondary"> &amp; Verhalten</span></span>
                         </v-btn>
-                        <v-btn v-if="showBehaviourEnabled" class="course-tab-mobile-btn" :variant="currentTab === 'behaviour' ? 'flat' : 'outlined'" :color="currentTab === 'behaviour' ? 'primary' : undefined" @click="currentTab = 'behaviour'">
-                            <v-icon start>mdi-account-star</v-icon>
-                            Verhalten
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'additional'" :variant="currentTab === 'additional' ? 'flat' : 'text'" :color="currentTab === 'additional' ? '#4056d6' : undefined" @click="currentTab = 'additional'">
+                            <v-icon start>mdi-information-variant-circle-outline</v-icon>
+                            Weitere
                         </v-btn>
-                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'dates' ? 'flat' : 'outlined'" :color="currentTab === 'dates' ? 'primary' : undefined" @click="currentTab = 'dates'">
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'dates'" :variant="currentTab === 'dates' ? 'flat' : 'text'" :color="currentTab === 'dates' ? '#4056d6' : undefined" @click="currentTab = 'dates'">
                             <v-icon start>mdi-calendar-month</v-icon>
                             Termine
                         </v-btn>
-                    </div>
-
-                    <v-tabs v-model="currentTab" class="course-tabs course-tabs-desktop" bg-color="transparent" color="#fd802e" grow>
-                        <v-tab value="overview">
-                            <v-icon start>mdi-information-outline</v-icon>
-                            Übersicht
-                        </v-tab>
-                        <v-tab value="entries">
-                            <v-icon start>mdi-notebook-outline</v-icon>
-                            Leistungen
-                        </v-tab>
-                        <v-tab v-if="showBehaviourEnabled" value="behaviour">
-                            <v-icon start>mdi-account-star</v-icon>
-                            Verhalten
-                        </v-tab>
-                        <v-tab value="dates">
-                            <v-icon start>mdi-calendar-month</v-icon>
-                            Termine
-                        </v-tab>
-                    </v-tabs>
+                    </nav>
 
                     <v-tabs-window v-model="currentTab" style="margin-top: 20px">
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
-                            <div class="profile-section">
-                                <h3 class="profile-section-title">
+                            <div class="student-course-summary">
+                                <button class="student-summary-card student-summary-card--next" type="button" @click="currentTab = 'dates'">
+                                    <v-icon size="24">mdi-calendar-clock-outline</v-icon>
+                                    <span>Nächster Unterricht</span>
+                                    <strong>{{ course.next_course_date?.date ? formatDate(course.next_course_date.date) : 'Noch kein Termin' }}</strong>
+                                    <small>{{ course.next_course_date?.time_label || 'Alle Termine ansehen' }}</small>
+                                </button>
+                                <div class="student-summary-card student-summary-card--open">
+                                    <v-icon size="24">mdi-bell-outline</v-icon>
+                                    <span>Offene Verständigungen</span>
+                                    <strong>{{ openNotifications.length }}</strong>
+                                    <small>{{ openNotifications.length ? 'Weiter unten im Überblick' : 'Du bist auf dem Laufenden' }}</small>
+                                </div>
+                                <div class="student-summary-card student-summary-card--stars">
+                                    <v-icon size="24">mdi-star-outline</v-icon>
+                                    <span>Deine Sterne</span>
+                                    <strong>{{ courseStars.length }}</strong>
+                                    <small>{{ courseStars.length ? 'Stark gemacht!' : 'Dein Einsatz zählt' }}</small>
+                                </div>
+                            </div>
+                            <details class="profile-section student-course-information">
+                                <summary class="profile-section-title">
                                     <v-icon size="20">mdi-information</v-icon>
-                                    Allgemeine Informationen
-                                </h3>
+                                    Kontakt &amp; Fachinfos
+                                    <v-icon class="ml-auto" size="20">mdi-chevron-down</v-icon>
+                                </summary>
                                 <div class="profile-fields">
                                     <div class="profile-field">
                                         <label>Fachbezeichnung</label>
@@ -118,7 +115,7 @@
                                     </div>
                                     <div class="profile-field" v-if="course.teacher_email">
                                         <label>E-Mail Lehrkraft</label>
-                                        <div class="profile-value">{{ course.teacher_email }}</div>
+                                        <a class="profile-value student-contact-link" :href="`mailto:${course.teacher_email}`">{{ course.teacher_email }}</a>
                                     </div>
                                     <div class="profile-field" v-if="course.classes && course.classes.length > 0">
                                         <label>Klassen</label>
@@ -129,7 +126,7 @@
                                         <div class="profile-value">{{ course.students_count }}</div>
                                     </div>
                                 </div>
-                            </div>
+                            </details>
 
                             <!-- Open Notifications Section (IMPORTANT - directly after general info!) -->
                             <div v-if="openNotifications.length" class="profile-section" style="margin-top: 20px">
@@ -182,11 +179,12 @@
                             </div>
 
                             <!-- Closed Notifications Section -->
-                            <div v-if="closedNotifications.length" class="profile-section" style="margin-top: 20px">
-                                <h3 class="profile-section-title">
+                            <details v-if="closedNotifications.length" class="profile-section student-course-information" style="margin-top: 20px">
+                                <summary class="profile-section-title">
                                     <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
-                                    Erledigte Verständigungen
-                                </h3>
+                                    Erledigte Verständigungen ({{ closedNotifications.length }})
+                                    <v-icon class="ml-auto" size="20">mdi-chevron-down</v-icon>
+                                </summary>
                                 <div class="notifications-list">
                                     <div v-for="notification in closedNotifications" :key="notification.id" class="notification-item notification-closed">
                                         <div class="notification-icon">
@@ -205,10 +203,10 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </details>
 
                             <!-- Grades Section (last) -->
-                            <div class="profile-section" style="margin-top: 20px">
+                            <div v-if="showSemesterGrade || showBehaviourGrade || showCalculatedGradesSection || showMissingRequiredNaHint" class="profile-section" style="margin-top: 20px">
                                 <h3 class="profile-section-title">
                                     <v-icon size="20">mdi-chart-line</v-icon>
                                     Noten
@@ -216,41 +214,21 @@
                                 <v-alert v-if="showMissingRequiredNaHint" type="error" variant="tonal" density="comfortable" icon="mdi-alert-circle" class="grades-required-hint">
                                     <strong>Hinweis:</strong> Es wurden noch nicht alle Leistungen erbracht! (siehe Leistungen)
                                 </v-alert>
-                                <div class="grades-display">
-                                    <template v-if="course?.sem_1_grade || course?.sem_2_grade">
-                                        <div class="grade-item" :class="course?.sem_1_grade ? 'grade-set' : 'grade-open'">
-                                            <div class="grade-label">1. Semester</div>
-                                            <div class="grade-value">{{ course?.sem_1_grade || 'offen' }}</div>
-                                            <div
-                                                v-if="showBehaviourEnabled && (course?.behaviour_1_grade || !course?.sem_1_grade)"
-                                                class="behaviour-value"
-                                                :class="course?.behaviour_1_grade ? 'behaviour-set' : 'behaviour-open'">
-                                                Verhalten: {{ course?.behaviour_1_grade || 'offen' }}
-                                            </div>
+                                <div v-if="showSemesterGrade || showBehaviourGrade" class="grades-display" data-testid="student-assigned-grades">
+                                    <div
+                                        v-for="period in assignedGradePeriods"
+                                        :key="period.label"
+                                        class="grade-item"
+                                        :class="(showSemesterGrade ? period.grade : period.behaviourGrade) ? 'grade-set' : 'grade-open'">
+                                        <div class="grade-label">{{ period.label }}</div>
+                                        <div v-if="showSemesterGrade" class="grade-value semester-grade-value">{{ period.grade || 'offen' }}</div>
+                                        <div
+                                            v-if="showBehaviourGrade"
+                                            class="behaviour-value"
+                                            :class="period.behaviourGrade ? 'behaviour-set' : 'behaviour-open'">
+                                            Verhaltensnote: {{ period.behaviourGrade || 'offen' }}
                                         </div>
-                                        <div class="grade-item" :class="course?.sem_2_grade ? 'grade-set' : 'grade-open'">
-                                            <div class="grade-label">2. Semester</div>
-                                            <div class="grade-value">{{ course?.sem_2_grade || 'offen' }}</div>
-                                            <div
-                                                v-if="showBehaviourEnabled && (course?.behaviour_2_grade || !course?.sem_2_grade)"
-                                                class="behaviour-value"
-                                                :class="course?.behaviour_2_grade ? 'behaviour-set' : 'behaviour-open'">
-                                                Verhalten: {{ course?.behaviour_2_grade || 'offen' }}
-                                            </div>
-                                        </div>
-                                    </template>
-                                    <template v-else>
-                                        <div class="grade-item" :class="course?.sem_grade ? 'grade-set' : 'grade-open'">
-                                            <div class="grade-label">Semesternote</div>
-                                            <div class="grade-value">{{ course?.sem_grade || 'offen' }}</div>
-                                            <div
-                                                v-if="showBehaviourEnabled && (course?.behaviour_grade || !course?.sem_grade)"
-                                                class="behaviour-value"
-                                                :class="course?.behaviour_grade ? 'behaviour-set' : 'behaviour-open'">
-                                                Verhalten: {{ course?.behaviour_grade || 'offen' }}
-                                            </div>
-                                        </div>
-                                    </template>
+                                    </div>
                                 </div>
 
                                 <div v-if="showCalculatedGradesSection" class="calculated-grades-section">
@@ -294,45 +272,37 @@
 
                         <!-- Leistungen Tab -->
                         <v-tabs-window-item value="entries">
+                            <header class="feedback-intro">
+                                <div>
+                                    <span class="feedback-eyebrow">DEIN FEEDBACK</span>
+                                    <h2>{{ showBehaviourEnabled ? 'Leistungen & Verhalten' : 'Deine Leistungen' }}</h2>
+                                    <p>Alles im Blick. Schritt für Schritt weiter.</p>
+                                </div>
+                                <v-btn class="feedback-refresh" variant="outlined" prepend-icon="mdi-refresh" :loading="loadingEntries" @click="loadEntries">Aktualisieren</v-btn>
+                            </header>
+                            <div class="feedback-tools">
+                                <div class="feedback-jumps">
+                                    <a href="#student-performance" class="feedback-jump"><strong>{{ sortedEntries.length }}</strong><span>Leistungen</span><v-icon size="16">mdi-arrow-down</v-icon></a>
+                                    <a v-if="showBehaviourEnabled" href="#student-behaviour" class="feedback-jump feedback-jump--behaviour"><strong>{{ filteredBehaviourEntries.length }}</strong><span>Verhalten</span><v-icon size="16">mdi-arrow-down</v-icon></a>
+                                </div>
+                                <v-btn-toggle v-if="hasTwoSemesters" v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="#4056d6" aria-label="Semester für Leistungen und Verhalten">
+                                    <v-btn :value="1" size="small">1. Sem</v-btn>
+                                    <v-btn :value="2" size="small">2. Sem</v-btn>
+                                    <v-btn :value="3" size="small">Gesamt</v-btn>
+                                </v-btn-toggle>
+                            </div>
                             <!-- Loading State -->
                             <div v-if="loadingEntries" class="courses-loading">
-                                <v-progress-circular indeterminate color="#fd802e" />
-                                <p>Lade Leistungen...</p>
+                                <v-progress-circular indeterminate color="#4056d6" />
+                                <p>Lade Rückmeldungen...</p>
                             </div>
-
-                                <div v-else class="entries-section">
-                                    <div class="entries-toolbar">
-                                        <div class="entries-toolbar-title">
-                                            <v-icon size="18">mdi-clipboard-text</v-icon>
-                                            <span>Leistungen</span>
-                                            <v-chip v-if="sortedEntries.length" size="x-small" color="primary" variant="tonal">
-                                                {{ sortedEntries.length }}
-                                            </v-chip>
-                                        </div>
-                                        <div class="entries-toolbar-actions">
-                                            <v-btn
-                                                size="small"
-                                                variant="tonal"
-                                                color="primary"
-                                                prepend-icon="mdi-refresh"
-                                                :loading="loadingEntries"
-                                                :disabled="loadingEntries"
-                                                @click="loadEntries">
-                                                Aktualisieren
-                                            </v-btn>
-                                            <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
-                                                {{ sortByType ? 'Sort: Typ' : 'Sort: Datum' }}
-                                            </v-btn>
-                                        </div>
-                                    </div>
-
-                                <div v-if="hasTwoSemesters" class="entries-semester-filter">
-                                    <v-btn-toggle v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="primary">
-                                        <v-btn :value="1" size="small">1. Sem</v-btn>
-                                        <v-btn :value="2" size="small">2. Sem</v-btn>
-                                        <v-btn :value="3" size="small">1+2</v-btn>
-                                    </v-btn-toggle>
-                                </div>
+                            <div v-else class="feedback-grid" :class="{ 'feedback-grid--single': !showBehaviourEnabled }">
+                                <section id="student-performance" class="entries-section feedback-panel feedback-panel--assessment" data-testid="student-performance-entries">
+                                    <header class="feedback-panel-heading">
+                                        <span class="feedback-panel-icon"><v-icon size="23">mdi-chart-timeline-variant-shimmer</v-icon></span>
+                                        <div><h3>Leistungen</h3><p>Deine Arbeiten und Bewertungen</p></div>
+                                        <v-btn class="feedback-sort" size="small" variant="text" prepend-icon="mdi-sort" @click="toggleSortByType">{{ sortByType ? 'Typ' : 'Datum' }}</v-btn>
+                                    </header>
 
                                 <v-card v-if="sortedEntries.length > 0" variant="outlined">
                                     <v-card-text class="pa-0">
@@ -351,8 +321,8 @@
                                                         item.stripe % 2 === 1 ? 'entry-category-group--alt' : 'entry-category-group--base',
                                                     ]">
                                                         <div v-if="item.group.categoryName || item.group.categoryEvaluationValue" class="entry-category-group-head">
-                                                            <v-chip v-if="item.group.categoryName" size="small" color="secondary" variant="flat" class="entry-category-chip">
-                                                                Kategorie: {{ item.group.categoryName }}
+                                                            <v-chip v-if="item.group.categoryName" size="small" color="#4c60cf" variant="tonal" class="entry-category-chip">
+                                                                {{ item.group.categoryName }}
                                                             </v-chip>
                                                             <v-chip
                                                                 v-if="item.group.categoryEvaluationEnabled && shouldShowCategoryEvaluationValue(item.group.categoryEvaluationValue)"
@@ -414,9 +384,6 @@
                                                                     <v-chip v-if="entry.type" size="small" variant="outlined">
                                                                         {{ entryTypeChipLabel(entry.type) }}
                                                                     </v-chip>
-                                                                    <v-chip v-if="entry.is_required_entry" size="small" :color="entryGradeChipColor(entry)" variant="flat" :prepend-icon="entryGradeChipColor(entry) === 'success' ? 'mdi-check' : undefined">
-                                                                        Erforderlich
-                                                                    </v-chip>
                                                                     <v-chip class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(entry)">
                                                                         {{ entry.grade || 'offen' }}
                                                                     </v-chip>
@@ -431,41 +398,23 @@
                                 </v-card>
 
                                 <!-- Empty State -->
-                                <div v-else class="profile-info-box">
-                                    <v-icon color="#fd802e" size="24">mdi-notebook-outline</v-icon>
-                                    <div>
-                                        <strong>Keine Leistungen:</strong>
-                                        Für dieses Fach sind noch keine Leistungen vorhanden.
-                                    </div>
+                                <div v-else class="feedback-empty">
+                                    <v-icon size="28">mdi-notebook-outline</v-icon>
+                                    <strong>Noch keine Leistungen</strong>
+                                    <p>Für diesen Zeitraum sind noch keine Bewertungen eingetragen.</p>
                                 </div>
+                                </section>
+                                <StudentFeedbackEntries v-if="showBehaviourEnabled" id="student-behaviour" data-testid="student-behaviour-entries" title="Verhalten" kind="behaviour" :entries="behaviourFeedbackEntries" />
                             </div>
                         </v-tabs-window-item>
 
-                        <!-- Verhalten Tab -->
-                        <v-tabs-window-item v-if="showBehaviourEnabled" value="behaviour">
-                            <div v-if="behaviourEntries.length === 0" class="profile-info-box">
-                                <v-icon color="#fd802e" size="24">mdi-account-star</v-icon>
-                                <div>
-                                    <strong>Verhalten:</strong>
-                                    Keine Verhalteneinträge vorhanden.
-                                </div>
+                        <!-- Weitere Einträge -->
+                        <v-tabs-window-item value="additional">
+                            <div v-if="loadingEntries" class="courses-loading" role="status">
+                                <v-progress-circular indeterminate color="#4056d6" />
+                                <p>Lade Einträge...</p>
                             </div>
-                            <div v-else class="behaviour-entries-section">
-                                <div class="behaviour-entries-list">
-                                    <div v-for="entry in behaviourEntries" :key="entry.id" class="behaviour-entry-item">
-                                        <div class="behaviour-entry-icon">
-                                            <v-icon size="20" color="#2196f3">mdi-account-star</v-icon>
-                                        </div>
-                                        <div class="behaviour-entry-content">
-                                            <div class="behaviour-entry-header">
-                                                <span v-if="entry.date" class="behaviour-entry-date">{{ formatDate(entry.date) }}</span>
-                                                <span v-if="entry.type" class="behaviour-entry-type">{{ getBehaviourTypeLabel(entry.type) }}</span>
-                                            </div>
-                                            <div class="behaviour-entry-description">{{ entry.description }}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <StudentFeedbackEntries v-else data-testid="student-additional-entries" title="Weitere" kind="additional" :entries="additionalFeedbackEntries" />
                         </v-tabs-window-item>
 
                         <!-- Termine Tab -->
@@ -489,7 +438,7 @@
                                 </div>
 
                                 <div v-if="hasTwoSemesters" class="dates-semester-filter">
-                                    <v-btn-toggle v-model="selectedSemesterDates" class="semester-toggle" mandatory density="compact" color="primary">
+                                    <v-btn-toggle v-model="selectedSemesterDates" class="semester-toggle" mandatory density="compact" color="#4056d6">
                                         <v-btn :value="1" size="small">1. Sem</v-btn>
                                         <v-btn :value="2" size="small">2. Sem</v-btn>
                                         <v-btn :value="3" size="small">1+2</v-btn>
@@ -576,12 +525,14 @@ import {
 } from '@/helpers/teachingCategoryEvaluation'
 import ParentAccessPanel from '../../components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
+import StudentFeedbackEntries from '../../components/StudentFeedbackEntries.vue'
 import '../../../../../../css/student.css'
 
 export default {
     components: {
         ParentAccessPanel,
         StudentNavigationDrawer,
+        StudentFeedbackEntries,
     },
 
     async beforeMount() {
@@ -617,8 +568,9 @@ export default {
             showDrawer: false,
             loading: true,
             course: null,
-            currentTab: 'overview', // Start with Übersicht as default
             entries: [],
+            entryAreaBehaviourEntries: [],
+            additionalEntries: [],
             loadingEntries: false,
             selectedSemester: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for entries)
             selectedSemesterDates: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for dates)
@@ -632,6 +584,31 @@ export default {
 
     computed: {
         ...mapWritableState(useStudentStore, ['user']),
+
+        currentTab: {
+            get() {
+                const panel = this.$route?.query?.panel
+
+                if (panel === 'behaviour') {
+                    return 'entries'
+                }
+
+                return ['overview', 'entries', 'additional', 'dates'].includes(panel) ? panel : 'overview'
+            },
+            set(panel) {
+                const selectedPanel = panel === 'behaviour' ? 'entries' : panel
+
+                if (!['overview', 'entries', 'additional', 'dates'].includes(selectedPanel)
+                    || this.$route.query.panel === selectedPanel) {
+                    return
+                }
+
+                this.$router.replace({
+                    query: { ...this.$route.query, panel: selectedPanel },
+                    hash: this.$route.hash,
+                })
+            },
+        },
 
         courseId() {
             return this.$route.params.id
@@ -654,10 +631,45 @@ export default {
         },
 
         behaviourEntries() {
-            return this.course?.behaviour_entries || []
+            if (!this.showBehaviourEnabled) {
+                return []
+            }
+
+            return [...(this.course?.behaviour_entries || []), ...this.entryAreaBehaviourEntries]
+                .sort((first, second) => String(second.date || '').localeCompare(String(first.date || '')))
+        },
+        filteredBehaviourEntries() {
+            return this.filterEntriesBySemester(this.behaviourEntries)
+        },
+        behaviourFeedbackEntries() {
+            return this.filteredBehaviourEntries.map(this.feedbackEntry)
+        },
+        additionalFeedbackEntries() {
+            return this.additionalEntries.map(this.feedbackEntry)
         },
         showBehaviourEnabled() {
             return this.course?.show_behaviour !== false
+        },
+        showSemesterGrade() {
+            return this.course?.teacher_teaching_student_grade_columns?.show_semester_grade !== false
+        },
+        showBehaviourGrade() {
+            return this.showBehaviourEnabled
+                && this.course?.teacher_teaching_student_grade_columns?.show_behaviour_grade !== false
+        },
+        assignedGradePeriods() {
+            if (this.hasTwoSemesters) {
+                return [
+                    { label: '1. Semester', grade: this.course?.sem_1_grade, behaviourGrade: this.course?.behaviour_1_grade },
+                    { label: '2. Semester', grade: this.course?.sem_2_grade, behaviourGrade: this.course?.behaviour_2_grade },
+                ]
+            }
+
+            return [{
+                label: this.showSemesterGrade ? 'Semesternote' : 'Verhalten',
+                grade: this.course?.sem_grade,
+                behaviourGrade: this.course?.behaviour_grade,
+            }]
         },
 
         courseDates() {
@@ -903,24 +915,7 @@ export default {
 
         // Filter entries by selected semester
         filteredEntries() {
-            if (this.selectedSemester === 3) {
-                return this.entries
-            }
-
-            const boundary = this.normalizeDateKey(this.semesterBoundary)
-            if (!boundary) return this.entries
-
-            return this.entries.filter((entry) => {
-                if (!entry.date) return true
-                const date = this.normalizeDateKey(entry.date)
-                if (!date) return true
-                if (this.selectedSemester === 1) {
-                    return date < boundary
-                } else if (this.selectedSemester === 2) {
-                    return date >= boundary
-                }
-                return true
-            })
+            return this.filterEntriesBySemester(this.entries)
         },
 
         // Filter dates by selected semester
@@ -1012,7 +1007,9 @@ export default {
 
             const grouped = []
             let stripeIndex = 0
-            grouped.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+            if (sem2.length) {
+                grouped.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+            }
             this.buildEntryGroups(sem2).forEach((group, index) => {
                 grouped.push({
                     kind: 'group',
@@ -1022,7 +1019,9 @@ export default {
                 })
                 stripeIndex += 1
             })
-            grouped.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+            if (sem1.length) {
+                grouped.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+            }
             this.buildEntryGroups(sem1).forEach((group, index) => {
                 grouped.push({
                     kind: 'group',
@@ -1038,14 +1037,14 @@ export default {
 
     watch: {
         currentTab(newTab) {
-            // Load entries when switching to Leistungen tab
-            if (newTab === 'entries' && this.entries.length === 0 && !this.loadingEntries) {
-                this.loadEntries()
+            if (newTab === 'behaviour') {
+                this.currentTab = 'entries'
+                return
             }
-        },
-        showBehaviourEnabled(newValue) {
-            if (newValue === false && this.currentTab === 'behaviour') {
-                this.currentTab = 'overview'
+            if (['entries', 'additional'].includes(newTab)
+                && this.entries.length + this.entryAreaBehaviourEntries.length + this.additionalEntries.length === 0
+                && !this.loadingEntries) {
+                this.loadEntries()
             }
         },
         '$route.query.live_timer'() {
@@ -1057,6 +1056,28 @@ export default {
     },
 
     methods: {
+        feedbackEntry(entry) {
+            return {
+                ...entry,
+                key: `${entry.category ? 'entry' : 'behaviour'}-${entry.id}`,
+                dateLabel: entry.date ? this.formatDate(entry.date) : '',
+                typeLabel: entry.category ? this.entryTypeChipLabel(entry.type) : this.getBehaviourTypeLabel(entry.type),
+            }
+        },
+        filterEntriesBySemester(entries) {
+            if (this.selectedSemester === 3) {
+                return entries
+            }
+
+            const boundary = this.normalizeDateKey(this.semesterBoundary)
+            if (!boundary) return entries
+
+            return entries.filter((entry) => {
+                const date = this.normalizeDateKey(entry.date)
+                if (!date) return true
+                return this.selectedSemester === 1 ? date < boundary : date >= boundary
+            })
+        },
         async handleLogout() {
             this.showDrawer = false
             await this.studentStore.logout()
@@ -1122,8 +1143,8 @@ export default {
                 await this.courseStore.getCourse(this.courseId)
                 this.course = this.courseStore.course
                 this.setupSimulatedTimer()
-                if (!this.showBehaviourEnabled && this.currentTab === 'behaviour') {
-                    this.currentTab = 'overview'
+                if (this.currentTab === 'behaviour') {
+                    this.currentTab = 'entries'
                 }
 
                 if (!this.course) {
@@ -1142,7 +1163,10 @@ export default {
             try {
                 const success = await this.courseStore.getCourseEntries(this.courseId)
                 if (success) {
-                    this.entries = this.courseStore.entries || []
+                    const entries = this.courseStore.entries || []
+                    this.entries = entries.filter((entry) => !entry.category || entry.category === 'Benotung')
+                    this.entryAreaBehaviourEntries = entries.filter((entry) => entry.category === 'Verhalten')
+                    this.additionalEntries = entries.filter((entry) => entry.category === 'Weitere')
                 }
             } catch (error) {
                 console.error('Error loading entries:', error)

@@ -3,6 +3,102 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import CourseInfos from '@/pages/admin/teaching/overview/components/CourseInfos.vue'
 
+describe('CourseInfos assigned grade visibility', () => {
+    const methods = (CourseInfos as any).methods
+
+    function createContext(saved = true) {
+        const columns = {
+            show_sem1: false,
+            show_sem2: true,
+            show_year: false,
+            show_semester_grade: true,
+            show_behaviour_grade: false,
+        }
+
+        return {
+            selected_course: { id: 18, teaching_student_grade_columns: { ...columns } },
+            persistedStudentGradeColumns: columns,
+            teachingStore: { saveSettings: vi.fn().mockResolvedValue(saved) },
+            isSavingInfo: false,
+            runInfoMutation: async (_action: string, callback: () => Promise<boolean>) => callback(),
+            currentStudentGradeColumns: () => ({ show_sem1: true, show_sem2: false, show_year: true }),
+            gradeColumnsMatch: methods.gradeColumnsMatch,
+            restoreStudentGradeColumns: vi.fn(),
+        }
+    }
+
+    it('defaults assigned grades to visible for courses with older settings', () => {
+        const ctx = { selected_course: { teaching_student_grade_columns: { show_sem1: false } } }
+
+        expect((CourseInfos as any).computed.studentSemesterGradeVisible.call(ctx)).toBe(true)
+        expect((CourseInfos as any).computed.studentBehaviourGradeVisible.call(ctx)).toBe(true)
+    })
+
+    it('saves an assigned grade switch only for the selected course and preserves the other choices', async () => {
+        const ctx = createContext()
+
+        await methods.saveAssignedGradeVisibility.call(ctx, 'show_semester_grade', false)
+
+        const expectedColumns = { ...ctx.persistedStudentGradeColumns, show_semester_grade: false }
+        expect(ctx.teachingStore.saveSettings).toHaveBeenCalledWith({
+            teaching_course_id: 18,
+            teaching_student_grade_columns: expectedColumns,
+        }, { notifySuccess: false })
+        expect(ctx.selected_course.teaching_student_grade_columns).toEqual(expectedColumns)
+    })
+
+    it('retains the saved switch value if saving fails', async () => {
+        const ctx = createContext(false)
+
+        expect(await methods.saveAssignedGradeVisibility.call(ctx, 'show_semester_grade', false)).toBe(false)
+        expect(ctx.selected_course.teaching_student_grade_columns).toEqual(ctx.persistedStudentGradeColumns)
+    })
+
+    it('does not overwrite a newly selected course when saving finishes', async () => {
+        const ctx = createContext()
+        const originalCourse = ctx.selected_course
+        ctx.teachingStore.saveSettings.mockImplementation(async () => {
+            ctx.selected_course = { id: 19, teaching_student_grade_columns: { ...ctx.persistedStudentGradeColumns } }
+            return true
+        })
+
+        await methods.saveAssignedGradeVisibility.call(ctx, 'show_semester_grade', false)
+
+        expect(originalCourse.teaching_student_grade_columns.show_semester_grade).toBe(false)
+        expect(ctx.selected_course.teaching_student_grade_columns.show_semester_grade).toBe(true)
+    })
+
+    it('keeps assigned grade choices when calculated columns change', async () => {
+        const ctx = createContext()
+
+        await methods.persistStudentGradeColumns.call(ctx)
+
+        expect(ctx.selected_course.teaching_student_grade_columns).toEqual({
+            ...ctx.persistedStudentGradeColumns,
+            ...ctx.currentStudentGradeColumns(),
+        })
+    })
+
+    it('restores calculated columns when saving fails', async () => {
+        const ctx = createContext(false)
+
+        await methods.persistStudentGradeColumns.call(ctx)
+
+        expect(ctx.restoreStudentGradeColumns).toHaveBeenCalledWith(ctx.persistedStudentGradeColumns)
+        expect(ctx.selected_course.teaching_student_grade_columns).toEqual(ctx.persistedStudentGradeColumns)
+    })
+
+    it('prevents simultaneous saves of assigned and calculated grade visibility', async () => {
+        const ctx = createContext()
+        ctx.isSavingInfo = true
+
+        await methods.saveAssignedGradeVisibility.call(ctx, 'show_semester_grade', false)
+        await methods.persistStudentGradeColumns.call(ctx)
+
+        expect(ctx.teachingStore.saveSettings).not.toHaveBeenCalled()
+    })
+})
+
 it('completes a typeless reminder while preserving its scheduled date and time', async () => {
     const update = vi.fn().mockResolvedValue(true)
     const ctx = {
@@ -378,6 +474,7 @@ describe('CourseInfos course-specific definitions', () => {
             student_grade_visibility_show_sem2: false,
             student_grade_visibility_show_year: true,
             currentStudentGradeColumns: methods.currentStudentGradeColumns,
+            runInfoMutation: async (_action: string, callback: () => Promise<void>) => callback(),
             gradeColumnsMatch: methods.gradeColumnsMatch,
             persistedStudentGradeColumns: {
                 show_sem1: false,

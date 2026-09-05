@@ -63,6 +63,8 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Middleware/ToolLicensed.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/middleware-feature.md |
 | {app/Enums/StudentTimetableStudyProgram.php,app/Models/Import116.php,app/Services/StudentsTimetables/**} | .ai/rules/models-services-students-timetables.md |
 | app/Services/StudentsTimetables/StudentTimetableV3*|app/Models/StudentTimetableV3* | .ai/rules/models.md |
+| {app/Http/Controllers/Student/CourseStudentEntryController.php,app/Services/TeachingCourseStudentEntryService.php,resources/js/pages/homepage/student/overview/myCourse/MyCourse.vue} | .ai/rules/my-course.md |
+| {app/Http/Controllers/Admin/Teaching/{TeachingController,TeachingCourseController}.php,app/Http/Controllers/Student/CourseController.php,resources/js/pages/admin/teaching/overview/components/CourseInfos.vue,resources/js/pages/homepage/student/overview/myCourse/MyCourse.vue} | .ai/rules/overview-my-course.md |
 | {app/Http/Controllers/Homepage/StudentTimetableV3StateController.php,app/Http/Requests/Homepage/UpdateStudentTimetableV3StateRequest.php,resources/js/pages/homepage/studentsTimetables/overviewV2/**,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/overview-v2-feature.md |
 | resources/js/pages/homepage/studentsTimetables/overviewV2/** | .ai/rules/overview-v2.md |
 | resources/js/pages/admin/components/AdminAppBar.vue | .ai/rules/pages-admin-components.md |
@@ -88,6 +90,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Models/Teacher.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue} | .ai/rules/settings-components.md |
 | resources/js/pages/admin/settings/Settings.vue | .ai/rules/settings.md |
 | {app/Http/Middleware/RestrictStudentsTimetablesImpersonation.php,app/Http/Controllers/Admin/**,routes/{api,web}.php,resources/routes/homepage.js,resources/js/stores/homepage/HomepageStore.js} | .ai/rules/stores-homepage.md |
+| {app/Services/{AdminService,StudentService,RestaurantHomepageAuthService,TutoringService}.php,app/Http/Controllers/{Homepage/HomepageController,Student/StudentController,Tutoring/TutoringController}.php} | .ai/rules/student-controller-tutoring.md |
 | {resources/views/pdfs/students-timetable-overview.blade.php,resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue,app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/TimetableV3.test.ts} | .ai/rules/students-timetables-feature-ui-unit-pages-admin-students-timetables.md |
 | resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/ui/unit/pages/admin/studentsTimetables/**,tests/Feature/StudentsTimetablesModuleTest.php | .ai/rules/students-timetables-feature.md |
 | app/{Http/Controllers/Admin/StudentsTimetables,Jobs/StudentsTimetables,Services/StudentsTimetables}/**/*.php | .ai/rules/students-timetables-jobs-students-timetables-services-students-timetables.md |

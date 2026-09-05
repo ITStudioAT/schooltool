@@ -89,6 +89,18 @@ describe('CourseTable', () => {
         expect(emit).toHaveBeenCalledWith('manage-curriculum')
     })
 
+    it('shows the assigned curriculum title with a fallback for unassigned courses', () => {
+        const assignedCurriculumTitle = (CourseTable as any).computed.assignedCurriculumTitle
+
+        expect(assignedCurriculumTitle.call({
+            selected_course: { teaching_curriculum: { id: 3, title: 'DGB 1' } },
+        })).toBe('DGB 1')
+        expect(assignedCurriculumTitle.call({
+            selected_course: { teaching_curriculum: null },
+        })).toBe('Curriculum')
+        expect(assignedCurriculumTitle.call({ selected_course: null })).toBe('Curriculum')
+    })
+
     it('resolves the selected courses curriculum assignment', () => {
         const computed = (CourseTable as any).computed
 
@@ -201,6 +213,49 @@ describe('CourseTable', () => {
             },
             { key: 'topic-2', title: 'Reserve', units: [] },
         ])
+    })
+
+    it('lists old curriculum links separately and groups duplicate material titles', () => {
+        const methods = (CourseTable as any).methods
+        const titles = (CourseTable as any).computed.unmatchedCurriculumTitles.call({
+            curriculumDialogTopics: [{ title: 'Current', units: [{ title: 'Unit' }] }],
+            curriculumUnitTitle: methods.curriculumUnitTitle,
+            curriculumDialog: { courseDate: { adopted_materials: [
+                { id: 1, title: 'Old: Unit' },
+                { id: 2, title: 'Old: Unit' },
+                { id: 3, title: 'Current: Unit' },
+            ] } },
+        })
+        expect(titles).toEqual(['Old: Unit'])
+    })
+
+    it('opens existing links even when the course has no assigned curriculum', async () => {
+        const courseDate = { id: 318, adopted_materials: [{ id: 7, title: 'Old: Unit' }] }
+        const context = { assignedCurriculumId: null, curriculumDialogRequestId: 0, curriculumDialog: {} }
+        await (CourseTable as any).methods.openCurriculumDialog.call(context, courseDate)
+        expect(context.curriculumDialog).toEqual({ courseDate, curriculum: null, loading: false, open: true })
+    })
+
+    it('unlinks an old curriculum entry without a matching current unit', async () => {
+        const methods = (CourseTable as any).methods
+        vi.mocked(axios.delete).mockResolvedValue({ data: null })
+        const remainingMaterial = { id: 9, title: 'Current: Unit' }
+        const applyCurriculumDialogCourseDate = vi.fn()
+        const context = {
+            curriculumDialog: { courseDate: { id: 318, adopted_materials: [
+                { id: 7, title: 'Old: Unit' }, { id: 8, title: 'Old: Unit' }, remainingMaterial,
+            ] } },
+            curriculumUnitActionKey: null,
+            curriculumUnitAdoptedMaterials: methods.curriculumUnitAdoptedMaterials,
+            curriculumUnitTitle: methods.curriculumUnitTitle,
+            curriculumDialogUnitActionKey: methods.curriculumDialogUnitActionKey,
+            applyCurriculumDialogCourseDate,
+        }
+        await methods.unlinkCurriculumUnit.call(context, {}, { title: 'Old: Unit' })
+        expect(axios.delete).toHaveBeenCalledTimes(2)
+        expect(axios.delete).toHaveBeenNthCalledWith(1, '/api/admin/teaching/course_date_materials/7')
+        expect(axios.delete).toHaveBeenNthCalledWith(2, '/api/admin/teaching/course_date_materials/8')
+        expect(applyCurriculumDialogCourseDate).toHaveBeenCalledWith({ id: 318, adopted_materials: [remainingMaterial] })
     })
 
     it('loads the assigned curriculum when a Curriculum cell opens its dialog', async () => {
@@ -3620,7 +3675,8 @@ describe('CourseTable', () => {
         expect(source).toContain('aria-label="Curriculum zuweisen oder Zuordnung entfernen"')
         expect(source).toContain('@click="$emit(\'manage-curriculum\')"')
         expect(source).toContain('class="course-table-curriculum-row"')
-        expect(source).toContain('<span>Curriculum</span>')
+        expect(source).toContain('<span>{{ assignedCurriculumTitle }}</span>')
+        expect(source).toMatch(/<span>Curriculum<\/span>\s*<template v-if="hasAssignedCurriculum">\s*<br>\s*<span>\{\{ assignedCurriculumTitle \}\}<\/span>/u)
         expect(source).toContain('v-for="(content, contentIndex) in displayedCurriculumContentForCourseDate(courseDate)"')
         expect(source).toContain('v-if="contentIndex === 2 && hasAdditionalCurriculumContent(courseDate)"')
         expect(source).toContain('@click="openCurriculumDialog(courseDate)"')
@@ -3632,6 +3688,10 @@ describe('CourseTable', () => {
         expect(source).toContain('v-for="unit in topic.units"')
         expect(source).toContain("'course-table-curriculum-dialog-unit--linked': isCurriculumUnitLinkedToDialogDate(topic, unit)")
         expect(source).toContain('@click.stop="unlinkCurriculumUnit(topic, unit)"')
+        expect(source).toMatch(/v-if="isCurriculumUnitLinkedToDialogDate\(topic, unit\)"\s+color="error"\s+density="default"\s+prepend-icon="mdi-link-variant-off"\s+size="default"\s+variant="tonal"\s+height="36"\s+min-width="100"/u)
+        expect(source).toContain('@click.stop="unlinkCurriculumUnit({}, { title })"')
+        expect(source).toContain('v-for="title in unmatchedCurriculumTitles"')
+        expect(source).toMatch(/<v-btn color="error" density="default" prepend-icon="mdi-link-variant-off"\s+size="default" variant="tonal" height="36" min-width="100" class="ml-3"/u)
         expect(source).toContain('@click.stop="linkCurriculumUnit(topic, unit)"')
         expect(source).toContain('Lösen')
         expect(source).toContain('Verknüpfen')

@@ -190,7 +190,9 @@ class TeachingController extends Controller
             'teaching_student_grade_columns.show_sem1' => 'nullable|boolean',
             'teaching_student_grade_columns.show_sem2' => 'nullable|boolean',
             'teaching_student_grade_columns.show_year' => 'nullable|boolean',
-            'teaching_course_id' => 'nullable|integer',
+            'teaching_student_grade_columns.show_semester_grade' => ['sometimes', 'boolean'],
+            'teaching_student_grade_columns.show_behaviour_grade' => ['sometimes', 'boolean'],
+            'teaching_course_id' => 'required_with:teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade|nullable|integer',
         ]);
 
         if (isset($validated['teaching_schemas'])) {
@@ -794,7 +796,19 @@ class TeachingController extends Controller
      */
     private function storeTeachingStudentGradeColumnsForCourse(TeachingCourse $course, array $columns): void
     {
-        $course->teaching_student_grade_columns = $this->normalizedTeachingGradeColumns($columns);
+        $existingColumns = is_array($course->teaching_student_grade_columns)
+            ? $course->teaching_student_grade_columns
+            : $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id);
+        $mergedColumns = array_replace($existingColumns, $columns);
+        $normalizedColumns = $this->normalizedTeachingGradeColumns($mergedColumns);
+
+        foreach (['show_semester_grade', 'show_behaviour_grade'] as $key) {
+            if (array_key_exists($key, $mergedColumns)) {
+                $normalizedColumns[$key] = (bool) $mergedColumns[$key];
+            }
+        }
+
+        $course->teaching_student_grade_columns = $normalizedColumns;
         $course->save();
     }
 

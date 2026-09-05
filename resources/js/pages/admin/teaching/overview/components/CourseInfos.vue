@@ -91,6 +91,39 @@
                     </v-card-text>
                 </v-card>
 
+                <v-card variant="outlined" class="mt-3 course-student-grades-card">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
+                        <v-icon size="18">mdi-eye-outline</v-icon>
+                        Noten auf der Schüler:innen-Seite
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text>
+                        <div class="text-body-2 text-medium-emphasis mb-2">
+                            Lege für diesen Kurs fest, welche vergebenen Noten deine Schüler:innen sehen. Änderungen werden sofort gespeichert.
+                        </div>
+                        <div class="student-grade-switches">
+                            <v-switch
+                                :model-value="studentSemesterGradeVisible"
+                                label="Semesternote anzeigen"
+                                color="primary"
+                                inset
+                                hide-details
+                                :disabled="isSavingInfo"
+                                :loading="saving_info_action === 'show_semester_grade'"
+                                @update:model-value="saveAssignedGradeVisibility('show_semester_grade', $event)" />
+                            <v-switch
+                                :model-value="studentBehaviourGradeVisible"
+                                label="Verhaltensnote anzeigen"
+                                color="primary"
+                                inset
+                                hide-details
+                                :disabled="isSavingInfo"
+                                :loading="saving_info_action === 'show_behaviour_grade'"
+                                @update:model-value="saveAssignedGradeVisibility('show_behaviour_grade', $event)" />
+                        </div>
+                    </v-card-text>
+                </v-card>
+
                 <v-card variant="outlined" class="mt-3 course-infos-grades-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-calculator</v-icon>
@@ -539,6 +572,12 @@ export default {
                 || this.config?.user?.teaching_student_grade_columns
                 || this.defaultGradeColumns()
         },
+        studentSemesterGradeVisible() {
+            return this.selected_course?.teaching_student_grade_columns?.show_semester_grade !== false
+        },
+        studentBehaviourGradeVisible() {
+            return this.selected_course?.teaching_student_grade_columns?.show_behaviour_grade !== false
+        },
         anyGradeColumnVisible() {
             return this.infos_show_grade_sem1 || (this.hasTwoSemesters && (this.infos_show_grade_sem2 || this.infos_show_grade_year))
         },
@@ -845,7 +884,7 @@ export default {
             })
         },
         async persistStudentGradeColumns() {
-            if (!this.teachingStore) {
+            if (!this.teachingStore || !this.selected_course?.id || this.isSavingInfo) {
                 return
             }
 
@@ -854,16 +893,50 @@ export default {
                 return
             }
 
-            const saved = await this.teachingStore.saveSettings({
-                teaching_course_id: this.selected_course?.id || null,
-                teaching_student_grade_columns: columns,
-            }, {
-                notifySuccess: false,
-            })
+            const course = this.selected_course
+            await this.runInfoMutation('save-student-grade-columns', async () => {
+                const saved = await this.teachingStore.saveSettings({
+                    teaching_course_id: course.id,
+                    teaching_student_grade_columns: columns,
+                }, {
+                    notifySuccess: false,
+                })
 
-            if (saved && this.selected_course) {
-                this.selected_course.teaching_student_grade_columns = columns
+                if (saved) {
+                    course.teaching_student_grade_columns = {
+                        ...course.teaching_student_grade_columns,
+                        ...columns,
+                    }
+                } else if (this.selected_course?.id === course.id) {
+                    this.restoreStudentGradeColumns(this.persistedStudentGradeColumns)
+                }
+            })
+        },
+        async saveAssignedGradeVisibility(attribute, value) {
+            if (!this.teachingStore || !this.selected_course?.id || this.isSavingInfo) {
+                return false
             }
+
+            const course = this.selected_course
+            const columns = {
+                ...this.persistedStudentGradeColumns,
+                [attribute]: Boolean(value),
+            }
+
+            return this.runInfoMutation(attribute, async () => {
+                const saved = await this.teachingStore.saveSettings({
+                    teaching_course_id: course.id,
+                    teaching_student_grade_columns: columns,
+                }, {
+                    notifySuccess: false,
+                })
+
+                if (saved) {
+                    course.teaching_student_grade_columns = columns
+                }
+
+                return saved
+            })
         },
         syncGradeColumnsToRoute() {
             if (!this.$router || !this.$route) {
@@ -1181,6 +1254,12 @@ export default {
 
 .grade-checkbox {
     flex: none;
+}
+
+.student-grade-switches {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 8px 24px;
 }
 
 .grade-checkbox :deep(.v-label) {

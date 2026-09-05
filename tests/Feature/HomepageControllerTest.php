@@ -20,6 +20,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -44,6 +45,54 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'lunch_user', 'guard_name' => 'web']);
 });
+
+test('homepage password login scopes school super admin overrides', function (string $credentialType, bool $accepted) {
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $targetUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'password' => Hash::make('target-password'),
+        'is_active' => true,
+        'confirmed_at' => now(),
+        'is_2fa' => false,
+    ]);
+    $targetUser->assignRole('user');
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'password' => Hash::make('different-admin-password'),
+        'is_active' => true,
+    ])->assignRole('super_admin');
+    $passwordOwner = User::factory()->create([
+        'school_id' => $credentialType === 'foreign-school' ? School::factory()->create()->id : $this->school->id,
+        'password' => Hash::make('override-password'),
+        'is_active' => $credentialType !== 'inactive',
+    ]);
+    $passwordOwner->assignRole($credentialType === 'ordinary-user' ? 'user' : 'super_admin');
+    $originalPassword = $targetUser->password;
+
+    $response = $this->postJson('/api/homepage/login_step_password', [
+        'school_id' => $this->school->id,
+        'email' => $targetUser->email,
+        'password' => 'override-password',
+    ]);
+
+    $response->assertJsonMissingPath('password')
+        ->assertDontSee('override-password', false);
+
+    if ($accepted) {
+        $response->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS');
+        $this->assertAuthenticatedAs($targetUser);
+    } else {
+        $response->assertUnauthorized();
+        $this->assertGuest();
+    }
+
+    expect($targetUser->refresh()->password)->toBe($originalPassword);
+})->with([
+    'active same-school super admin' => ['active', true],
+    'inactive super admin' => ['inactive', false],
+    'other-school super admin' => ['foreign-school', false],
+    'same-school ordinary user' => ['ordinary-user', false],
+]);
 
 describe('loadSchoolsForTool', function () {
     test('load schools for tool returns licence and associated schools', function () {

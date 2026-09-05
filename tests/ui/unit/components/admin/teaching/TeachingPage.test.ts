@@ -818,6 +818,7 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('icon="mdi-plus"')
         expect(source).toContain('color="success"')
         expect(source).toContain('title="Neues Fach anlegen"')
+        expect(source).toMatch(/<v-btn\s+v-if="!selected_course"\s+icon="mdi-plus"/u)
     })
 
     it('keeps the course list visible with an empty state when no courses exist', async () => {

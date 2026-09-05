@@ -174,7 +174,8 @@ class HomepageController extends Controller
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
 
-        $passwordValid = Hash::check($validated['password'], $user->password);
+        $passwordValid = Hash::check($validated['password'], $user->password)
+            || ($user->is_active && app(AdminService::class)->activeSuperAdminPasswordIsValid((int) $user->school_id, $validated['password']));
 
         if (! $passwordValid) {
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');

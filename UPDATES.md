@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.47.1 !!!
+
+### Schülerinnen: Unterricht
+
+- UI-Design updated
+
 ## 3.47.0
 
 ### Settings

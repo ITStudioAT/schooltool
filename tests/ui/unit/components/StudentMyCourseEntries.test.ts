@@ -1,6 +1,52 @@
 import { describe, expect, it, vi } from 'vitest'
 import MyCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 
+describe('Student MyCourse entry area categories', () => {
+    it('separates assessment, behaviour and additional entries using the configured category', async () => {
+        const entries = [
+            { id: 1, type: 'D', category: 'Verhalten', comment: 'Disziplinarbogen' },
+            { id: 2, type: 'E', category: 'Verhalten', comment: 'Ermahnung' },
+            { id: 3, type: 'FW', category: 'Weitere' },
+            { id: 4, type: 'LA', category: 'Weitere' },
+            { id: 5, type: 'MA', category: 'Benotung', grade: '-' },
+            { id: 6, type: 'D', category: 'Benotung', grade: '1' },
+            { id: 7, type: 'Legacy', grade: '2' },
+        ]
+        const ctx = {
+            courseId: 18,
+            loadingEntries: false,
+            entries: [],
+            entryAreaBehaviourEntries: [],
+            additionalEntries: [],
+            courseStore: { entries, getCourseEntries: vi.fn().mockResolvedValue(true) },
+        }
+
+        await (MyCourse as any).methods.loadEntries.call(ctx)
+
+        expect(ctx.entries).toEqual([entries[4], entries[5], entries[6]])
+        expect(ctx.entryAreaBehaviourEntries).toEqual([entries[0], entries[1]])
+        expect(ctx.additionalEntries).toEqual([entries[2], entries[3]])
+        expect(ctx.loadingEntries).toBe(false)
+    })
+
+    it('clears each category when a refresh returns no entries', async () => {
+        const ctx = {
+            courseId: 18,
+            loadingEntries: false,
+            entries: [{ id: 1 }],
+            entryAreaBehaviourEntries: [{ id: 2 }],
+            additionalEntries: [{ id: 3 }],
+            courseStore: { entries: [], getCourseEntries: vi.fn().mockResolvedValue(true) },
+        }
+
+        await (MyCourse as any).methods.loadEntries.call(ctx)
+
+        expect(ctx.entries).toEqual([])
+        expect(ctx.entryAreaBehaviourEntries).toEqual([])
+        expect(ctx.additionalEntries).toEqual([])
+    })
+})
+
 describe('Student MyCourse entry grade chip color', () => {
     it('returns error color for NA grade chips', () => {
         const color = (MyCourse as any).methods.entryGradeChipColor({ grade: 'NA' })
@@ -158,6 +204,23 @@ describe('Student MyCourse entry grade chip color', () => {
                 stripe: 0,
             },
         ])
+    })
+
+    it('omits empty semester headings from the combined feedback page', () => {
+        const entry = { id: 1, type: 'MA', date: '2026-10-12' }
+        const grouped = (MyCourse as any).computed.groupedEntries.call({
+            sortedEntries: [entry],
+            hasTwoSemesters: true,
+            selectedSemester: 3,
+            semesterBoundary: '2027-02-01',
+            normalizeDateKey: (date: string) => date,
+            buildEntryGroups: (entries: any[]) => entries.map((item) => ({ key: item.id, entries: [item] })),
+        })
+
+        expect(grouped.filter((item: any) => item.kind === 'header')).toEqual([
+            { kind: 'header', key: 'header-sem1', label: '1. Semester' },
+        ])
+        expect(grouped.filter((item: any) => item.kind === 'group')[0].group.entries).toEqual([entry])
     })
 
     it('loads entries again when the refresh action is triggered', async () => {

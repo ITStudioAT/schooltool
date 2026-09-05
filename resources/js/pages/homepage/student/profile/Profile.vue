@@ -1,5 +1,5 @@
 <template>
-    <div class="lernportal-page" data-testid="student-profile-page">
+    <div class="lernportal-page student-workspace" data-testid="student-profile-page">
         <div class="bg-shape bg-shape-1"></div>
         <div class="bg-shape bg-shape-2"></div>
 

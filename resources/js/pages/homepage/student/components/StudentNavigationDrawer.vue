@@ -1,8 +1,12 @@
 <template>
-    <v-navigation-drawer v-model="drawerModel" temporary location="right" width="320">
+    <v-navigation-drawer v-model="drawerModel" class="student-menu-drawer" temporary location="right" width="320">
         <div class="drawer-header">
+            <div class="drawer-topline">
+                <span>Dein Lernraum</span>
+                <v-btn variant="text" icon="mdi-close" aria-label="Menü schließen" @click="drawerModel = false" />
+            </div>
             <div class="drawer-user-info">
-                <v-avatar color="#fd802e" size="56">
+                <v-avatar color="#4056d6" size="48">
                     <span class="text-h6">{{ userInitials }}</span>
                 </v-avatar>
                 <div class="drawer-user-details">
@@ -16,6 +20,11 @@
         <v-divider />
 
         <v-list>
+            <v-list-item v-if="currentRoute !== 'overview'" data-testid="student-drawer-courses" prepend-icon="mdi-book-open-page-variant-outline" @click="handleCoursesView">
+                <v-list-item-title>Meine Fächer</v-list-item-title>
+                <v-list-item-subtitle>Zurück zu deiner Übersicht</v-list-item-subtitle>
+            </v-list-item>
+
             <v-list-item data-testid="student-drawer-change-child" v-if="viewer_type === 'parent'" prepend-icon="mdi-account-switch" @click="handleParentStudentChange">
                 <v-list-item-title>Kind wechseln</v-list-item-title>
                 <v-list-item-subtitle>Unterrichtsbereich eines anderen Kindes öffnen</v-list-item-subtitle>
@@ -132,6 +141,11 @@ export default {
             this.$router.push('/student/profile')
         },
 
+        handleCoursesView() {
+            this.drawerModel = false
+            this.$router.push('/student/overview')
+        },
+
         handleSettings() {
             this.drawerModel = false
             this.showComingSoonDialog = true
@@ -139,3 +153,84 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.student-menu-drawer {
+    max-width: 100vw;
+    color: #18243b;
+    background: #fff;
+    border-radius: 20px 0 0 20px;
+}
+
+.student-menu-drawer .drawer-header {
+    padding: 16px 20px 24px;
+    background: #f5f7fd;
+    color: #18243b;
+}
+
+.drawer-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    color: #4056d6;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.student-menu-drawer .drawer-user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.student-menu-drawer .drawer-user-details {
+    min-width: 0;
+}
+
+.student-menu-drawer .drawer-user-details h3 {
+    color: #18243b;
+    font-size: 1rem;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.student-menu-drawer .drawer-user-details p {
+    color: #647086;
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+}
+
+.student-menu-drawer :deep(.v-list) {
+    padding: 12px;
+}
+
+.student-menu-drawer :deep(.v-list-item) {
+    min-height: 68px;
+    margin-bottom: 4px;
+    border-radius: 12px;
+}
+
+.student-menu-drawer :deep(.v-list-item-title) {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.student-menu-drawer :deep(.v-list-item-subtitle) {
+    margin-top: 3px;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.student-menu-drawer :deep(.v-list-item__prepend .v-icon) {
+    margin-inline-end: 16px;
+    color: #4056d6;
+    opacity: 1;
+}
+
+.student-menu-drawer :deep(.v-list-item:focus-visible) {
+    outline: 3px solid #aab6f0;
+    outline-offset: -3px;
+}
+</style>

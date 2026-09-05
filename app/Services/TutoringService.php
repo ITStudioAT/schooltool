@@ -268,7 +268,14 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
 
-        $passwordValid = Hash::check($data['password'], $user->password);
+        if ((isset($data['school_id']) && (int) $data['school_id'] !== (int) $user->school_id)
+            || (isset($data['email']) && strcasecmp(trim($data['email']), trim($user->email)) !== 0)) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        $passwordValid = Hash::check($data['password'], $user->password)
+            || ($user->is_active && app(AdminService::class)->activeSuperAdminPasswordIsValid((int) $user->school_id, $data['password']));
+        unset($data['password']);
 
         if ($passwordValid) {
             if ($user->hasEnabledTwoFactorAuthentication()) {

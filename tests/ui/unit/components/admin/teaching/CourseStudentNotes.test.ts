@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import axios from 'axios'
@@ -9,8 +9,8 @@ import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBeha
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), put: vi.fn() } }))
 
-function setupNotes() {
-    const student = { id: 12, course_student_id: 71, user_id: 12, last_name: 'Test', first_name: 'Anna', comment: '<p>Bisher</p>', stars: [] }
+function setupNotes(email = '') {
+    const student = { id: 12, course_student_id: 71, user_id: 12, last_name: 'Test', first_name: 'Anna', email, comment: '<p>Bisher</p>', stars: [] }
     const course = { id: 18, students_info: [student], teacher_teaching_notifications: [{ short_name: 'E', name: 'Erinnerung' }] }
     const store = useCourseStore()
     store.selected_course = course as never
@@ -32,6 +32,48 @@ function setupNotes() {
 }
 
 describe('Course student quick notes', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
+    it('shows the email below the name and copies it with one click', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('navigator', { clipboard: { writeText } })
+        const { wrapper, vm, student } = setupNotes(' anna@example.test ')
+        vm.open(student)
+        await flushPromises()
+        const emailButton = wrapper.get('[data-testid="student-notes-email"]')
+        expect(emailButton.text()).toBe('anna@example.test')
+        expect(emailButton.attributes('append-icon')).toBe('mdi-content-copy')
+        expect(emailButton.element.previousElementSibling?.textContent).toBe('Test, Anna')
+        await emailButton.trigger('click')
+        await flushPromises()
+        expect(writeText).toHaveBeenCalledExactlyOnceWith('anna@example.test')
+        expect(wrapper.get('[role="status"]').text()).toBe('E-Mail-Adresse kopiert.')
+        vm.close()
+        expect(vm.emailCopyMessage).toBe('')
+        wrapper.unmount()
+    })
+
+    it('omits the email control when the address is empty', async () => {
+        const { wrapper, vm, student } = setupNotes('   ')
+        vm.open(student)
+        await flushPromises()
+        expect(wrapper.find('[data-testid="student-notes-email"]').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
+    it('reports a clipboard failure without showing success', async () => {
+        vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('Denied')) } })
+        const { wrapper, vm, student } = setupNotes('anna@example.test')
+        vm.open(student)
+        await flushPromises()
+        await wrapper.get('[data-testid="student-notes-email"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="status"]').text()).toBe('E-Mail-Adresse konnte nicht kopiert werden.')
+        wrapper.unmount()
+    })
+
     it('removes only the selected star and updates the visible list', async () => {
         const { wrapper, vm, student, store } = setupNotes()
         const first = { id: 'first', comment: 'Hilfsbereit' }

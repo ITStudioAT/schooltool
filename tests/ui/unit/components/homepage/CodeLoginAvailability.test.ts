@@ -116,6 +116,19 @@ describe('code login availability guards', () => {
         expect(push).toHaveBeenCalledWith({ path: '/student', query: { select_child: '1' } })
     })
 
+    it('student drawer returns to subjects and closes the menu', () => {
+        const push = vi.fn()
+        const context: Record<string, any> = {
+            drawerModel: true,
+            $router: { push },
+        }
+
+        ;(StudentNavigationDrawer as any).methods.handleCoursesView.call(context)
+
+        expect(context.drawerModel).toBe(false)
+        expect(push).toHaveBeenCalledWith('/student/overview')
+    })
+
     it('parent access panel offers child selection directly', () => {
         const push = vi.fn()
 

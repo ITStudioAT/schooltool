@@ -221,6 +221,41 @@ it('logs a lunch user in with a restaurant login code and stores login metadata'
     $this->assertAuthenticatedAs($user);
 });
 
+it('scopes restaurant super admin password login to active admins in the target school', function (string $kind, bool $accepted) {
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => true,
+    ]);
+    $user->assignRole('lunch_user');
+    $admin = User::factory()->create([
+        'school_id' => $kind === 'foreign' ? School::factory()->create()->id : $this->school->id,
+        'is_active' => $kind !== 'inactive',
+        'password' => Hash::make('school-admin-secret'),
+    ]);
+    $admin->assignRole($kind === 'ordinary' ? 'lunch_user' : 'super_admin');
+
+    $this->postJson('/api/homepage/restaurant/login_with_password', ['data' => [
+        'school_id' => $this->school->id,
+        'email' => $user->email,
+        'user_id' => $user->id,
+        'password' => 'school-admin-secret',
+    ]])->assertOk()->assertJsonPath('status', $accepted ? 'LOGGED_IN' : 'RETRY_PASSWORD')
+        ->assertJsonMissingPath('password')->assertJsonMissingPath('data.password');
+
+    if ($accepted) {
+        $this->assertAuthenticatedAs($user);
+    } else {
+        $this->assertGuest();
+    }
+})->with([
+    'same school' => ['same', true],
+    'other school' => ['foreign', false],
+    'inactive admin' => ['inactive', false],
+    'ordinary user' => ['ordinary', false],
+]);
+
 it('logs a lunch user in with the restaurant password and stores login metadata', function () {
     $user = User::factory()->create([
         'school_id' => $this->school->id,

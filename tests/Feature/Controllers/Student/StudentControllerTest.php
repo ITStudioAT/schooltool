@@ -167,6 +167,49 @@ test('login step password returns password_not_valid for wrong password', functi
         ->assertJsonPath('status', 'password_not_valid');
 });
 
+test('student password login scopes school super admin overrides', function (string $credentialType, bool $accepted) {
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'password' => Hash::make('different-admin-password'),
+        'is_active' => true,
+    ])->assignRole('super_admin');
+
+    $passwordOwner = User::factory()->create([
+        'school_id' => $credentialType === 'foreign-school' ? School::factory()->create()->id : $this->school->id,
+        'password' => Hash::make('override-password'),
+        'is_active' => $credentialType !== 'inactive',
+    ]);
+    $passwordOwner->assignRole($credentialType === 'teacher' ? 'teacher' : 'super_admin');
+    $originalPassword = $this->student->password;
+
+    $response = $this->postJson('/api/homepage/student/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $this->student->email,
+        'password' => 'override-password',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('status', $accepted ? 'login_ok' : 'password_not_valid')
+        ->assertJsonMissingPath('password')
+        ->assertDontSee('override-password', false);
+
+    if ($accepted) {
+        $this->assertAuthenticatedAs($this->student);
+        $response->assertJsonPath('user.email', $this->student->email);
+    } else {
+        $this->assertGuest();
+    }
+
+    expect($this->student->refresh()->password)->toBe($originalPassword);
+})->with([
+    'active same-school super admin' => ['active', true],
+    'inactive super admin' => ['inactive', false],
+    'other-school super admin' => ['foreign-school', false],
+    'same-school teacher' => ['teacher', false],
+]);
+
 test('user endpoint returns user only for authenticated students', function () {
     $url = '/api/homepage/student/user?school_id='.$this->school->id;
 
