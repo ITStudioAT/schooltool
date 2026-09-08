@@ -7,6 +7,10 @@
 - Sicherheits-Fix: Kursanzeige für fremde Lehrerinnen
 - Einstellungen werden für Nicht-Admins nicht mehr angezeiegt
 
+### Schülerstundenpläne
+
+- Dokumentation für Admins ergänzt
+
 ## 3.47.1
 
 ### Schülerinnen: Unterricht
