@@ -5,6 +5,7 @@
 ### System
 
 - Sicherheits-Fix: Kursanzeige für fremde Lehrerinnen
+- Einstellungen werden für Nicht-Admins nicht mehr angezeiegt
 
 ## 3.47.1
 

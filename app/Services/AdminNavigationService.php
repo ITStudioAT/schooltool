@@ -25,18 +25,15 @@ class AdminNavigationService
 
     private const ABA_DASHBOARD_ROLES = ['aba_teacher'];
 
-    private const ADMIN_SHELL_ROLES = [
+    private const SETTINGS_ROLES = [
+        'super_admin',
         'admin',
         'register_admin',
         'tutoring_admin',
         'teaching_admin',
         'materials_admin',
         'materials_moderator',
-        'teacher',
         'lunch_admin',
-        'aba_teacher',
-        'studentstimetables_admin',
-        'studentstimetables_moderator',
     ];
 
     /* MENÜ AUF DER LINKEN SEITE */
@@ -64,7 +61,7 @@ class AdminNavigationService
         ]);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
-        if ($isSuperAdmin || $user->hasAnyRole(self::ADMIN_SHELL_ROLES)) {
+        if ($user->hasAnyRole(self::SETTINGS_ROLES)) {
             $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'active_paths' => ['/admin/settings'], 'is_active' => true];
         }
 
@@ -225,7 +222,7 @@ class AdminNavigationService
         $menuByPath = $this->dashboardMenuByPath($menu);
 
         $capabilities['home'] = $user->hasAdminShellAccess();
-        $capabilities['settings'] = $user->hasAdminShellAccess();
+        $capabilities['settings'] = $user->hasAnyRole(self::SETTINGS_ROLES);
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');

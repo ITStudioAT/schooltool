@@ -213,14 +213,14 @@ describe('dashboardMenu', function () {
         expect(collect($result)->firstWhere('title', 'Anmeldetool'))->toBeNull();
     });
 
-    it('includes settings menu item for admin shell roles such as teacher', function () {
+    it('hides settings while keeping profile for roles without settings rights', function (string $roleName) {
         $school = School::factory()->create();
         $user = User::factory()->create([
             'first_name' => 'Teach',
             'last_name' => 'Er',
             'school_id' => $school->id,
         ]);
-        $role = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -231,11 +231,29 @@ describe('dashboardMenu', function () {
 
         $settingsItem = collect($result)->firstWhere('title', 'Einstellungen');
 
-        expect($settingsItem)
-            ->not->toBeNull()
+        $capabilities = $this->service->routeCapabilities($user, $result);
+
+        expect($settingsItem)->toBeNull()
+            ->and($capabilities['settings'])->toBeFalse()
+            ->and($capabilities['profile'])->toBeTrue()
+            ->and(collect($result)->firstWhere('to', '/admin/profile'))->not->toBeNull();
+    })->with(['teacher', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator']);
+
+    it('keeps settings available for settings management roles', function (string $roleName) {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
+        $this->actingAs($user);
+
+        $menu = $this->service->dashboardMenu();
+        $settingsItem = collect($menu)->firstWhere('title', 'Einstellungen');
+        $capabilities = $this->service->routeCapabilities($user, $menu);
+
+        expect($settingsItem)->not->toBeNull()
             ->and($settingsItem['icon'])->toBe('mdi-cog')
-            ->and($settingsItem['to'])->toBe('/admin/settings');
-    });
+            ->and($settingsItem['to'])->toBe('/admin/settings')
+            ->and($capabilities['settings'])->toBeTrue()
+            ->and($capabilities['profile'])->toBeTrue();
+    })->with(['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'lunch_admin']);
 
     it('does not add a profile menu item for users without admin shell access', function () {
         $user = User::factory()->create([
@@ -1260,7 +1278,7 @@ describe('routeCapabilities', function () {
 
         expect($capabilities['home'])->toBeTrue()
             ->and($capabilities['profile'])->toBeTrue()
-            ->and($capabilities['settings'])->toBeTrue();
+            ->and($capabilities['settings'])->toBeFalse();
     });
 
     it('disables module routes when the dashboard item is shown but disabled', function () {
