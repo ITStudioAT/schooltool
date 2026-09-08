@@ -3,6 +3,7 @@ import { config, flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import axios from 'axios'
 import MaterialsV2 from '@/pages/admin/materialsV2/MaterialsV2.vue'
+import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 import { useMaterialsV2Store } from '@/stores/admin/materialsV2/MaterialsV2Store'
 
 const notify = vi.fn()
@@ -2050,6 +2051,53 @@ describe('MaterialsV2', () => {
         expect(previewFrame.attributes('title')).toBe('Vorschau: arbeitsblatt.docx')
     })
 
+    it.each([
+        ['application/pdf', 'arbeitsblatt.pdf'],
+        ['application/octet-stream', 'arbeitsblatt.PDF'],
+    ])('renders PDF attachments from the edit dialog with the PDF viewer (%s)', async (mimeType, originalName) => {
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    ...Object.fromEntries([
+                        'v-alert', 'v-btn-toggle', 'v-card', 'v-card-actions', 'v-card-text', 'v-card-title',
+                        'v-chip', 'v-col', 'v-combobox', 'v-container', 'v-dialog', 'v-divider', 'v-file-input',
+                        'v-icon', 'v-list', 'v-list-item', 'v-list-item-title', 'v-menu', 'v-pagination',
+                        'v-row', 'v-sheet', 'v-skeleton-loader', 'v-spacer', 'v-text-field', 'v-textarea',
+                    ].map((name) => [name, true])),
+                    'v-btn': {
+                        template: '<button v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
+                    },
+                },
+            },
+        })
+        await flushPromises()
+
+        const component = wrapper.vm as any
+        const item = component.items[0]
+        item.attachments[0].mime_type = mimeType
+        item.attachments[0].original_name = originalName
+        component.openEditDialog(item)
+        component.materialForm.title = 'Ungespeicherte Änderung'
+        await wrapper.vm.$nextTick()
+
+        await wrapper.find('.materials-v2-edit-attachments [title="Vorschau"]').trigger('click')
+
+        const viewer = wrapper.findComponent(CurriculumPdfPreview)
+        expect(viewer.exists()).toBe(true)
+        expect(viewer.props('src')).toBe('/api/admin/materials-v2/attachments/41/preview')
+        expect(viewer.props('documentId')).toBe(41)
+        expect(wrapper.find('iframe.materials-v2-preview-frame').exists()).toBe(false)
+        expect(component.materialDialog.open).toBe(true)
+
+        await wrapper.find('[title="Vorschau schließen"]').trigger('click')
+
+        expect(wrapper.findComponent(CurriculumPdfPreview).exists()).toBe(false)
+        expect(component.materialDialog.open).toBe(true)
+        expect(component.materialForm.title).toBe('Ungespeicherte Änderung')
+        wrapper.unmount()
+    })
+
     it('asks whether to reuse a similar cluster before saving', async () => {
         const wrapper = shallowMount(MaterialsV2, {
             global: {
@@ -2407,6 +2455,15 @@ describe('MaterialsV2', () => {
         expect(editAttachments.find('[title="Anlagen hinzufügen"]').exists()).toBe(true)
         expect(editAttachments.find('[title="Vorschau"]').exists()).toBe(true)
         expect(editAttachments.find('[title="Herunterladen"]').exists()).toBe(true)
+        await editAttachments.find('[title="Vorschau"]').trigger('click')
+        expect(wrapper.find('.materials-v2-preview-frame').attributes('src')).toBe(
+            '/api/admin/materials-v2/attachments/41/preview',
+        )
+        expect(wrapper.find('.materials-v2-preview-frame').attributes('sandbox')).toBe('allow-downloads allow-same-origin')
+        expect(component.materialDialog.open).toBe(true)
+        await wrapper.find('[title="Vorschau schließen"]').trigger('click')
+        expect(wrapper.find('.materials-v2-preview-frame').exists()).toBe(false)
+        expect(component.materialDialog.open).toBe(true)
         expect(wrapper.find('.materials-v2-automatic-tag-summary').text()).toContain('Chlorophyll')
         expect(wrapper.find('.materials-v2-automatic-tag-names').classes()).toContain(
             'materials-v2-automatic-tag-names',

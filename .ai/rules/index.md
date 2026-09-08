@@ -60,6 +60,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Middleware/RestrictStudentsTimetablesImpersonation.php,app/Http/Controllers/Admin/{ImpersonationController.php,StudentsTimetables/StudentsTimetablesController.php},resources/js/pages/{admin/studentsTimetables/timetableV3/TimetableV3.vue,homepage/App.vue},resources/js/stores/homepage/HomepageStore.js} | .ai/rules/js-stores-homepage.md |
 | {app,resources/js,tests}/**/*Student*Timetable* | .ai/rules/jstests.md |
 | {app/Models/StudentTimetableV3Timetable.php,app/Services/StudentsTimetables/StudentTimetableV3*.php,app/Listeners/StudentTimetableV3SessionSubscriber.php} | .ai/rules/listeners.md |
+| app/Http/Controllers/Admin/MaterialsV2/** | .ai/rules/materials-v2.md |
 | {app/Http/Middleware/ToolLicensed.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/middleware-feature.md |
 | {app/Enums/StudentTimetableStudyProgram.php,app/Models/Import116.php,app/Services/StudentsTimetables/**} | .ai/rules/models-services-students-timetables.md |
 | app/Services/StudentsTimetables/StudentTimetableV3*|app/Models/StudentTimetableV3* | .ai/rules/models.md |

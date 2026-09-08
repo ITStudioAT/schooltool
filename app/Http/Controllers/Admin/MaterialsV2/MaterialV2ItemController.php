@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -466,19 +467,40 @@ class MaterialV2ItemController extends Controller
             ->trim()
             ->toString() ?: 'attachment';
 
-        return $disk->response(
-            $attachment->path,
-            $attachment->original_name,
-            [
-                'Content-Type' => $mimeType,
-                'Content-Disposition' => HeaderUtils::makeDisposition(
-                    $safeDisposition,
-                    $attachment->original_name,
-                    $fallbackName,
-                ),
-                'X-Content-Type-Options' => 'nosniff',
-                'Content-Security-Policy' => "default-src 'none'; sandbox",
-            ],
+        $headers = [
+            'Content-Type' => $mimeType,
+            'Content-Length' => $disk->size($attachment->path),
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                $safeDisposition,
+                $attachment->original_name,
+                $fallbackName,
+            ),
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; sandbox",
+        ];
+
+        $stream = $disk->readStream($attachment->path);
+        if (! is_resource($stream)) {
+            abort(404, 'Die Datei wurde nicht gefunden.');
+        }
+
+        return response()->stream(
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            throw new RuntimeException('Die Datei konnte nicht vollständig gelesen werden.');
+                        }
+
+                        echo $chunk;
+                    }
+                } finally {
+                    fclose($stream);
+                }
+            },
+            200,
+            $headers,
         );
     }
 

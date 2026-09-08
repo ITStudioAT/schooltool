@@ -1178,8 +1178,14 @@
                         @click="closePreviewDialog" />
                 </v-card-title>
                 <v-card-text class="materials-v2-preview-body">
+                    <CurriculumPdfPreview
+                        v-if="previewDialog.open && isPdfPreview && previewDialog.attachment?.preview_url"
+                        :key="previewDialog.attachment.id"
+                        class="materials-v2-preview-frame"
+                        :document-id="previewDialog.attachment.id"
+                        :src="previewDialog.attachment.preview_url" />
                     <iframe
-                        v-if="previewDialog.attachment?.preview_url"
+                        v-else-if="previewDialog.open && previewDialog.attachment?.preview_url"
                         class="materials-v2-preview-frame"
                         :src="previewDialog.attachment.preview_url"
                         :title="`Vorschau: ${previewDialog.attachment.original_name}`"
@@ -1288,6 +1294,7 @@ import { useMaterialsV2Polling } from '@/domains/materialsV2/useMaterialsV2Polli
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import MaterialsV2Calendar from '@/pages/admin/materialsV2/components/MaterialsV2Calendar.vue'
 import MaterialsV2Header from '@/pages/admin/materialsV2/components/MaterialsV2Header.vue'
+import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialsV2Store } from '@/stores/admin/materialsV2/MaterialsV2Store'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
@@ -1374,6 +1381,12 @@ const attachmentDialog = reactive({
 const previewDialog = reactive({
     open: false,
     attachment: null,
+})
+const isPdfPreview = computed(() => {
+    const attachment = previewDialog.attachment
+
+    return String(attachment?.mime_type || '').toLowerCase() === 'application/pdf'
+        || /\.pdf$/i.test(String(attachment?.original_name || ''))
 })
 const categorySuggestionDialog = reactive({
     open: false,

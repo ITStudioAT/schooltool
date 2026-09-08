@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use Spatie\Permission\Models\Role;
@@ -934,26 +935,42 @@ it('never exposes another users materials', function () {
         ->assertJsonCount(0, 'data');
 });
 
-it('downloads only owned attachments from the configured disk', function () {
-    Storage::fake('local');
+it('downloads only owned attachments from the configured disk', function (string $diskName, string $fileName, string $content) {
+    Storage::fake($diskName);
     $item = MaterialV2Item::factory()->create([
         'school_id' => $this->school->id,
         'user_id' => $this->user->id,
     ]);
-    Storage::disk('local')->put('materials-v2/test/lesson.txt', 'Lesson content');
+    Storage::disk($diskName)->put('materials-v2/test/lesson.txt', $content);
     $attachment = MaterialV2Attachment::factory()->create([
         'material_v2_item_id' => $item->id,
-        'disk' => 'local',
+        'disk' => $diskName,
         'path' => 'materials-v2/test/lesson.txt',
-        'original_name' => 'lesson.txt',
+        'original_name' => $fileName,
         'mime_type' => 'text/plain',
     ]);
 
-    $this->actingAs($this->user, 'sanctum')
+    $response = $this->actingAs($this->user, 'sanctum')
         ->get("/api/admin/materials-v2/attachments/{$attachment->id}/download")
         ->assertSuccessful()
-        ->assertHeader('content-type', 'text/plain; charset=UTF-8');
-});
+        ->assertHeader('content-type', 'text/plain; charset=UTF-8')
+        ->assertHeader('content-length', (string) strlen($content))
+        ->assertHeader('x-content-type-options', 'nosniff')
+        ->assertDownload(Str::ascii($fileName))
+        ->assertStreamedContent($content);
+
+    if ($fileName !== Str::ascii($fileName)) {
+        expect($response->headers->get('content-disposition'))->toContain("filename*=utf-8''".rawurlencode($fileName));
+    }
+
+    $this->actingAs($this->otherUser, 'sanctum')
+        ->getJson("/api/admin/materials-v2/attachments/{$attachment->id}/download")
+        ->assertForbidden();
+})->with([
+    'local file' => ['local', 'lesson.txt', 'Lesson content'],
+    'multiple chunks and unicode filename' => ['s3', 'Übungen – Biologie.txt', str_repeat("Lesson\0\xFF\r\n", 10000)],
+    'empty file' => ['local', 'empty.txt', ''],
+]);
 
 it('sanitizes unsafe html attachment previews in the browser', function () {
     Storage::fake('local');

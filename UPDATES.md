@@ -6,6 +6,10 @@
 
 - UI-Design updated
 
+### Materials
+
+- Download-Problem fixe
+
 ## 3.47.0
 
 ### Settings
