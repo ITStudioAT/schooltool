@@ -230,6 +230,12 @@ function gitpush {
             php scripts/update.php --target=local --prepare
         }
 
+        if ($version) {
+            Invoke-SchooltoolCommand 'Updating the changelog from UPDATES.md...' {
+                node scripts/update-changelog.mjs $version
+            }
+        }
+
         Invoke-SchooltoolCommand 'Formatting changed PHP files...' {
             php vendor/bin/pint --dirty --format agent
         }

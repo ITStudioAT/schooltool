@@ -40,7 +40,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/feature-ui-unit-pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/**,app/Services/StudentsTimetables/TimetableImportService.php,resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue,tests/{Feature,Unit,ui}/**} | .ai/rules/feature-unitui.md |
 | {app/Services/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/feature.md |
-| **/*TimetableV3* | .ai/rules/general.md |
+| **/*TimetableV3*, vite.config.js | .ai/rules/general.md |
 | {app/Models/User.php,app/Http/Controllers/Admin/AdminShellColorPreferenceController.php,app/Http/Resources/Admin/UserWithRoleResource.php,resources/js/pages/admin/{App.vue,profile/Profile.vue},resources/js/helpers/adminShellTheme.js} | .ai/rules/helpers.md |
 | {app/Http/Requests/Homepage/UpdateStudentTimetableV3StateRequest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/homepage-feature.md |
 | resources/js/pages/homepage/index/Index.vue | .ai/rules/homepage-index.md |
@@ -81,6 +81,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/views/pdfs/students-timetable-overview.blade.php, resources/views/pdfs/** | .ai/rules/pdfs.md |
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
+| {scripts/git_helpers.ps1,scripts/update-changelog.mjs} | .ai/rules/scripts-2.md |
 | scripts/*cloudways*.sh, scripts/frontend-release.php | .ai/rules/scripts.md |
 | {app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,app/Services/StudentsTimetablesStudentService.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/services-feature.md |
 | {app/Services/AccessScopeService.php,routes/api.php,resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue,tests/**} | .ai/rules/services-js-pages-admin-students-timetables.md |

@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.47.1 !!!
+## 3.47.1
 
 ### Schülerinnen: Unterricht
 
@@ -8,7 +8,7 @@
 
 ### Materials
 
-- Download-Problem fixe
+- Download-Problem fixed
 
 ## 3.47.0
 

@@ -1,12 +1,49 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { loadConfigFromFile } from 'vite'
+import { rollup } from 'rollup'
 
 function readSource(path: string): string {
     return readFileSync(resolve(process.cwd(), path), 'utf8')
 }
 
 describe('frontend bundle boundaries', () => {
+    it('emits the PDF worker as JavaScript while preserving its module and other asset types', async () => {
+        const configuration = await loadConfigFromFile({ command: 'build', mode: 'production' }, resolve('vite.config.js'))
+        const workerSource = readSource('node_modules/pdfjs-dist/build/pdf.worker.min.mjs')
+        const bundle = await rollup({
+            input: 'preview-entry',
+            plugins: [{
+                name: 'pdf-worker-build-test',
+                resolveId: (id) => id,
+                load() {
+                    const workerReference = this.emitFile({ type: 'asset', name: 'pdf.worker.min.mjs', source: workerSource })
+                    this.emitFile({ type: 'asset', name: 'logo.svg', source: '<svg />' })
+
+                    return `export default import.meta.ROLLUP_FILE_URL_${workerReference};`
+                },
+            }],
+        })
+
+        try {
+            const { output } = await bundle.generate({
+                ...configuration.config.build.rollupOptions.output,
+                format: 'es',
+            })
+            const worker = output.find((file) => file.type === 'asset' && file.names.includes('pdf.worker.min.mjs'))
+            const entry = output.find((file) => file.type === 'chunk' && file.isEntry)
+
+            expect(worker.fileName).toMatch(/^assets\/pdf\.worker\.min-[\w-]+\.js$/)
+            expect(worker.source).toBe(workerSource)
+            expect(entry.code).toContain(worker.fileName)
+            expect(output.some((file) => file.fileName.endsWith('.mjs'))).toBe(false)
+            expect(output.some((file) => /^assets\/logo-[\w-]+\.svg$/.test(file.fileName))).toBe(true)
+        } finally {
+            await bundle.close()
+        }
+    })
+
     it('gives production builds reliable heap headroom without returning to a 4 GB budget', () => {
         const packageConfiguration = JSON.parse(readSource('package.json'))
         const viteSource = readSource('vite.config.js')

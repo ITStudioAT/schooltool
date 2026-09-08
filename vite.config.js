@@ -55,6 +55,13 @@ export default defineConfig({
         reportCompressedSize: false,
         rollupOptions: {
             output: {
+                assetFileNames(asset) {
+                    if (asset.names.includes('pdf.worker.min.mjs')) {
+                        return 'assets/[name]-[hash].js';
+                    }
+
+                    return 'assets/[name]-[hash][extname]';
+                },
                 manualChunks(id) {
                     if (!id.includes('node_modules')) return;
 
