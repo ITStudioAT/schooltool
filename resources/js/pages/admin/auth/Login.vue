@@ -256,13 +256,14 @@ export default {
 
         if (this.$route.query.logout === '1') {
             this.step = 'LOGOUT_PROCESSING'
-            await this.adminStore.executeLogout()
-            this.$router.replace({ path: '/admin/login', query: {} })
+            if (await this.adminStore.executeLogout()) {
+                window.location.replace('/admin/login')
+                return
+            }
             this.restartLogin()
             return
         }
 
-        if (!this.config?.is_auth) await this.adminStore.executeLogout()
         this.restartLogin()
     },
 
@@ -386,8 +387,7 @@ export default {
             }
 
             if (this.data.step == 'LOGIN_SUCCESS') {
-                await this.adminStore.loadConfig()
-                this.$router.push('/admin')
+                window.location.replace('/admin')
             } else if (this.data.step == 'LOGIN_ENTER_TWO_FACTOR') {
                 this.data.password = null
                 this.step = 'LOGIN_ENTER_TWO_FACTOR'

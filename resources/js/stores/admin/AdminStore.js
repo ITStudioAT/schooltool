@@ -181,7 +181,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.is_loading++
             try {
                 await axios.post('/api/admin/impersonation/start', { user_id })
-                await this.loadConfig()
                 notification.notify({
                     message: 'Benutzer-Übernahme gestartet.',
                     type: 'success',
@@ -206,7 +205,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.is_loading++
             try {
                 await axios.post('/api/admin/impersonation/stop')
-                await this.loadConfig()
                 notification.notify({
                     message: 'Benutzer-Übernahme beendet.',
                     type: 'success',
@@ -561,7 +559,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.api_response = null
             try {
                 this.api_response = await axios.post('/api/admin/execute_logout', {})
-                await ensureCsrfCookie()
 
                 this.config = this.api_response.data
                 this.selected_school = this.config?.selected_school

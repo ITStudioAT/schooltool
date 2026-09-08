@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Anmelden | Studierende | Schülerstundenpläne | SchoolTool</title>
-    <meta name="description" content="Anmeldung für Studierende mit Kennwort oder E-Mail-Code, Erstzugang und Hilfe bei Anmeldeproblemen.">
+    <title>Konten und Rollen | Admin | Schülerstundenpläne | SchoolTool</title>
+    <meta name="description" content="Lehrerliste pflegen, Konten aktivieren und die Rollen TT-Moderator und TT-Admin zuweisen.">
     <link rel="icon" href="/documentation/img/schooltool.ico">
-    <link rel="canonical" href="https://schooltool.at/documentation/schuelerstundenplaene/studierende/anmeldung/">
+    <link rel="canonical" href="https://schooltool.at/documentation/schuelerstundenplaene/admin/konten-und-rollen/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" crossorigin="anonymous">
@@ -89,13 +89,13 @@
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/tt-eintraege/">TT-Einträge und Unterrichtsangebot</a></li>
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/faecher-und-regeln/">Fächer, Regeln und Zuordnung</a></li>
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/tests/">Tests und Kontrolle</a></li>
-        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/konten-und-rollen/">Konten und Rollen</a></li>
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" href="/documentation/schuelerstundenplaene/admin/konten-und-rollen/">Konten und Rollen</a></li>
     </ul>
 </li>
 <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item">
     <div class="menu__list-item-collapsible"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/">Studierende</a></div>
     <ul class="menu__list">
-        <li class="menu__list-item"><a class="menu__link menu__link--active" aria-current="page" href="/documentation/schuelerstundenplaene/studierende/anmeldung/">Anmelden</a></li>
+        <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/anmeldung/">Anmelden</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/kennwort-aendern/">Kennwort ändern</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/stundenplan-der-lehrperson/">Stundenplan der Lehrperson öffnen</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/leerer-stundenplan/">Mit einem leeren Stundenplan beginnen</a></li>
@@ -153,13 +153,13 @@
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/tt-eintraege/">TT-Einträge und Unterrichtsangebot</a></li>
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/faecher-und-regeln/">Fächer, Regeln und Zuordnung</a></li>
         <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/tests/">Tests und Kontrolle</a></li>
-        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/admin/konten-und-rollen/">Konten und Rollen</a></li>
+        <li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" href="/documentation/schuelerstundenplaene/admin/konten-und-rollen/">Konten und Rollen</a></li>
     </ul>
 </li>
 <li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item">
     <div class="menu__list-item-collapsible"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/">Studierende</a></div>
     <ul class="menu__list">
-        <li class="menu__list-item"><a class="menu__link menu__link--active" aria-current="page" href="/documentation/schuelerstundenplaene/studierende/anmeldung/">Anmelden</a></li>
+        <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/anmeldung/">Anmelden</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/kennwort-aendern/">Kennwort ändern</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/stundenplan-der-lehrperson/">Stundenplan der Lehrperson öffnen</a></li>
         <li class="menu__list-item"><a class="menu__link" href="/documentation/schuelerstundenplaene/studierende/leerer-stundenplan/">Mit einem leeren Stundenplan beginnen</a></li>
@@ -176,41 +176,36 @@
                                     <ul class="breadcrumbs">
                                         <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/">Startseite</a></li>
                                         <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/schuelerstundenplaene/">Schülerstundenpläne</a></li>
-                                        <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/schuelerstundenplaene/studierende/">Studierende</a></li>
-<li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link" aria-current="page">Anmelden</span></li>
+                                        <li class="breadcrumbs__item"><a class="breadcrumbs__link" href="/documentation/schuelerstundenplaene/admin/">Admin</a></li>
+                                        <li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link" aria-current="page">Konten und Rollen</span></li>
                                     </ul>
                                 </nav>
                                 <div class="theme-doc-markdown markdown">
-                                    <header><h1>Anmelden</h1></header>
-<p>Verwenden Sie die E-Mail-Adresse, die Ihre Schule für Sie hinterlegt hat. Für die Anmeldung ohne Kennwort brauchen Sie Zugriff auf dieses Postfach.</p>
-<h2 id="schule">1. Schule wählen und E-Mail-Adresse eingeben</h2>
-<ol>
-<li>Öffnen Sie die <a href="/">SchoolTool-Startseite</a>.</li>
-<li>Wählen Sie Ihre Schule. Bei vielen Schulen nutzen Sie <strong>Schule suchen …</strong> und klicken auf <strong>Weiter</strong>. Ist die richtige Schule bereits ausgewählt, fahren Sie direkt fort.</li>
-<li>Klicken Sie bei der Karte <strong>Schülerstundenpläne</strong> auf <strong>Starten</strong>.</li>
-<li>Prüfen Sie im <strong>Login-Bereich</strong> die Schule. Über <strong>Schule ändern</strong> können Sie sie wechseln.</li>
-<li>Geben Sie Ihre E-Mail-Adresse im Feld <strong>E-Mail</strong> ein. Fahren Sie mit oder ohne Kennwort fort:</li>
-</ol>
-<p><strong>Direkter Anmeldelink:</strong> Über einen Link Ihrer Schule oder die <a href="/homepage/students-timetables">direkte Anmeldung</a> gelangen Sie oft gleich zum <strong>Login-Bereich</strong>. Falls <strong>Verfügbare Schulen</strong> erscheint, wählen Sie zuerst Ihre Schule. Bei vielen Schulen hilft <strong>Schule suchen (Name oder Kürzel)</strong>.</p>
-<p><strong>Bereits angemeldet?</strong> Dann gelangen Sie direkt zur Stundenplanübersicht.</p>
-<h2 id="mit-kennwort">2. Mit bekanntem Kennwort anmelden</h2>
-<ol><li>Klicken Sie auf <strong>Weiter mit Kennwort</strong>.</li><li>Geben Sie Ihr Kennwort im Feld <strong>Passwort</strong> ein.</li><li>Klicken Sie auf <strong>Anmelden</strong>. Nach erfolgreicher Anmeldung gelangen Sie zu Ihrer Stundenplanübersicht.</li></ol>
-<h2 id="ohne-kennwort">Erste Anmeldung oder Kennwort vergessen</h2>
-<p>Wenn Sie noch kein Kennwort haben oder es vergessen haben, melden Sie sich mit einem E-Mail-Code an:</p>
-<ol><li>Wählen Sie nach der Eingabe Ihrer E-Mail-Adresse <strong>Weiter ohne Kennwort</strong>.</li><li>Öffnen Sie Ihr E-Mail-Postfach und suchen Sie die Nachricht mit dem <strong>sechsstelligen Code</strong>. Prüfen Sie gegebenenfalls auch den Spamordner.</li><li>Geben Sie den Code auf der Anmeldeseite ein und klicken Sie auf <strong>Code bestätigen</strong>.</li><li>Nach erfolgreicher Anmeldung können Sie über <a href="/documentation/schuelerstundenplaene/studierende/kennwort-aendern/">Kennwort ändern</a> ein eigenes Kennwort festlegen.</li></ol>
-<h2 id="probleme">Hilfe bei Anmeldeproblemen</h2>
-<ul><li><strong>E-Mail-Adresse nicht bekannt:</strong> Kontrollieren Sie Schule, Schreibweise und verwendete Adresse. Kontaktieren Sie die Schule, wenn Ihre Adresse nicht hinterlegt ist.</li>
-<li><strong>Keine E-Mail erhalten:</strong> Prüfen Sie Posteingang und Spamordner sowie die eingegebene Adresse. Wenden Sie sich bei anhaltenden Problemen an die Schule.</li>
-<li><strong>Code ungültig oder abgelaufen:</strong> Klicken Sie auf <strong>Zurück</strong> und fordern Sie über <strong>Weiter ohne Kennwort</strong> einen neuen Code an.</li>
-<li><strong>„Login mit Code derzeit nicht möglich“:</strong> Der Code-Zugang steht momentan nicht zur Verfügung. Verwenden Sie Ihr vorhandenes Kennwort oder wenden Sie sich an die Schule.</li></ul>
-<h2 id="abmelden">Nach der Arbeit abmelden</h2>
-<p>Sichern Sie Änderungen zuerst mit <strong>Speichern</strong>. Klicken Sie danach oben auf <strong>Abmelden</strong> oder öffnen Sie das Menü rechts oben und wählen Sie dort <strong>Abmelden</strong>. Das ist besonders an gemeinsam verwendeten Computern wichtig.</p>
-<aside class="alert alert--warning"><strong>Für Computer und Laptop gedacht</strong><p>Nutzen Sie die App am Computer oder Laptop mit Maus und Tastatur. Auf dem Handy sind die Tabellen und Auswahlfelder schwer zu bedienen. Die App läuft im Browser; eine Installation ist nicht nötig.</p></aside>
+                                    <header><h1>Konten und Rollen</h1></header>
+<p>Im Bereich <strong>Lehrer:innen → Lehrerliste</strong> verwalten Stundenplan-Admins die Personen, die mit dem Tool arbeiten sollen. „Lehrer:innen“ ist die tatsächliche Menübeschriftung; die Rolle für die begleitende Stundenplanung heißt in dieser Dokumentation <strong>Moderator</strong>.</p>
+<h2 id="personen">Personen hinzufügen und bearbeiten</h2>
+<ol><li>Öffnen Sie die <strong>Lehrerliste</strong> und suchen Sie zuerst nach der Person.</li><li>Fehlt sie, verwenden Sie <strong>Hinzufügen</strong> und tragen Kürzel, Namen und E-Mail-Adresse ein.</li><li>Vorhandene Angaben bearbeiten Sie über das Stiftsymbol.</li><li>Prüfen Sie bei einem registrierten Konto den Status <strong>Aktiv</strong>. Stundenplanrollen lassen sich nur bei einem aktiven Konto ändern.</li></ol>
+<h2 id="rollen">Moderation oder Administration zuweisen</h2>
+<ul>
+<li><strong>TT-Moderator</strong> ist die Rolle für die begleitende Planung mit Studierenden.</li>
+<li><strong>TT-Admin</strong> erhält zusätzlich die in diesem Admin-Kapitel beschriebenen Verwaltungsfunktionen.</li>
+</ul>
+<p>Die beiden Stundenplanrollen schließen sich gegenseitig aus. Wählen Sie die benötigte Rolle in der Zeile der Person. Ein erneuter Klick auf die bereits ausgewählte Rolle entfernt diese Zuweisung. Ihre eigene Stundenplanrolle können Sie hier nicht ändern.</p>
+<p>Bei einer noch nicht registrierten importierten Person wird für die Rollenzuweisung zunächst das Konto aktiviert. Ein Eintrag kann auch ohne TT-Rolle in der Lehrerliste bleiben. Die Zugehörigkeit zur Lehrerliste allein gibt noch keine Berechtigung zur Stundenplan-Administration.</p>
+<h2 id="aktiv">Konten aktivieren und deaktivieren</h2>
+<p>Bei registrierten Konten können Sie den Aktivstatus umschalten. Ihr eigenes Konto sowie Konten mit allgemeinen Admin- oder Superadminrechten sind vor Deaktivierung geschützt.</p>
+<aside class="alert alert--warning"><strong>Sammelaktionen gelten schulweit</strong><p>„Alle aktiv“ und „Alle inaktiv“ wirken auf die zulässigen Konten der Schule, auch außerhalb der aktuellen Suche oder Tabellenseite. Prüfen Sie vor einer Sammelaktion, ob wirklich alle diese Konten betroffen sein sollen.</p></aside>
+<h2 id="entfernen">Aus der Lehrerliste entfernen</h2>
+<p>Beim Entfernen eines registrierten Kontos bleiben das Konto und sein Aktivstatus erhalten. Entfernt werden die Zugehörigkeit zur Lehrerliste sowie die Lehrenden- und Stundenplanrollen; andere Rollen bleiben bestehen.</p>
+<p>Das eigene Konto lässt sich hier nicht entfernen. Bestehende Gruppen- oder Kurszuordnungen können das Entfernen ebenfalls verhindern. Klären Sie diese Zuordnungen, statt ein weiteres Konto für dieselbe Person anzulegen.</p>
+<h2 id="grenzen">Grenzen der Stundenplan-Administration</h2>
+<p>Sie können hier Stundenplanrollen zuweisen, aber keine allgemeinen Admin- oder Superadminrechte vergeben.</p>
+<p>Der Dateiimport der Lehrerliste ist derzeit eine Funktion der allgemeinen Schuladministration. Eine reine TT-Admin-Rolle berechtigt dazu nicht, auch wenn die Schaltfläche <strong>Importieren</strong> angezeigt wird. Die unter <a href="/documentation/schuelerstundenplaene/admin/importe/">Importe</a> beschriebenen Stundenplan-, Anrechnungs- und Sokrates-Importe sind davon unabhängig.</p>
                                 </div>
                             </article>
 <nav class="docusaurus-mt-lg pagination-nav" aria-label="Dokumentation Seiten">
-<a class="pagination-nav__link pagination-nav__link--prev" href="/documentation/schuelerstundenplaene/studierende/"><div class="pagination-nav__sublabel">Zurück</div><div class="pagination-nav__label">Studierende</div></a>
-<a class="pagination-nav__link pagination-nav__link--next" href="/documentation/schuelerstundenplaene/studierende/kennwort-aendern/"><div class="pagination-nav__sublabel">Weiter</div><div class="pagination-nav__label">Kennwort ändern</div></a>
+<a class="pagination-nav__link pagination-nav__link--prev" href="/documentation/schuelerstundenplaene/admin/tests/"><div class="pagination-nav__sublabel">Zurück</div><div class="pagination-nav__label">Tests und Kontrolle</div></a>
+<a class="pagination-nav__link pagination-nav__link--next" href="/documentation/schuelerstundenplaene/studierende/"><div class="pagination-nav__sublabel">Weiter</div><div class="pagination-nav__label">Studierende</div></a>
 </nav>
                         </div></div></div>
                     </div>

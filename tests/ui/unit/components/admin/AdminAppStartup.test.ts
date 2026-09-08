@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminApp from '@/pages/admin/App.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -18,6 +18,37 @@ vi.mock('@/stores/admin/SchoolStore', () => ({
 }))
 
 describe('Admin app startup', () => {
+    afterEach(() => vi.restoreAllMocks())
+
+    it.each([
+        ['logout', 'executeLogout', '/admin/login'],
+        ['stopImpersonationAndReturn', 'stopImpersonation', '/admin'],
+    ])('discards cached account data through document navigation after %s', async (method, action, target) => {
+        const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+        const context = {
+            adminStore: { [action]: vi.fn().mockResolvedValue(true) },
+            $router: { replace: vi.fn() },
+        }
+
+        await (AdminApp as any).methods[method].call(context)
+
+        expect(context.adminStore[action]).toHaveBeenCalledTimes(1)
+        expect(replace).toHaveBeenCalledWith(target)
+        expect(context.$router.replace).not.toHaveBeenCalled()
+    })
+
+    it.each([
+        ['logout', 'executeLogout'],
+        ['stopImpersonationAndReturn', 'stopImpersonation'],
+    ])('keeps the current document when %s fails', async (method, action) => {
+        const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+        const context = { adminStore: { [action]: vi.fn().mockResolvedValue(false) } }
+
+        await (AdminApp as any).methods[method].call(context)
+
+        expect(replace).not.toHaveBeenCalled()
+    })
+
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useSchoolStore).mockReset()

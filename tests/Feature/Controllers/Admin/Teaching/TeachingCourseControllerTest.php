@@ -249,6 +249,68 @@ describe('index', function () {
         $response->assertStatus(200);
     });
 
+    test('teacher without courses cannot list view or update another teachers course', function () {
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherTeacher->assignRole('teacher');
+
+        $course = TeachingCourse::factory()
+            ->forSchool($this->school)
+            ->forSchoolyear($this->schoolyear)
+            ->forTeacher($otherTeacher)
+            ->create(['title' => 'Private teacher course']);
+
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonPath('data', []);
+
+        $this->getJson("/api/admin/teaching/courses?user_id={$otherTeacher->id}")
+            ->assertOk()
+            ->assertJsonPath('data', []);
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertForbidden();
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => 'Unauthorized change',
+            'user_id' => $this->teacher->id,
+        ])->assertForbidden();
+
+        expect($course->fresh())
+            ->title->toBe('Private teacher course')
+            ->user_id->toBe($otherTeacher->id);
+    });
+
+    test('teacher course access stays owner scoped when an owner query is spoofed', function () {
+        $ownCourse = TeachingCourse::factory()
+            ->forSchool($this->school)
+            ->forSchoolyear($this->schoolyear)
+            ->forTeacher($this->teacher)
+            ->create();
+
+        TeachingCourse::factory()
+            ->forSchool($this->school)
+            ->forSchoolyear($this->schoolyear)
+            ->forTeacher($this->admin)
+            ->create();
+
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $this->getJson("/api/admin/teaching/courses?user_id={$this->admin->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $ownCourse->id)
+            ->assertJsonPath('data.0.user_id', $this->teacher->id);
+
+        $this->getJson("/api/admin/teaching/courses/{$ownCourse->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $ownCourse->id);
+    });
+
     test('admin cannot view course details from another school', function () {
         $this->actingAs($this->admin, 'sanctum');
 

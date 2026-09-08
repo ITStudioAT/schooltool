@@ -91,6 +91,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Services/AbaLocalDocumentTextExtractor.php | .ai/rules/services.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Models/Teacher.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue} | .ai/rules/settings-components.md |
 | resources/js/pages/admin/settings/Settings.vue | .ai/rules/settings.md |
+| {resources/js/pages/admin/auth/Login.vue,resources/js/pages/admin/App.vue,resources/js/stores/admin/AdminStore.js} | .ai/rules/stores-admin.md |
 | {app/Http/Middleware/RestrictStudentsTimetablesImpersonation.php,app/Http/Controllers/Admin/**,routes/{api,web}.php,resources/routes/homepage.js,resources/js/stores/homepage/HomepageStore.js} | .ai/rules/stores-homepage.md |
 | {app/Services/{AdminService,StudentService,RestaurantHomepageAuthService,TutoringService}.php,app/Http/Controllers/{Homepage/HomepageController,Student/StudentController,Tutoring/TutoringController}.php} | .ai/rules/student-controller-tutoring.md |
 | {resources/views/pdfs/students-timetable-overview.blade.php,resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue,app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/TimetableV3.test.ts} | .ai/rules/students-timetables-feature-ui-unit-pages-admin-students-timetables.md |

@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.47.2 !!!
+
+### System
+
+- Sicherheits-Fix: Kursanzeige für fremde Lehrerinnen
+
 ## 3.47.1
 
 ### Schülerinnen: Unterricht

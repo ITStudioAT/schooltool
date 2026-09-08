@@ -14,7 +14,38 @@ describe('Admin store config loading', () => {
         globalThis.axios = {
             get: vi.fn(),
             put: vi.fn(),
+            post: vi.fn(),
         } as never
+    })
+
+    it.each(['startImpersonation', 'stopImpersonation'])(
+        '%s does not mix the new identity into cached stores before document navigation',
+        async action => {
+            const store = useAdminStore()
+            store.config = { user: { id: 7 } } as never
+            vi.mocked(globalThis.axios.post).mockResolvedValue({ data: {} } as never)
+            const loadConfig = vi.spyOn(store, 'loadConfig')
+
+            const result = action === 'startImpersonation'
+                ? await store.startImpersonation(9)
+                : await store.stopImpersonation()
+
+            expect(result).toBe(true)
+            expect(loadConfig).not.toHaveBeenCalled()
+            expect(store.config?.user.id).toBe(7)
+        },
+    )
+
+    it('finishes logout after server confirmation without another fallible cookie request', async () => {
+        const store = useAdminStore()
+        store.config = { user: { id: 7 }, is_auth: true } as never
+        vi.mocked(globalThis.axios.get).mockResolvedValueOnce({ data: {} } as never)
+        vi.mocked(globalThis.axios.post).mockResolvedValueOnce({ data: { is_auth: false } } as never)
+
+        expect(await store.executeLogout()).toBe(true)
+        expect(globalThis.axios.get).toHaveBeenCalledTimes(1)
+        expect(globalThis.axios.post).toHaveBeenCalledWith('/api/admin/execute_logout', {})
+        expect(store.config?.is_auth).toBe(false)
     })
 
     it('loads admin config without requesting a csrf cookie first', async () => {

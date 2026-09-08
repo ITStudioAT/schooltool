@@ -175,14 +175,12 @@ export default {
             await this.routeNavigation?.navigateMenuRoute(target, this.isMenuInteractionDisabled)
         },
         async logout() {
-            this.$router.replace({ path: '/admin/login', query: { logout: '1' } })
-            await this.$nextTick()
-            await this.adminStore.executeLogout()
+            if (!(await this.adminStore.executeLogout())) return
+            window.location.replace('/admin/login')
         },
         async stopImpersonationAndReturn() {
             if (!(await this.adminStore.stopImpersonation())) return
-            await this.$nextTick()
-            this.$router.replace('/admin')
+            window.location.replace('/admin')
         },
         openCookiePrefs() {
             if (typeof window.showHideToggleCookiePreferencesModal === 'function') {

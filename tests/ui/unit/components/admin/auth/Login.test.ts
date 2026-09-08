@@ -33,7 +33,7 @@ const vuetifyStubs = {
 
 const warningText = '!Anmelden ohne Kennwort derzeit nicht möglich'
 
-function mountLogin(queueWorking: boolean) {
+function mountLogin(queueWorking: boolean, isAuthenticated = true) {
     return mount(Login, {
         global: {
             plugins: [
@@ -42,7 +42,7 @@ function mountLogin(queueWorking: boolean) {
                     initialState: {
                         AdminAdminStore: {
                             config: {
-                                is_auth: true,
+                                is_auth: isAuthenticated,
                                 logo: null,
                                 version: 'test',
                                 register_admin_allowed: false,
@@ -69,6 +69,15 @@ describe('Admin login unknown password availability', () => {
         globalThis.axios = {
             get: vi.fn().mockResolvedValue({}),
         } as never
+    })
+
+    it('shows the guest login form without issuing another logout request', async () => {
+        const wrapper = mountLogin(true, false)
+        await flushPromises()
+
+        expect((wrapper.vm as any).adminStore.executeLogout).not.toHaveBeenCalled()
+        expect(wrapper.find('[data-testid="admin-login-continue-password"]').exists()).toBe(true)
+        wrapper.unmount()
     })
 
     it('shows warning and disables unknown password when queue is down', async () => {
@@ -99,6 +108,62 @@ describe('Admin two-factor challenge', () => {
     })
 
     afterEach(() => vi.restoreAllMocks())
+
+    it.each(['LOGIN_SUCCESS', 'LOGIN_ENTER_TWO_FACTOR', 'LOGIN_ENTER_TOKEN', 'FAILED'])(
+        'starts a fresh document only after completed password authentication: %s',
+        async outcome => {
+            const context: any = {
+                is_valid: false,
+                data: { password: 'test-password', remember: true },
+                $refs: { form: { validate: vi.fn(async () => { context.is_valid = true }) } },
+                adminStore: {
+                    loginStep2: vi.fn(async () => {
+                        context.data.step = outcome
+                        return outcome !== 'FAILED'
+                    }),
+                    loadConfig: vi.fn(),
+                },
+                $router: { push: vi.fn() },
+            }
+
+            await methods.loginStep2.call(context)
+
+            expect(context.adminStore.loadConfig).not.toHaveBeenCalled()
+            expect(context.$router.push).not.toHaveBeenCalled()
+            if (outcome === 'LOGIN_SUCCESS') {
+                expect(window.location.replace).toHaveBeenCalledWith('/admin')
+            } else {
+                expect(window.location.replace).not.toHaveBeenCalled()
+                expect(context.step).toBe(outcome === 'FAILED' ? 'LOGIN_ENTER_PASSWORD' : outcome)
+            }
+        },
+    )
+
+    it.each([true, false])('discards the old document after an explicit logout only on success: %s', async success => {
+        const executeLogout = vi.fn().mockResolvedValue(success)
+        const wrapper = mountLogin(true)
+        await flushPromises()
+        const store = (wrapper.vm as any).adminStore
+        store.executeLogout = executeLogout
+        const context: any = {
+            $route: { query: { logout: '1' } },
+            $router: { replace: vi.fn() },
+            restartLogin: vi.fn(),
+        }
+
+        await (Login as any).beforeMount.call(context)
+
+        expect(executeLogout).toHaveBeenCalledTimes(1)
+        expect(context.$router.replace).not.toHaveBeenCalled()
+        if (success) {
+            expect(window.location.replace).toHaveBeenCalledWith('/admin/login')
+            expect(context.restartLogin).not.toHaveBeenCalled()
+        } else {
+            expect(window.location.replace).not.toHaveBeenCalled()
+            expect(context.restartLogin).toHaveBeenCalledTimes(1)
+        }
+        wrapper.unmount()
+    })
 
     it('sends only a normalized authenticator code and immediately opens admin', async () => {
         const push = vi.fn()
