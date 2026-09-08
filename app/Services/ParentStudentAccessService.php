@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Notification;
 
 class ParentStudentAccessService
 {
-    private const MAXIMUM_CHILD_AGE = 18;
+    private const MAXIMUM_CHILD_AGE = 17;
 
     private const MAXIMUM_CODE_ATTEMPTS = 5;
 
@@ -25,7 +25,7 @@ class ParentStudentAccessService
     public function eligibleStudents(string $email, int $schoolId, int $schoolyearId): Collection
     {
         $normalizedEmail = $this->normalizeEmail($email);
-        $earliestBirthDate = today()->subYears(self::MAXIMUM_CHILD_AGE + 1)->addDay();
+        $earliestBirthDate = today()->subYearsNoOverflow(self::MAXIMUM_CHILD_AGE + 1)->addDay();
         $hasActiveCourse = function (Builder $query) use ($schoolId, $schoolyearId): void {
             $query->whereNull('canceled_at')
                 ->whereHas('teachingCourse', function (Builder $courseQuery) use ($schoolId, $schoolyearId): void {

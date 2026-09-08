@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createTestingPinia } from '@pinia/testing'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { defineComponent, h, inject, provide } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 import Settings from '@/pages/admin/settings/Settings.vue'
 import StudentsTimetablesTeachers from '@/pages/admin/settings/components/StudentsTimetablesTeachers.vue'
@@ -56,7 +57,7 @@ const vuetifyStubs = {
 }
 
 describe('Admin settings page', () => {
-    it.each([undefined, 'teachers', 'teaching_admin'])('keeps only the legacy teaching admin tools in settings for panel %s', async (panel) => {
+    it.each([undefined, 'teachers', 'teaching_admin', 'import', 'holidays', 'school_hours', 'invalid'])('redirects teaching settings panel %s to teaching administration', async (panel) => {
         const replace = vi.fn()
 
         render(Settings, {
@@ -87,12 +88,11 @@ describe('Admin settings page', () => {
             },
         })
 
-        await waitFor(() => expect(screen.getByText('Import, Ferien, Schulstunden')).toBeInTheDocument())
+        const expectedPanel = ['teachers', 'import', 'holidays', 'school_hours'].includes(panel) ? panel : 'import'
+        await waitFor(() => expect(replace).toHaveBeenCalledWith(`/admin/teaching/administration?panel=${expectedPanel}`))
+        expect(screen.queryByText('Import, Ferien, Schulstunden')).not.toBeInTheDocument()
         expect(screen.queryByText('Lehrer')).not.toBeInTheDocument()
         expect(screen.queryByText('Teacher accounts')).not.toBeInTheDocument()
-        if (panel) {
-            expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
-        }
     })
 
     it('builds the updated super-admin sub navigation with grundeinstellungen first', () => {
@@ -126,17 +126,65 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Alle Lizenzen', 'Lizenzvergaben'])
     })
 
-    it('builds the general sub navigation with module visibility and licences', () => {
+    it('builds the general sub navigation with only module visibility', () => {
         const items = (Settings as any).computed.generalNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['module_visibility', 'licences'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['module_visibility'])
         expect(items[0]).toMatchObject({
             key: 'module_visibility',
             label: 'Sichtbarkeit Modul',
         })
-        expect(items[1]).toMatchObject({
-            key: 'licences',
-            label: 'Lizenzen',
+    })
+
+    it.each([
+        '/admin/settings?general_panel=licences',
+        '/admin/settings?panel=general&general_panel=licences',
+        '/admin/settings?panel=licence_models',
+    ])('opens the single licence overview from %s', async (url) => {
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [{ path: '/admin/settings', component: Settings }],
+        })
+        await router.push(url)
+        await router.isReady()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    router,
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: { is_auth: true, roles: ['super_admin'] },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: true,
+                    ModuleStatusesCard: { template: '<div>Module visibility</div>' },
+                    Licences: { template: '<div>Licences Component</div>' },
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(router.currentRoute.value.fullPath).toBe('/admin/settings?panel=licence_models')
+            expect(screen.getAllByText('Licences Component')).toHaveLength(1)
+        })
+        expect(screen.queryByText('Lizenzen')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByText('Grundeinstellungen'))
+        await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/admin/settings'))
+        expect(screen.getByText('Module visibility')).toBeInTheDocument()
+        expect(screen.queryByText('Licences Component')).not.toBeInTheDocument()
+
+        await router.push('/admin/settings?general_panel=licences')
+        await waitFor(() => {
+            expect(router.currentRoute.value.fullPath).toBe('/admin/settings?panel=licence_models')
+            expect(screen.getAllByText('Licences Component')).toHaveLength(1)
         })
     })
 
@@ -203,9 +251,8 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Benutzer'])
     })
 
-    it('builds the materials sub navigation with settings first and material groups second', () => {
+    it('does not expose materials sub navigation in global settings', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
-            isMaterialsTab: true,
             isAdminTab: false,
             isRegisterTab: false,
             isTeachingTab: false,
@@ -213,11 +260,11 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['material_settings', 'material_groups'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Einstellungen', 'Materialgruppen'])
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('material_settings')
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('material_groups')
     })
 
-    it('builds the groups sub navigation with overview and own groups', () => {
+    it('does not expose groups sub navigation in global settings', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isGroupsTab: true,
             isAdminTab: false,
@@ -227,23 +274,14 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['groups_overview', 'groups_own'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Überblick', 'Eigene Gruppen'])
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('groups_overview')
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('groups_own')
+        expect((Settings as any).computed.showsSubNavigation.call({ main_action: 'groups' })).toBe(false)
     })
 
-    it('builds the restaurant sub navigation with the overtaken settings sections', () => {
-        const items = (Settings as any).computed.subNavigationItems.call({
-            isRestaurantTab: true,
-            isAdminTab: false,
-            isRegisterTab: false,
-            isTeachingTab: false,
-            isMaterialsTab: false,
-            isGroupsTab: false,
-            isTutoringTab: false,
-        })
-
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'SEPA', 'Online'])
+    it('does not expose restaurant sub navigation in global settings', () => {
+        expect((Settings as any).computed.showsSubNavigation.call({ main_action: 'restaurant' })).toBe(false)
+        expect((Settings as any).components).not.toHaveProperty('RestaurantSettings')
     })
 
     it('shows active controls and teacher roles in the teachers panel', () => {
@@ -443,7 +481,7 @@ describe('Admin settings page', () => {
         expect(context.teachersListStore.index).toHaveBeenCalledOnce()
     })
 
-    it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
+    it('removes the groups tab from global settings even for previously authorized users', () => {
         const allowedItems = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: false,
             canAccessAdminSettingsTab: false,
@@ -459,51 +497,43 @@ describe('Admin settings page', () => {
             canAccessGroupsSettingsTab: false,
         })
 
-        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('groups')
+        expect(allowedItems.map((item: { key: string }) => item.key)).not.toContain('groups')
         expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('groups')
 
         const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
-        expect(tabRoleMap.groups).toEqual(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])
+        expect(tabRoleMap).not.toHaveProperty('groups')
     })
 
-    it('includes the groups settings tab in available tabs only for authorized roles', () => {
+    it('excludes groups from the available global settings tabs', () => {
         const methods = (Settings as any).methods
 
-        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('groups')
-        expect(methods.availableTabKeys(true, true, true, true, true, true, false, true, true)).not.toContain('groups')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true)).not.toContain('groups')
+        expect(methods.availableTabKeys(true, true, true, true, true, false, true, true)).not.toContain('groups')
     })
 
-    it('shows the materials settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
-        const allowedItems = (Settings as any).computed.navigationItems.call({
-            canAccessSuperAdminSettingsTab: false,
-            canAccessAdminSettingsTab: false,
-            canAccessRegisterSettingsTab: false,
-            canAccessMaterialsSettingsTab: true,
-            canAccessGroupsSettingsTab: false,
-        })
-        const deniedItems = (Settings as any).computed.navigationItems.call({
-            canAccessSuperAdminSettingsTab: false,
-            canAccessAdminSettingsTab: false,
-            canAccessRegisterSettingsTab: false,
-            canAccessMaterialsSettingsTab: false,
-            canAccessGroupsSettingsTab: false,
-        })
+    it.each([
+        ['super_admin', true],
+        ['admin', true],
+        ['materials_admin', true],
+        ['materials_moderator', true],
+        ['teacher', false],
+    ])('allows the legacy materials redirect for %s: %s', (role, allowed) => {
+        expect((Settings as any).computed.canAccessMaterialsAdministration.call({
+            configuredRoleNames: [role],
+        })).toBe(allowed)
+    })
 
-        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('materials')
-        expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('materials')
-
+    it('removes the materials tab from global settings navigation', () => {
+        const items = (Settings as any).computed.navigationItems.call({})
         const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
-        expect(tabRoleMap.materials).toEqual(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])
+
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('materials')
+        expect(tabRoleMap).not.toHaveProperty('materials')
+        expect((Settings as any).methods.availableTabKeys(true, true, true, true, true, true, true))
+            .not.toContain('materials')
     })
 
-    it('includes the materials settings tab in available tabs only for authorized roles', () => {
-        const methods = (Settings as any).methods
-
-        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('materials')
-        expect(methods.availableTabKeys(true, true, true, true, true, false, true, true, true)).not.toContain('materials')
-    })
-
-    it('shows the restaurant settings tab only for super_admin, admin, and lunch_admin', () => {
+    it('removes the restaurant settings tab even for authorized restaurant users', () => {
         const allowedItems = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: false,
             canAccessAdminSettingsTab: false,
@@ -521,18 +551,18 @@ describe('Admin settings page', () => {
             canAccessRestaurantSettingsTab: false,
         })
 
-        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('restaurant')
+        expect(allowedItems.map((item: { key: string }) => item.key)).not.toContain('restaurant')
         expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('restaurant')
 
         const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
-        expect(tabRoleMap.restaurant).toEqual(['super_admin', 'admin', 'lunch_admin'])
+        expect(tabRoleMap).not.toHaveProperty('restaurant')
     })
 
-    it('includes the restaurant settings tab in available tabs only for authorized roles', () => {
+    it('excludes restaurant from available global settings tabs', () => {
         const methods = (Settings as any).methods
 
-        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('restaurant')
-        expect(methods.availableTabKeys(true, true, true, true, true, true, true, false, true)).not.toContain('restaurant')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true)).not.toContain('restaurant')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, false, true)).not.toContain('restaurant')
     })
 
     it('does not expose profile or students timetables management in Settings', () => {
@@ -553,7 +583,8 @@ describe('Admin settings page', () => {
 
         expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('students_timetables')
         expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('profile')
-        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true))
+        expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('teaching')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true))
             .not.toContain('students_timetables')
         expect(componentSource).not.toContain("label: 'Schülerstundenpläne'")
         expect(componentSource).not.toContain('StudentsTimetablesTeachers')
@@ -681,21 +712,15 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.getAllByText('Grundeinstellungen').length).toBeGreaterThan(0)
+        expect(screen.getByRole('navigation', { name: 'Super-Admin Einstellungen' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Grundeinstellungen Allgemein' })).toHaveAttribute('aria-pressed', 'true')
         expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
         expect(container.querySelector('.settings-general-subnav')).not.toBeNull()
         expect(screen.getByText('Sichtbarkeit Modul')).toBeInTheDocument()
-        expect(screen.getByText('Lizenzen')).toBeInTheDocument()
+        expect(screen.queryByText('Lizenzen')).not.toBeInTheDocument()
         expect(screen.getByText('ModuleStatusesCard Component')).toBeInTheDocument()
         expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()
         expect(screen.getByText('Lizenzen Modelle')).toBeInTheDocument()
-
-        await fireEvent.click(screen.getByText('Lizenzen'))
-
-        await waitFor(() => {
-            expect(screen.getByText('Licences Component')).toBeInTheDocument()
-        })
-
-        expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
 
         await fireEvent.click(screen.getByText('Schulen'))
 
@@ -710,6 +735,8 @@ describe('Admin settings page', () => {
         })
 
         expect(container.querySelector('.settings-licences-wrap')).not.toBeNull()
+        expect(screen.getByRole('button', { name: 'Lizenzen Modelle Lizenzverwaltung' })).toHaveAttribute('aria-pressed', 'true')
+        expect(screen.getByRole('button', { name: 'Grundeinstellungen Allgemein' })).toHaveAttribute('aria-pressed', 'false')
         expect(screen.getByText('Alle Lizenzen')).toBeInTheDocument()
         expect(screen.getByText('Lizenzvergaben')).toBeInTheDocument()
 
@@ -746,13 +773,13 @@ describe('Admin settings page', () => {
         const source = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
 
         expect(source).toContain("<ModuleStatusesCard v-if=\"general_action === 'module_visibility'\" />")
-        expect(source).toContain("<Licences v-else-if=\"general_action === 'licences'\" />")
+        expect(source).not.toContain("<Licences v-else-if=\"general_action === 'licences'\" />")
         expect(source).toContain("<StorageAudit />")
         expect(source).toContain("const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/settings/components/ModuleStatusesCard.vue'))")
         expect(source).toContain("const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))")
         expect(source).toContain('generalNavigationItems')
         expect(source).toContain('Sichtbarkeit Modul')
-        expect(source).toContain("key: 'licences'")
+        expect(source).not.toContain("key: 'licences'")
         expect(source).toContain("key: 'storage_audit'")
     })
 
@@ -806,6 +833,7 @@ describe('Admin settings page', () => {
 
         expect(container.querySelector('.settings-subnav')).not.toBeNull()
         expect(container.querySelector('.settings-schoolyears-wrap')).not.toBeNull()
+        expect(screen.getByRole('navigation', { name: 'Admin Einstellungen' })).toHaveClass('settings-section-subnav')
         expect(screen.getAllByText('Schuljahre').length).toBeGreaterThan(0)
         expect(screen.getByText('Schoolyears Component')).toBeInTheDocument()
         expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()
@@ -840,77 +868,84 @@ describe('Admin settings page', () => {
         expect(screen.queryByText('Users Component')).not.toBeInTheDocument()
     })
 
-    it('renders the materials settings tab with Einstellungen first and Materialgruppen second', async () => {
-        const GroupsStub = defineComponent({
-            props: ['embedded', 'embeddedFilter'],
-            template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter }}</div>',
-        })
+    it.each([
+        [undefined, 'material_settings'],
+        ['material_settings', 'material_settings'],
+        ['material_groups', 'material_groups'],
+        ['missing', 'material_settings'],
+    ])('redirects the legacy materials panel %s into Materials Admin', async (panel, expectedPanel) => {
+        const replace = vi.fn()
 
-        const { container } = render(Settings, {
+        render(Settings, {
             global: {
-                plugins: [
-                    createTestingPinia({
-                        stubActions: true,
-                        initialState: {
-                            AdminAdminStore: {
-                                config: {
-                                    is_auth: true,
-                                    roles: ['materials_admin'],
-                                    selected_school: { long_name: 'Testschule' },
-                                },
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: {
+                                is_auth: true,
+                                roles: ['materials_admin'],
+                                selected_school: { long_name: 'Testschule' },
                             },
                         },
-                    }),
-                ],
+                    },
+                })],
                 mocks: {
                     $route: {
                         fullPath: '/admin/settings?tab=materials',
-                        query: {
-                            tab: 'materials',
-                        },
+                        query: { tab: 'materials', panel },
                     },
-                    $router: {
-                        replace: () => {},
-                    },
+                    $router: { replace },
                 },
                 stubs: {
                     ...vuetifyStubs,
-                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
-                    Groups: GroupsStub,
+                    Groups: { template: '<div>Other groups settings</div>' },
                     MaterialsSettingsView: { template: '<div>Materials Settings Component</div>' },
                 },
             },
         })
 
-        expect(container.querySelector('.settings-subnav')).not.toBeNull()
-        expect(screen.getByText('Einstellungen')).toBeInTheDocument()
-        expect(screen.getAllByText('Materialgruppen').length).toBeGreaterThan(0)
-
-        await waitFor(() => {
-            expect(screen.getByText('Materials Settings Component')).toBeInTheDocument()
-        })
-
-        expect(container.querySelector('.settings-materials-wrap')).not.toBeNull()
-
-        await fireEvent.click(screen.getByText('Materialgruppen'))
-
-        await waitFor(() => {
-            expect(screen.getByText('Groups Component embedded materials')).toBeInTheDocument()
-        })
-
-        expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
-
-        const source = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
-        expect(source).toContain('.settings-materials-wrap {')
-        expect(source).toContain('width: 520px;')
-        expect(source).toContain('margin: 0;')
+        await waitFor(() => expect(replace).toHaveBeenCalledWith(
+            `/admin/materials-v2?section=admin&panel=${expectedPanel}`,
+        ))
+        expect(screen.queryByText('Materialien')).not.toBeInTheDocument()
+        expect(screen.queryByText('Materialgruppen')).not.toBeInTheDocument()
+        expect(screen.queryByText('Materials Settings Component')).not.toBeInTheDocument()
     })
 
-    it('renders the groups settings tab with overview and own-groups sub navigation', async () => {
-        const GroupsStub = defineComponent({
-            props: ['embedded', 'embeddedFilter'],
-            template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter || "overview" }}</div>',
+    it('does not redirect ordinary teachers into Materials Admin', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: { is_auth: true, roles: ['teacher'] },
+                        },
+                    },
+                })],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=materials',
+                        query: { tab: 'materials', panel: 'material_groups' },
+                    },
+                    $router: { replace },
+                },
+                stubs: vuetifyStubs,
+            },
         })
+
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
+        expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('/admin/materials-v2'))
+    })
+
+    it.each([
+        [undefined, 'groups_overview'],
+        ['groups_overview', 'groups_overview'],
+        ['groups_own', 'groups_own'],
+        ['unknown', 'groups_overview'],
+    ])('redirects the former groups panel %s to the standalone page for super admins', async (panel, expectedPanel) => {
+        const replace = vi.fn()
 
         const { container } = render(Settings, {
             global: {
@@ -921,7 +956,7 @@ describe('Admin settings page', () => {
                             AdminAdminStore: {
                                 config: {
                                     is_auth: true,
-                                    roles: ['admin'],
+                                    roles: ['super_admin'],
                                     selected_school: { long_name: 'Testschule' },
                                 },
                             },
@@ -933,34 +968,106 @@ describe('Admin settings page', () => {
                         fullPath: '/admin/settings?tab=groups',
                         query: {
                             tab: 'groups',
+                            panel,
                         },
                     },
                     $router: {
-                        replace: () => {},
+                        replace,
                     },
                 },
                 stubs: {
                     ...vuetifyStubs,
                     AdminSectionHero: { template: '<div>Admin Hero</div>' },
-                    Groups: GroupsStub,
+                    Groups: { template: '<div>Groups content</div>' },
+                    ModuleStatusesCard: { template: '<div>Module settings</div>' },
                 },
             },
         })
 
-        await waitFor(() => {
-            expect(screen.getByText('Groups Component embedded overview')).toBeInTheDocument()
+        await waitFor(() => expect(replace).toHaveBeenCalledWith(`/admin/groups?panel=${expectedPanel}`))
+        expect(container.querySelector('.settings-groups-wrap')).toBeNull()
+        expect(screen.queryByText('Groups content')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Gruppen', exact: true })).not.toBeInTheDocument()
+        expect(screen.queryByText('Eigene Gruppen')).not.toBeInTheDocument()
+    })
+
+    it.each([
+        ['admin', '/admin/settings?tab=admin'],
+        ['materials_admin', '/admin/profile'],
+        ['materials_moderator', '/admin/profile'],
+    ])('keeps %s away from the standalone groups page through legacy links', async (role, expectedTarget) => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: {
+                                is_auth: true,
+                                roles: [role],
+                                capabilities: { groups: true },
+                            },
+                        },
+                    },
+                })],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=groups&panel=groups_own',
+                        query: { tab: 'groups', panel: 'groups_own' },
+                    },
+                    $router: { replace },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: true,
+                    Schoolyears: { template: '<div>Schoolyears settings</div>' },
+                    Groups: { template: '<div>Groups content</div>' },
+                },
+            },
         })
 
-        expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
-        expect(container.querySelector('.settings-subnav')).not.toBeNull()
-        expect(screen.getByText('Überblick')).toBeInTheDocument()
-        expect(screen.getByText('Eigene Gruppen')).toBeInTheDocument()
+        await waitFor(() => expect(replace).toHaveBeenCalledWith(expectedTarget))
+        expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('/admin/groups'))
+        expect(screen.queryByText('Groups content')).not.toBeInTheDocument()
+    })
 
-        await fireEvent.click(screen.getByText('Eigene Gruppen'))
-
-        await waitFor(() => {
-            expect(screen.getByText('Groups Component embedded own')).toBeInTheDocument()
+    it.each(['super_admin', 'admin'])('handles legacy groups links inside an already mounted settings page for %s', async (role) => {
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/admin/settings', component: Settings },
+                { path: '/admin/groups', component: { template: '<div>Standalone groups</div>' } },
+            ],
         })
+        await router.push('/admin/settings?tab=admin')
+        await router.isReady()
+
+        render({ template: '<router-view />' }, {
+            global: {
+                plugins: [router, createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: { is_auth: true, roles: [role], capabilities: { groups: true } },
+                        },
+                    },
+                })],
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: true,
+                    Schoolyears: { template: '<div>Schoolyears settings</div>' },
+                },
+            },
+        })
+
+        await waitFor(() => expect(screen.getByText('Schoolyears settings')).toBeInTheDocument())
+        await router.push('/admin/settings?tab=groups&panel=groups_own')
+
+        const expectedTarget = role === 'super_admin'
+            ? '/admin/groups?panel=groups_own'
+            : '/admin/settings?tab=admin'
+        await waitFor(() => expect(router.currentRoute.value.fullPath).toBe(expectedTarget))
+        expect(screen.queryByText('Standalone groups') !== null).toBe(role === 'super_admin')
     })
 
     it('redirects the removed students timetables settings URL for students timetables moderators', () => {
@@ -1010,7 +1117,20 @@ describe('Admin settings page', () => {
         expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
-    it('renders the restaurant settings tab with overtaken settings sub navigation', async () => {
+    it.each([
+        [undefined, 'general'],
+        ['general', 'general'],
+        ['categories', 'categories'],
+        ['ingredient-icons', 'ingredient-icons'],
+        ['free-days', 'free-days'],
+        ['eating-times', 'eating-times'],
+        ['users', 'users'],
+        ['sepa', 'sepa'],
+        ['online', 'online'],
+        ['invalid', 'general'],
+        [['users', 'online'], 'general'],
+    ])('redirects the former restaurant settings panel %s to Restaurant Admin', async (panel, expectedPanel) => {
+        const replace = vi.fn()
         const { container } = render(Settings, {
             global: {
                 plugins: [
@@ -1035,11 +1155,11 @@ describe('Admin settings page', () => {
                         fullPath: '/admin/settings?tab=restaurant&panel=users',
                         query: {
                             tab: 'restaurant',
-                            panel: 'users',
+                            panel,
                         },
                     },
                     $router: {
-                        replace: () => {},
+                        replace,
                     },
                 },
                 stubs: {
@@ -1053,19 +1173,16 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(container.querySelector('.settings-subnav')).not.toBeNull()
-        expect(screen.getByText('Allgemein')).toBeInTheDocument()
-        expect(screen.getByText('Kategorien')).toBeInTheDocument()
-        expect(screen.getByText('Zutaten-Symbole')).toBeInTheDocument()
-        expect(screen.getByText('Freie Tage')).toBeInTheDocument()
-        expect(screen.getByText('Speisezeiten')).toBeInTheDocument()
-        expect(screen.getByText('Benutzer')).toBeInTheDocument()
-        expect(screen.getByText('Online')).toBeInTheDocument()
-        expect(screen.getByText('RestaurantSettings embedded users')).toBeInTheDocument()
-        expect(container.querySelector('.settings-restaurant-wrap')).not.toBeNull()
+        await waitFor(() => expect(replace).toHaveBeenCalledWith(`/admin/restaurant/settings?panel=${expectedPanel}`))
+        expect(container.querySelector('.settings-subnav')).toBeNull()
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
+        expect(screen.queryByText(/RestaurantSettings embedded/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('navigation', { name: 'Restaurant Einstellungen' })).not.toBeInTheDocument()
+        expect(container.querySelector('.settings-restaurant-wrap')).toBeNull()
     })
 
-    it('allows lunch_admin to open the restaurant settings tab directly', () => {
+    it('redirects lunch_admin to the restaurant administration from its former settings tab', () => {
+        const replace = vi.fn()
         render(Settings, {
             global: {
                 plugins: [
@@ -1093,7 +1210,7 @@ describe('Admin settings page', () => {
                         },
                     },
                     $router: {
-                        replace: vi.fn(),
+                        replace,
                     },
                 },
                 stubs: {
@@ -1108,12 +1225,85 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.getByText('Restaurant')).toBeInTheDocument()
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
         expect(screen.queryByText('Profil')).not.toBeInTheDocument()
         expect(screen.queryByText('Nachhilfe')).not.toBeInTheDocument()
         expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
-        expect(screen.getByText('RestaurantSettings embedded general')).toBeInTheDocument()
-        expect(screen.getByText('lunch_admin')).toBeInTheDocument()
+        expect(screen.queryByText('RestaurantSettings embedded general')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/restaurant/settings?panel=general')
+    })
+
+    it.each([true, false])('handles a legacy restaurant link from an already mounted settings page with access %s', async (restaurantAccess) => {
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/admin/settings', component: Settings },
+                { path: '/admin/restaurant/settings', component: { template: '<div>Restaurant administration</div>' } },
+            ],
+        })
+        await router.push('/admin/settings?tab=admin')
+        await router.isReady()
+
+        render({ template: '<router-view />' }, {
+            global: {
+                plugins: [router, createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: {
+                                is_auth: true,
+                                roles: ['admin'],
+                                capabilities: { restaurant: restaurantAccess },
+                            },
+                        },
+                    },
+                })],
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: true,
+                    Schoolyears: { template: '<div>Schoolyears settings</div>' },
+                },
+            },
+        })
+
+        await waitFor(() => expect(screen.getByText('Schoolyears settings')).toBeInTheDocument())
+        await router.push('/admin/settings?tab=restaurant&panel=categories')
+
+        const expectedTarget = restaurantAccess
+            ? '/admin/restaurant/settings?panel=categories'
+            : '/admin/settings?tab=admin'
+        await waitFor(() => expect(router.currentRoute.value.fullPath).toBe(expectedTarget))
+        if (restaurantAccess) {
+            expect(screen.getByText('Restaurant administration')).toBeInTheDocument()
+        } else {
+            expect(screen.queryByText('Restaurant administration')).not.toBeInTheDocument()
+        }
+    })
+
+    it('falls back to profile when lunch_admin opens global settings without a legacy restaurant link', () => {
+        const replace = vi.fn()
+        render(Settings, {
+            global: {
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: {
+                                is_auth: true,
+                                roles: ['lunch_admin'],
+                                capabilities: { restaurant: true },
+                            },
+                        },
+                    },
+                })],
+                mocks: {
+                    $route: { fullPath: '/admin/settings', query: {} },
+                    $router: { replace },
+                },
+                stubs: { ...vuetifyStubs, AdminSectionHero: true },
+            },
+        })
+
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
     })
 
     it('redirects lunch_admin away from restaurant settings when the restaurant capability is disabled', () => {
@@ -1308,9 +1498,9 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.queryByText('Super-Admin')).not.toBeInTheDocument()
-        expect(container.querySelector('.settings-subnav')).not.toBeNull()
-        expect(screen.getAllByText('Unterricht').length).toBeGreaterThan(0)
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
+        expect(container.querySelector('.settings-subnav')).toBeNull()
+        expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('redirects unauthorized users away from the restaurant settings tab', () => {
@@ -1354,7 +1544,7 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
+        expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
     it('hides the register settings tab when the register capability is disabled', () => {

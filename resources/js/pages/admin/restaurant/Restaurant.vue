@@ -10,41 +10,105 @@
             secondary-color="#b45309"
             right-orb-color="#fcd34d" />
 
-        <v-sheet rounded="xl" class="restaurant-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
-            <div class="restaurant-nav__buttons">
+        <v-sheet v-if="main_action !== 'settings'" class="restaurant-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
+            <v-btn-toggle
+                :model-value="main_action"
+                mandatory
+                divided
+                color="primary"
+                class="restaurant-nav__buttons"
+                :disabled="isNavigationLocked"
+                @update:model-value="handleNavigation">
                 <v-btn
                     v-for="item in visibleNavigationItems"
                     :key="item.key"
                     :data-testid="`restaurant-nav-${item.key}`"
-                    rounded="xl"
-                    :color="main_action === item.key ? 'primary' : 'secondary'"
-                    :variant="main_action === item.key ? 'flat' : 'tonal'"
+                    :value="item.key"
+                    :prepend-icon="item.icon"
+                    :aria-pressed="main_action === item.key"
                     class="restaurant-nav__button"
-                    :disabled="isNavigationLocked"
-                    @click="handleNavigation(item.key)">
-                    <v-icon size="18" :icon="item.icon" class="mr-2" />
+                    :disabled="isNavigationLocked">
                     <span class="restaurant-nav__button-copy">
                         <span class="restaurant-nav__button-title">{{ item.label }}</span>
                         <span class="restaurant-nav__button-meta">{{ item.meta }}</span>
                     </span>
                 </v-btn>
-            </div>
-            <div class="restaurant-nav__actions">
+            </v-btn-toggle>
+            <v-btn-toggle
+                :model-value="main_action"
+                mandatory
+                divided
+                color="primary"
+                class="restaurant-nav__actions"
+                :disabled="isNavigationLocked">
                 <v-btn
-                    rounded="xl"
-                    icon
-                    size="small"
-                    variant="text"
-                    color="grey"
-                    class="restaurant-nav__settings-btn"
-                    title="Restaurant-Einstellungen"
-                    @click="$router.push('/admin/settings?tab=restaurant')">
-                    <v-icon size="20">mdi-cog-outline</v-icon>
+                    value="settings"
+                    prepend-icon="mdi-cog-outline"
+                    :aria-pressed="main_action === 'settings'"
+                    class="restaurant-nav__button"
+                    data-testid="restaurant-admin"
+                    :disabled="isNavigationLocked"
+                    @click="handleNavigation('settings')">
+                    <span class="restaurant-nav__button-copy">
+                        <span class="restaurant-nav__button-title">Admin</span>
+                        <span class="restaurant-nav__button-meta">Einstellungen</span>
+                    </span>
                 </v-btn>
-            </div>
+            </v-btn-toggle>
         </v-sheet>
 
-        <div class="restaurant-content">
+        <Settings v-if="main_action === 'settings'" class="restaurant-settings pa-0">
+            <template #navigation="{ selectedPanel, activatePanel, isPanelNavigationDisabled, disabled }">
+                <v-sheet class="restaurant-nav mb-2" data-testid="restaurant-settings-nav">
+                    <v-btn-toggle
+                        :model-value="selectedPanel"
+                        mandatory
+                        divided
+                        color="primary"
+                        class="restaurant-nav__buttons"
+                        :disabled="isNavigationLocked"
+                        @update:model-value="activatePanel">
+                        <v-btn
+                            v-for="item in settingsNavigationItems"
+                            :key="item.key"
+                            :data-testid="`restaurant-settings-${item.key}`"
+                            :value="item.key"
+                            :prepend-icon="item.icon"
+                            :aria-pressed="selectedPanel === item.key"
+                            class="restaurant-nav__button"
+                            :disabled="isNavigationLocked || isPanelNavigationDisabled(item.key)">
+                            <span class="restaurant-nav__button-copy">
+                                <span class="restaurant-nav__button-title">{{ item.label }}</span>
+                                <span class="restaurant-nav__button-meta">{{ item.meta }}</span>
+                            </span>
+                        </v-btn>
+                    </v-btn-toggle>
+                    <v-btn-toggle
+                        :model-value="main_action"
+                        mandatory
+                        divided
+                        color="primary"
+                        class="restaurant-nav__actions"
+                        :disabled="disabled || isNavigationLocked">
+                        <v-btn
+                            value="overview"
+                            prepend-icon="mdi-silverware-fork-knife"
+                            :aria-pressed="false"
+                            class="restaurant-nav__button"
+                            data-testid="restaurant-back"
+                            :disabled="disabled || isNavigationLocked"
+                            @click="handleNavigation('overview')">
+                            <span class="restaurant-nav__button-copy">
+                                <span class="restaurant-nav__button-title">Restaurant</span>
+                                <span class="restaurant-nav__button-meta">Überblick</span>
+                            </span>
+                        </v-btn>
+                    </v-btn-toggle>
+                </v-sheet>
+            </template>
+        </Settings>
+
+        <div v-else class="restaurant-content">
             <v-row class="w-100 ma-0" dense>
                 <Overview v-if="main_action === 'overview'" />
                 <Foods v-if="main_action === 'foods'" />
@@ -54,7 +118,6 @@
                 <Users v-if="main_action === 'users'" />
                 <RestaurantSepa v-if="main_action === 'sepa'" />
                 <CdgymLegacy v-if="main_action === 'cdgym' && isCdgymSchool" />
-                <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
     </v-container>
@@ -249,6 +312,18 @@ export default {
         allowedSectionKeys() {
             return [...this.visibleNavigationItems.map((item) => item.key), 'settings']
         },
+        settingsNavigationItems() {
+            return [
+                { key: 'general', label: 'Allgemein', meta: 'Schulweite Einstellungen', icon: 'mdi-tune-variant' },
+                { key: 'categories', label: 'Kategorien', meta: 'Speisen strukturieren', icon: 'mdi-shape-outline' },
+                { key: 'ingredient-icons', label: 'Zutaten-Symbole', meta: 'Kennzeichnungen', icon: 'mdi-image-multiple-outline' },
+                { key: 'free-days', label: 'Freie Tage', meta: 'Schließzeiten', icon: 'mdi-calendar-remove-outline' },
+                { key: 'eating-times', label: 'Speisezeiten', meta: 'Ausgabe planen', icon: 'mdi-clock-outline' },
+                { key: 'users', label: 'Benutzer', meta: 'Mittagskonten', icon: 'mdi-account-group-outline' },
+                { key: 'sepa', label: 'SEPA', meta: 'Lastschriftmandat', icon: 'mdi-bank-transfer' },
+                { key: 'online', label: 'Online', meta: 'Bestellung & Sichtbarkeit', icon: 'mdi-web' },
+            ]
+        },
     },
 
     watch: {
@@ -310,6 +385,7 @@ export default {
 }
 
 .restaurant-nav {
+    border-radius: 16px;
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(30, 41, 59, 0.8);
     padding: 10px;
@@ -320,10 +396,11 @@ export default {
 }
 
 .restaurant-nav__buttons {
-    display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    flex: 1;
+    row-gap: 6px;
+    height: auto !important;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .restaurant-nav__actions {
@@ -331,41 +408,37 @@ export default {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
-}
-
-.restaurant-nav__settings-btn {
-    flex-shrink: 0;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-}
-
-.restaurant-nav__settings-btn:hover {
-    opacity: 1;
+    height: auto !important;
 }
 
 .restaurant-nav__button {
-    min-height: 54px;
-    padding: 0 14px;
+    min-height: 56px !important;
+    height: auto !important;
     text-transform: none;
     letter-spacing: 0;
-    justify-content: flex-start;
+    font-weight: 650;
 }
 
 .restaurant-nav__button-copy {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
-    line-height: 1.2;
+    line-height: 1.15;
+    gap: 4px;
 }
 
 .restaurant-nav__button-title {
     font-weight: 650;
-    font-size: 0.92rem;
 }
 
 .restaurant-nav__button-meta {
-    font-size: 0.72rem;
-    opacity: 0.85;
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 2px 8px;
 }
 
 .restaurant-nav.is-locked {
@@ -377,9 +450,35 @@ export default {
     max-width: 1240px;
 }
 
+.restaurant-settings :deep(> .v-row) {
+    max-width: 1240px;
+    margin: 0;
+}
+
 @media (max-width: 960px) {
+    .restaurant-nav__buttons {
+        flex-basis: 100%;
+    }
+
     .restaurant-nav__button {
-        flex: 1 1 calc(50% - 8px);
+        flex: 1 1 220px;
+        min-width: 0;
+        max-width: 100%;
+        justify-content: start;
+        padding-block: 8px;
+    }
+
+    .restaurant-nav__button :deep(.v-btn__content) {
+        min-width: 0;
+        white-space: normal;
+        text-align: left;
+    }
+
+    .restaurant-nav__button-copy,
+    .restaurant-nav__button-meta {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
     }
 
     .restaurant-nav__actions {

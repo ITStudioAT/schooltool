@@ -53,8 +53,11 @@ describe('admin route access metadata', () => {
         expect(resolveAdminRouteAccess('/admin/unknown')).toBeNull()
     })
 
-    it('treats the removed groups dashboard route as unknown', () => {
-        expect(resolveAdminRouteAccess('/admin/groups')).toBeNull()
+    it('protects the standalone groups page with its dedicated capability', () => {
+        expect(resolveAdminRouteAccess('/admin/groups')).toEqual({
+            public: false,
+            capability: 'groups',
+        })
     })
 
     it('treats the legacy super admin route as a redirect without capability guard', () => {

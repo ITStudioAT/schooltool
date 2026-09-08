@@ -1,12 +1,243 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { createTestingPinia } from '@pinia/testing'
+import { flushPromises, mount } from '@vue/test-utils'
+import axios from 'axios'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import Groups from '@/pages/admin/groups/Groups.vue'
+
+function deferredResponse() {
+    let resolve: (value: any) => void
+    let reject: (reason: Error) => void
+    const promise = new Promise<any>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise
+        reject = rejectPromise
+    })
+
+    return { promise, resolve: resolve!, reject: reject! }
+}
+
+function mountGroups(embedded = false) {
+    return mount(Groups, {
+        props: { embedded },
+        global: {
+            plugins: [createTestingPinia({
+                createSpy: vi.fn,
+                initialState: {
+                    AdminAdminStore: { config: { roles: ['super_admin'] }, is_loading: 0 },
+                },
+            })],
+            stubs: {
+                AdminSectionHero: {
+                    props: ['chips'],
+                    template: '<div><span v-for="chip in chips" :key="chip.key">{{ chip.text }}</span></div>',
+                },
+                'v-container': { template: '<div><slot /></div>' },
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                'v-btn': { template: '<button><slot /></button>' },
+                'v-expansion-panels': { template: '<div><slot /></div>' },
+                'v-expansion-panel': { template: '<div><slot /></div>' },
+                'v-expansion-panel-title': { template: '<div><slot /></div>' },
+                'v-expansion-panel-text': { template: '<div><slot /></div>' },
+                'v-checkbox-btn': true,
+                'v-pagination': true,
+                'v-textarea': true,
+            },
+        },
+    })
+}
+
+describe('Groups loading state', () => {
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    it.each([false, true])('hides empty groups and counts until a delayed response is complete, embedded: %s', async (embedded) => {
+        const response = deferredResponse()
+        const get = vi.spyOn(axios, 'get').mockReturnValueOnce(response.promise)
+        const wrapper = mountGroups(embedded)
+
+        try {
+            expect(get).toHaveBeenCalledWith('/api/admin/groups')
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+            expect(wrapper.find('.super-admin-overview-shell').exists()).toBe(false)
+            expect(wrapper.text()).not.toContain('0 Gruppen')
+            expect(wrapper.text()).not.toContain('Keine Gruppen vorhanden.')
+
+            await flushPromises()
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+
+            response.resolve({ data: { data: [{ id: 1, type: 'school', name: 'Testgruppe', members_count: 3 }] } })
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            if (!embedded) {
+                expect(wrapper.text()).toContain('1 Gruppen')
+            }
+            expect(wrapper.text()).toContain('Testgruppe')
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
+    it.each([false, true])('keeps loading through pending synchronization until the final poll, failure: %s', async (fails) => {
+        const initialResponse = deferredResponse()
+        const finalResponse = deferredResponse()
+        vi.spyOn(axios, 'get')
+            .mockReturnValueOnce(initialResponse.promise)
+            .mockReturnValueOnce(finalResponse.promise)
+        const wrapper = mountGroups()
+
+        try {
+            initialResponse.resolve({ data: { data: [], meta: { sync: { in_progress: true } } } })
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+            expect(wrapper.text()).not.toContain('0 Gruppen')
+            ;(wrapper.vm as any).clearSyncStatusReload()
+            const loading = (wrapper.vm as any).loadGroups()
+            await flushPromises()
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+
+            if (fails) {
+                finalResponse.reject(new Error('Unable to load groups'))
+            } else {
+                finalResponse.resolve({ data: { data: [{ id: 1, type: 'own', name: 'Fertige Gruppe' }] } })
+            }
+            await loading
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            expect(wrapper.find('[data-testid="groups-load-error"]').exists()).toBe(fails)
+            if (fails) {
+                expect(wrapper.text()).not.toContain('0 Gruppen')
+                expect(wrapper.find('.super-admin-overview-shell').exists()).toBe(false)
+                expect((wrapper.vm as any).syncReloadTimer).toBeNull()
+            } else {
+                expect(wrapper.text()).toContain('Fertige Gruppe')
+            }
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
+    it.each([false, true])('shows an available snapshot while synchronization and the next request continue, failure: %s', async (fails) => {
+        const response = deferredResponse()
+        const refreshResponse = deferredResponse()
+        vi.spyOn(axios, 'get').mockReturnValueOnce(response.promise).mockReturnValueOnce(refreshResponse.promise)
+        const wrapper = mountGroups()
+
+        try {
+            response.resolve({
+                data: {
+                    data: [{ id: 1, type: 'school', name: 'Vorhandene Gruppe', members_count: 12 }],
+                    meta: { sync: { in_progress: true } },
+                },
+            })
+            await flushPromises()
+
+            expect(wrapper.find('.super-admin-overview-shell').exists()).toBe(true)
+            expect(wrapper.text()).toContain('Vorhandene Gruppe')
+            expect(wrapper.text()).toContain('1 Gruppen')
+            expect(wrapper.get('[data-testid="groups-loading"]').text()).toContain('Die angezeigten Werte können sich noch ändern.')
+
+            ;(wrapper.vm as any).clearSyncStatusReload()
+            const refresh = (wrapper.vm as any).loadGroups()
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+            expect(wrapper.text()).toContain('Vorhandene Gruppe')
+            expect(wrapper.text()).toContain('1 Gruppen')
+
+            if (fails) {
+                refreshResponse.reject(new Error('Refresh failed'))
+            } else {
+                refreshResponse.resolve({ data: { data: [{ id: 2, type: 'school', name: 'Aktualisierte Gruppe' }] } })
+            }
+            await refresh
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            expect(wrapper.find('.super-admin-overview-shell').exists()).toBe(true)
+            expect(wrapper.text()).toContain(fails ? 'Vorhandene Gruppe' : 'Aktualisierte Gruppe')
+            expect(wrapper.text()).toContain('1 Gruppen')
+            if (fails) {
+                expect(wrapper.get('[data-testid="groups-load-error"]').text()).toContain('Der zuletzt geladene Stand wird angezeigt.')
+                expect(wrapper.text()).toContain('Erneut versuchen')
+                expect((wrapper.vm as any).syncReloadTimer).toBeNull()
+            } else {
+                expect(wrapper.find('[data-testid="groups-load-error"]').exists()).toBe(false)
+                expect(wrapper.text()).not.toContain('Vorhandene Gruppe')
+            }
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
+    it('keeps a snapshot through an empty synchronization response but accepts a completed empty result', async () => {
+        vi.spyOn(axios, 'get')
+            .mockResolvedValueOnce({ data: { data: [{ id: 1, type: 'school', name: 'Vorhandene Gruppe' }] } })
+            .mockResolvedValueOnce({ data: { data: [], meta: { sync: { in_progress: true } } } })
+            .mockResolvedValueOnce({ data: { data: [] } })
+        const wrapper = mountGroups()
+
+        try {
+            await flushPromises()
+            await (wrapper.vm as any).loadGroups()
+            await flushPromises()
+
+            expect(wrapper.text()).toContain('Vorhandene Gruppe')
+            expect(wrapper.text()).toContain('1 Gruppen')
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+
+            ;(wrapper.vm as any).clearSyncStatusReload()
+            await (wrapper.vm as any).loadGroups()
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            expect(wrapper.text()).not.toContain('Vorhandene Gruppe')
+            expect(wrapper.text()).toContain('0 Gruppen')
+            expect(wrapper.text()).toContain('Keine Gruppen vorhanden.')
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
+    it('ends loading on an initial failure and retries without showing empty results', async () => {
+        const response = deferredResponse()
+        const retryResponse = deferredResponse()
+        vi.spyOn(axios, 'get').mockReturnValueOnce(response.promise).mockReturnValueOnce(retryResponse.promise)
+        const wrapper = mountGroups()
+
+        try {
+            response.reject(new Error('Unable to load groups'))
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            expect(wrapper.find('[data-testid="groups-load-error"]').exists()).toBe(true)
+            expect(wrapper.text()).not.toContain('0 Gruppen')
+
+            await wrapper.get('[data-testid="groups-load-error"] button').trigger('click')
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(true)
+            expect(wrapper.find('[data-testid="groups-load-error"]').exists()).toBe(false)
+
+            retryResponse.resolve({ data: { data: [] } })
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="groups-loading"]').exists()).toBe(false)
+            expect(wrapper.text()).toContain('0 Gruppen')
+            expect(wrapper.text()).toContain('Keine Gruppen vorhanden.')
+        } finally {
+            wrapper.unmount()
+        }
+    })
+})
 
 describe('Groups page header', () => {
     it('builds header chips from school and groups count', () => {
         const ctx = {
             selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',
             groups: [{ id: 1 }, { id: 2 }, { id: 3 }],
+            hasGroupSnapshot: true,
         }
 
         const chips = (Groups as any).computed.headerChips.call(ctx)

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import Restaurant from '@/pages/admin/restaurant/Restaurant.vue'
+import RestaurantSettings from '@/pages/admin/restaurant/components/Settings.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
@@ -21,12 +24,168 @@ vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
     useRestaurantStore: vi.fn(),
 }))
 
+function mountRestaurant(section = 'overview', panel?: string) {
+    const route = reactive({ params: { section }, query: panel ? { panel } : {} })
+    const routerReplace = vi.fn(async (location) => {
+        if (location.path) {
+            route.params.section = location.path.split('/')[3] || 'overview'
+        }
+        route.query = location.query || {}
+    })
+    const adminStore = reactive({ config: { capabilities: { restaurant: true } }, action: '', action_2: '' })
+    vi.mocked(useAdminStore).mockReturnValue(adminStore as never)
+    vi.mocked(useFoodStore).mockReturnValue({ index: vi.fn().mockResolvedValue(true) } as never)
+    vi.mocked(useMenuStore).mockReturnValue({ index: vi.fn().mockResolvedValue(true) } as never)
+    vi.mocked(useRestaurantStore).mockReturnValue({
+        settings: {},
+        categories: [],
+        ingredientIcons: [],
+        generalSettings: {},
+        canManageGeneralSettings: true,
+        loadSettings: vi.fn().mockResolvedValue(true),
+    } as never)
+
+    const wrapper = mount({
+        ...Restaurant,
+        components: { ...Restaurant.components, Settings: RestaurantSettings },
+    }, {
+        global: {
+            mocks: { $route: route, $router: { replace: routerReplace } },
+            stubs: {
+                AdminSectionHero: true,
+                Overview: { template: '<div data-testid="restaurant-overview">Überblick Inhalt</div>' },
+                Foods: true,
+                Menus: true,
+                MenuPlans: true,
+                Reports: true,
+                RestaurantSepa: true,
+                CdgymLegacy: true,
+                FreeDays: { template: '<div data-testid="settings-free-days">Freie Tage Inhalt</div>' },
+                EatingTimes: { template: '<div data-testid="settings-eating-times">Speisezeiten Inhalt</div>' },
+                Users: { template: '<div data-testid="settings-users">Benutzer Inhalt</div>' },
+                Sepa: { template: '<div data-testid="settings-sepa">SEPA Inhalt</div>' },
+                OnlineSettings: { template: '<div data-testid="settings-online">Online Inhalt</div>' },
+                ItsGridBox: { props: ['title'], template: '<div><h2>{{ title }}</h2><slot name="header-actions" /><slot /></div>' },
+                ItsRichTextEditor: true,
+                FilePond: true,
+                'v-container': { template: '<div><slot /></div>' },
+                'v-sheet': { template: '<div><slot /></div>' },
+                'v-btn': { template: '<button v-bind="$attrs"><slot /></button>' },
+                'v-btn-toggle': {
+                    emits: ['update:modelValue'],
+                    template: '<div @click="$emit(\'update:modelValue\', $event.target.closest(\'button\')?.value)"><slot /></div>',
+                },
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                'v-switch': true,
+                'v-checkbox': true,
+                'v-avatar': true,
+                'v-img': true,
+            },
+        },
+    })
+
+    return { wrapper, route, routerReplace, adminStore }
+}
+
 describe('Restaurant page navigation', () => {
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useFoodStore).mockReset()
         vi.mocked(useMenuStore).mockReset()
         vi.mocked(useRestaurantStore).mockReset()
+    })
+
+    it('replaces the restaurant menu with all settings panels and returns to the restaurant', async () => {
+        const { wrapper, route, routerReplace } = mountRestaurant()
+        await flushPromises()
+
+        const adminButton = wrapper.get('[data-testid="restaurant-admin"]')
+        expect(adminButton.get('.restaurant-nav__button-title').text()).toBe('Admin')
+        expect(adminButton.get('.restaurant-nav__button-meta').text()).toBe('Einstellungen')
+        expect(adminButton.classes()).toEqual(wrapper.get('[data-testid="restaurant-nav-menus"]').classes())
+        expect(adminButton.attributes('aria-pressed')).toBe('false')
+        expect(adminButton.attributes('size')).toBeUndefined()
+        await wrapper.get('[data-testid="restaurant-admin"]').trigger('click')
+        await flushPromises()
+
+        expect(route.params.section).toBe('settings')
+        expect(wrapper.find('[data-testid="restaurant-nav-foods"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="restaurant-settings-nav"]').exists()).toBe(true)
+        expect(wrapper.find('.restaurant-content').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="restaurant-overview"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="restaurant-back"] .restaurant-nav__button-title').text()).toBe('Restaurant')
+        expect(wrapper.get('h2').text()).toBe('Allgemein')
+
+        const panels = [
+            ['Allgemein', 'general', 'h2', 'Allgemein'],
+            ['Kategorien', 'categories', 'h2', 'Kategorien'],
+            ['Zutaten-Symbole', 'ingredient-icons', 'h2', 'Zutaten-Symbole'],
+            ['Freie Tage', 'free-days', '[data-testid="settings-free-days"]', 'Freie Tage Inhalt'],
+            ['Speisezeiten', 'eating-times', '[data-testid="settings-eating-times"]', 'Speisezeiten Inhalt'],
+            ['Benutzer', 'users', '[data-testid="settings-users"]', 'Benutzer Inhalt'],
+            ['SEPA', 'sepa', '[data-testid="settings-sepa"]', 'SEPA Inhalt'],
+            ['Online', 'online', '[data-testid="settings-online"]', 'Online Inhalt'],
+        ]
+        expect(wrapper.findAll('[data-testid="restaurant-settings-nav"] .restaurant-nav__buttons .restaurant-nav__button-title').map((title) => title.text())).toEqual(panels.map(([label]) => label))
+
+        for (const [, panel, selector, content] of panels) {
+            await wrapper.get(`[data-testid="restaurant-settings-${panel}"]`).trigger('click')
+            await flushPromises()
+
+            expect(route.params.section).toBe('settings')
+            expect(route.query.panel).toBe(panel)
+            expect(wrapper.get(selector).text()).toBe(content)
+            expect(wrapper.get(`[data-testid="restaurant-settings-${panel}"]`).attributes('aria-pressed')).toBe('true')
+            expect(wrapper.findAll('[data-testid="restaurant-settings-nav"] [aria-pressed="true"]')).toHaveLength(1)
+        }
+
+        await wrapper.get('[data-testid="restaurant-back"]').trigger('click')
+        await flushPromises()
+
+        expect(route.params.section).toBe('overview')
+        expect(route.query).toEqual({})
+        expect(wrapper.find('[data-testid="restaurant-settings-nav"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="restaurant-overview"]').text()).toBe('Überblick Inhalt')
+        expect(wrapper.find('[data-testid="restaurant-nav-foods"]').exists()).toBe(true)
+        expect(routerReplace.mock.calls.every(([location]) => !location.path || location.path.startsWith('/admin/restaurant'))).toBe(true)
+        wrapper.unmount()
+    })
+
+    it('restores the admin menu and selected settings content from the restaurant route', async () => {
+        const { wrapper } = mountRestaurant('settings', 'online')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="restaurant-nav-foods"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="settings-online"]').text()).toBe('Online Inhalt')
+        expect(wrapper.get('[data-testid="restaurant-back"] .restaurant-nav__button-title').text()).toBe('Restaurant')
+        wrapper.unmount()
+    })
+
+    it('locks Admin during restaurant actions and Restaurant during general settings editing', async () => {
+        const { wrapper, adminStore, route } = mountRestaurant()
+        await flushPromises()
+
+        adminStore.action = 'edit'
+        await wrapper.vm.$nextTick()
+        expect(wrapper.get('[data-testid="restaurant-admin"]').attributes('disabled')).toBeDefined()
+        await wrapper.get('[data-testid="restaurant-admin"]').trigger('click')
+        expect(route.params.section).toBe('overview')
+
+        adminStore.action = ''
+        await wrapper.vm.$nextTick()
+        await wrapper.get('[data-testid="restaurant-admin"]').trigger('click')
+        await flushPromises()
+        await wrapper.findAll('button').find((button) => button.text() === 'Bearbeiten')!.trigger('click')
+        expect(wrapper.get('[data-testid="restaurant-back"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.get('[data-testid="restaurant-settings-categories"]').attributes('disabled')).toBeDefined()
+        await wrapper.get('[data-testid="restaurant-settings-categories"]').trigger('click')
+        expect(route.query.panel).not.toBe('categories')
+        await wrapper.get('[data-testid="restaurant-back"]').trigger('click')
+        expect(route.params.section).toBe('settings')
+
+        await wrapper.get('[data-testid="general-settings-cancel-icon"]').trigger('click')
+        expect(wrapper.get('[data-testid="restaurant-back"]').attributes('disabled')).toBeUndefined()
+        wrapper.unmount()
     })
 
     it('loads settings, foods, and menus on beforeMount', async () => {
@@ -213,7 +372,7 @@ describe('Restaurant page navigation', () => {
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/cdgym' })
     })
 
-    it('does not switch sections when locked', () => {
+    it.each(['foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa', 'cdgym', 'settings'])('does not switch to %s when locked', (section) => {
         const routerReplace = vi.fn()
         const ctx = {
             isNavigationLocked: true,
@@ -224,7 +383,7 @@ describe('Restaurant page navigation', () => {
             },
         }
 
-        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'settings')
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, section)
 
         expect(ctx.main_action).toBe('overview')
         expect(routerReplace).not.toHaveBeenCalled()

@@ -17,27 +17,79 @@
 
         <TeachingDueReminders />
 
-        <v-sheet v-if="!selected_course" rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
-            <div class="teaching-nav__buttons">
+        <v-sheet v-if="!selected_course && main_action !== 'administration'" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
+            <v-btn-toggle
+                :model-value="main_action"
+                mandatory
+                divided
+                color="primary"
+                class="teaching-nav__buttons"
+                :disabled="isNavigationLocked"
+                @update:model-value="handleNavigation">
                 <v-btn
                     v-for="item in visibleNavigationItems"
                     :key="item.key"
                     :data-testid="`teaching-nav-${item.key}`"
-                    rounded="xl"
-                    :color="main_action === item.key ? 'primary' : 'secondary'"
-                    :variant="main_action === item.key ? 'flat' : 'tonal'"
+                    :value="item.key"
+                    :prepend-icon="item.icon"
+                    :aria-pressed="main_action === item.key"
                     class="teaching-nav__button"
-                    :class="main_action === item.key ? 'teaching-nav__button--active' : 'teaching-nav__button--idle'"
-                    :disabled="isNavigationLocked"
-                    @click="handleNavigation(item.key)">
-                    <v-icon size="18" :icon="item.icon" class="mr-2" />
+                    :class="{ 'teaching-nav__button--admin': item.key === 'administration' }"
+                    :disabled="isNavigationLocked">
                     <span class="teaching-nav__button-copy">
                         <span class="teaching-nav__button-title">{{ item.label }}</span>
                         <span class="teaching-nav__button-meta">{{ item.meta }}</span>
                     </span>
                 </v-btn>
-            </div>
+            </v-btn-toggle>
         </v-sheet>
+
+        <TeacherAdministration
+            v-if="main_action === 'administration' && canManageTeachingAdministration"
+            :navigation-locked="isNavigationLocked">
+            <template #navigation="{ panels, selectedPanel, activatePanel, activeSchoolyearLabel, hasMissingSchoolHours }">
+                <v-sheet class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }" data-testid="teaching-administration-nav">
+                    <v-btn-toggle
+                        :model-value="selectedPanel"
+                        mandatory
+                        divided
+                        color="primary"
+                        class="teaching-nav__buttons"
+                        :disabled="isNavigationLocked"
+                        @update:model-value="activatePanel">
+                        <v-btn
+                            v-for="panel in panels"
+                            :key="panel.id"
+                            :value="panel.id"
+                            :prepend-icon="panel.icon"
+                            :aria-pressed="selectedPanel === panel.id"
+                            :data-testid="`teaching-administration-${panel.id}`"
+                            :disabled="isNavigationLocked"
+                            class="teaching-nav__button">
+                            <span class="teaching-nav__button-copy">
+                                <span class="teaching-nav__button-title">{{ panel.label }}</span>
+                                <span class="teaching-nav__button-meta">{{ activeSchoolyearLabel }}</span>
+                            </span>
+                            <span v-if="panel.id === 'school_hours' && hasMissingSchoolHours" class="ml-2 text-error font-weight-black" aria-label="Keine Schulstunden vorhanden">!</span>
+                        </v-btn>
+                    </v-btn-toggle>
+                    <v-btn-toggle :model-value="main_action" mandatory color="primary" class="teaching-nav__return" :disabled="isNavigationLocked">
+                        <v-btn
+                            value="overview"
+                            prepend-icon="mdi-school-outline"
+                            class="teaching-nav__button"
+                            data-testid="teaching-administration-back"
+                            :disabled="isNavigationLocked"
+                            @click="handleNavigation('overview')">
+                            <span class="teaching-nav__button-copy">
+                                <span class="teaching-nav__button-title">Unterricht</span>
+                                <span class="teaching-nav__button-meta">Stundenplan &amp; Kurse</span>
+                            </span>
+                        </v-btn>
+                    </v-btn-toggle>
+                </v-sheet>
+            </template>
+        </TeacherAdministration>
 
         <v-sheet
             v-if="main_action === 'overview'"
@@ -125,10 +177,9 @@
             </v-card>
         </v-dialog>
 
-        <v-row class="w-100 teaching-content" dense>
+        <v-row v-if="main_action !== 'administration'" class="w-100 teaching-content" dense>
             <Overview v-if="main_action === 'overview'" />
             <Settings v-if="main_action === 'settings'" :key="`settings-${settings_view_key}`" />
-            <TeacherAdministration v-if="main_action === 'administration' && canManageTeachingAdministration" />
             <Admin v-if="main_action === 'admin'" />
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
@@ -575,7 +626,7 @@ export default {
                 {
                     key: 'administration',
                     label: 'Admin',
-                    meta: 'Lehrer',
+                    meta: 'Lehrer, Import & Schulzeiten',
                     icon: 'mdi-shield-account-outline',
                     visible: this.canManageTeachingAdministration,
                 },
@@ -860,9 +911,9 @@ export default {
 }
 
 .teaching-nav {
-    border: 1px solid rgba(37, 99, 235, 0.16);
-    background: rgba(255, 255, 255, 0.86);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
     padding: 10px;
     display: flex;
     align-items: center;
@@ -870,66 +921,51 @@ export default {
 }
 
 .teaching-nav__buttons {
-    display: flex;
+    width: 100%;
     flex-wrap: wrap;
-    gap: 8px;
-    flex: 1;
+    row-gap: 6px;
+    height: auto !important;
+    min-width: 0;
+}
+
+.teaching-nav__return {
+    flex-shrink: 0;
+    height: auto !important;
+    margin-inline-start: auto;
 }
 
 .teaching-nav__button {
-    min-height: 44px !important;
+    min-height: 56px !important;
     height: auto !important;
-    padding: 0 14px;
     text-transform: none;
     letter-spacing: 0;
-    justify-content: flex-start;
-    border: 1px solid transparent !important;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease !important;
+    font-weight: 650;
 }
 
-.teaching-nav__button--idle {
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(219, 234, 254, 0.92) 100%) !important;
-    color: #1e3a8a !important;
-    border-color: rgba(37, 99, 235, 0.2) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 6px 14px rgba(148, 163, 184, 0.12) !important;
-}
-
-.teaching-nav__button--idle:hover {
-    background: linear-gradient(180deg, rgba(239, 246, 255, 1) 0%, rgba(191, 219, 254, 0.98) 100%) !important;
-    color: #1d4ed8 !important;
-    border-color: rgba(37, 99, 235, 0.28) !important;
-}
-
-.teaching-nav__button--active {
-    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
-    color: #ffffff !important;
-    border-color: rgba(30, 64, 175, 0.5) !important;
-    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24) !important;
+.teaching-nav__button--admin {
+    margin-inline-start: auto !important;
 }
 
 .teaching-nav__button-copy {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
-    line-height: 1.2;
+    line-height: 1.15;
+    gap: 4px;
 }
 
 .teaching-nav__button-title {
     font-weight: 650;
-    font-size: 0.92rem;
 }
 
 .teaching-nav__button-meta {
-    font-size: 0.72rem;
-    opacity: 0.9;
-}
-
-.teaching-nav__button--idle .teaching-nav__button-meta {
-    color: rgba(30, 64, 175, 0.9);
-}
-
-.teaching-nav__button--active .teaching-nav__button-meta {
-    color: rgba(255, 255, 255, 0.92);
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 2px 8px;
 }
 
 .teaching-nav.is-locked {
@@ -1075,6 +1111,12 @@ export default {
     .teaching-nav__button {
         min-width: 0 !important;
         width: 100%;
+    }
+
+    .teaching-nav__button--admin {
+        grid-column: 1 / -1;
+        justify-self: end;
+        width: auto;
     }
 
     .teaching-nav__button :deep(.v-btn__content),

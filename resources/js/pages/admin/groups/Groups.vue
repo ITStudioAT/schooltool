@@ -11,7 +11,20 @@
                 :show-current-user-chip="true"
                 focus-label="Gruppentypen" />
 
-            <div class="super-admin-overview-shell super-admin-overview-shell--active">
+            <div v-if="isLoadingGroups" role="status" aria-live="polite" class="sa-card pa-4 mb-3" data-testid="groups-loading">
+                <div class="sa-item-title text-body-1 mb-3">
+                    {{ hasGroupSnapshot ? 'Gruppen werden aktualisiert. Die angezeigten Werte können sich noch ändern.' : 'Gruppen werden geladen …' }}
+                </div>
+                <v-progress-linear indeterminate color="primary" aria-label="Gruppen werden geladen" />
+            </div>
+            <div v-else-if="groupLoadFailed" role="alert" class="sa-card pa-4 mb-3" data-testid="groups-load-error">
+                <div class="sa-item-title text-body-1 mb-3">
+                    {{ hasGroupSnapshot ? 'Aktualisierung fehlgeschlagen. Der zuletzt geladene Stand wird angezeigt.' : 'Gruppen konnten nicht geladen werden.' }}
+                </div>
+                <v-btn color="primary" @click="loadGroups">Erneut versuchen</v-btn>
+            </div>
+
+            <div v-if="hasGroupSnapshot" class="super-admin-overview-shell super-admin-overview-shell--active">
                 <div v-if="isEmbeddedOverview" class="groups-embedded-explorer">
                     <section class="sa-card groups-embedded-types-card">
                         <div class="sa-card-head">
@@ -1390,6 +1403,9 @@ export default {
             adminStore: null,
             notificationStore: null,
             isBusy: false,
+            isFetchingGroups: true,
+            groupLoadFailed: false,
+            hasGroupSnapshot: false,
             groups: [],
             apiPermissions: {},
             syncStatus: {
@@ -1495,6 +1511,9 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'is_loading']),
+        isLoadingGroups() {
+            return this.isFetchingGroups || this.syncStatus.in_progress
+        },
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.short_name || 'Keine Schule gewählt'
         },
@@ -1510,7 +1529,7 @@ export default {
                     text: `${this.groups.length} Gruppen`,
                     icon: 'mdi-account-group-outline',
                 },
-            ]
+            ].filter((chip) => chip.key !== 'groups' || this.hasGroupSnapshot)
         },
         headerActiveSection() {
             return {
@@ -2174,11 +2193,12 @@ export default {
 
         async loadGroups() {
             this.isBusy = true
+            this.isFetchingGroups = true
+            this.groupLoadFailed = false
             this.is_loading++
             try {
                 const response = await axios.get('/api/admin/groups')
-                this.groups = Array.isArray(response.data?.data) ? response.data.data : []
-                this.apiPermissions = response.data?.meta?.permissions || {}
+                const groups = Array.isArray(response.data?.data) ? response.data.data : []
                 this.syncStatus = {
                     queued: !!response.data?.meta?.sync?.queued,
                     running: !!response.data?.meta?.sync?.running,
@@ -2186,12 +2206,21 @@ export default {
                     last_synced_at: response.data?.meta?.sync?.last_synced_at || null,
                     refresh_after_seconds: Number(response.data?.meta?.sync?.refresh_after_seconds || 120),
                 }
+                if (groups.length > 0 || !this.syncStatus.in_progress) {
+                    this.groups = groups
+                    this.apiPermissions = response.data?.meta?.permissions || {}
+                    this.hasGroupSnapshot = true
+                }
                 this.scheduleSyncStatusReload()
                 this.cleanupSelectedGroups()
                 this.refreshAssignDialogGroupReference()
             } catch (error) {
-                this.groups = []
-                this.apiPermissions = {}
+                this.groupLoadFailed = true
+                if (!this.hasGroupSnapshot) {
+                    this.groups = []
+                    this.apiPermissions = {}
+                    this.selectedGroupIdsByType = { school: null, materials: null, own: null }
+                }
                 this.syncStatus = {
                     queued: false,
                     running: false,
@@ -2200,12 +2229,12 @@ export default {
                     refresh_after_seconds: 120,
                 }
                 this.clearSyncStatusReload()
-                this.selectedGroupIdsByType = { school: null, materials: null, own: null }
                 this.refreshAssignDialogGroupReference()
                 this.notifyError(error, 'Gruppen konnten nicht geladen werden.')
             } finally {
                 this.is_loading--
                 this.isBusy = false
+                this.isFetchingGroups = false
             }
         },
 

@@ -14,12 +14,13 @@
 
             <nav class="materials-v2-system-navigation" aria-label="Systemkategorien">
                 <v-tabs
-                    v-model="selectedCategory"
+                    :model-value="isAdminView ? null : selectedCategory"
                     class="materials-v2-system-tabs"
                     color="#ff7a32"
                     slider-color="#ff7a32"
                     height="56"
                     :mandatory="false"
+                    :disabled="administrationLocked"
                     show-arrows>
                     <template v-for="category in systemCategoryDetails" :key="category.name">
                         <v-tab
@@ -37,14 +38,56 @@
                             icon="mdi-plus"
                             size="x-small"
                             variant="text"
+                            :disabled="administrationLocked"
                             :title="createActionLabel(category.name, 'Material erstellen')"
                             :aria-label="createActionLabel(category.name, 'Material erstellen')"
                             @click.stop="openSystemCategoryCreateDialog(category.name)" />
                     </template>
                 </v-tabs>
+                <v-btn
+                    v-if="canManageAdministration"
+                    class="materials-v2-admin-button"
+                    :class="{ 'materials-v2-admin-button--active': isAdminView }"
+                    :aria-pressed="isAdminView"
+                    variant="text"
+                    height="56"
+                    rounded="0"
+                    prepend-icon="mdi-shield-account-outline"
+                    @click="openAdministration()">
+                    Admin
+                </v-btn>
             </nav>
 
-            <div class="materials-v2-workspace">
+            <section v-if="isAdminView" class="materials-v2-administration">
+                <nav class="materials-v2-admin-panels" aria-label="Materialien Administration">
+                    <v-btn-toggle
+                        :model-value="selectedAdministrationPanel"
+                        mandatory
+                        color="primary"
+                        class="materials-v2-admin-panel-switcher"
+                        :disabled="administrationLocked"
+                        @update:model-value="openAdministration">
+                        <v-btn
+                            v-for="panel in administrationPanels"
+                            :key="panel.id"
+                            :value="panel.id"
+                            :prepend-icon="panel.icon"
+                            :aria-pressed="selectedAdministrationPanel === panel.id"
+                            class="materials-v2-admin-panel-button">
+                            <span class="materials-v2-admin-panel-copy">
+                                <span>{{ panel.label }}</span>
+                                <span class="materials-v2-admin-panel-meta">{{ activeSchoolyearLabel }}</span>
+                            </span>
+                        </v-btn>
+                    </v-btn-toggle>
+                </nav>
+                <div v-if="selectedAdministrationPanel === 'material_settings'" class="materials-v2-admin-settings">
+                    <MaterialsSettingsView @menu-lock-change="administrationLocked = $event" />
+                </div>
+                <Groups v-else :embedded="true" embedded-filter="materials" />
+            </section>
+
+            <div v-else class="materials-v2-workspace">
                 <aside class="materials-v2-category-panel">
                     <div class="materials-v2-category-panel-heading">
                         <span>{{ isClusterView ? 'Clusters' : 'Eigene Kategorien' }}</span>
@@ -1247,7 +1290,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
@@ -1304,6 +1347,21 @@ const materialsStore = useMaterialsV2Store()
 const notification = useNotificationStore()
 const route = useRoute()
 const router = useRouter()
+const administrationLocked = ref(false)
+const activeSchoolyearLabel = computed(() => adminStore.config?.selected_schoolyear?.name
+    || adminStore.config?.selected_schoolyear?.concerns
+    || 'Kein Schuljahr gewählt')
+const MaterialsSettingsView = defineAsyncComponent(() => import('@/pages/admin/materials/components/views/MaterialsSettingsView.vue'))
+const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
+const administrationPanels = [
+    { id: 'material_settings', label: 'Einstellungen', icon: 'mdi-cog-outline' },
+    { id: 'material_groups', label: 'Materialgruppen', icon: 'mdi-folder-multiple-outline' },
+]
+const canManageAdministration = computed(() => ['super_admin', 'admin', 'materials_admin', 'materials_moderator']
+    .some((role) => adminStore.config?.roles?.includes(role)))
+const isAdminView = computed(() => canManageAdministration.value && route.query.section === 'admin')
+const selectedAdministrationPanel = computed(() => administrationPanels.some((panel) => panel.id === route.query.panel)
+    ? route.query.panel : 'material_settings')
 const {
     items,
     categoryDetails,
@@ -1719,6 +1777,10 @@ watch(selectedCategory, (category) => {
 watch(
     [() => route.query.category, () => route.query.section],
     ([category, section]) => {
+        if (section === 'admin') {
+            return
+        }
+
         const routeCategory = categoryFromRoute(category, section)
 
         if (routeCategory !== selectedCategory.value) {
@@ -1876,8 +1938,38 @@ function clearSearch() {
 }
 
 function selectCategory(category) {
+    if (administrationLocked.value) {
+        return
+    }
+
     selectedCategory.value = category
+    if (route.query.section === 'admin') {
+        syncRouteQuery(category, true)
+    }
 }
+
+function openAdministration(panel = 'material_settings') {
+    if (administrationLocked.value || !canManageAdministration.value || !administrationPanels.some((item) => item.id === panel)) {
+        return
+    }
+
+    router.replace({ query: { ...route.query, section: 'admin', panel } }).catch(() => {})
+}
+
+watch([() => route.query.section, () => route.query.panel, canManageAdministration], ([section]) => {
+    if (section !== 'admin') {
+        return
+    }
+
+    if (!canManageAdministration.value) {
+        const query = { ...route.query }
+        delete query.section
+        delete query.panel
+        router.replace({ query }).catch(() => {})
+    } else if (route.query.panel !== selectedAdministrationPanel.value) {
+        openAdministration(selectedAdministrationPanel.value)
+    }
+}, { immediate: true })
 
 function selectCluster(clusterId) {
     selectedClusterId.value = clusterId
@@ -1918,8 +2010,13 @@ function clusterIdFromQuery(cluster) {
     return Number.isInteger(clusterId) && clusterId > 0 ? clusterId : null
 }
 
-function syncRouteQuery(category) {
+function syncRouteQuery(category, leaveAdministration = false) {
+    if (route.query.section === 'admin' && !leaveAdministration) {
+        return
+    }
+
     const query = { ...route.query }
+    delete query.panel
 
     if (category === clustersViewValue) {
         delete query.category
@@ -3062,7 +3159,7 @@ function notify(message, type = 'success') {
     position: relative;
     z-index: 1;
     width: min(1500px, 100%);
-    margin: 0 auto;
+    margin: 0;
 }
 
 .materials-v2-orb {
@@ -3089,12 +3186,88 @@ function notify(message, type = 'success') {
 }
 
 .materials-v2-system-navigation {
+    display: flex;
+    align-items: center;
     border-bottom: 1px solid rgba(23, 45, 59, 0.08);
     background: rgba(248, 250, 253, 0.94);
 }
 
 .materials-v2-system-tabs {
+    flex: 1;
+    min-width: 0;
     padding: 0 22px;
+}
+
+.materials-v2-admin-button {
+    flex-shrink: 0;
+    margin-left: auto;
+    margin-right: 22px;
+    color: var(--materials-v2-muted);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.78rem;
+    font-weight: 650;
+    border-bottom: 2px solid transparent;
+}
+
+.materials-v2-admin-button--active {
+    color: var(--materials-v2-accent);
+    border-bottom-color: var(--materials-v2-accent);
+}
+
+.materials-v2-administration {
+    padding: 22px;
+}
+
+.materials-v2-admin-panels {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
+    padding: 10px;
+    margin-bottom: 16px;
+}
+
+.materials-v2-admin-panel-switcher {
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    height: auto !important;
+}
+
+.materials-v2-admin-panel-button {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 650;
+    height: auto !important;
+    min-height: 56px !important;
+}
+
+.materials-v2-admin-panel-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.15;
+    gap: 4px;
+}
+
+.materials-v2-admin-panel-meta {
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.materials-v2-admin-settings {
+    width: 520px;
+    max-width: 100%;
 }
 
 .materials-v2-system-tab {

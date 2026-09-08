@@ -35,8 +35,9 @@ class TeacherController extends Controller
                         ->orWhere('email', 'like', "%{$search_string}%");
                 });
             })
-            ->orderBy('short')
             ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('id')
             ->paginate(config('schooltool.pagination'));
 
         return response()->json([

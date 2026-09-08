@@ -216,34 +216,37 @@ test('index searches by last_name', function () {
         ->and($teachers[0]['last_name'])->toBe('Kron');
 });
 
-test('index orders by short and last_name', function () {
+test('index orders teachers by surname and first name across pages', function () {
     $this->actingAs($this->adminUser, 'sanctum');
+    config(['schooltool.pagination' => 2]);
 
-    $teacher1 = User::factory()->create([
+    $teachers = User::factory()->count(4)->sequence(
+        ['short' => 'AAA', 'last_name' => 'Zimmer', 'first_name' => 'Anna'],
+        ['short' => 'BBB', 'last_name' => 'Mueller', 'first_name' => 'Zoe'],
+        ['short' => 'ZZZ', 'last_name' => 'Mueller', 'first_name' => 'Anna'],
+        ['short' => null, 'last_name' => 'Bauer', 'first_name' => 'Max'],
+    )->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
-        'short' => 'MUS',
-        'last_name' => 'Mueller',
-        'email' => 'mueller@test.com',
     ]);
-    $teacher1->assignRole('teacher');
+    $teachers->each(fn (User $teacher) => $teacher->assignRole('teacher'));
 
-    $teacher2 = User::factory()->create([
-        'school_id' => $this->school->id,
-        'schoolyear_id' => $this->schoolyear->id,
-        'short' => 'KRO',
-        'last_name' => 'Kron',
-        'email' => 'kron@test.com',
-    ]);
-    $teacher2->assignRole('teacher');
+    $this->getJson('/api/admin/teachers?page=1')
+        ->assertSuccessful()
+        ->assertJsonPath('meta.total', 4)
+        ->assertJsonPath('data.0.id', $teachers[3]->id)
+        ->assertJsonPath('data.1.id', $teachers[2]->id)
+        ->assertJsonPath('data.1.short', 'ZZZ');
 
-    $response = $this->getJson('/api/admin/teachers');
+    $this->getJson('/api/admin/teachers?page=2')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.id', $teachers[1]->id)
+        ->assertJsonPath('data.1.id', $teachers[0]->id);
 
-    $response->assertStatus(200);
-    $teachers = $response->json('data');
-
-    expect($teachers[0]['short'])->toBe('KRO')
-        ->and($teachers[1]['short'])->toBe('MUS');
+    $this->getJson('/api/admin/teachers?search_string=Mueller')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.id', $teachers[2]->id)
+        ->assertJsonPath('data.1.id', $teachers[1]->id);
 });
 
 // ============================================================================

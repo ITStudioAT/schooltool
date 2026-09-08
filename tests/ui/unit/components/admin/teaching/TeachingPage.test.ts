@@ -464,7 +464,7 @@ describe('Teaching page navigation', () => {
 
         expect(source).not.toContain('class="teaching-nav__settings-btn"')
         expect(source).not.toContain('title="Unterricht-Einstellungen"')
-        expect(source).toContain('@click="handleNavigation(item.key)"')
+        expect(source).toContain('@update:model-value="handleNavigation"')
     })
 
     it('does not navigate when controls are locked', () => {
@@ -860,14 +860,17 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('width: 100%;')
     })
 
-    it('uses higher-contrast classes for teaching navigation buttons', async () => {
+    it('uses the shared divided menu appearance and keeps Admin aligned right', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
         )
 
-        expect(source).toContain(":class=\"main_action === item.key ? 'teaching-nav__button--active' : 'teaching-nav__button--idle'\"")
-        expect(source).toContain('.teaching-nav__button--idle {')
-        expect(source).toContain('.teaching-nav__button--active {')
+        expect(source).toContain('<v-btn-toggle')
+        expect(source).toContain('divided')
+        expect(source).toContain('@update:model-value="handleNavigation"')
+        expect(source).toContain(":class=\"{ 'teaching-nav__button--admin': item.key === 'administration' }\"")
+        expect(source).toContain('margin-inline-start: auto !important;')
+        expect(source).toContain('justify-self: end;')
     })
 
     it('uses higher-contrast classes for the overview panel switcher', async () => {

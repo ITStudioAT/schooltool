@@ -1,12 +1,42 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
 import AdminApp from '@/pages/admin/App.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
 
 describe('Admin app navigation', () => {
+    it('renders the groups subtitle and separator only with the groups menu entry', async () => {
+        const hopper = { title: 'Hopp', to: '/admin/hopp', is_active: true }
+        const groups = { title: 'Gruppen', subtitle: 'nur Super-Admins', to: '/admin/groups', is_active: true, divider_before: true }
+        const wrapper = mount(AdminNavigationDrawer, {
+            props: { modelValue: true, isVisible: true, config: { menu: [hopper, groups] }, isLoading: 0, isMenuInteractionDisabled: false },
+            global: {
+                mocks: { $route: { path: '/admin/groups' } },
+                stubs: {
+                    'v-navigation-drawer': { template: '<aside><slot /></aside>' },
+                    'v-toolbar': { template: '<div><slot /></div>' },
+                    'v-toolbar-title': { template: '<div><slot /></div>' },
+                    'v-list': { template: '<nav><slot /></nav>' },
+                    'v-list-item': { props: ['title', 'subtitle'], template: '<button>{{ title }}<small v-if="subtitle">{{ subtitle }}</small><slot /></button>' },
+                    'v-divider': { template: '<hr />' },
+                },
+            },
+        })
+
+        expect(wrapper.get('nav').text()).toContain('Hopp')
+        expect(wrapper.get('nav').text()).toContain('Gruppen')
+        expect(wrapper.get('small').text()).toBe('nur Super-Admins')
+        expect(wrapper.get('hr').element.previousElementSibling?.textContent).toBe('Hopp')
+        expect(wrapper.get('hr').element.nextElementSibling?.textContent).toContain('Gruppen')
+        await wrapper.setProps({ config: { menu: [hopper] } })
+        expect(wrapper.find('hr').exists()).toBe(false)
+        expect(wrapper.find('small').exists()).toBe(false)
+        wrapper.unmount()
+    })
+
     afterEach(() => {
         vi.useRealTimers()
     })

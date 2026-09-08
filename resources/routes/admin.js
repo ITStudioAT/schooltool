@@ -24,6 +24,7 @@ const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const MenuPlansEntry = () => import('@/pages/admin/restaurant/components/MenuPlansEntry.vue')
 const StudentsTimetables = () => import('@/pages/admin/studentsTimetables/StudentsTimetables.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
+const GroupAdministration = () => import('@/pages/admin/groups/GroupAdministration.vue')
 const Profile = () => import('@/pages/admin/profile/Profile.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
@@ -31,6 +32,7 @@ const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
 export const routes = [
     { path: '/admin', component: Index, meta: { capability: 'home' } },
     { path: '/admin/settings', component: Settings, meta: { capability: 'settings' } },
+    { path: '/admin/groups', component: GroupAdministration, meta: { capability: 'groups' } },
     { path: '/admin/login', component: Auth_Login, meta: { public: true } },
     { path: '/admin/unknown_password', component: Auth_UnknownPassword, meta: { public: true } },
     { path: '/admin/register', component: Auth_Register, meta: { public: true } },

@@ -2,12 +2,14 @@
 
 use App\Http\Middleware\AbaAccess;
 use App\Http\Middleware\ApiAllowed;
+use App\Http\Middleware\RestrictRestaurantParentSession;
 use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Middleware\ToolLicensed;
 use App\Http\Middleware\WebAllowed;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Session\Middleware\StartSession;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -18,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
+        $middleware->appendToGroup('web', RestrictRestaurantParentSession::class);
+        $middleware->appendToGroup('api', RestrictRestaurantParentSession::class);
+        $middleware->appendToPriorityList(StartSession::class, RestrictRestaurantParentSession::class);
         $middleware->alias([
             'aba-access' => AbaAccess::class,
             'web-allowed' => WebAllowed::class,

@@ -46,9 +46,20 @@
                                                         <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
                                                         <span>
                                                             {{ item.last_name }} {{ item.first_name }}
+                                                            <span v-if="item.short">({{ item.short }})</span>
                                                         </span>
                                                     </div>
-                                                    <div v-if="item.short" class="person-roles">{{ item.short }}</div>
+                                                    <div v-if="item.roles?.length" class="person-roles d-flex flex-wrap ga-1 mt-1">
+                                                        <v-chip
+                                                            v-for="role in item.roles"
+                                                            :key="role"
+                                                            size="x-small"
+                                                            rounded="lg"
+                                                            color="primary"
+                                                            variant="tonal">
+                                                            {{ role }}
+                                                        </v-chip>
+                                                    </div>
                                                     <div class="person-roles"><CopyEmailButton :email="item.email" /></div>
                                                 </div>
                                             </div>

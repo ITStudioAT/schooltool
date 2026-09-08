@@ -36,7 +36,27 @@
                 </v-chip>
             </div>
 
-            <v-sheet v-if="showsSubNavigation" rounded="xl" class="settings-subnav mb-2">
+            <nav
+                v-if="isSuperAdminTab || isAdminTab"
+                class="settings-subnav settings-section-subnav mb-2"
+                :aria-label="`${activeSection} Einstellungen`">
+                <v-btn-toggle v-model="sub_action" mandatory divided color="primary" class="settings-section-subnav__switcher">
+                    <v-btn
+                        v-for="item in subNavigationItems"
+                        :key="item.key"
+                        :value="item.key"
+                        :prepend-icon="item.icon"
+                        :aria-pressed="sub_action === item.key"
+                        class="settings-section-subnav__button">
+                        <span class="settings-section-subnav__copy">
+                            <span>{{ item.label }}</span>
+                            <span class="settings-section-subnav__meta">{{ item.meta }}</span>
+                        </span>
+                    </v-btn>
+                </v-btn-toggle>
+            </nav>
+
+            <v-sheet v-else-if="showsSubNavigation" rounded="xl" class="settings-subnav mb-2">
                 <div class="settings-subnav__buttons">
                     <v-btn
                         v-for="item in subNavigationItems"
@@ -96,7 +116,6 @@
                 <v-row class="w-100 ma-0" dense>
                     <div v-if="isSuperAdminTab && sub_action === 'general'" class="settings-general-wrap">
                         <ModuleStatusesCard v-if="general_action === 'module_visibility'" />
-                        <Licences v-else-if="general_action === 'licences'" />
                     </div>
 
                     <div v-else-if="(isSuperAdminTab || isAdminTab) && sub_action === 'schools'" class="settings-schools-wrap">
@@ -148,36 +167,12 @@
                         <TutoringUsers />
                     </div>
 
-                    <div v-else-if="isMaterialsTab && sub_action === 'material_groups'" class="settings-groups-wrap">
-                        <Groups :embedded="true" embedded-filter="materials" />
-                    </div>
-
-                    <div v-else-if="isMaterialsTab && sub_action === 'material_settings'" class="settings-materials-wrap">
-                        <MaterialsSettingsView />
-                    </div>
-
-                    <div v-else-if="isTeachingTab && sub_action === 'teaching_admin'" class="settings-teaching-admin-wrap">
-                        <TeachingAdmin />
-                    </div>
-
                     <div v-else-if="isSuperAdminTab && sub_action === 'school_switch'" class="settings-school-switch-wrap">
                         <ActiveSchool :hide-details="true" />
                     </div>
 
                     <div v-else-if="isSuperAdminTab && sub_action === 'user_impersonation'" class="settings-user-impersonation-wrap">
                         <UserImpersonation />
-                    </div>
-
-                    <div v-else-if="isGroupsTab && sub_action === 'groups_overview'" class="settings-groups-wrap">
-                        <Groups :embedded="true" />
-                    </div>
-
-                    <div v-else-if="isGroupsTab && sub_action === 'groups_own'" class="settings-groups-wrap">
-                        <Groups :embedded="true" embedded-filter="own" />
-                    </div>
-
-                    <div v-else-if="isRestaurantTab" class="settings-restaurant-wrap">
-                        <RestaurantSettings :embedded="true" :panel="sub_action" />
                     </div>
 
                     <v-col v-else cols="12">
@@ -205,6 +200,7 @@
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { administration as teachingAdministration } from '@/routes/admin/teaching'
 
 const Schools = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Schools.vue'))
 const Schoolyears = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Schoolyears.vue'))
@@ -221,13 +217,10 @@ const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin
 const TutoringSettings = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Settings.vue'))
 const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Subjects.vue'))
 const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Users.vue'))
-const TeachingAdmin = defineAsyncComponent(() => import('@/pages/admin/teaching/admin/Admin.vue'))
-const MaterialsSettingsView = defineAsyncComponent(() => import('@/pages/admin/materials/components/views/MaterialsSettingsView.vue'))
 const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
-const RestaurantSettings = defineAsyncComponent(() => import('@/pages/admin/restaurant/components/Settings.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -269,6 +262,10 @@ export default {
             }
         },
         '$route.query.tab'(val) {
+            if (val === 'materials' || val === 'restaurant' || val === 'groups') {
+                this.syncRouteQuery()
+                return
+            }
             if (val === 'profile') {
                 this.$router.replace('/admin/profile')
                 return
@@ -283,7 +280,9 @@ export default {
                 return
             }
 
-            const panel = val || this.defaultSubAction
+            const panel = this.isSuperAdminTab && (!val || val === 'general') && this.$route.query.general_panel === 'licences'
+                ? 'licence_models'
+                : val || this.defaultSubAction
             if (this.subNavigationItems.some((i) => i.key === panel)) {
                 this.sub_action = panel
             }
@@ -300,6 +299,11 @@ export default {
         },
         '$route.query.general_panel'(val) {
             if (!this.showsGeneralSubNavigation) {
+                return
+            }
+
+            if (val === 'licences') {
+                this.sub_action = 'licence_models'
                 return
             }
 
@@ -329,9 +333,6 @@ export default {
                 register: ['super_admin', 'admin', 'register_admin'],
                 teaching: ['super_admin', 'admin', 'teaching_admin'],
                 tutoring: ['super_admin', 'admin', 'tutoring_admin'],
-                materials: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
-                groups: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
-                restaurant: ['super_admin', 'admin', 'lunch_admin'],
             }
         },
         activeRoles() {
@@ -360,10 +361,7 @@ export default {
 
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
         },
-        canAccessMaterialsSettingsTab() {
-            return ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => this.configuredRoleNames.includes(role))
-        },
-        canAccessGroupsSettingsTab() {
+        canAccessMaterialsAdministration() {
             return ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => this.configuredRoleNames.includes(role))
         },
         canAccessRestaurantSettingsTab() {
@@ -384,16 +382,13 @@ export default {
             return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups', 'restaurant'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register', 'tutoring'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'register') return 'users'
             if (this.main_action === 'teaching') return 'teaching_admin'
             if (this.main_action === 'tutoring') return 'tutoring_settings'
-            if (this.main_action === 'materials') return 'material_settings'
-            if (this.main_action === 'groups') return 'groups_overview'
-            if (this.main_action === 'restaurant') return 'general'
             return 'general'
         },
         isSuperAdminTab() {
@@ -408,17 +403,8 @@ export default {
         isTutoringTab() {
             return this.main_action === 'tutoring'
         },
-        isMaterialsTab() {
-            return this.main_action === 'materials'
-        },
         isTeachingTab() {
             return this.main_action === 'teaching'
-        },
-        isGroupsTab() {
-            return this.main_action === 'groups'
-        },
-        isRestaurantTab() {
-            return this.main_action === 'restaurant'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -431,10 +417,6 @@ export default {
                 {
                     key: 'module_visibility',
                     label: 'Sichtbarkeit Modul',
-                },
-                {
-                    key: 'licences',
-                    label: 'Lizenzen',
                 },
             ]
         },
@@ -462,36 +444,7 @@ export default {
             }
 
             if (this.isTeachingTab) {
-                return [
-                    { key: 'teaching_admin', label: 'Admin', meta: 'Import, Ferien, Stunden', icon: 'mdi-import' },
-                ]
-            }
-
-            if (this.isMaterialsTab) {
-                return [
-                    { key: 'material_settings', label: 'Einstellungen', meta: 'Materialien', icon: 'mdi-cog-outline' },
-                    { key: 'material_groups', label: 'Materialgruppen', meta: 'Gruppen', icon: 'mdi-folder-multiple-outline' },
-                ]
-            }
-
-            if (this.isGroupsTab) {
-                return [
-                    { key: 'groups_overview', label: 'Überblick', meta: 'Alle Gruppentypen', icon: 'mdi-view-dashboard-outline' },
-                    { key: 'groups_own', label: 'Eigene Gruppen', meta: 'Verwalten', icon: 'mdi-account-multiple-outline' },
-                ]
-            }
-
-            if (this.isRestaurantTab) {
-                return [
-                    { key: 'general', label: 'Allgemein', meta: 'Schulweite Einstellungen', icon: 'mdi-tune-variant' },
-                    { key: 'categories', label: 'Kategorien', meta: 'Speisen strukturieren', icon: 'mdi-shape-outline' },
-                    { key: 'ingredient-icons', label: 'Zutaten-Symbole', meta: 'Kennzeichnungen', icon: 'mdi-image-multiple-outline' },
-                    { key: 'free-days', label: 'Freie Tage', meta: 'Schließzeiten', icon: 'mdi-calendar-remove-outline' },
-                    { key: 'eating-times', label: 'Speisezeiten', meta: 'Ausgabe planen', icon: 'mdi-clock-outline' },
-                    { key: 'users', label: 'Benutzer', meta: 'Mittagskonten', icon: 'mdi-account-group-outline' },
-                    { key: 'sepa', label: 'SEPA', meta: 'Lastschriftmandat', icon: 'mdi-bank-transfer' },
-                    { key: 'online', label: 'Online', meta: 'Bestellung & Sichtbarkeit', icon: 'mdi-web' },
-                ]
+                return []
             }
 
             if (this.isAdminTab) {
@@ -536,10 +489,6 @@ export default {
                 { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
                 { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group', visible: this.canAccessTutoringSettingsTab },
-                { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant', visible: this.canAccessTeachingSettingsTab },
-                { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed', visible: this.canAccessMaterialsSettingsTab },
-                { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline', visible: this.canAccessGroupsSettingsTab },
-                { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife', visible: this.canAccessRestaurantSettingsTab },
             ].filter((item) => item.visible !== false)
         },
     },
@@ -551,9 +500,6 @@ export default {
             canAccessRegisterTab,
             canAccessTutoringTab,
             canAccessTeachingTab,
-            canAccessMaterialsTab,
-            canAccessGroupsTab,
-            canAccessRestaurantTab,
         ) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
@@ -561,9 +507,6 @@ export default {
                 canAccessRegisterTab ? 'register' : null,
                 canAccessTutoringTab ? 'tutoring' : null,
                 canAccessTeachingTab ? 'teaching' : null,
-                canAccessMaterialsTab ? 'materials' : null,
-                canAccessGroupsTab ? 'groups' : null,
-                canAccessRestaurantTab ? 'restaurant' : null,
             ].filter(Boolean)
         },
         canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities) {
@@ -593,18 +536,12 @@ export default {
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
-            const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)
             const keys = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
                 canAccessRegisterTab,
                 canAccessTutoringTab,
                 canAccessTeachingTab,
-                canAccessMaterialsTab,
-                canAccessGroupsTab,
-                canAccessRestaurantTab,
             )
 
             return keys.includes(tab) ? tab : keys[0]
@@ -626,18 +563,12 @@ export default {
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
-            const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)
             const availableTabs = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
                 canAccessRegisterTab,
                 canAccessTutoringTab,
                 canAccessTeachingTab,
-                canAccessMaterialsTab,
-                canAccessGroupsTab,
-                canAccessRestaurantTab,
             )
             const resolvedTab = availableTabs.includes(tab)
                 ? tab
@@ -649,24 +580,19 @@ export default {
             } else if (resolvedTab === 'tutoring') {
                 keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
                 fallback = 'tutoring_settings'
-            } else if (resolvedTab === 'materials') {
-                keys = ['material_settings', 'material_groups']
-                fallback = 'material_settings'
             } else if (resolvedTab === 'register') {
                 keys = ['users']
                 fallback = 'users'
             } else if (resolvedTab === 'teaching') {
                 keys = ['teaching_admin']
                 fallback = 'teaching_admin'
-            } else if (resolvedTab === 'groups') {
-                keys = ['groups_overview', 'groups_own']
-                fallback = 'groups_overview'
-            } else if (resolvedTab === 'restaurant') {
-                keys = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online']
-                fallback = 'general'
             } else {
                 keys = ['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation']
                 fallback = 'general'
+            }
+
+            if (resolvedTab === 'super_admin' && panel === 'general' && this.$route?.query?.general_panel === 'licences') {
+                return 'licence_models'
             }
 
             return keys.includes(panel) ? panel : fallback
@@ -678,11 +604,43 @@ export default {
         },
         initialGeneralAction() {
             const panel = this.$route?.query?.general_panel || 'module_visibility'
-            const keys = ['module_visibility', 'licences']
+            const keys = ['module_visibility']
 
             return keys.includes(panel) ? panel : 'module_visibility'
         },
         syncRouteQuery() {
+            if (this.$route.query?.tab === 'groups' && this.configuredRoleNames.includes('super_admin')) {
+                const panel = this.$route.query?.panel === 'groups_own' ? 'groups_own' : 'groups_overview'
+                this.$router.replace(`/admin/groups?panel=${panel}`)
+                return
+            }
+
+            if (this.$route.query?.tab === 'restaurant' && this.canAccessRestaurantSettingsTab) {
+                const requestedPanel = this.$route.query?.panel
+                const panels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online']
+                const panel = panels.includes(requestedPanel) ? requestedPanel : 'general'
+                this.$router.replace(`/admin/restaurant/settings?panel=${panel}`)
+                return
+            }
+
+            if (this.$route.query?.tab === 'materials' && this.canAccessMaterialsAdministration) {
+                const panel = this.$route.query?.panel === 'material_groups' ? 'material_groups' : 'material_settings'
+                this.$router.replace(`/admin/materials-v2?section=admin&panel=${panel}`)
+                return
+            }
+
+            if (this.main_action === 'teaching') {
+                if (!['super_admin', 'admin', 'teaching_admin'].some((role) => this.configuredRoleNames.includes(role))) {
+                    this.$router.replace('/admin/profile')
+                    return
+                }
+
+                const requestedPanel = this.$route.query?.tab === 'teaching' ? this.$route.query?.panel : null
+                const panel = ['teachers', 'import', 'holidays', 'school_hours'].includes(requestedPanel) ? requestedPanel : 'import'
+                this.$router.replace(teachingAdministration.url({ query: { panel } }))
+                return
+            }
+
             if (this.$route.query?.tab === 'profile' || !this.main_action) {
                 this.$router.replace('/admin/profile')
                 return
@@ -833,6 +791,51 @@ export default {
     opacity: 0.65;
 }
 
+.settings-section-subnav {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8) !important;
+    padding: 10px;
+}
+
+.settings-section-subnav__switcher {
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    height: auto !important;
+}
+
+.settings-section-subnav__button {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 650;
+    height: auto !important;
+    min-height: 56px !important;
+}
+
+.settings-section-subnav__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.15;
+    gap: 4px;
+}
+
+.settings-section-subnav__meta {
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
 .settings-schools-wrap {
     width: 1000px;
     max-width: 100%;
@@ -880,16 +883,6 @@ export default {
 
 .settings-tutoring-wrap {
     width: 1000px;
-    max-width: 100%;
-}
-
-.settings-restaurant-wrap {
-    width: 1000px;
-    max-width: 100%;
-}
-
-.settings-teaching-admin-wrap {
-    width: 100%;
     max-width: 100%;
 }
 
@@ -958,12 +951,6 @@ export default {
 
 .settings-groups-wrap {
     width: 100%;
-}
-
-.settings-materials-wrap {
-    width: 520px;
-    max-width: 100%;
-    margin: 0;
 }
 
 .settings-empty-card {

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Http\Middleware\RestrictRestaurantParentSession;
 use App\Models\Import116;
 use App\Models\RestaurantSepaMandate;
 use App\Models\School;
@@ -11,6 +12,7 @@ use App\Notifications\StandardEmail;
 use App\Rules\Iban;
 use App\Support\SafeHtml;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -275,8 +277,13 @@ class RestaurantSepaMandateService
         session()->forget('restaurant.sepa_flow_bindings.'.$mandate->flow_uuid);
 
         if ($user->hasRole('lunch_user')) {
+            $isParentLogin = (int) session(RestrictRestaurantParentSession::SESSION_KEY, 0) === (int) $user->id;
+            if ($isParentLogin) {
+                Cookie::queue(Cookie::forget(Auth::guard('web')->getRecallerName()));
+            }
+
             $user->rememberLogin();
-            Auth::guard('web')->login($user, true);
+            Auth::guard('web')->login($user, ! $isParentLogin);
             session()->regenerate();
             $loggedIn = true;
         }

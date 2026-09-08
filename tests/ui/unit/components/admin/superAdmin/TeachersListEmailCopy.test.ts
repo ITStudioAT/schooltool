@@ -21,6 +21,57 @@ afterEach(() => {
 })
 
 describe('Teacher email copying', () => {
+    it('shows each teacher role as a chip and handles missing roles', async () => {
+        const store = useTeacherStore()
+        store.teachers = [
+            { id: 1, last_name: 'Example', first_name: 'Anna', roles: ['teacher', 'teaching_admin'], email: '' },
+            { id: 2, last_name: 'Example', first_name: 'Ben', roles: ['admin'], email: '' },
+            { id: 3, last_name: 'Example', first_name: 'Cara', roles: [], email: '' },
+            { id: 4, last_name: 'Example', first_name: 'David', email: '' },
+        ]
+        vi.spyOn(store, 'index').mockResolvedValue(true)
+        wrapper = mount(Teachers, {
+            global: {
+                stubs: {
+                    SearchField: true,
+                    Pagination: true,
+                    TeachersListImportDialog: true,
+                    'v-divider': true,
+                    'v-list-item': { template: '<div class="teacher-row"><slot name="title" /></div>' },
+                    'v-chip': { template: '<span class="role-chip"><slot /></span>' },
+                },
+            },
+        })
+        await flushPromises()
+
+        const rows = wrapper.findAll('.teacher-row')
+        expect(rows.map((row) => row.findAll('.role-chip').map((chip) => chip.text()))).toEqual([
+            ['teacher', 'teaching_admin'], ['admin'], [], [],
+        ])
+    })
+
+    it.each(['EXA', null])('shows the teacher short code beside the name when present (%s)', async (short) => {
+        const store = useTeacherStore()
+        store.teachers = [{ id: 1, last_name: 'Example', first_name: 'Teacher', short, email: '' }]
+        vi.spyOn(store, 'index').mockResolvedValue(true)
+        wrapper = mount(Teachers, {
+            global: {
+                stubs: {
+                    SearchField: true,
+                    Pagination: true,
+                    TeachersListImportDialog: true,
+                    'v-divider': true,
+                    'v-list-item': { template: '<div class="teacher-row"><slot name="title" /></div>' },
+                },
+            },
+        })
+        await flushPromises()
+
+        expect(wrapper.get('.person-name').text().replace(/\s+/g, ' ')).toBe(
+            short ? 'Example Teacher (EXA)' : 'Example Teacher',
+        )
+    })
+
     it.each([
         ['Lehrer', Teachers, useTeacherStore],
         ['Lehrerliste', TeachersList, useTeachersListStore],

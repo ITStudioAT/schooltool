@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
 import TeacherAdministration from '@/pages/admin/teaching/admin/TeacherAdministration.vue'
@@ -41,8 +42,14 @@ describe('Teacher import completion refresh', () => {
             return true
         })
 
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [{ path: '/admin/teaching/administration', component: TeacherAdministration }],
+        })
+        await router.push('/admin/teaching/administration?panel=teachers')
         wrapper = mount(TeacherAdministration, {
             global: {
+                plugins: [router],
                 stubs: {
                     FileUpload: true,
                     SearchField: true,

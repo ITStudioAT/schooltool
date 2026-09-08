@@ -5,6 +5,7 @@ use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationContr
 use App\Http\Controllers\Tutoring\OfferController;
 use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Http\Controllers\Tutoring\TutoringController;
+use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 
 // Broadcasting wird vom BroadcastServiceProvider gehandhabt
@@ -100,6 +101,12 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     Route::get('/admin/aba/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'aba-access']);
+
+    Route::get('/admin/groups', function (): View {
+        abort_unless(auth()->user()?->hasRole('super_admin'), 403);
+
+        return view('spa::admin');
+    })->middleware(['auth:sanctum', 'web-allowed:super_admin'])->name('admin.groups');
 
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');

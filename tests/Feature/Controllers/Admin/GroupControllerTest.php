@@ -180,6 +180,117 @@ test('groups index does not inspect database metadata on the request path', func
     expect($metadataQueries)->toBeEmpty();
 });
 
+test('groups index loads class and teacher sources once regardless of group count', function (int $classCount) {
+    Queue::fake();
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    foreach (range(1, $classCount) as $classNumber) {
+        Import116::factory()->forSchool($this->school)->importedBy($this->materialsAdmin)
+            ->count(2)->create([
+                'schoolyear_id' => $this->schoolyear->id,
+                'class' => "{$classNumber}A",
+            ]);
+    }
+    foreach (range(1, 2) as $teacherNumber) {
+        Teacher::query()->create([
+            'school_id' => $this->school->id,
+            'first_name' => 'Teacher',
+            'last_name' => (string) $teacherNumber,
+            'email' => "teacher-{$teacherNumber}@test.local",
+        ]);
+    }
+
+    // Warm existing defaults so creation writes do not obscure read-query scaling.
+    $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    try {
+        $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+        $queries = collect(DB::getQueryLog())->pluck('query');
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    expect($queries->filter(fn (string $query): bool => str_contains($query, 'select `id`, `class` from `import116`')))->toHaveCount(1)
+        ->and($queries->filter(fn (string $query): bool => str_contains($query, 'from `teachers`')))->toHaveCount(1)
+        ->and($queries->count())->toBeLessThan(40);
+
+    $groups = collect($response->json('data'))->keyBy('name');
+    foreach (range(1, $classCount) as $classNumber) {
+        expect($groups["{$classNumber}A"]['source_users_count'])->toBe(2)
+            ->and($groups["{$classNumber}A"]['members_count'])->toBe(0)
+            ->and($groups["{$classNumber}A"]['is_system_default'])->toBeTrue();
+    }
+    expect($groups['Lehrer']['source_users_count'])->toBe(2);
+})->with([1, 34]);
+
+test('groups index refreshes source maps after import changes and active schoolyear changes', function () {
+    Queue::fake();
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+    $import = Import116::factory()->forSchool($this->school)->importedBy($this->materialsAdmin)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+    ]);
+
+    $firstGroups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'))->keyBy('name');
+    expect($firstGroups['1A']['source_users_count'])->toBe(1);
+
+    $import->update(['class' => '2B']);
+    $changedGroups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'))->keyBy('name');
+    expect($changedGroups['2B']['source_users_count'])->toBe(1)
+        ->and($changedGroups['1A']['is_system_default'])->toBeFalse()
+        ->and($changedGroups['1A']['source_users_count'])->toBeNull();
+
+    $nextSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    Import116::factory()->forSchool($this->school)->importedBy($this->materialsAdmin)->count(2)->create([
+        'schoolyear_id' => $nextSchoolyear->id,
+        'class' => '3C',
+    ]);
+    SchoolTool::query()->where('school_id', $this->school->id)->update(['active_schoolyear_id' => $nextSchoolyear->id]);
+
+    $nextGroups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'))->keyBy('name');
+    expect($nextGroups['3C']['source_users_count'])->toBe(2)
+        ->and($nextGroups['2B']['is_system_default'])->toBeFalse()
+        ->and($nextGroups['2B']['source_users_count'])->toBeNull();
+});
+
+test('groups index keeps reused sources scoped to the newly selected school', function () {
+    Queue::fake();
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+    Import116::factory()->forSchool($this->school)->importedBy($this->materialsAdmin)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+    ]);
+    $firstGroups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'))->keyBy('name');
+    expect($firstGroups['1A']['source_users_count'])->toBe(1);
+
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    SchoolTool::factory()->create([
+        'school_id' => $otherSchool->id,
+        'active_schoolyear_id' => $otherSchoolyear->id,
+    ]);
+    SchoolLicence::create([
+        'school_id' => $otherSchool->id,
+        'licence_id' => Licence::where('name', 'Materialientool')->value('id'),
+        'valid_until' => now()->addYear(),
+    ]);
+    Import116::factory()->forSchool($otherSchool)->importedBy($this->materialsAdmin)->count(3)->create([
+        'schoolyear_id' => $otherSchoolyear->id,
+        'class' => '1A',
+    ]);
+    $this->materialsAdmin->update([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+    $this->actingAs($this->materialsAdmin->fresh(), 'sanctum');
+
+    $otherGroups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'))->keyBy('name');
+    expect($otherGroups['1A']['source_users_count'])->toBe(3)
+        ->and($otherGroups->pluck('id')->intersect($firstGroups->pluck('id')))->toBeEmpty();
+});
+
 test('groups sync job delegates to the synchronization service and records completion', function () {
     Cache::flush();
 

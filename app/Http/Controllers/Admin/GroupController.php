@@ -30,7 +30,9 @@ class GroupController extends Controller
         $this->assertGroupsFeatureLicence($auth_user);
 
         $schoolId = $this->currentSchoolId($auth_user);
-        $this->ensureDefaultSchoolGroups($schoolId, (int) $auth_user->id);
+        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $requiredSchoolGroupNames = $this->requiredSchoolGroupNames($schoolId, $classGroups);
+        $this->ensureDefaultSchoolGroups($schoolId, (int) $auth_user->id, $requiredSchoolGroupNames);
         $this->dispatchHeavyGroupsSyncIfNeeded($auth_user, $schoolId);
         $syncMeta = $this->groupsSyncMeta($schoolId);
 
@@ -40,14 +42,15 @@ class GroupController extends Controller
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
             ->get();
-        $schoolGroupSourceCounts = $this->schoolGroupSourceUserCounts($schoolId);
-        $parentGroupContacts = $this->parentContactsForSchoolGroups($schoolId);
-        $allSchoolMembers = $this->allSchoolMembersCollections($schoolId);
+        $teacherSourceMembers = $this->teacherSourceMembers($schoolId);
+        $schoolGroupSourceCounts = $this->schoolGroupSourceUserCounts($schoolId, $classGroups, $teacherSourceMembers->count());
+        $parentGroupContacts = $this->parentContactsForSchoolGroups($schoolId, $classGroups);
+        $allSchoolMembers = $this->allSchoolMembersCollections($schoolId, $teacherSourceMembers);
         $ownCourseSourceCounts = $this->ownCourseSourceUserCounts($groups);
         $ownCourseParentContacts = $this->parentContactsForAutomaticOwnCourseGroups($groups, $schoolId);
 
         return response()->json([
-            'data' => $groups->map(fn (UserGroup $group) => $this->serializeGroup($group, $schoolGroupSourceCounts, $ownCourseSourceCounts, $parentGroupContacts, $ownCourseParentContacts, $allSchoolMembers))->values(),
+            'data' => $groups->map(fn (UserGroup $group) => $this->serializeGroup($group, $schoolGroupSourceCounts, $ownCourseSourceCounts, $parentGroupContacts, $ownCourseParentContacts, $allSchoolMembers, $requiredSchoolGroupNames))->values(),
             'meta' => [
                 'permissions' => [
                     UserGroup::TYPE_SCHOOL => $this->canManageType($auth_user, UserGroup::TYPE_SCHOOL),
@@ -818,6 +821,7 @@ class GroupController extends Controller
      * @param  array{registered: array<string, Collection>, all: array<string, Collection>}|null  $parentGroupContacts
      * @param  array{registered: array<int, Collection>, all: array<int, Collection>}|null  $ownCourseParentContacts
      * @param  array{registered: Collection<int, array<string, mixed>>, all: Collection<int, array<string, mixed>>}|null  $allSchoolMembers
+     * @param  array<string, string>|null  $requiredSchoolGroupNames
      */
     private function serializeGroup(
         UserGroup $group,
@@ -825,12 +829,13 @@ class GroupController extends Controller
         ?array $ownCourseSourceCounts = null,
         ?array $parentGroupContacts = null,
         ?array $ownCourseParentContacts = null,
-        ?array $allSchoolMembers = null
+        ?array $allSchoolMembers = null,
+        ?array $requiredSchoolGroupNames = null
     ): array {
         $storedMembersCount = (int) ($group->group_members_count ?? 0);
         $linkedMembersCount = (int) ($group->members_count ?? 0);
         $membersCount = $storedMembersCount > 0 ? $storedMembersCount : $linkedMembersCount;
-        $isSystemDefault = $this->isSystemDefaultSchoolGroup($group);
+        $isSystemDefault = $this->isSystemDefaultSchoolGroup($group, $requiredSchoolGroupNames);
         $isSystemManagedCourseGroup = $this->isSystemManagedCourseGroup($group);
         $isParentGroup = $this->isParentGroup($group);
         $isAllSchoolMembersGroup = $this->isAllSchoolMembersGroup($group);
@@ -911,13 +916,14 @@ class GroupController extends Controller
     }
 
     /**
+     * @param  array{by_class: array<string, array{name: string, import_ids: array<int, int>}>, by_family: array<string, array{name: string, import_ids: array<int, int>}>}|null  $classGroups
      * @return array<string, int>
      */
-    private function schoolGroupSourceUserCounts(int $schoolId): array
+    private function schoolGroupSourceUserCounts(int $schoolId, ?array $classGroups = null, ?int $teacherSourceCount = null): array
     {
         $counts = [];
 
-        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $classGroups ??= $this->buildImportClassGroupMappings($schoolId);
         foreach ($classGroups['by_class'] as $normalizedClass => $classData) {
             $counts[$normalizedClass] = count($classData['import_ids']);
         }
@@ -925,15 +931,16 @@ class GroupController extends Controller
             $counts[$normalizedFamily] = count($familyData['import_ids']);
         }
 
-        $counts[$this->normalizeGroupName($this->defaultTeacherGroupName())] = $this->teacherSourceUsersCount($schoolId);
+        $counts[$this->normalizeGroupName($this->defaultTeacherGroupName())] = $teacherSourceCount ?? $this->teacherSourceUsersCount($schoolId);
 
         return $counts;
     }
 
     /**
+     * @param  Collection<int, array<string, mixed>>|null  $teacherSourceMembers
      * @return array{registered: Collection<int, array<string, mixed>>, all: Collection<int, array<string, mixed>>}
      */
-    private function allSchoolMembersCollections(int $schoolId): array
+    private function allSchoolMembersCollections(int $schoolId, ?Collection $teacherSourceMembers = null): array
     {
         $importRows = collect();
         $usersByImportId = collect();
@@ -981,9 +988,10 @@ class GroupController extends Controller
             $this->buildParentContacts($importRows, $usersByImportId, false)
         );
 
-        $allTeachers = $this->allSchoolTeacherEntries($this->teacherSourceMembers($schoolId));
+        $teacherSourceMembers ??= $this->teacherSourceMembers($schoolId);
+        $allTeachers = $this->allSchoolTeacherEntries($teacherSourceMembers);
         $registeredTeachers = $this->allSchoolTeacherEntries(
-            $this->teacherSourceMembers($schoolId)->filter(fn (array $entry) => ! empty($entry['user_id']))->values()
+            $teacherSourceMembers->filter(fn (array $entry) => ! empty($entry['user_id']))->values()
         );
 
         $adminEntries = $this->allSchoolAdminEntries($schoolId);
@@ -1026,16 +1034,17 @@ class GroupController extends Controller
     }
 
     /**
+     * @param  array{by_class: array<string, array{name: string, import_ids: array<int, int>}>, by_family: array<string, array{name: string, import_ids: array<int, int>}>}|null  $classGroups
      * @return array{registered: array<string, Collection>, all: array<string, Collection>}
      */
-    private function parentContactsForSchoolGroups(int $schoolId): array
+    private function parentContactsForSchoolGroups(int $schoolId, ?array $classGroups = null): array
     {
         $result = [
             'registered' => [],
             'all' => [],
         ];
 
-        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $classGroups ??= $this->buildImportClassGroupMappings($schoolId);
         $allMappings = collect($classGroups['by_class'])
             ->merge($classGroups['by_family']);
 
@@ -1495,7 +1504,10 @@ class GroupController extends Controller
         return mb_strtolower(trim($name));
     }
 
-    private function isSystemDefaultSchoolGroup(UserGroup $group): bool
+    /**
+     * @param  array<string, string>|null  $requiredNames
+     */
+    private function isSystemDefaultSchoolGroup(UserGroup $group, ?array $requiredNames = null): bool
     {
         if ((string) $group->type !== UserGroup::TYPE_SCHOOL) {
             return false;
@@ -1505,7 +1517,7 @@ class GroupController extends Controller
             return true;
         }
 
-        $requiredNames = $this->requiredSchoolGroupNames((int) $group->school_id);
+        $requiredNames ??= $this->requiredSchoolGroupNames((int) $group->school_id);
 
         return array_key_exists($this->normalizeGroupName((string) $group->name), $requiredNames);
     }
@@ -1532,7 +1544,10 @@ class GroupController extends Controller
         }
     }
 
-    private function ensureDefaultSchoolGroups(int $schoolId, int $creatorUserId): void
+    /**
+     * @param  array<string, string>  $requiredNames
+     */
+    private function ensureDefaultSchoolGroups(int $schoolId, int $creatorUserId, array $requiredNames): void
     {
         $this->normalizeLegacyTeacherGroupName($schoolId);
 
@@ -1546,7 +1561,7 @@ class GroupController extends Controller
 
         $existingMap = array_fill_keys($existingNames, true);
 
-        foreach ($this->requiredSchoolGroupNames($schoolId) as $normalized => $name) {
+        foreach ($requiredNames as $normalized => $name) {
             if (isset($existingMap[$normalized])) {
                 continue;
             }
@@ -1567,16 +1582,17 @@ class GroupController extends Controller
      */
 
     /**
+     * @param  array{by_class: array<string, array{name: string, import_ids: array<int, int>}>, by_family: array<string, array{name: string, import_ids: array<int, int>}>}|null  $classGroups
      * @return array<string, string>
      */
-    private function requiredSchoolGroupNames(int $schoolId): array
+    private function requiredSchoolGroupNames(int $schoolId, ?array $classGroups = null): array
     {
         $names = [
             $this->defaultTeacherGroupName(),
             $this->defaultAllSchoolMembersGroupName(),
         ];
 
-        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $classGroups ??= $this->buildImportClassGroupMappings($schoolId);
         foreach ($classGroups['by_class'] as $classData) {
             $names[] = $classData['name'];
             $names[] = $this->parentGroupName((string) $classData['name']);

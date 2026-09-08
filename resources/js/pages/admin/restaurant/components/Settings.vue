@@ -1,7 +1,13 @@
 <template>
     <v-col cols="12">
+        <slot
+            name="navigation"
+            :selected-panel="selectedPanel"
+            :activate-panel="activatePanel"
+            :is-panel-navigation-disabled="isPanelNavigationDisabled"
+            :disabled="isEditingGeneralSettings" />
         <v-row dense>
-            <v-col v-if="!embedded" cols="12">
+            <v-col v-if="!embedded && !$slots.navigation" cols="12">
                 <v-sheet rounded="xl" class="settings-subnav pa-2 mb-3">
                     <div class="d-flex flex-wrap ga-2">
                         <v-btn

@@ -1,11 +1,22 @@
 # UPDATES
 
-## 3.47.2 !!!
+## 3.47.2
 
 ### System
 
 - Sicherheits-Fix: Kursanzeige für fremde Lehrerinnen
 - Einstellungen werden für Nicht-Admins nicht mehr angezeiegt
+- Einstellungen/Unterricht -> Unterricht/Admin
+- Einstellungen/Materialien -> Materialien /Admin
+- Eltern-Zugang: 18. Geburtstag des Kindes als definitive Grenzen: Das gilt ausdrücklich nicht für den Restaurant-Bereich.
+- Einstellungen: UI-Design-Anpassung der Menüs
+- Restaurant: Übernahme der Menügestaltung
+- Gruppen als eigener Menüpunkt im Dashboardmenü
+- Unterricht: Änderung Menü-UI-Design und Verhalten
+
+### UI-Design
+
+- Portrait-Handy-Format für Restaurant angepasst
 
 ### Schülerstundenpläne
 

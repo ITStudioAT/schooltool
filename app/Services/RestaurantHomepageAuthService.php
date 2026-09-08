@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Http\Middleware\RestrictRestaurantParentSession;
 use App\Models\Import116;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -12,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -21,6 +23,8 @@ use Illuminate\Validation\ValidationException;
 
 class RestaurantHomepageAuthService
 {
+    private const PARENT_CHALLENGE_SESSION_KEY = 'restaurant.parent_login_challenge';
+
     public function __construct(
         public Import116Service $import116Service,
         public RestaurantSepaMandateService $restaurantSepaMandateService,
@@ -388,7 +392,12 @@ class RestaurantHomepageAuthService
         $normalizedEmail = $this->normalizeEmail($data['email']);
         $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
 
-        $this->userService->sendCode($user, 'Ihr Login-Code für das Restaurant', $normalizedEmail);
+        if ($this->normalizeEmail((string) $user->email) !== $normalizedEmail) {
+            $this->sendParentLoginCode($user, $normalizedEmail);
+        } else {
+            session()->forget(self::PARENT_CHALLENGE_SESSION_KEY);
+            $this->userService->sendCode($user, 'Ihr Login-Code für das Restaurant', $normalizedEmail);
+        }
 
         return [
             'status' => 'LOGIN_WITH_CODE',
@@ -409,7 +418,13 @@ class RestaurantHomepageAuthService
         $normalizedEmail = $this->normalizeEmail($data['email']);
         $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
 
-        if (! $user->consumeToken2Fa(trim((string) $data['token_2fa']))) {
+        $token = trim((string) $data['token_2fa']);
+        $isParentLogin = $this->normalizeEmail((string) $user->email) !== $normalizedEmail;
+        $tokenIsValid = $isParentLogin
+            ? $this->consumeParentLoginCode($user, $normalizedEmail, $token)
+            : $user->consumeToken2Fa($token);
+
+        if (! $tokenIsValid) {
             return [
                 'status' => 'RETRY_LOGIN_WITH_CODE',
                 'school_id' => $schoolId,
@@ -419,7 +434,7 @@ class RestaurantHomepageAuthService
             ];
         }
 
-        $this->loginRestaurantUser($user);
+        $this->loginRestaurantUser($user, $normalizedEmail);
 
         if ($sepaResponse = $this->sepaRequiredLoginResponse($user, $schoolId, $normalizedEmail)) {
             return $sepaResponse;
@@ -461,7 +476,7 @@ class RestaurantHomepageAuthService
             abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
         }
 
-        $this->loginRestaurantUser($user);
+        $this->loginRestaurantUser($user, $normalizedEmail);
 
         if ($sepaResponse = $this->sepaRequiredLoginResponse($user, $schoolId, $normalizedEmail)) {
             return $sepaResponse;
@@ -758,11 +773,72 @@ class RestaurantHomepageAuthService
         }
     }
 
-    private function loginRestaurantUser(User $user): void
+    private function loginRestaurantUser(User $user, ?string $loginEmail = null): void
     {
+        $isParentLogin = $loginEmail !== null && $this->normalizeEmail((string) $user->email) !== $loginEmail;
+
+        if ($isParentLogin) {
+            session()->put(RestrictRestaurantParentSession::SESSION_KEY, (int) $user->id);
+            Cookie::queue(Cookie::forget(Auth::guard('web')->getRecallerName()));
+        } else {
+            session()->forget(RestrictRestaurantParentSession::SESSION_KEY);
+        }
+
         $user->rememberLogin();
-        Auth::guard('web')->login($user, true);
+        Auth::guard('web')->login($user, ! $isParentLogin);
         session()->regenerate();
+    }
+
+    private function sendParentLoginCode(User $user, string $email): void
+    {
+        $token = (string) random_int(100000, 999999);
+        $expiryMinutes = (int) config('schooltool.token_expire_time');
+        session()->put(self::PARENT_CHALLENGE_SESSION_KEY, [
+            'user_id' => (int) $user->id,
+            'school_id' => (int) $user->school_id,
+            'email' => $email,
+            'token_hash' => Hash::make($token),
+            'expires_at' => now()->addMinutes($expiryMinutes)->timestamp,
+            'attempts_remaining' => 5,
+        ]);
+
+        $school = School::query()->findOrFail($user->school_id);
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail([
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/'.$school->logo),
+            'subject' => 'Ihr Login-Code für das Restaurant',
+            'markdown' => 'mails.homepage.sendCode',
+            'token_2fa' => $token,
+            'token-expire-time' => $expiryMinutes,
+        ]));
+    }
+
+    private function consumeParentLoginCode(User $user, string $email, string $token): bool
+    {
+        $challenge = session(self::PARENT_CHALLENGE_SESSION_KEY);
+        if (! is_array($challenge)
+            || (int) ($challenge['user_id'] ?? 0) !== (int) $user->id
+            || (int) ($challenge['school_id'] ?? 0) !== (int) $user->school_id
+            || ($challenge['email'] ?? null) !== $email
+            || (int) ($challenge['expires_at'] ?? 0) <= now()->timestamp
+            || (int) ($challenge['attempts_remaining'] ?? 0) < 1
+        ) {
+            session()->forget(self::PARENT_CHALLENGE_SESSION_KEY);
+
+            return false;
+        }
+
+        if (! Hash::check($token, (string) ($challenge['token_hash'] ?? ''))) {
+            $challenge['attempts_remaining']--;
+            session()->put(self::PARENT_CHALLENGE_SESSION_KEY, $challenge);
+
+            return false;
+        }
+
+        session()->forget(self::PARENT_CHALLENGE_SESSION_KEY);
+
+        return true;
     }
 
     private function resolveLoginUser(int $schoolId, string $normalizedEmail, int $userId): User

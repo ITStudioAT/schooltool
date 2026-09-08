@@ -16,6 +16,7 @@
         <v-progress-linear v-if="isLoading > 0" indeterminate color="light-blue-lighten-3" />
         <v-list>
             <template v-for="(item, i) in config?.menu || []" :key="i">
+                <v-divider v-if="item.divider_before" class="mx-4 my-3" :opacity="0.65" :thickness="1" />
                 <v-menu
                     v-if="Array.isArray(item.children) && item.children.length > 0"
                     location="end top"
@@ -70,6 +71,7 @@
                     v-else-if="item.to"
                     :exact="false"
                     :title="item.title"
+                    :subtitle="item.subtitle"
                     :prepend-icon="item.icon"
                     v-bind="routeItemBindings(item)"
                     :disabled="isMenuInteractionDisabled || !item.is_active"

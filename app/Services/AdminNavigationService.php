@@ -61,9 +61,6 @@ class AdminNavigationService
         ]);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
-        if ($user->hasAnyRole(self::SETTINGS_ROLES)) {
-            $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'active_paths' => ['/admin/settings'], 'is_active' => true];
-        }
 
         $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
         $tutoringLicenceStatus = $licenceStatuses['Nachhilfetool'] ?? 'missing';
@@ -185,11 +182,27 @@ class AdminNavigationService
             $menu[] = ['title' => 'Profil', 'icon' => 'mdi-account-circle', 'to' => '/admin/profile', 'active_paths' => ['/admin/profile'], 'is_active' => true];
         }
 
+        if ($user->hasAnyRole(self::SETTINGS_ROLES)) {
+            $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'active_paths' => ['/admin/settings'], 'is_active' => true];
+        }
+
         // ABMELDEN
         $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
         $hopperDashboardMenu = $this->hopperDashboardMenu($user);
         if ($hopperDashboardMenu !== null) {
             $menu[] = $hopperDashboardMenu;
+        }
+
+        if ($isSuperAdmin) {
+            $menu[] = [
+                'title' => 'Gruppen',
+                'subtitle' => 'nur Super-Admins',
+                'icon' => 'mdi-account-multiple-outline',
+                'to' => '/admin/groups',
+                'active_paths' => ['/admin/groups'],
+                'is_active' => true,
+                'divider_before' => true,
+            ];
         }
 
         return $menu;
@@ -232,7 +245,7 @@ class AdminNavigationService
         $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', self::TEACHING_DASHBOARD_ROLES);
         $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', self::MATERIALS_DASHBOARD_ROLES);
         $capabilities['materials_v2'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials-v2', self::MATERIALS_DASHBOARD_ROLES);
-        $capabilities['groups'] = false;
+        $capabilities['groups'] = $user->hasRole('super_admin');
         $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', self::RESTAURANT_DASHBOARD_ROLES);
         $capabilities['students_timetables'] = $this->menuRouteCapability($user, $menuByPath, '/admin/students-timetables', self::STUDENTS_TIMETABLES_DASHBOARD_ROLES);
         $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', self::ABA_DASHBOARD_ROLES);

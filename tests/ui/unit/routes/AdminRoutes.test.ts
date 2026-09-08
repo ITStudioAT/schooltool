@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import router, { routes } from '../../../../resources/routes/admin.js'
+import router, { resolveAdminRouteAccess, routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {
+    it('protects the standalone groups page with its dedicated capability', () => {
+        expect(router.resolve('/admin/groups?panel=groups_own').matched).toHaveLength(1)
+        expect(resolveAdminRouteAccess('/admin/groups')).toEqual({ public: false, capability: 'groups' })
+    })
+
     it('registers the restaurant menu plans route', () => {
         const resolvedRoute = router.resolve('/admin/restaurant/menu-plans')
 

@@ -7,6 +7,7 @@ use App\Models\SchoolTool;
 use App\Models\SchoolUserLicence;
 use App\Models\User;
 use App\Services\AdminNavigationService;
+use App\Services\UserHopperService;
 use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -247,12 +248,14 @@ describe('dashboardMenu', function () {
         $menu = $this->service->dashboardMenu();
         $settingsItem = collect($menu)->firstWhere('title', 'Einstellungen');
         $capabilities = $this->service->routeCapabilities($user, $menu);
+        $titles = array_column($menu, 'title');
 
         expect($settingsItem)->not->toBeNull()
             ->and($settingsItem['icon'])->toBe('mdi-cog')
             ->and($settingsItem['to'])->toBe('/admin/settings')
             ->and($capabilities['settings'])->toBeTrue()
-            ->and($capabilities['profile'])->toBeTrue();
+            ->and($capabilities['profile'])->toBeTrue()
+            ->and(array_search('Einstellungen', $titles, true))->toBe(array_search('Profil', $titles, true) + 1);
     })->with(['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'lunch_admin']);
 
     it('does not add a profile menu item for users without admin shell access', function () {
@@ -289,13 +292,12 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(5)
+            ->toHaveCount(6)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toBe(['Home', 'Einstellungen', 'Dokumentation', 'Profil', 'Abmelden'])
-            ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA')
-            ->not->toContain('Gruppen');
+            ->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
+            ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA');
 
-        expect($result[3])->toMatchArray([
+        expect($result[2])->toMatchArray([
             'to' => '/admin/profile',
             'active_paths' => ['/admin/profile'],
             'is_active' => true,
@@ -341,6 +343,58 @@ describe('dashboardMenu', function () {
         expect($item)
             ->not->toBeNull()
             ->and($item['is_active'])->toBeTrue();
+    });
+
+    it('shows the groups entry and capability only for the actual super_admin role', function (string $roleName, bool $allowed) {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
+        $this->actingAs($user);
+
+        $menu = $this->service->dashboardMenu();
+        $groupsItem = collect($menu)->firstWhere('to', '/admin/groups');
+        $capabilities = $this->service->routeCapabilities($user, $menu);
+
+        expect($capabilities['groups'])->toBe($allowed);
+
+        if (! $allowed) {
+            expect($groupsItem)->toBeNull()
+                ->and(collect($menu)->where('divider_before', true))->toBeEmpty();
+
+            return;
+        }
+
+        expect($groupsItem)->toMatchArray([
+            'title' => 'Gruppen',
+            'subtitle' => 'nur Super-Admins',
+            'icon' => 'mdi-account-multiple-outline',
+            'active_paths' => ['/admin/groups'],
+            'is_active' => true,
+            'divider_before' => true,
+        ])->and(array_key_last($menu))->toBe(array_search($groupsItem, $menu, true));
+    })->with([
+        ['super_admin', true],
+        ['admin', false],
+        ['materials_admin', false],
+        ['materials_moderator', false],
+        ['teaching_admin', false],
+        ['teacher', false],
+        ['lunch_admin', false],
+    ]);
+
+    it('places groups immediately after Hopp while keeping settings below profile', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']));
+        $this->actingAs($user);
+        $this->mock(UserHopperService::class)
+            ->shouldReceive('loadHopperAccounts')->once()->with($user)->andReturn([
+                ['id' => 123, 'school_label' => 'Andere Schule', 'full_name' => 'Testkonto', 'email' => 'test@example.test'],
+            ]);
+
+        $menu = $this->service->dashboardMenu();
+        $titles = array_column($menu, 'title');
+
+        expect($titles)->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
+            ->and(collect($menu)->last()['divider_before'])->toBeTrue();
     });
 
     it('ensures Home is always first menu item', function () {

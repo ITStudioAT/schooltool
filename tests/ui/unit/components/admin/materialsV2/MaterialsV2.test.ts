@@ -7,12 +7,19 @@ import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdf
 import { useMaterialsV2Store } from '@/stores/admin/materialsV2/MaterialsV2Store'
 
 const notify = vi.fn()
-const { routeQuery, routerReplace } = vi.hoisted(() => ({
+const { routeQuery, routerReplace, adminRoles } = vi.hoisted(() => ({
     routeQuery: {} as Record<string, string>,
     routerReplace: vi.fn(() => Promise.resolve()),
+    adminRoles: [] as string[],
 }))
 
 config.global.stubs = {
+    ...Object.fromEntries([
+        'v-alert', 'v-btn', 'v-btn-toggle', 'v-card', 'v-card-actions', 'v-card-text', 'v-card-title',
+        'v-chip', 'v-col', 'v-combobox', 'v-container', 'v-dialog', 'v-divider', 'v-file-input',
+        'v-icon', 'v-list', 'v-list-item', 'v-list-item-title', 'v-menu', 'v-pagination', 'v-row',
+        'v-sheet', 'v-skeleton-loader', 'v-spacer', 'v-text-field', 'v-textarea',
+    ].map((name) => [name, true])),
     'v-tab': {
         template: '<button v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
     },
@@ -44,6 +51,8 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 vi.mock('@/stores/admin/AdminStore', () => ({
     useAdminStore: () => ({
         config: {
+            roles: adminRoles,
+            selected_schoolyear: { name: '2026/2027' },
             selected_school: {
                 long_name: 'Christian-Doppler-Gymnasium Salzburg',
                 logo: 'logos/cdgym.svg',
@@ -74,6 +83,7 @@ describe('MaterialsV2', () => {
         window.localStorage.clear()
         vi.clearAllMocks()
         Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
+        adminRoles.splice(0)
         Object.defineProperty(URL, 'createObjectURL', {
             configurable: true,
             value: vi.fn(() => 'blob:screenshot-preview'),
@@ -151,6 +161,56 @@ describe('MaterialsV2', () => {
                 },
             }
         })
+    })
+
+    it.each(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])('offers the right-hand Admin menu for %s', async (role) => {
+        adminRoles.push(role)
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+
+        await wrapper.get('.materials-v2-admin-button').trigger('click')
+        expect(routerReplace).toHaveBeenCalledWith({ query: { section: 'admin', panel: 'material_settings' } })
+        wrapper.unmount()
+    })
+
+    it.each(['teacher', 'user'])('keeps administration hidden for %s even through a direct URL', async (role) => {
+        adminRoles.push(role)
+        Object.assign(routeQuery, { section: 'admin', panel: 'material_groups' })
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+
+        expect(wrapper.find('.materials-v2-admin-button').exists()).toBe(false)
+        expect(wrapper.find('.materials-v2-administration').exists()).toBe(false)
+        expect(routerReplace).toHaveBeenCalledWith({ query: {} })
+        wrapper.unmount()
+    })
+
+    it.each(['material_settings', 'material_groups'])('restores the moved %s panel and can return to the material list', async (panel) => {
+        adminRoles.push('admin')
+        Object.assign(routeQuery, { section: 'admin', panel })
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    MaterialsSettingsView: { template: '<div class="settings-content-stub" />' },
+                    Groups: { name: 'Groups', props: ['embedded', 'embeddedFilter'], template: '<div class="groups-content-stub" />' },
+                },
+            },
+        })
+        await flushPromises()
+
+        expect(wrapper.get('.materials-v2-admin-button').attributes('aria-pressed')).toBe('true')
+        expect(wrapper.find('.materials-v2-workspace').exists()).toBe(false)
+        expect(wrapper.findAll('.materials-v2-admin-panel-meta').map((label) => label.text())).toEqual(['2026/2027', '2026/2027'])
+        expect(wrapper.find('.settings-content-stub').exists()).toBe(panel === 'material_settings')
+        expect(wrapper.find('.groups-content-stub').exists()).toBe(panel === 'material_groups')
+        if (panel === 'material_groups') {
+            expect(wrapper.findComponent({ name: 'Groups' }).props()).toMatchObject({ embedded: true, embeddedFilter: 'materials' })
+        }
+
+        await wrapper.findAll('.materials-v2-system-tab')[0].trigger('click')
+        expect(routerReplace).toHaveBeenCalledWith({ query: {} })
+        wrapper.unmount()
     })
 
     it('loads the independent materials v2 endpoint on mount', async () => {

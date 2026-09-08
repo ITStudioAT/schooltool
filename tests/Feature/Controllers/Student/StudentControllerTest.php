@@ -299,7 +299,7 @@ test('parent verifies its email and selects one of multiple eligible children wi
         'first_name' => 'Anna',
         'last_name' => 'Adler',
         'class' => '2A',
-        'birth_date' => '2007-07-22',
+        'birth_date' => '2008-07-22',
         'mother_email' => $parentEmail,
         'father_email' => null,
         'exists_date' => now(),
@@ -359,7 +359,7 @@ test('parent verifies its email and selects one of multiple eligible children wi
         ->assertJsonPath('status', 'select_student')
         ->assertJsonCount(2, 'students')
         ->assertJsonPath('students.0.id', $firstChild->id)
-        ->assertJsonPath('students.0.age', 18)
+        ->assertJsonPath('students.0.age', 17)
         ->assertJsonPath('students.1.id', $secondChild->id);
 
     $this->assertGuest();
@@ -430,15 +430,15 @@ test('parent verifies its email and selects one of multiple eligible children wi
     $this->assertGuest();
 });
 
-test('parent login only exposes active children aged 18 or less from the active schoolyear', function () {
-    Carbon::setTestNow(Carbon::parse('2026-07-21 10:00:00', 'Europe/Vienna'));
+test('parent login only exposes active children under 18 and revokes access on their eighteenth birthday', function (string $currentTime, string $eligibleBirthDate, string $adultBirthDate) {
+    Carbon::setTestNow(Carbon::parse($currentTime, 'Europe/Vienna'));
     Notification::fake();
 
     $parentEmail = 'filtered.parent@example.test';
     $eligibleChild = Import116::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
-        'birth_date' => '2007-07-22',
+        'birth_date' => $eligibleBirthDate,
         'mother_email' => $parentEmail,
         'father_email' => null,
         'exists_date' => now(),
@@ -447,7 +447,7 @@ test('parent login only exposes active children aged 18 or less from the active 
     $adultChild = Import116::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
-        'birth_date' => '2007-07-21',
+        'birth_date' => $adultBirthDate,
         'mother_email' => $parentEmail,
         'father_email' => null,
         'exists_date' => now(),
@@ -516,7 +516,29 @@ test('parent login only exposes active children aged 18 or less from the active 
         ->not->toContain($adultChild->id)
         ->not->toContain($inactiveChild->id)
         ->not->toContain($otherSchoolyearChild->id);
-});
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $adultChild->id,
+    ])->assertForbidden();
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $eligibleChild->id,
+    ])->assertOk()->assertJsonPath('viewer_type', 'parent');
+
+    $this->travel(1)->minutes();
+
+    $this->getJson('/api/homepage/student/user')
+        ->assertOk()
+        ->assertJsonPath('user', null)
+        ->assertJsonPath('viewer_type', null);
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $eligibleChild->id,
+    ])->assertForbidden();
+})->with([
+    'ordinary birthday' => ['2026-07-21 23:59:00', '2008-07-22', '2008-07-21'],
+    'leap day before birthday' => ['2024-02-29 23:59:00', '2006-03-01', '2006-02-28'],
+]);
 
 test('parent cannot select another parents child and loses access when the selected child becomes inactive', function () {
     Notification::fake();
@@ -630,14 +652,14 @@ test('student email takes precedence when the same address is also a parent cont
     Notification::assertNothingSent();
 });
 
-test('parent without an active child aged 18 or less cannot start a login', function () {
+test('parent cannot start a login on or after the childs eighteenth birthday', function (string $birthDate) {
     Carbon::setTestNow(Carbon::parse('2026-07-21 10:00:00', 'Europe/Vienna'));
     Notification::fake();
 
     $adultChild = Import116::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
-        'birth_date' => '2007-07-21',
+        'birth_date' => $birthDate,
         'mother_email' => 'adult-only.parent@example.test',
         'father_email' => null,
         'exists_date' => now(),
@@ -659,7 +681,11 @@ test('parent without an active child aged 18 or less cannot start a login', func
     ])->assertForbidden();
 
     Notification::assertNothingSent();
-});
+})->with([
+    'eighteenth birthday' => '2008-07-21',
+    'already eighteen' => '2008-07-20',
+    'nineteenth birthday' => '2007-07-21',
+]);
 
 test('parent child selection only includes children with an active course', function () {
     Notification::fake();
