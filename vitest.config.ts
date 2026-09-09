@@ -42,6 +42,7 @@ export default defineConfig({
     esbuild: false,
     test: {
         environment: 'happy-dom',
+        server: { deps: { inline: ['vuetify'] } },
         globals: true,
         pool: 'threads',
         setupFiles: ['./tests/ui/setup.ts'],

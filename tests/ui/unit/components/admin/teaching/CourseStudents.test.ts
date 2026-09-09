@@ -1,6 +1,171 @@
 import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 
+describe('CourseStudents complete performance loading', () => {
+    it('keeps the three local card states through normalization and legacy serialization', () => {
+        const methods = (CourseStudents as any).methods
+        const context = {
+            ...methods,
+            canEditAttendance: true,
+            selected_course: { students_info: [{ id: 10 }] },
+            selectedCourseDateForCourse: { id: 1, attendance: {}, attendance_checked: true },
+            attendanceCheckedForSelectedDate: true,
+            selected_courseDate: null,
+        }
+        for (const expected of [null, false, true, null]) {
+            context.toggleStudentPresence({ id: 10 })
+            context.selectedCourseDateForCourse = JSON.parse(JSON.stringify(context.selected_courseDate))
+            expect(context.studentAttendanceStateForSelectedDate(10)).toBe(expected)
+        }
+        const states = { 10: null, 11: true, 12: false }
+        expect(context.buildStatusWithAttendanceMeta(['pruefung'], states, true)).toEqual([
+            'pruefung', 'att:10:null', 'att:11:1', 'att:12:0', 'att_checked:1',
+        ])
+        context.selected_course.students_info = [{ id: 10 }, { id: 11 }, { id: 12 }]
+        expect(context.getAttendanceMap({ status: context.buildStatusWithAttendanceMeta([], states, true) })).toEqual(states)
+    })
+
+    it('leaves unchecked card attendance blank and keeps explicit absence and checked presence', () => {
+        const methods = (CourseStudents as any).methods
+        const ctx = {
+            ...methods,
+            selectedCourseDateForCourse: { id: 1, attendance: {} as Record<string, boolean | null> },
+            selected_course: { students_info: [{ id: 10 }] },
+            presence_by_student: {} as Record<string, boolean>,
+            attendanceCheckedForSelectedDate: false,
+        }
+
+        expect(ctx.studentAttendanceStateForSelectedDate(10)).toBeNull()
+        ctx.selectedCourseDateForCourse.attendance.s_10 = false
+        expect(ctx.studentAttendanceStateForSelectedDate(10)).toBe(false)
+        ctx.selectedCourseDateForCourse.attendance.s_10 = true
+        expect(ctx.studentAttendanceStateForSelectedDate(10)).toBe(true)
+        ctx.attendanceCheckedForSelectedDate = true
+        expect(ctx.studentAttendanceStateForSelectedDate(10)).toBe(true)
+        ctx.attendanceCheckedForSelectedDate = false
+        ctx.selectedCourseDateForCourse.attendance.s_10 = null
+        expect(ctx.studentAttendanceStateForSelectedDate(10)).toBeNull()
+    })
+
+    it('invalidates cached performances and reloads course selection on schoolyear changes', () => {
+        const context = { performanceRequestId: 4, performanceData: { entries: [{ teaching_course_id: 18 }] }, performanceLoading: false, courseStore: { index: vi.fn() } }
+        ;(CourseStudents as any).watch['config.selected_schoolyear.id'].call(context, 4, 3)
+        expect(context.performanceRequestId).toBe(5)
+        expect(context.performanceData).toEqual({ entries: [], behaviourEntries: [], works: [], evaluations: [] })
+        expect(context.performanceLoading).toBe(true)
+        expect(context.courseStore.index).toHaveBeenCalledOnce()
+    })
+
+    it('uses course ownership for star schoolyears and suppresses stale-year reminder indicators', () => {
+        const student = { id: 12, user_id: 12, stars: [{ date: '2025-08-31' }, { date: '2026-09-01' }, { date: null }, { date: '2026-01-01' }] }
+        const context = { activeSemester: 3, countSem2StartDate: '2026-02-09', selected_course: { schoolyear_id: 3 }, config: { selected_schoolyear: { id: 3, from: '2025-09-01', until: '2026-08-31' } } }
+        const filtered = (CourseStudents as any).methods.studentForSelectedSemester.call(context, student)
+        expect(filtered.stars).toEqual(student.stars)
+        context.config.selected_schoolyear.id = 4
+        const stale = (CourseStudents as any).methods.studentForSelectedSemester.call(context, student)
+        expect(stale.stars).toEqual([])
+        expect(stale.user_id).toBeNull()
+    })
+
+    it.each([1, 2, 3])('filters the existing star badges for semester %s without changing student data', (activeSemester) => {
+        const student = { id: 12, stars: [{ date: '2026-02-08' }, { date: '2026-02-09' }, { date: null }] }
+        const filtered = (CourseStudents as any).methods.studentForSelectedSemester.call({
+            activeSemester, countSem2StartDate: '2026-02-09', selected_course: { schoolyear_id: 3 },
+            config: { selected_schoolyear: { id: 3, from: '2025-09-01', until: '2026-08-31' } },
+        }, student)
+        expect(filtered.stars).toHaveLength(activeSemester === 3 ? 3 : 1)
+        expect(student.stars).toHaveLength(3)
+        expect(filtered.stars.some((star) => star.date === '2026-02-09')).toBe(activeSemester !== 1)
+        expect(filtered.stars.some((star) => star.date === '2026-02-08')).toBe(activeSemester !== 2)
+    })
+
+    it.each([[1, 2], [2, 0], [3, 2]])('keeps the two course stars awarded before teaching started in semester %s', (activeSemester, expectedStars) => {
+        const student = { id: 492, user_id: 492, stars: [{ id: 'one', date: '2026-09-05' }, { id: 'two', date: '2026-09-05' }] }
+        const context = {
+            activeSemester, countSem2StartDate: '2027-02-15', selected_course: { id: 18, schoolyear_id: 2 },
+            config: { selected_schoolyear: { id: 2, from: '2026-09-14', until: '2027-07-09' } },
+        }
+        const filtered = (CourseStudents as any).methods.studentForSelectedSemester.call(context, student)
+        expect(filtered.stars).toHaveLength(expectedStars)
+        context.selected_course.schoolyear_id = 1
+        expect((CourseStudents as any).methods.studentForSelectedSemester.call(context, student).stars).toEqual([])
+    })
+
+    it('reloads performance after leaving a bulk action', () => {
+        const context = { selected_course: { id: 18 }, loadStudentPerformance: vi.fn() }
+        ;(CourseStudents as any).watch.show_bulk_entry.call(context, false, true)
+        expect(context.loadStudentPerformance).toHaveBeenCalledWith(18)
+    })
+
+    it('keeps legacy schema definitions when the course has no assigned entry area', () => {
+        const context = { uses_entry_areas_for_grading_schema: true, selected_course: { id: 18 } }
+        expect((CourseStudents as any).computed.usesNewBulkEntryDefinitions.call(context)).toBe(false)
+    })
+
+    it('keeps the new course snapshot when an old request overwrites the shared store later', async () => {
+        let finishOldRequest: (() => void) | undefined
+        const context: any = {
+            performanceRequestId: 0,
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: {
+                courseEntries: [],
+                indexByCourse: vi.fn((courseId) => {
+                    if (courseId === 18) return new Promise((resolve) => {
+                        finishOldRequest = () => {
+                            context.entryStore.courseEntries = [{ teaching_course_id: 18 }]
+                            resolve(true)
+                        }
+                    })
+                    context.entryStore.courseEntries = [{ teaching_course_id: 19 }]
+                    return Promise.resolve(true)
+                }),
+            },
+        }
+        const oldRequest = (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 19)
+        finishOldRequest?.()
+        await oldRequest
+        expect(context.performanceData.entries).toEqual([{ teaching_course_id: 19 }])
+        expect(context.performanceLoadFailed).toBe(false)
+    })
+
+    it('loads all course records and evaluations without restricting the semester or student', async () => {
+        const context = {
+            performanceRequestId: 0,
+            performanceLoading: false,
+            performanceLoadFailed: false,
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(context.entryStore.indexByCourse).toHaveBeenCalledWith(18)
+        expect(context.courseWorkStore.index).toHaveBeenCalledWith(18)
+        expect(context.behaviourEntryStore.indexByCourse).toHaveBeenCalledWith(18)
+        expect(context.categoryEvaluationStore.indexByCourse).toHaveBeenCalledWith(18)
+        expect(context.performanceLoading).toBe(false)
+        expect(context.performanceLoadFailed).toBe(false)
+    })
+
+    it('marks partially failed data loading instead of showing an empty performance record', async () => {
+        const context = {
+            performanceRequestId: 0,
+            performanceLoading: false,
+            performanceLoadFailed: false,
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            courseWorkStore: { index: vi.fn().mockRejectedValue(new Error('Offline')) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(false) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(context.performanceLoading).toBe(false)
+        expect(context.performanceLoadFailed).toBe(true)
+    })
+})
+
 describe('CourseStudents sorting', () => {
     it('defaults student sort mode to name', () => {
         const data = (CourseStudents as any).data.call({
@@ -131,10 +296,10 @@ describe('CourseStudents sorting', () => {
         )
 
         expect(source).toContain('class="student-name-line"')
-        expect(source).toContain('<CourseStudentIndicators :student="student"')
-        expect(source.indexOf('<CourseStudentIndicators :student="student"')).toBeGreaterThan(source.indexOf('class="student-name-line"'))
-        expect(source.indexOf('<CourseStudentIndicators :student="student"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
-        expect(source).toContain('<CourseStudentIndicators :student="item.student"')
+        expect(source).toContain('<CourseStudentIndicators :student="studentForSelectedSemester(student)"')
+        expect(source.indexOf('<CourseStudentIndicators :student="studentForSelectedSemester(student)"')).toBeGreaterThan(source.indexOf('class="student-name-line"'))
+        expect(source.indexOf('<CourseStudentIndicators :student="studentForSelectedSemester(student)"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
+        expect(source).toContain('<CourseStudentIndicators :student="studentForSelectedSemester(item.student)"')
         expect(source).toContain('@select="$refs.studentNotes.open(student, $event)"')
     })
 

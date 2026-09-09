@@ -27,6 +27,9 @@
             variant="tonal">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
+                <span v-if="tableView === 'attendance'" class="text-caption text-medium-emphasis">
+                    Zellklick: ungeprüft → abwesend → anwesend → ungeprüft
+                </span>
                 <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary" variant="tonal">
                     <v-btn :value="1" size="small">1. Sem</v-btn>
                     <v-btn :value="2" size="small">2. Sem</v-btn>
@@ -94,6 +97,14 @@
                                                 :title="`${compactCourseDateTitle(courseDate)}: alle abwesend setzen`"
                                                 variant="tonal"
                                                 @click.stop="openBulkAttendanceDialog(courseDate, false)" />
+                                            <v-btn
+                                                class="course-table-date-attendance-action"
+                                                density="compact"
+                                                icon="mdi-eraser"
+                                                size="x-small"
+                                                :title="`${compactCourseDateTitle(courseDate)}: Anwesenheiten der Spalte zurücksetzen`"
+                                                variant="tonal"
+                                                @click.stop="openBulkAttendanceDialog(courseDate, null)" />
                                         </div>
                                     </div>
                                 </th>
@@ -431,25 +442,27 @@
                                         class="course-table-entry-cell"
                                         :class="[
                                             {
-                                                'course-table-entry-cell--interactive': tableView === 'entries',
-                                                'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate),
+                                                'course-table-entry-cell--interactive': true,
+                                                'course-table-entry-cell--absent': tableView === 'entries' && studentAttendanceState(student, courseDate) === false,
                                                 'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate),
                                             },
                                             courseDateColumnMarkingClass(courseDate),
                                         ]"
-                                        :role="tableView === 'entries' ? 'button' : undefined"
-                                        :tabindex="tableView === 'entries' ? 0 : undefined"
-                                        @click="openEntryDialog(student, courseDate)"
-                                        @keydown.enter.prevent="openEntryDialog(student, courseDate)"
-                                        @keydown.space.prevent="openEntryDialog(student, courseDate)">
+                                        role="button"
+                                        tabindex="0"
+                                        :aria-label="tableView === 'attendance' ? attendanceMarkerTitle(student, courseDate) : undefined"
+                                        :aria-disabled="tableView === 'attendance' && isAttendanceCellSaving(student, courseDate)"
+                                        @click="activateStudentCell(student, courseDate)"
+                                        @keydown.enter.self.prevent="activateStudentCell(student, courseDate)"
+                                        @keydown.space.self.prevent="activateStudentCell(student, courseDate)">
                                         <v-icon
-                                            v-if="tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)"
-                                            class="course-table-entry-cell-absent-marker"
-                                            color="error"
+                                            v-if="tableView === 'entries' && studentAttendanceState(student, courseDate) !== null"
+                                            class="course-table-entry-cell-attendance-marker"
+                                            :color="studentAttendanceState(student, courseDate) ? 'success' : 'error'"
                                             size="14"
-                                            aria-label="Abwesend"
-                                            title="Abwesend">
-                                            mdi-close
+                                            :aria-label="studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'"
+                                            :title="studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'">
+                                            {{ studentAttendanceState(student, courseDate) ? 'mdi-check' : 'mdi-close' }}
                                         </v-icon>
                                         <div class="course-table-entry-cell-content">
                                             <div
@@ -498,17 +511,19 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                            <v-btn
+                                            <span
                                                 v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
                                                 class="course-table-attendance-marker"
-                                                :color="isStudentPresentForCourseDate(student, courseDate) ? 'success' : 'error'"
-                                                density="compact"
-                                                :icon="isStudentPresentForCourseDate(student, courseDate) ? 'mdi-check' : 'mdi-close'"
-                                                :loading="isAttendanceCellSaving(student, courseDate)"
-                                                size="x-small"
                                                 :title="attendanceMarkerTitle(student, courseDate)"
-                                                variant="tonal"
-                                                @click.stop="toggleStudentAttendance(student, courseDate)" />
+                                                aria-hidden="true">
+                                                <v-progress-circular v-if="isAttendanceCellSaving(student, courseDate)" indeterminate size="18" width="2" />
+                                                <v-icon
+                                                    v-else-if="studentAttendanceState(student, courseDate) !== null"
+                                                    :color="studentAttendanceState(student, courseDate) ? 'success' : 'error'"
+                                                    size="18">
+                                                    {{ studentAttendanceState(student, courseDate) ? 'mdi-check' : 'mdi-close' }}
+                                                </v-icon>
+                                            </span>
                                         </div>
                                         <v-tooltip
                                             v-if="tableView === 'entries' && entriesForCell(student, courseDate).length"
@@ -566,18 +581,18 @@
             <v-card class="course-table-curriculum-dialog-card" data-testid="course-table-curriculum-dialog">
                 <v-card-title class="course-table-curriculum-dialog-title">
                     <v-icon color="deep-purple" size="22">mdi-book-education-outline</v-icon>
-                    <span>{{ curriculumDialogTitle }}</span>
-                    <v-chip
-                        v-if="curriculumDialogCourseDateTitle"
-                        class="ml-auto"
-                        color="deep-purple"
-                        size="small"
-                        variant="tonal">
-                        {{ curriculumDialogCourseDateTitle }}
-                    </v-chip>
+                    <div>
+                        <div class="course-table-curriculum-date" data-testid="curriculum-dialog-date">
+                            {{ curriculumDialogCourseDateTitle }}
+                        </div>
+                        <div class="text-subtitle-2 text-medium-emphasis">{{ curriculumDialogTitle }}</div>
+                    </div>
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="course-table-curriculum-dialog-content pa-0">
+                    <div v-if="curriculumFileError" role="alert" class="text-error text-body-2 pa-3">
+                        {{ curriculumFileError }}
+                    </div>
                     <div v-if="curriculumDialog.loading" class="course-table-curriculum-dialog-loading">
                         <v-progress-circular color="deep-purple" indeterminate />
                         <span>Curriculum wird geladen …</span>
@@ -586,8 +601,8 @@
                         v-else-if="curriculumDialogTopics.length"
                         class="course-table-curriculum-dialog-list"
                         density="compact">
-                        <template v-for="(topic, topicIndex) in curriculumDialogTopics" :key="topic.key">
-                            <v-divider v-if="topicIndex > 0" />
+                        <section v-for="topic in curriculumDialogTopics" :key="topic.key"
+                            class="course-table-curriculum-chapter" :aria-label="topic.title">
                             <v-list-subheader :title="topic.title" color="deep-purple" />
                             <v-list-item
                                 v-for="unit in topic.units"
@@ -596,19 +611,44 @@
                                 :class="{
                                     'course-table-curriculum-dialog-unit--linked': isCurriculumUnitLinkedToDialogDate(topic, unit),
                                 }"
-                                :prepend-icon="unit.isExam ? 'mdi-clipboard-text-outline' : 'mdi-circle-small'"
                                 :title="unit.title">
+                                <template #title>
+                                    <div class="course-table-curriculum-unit-heading">
+                                        <v-icon v-if="unit.isExam" color="error" size="17" role="img" aria-label="Prüfung">mdi-file-document-edit-outline</v-icon>
+                                        <span class="course-table-curriculum-unit-title" :class="{ 'text-error': unit.isExam }">{{ unit.title }}</span>
+                                    </div>
+                                </template>
+                                <div v-if="unit.files.length" class="course-table-curriculum-files" data-testid="course-table-curriculum-files">
+                                    <div v-for="file in unit.files" :key="file.id" class="course-table-curriculum-file">
+                                        <v-icon size="17" color="primary">{{ curriculumFileIcon(file) }}</v-icon>
+                                        <button
+                                            v-if="file.preview_url || file.download_url"
+                                            type="button"
+                                            class="course-table-curriculum-file-name"
+                                            :disabled="Boolean(curriculumFilePending)"
+                                            :title="file.preview_url ? `${file.name} – Vorschau` : `${file.name} – Herunterladen`"
+                                            @click.stop="openCurriculumFile(file, Boolean(file.preview_url))">{{ file.name }}</button>
+                                        <span v-else class="course-table-curriculum-file-name">{{ file.name }}</span>
+                                        <v-btn
+                                            v-if="file.download_url"
+                                            icon="mdi-download-outline"
+                                            :title="`${file.name} herunterladen`"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="Boolean(curriculumFilePending)"
+                                            :loading="curriculumFilePending === file.id"
+                                            @click.stop="openCurriculumFile(file)" />
+                                    </div>
+                                </div>
                                 <template #append>
                                     <v-btn
                                         v-if="isCurriculumUnitLinkedToDialogDate(topic, unit)"
                                         color="error"
-                                        density="default"
+                                        density="compact"
                                         prepend-icon="mdi-link-variant-off"
-                                        size="default"
+                                        size="x-small"
                                         variant="tonal"
-                                        height="36"
-                                        min-width="100"
-                                        class="ml-3"
+                                        class="course-table-curriculum-unit-action"
                                         :disabled="Boolean(curriculumUnitActionKey)"
                                         :loading="isCurriculumUnitActionPending(topic, unit)"
                                         @click.stop="unlinkCurriculumUnit(topic, unit)">
@@ -621,6 +661,7 @@
                                         prepend-icon="mdi-link-variant"
                                         size="x-small"
                                         variant="tonal"
+                                        class="course-table-curriculum-unit-action"
                                         :disabled="Boolean(curriculumUnitActionKey)"
                                         :loading="isCurriculumUnitActionPending(topic, unit)"
                                         @click.stop="linkCurriculumUnit(topic, unit)">
@@ -631,7 +672,7 @@
                             <div v-if="!topic.units.length" class="course-table-curriculum-dialog-empty-topic">
                                 Keine Einheiten
                             </div>
-                        </template>
+                        </section>
                     </v-list>
                     <div v-else class="course-table-curriculum-dialog-empty">
                         Dieses Curriculum enthält keine Themen.
@@ -639,16 +680,19 @@
                     <v-list v-if="!curriculumDialog.loading && unmatchedCurriculumTitles.length"
                         class="course-table-curriculum-dialog-list" density="compact"
                         data-testid="course-table-old-curriculum-links">
-                        <v-list-subheader title="Weitere verknüpfte Inhalte" />
-                        <v-list-item v-for="title in unmatchedCurriculumTitles" :key="title" :title="title">
-                            <template #append>
-                                <v-btn color="error" density="default" prepend-icon="mdi-link-variant-off"
-                                    size="default" variant="tonal" height="36" min-width="100" class="ml-3"
-                                    :disabled="Boolean(curriculumUnitActionKey)"
-                                    :loading="isCurriculumUnitActionPending({}, { title })"
-                                    @click.stop="unlinkCurriculumUnit({}, { title })">Lösen</v-btn>
-                            </template>
-                        </v-list-item>
+                        <section class="course-table-curriculum-chapter" aria-label="Weitere verknüpfte Inhalte">
+                            <v-list-subheader title="Weitere verknüpfte Inhalte" />
+                            <v-list-item v-for="title in unmatchedCurriculumTitles" :key="title" :title="title"
+                                class="course-table-curriculum-dialog-unit">
+                                <template #append>
+                                    <v-btn color="error" density="compact" prepend-icon="mdi-link-variant-off"
+                                        size="x-small" variant="tonal" class="course-table-curriculum-unit-action"
+                                        :disabled="Boolean(curriculumUnitActionKey)"
+                                        :loading="isCurriculumUnitActionPending({}, { title })"
+                                        @click.stop="unlinkCurriculumUnit({}, { title })">Lösen</v-btn>
+                                </template>
+                            </v-list-item>
+                        </section>
                     </v-list>
                 </v-card-text>
                 <v-divider />
@@ -662,6 +706,25 @@
                         @click="closeCurriculumDialog">
                         Schließen
                     </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog :model-value="Boolean(curriculumFilePreview)" max-width="1000" @update:model-value="closeCurriculumFilePreview">
+            <v-card v-if="curriculumFilePreview">
+                <v-card-title class="text-subtitle-1 text-wrap">{{ curriculumFilePreview.file.name }}</v-card-title>
+                <v-card-text class="pa-0">
+                    <CurriculumPdfPreview
+                        v-if="curriculumFilePreview.isPdf"
+                        :document-id="curriculumFilePreview.file.id"
+                        :src="curriculumFilePreview.url"
+                        class="course-table-file-preview" />
+                    <iframe v-else :src="curriculumFilePreview.url" :title="curriculumFilePreview.file.name"
+                        sandbox="" referrerpolicy="no-referrer" class="course-table-file-preview" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeCurriculumFilePreview">Schließen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -1460,14 +1523,17 @@
         <v-dialog v-model="bulkAttendanceDialog.open" persistent max-width="460">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold">
-                    Anwesenheit setzen
+                    {{ bulkAttendanceDialog.present === null ? 'Anwesenheitsspalte zurücksetzen' : 'Anwesenheit setzen' }}
                 </v-card-title>
                 <v-card-text>
                     Alle Schüler:innen für
                     <strong>{{ bulkAttendanceCourseDateTitle }}</strong>
                     als
-                    <strong>{{ bulkAttendanceDialog.present ? 'anwesend' : 'abwesend' }}</strong>
+                    <strong>{{ bulkAttendanceDialog.present === null ? 'ungeprüft' : bulkAttendanceDialog.present ? 'anwesend' : 'abwesend' }}</strong>
                     markieren?
+                    <div v-if="bulkAttendanceDialog.present === null" class="mt-2">
+                        Nur die Anwesenheitseinträge und der Anwesenheitsprüfstatus dieses Termins werden zurückgesetzt.
+                    </div>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
@@ -1478,11 +1544,11 @@
                         Abbrechen
                     </v-btn>
                     <v-btn
-                        :color="bulkAttendanceDialog.present ? 'success' : 'error'"
+                        :color="bulkAttendanceDialog.present === null ? 'primary' : bulkAttendanceDialog.present ? 'success' : 'error'"
                         :loading="bulkAttendanceSaving"
                         variant="flat"
                         @click="confirmBulkAttendance">
-                        Bestätigen
+                        {{ bulkAttendanceDialog.present === null ? 'Zurücksetzen' : 'Bestätigen' }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -1507,6 +1573,7 @@
                             aria-label="Anwesenheit auswählen">
                             <strong class="mr-1">Anwesenheit:</strong>
                             <v-chip
+                                v-if="studentAttendanceState(entryDialog.student, entryDialog.courseDate) !== null"
                                 class="font-weight-bold mr-2"
                                 :color="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'success' : 'error'"
                                 data-testid="course-table-entry-attendance-status"
@@ -1524,8 +1591,8 @@
                                 density="compact"
                                 prepend-icon="mdi-check"
                                 size="small"
-                                :variant="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'flat' : 'outlined'"
-                                :aria-pressed="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate)"
+                                :variant="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === true ? 'flat' : 'outlined'"
+                                :aria-pressed="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === true"
                                 :disabled="isAttendanceCellSaving(entryDialog.student, entryDialog.courseDate)"
                                 @click="setEntryDialogAttendance(true)">
                                 Anwesend
@@ -1535,11 +1602,20 @@
                                 density="compact"
                                 prepend-icon="mdi-close"
                                 size="small"
-                                :variant="isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate) ? 'outlined' : 'flat'"
-                                :aria-pressed="!isStudentPresentForCourseDate(entryDialog.student, entryDialog.courseDate)"
+                                :variant="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === false ? 'flat' : 'outlined'"
+                                :aria-pressed="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === false"
                                 :disabled="isAttendanceCellSaving(entryDialog.student, entryDialog.courseDate)"
                                 @click="setEntryDialogAttendance(false)">
                                 Abwesend
+                            </v-btn>
+                            <v-btn
+                                density="compact"
+                                size="small"
+                                :variant="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === null ? 'flat' : 'outlined'"
+                                :aria-pressed="studentAttendanceState(entryDialog.student, entryDialog.courseDate) === null"
+                                :disabled="isAttendanceCellSaving(entryDialog.student, entryDialog.courseDate)"
+                                @click="setEntryDialogAttendance(null)">
+                                Ungeprüft
                             </v-btn>
                         </div>
                     </div>
@@ -2128,6 +2204,7 @@ import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { parseLocalDate } from '@/helpers/date'
+import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -2138,6 +2215,7 @@ import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
+const CurriculumPdfPreview = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'))
 const courseContentAllowedTags = new Set([
     'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'hr', 'i', 'li', 'ol', 'p', 'pre',
     's', 'strike', 'strong', 'sub', 'sup', 'u', 'ul',
@@ -2148,7 +2226,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2187,6 +2265,9 @@ export default {
                 open: false,
             },
             curriculumDialogRequestId: 0,
+            curriculumFileError: '',
+            curriculumFilePending: null,
+            curriculumFilePreview: null,
             curriculumStore: null,
             curriculumUnitActionKey: null,
             courseEntriesRequestPromise: null,
@@ -2305,6 +2386,10 @@ export default {
         this.scrollToInitialCourseDate()
     },
 
+    beforeUnmount() {
+        this.closeCurriculumFilePreview()
+    },
+
     watch: {
         async view(view) {
             this.restoreTableView(view)
@@ -2373,21 +2458,7 @@ export default {
 
                 return Number(first?.id || 0) - Number(second?.id || 0)
             })
-            const selectedSemester = Number(this.activeSemester)
-            const semesterTwoStartDate = String(this.semesterTwoStartDate || '').slice(0, 10)
-
-            if (![1, 2].includes(selectedSemester) || !/^\d{4}-\d{2}-\d{2}$/.test(semesterTwoStartDate)) {
-                return sortedDates
-            }
-
-            return sortedDates.filter((courseDate) => {
-                const date = String(courseDate?.date || '').slice(0, 10)
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return true
-
-                return selectedSemester === 1
-                    ? date < semesterTwoStartDate
-                    : date >= semesterTwoStartDate
-            })
+            return sortedDates.filter((courseDate) => isInTeachingSemester(courseDate?.date, this.activeSemester, this.semesterTwoStartDate))
         },
         hasAssignedCurriculum() {
             return this.assignedCurriculumId !== null
@@ -2409,9 +2480,12 @@ export default {
                 || 'Curriculum'
         },
         curriculumDialogCourseDateTitle() {
-            return this.curriculumDialog.courseDate
-                ? this.compactCourseDateTitle(this.curriculumDialog.courseDate)
-                : ''
+            const value = this.curriculumDialog.courseDate?.date
+            if (!value) return ''
+            const date = parseLocalDate(value)
+            if (Number.isNaN(date.getTime())) return ''
+
+            return date.toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' })
         },
         contentDialogCurriculumContent() {
             return this.curriculumContentForCourseDate(this.contentDialog.courseDate)
@@ -2466,6 +2540,9 @@ export default {
                     key: topic?.id || `topic-${topicIndex}`,
                     title: String(topic?.title || '').trim() || `Thema ${topicIndex + 1}`,
                     units: (Array.isArray(topic?.units) ? topic.units : []).map((unit, unitIndex) => ({
+                        files: Array.isArray(this.curriculumDialog.curriculum?.unit_files?.[topic?.id]?.[unit?.id])
+                            ? this.curriculumDialog.curriculum.unit_files[topic.id][unit.id]
+                            : [],
                         isExam: Boolean(unit?.is_exam),
                         key: unit?.id || `unit-${topicIndex}-${unitIndex}`,
                         materials: [...topicMaterials, ...(Array.isArray(unit?.materials) ? unit.materials : [])]
@@ -2774,6 +2851,7 @@ export default {
             window.open(courseOverviewPdf.url(this.selected_course.id), '_blank', 'noopener')
         },
         async openCurriculumDialog(courseDate) {
+            this.curriculumFileError = ''
             const curriculumId = this.assignedCurriculumId
             if (!curriculumId && !courseDate?.adopted_materials?.length) {
                 this.$emit('manage-curriculum')
@@ -2816,6 +2894,66 @@ export default {
                 .map((title) => String(title || '').trim())
                 .filter(Boolean)
                 .join(': ')
+        },
+        curriculumFileIcon(file) {
+            const mimeType = String(file?.mime_type || '').toLowerCase()
+            if (mimeType === 'application/pdf') return 'mdi-file-pdf-box'
+            if (mimeType.startsWith('image/')) return 'mdi-file-image-outline'
+
+            return 'mdi-file-document-outline'
+        },
+        async openCurriculumFile(file, preview = false) {
+            if (this.curriculumFilePending) return
+
+            this.curriculumFileError = ''
+            this.curriculumFilePending = file.id
+
+            try {
+                const fileUrl = new URL(preview ? file.preview_url : file.download_url, window.location.origin)
+                if (fileUrl.origin !== window.location.origin) throw new Error('Invalid file origin')
+
+                const response = await axios.get(fileUrl.href, {
+                    responseType: 'blob',
+                    withCredentials: true,
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                })
+                const blob = response.data
+
+                if (preview) {
+                    this.closeCurriculumFilePreview()
+                    const contentType = String(response.headers?.['content-type'] || blob.type).split(';')[0].trim()
+                    this.curriculumFilePreview = {
+                        file,
+                        isPdf: contentType === 'application/pdf',
+                        url: URL.createObjectURL(new Blob([blob], { type: contentType })),
+                    }
+                    return
+                }
+
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = file.name || 'Datei'
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+            } catch (error) {
+                const status = error?.response?.status
+                this.curriculumFileError = status === 401
+                    ? 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.'
+                    : status === 403
+                        ? 'Keine Berechtigung für diese Datei.'
+                        : preview
+                            ? 'Die Vorschau konnte nicht geöffnet werden. Bitte versuche den Download.'
+                            : 'Die Datei konnte nicht heruntergeladen werden.'
+            } finally {
+                this.curriculumFilePending = null
+            }
+        },
+        closeCurriculumFilePreview() {
+            if (this.curriculumFilePreview) URL.revokeObjectURL(this.curriculumFilePreview.url)
+            this.curriculumFilePreview = null
         },
         curriculumDialogUnitActionKey(topic, unit) {
             return `${topic?.key || topic?.title || 'topic'}:${unit?.key || unit?.title || 'unit'}`
@@ -5123,11 +5261,11 @@ export default {
             }
         },
         bulkAttendanceMap(present) {
-            if (present) return {}
+            if (present === null) return {}
 
             return this.sortedSelectedStudents.reduce((attendance, student) => {
                 if (student?.id) {
-                    attendance[String(student.id)] = false
+                    attendance[String(student.id)] = present
                 }
 
                 return attendance
@@ -5141,13 +5279,14 @@ export default {
 
             const previousDate = { ...courseDate, attendance: { ...(courseDate.attendance || {}) } }
             const nextAttendance = this.bulkAttendanceMap(this.bulkAttendanceDialog.present)
-            const optimisticDate = { ...courseDate, attendance: nextAttendance }
+            const attendanceChecked = this.bulkAttendanceDialog.present === null ? false : this.isAttendanceChecked(courseDate)
+            const optimisticDate = { ...courseDate, attendance: nextAttendance, attendance_checked: attendanceChecked }
             this.applyUpdatedCourseDate(optimisticDate)
 
             try {
                 const response = await this.courseDateStore?.updateStatus(courseDate.id, {
                     attendance: nextAttendance,
-                    attendance_checked: this.isAttendanceChecked(courseDate),
+                    attendance_checked: attendanceChecked,
                 })
                 if (response) {
                     this.applyUpdatedCourseDate({
@@ -5178,7 +5317,18 @@ export default {
             return Boolean(this.savingAttendanceCells[this.attendanceCellKey(student, courseDate)])
         },
         attendanceMarkerTitle(student, courseDate) {
-            return `${this.studentName(student)} - ${this.compactCourseDateTitle(courseDate)}`
+            const state = this.studentAttendanceState(student, courseDate)
+            const current = state === null ? 'ungeprüft' : state ? 'anwesend' : 'abwesend'
+            const next = state === null ? 'abwesend' : state ? 'ungeprüft' : 'anwesend'
+
+            return `${this.studentName(student)} - ${this.compactCourseDateTitle(courseDate)}: ${current}. Klicken: ${next}`
+        },
+        activateStudentCell(student, courseDate) {
+            if (this.tableView === 'attendance') {
+                return this.toggleStudentAttendance(student, courseDate)
+            }
+
+            return this.openEntryDialog(student, courseDate)
         },
         isStudentPresentForCourseDate(student, courseDate) {
             if (!student?.id || !courseDate) return false
@@ -5186,13 +5336,24 @@ export default {
 
             return this.isAttendancePresentValue(attendance[String(student.id)])
         },
+        studentAttendanceState(student, courseDate) {
+            if (!student?.id || !courseDate) return null
+            const attendance = this.getAttendanceMap(courseDate)
+            const studentId = String(student.id)
+            if (Object.prototype.hasOwnProperty.call(attendance, studentId)) return attendance[studentId]
+
+            return this.isAttendanceChecked(courseDate) ? true : null
+        },
         studentPresencePercentage(student) {
-            const attendanceDates = this.sortedCourseDates.filter((courseDate) => this.isAttendanceToggleable(courseDate))
-            if (!attendanceDates.length) return null
+            const attendanceStates = this.sortedCourseDates
+                .filter((courseDate) => this.isAttendanceToggleable(courseDate))
+                .map((courseDate) => this.studentAttendanceState(student, courseDate))
+                .filter((state) => state !== null)
+            if (!attendanceStates.length) return null
 
-            const presentDates = attendanceDates.filter((courseDate) => this.isStudentPresentForCourseDate(student, courseDate))
+            const presentDates = attendanceStates.filter((state) => state === true)
 
-            return Math.round((presentDates.length / attendanceDates.length) * 100)
+            return Math.round((presentDates.length / attendanceStates.length) * 100)
         },
         getAttendanceMap(courseDate) {
             if (!courseDate) return {}
@@ -5217,7 +5378,7 @@ export default {
                 const studentId = String(parts[1] || '').trim()
                 const present = String(parts[2] || '').trim()
                 if (!studentId) return
-                attendance[studentId] = ['1', 'true'].includes(present)
+                attendance[studentId] = present === 'null' ? null : ['1', 'true'].includes(present)
             })
 
             return this.sanitizeAttendanceMap(attendance)
@@ -5229,20 +5390,19 @@ export default {
             Object.entries(input).forEach(([studentId, value]) => {
                 const key = String(studentId || '').trim()
                 if (!key) return
-                if (!this.isAttendancePresentValue(value)) {
-                    sanitized[key] = false
-                }
+                sanitized[key] = value === null ? null : this.isAttendancePresentValue(value)
             })
 
             return sanitized
         },
         isAttendancePresentValue(value) {
+            if ([true, 1, '1', 'true'].includes(value)) return true
             if (value === false) return false
             if (value === 0) return false
             if (value === '0') return false
             if (value === 'false') return false
 
-            return true
+            return null
         },
         isAttendanceChecked(courseDate) {
             if (typeof courseDate?.attendance_checked === 'boolean') return courseDate.attendance_checked
@@ -5276,11 +5436,10 @@ export default {
         async setEntryDialogAttendance(present) {
             const { student, courseDate } = this.entryDialog
             if (!student || !courseDate) return
-            if (this.isStudentPresentForCourseDate(student, courseDate) === present) return
 
-            await this.toggleStudentAttendance(student, courseDate)
+            await this.toggleStudentAttendance(student, courseDate, present)
         },
-        async toggleStudentAttendance(student, courseDate) {
+        async toggleStudentAttendance(student, courseDate, requestedState = undefined) {
             if (!student?.id || !this.isAttendanceToggleable(courseDate) || this.isAttendanceCellSaving(student, courseDate)) return
 
             const cellKey = this.attendanceCellKey(student, courseDate)
@@ -5289,11 +5448,13 @@ export default {
             const previousDate = { ...courseDate, attendance: { ...(courseDate.attendance || {}) } }
             const attendance = this.getAttendanceMap(courseDate)
             const studentId = String(student.id)
-            if (this.isAttendancePresentValue(attendance[studentId])) {
-                attendance[studentId] = false
-            } else {
-                delete attendance[studentId]
-            }
+            const currentState = Object.prototype.hasOwnProperty.call(attendance, studentId)
+                ? attendance[studentId]
+                : this.isAttendanceChecked(courseDate) ? true : null
+            const nextState = requestedState === undefined
+                ? currentState === null ? false : currentState === false ? true : null
+                : requestedState
+            attendance[studentId] = nextState
 
             const nextAttendance = this.sanitizeAttendanceMap(attendance)
             const optimisticDate = { ...courseDate, attendance: nextAttendance }
@@ -5302,7 +5463,7 @@ export default {
             try {
                 const response = await this.courseDateStore?.updateStatus(courseDate.id, {
                     toggle_student_id: student.id,
-                    attendance_checked: this.isAttendanceChecked(courseDate),
+                    attendance_state: nextState,
                 })
                 if (response) {
                     this.applyUpdatedCourseDate({
@@ -5796,6 +5957,58 @@ export default {
     overflow-y: auto;
 }
 
+.course-table-curriculum-date {
+    font-size: clamp(1.2rem, 3.5vw, 1.55rem);
+    font-weight: 750;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.course-table-curriculum-dialog-list {
+    padding: 12px;
+}
+
+.course-table-curriculum-chapter {
+    background: rgba(var(--v-theme-on-surface), 0.025);
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+    border-radius: 10px;
+    padding: 4px 0;
+    overflow: hidden;
+}
+
+.course-table-curriculum-chapter > .v-list-subheader {
+    background: rgba(var(--v-theme-on-surface), 0.04);
+    font-weight: 650;
+}
+
+.course-table-curriculum-chapter + .course-table-curriculum-chapter {
+    margin-top: 38px;
+}
+
+.course-table-curriculum-unit-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.course-table-curriculum-dialog-unit + .course-table-curriculum-dialog-unit {
+    border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.course-table-curriculum-unit-action {
+    width: 104px;
+    min-width: 104px;
+    height: 30px;
+    margin-left: 12px;
+}
+
+.course-table-file-preview {
+    display: block;
+    width: 100%;
+    height: 68vh;
+    border: 0;
+}
+
 .course-table-curriculum-dialog-loading,
 .course-table-curriculum-dialog-empty {
     align-items: center;
@@ -5833,6 +6046,8 @@ export default {
 :deep(.course-table-curriculum-dialog-unit .v-list-item-title) {
     font-size: 0.84rem;
     line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 :deep(.course-table-curriculum-dialog-unit .v-btn) {
@@ -6449,7 +6664,7 @@ export default {
     position: relative;
 }
 
-.course-table-entry-cell-absent-marker {
+.course-table-entry-cell-attendance-marker {
     pointer-events: none;
     position: absolute;
     right: 3px;
@@ -6726,7 +6941,35 @@ export default {
     padding: 12px;
 }
 
+.course-table-curriculum-files {
+    margin-top: 4px;
+}
+
+.course-table-curriculum-file {
+    align-items: center;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    margin-top: 3px;
+}
+
+.course-table-curriculum-file-name {
+    color: rgb(var(--v-theme-primary));
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    text-align: left;
+    text-decoration: underline;
+}
+
+button.course-table-curriculum-file-name:disabled {
+    opacity: 0.6;
+}
+
 .course-table-attendance-marker {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
     height: 24px;
     min-width: 24px;
     width: 24px;

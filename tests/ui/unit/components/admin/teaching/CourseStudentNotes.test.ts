@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { createVuetify } from 'vuetify'
+import { VBtn } from 'vuetify/components/VBtn'
+import { VChip } from 'vuetify/components/VChip'
+import { VTooltip } from 'vuetify/components/VTooltip'
 import axios from 'axios'
 import CourseStudentNotes from '@/pages/admin/teaching/overview/components/CourseStudentNotes.vue'
 import CourseStudentIndicators from '@/pages/admin/teaching/overview/components/CourseStudentIndicators.vue'
@@ -8,6 +13,22 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), put: vi.fn() } }))
+
+const ActivatorOnlyHoverDetails = defineComponent({
+    setup(_, { slots }) {
+        return () => slots.activator?.({ props: {} })
+    },
+})
+
+function mountIndicators(options) {
+    return mount(CourseStudentIndicators, {
+        ...options,
+        global: {
+            ...options.global,
+            stubs: { CourseStudentHoverDetails: ActivatorOnlyHoverDetails, ...options.global?.stubs },
+        },
+    })
+}
 
 function setupNotes(email = '') {
     const student = { id: 12, course_student_id: 71, user_id: 12, last_name: 'Test', first_name: 'Anna', email, comment: '<p>Bisher</p>', stars: [] }
@@ -349,6 +370,157 @@ describe('Course student quick notes', () => {
 describe('Student indicator symbols', () => {
     beforeEach(() => setActivePinia(createPinia()))
 
+    it('reveals the complete normal comment on hover and focus while confidential information stays click-only', async () => {
+        vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), { width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, scale: 1 }))
+        vi.mocked(axios.get).mockClear()
+        const wrapper = mountIndicators({
+            attachTo: document.body,
+            props: { courseId: 18, student: {
+                comment: '<p>Erster Absatz &amp; Details</p><p>Zweiter Absatz<br>Letzte Zeile</p><script>BAD_SCRIPT</script>',
+                has_special_information: true, special_information: 'CONFIDENTIAL_ONLY_AFTER_CLICK',
+            } },
+            global: {
+                plugins: [createVuetify({ components: { VTooltip, VBtn } })],
+                components: { 'v-tooltip': VTooltip, 'v-btn': VBtn },
+                stubs: { CourseStudentHoverDetails: false, 'v-tooltip': false, 'v-btn': false, VTooltip: false, VBtn: false },
+            },
+        })
+        const waitForTooltip = async () => {
+            await new Promise(resolve => setTimeout(resolve, 250))
+            await flushPromises()
+        }
+        try {
+            await flushPromises()
+            expect(document.querySelector('[role="tooltip"]')).toBeNull()
+            const comment = wrapper.get('[aria-label="Kommentar vorhanden"]')
+            expect(comment.element.tagName).toBe('BUTTON')
+            await comment.trigger('mouseenter')
+            await waitForTooltip()
+            const tooltip = document.querySelector('.v-overlay--active[role="tooltip"]')
+            expect(tooltip?.textContent).toContain('Erster Absatz & Details\nZweiter Absatz\nLetzte Zeile')
+            expect(tooltip?.textContent).not.toContain('BAD_SCRIPT')
+            expect(document.body.textContent).not.toContain('CONFIDENTIAL_ONLY_AFTER_CLICK')
+            await comment.trigger('mouseleave')
+            tooltip?.querySelector('.v-overlay__content')?.dispatchEvent(new MouseEvent('mouseenter'))
+            await waitForTooltip()
+            expect(tooltip?.classList.contains('v-overlay--active')).toBe(true)
+            tooltip?.querySelector('.v-overlay__content')?.dispatchEvent(new MouseEvent('mouseleave'))
+            await waitForTooltip()
+            ;(comment.element as HTMLElement).focus()
+            await waitForTooltip()
+            expect(document.activeElement).toBe(comment.element)
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')?.textContent).toContain('Letzte Zeile')
+            ;(document.querySelector('.v-overlay--active [aria-label="Detailfenster schließen"]') as HTMLButtonElement).click()
+            await waitForTooltip()
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')).toBeNull()
+            expect(document.activeElement).toBe(comment.element)
+            ;(comment.element as HTMLElement).blur()
+            const special = wrapper.get('[aria-label="Vertrauliche besondere Informationen vorhanden"]')
+            await special.trigger('mouseenter')
+            await waitForTooltip()
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')).toBeNull()
+            expect(axios.get).not.toHaveBeenCalled()
+            await special.trigger('click')
+            await comment.trigger('click')
+            expect(wrapper.emitted('select')).toEqual([['special'], ['comment']])
+            expect(document.body.textContent).not.toContain('CONFIDENTIAL_ONLY_AFTER_CLICK')
+        } finally {
+            wrapper.unmount()
+            document.querySelectorAll('.v-overlay-container').forEach(container => container.remove())
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('lists all supplied stars with dates and comments on hover and keeps the close action dismissed', async () => {
+        vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), { width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, scale: 1 }))
+        const wrapper = mountIndicators({
+            attachTo: document.body,
+            props: { courseId: 18, starsOnly: true, showEmptyStars: true, student: {
+                stars: [
+                    ...Array.from({ length: 35 }, (_, index) => ({ id: String(index), date: '2026-09-05', comment: `Sternkommentar ${index + 1}` })),
+                    { id: 'undated', date: null, comment: 'Stern ohne Datumsangabe' },
+                ],
+            } },
+            global: {
+                plugins: [createVuetify({ components: { VTooltip, VChip } })],
+                components: { 'v-tooltip': VTooltip, 'v-chip': VChip },
+                stubs: { CourseStudentHoverDetails: false, 'v-tooltip': false, 'v-chip': false, VTooltip: false, VChip: false },
+            },
+        })
+        const waitForTooltip = async () => {
+            await new Promise(resolve => setTimeout(resolve, 320))
+            await flushPromises()
+        }
+        try {
+            await flushPromises()
+            const stars = wrapper.get('[aria-label="36 Sterne für besondere Leistungen"]')
+            expect(stars.attributes('title')).toBeUndefined()
+            expect(document.querySelector('[role="tooltip"]')).toBeNull()
+            await stars.trigger('mouseenter')
+            await waitForTooltip()
+            const tooltip = document.querySelector('.v-overlay--active[role="tooltip"]')
+            expect(tooltip?.querySelectorAll('.student-star-detail')).toHaveLength(36)
+            expect(tooltip?.textContent).toContain('05.09.2026')
+            expect(tooltip?.textContent).toContain('Sternkommentar 35')
+            expect(tooltip?.textContent).toContain('Datum nicht angegeben')
+            expect(tooltip?.querySelector('[role="region"]')?.getAttribute('tabindex')).toBe('0')
+            ;(tooltip?.querySelector('[aria-label="Detailfenster schließen"]') as HTMLButtonElement).click()
+            await waitForTooltip()
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')).toBeNull()
+            expect(document.activeElement).toBe(stars.element)
+            expect(wrapper.emitted('select')).toBeUndefined()
+            ;(stars.element as HTMLElement).blur()
+            ;(stars.element as HTMLElement).focus()
+            await waitForTooltip()
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')?.textContent).toContain('Sternkommentar 35')
+            await wrapper.setProps({ student: { stars: [] } })
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')?.textContent).toContain('Keine Sterne im ausgewählten Zeitraum.')
+            expect(document.querySelector('.v-overlay--active[role="tooltip"]')?.textContent).not.toContain('Sternkommentar')
+            await wrapper.get('[aria-label="0 Sterne für besondere Leistungen"]').trigger('click')
+            expect(wrapper.emitted('select')).toEqual([['star']])
+        } finally {
+            wrapper.unmount()
+            document.querySelectorAll('.v-overlay-container').forEach(container => container.remove())
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('can show zero stars for the selected overview period without restoring other stars', async () => {
+        const wrapper = mountIndicators({ props: { courseId: 18, starsOnly: true, showEmptyStars: true, student: { stars: [] } } })
+        expect(wrapper.get('v-chip').text()).toBe('0')
+        expect(wrapper.get('v-chip').attributes('aria-label')).toBe('0 Sterne für besondere Leistungen')
+        expect(wrapper.get('v-icon').attributes('icon')).toBe('mdi-star-outline')
+        await wrapper.get('v-chip').trigger('click')
+        expect(wrapper.emitted('select')).toEqual([['star']])
+        await wrapper.setProps({ student: { stars: [{ id: 'included', comment: 'Aktueller Stern' }] } })
+        expect(wrapper.get('v-chip').attributes('aria-label')).toBe('1 Sterne für besondere Leistungen')
+        expect(wrapper.get('v-icon').attributes('icon')).toBe('mdi-star')
+        wrapper.unmount()
+    })
+
+    it('counts only safely dated reminders inside the selected schoolyear when year scope is supplied', () => {
+        useCourseBehaviourEntryStore().courseEntries = ['2025-08-31', '2026-09-01', null, '2026-01-01'].map((date, id) => ({
+            id, date, teaching_course_id: 18, user_id: 12, kind: 'notification', done_date: null,
+        })) as never
+        const wrapper = mountIndicators({ props: {
+            student: { id: 12, user_id: 12 }, courseId: 18, activeSemester: 3,
+            schoolyear: { id: 3, from: '2025-09-01', until: '2026-08-31' },
+        } })
+        expect(wrapper.get('v-btn').attributes('aria-label')).toBe('1 offene Erinnerung')
+        wrapper.unmount()
+    })
+
+    it.each([1, 2, 3])('limits the reminder counter to semester %s including undated reminders', (activeSemester) => {
+        useCourseBehaviourEntryStore().courseEntries = ['2026-02-08', '2026-02-09', null].map((date, id) => ({
+            id, date, teaching_course_id: 18, user_id: 12, kind: 'notification', done_date: null,
+        })) as never
+        const wrapper = mountIndicators({ props: {
+            student: { id: 12, user_id: 12 }, courseId: 18, activeSemester, semesterTwoStartDate: '2026-02-09',
+        } })
+        expect(wrapper.get('v-btn').attributes('aria-label')).toBe(`${activeSemester === 3 ? 3 : 2} offene Erinnerungen`)
+        wrapper.unmount()
+    })
+
     it('shows counts and generic labels, never the confidential content', async () => {
         useCourseBehaviourEntryStore().courseEntries = [
             { id: 1, teaching_course_id: 18, user_id: 12, kind: 'notification', done_date: null },
@@ -356,7 +528,7 @@ describe('Student indicator symbols', () => {
             { id: 3, teaching_course_id: 19, user_id: 12, kind: 'notification', done_date: null },
             { id: 4, teaching_course_id: 18, user_id: 99, kind: 'notification', done_date: null },
         ] as never
-        const wrapper = mount(CourseStudentIndicators, { props: { courseId: 18, student: { id: 12, user_id: 12, stars: [{ id: '1' }, { id: '2' }], comment: '<p>Kommentar</p>', has_special_information: true, special_information: 'SECRET' } } })
+        const wrapper = mountIndicators({ props: { courseId: 18, student: { id: 12, user_id: 12, stars: [{ id: '1' }, { id: '2' }], comment: '<p>Kommentar</p>', has_special_information: true, special_information: 'SECRET' } } })
         expect(wrapper.findAll('v-btn')).toHaveLength(3)
         expect(wrapper.html()).not.toContain('mdi-star')
         expect(wrapper.html()).toContain('1 offene Erinnerung')
@@ -367,21 +539,20 @@ describe('Student indicator symbols', () => {
     })
 
     it('does not show empty indicators', () => {
-        const wrapper = mount(CourseStudentIndicators, { props: { courseId: 18, student: { stars: [], comment: '<p>&nbsp;</p>', has_special_information: false } } })
+        const wrapper = mountIndicators({ props: { courseId: 18, student: { stars: [], comment: '<p>&nbsp;</p>', has_special_information: false } } })
         expect(wrapper.findAll('v-btn')).toHaveLength(0)
         wrapper.unmount()
     })
 
     it('groups all stars in one clickable badge in the name row', async () => {
-        const wrapper = mount(CourseStudentIndicators, { props: {
+        const wrapper = mountIndicators({ props: {
             courseId: 18, starsOnly: true,
             student: { stars: [{ id: '1', comment: 'Hilfsbereit' }, { id: '2', comment: 'Gute Leistung' }], comment: 'Notiz' },
         } })
         expect(wrapper.findAll('v-chip')).toHaveLength(1)
         expect(wrapper.find('v-chip').findAll('v-icon')).toHaveLength(2)
         expect(wrapper.findAll('v-btn')).toHaveLength(0)
-        expect(wrapper.html()).toContain('Hilfsbereit')
-        expect(wrapper.find('v-chip').attributes('title')).toContain('Gute Leistung')
+        expect(wrapper.find('v-chip').attributes('title')).toBeUndefined()
         await wrapper.find('v-chip').trigger('click')
         expect(wrapper.emitted('select')).toEqual([['star']])
         await wrapper.setProps({ student: { stars: [{ id: '1', comment: 'Hilfsbereit' }] } })

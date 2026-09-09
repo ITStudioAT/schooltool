@@ -1,9 +1,58 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { reactive, isProxy } from 'vue'
+import { getDocument } from 'pdfjs-dist'
 import CurriculumPdfPreview, { resolvePdfWorkerUrl } from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 
+vi.mock('pdfjs-dist', () => ({ getDocument: vi.fn(), GlobalWorkerOptions: {} }))
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/pdf.worker.mjs' }))
+
 describe('CurriculumPdfPreview', () => {
+    it('renders and disposes PDF.js instances with private fields without Vue proxying them', async () => {
+        class RenderTask {
+            #cancelled = false
+            promise = Promise.resolve()
+            cancel() { this.#cancelled = true }
+            get cancelled() { return this.#cancelled }
+        }
+        const renderTask = new RenderTask()
+        class PdfDocument {
+            #page = { getViewport: () => ({ width: 600, height: 800 }), render: () => renderTask }
+            numPages = 1
+            getPage() { return this.#page }
+            destroy() { this.#page = null }
+        }
+        const document = new PdfDocument()
+        class LoadingTask {
+            #destroyed = false
+            promise = Promise.resolve(document)
+            destroy() { this.#destroyed = true }
+            get destroyed() { return this.#destroyed }
+        }
+        const task = new LoadingTask()
+        vi.mocked(getDocument).mockReturnValue(task as never)
+        const canvas = { getContext: () => ({}), style: {} }
+        const context = reactive({
+            ...(CurriculumPdfPreview as any).data(),
+            ...(CurriculumPdfPreview as any).methods,
+            src: 'blob:protected-pdf', initialPosition: null,
+            $refs: { viewport: { clientWidth: 700, querySelector: () => canvas } },
+            $nextTick: async () => {}, restorePosition: vi.fn(),
+        })
+        await context.loadDocument()
+        expect(context.useNativePreview).toBe(false)
+        expect(context.errorMessage).toBe('')
+        expect(context.pageCount).toBe(1)
+        expect(isProxy(context.pdfDocument)).toBe(false)
+        expect(isProxy(context.loadingTask)).toBe(false)
+        expect(isProxy(context.renderTasks[0])).toBe(false)
+        expect(canvas.style).toMatchObject({ width: '600px', height: '800px' })
+        await context.destroyDocument()
+        expect(renderTask.cancelled).toBe(true)
+        expect(task.destroyed).toBe(true)
+    })
+
     it('normalizes a saved page-relative position', () => {
         const methods = (CurriculumPdfPreview as any).methods
 

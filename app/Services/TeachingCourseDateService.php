@@ -211,7 +211,7 @@ class TeachingCourseDateService
             if ($studentId === '') {
                 continue;
             }
-            $attendance[$studentId] = in_array($presentValue, ['1', 'true'], true);
+            $attendance[$studentId] = $this->normalizeAttendanceState($presentValue);
         }
 
         return $attendance;
@@ -228,14 +228,13 @@ class TeachingCourseDateService
     {
         $status = $this->normalizePublicStatus($publicStatus);
         foreach ($attendance as $studentId => $present) {
-            if ($this->isPresentValue($present)) {
-                continue;
-            }
             $id = trim((string) $studentId);
             if ($id === '') {
                 continue;
             }
-            $status[] = "att:{$id}:0";
+            $state = $this->normalizeAttendanceState($present);
+            $encodedState = $state === null ? 'null' : ($state ? '1' : '0');
+            $status[] = "att:{$id}:{$encodedState}";
         }
         if ($attendanceChecked) {
             $status[] = 'att_checked:1';
@@ -246,7 +245,16 @@ class TeachingCourseDateService
 
     public function isPresentValue($value): bool
     {
-        return ! ($value === false || $value === 0 || $value === '0' || $value === 'false');
+        return $this->normalizeAttendanceState($value) === true;
+    }
+
+    public function normalizeAttendanceState(mixed $value): ?bool
+    {
+        return match ($value) {
+            true, 1, '1', 'true' => true,
+            false, 0, '0', 'false' => false,
+            default => null,
+        };
     }
 
     public function normalizeAttendanceForCourse($attendance, TeachingCourse $course): array
@@ -278,9 +286,7 @@ class TeachingCourseDateService
                 continue;
             }
 
-            if (! $this->isPresentValue($value)) {
-                $normalized['s_'.$targetId] = false;
-            }
+            $normalized['s_'.$targetId] = $this->normalizeAttendanceState($value);
         }
 
         return $normalized;
@@ -339,9 +345,7 @@ class TeachingCourseDateService
                     continue;
                 }
             }
-            if (! $this->isPresentValue($value)) {
-                $normalized['s_'.$targetId] = false;
-            }
+            $normalized['s_'.$targetId] = $this->normalizeAttendanceState($value);
         }
 
         return $normalized;
@@ -487,12 +491,23 @@ class TeachingCourseDateService
             : $this->attendanceFromStatus(is_array($courseDate->status) ? $courseDate->status : []);
         $currentAttendance = $this->normalizeAttendanceMapForToggle($currentAttendance, $course);
         $studentKey = 's_'.((string) $validated['toggle_student_id']);
-        $isCurrentlyPresent = $this->isPresentValue($currentAttendance[$studentKey] ?? null);
-        if ($isCurrentlyPresent) {
-            $currentAttendance[$studentKey] = false;
-        } else {
-            unset($currentAttendance[$studentKey]);
+        if (array_key_exists('attendance_state', $validated)) {
+            $currentAttendance[$studentKey] = $this->normalizeAttendanceState($validated['attendance_state']);
+
+            return $currentAttendance;
         }
+
+        $attendanceChecked = $supportsAttendanceColumns
+            ? (bool) $courseDate->attendance_checked
+            : $this->attendanceCheckedFromStatus($courseDate->status);
+        $currentState = array_key_exists($studentKey, $currentAttendance)
+            ? $currentAttendance[$studentKey]
+            : ($attendanceChecked ? true : null);
+        $currentAttendance[$studentKey] = match ($currentState) {
+            null => false,
+            false => true,
+            true => null,
+        };
 
         return $currentAttendance;
     }

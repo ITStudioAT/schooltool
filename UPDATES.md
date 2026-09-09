@@ -1,5 +1,13 @@
 # UPDATES
 
+## 3.47.3 !!!
+
+### Unterricht
+
+- SchülerInnen-Einträge adaptiert
+- Auswahl An-/Abwesenheiten angepasst
+- Curricula bei Unterricht: Anzeigen der Anhänge
+
 ## 3.47.2
 
 ### System

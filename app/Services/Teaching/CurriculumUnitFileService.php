@@ -68,6 +68,33 @@ class CurriculumUnitFileService
         return $payload;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function curriculumDetailPayload(TeachingCurriculum $curriculum): array
+    {
+        $files = $curriculum->documents()
+            ->where('source_type', 'unit_file')
+            ->latest('id')
+            ->get();
+        $unitFiles = [];
+        $counts = [];
+
+        foreach ($files as $file) {
+            $topicId = (string) $file->topic_id;
+            $unitId = (string) $file->unit_id;
+
+            if (! $this->unitExists($curriculum, $topicId, $unitId)) {
+                continue;
+            }
+
+            $unitFiles[$topicId][$unitId][] = $this->payload($curriculum, $topicId, $unitId, $file);
+            $counts[$topicId][$unitId] = ($counts[$topicId][$unitId] ?? 0) + 1;
+        }
+
+        return $this->curriculumPayload($curriculum, $counts) + ['unit_files' => $unitFiles];
+    }
+
     public function unitExists(TeachingCurriculum $curriculum, string $topicId, string $unitId): bool
     {
         return collect($curriculum->topics)

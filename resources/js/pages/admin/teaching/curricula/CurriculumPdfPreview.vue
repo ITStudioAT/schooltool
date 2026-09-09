@@ -51,6 +51,8 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+
 let sameOriginPdfWorkerUrlPromise = null
 let pdfWorkerUrlPromise = null
 
@@ -202,7 +204,7 @@ export default {
                     url: this.src,
                     withCredentials: true,
                 })
-                this.loadingTask = loadingTask
+                this.loadingTask = markRaw(loadingTask)
 
                 const pdfDocument = await loadingTask.promise
                 if (generation !== this.loadGeneration) {
@@ -210,7 +212,7 @@ export default {
                     return
                 }
 
-                this.pdfDocument = pdfDocument
+                this.pdfDocument = markRaw(pdfDocument)
                 this.pageCount = pdfDocument.numPages
                 await this.$nextTick()
                 await this.renderPages()
@@ -301,7 +303,7 @@ export default {
                     transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
                     viewport,
                 })
-                this.renderTasks.push(renderTask)
+                this.renderTasks.push(markRaw(renderTask))
 
                 try {
                     await renderTask.promise

@@ -1,11 +1,22 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTestingPinia } from '@pinia/testing'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
+import { createVuetify } from 'vuetify'
+import { VBtn } from 'vuetify/components/VBtn'
+import { VIcon } from 'vuetify/components/VIcon'
+import { VDialog } from 'vuetify/components/VDialog'
+import { VList, VListItem } from 'vuetify/components/VList'
 import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 vi.mock('axios', () => ({
     default: {
+        get: vi.fn(),
         delete: vi.fn(),
         post: vi.fn(),
     },
@@ -197,6 +208,7 @@ describe('CourseTable', () => {
                     {
                         isExam: false,
                         key: 'unit-1',
+                        files: [],
                         materials: [
                             { id: 10, title: 'Themenmaterial' },
                             { id: 11, title: 'Einheitenmaterial' },
@@ -206,6 +218,7 @@ describe('CourseTable', () => {
                     {
                         isExam: true,
                         key: 'unit-2',
+                        files: [],
                         materials: [{ id: 10, title: 'Themenmaterial' }],
                         title: 'Prüfung',
                     },
@@ -213,6 +226,195 @@ describe('CourseTable', () => {
             },
             { key: 'topic-2', title: 'Reserve', units: [] },
         ])
+    })
+
+    it('renders scoped attachments for linked and available curriculum units without changing links', async () => {
+        vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), { width: 1280, height: 800, offsetLeft: 0, offsetTop: 0, scale: 1 }))
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const courseDate = {
+            id: 1, date: '2026-09-14',
+            adopted_materials: [{ id: 9, title: 'Grundlagen: Verknüpft' }],
+            attachments: [{ id: 99, name: 'Nur-am-Termin.pdf' }],
+        }
+        useCourseStore(pinia).selected_course = {
+            id: 18, teaching_curriculum_id: 3, students_info: [], course_dates: [courseDate],
+        } as never
+        const makeFile = (id, name, mimeType) => ({
+            id, name, mime_type: mimeType,
+            preview_url: `/protected/unit-files/${id}/preview`,
+            download_url: `/protected/unit-files/${id}/download`,
+        })
+        const files = [makeFile(1, 'Übung.pdf', 'application/pdf'), makeFile(2, 'Bild.png', 'image/png')]
+        const show = vi.mocked(useCurriculumStore(pinia).show).mockResolvedValue({
+            id: 3, title: 'Curriculum',
+            topics: [{ id: 'topic', title: 'Grundlagen', units: [
+                { id: 'linked', title: 'Verknüpft', is_exam: true },
+                { id: 'available', title: 'Verfügbar', is_exam: true },
+                { id: 'empty', title: 'Ohne Dateien' },
+            ] }],
+            unit_files: { topic: { linked: files, available: [makeFile(3, 'Aufgabe.docx', 'application/msword')] } },
+        } as never)
+        const wrapper = mount(CourseTable, {
+            attachTo: document.body,
+            props: { view: 'attendance' },
+            global: {
+                plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog, VList, VListItem } })],
+                components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog, 'v-list': VList, 'v-list-item': VListItem },
+                stubs: {
+                    'v-btn': false, VBtn: false, 'v-icon': false, VIcon: false,
+                    'v-dialog': false, VDialog: false, 'v-list': false, VList: false,
+                    'v-list-item': false, VListItem: false,
+                    'v-autocomplete': true, 'v-checkbox': true, 'v-date-input': true,
+                    'v-divider': true, 'v-list-subheader': true, 'v-tab': true,
+                    'v-tabs': true, 'v-textarea': true, CourseStudentNotes: true,
+                    CourseStudentIndicators: true, ItsGridBox: { template: '<div><slot /></div>' },
+                },
+            },
+        })
+
+        try {
+            await flushPromises()
+            await (wrapper.vm as any).openCurriculumDialog(courseDate)
+            await flushPromises()
+            const dialog = new DOMWrapper(document.querySelector('.v-overlay--active')!)
+            const rows = dialog.findAll('.v-list-item')
+            expect(rows).toHaveLength(3)
+            expect(dialog.text()).not.toContain('Anhänge')
+            expect(dialog.find('.mdi-circle-small').exists()).toBe(false)
+            for (const row of rows.slice(0, 2)) {
+                expect(row.get('.mdi-file-document-edit-outline').classes()).toContain('text-error')
+                expect(row.get('.course-table-curriculum-unit-title').classes()).toContain('text-error')
+                expect(row.find('.v-list-item__prepend').exists()).toBe(false)
+                expect(row.get('.mdi-file-document-edit-outline').attributes('aria-label')).toBe('Prüfung')
+                expect(row.text()).not.toContain('Prüfung')
+            }
+            expect(rows[2].find('.mdi-file-document-edit-outline').exists()).toBe(false)
+            expect(rows[2].get('.course-table-curriculum-unit-title').classes()).not.toContain('text-error')
+            expect(rows[2].text()).not.toContain('Prüfung')
+            expect(rows[0].text()).toContain('Übung.pdf')
+            expect(rows[0].text()).toContain('Bild.png')
+            expect(rows[0].text()).toContain('Lösen')
+            expect(rows[0].get('.v-list-item__append .v-btn').classes()).toContain('v-btn--size-x-small')
+            expect(rows[0].get('.v-list-item__append .v-btn').classes()).toContain('course-table-curriculum-unit-action')
+            expect(rows[1].text()).toContain('Aufgabe.docx')
+            expect(rows[1].text()).toContain('Verknüpfen')
+            expect(rows[1].get('.v-list-item__append .v-btn').classes()).toContain('v-btn--size-x-small')
+            expect(rows[1].get('.v-list-item__append .v-btn').classes()).toContain('course-table-curriculum-unit-action')
+            expect(dialog.findAll('.course-table-curriculum-dialog-unit + .course-table-curriculum-dialog-unit')).toHaveLength(2)
+            expect(rows[2].find('.course-table-curriculum-files').exists()).toBe(false)
+            expect(rows[2].find('a').exists()).toBe(false)
+            expect(dialog.text()).not.toContain('Nur-am-Termin.pdf')
+            expect(rows[0].find('.mdi-file-pdf-box').exists()).toBe(true)
+            expect(rows[0].find('.mdi-file-image-outline').exists()).toBe(true)
+            expect(rows[1].find('.mdi-file-document-outline').exists()).toBe(true)
+            expect(rows[0].find('.course-table-curriculum-file-name').element.tagName).toBe('BUTTON')
+            expect(rows[0].find('a').exists()).toBe(false)
+            const openFile = vi.spyOn(wrapper.vm as any, 'openCurriculumFile').mockResolvedValue(undefined)
+            await rows[0].get('.course-table-curriculum-file-name').trigger('click')
+            expect(openFile).toHaveBeenLastCalledWith(files[0], true)
+            await rows[0].get('button[title="Übung.pdf herunterladen"]').trigger('click')
+            expect(openFile).toHaveBeenLastCalledWith(files[0])
+            openFile.mockRestore()
+            expect(show).toHaveBeenCalledExactlyOnceWith(3)
+            expect(axios.post).not.toHaveBeenCalled()
+            expect(axios.delete).not.toHaveBeenCalled()
+            expect(courseDate.adopted_materials).toEqual([{ id: 9, title: 'Grundlagen: Verknüpft' }])
+            expect(dialog.get('[data-testid="curriculum-dialog-date"]').text()).toMatch(/Montag.*14\.9\.2026/)
+            expect(dialog.findAll('[data-testid="curriculum-dialog-date"]')).toHaveLength(1)
+            ;(wrapper.vm as any).curriculumDialog.courseDate = { id: 2, date: '2026-09-21' }
+            ;(wrapper.vm as any).curriculumDialog.curriculum.topics.push({ id: 'next', title: 'Nächstes Kapitel', units: [] })
+            await flushPromises()
+            expect(dialog.get('[data-testid="curriculum-dialog-date"]').text()).toMatch(/Montag.*21\.9\.2026/)
+            const chapters = dialog.findAll('section.course-table-curriculum-chapter')
+            expect(chapters).toHaveLength(2)
+            expect(chapters[0].attributes('aria-label')).toBe('Grundlagen')
+            expect(chapters[0].findAll('.course-table-curriculum-dialog-unit')).toHaveLength(3)
+            expect(chapters[0].findAll('.course-table-curriculum-file')).toHaveLength(3)
+            expect(chapters[1].attributes('aria-label')).toBe('Nächstes Kapitel')
+            expect(chapters[1].text()).toContain('Keine Einheiten')
+            expect(chapters[1].find('.course-table-curriculum-dialog-unit').exists()).toBe(false)
+            ;(wrapper.vm as any).curriculumDialog.courseDate.adopted_materials = [{ id: 12, title: 'Alter Inhalt' }]
+            await flushPromises()
+            const legacyChapter = dialog.get('[data-testid="course-table-old-curriculum-links"] section')
+            expect(legacyChapter.classes()).toContain('course-table-curriculum-chapter')
+            expect(legacyChapter.text()).toContain('Alter Inhalt')
+            expect(chapters[0].text()).not.toContain('Alter Inhalt')
+            ;(wrapper.vm as any).curriculumFilePreview = { file: { id: 3, name: 'Aufgabe.docx' }, isPdf: false, url: 'about:blank' }
+            await flushPromises()
+            const previewFrame = new DOMWrapper(document.querySelector('iframe.course-table-file-preview')!)
+            expect(previewFrame.attributes()).toMatchObject({ sandbox: '', referrerpolicy: 'no-referrer', src: 'about:blank' })
+            ;(wrapper.vm as any).curriculumFilePreview = null
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([[false, 'application/pdf'], [true, 'application/pdf'], [true, 'text/html']])('fetches curriculum file bytes with session credentials before opening a local blob (preview=%s, type=%s)', async (preview, contentType) => {
+        const originalCreateObjectURL = URL.createObjectURL
+        const originalRevokeObjectURL = URL.revokeObjectURL
+        const createdBlobs: Blob[] = []
+        URL.createObjectURL = vi.fn((blob) => { createdBlobs.push(blob); return 'blob:curriculum-file' })
+        URL.revokeObjectURL = vi.fn()
+        const opened: { href: string, download: string, target: string }[] = []
+        const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+            opened.push({ href: this.href, download: this.download, target: this.target })
+        })
+        const timeout = vi.spyOn(window, 'setTimeout').mockImplementation((callback: any) => { callback(); return 1 })
+        const body = contentType === 'text/html' ? '<p>Word-Vorschau</p>' : '%PDF-1.7 file bytes'
+        const blob = new Blob([body], { type: contentType })
+        vi.mocked(axios.get).mockResolvedValue({ data: blob, headers: { 'content-type': contentType } })
+        const file = { id: 6, name: contentType === 'text/html' ? 'Aufgabe.docx' : 'Übung.pdf', mime_type: contentType === 'text/html' ? 'application/msword' : 'application/pdf', download_url: '/files/6/download', preview_url: '/files/6/preview' }
+        const context = { curriculumFilePending: null, curriculumFileError: '', curriculumFilePreview: null,
+            closeCurriculumFilePreview: (CourseTable as any).methods.closeCurriculumFilePreview }
+
+        try {
+            await (CourseTable as any).methods.openCurriculumFile.call(context, file, preview)
+            expect(axios.get).toHaveBeenCalledExactlyOnceWith(new URL(preview ? file.preview_url : file.download_url, window.location.origin).href, {
+                responseType: 'blob', withCredentials: true,
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            })
+            expect(await createdBlobs[0].text()).toBe(body)
+            expect(createdBlobs[0].type).toBe(contentType)
+            expect(opened).toEqual(preview ? [] : [{ href: 'blob:curriculum-file', download: 'Übung.pdf', target: '' }])
+            if (preview) {
+                expect(context.curriculumFilePreview).toEqual({ file, isPdf: contentType === 'application/pdf', url: 'blob:curriculum-file' })
+                context.closeCurriculumFilePreview()
+            }
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:curriculum-file')
+            expect(context).toMatchObject({ curriculumFilePending: null, curriculumFileError: '', curriculumFilePreview: null })
+        } finally {
+            anchorClick.mockRestore()
+            timeout.mockRestore()
+            URL.createObjectURL = originalCreateObjectURL
+            URL.revokeObjectURL = originalRevokeObjectURL
+        }
+    })
+
+    it.each([[401, false], [403, false], [401, true], [403, true]])('keeps failed file actions in the dialog without navigation (%s, preview=%s)', async (status, preview) => {
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        const context = { curriculumFilePending: null, curriculumFileError: '' }
+        const beforeUrl = window.location.href
+        vi.mocked(axios.get).mockRejectedValue({ response: { status, data: new Blob(['{}']) } })
+        try {
+            await (CourseTable as any).methods.openCurriculumFile.call(context, {
+                id: 6, download_url: '/files/6/download', preview_url: '/files/6/preview',
+            }, preview)
+            expect(click).not.toHaveBeenCalled()
+            expect(window.location.href).toBe(beforeUrl)
+            expect(context.curriculumFilePending).toBeNull()
+            expect(context.curriculumFileError).toBe(status === 401
+                ? 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.' : 'Keine Berechtigung für diese Datei.')
+        } finally {
+            click.mockRestore()
+        }
+    })
+
+    it('rejects foreign attachment origins before sending session credentials', async () => {
+        const context = { curriculumFilePending: null, curriculumFileError: '' }
+        await (CourseTable as any).methods.openCurriculumFile.call(context, { id: 6, download_url: 'https://foreign.example/file' })
+        expect(axios.get).not.toHaveBeenCalled()
+        expect(context.curriculumFileError).toBe('Die Datei konnte nicht heruntergeladen werden.')
     })
 
     it('lists old curriculum links separately and groups duplicate material titles', () => {
@@ -3419,7 +3621,7 @@ describe('CourseTable', () => {
         expect(methods.isEntryDialogCellSelected.call(ctx, { id: 10 }, { id: 7 })).toBe(false)
     })
 
-    it('builds bulk attendance maps where present clears absences and absent stores all students', () => {
+    it('builds explicit bulk attendance maps and clears only on reset', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
             sortedSelectedStudents: [
@@ -3429,7 +3631,8 @@ describe('CourseTable', () => {
             ],
         }
 
-        expect(methods.bulkAttendanceMap.call(ctx, true)).toEqual({})
+        expect(methods.bulkAttendanceMap.call(ctx, true)).toEqual({ 10: true, 11: true })
+        expect(methods.bulkAttendanceMap.call(ctx, null)).toEqual({})
         expect(methods.bulkAttendanceMap.call(ctx, false)).toEqual({
             10: false,
             11: false,
@@ -3485,7 +3688,7 @@ describe('CourseTable', () => {
         expect(ctx.bulkAttendanceSaving).toBe(false)
     })
 
-    it('defaults students to present and stores absent students only', () => {
+    it('retains explicit presence and absence in normalized attendance maps', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
             getAttendanceMap: methods.getAttendanceMap,
@@ -3501,7 +3704,7 @@ describe('CourseTable', () => {
             },
         })
 
-        expect(attendance).toEqual({ 10: false, 12: false })
+        expect(attendance).toEqual({ 10: false, 11: true, 12: false })
         expect(methods.isStudentPresentForCourseDate.call(ctx, { id: 10 }, { attendance })).toBe(false)
         expect(methods.isStudentPresentForCourseDate.call(ctx, { id: 11 }, { attendance })).toBe(true)
     })
@@ -3510,21 +3713,236 @@ describe('CourseTable', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
             sortedCourseDates: [
-                { id: 1, attendance: {} },
+                { id: 1, attendance: {}, attendance_checked: true },
                 { id: 2, attendance: { 10: false } },
-                { id: 3, attendance: {} },
+                { id: 3, attendance: {}, attendance_checked: true },
                 { id: 4, attendance: { 10: false } },
+                { id: 5, attendance: {}, attendance_checked: false },
             ],
             isAttendanceToggleable: (courseDate: { id: number }) => courseDate.id !== 4,
             isStudentPresentForCourseDate(student: { id: number }, courseDate: Record<string, unknown>) {
                 return methods.isStudentPresentForCourseDate.call(this, student, courseDate)
             },
+            studentAttendanceState: methods.studentAttendanceState,
+            isAttendanceChecked: methods.isAttendanceChecked,
             getAttendanceMap: methods.getAttendanceMap,
             sanitizeAttendanceMap: methods.sanitizeAttendanceMap,
             isAttendancePresentValue: methods.isAttendancePresentValue,
         }
 
         expect(methods.studentPresencePercentage.call(ctx, { id: 10 })).toBe(67)
+    })
+
+    it.each([
+        [{ attendance: {}, attendance_checked: false }, null],
+        [{ attendance: { s_10: false }, attendance_checked: false }, false],
+        [{ attendance: { s_11: false }, attendance_checked: false }, null],
+        [{ attendance: {}, attendance_checked: true }, true],
+        [{ attendance: { s_10: false }, attendance_checked: true }, false],
+        [{ status: ['att_checked:1'] }, true],
+        [{ status: ['att:10:0'] }, false],
+        [{ attendance: [], attendance_checked: false, status: ['att:10:0', 'att_checked:1'] }, null],
+        [{ attendance: { s_10: true }, attendance_checked: false }, true],
+        [{ attendance: { s_10: null }, attendance_checked: true }, null],
+        [{ status: ['att:10:null', 'att_checked:1'] }, null],
+    ])('only displays explicit absence or whole-date confirmed presence: %j', (courseDate, expected) => {
+        const methods = (CourseTable as any).methods
+        expect(methods.studentAttendanceState.call(methods, { id: 10 }, courseDate)).toBe(expected)
+    })
+
+    it('returns to blank and excludes reset or unchecked attendance from the percentage', () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 1, attendance: {} as Record<string, boolean>, attendance_checked: false }
+        const ctx = { ...methods, sortedCourseDates: [courseDate], isAttendanceToggleable: () => true }
+        const student = { id: 10 }
+
+        expect(ctx.studentPresencePercentage(student)).toBeNull()
+        courseDate.attendance.s_10 = false
+        expect(ctx.studentAttendanceState(student, courseDate)).toBe(false)
+        expect(ctx.studentPresencePercentage(student)).toBe(0)
+        delete courseDate.attendance.s_10
+        expect(ctx.studentAttendanceState(student, courseDate)).toBeNull()
+        expect(ctx.studentPresencePercentage(student)).toBeNull()
+        courseDate.attendance_checked = true
+        expect(ctx.studentAttendanceState(student, courseDate)).toBe(true)
+        expect(ctx.studentPresencePercentage(student)).toBe(100)
+        courseDate.attendance_checked = false
+        expect(ctx.studentAttendanceState(student, courseDate)).toBeNull()
+        expect(ctx.studentPresencePercentage(student)).toBeNull()
+    })
+
+    it('supports persisted cell cycles, keyboard input and a persistent scoped reset dialog in the rendered matrix', async () => {
+        vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), { width: 1280, height: 800, offsetLeft: 0, offsetTop: 0, scale: 1 }))
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const store = useCourseStore(pinia)
+        store.selected_course = {
+            id: 18,
+            title: 'Testkurs',
+            students_info: [{ id: 10, first_name: 'Anna', last_name: 'Test' }],
+            course_dates: [
+                { id: 1, date: '2026-09-14', attendance: {}, attendance_checked: false },
+                { id: 2, date: '2026-09-21', attendance: { s_10: false }, attendance_checked: false },
+                { id: 3, date: '2026-09-28', attendance: {}, attendance_checked: true },
+            ],
+        } as never
+        const wrapper = mount(CourseTable, {
+            attachTo: document.body,
+            props: { view: 'attendance' },
+            global: {
+                plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog } })],
+                components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog },
+                stubs: {
+                    'v-btn': false,
+                    VBtn: false,
+                    'v-icon': false,
+                    VIcon: false,
+                    'v-dialog': false,
+                    VDialog: false,
+                    'v-autocomplete': true,
+                    'v-checkbox': true,
+                    'v-date-input': true,
+                    'v-divider': true,
+                    'v-list-subheader': true,
+                    'v-tab': true,
+                    'v-tabs': true,
+                    'v-textarea': true,
+                    CourseStudentNotes: true,
+                    CourseStudentIndicators: true,
+                    ItsGridBox: { template: '<div><slot /></div>' },
+                },
+            },
+        })
+
+        try {
+            await flushPromises()
+            const cells = () => wrapper.findAll('.course-table-attendance-marker')
+            expect(cells()).toHaveLength(3)
+            expect(cells()[0].text()).toBe('')
+            expect(cells()[0].find('.v-icon').exists()).toBe(false)
+            expect(cells()[0].find('button').exists()).toBe(false)
+            expect(cells()[1].find('.mdi-close').exists()).toBe(true)
+            expect(cells()[2].find('.mdi-check').exists()).toBe(true)
+
+            store.selected_course.course_dates[0].attendance_checked = true
+            await flushPromises()
+            expect(cells()[0].find('.mdi-check').exists()).toBe(true)
+
+            store.selected_course.course_dates[0].attendance_checked = false
+            store.selected_course.course_dates[1].attendance = {}
+            await flushPromises()
+            expect(cells()[0].find('.v-icon').exists()).toBe(false)
+            expect(cells()[1].find('.v-icon').exists()).toBe(false)
+            expect(cells()[2].find('.mdi-check').exists()).toBe(true)
+
+            const updateStatus = vi.mocked(useCourseDateStore(pinia).updateStatus)
+            updateStatus.mockImplementation(async (dateId) => JSON.parse(JSON.stringify(
+                store.selected_course.course_dates.find((date) => date.id === dateId),
+            )))
+            const tableCells = () => wrapper.findAll('.course-table-row .course-table-entry-cell')
+
+            await tableCells()[0].trigger('click')
+            await flushPromises()
+            expect(updateStatus).toHaveBeenCalledTimes(1)
+            expect(updateStatus).toHaveBeenLastCalledWith(1, expect.objectContaining({ attendance_state: false, toggle_student_id: 10 }))
+            expect(cells()[0].find('.mdi-close').exists()).toBe(true)
+
+            await cells()[0].get('.mdi-close').trigger('click')
+            await flushPromises()
+            expect(updateStatus).toHaveBeenCalledTimes(2)
+            expect(updateStatus).toHaveBeenLastCalledWith(1, expect.objectContaining({ attendance_state: true }))
+            expect(cells()[0].find('.mdi-check').exists()).toBe(true)
+
+            await tableCells()[0].trigger('click')
+            await flushPromises()
+            expect(updateStatus).toHaveBeenCalledTimes(3)
+            expect(updateStatus).toHaveBeenLastCalledWith(1, expect.objectContaining({ attendance_state: null }))
+            store.selected_course = JSON.parse(JSON.stringify(store.selected_course))
+            store.selected_course.course_dates[0].attendance_checked = true
+            await flushPromises()
+            expect(cells()[0].find('.v-icon').exists()).toBe(false)
+
+            await tableCells()[0].trigger('keydown', { key: 'Enter' })
+            await flushPromises()
+            await tableCells()[0].trigger('keydown', { key: ' ' })
+            await flushPromises()
+            expect(updateStatus).toHaveBeenCalledTimes(5)
+            expect(cells()[0].find('.mdi-check').exists()).toBe(true)
+
+            let finishSaving: (value: unknown) => void
+            updateStatus.mockImplementationOnce(() => new Promise((resolve) => { finishSaving = resolve }))
+            await tableCells()[0].trigger('click')
+            await tableCells()[0].trigger('click')
+            expect(updateStatus).toHaveBeenCalledTimes(6)
+            expect(tableCells()[0].attributes('aria-disabled')).toBe('true')
+            finishSaving(false)
+            await flushPromises()
+            expect(cells()[0].find('.mdi-check').exists()).toBe(true)
+
+            updateStatus.mockClear()
+            store.selected_course.course_dates[0].status = ['pruefung']
+            const otherDates = JSON.stringify(store.selected_course.course_dates.slice(1))
+            const reset = wrapper.findAll('.course-table-date-attendance-action')[2]
+            await reset.trigger('click')
+            await flushPromises()
+            const dialog = wrapper.findAllComponents(VDialog).find((item) => item.props('modelValue') === true)!
+            expect(dialog.props('persistent')).toBe(true)
+            expect(dialog.props('modelValue')).toBe(true)
+            const dialogContent = () => new DOMWrapper(document.querySelector('.v-overlay--active')!)
+            await vi.waitFor(() => expect(dialogContent().text()).toContain('14.09.'))
+            expect(dialogContent().text()).toContain('Nur die Anwesenheitseinträge')
+            expect(updateStatus).not.toHaveBeenCalled()
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+            await dialogContent().get('.v-overlay__scrim').trigger('click')
+            await flushPromises()
+            expect(dialog.props('modelValue')).toBe(true)
+            const dialogButton = (label: string) => dialogContent().findAll('button').find((button) => button.text() === label)!
+            await dialogButton('Abbrechen').trigger('click')
+            await flushPromises()
+            expect(dialog.props('modelValue')).toBe(false)
+            expect(updateStatus).not.toHaveBeenCalled()
+
+            await reset.trigger('click')
+            await flushPromises()
+            updateStatus.mockImplementationOnce(() => new Promise((resolve) => { finishSaving = resolve }))
+            await dialogButton('Zurücksetzen').trigger('click')
+            await dialogButton('Zurücksetzen').trigger('click')
+            expect(updateStatus).toHaveBeenCalledTimes(1)
+            expect(updateStatus).toHaveBeenCalledWith(1, { attendance: {}, attendance_checked: false })
+            finishSaving(JSON.parse(JSON.stringify(store.selected_course.course_dates[0])))
+            await flushPromises()
+            store.selected_course = JSON.parse(JSON.stringify(store.selected_course))
+            await flushPromises()
+            expect(dialog.props('modelValue')).toBe(false)
+            expect(cells()[0].find('.v-icon').exists()).toBe(false)
+            expect(store.selected_course.course_dates[0].attendance_checked).toBe(false)
+            expect(store.selected_course.course_dates[0].status).toEqual(['pruefung'])
+            expect(JSON.stringify(store.selected_course.course_dates.slice(1))).toBe(otherDates)
+
+            store.selected_course.course_dates[0].attendance = { s_10: true }
+            store.selected_course.course_dates[0].attendance_checked = true
+            await reset.trigger('click')
+            await flushPromises()
+            updateStatus.mockResolvedValueOnce(false)
+            await dialogButton('Zurücksetzen').trigger('click')
+            await flushPromises()
+            expect(dialog.props('modelValue')).toBe(true)
+            expect(store.selected_course.course_dates[0].attendance).toEqual({ s_10: true })
+            expect(store.selected_course.course_dates[0].attendance_checked).toBe(true)
+            await dialogButton('Abbrechen').trigger('click')
+            store.selected_course.course_dates[0].attendance = {}
+            store.selected_course.course_dates[0].attendance_checked = false
+
+            store.selected_course.course_dates[1].attendance = { s_10: false }
+            await wrapper.setProps({ view: 'entries' })
+            await flushPromises()
+            const entryCells = wrapper.findAll('.course-table-row .course-table-entry-cell')
+            expect(entryCells[0].find('.course-table-entry-cell-attendance-marker').exists()).toBe(false)
+            expect(entryCells[1].find('.course-table-entry-cell-attendance-marker.mdi-close').exists()).toBe(true)
+            expect(entryCells[2].find('.course-table-entry-cell-attendance-marker.mdi-check').exists()).toBe(true)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
     })
 
     it('does not calculate a presence percentage without eligible course dates', () => {
@@ -3575,14 +3993,14 @@ describe('CourseTable', () => {
 
         expect(updateStatus).toHaveBeenCalledWith(7, {
             toggle_student_id: 2098,
-            attendance_checked: false,
+            attendance_state: false,
         })
         expect((ctx.selected_course as any).course_dates[0].attendance).toEqual({ 2098: false })
         expect((ctx.entryDialog as any).courseDate.attendance).toEqual({ 2098: false })
         expect(ctx.savingAttendanceCells).toEqual({})
     })
 
-    it('selects attendance from the entry dialog without toggling the active choice', async () => {
+    it('sets each exact attendance state from the entry dialog', async () => {
         const methods = (CourseTable as any).methods
         const toggleStudentAttendance = vi.fn().mockResolvedValue(undefined)
         const student = { id: 2098 }
@@ -3594,10 +4012,12 @@ describe('CourseTable', () => {
         }
 
         await methods.setEntryDialogAttendance.call(ctx, true)
-        expect(toggleStudentAttendance).not.toHaveBeenCalled()
+        expect(toggleStudentAttendance).toHaveBeenLastCalledWith(student, courseDate, true)
 
         await methods.setEntryDialogAttendance.call(ctx, false)
-        expect(toggleStudentAttendance).toHaveBeenCalledWith(student, courseDate)
+        expect(toggleStudentAttendance).toHaveBeenLastCalledWith(student, courseDate, false)
+        await methods.setEntryDialogAttendance.call(ctx, null)
+        expect(toggleStudentAttendance).toHaveBeenLastCalledWith(student, courseDate, null)
     })
 
     it('targets today, the next upcoming date, or the last date for initial horizontal scrolling', () => {
@@ -3684,14 +4104,14 @@ describe('CourseTable', () => {
         expect(source).toContain('@keydown.space.prevent="openCurriculumDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">')
         expect(source).toContain('data-testid="course-table-curriculum-dialog"')
-        expect(source).toContain('v-for="(topic, topicIndex) in curriculumDialogTopics"')
+        expect(source).toContain('v-for="topic in curriculumDialogTopics"')
         expect(source).toContain('v-for="unit in topic.units"')
         expect(source).toContain("'course-table-curriculum-dialog-unit--linked': isCurriculumUnitLinkedToDialogDate(topic, unit)")
         expect(source).toContain('@click.stop="unlinkCurriculumUnit(topic, unit)"')
-        expect(source).toMatch(/v-if="isCurriculumUnitLinkedToDialogDate\(topic, unit\)"\s+color="error"\s+density="default"\s+prepend-icon="mdi-link-variant-off"\s+size="default"\s+variant="tonal"\s+height="36"\s+min-width="100"/u)
+        expect(source).toMatch(/v-if="isCurriculumUnitLinkedToDialogDate\(topic, unit\)"\s+color="error"\s+density="compact"\s+prepend-icon="mdi-link-variant-off"\s+size="x-small"\s+variant="tonal"/u)
         expect(source).toContain('@click.stop="unlinkCurriculumUnit({}, { title })"')
         expect(source).toContain('v-for="title in unmatchedCurriculumTitles"')
-        expect(source).toMatch(/<v-btn color="error" density="default" prepend-icon="mdi-link-variant-off"\s+size="default" variant="tonal" height="36" min-width="100" class="ml-3"/u)
+        expect(source).toMatch(/<v-btn color="error" density="compact" prepend-icon="mdi-link-variant-off"\s+size="x-small" variant="tonal" class="course-table-curriculum-unit-action"/u)
         expect(source).toContain('@click.stop="linkCurriculumUnit(topic, unit)"')
         expect(source).toContain('Lösen')
         expect(source).toContain('Verknüpfen')
@@ -3938,13 +4358,13 @@ describe('CourseTable', () => {
         expect(source).not.toContain('transform: rotate(90deg);')
         expect(source).toContain('v-for="courseDate in sortedCourseDates"')
         expect(source).toContain('v-for="(student, studentIndex) in sortedSelectedStudents"')
-        expect(source).toContain("'course-table-entry-cell--interactive': tableView === 'entries'")
-        expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)")
+        expect(source).toContain("'course-table-entry-cell--interactive': true")
+        expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && studentAttendanceState(student, courseDate) === false")
         expect(source).toContain('.course-table-entry-cell--absent {')
-        expect(source).toContain("v-if=\"tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)\"")
-        expect(source).toContain('class="course-table-entry-cell-absent-marker"')
-        expect(source).toContain('aria-label="Abwesend"')
-        expect(source).toContain('.course-table-entry-cell-absent-marker {')
+        expect(source).toContain("v-if=\"tableView === 'entries' && studentAttendanceState(student, courseDate) !== null\"")
+        expect(source).toContain('class="course-table-entry-cell-attendance-marker"')
+        expect(source).toContain(":aria-label=\"studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'\"")
+        expect(source).toContain('.course-table-entry-cell-attendance-marker {')
         expect(source).toContain('right: 3px;')
         expect(source).toContain('top: 3px;')
         expect(source).not.toContain('background: rgba(var(--v-theme-error), 0.14) !important;')
@@ -3982,8 +4402,9 @@ describe('CourseTable', () => {
         expect(source).toContain('color="grey-lighten-2"')
         expect(source).toContain('{{ assignment.scope }}')
         expect(source).toContain('Keine Arbeit eingetragen. Klicken, um eine Arbeit anzulegen.')
-        expect(source).toContain('@click="openEntryDialog(student, courseDate)"')
-        expect(source).toContain('@keydown.enter.prevent="openEntryDialog(student, courseDate)"')
+        expect(source).toContain('@click="activateStudentCell(student, courseDate)"')
+        expect(source).toContain('@keydown.enter.self.prevent="activateStudentCell(student, courseDate)"')
+        expect(source).toContain('@keydown.space.self.prevent="activateStudentCell(student, courseDate)"')
         expect(source).toContain('<v-dialog v-model="entryDialog.open" persistent max-width="860">')
         expect(source).toContain('data-testid="course-table-entry-dialog-meta"')
         expect(source).toContain('<strong>Schüler:in:</strong> {{ studentName(entryDialog.student) }}')
@@ -3994,7 +4415,8 @@ describe('CourseTable', () => {
         expect(source).toContain(": 'abwesend' }}")
         expect(source).toContain('<span class="text-caption text-medium-emphasis mr-1">Ändern:</span>')
         expect(source).toContain("? 'flat' : 'outlined'")
-        expect(source).toContain("? 'outlined' : 'flat'")
+        expect(source).toContain('v-if="studentAttendanceState(entryDialog.student, entryDialog.courseDate) !== null"')
+        expect(source).toContain('v-else-if="studentAttendanceState(student, courseDate) !== null"')
         expect(source).toContain('@click="setEntryDialogAttendance(true)"')
         expect(source).toContain('@click="setEntryDialogAttendance(false)"')
         expect(source).not.toContain('data-testid="course-table-cell-entry-work-periods"')
@@ -4068,7 +4490,8 @@ describe('CourseTable', () => {
         expect(source).toContain('.course-table-entry-cell--selected {')
         expect(source).toContain('class="course-table-attendance-marker"')
         expect(source).toContain("v-if=\"tableView === 'attendance' && isAttendanceToggleable(courseDate)\"")
-        expect(source).toContain('@click.stop="toggleStudentAttendance(student, courseDate)"')
+        expect(source).toContain('@click="activateStudentCell(student, courseDate)"')
+        expect(source).toContain('@click.stop="openBulkAttendanceDialog(courseDate, null)"')
         expect(source).toContain('font-weight: 500;')
         expect(source).toContain('class="course-table-student-subline"')
         expect(source).toContain('studentSexIcon(student)')

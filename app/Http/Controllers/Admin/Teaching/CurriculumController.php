@@ -89,7 +89,7 @@ class CurriculumController extends Controller
     {
         $auth_user = $this->authorizeCurriculum($curriculum);
 
-        return response()->json(['data' => $unitFileService->curriculumPayload($curriculum)]);
+        return response()->json(['data' => $unitFileService->curriculumDetailPayload($curriculum)]);
     }
 
     public function materialsConfig(TeachingCurriculum $curriculum, MaterialService $service)

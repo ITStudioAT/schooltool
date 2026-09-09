@@ -114,7 +114,7 @@ it('returns 401 for attendance status update when unauthenticated', function () 
     ])->assertStatus(401);
 });
 
-it('toggles one student absence on and off via toggle_student_id', function () {
+it('cycles one student through absence presence and unchecked via toggle_student_id', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     $courseDate = TeachingCourseDate::create([
@@ -144,10 +144,17 @@ it('toggles one student absence on and off via toggle_student_id', function () {
     ]);
 
     $second->assertOk()
-        ->assertJsonPath('attendance', []);
+        ->assertJsonPath('attendance.s_'.$this->studentA->id, true);
 
     $courseDate->refresh();
-    expect($courseDate->attendance)->toBe([]);
+    expect($courseDate->attendance)->toBe(['s_'.$this->studentA->id => true]);
+
+    $this->patchJson("/api/admin/teaching/course_dates/{$courseDate->id}/status", [
+        'toggle_student_id' => $this->studentA->id,
+        'attendance_state' => null,
+    ])->assertOk()->assertJsonPath('attendance.s_'.$this->studentA->id, null);
+
+    expect($courseDate->fresh()->attendance)->toBe(['s_'.$this->studentA->id => null]);
 });
 
 it('persists an import student identifier toggled from the attendance table', function () {
@@ -203,7 +210,10 @@ it('normalizes indexed legacy attendance keys to real student ids on toggle', fu
     expect($attendance['s_'.$this->studentB->id] ?? null)->toBeFalse();
 
     $courseDate->refresh();
-    expect($courseDate->attendance)->toBe(['s_'.$this->studentB->id => false]);
+    expect($courseDate->attendance)->toBe([
+        's_'.$this->studentA->id => true,
+        's_'.$this->studentB->id => false,
+    ]);
 });
 
 it('does not fall back to legacy status attendance when attendance column is empty', function () {

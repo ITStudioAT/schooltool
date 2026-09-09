@@ -8,6 +8,16 @@
             </div>
             <div v-else class="text-caption text-medium-emphasis">Kein Datum</div>
         </template>
+        <v-card class="mt-3 mb-3" color="primary" variant="tonal" data-testid="course-students-semester-selection">
+            <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
+                <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
+                <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary" variant="tonal">
+                    <v-btn :value="1" size="small">1. Sem</v-btn>
+                    <v-btn :value="2" size="small">2. Sem</v-btn>
+                    <v-btn :value="3" size="small">Sem 1+2</v-btn>
+                </v-btn-toggle>
+            </v-card-text>
+        </v-card>
         <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
                 v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
@@ -160,88 +170,89 @@
                                         density="compact"
                                         hide-details
                                         class="flex-grow-0" />
-                                    <div class="student-presence student-presence--left">
-                                        <v-btn
-                                            v-if="canEditAttendance && selectedCourseDateForCourse"
-                                            :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
-                                            size="x-small"
-                                            :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
-                                            variant="tonal"
-                                            @click.stop="toggleStudentPresence(student)">
-                                            <v-icon size="16">
-                                                {{ isStudentPresentForSelectedDate(student.id) ? 'mdi-check' : 'mdi-close' }}
-                                            </v-icon>
-                                        </v-btn>
-                                    </div>
-                                    <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
-                                        {{ student.schoolclass || student.class }}
-                                    </v-chip>
-                                    <div
-                                        class="student-name"
-                                        :class="studentNameClass(student)">
-                                        <div class="student-name-line">
-                                            <span class="student-name-text">
-                                                {{ student.last_name }}, {{ student.first_name }}
-                                            </span>
-                                            <CourseStudentIndicators :student="student" :course-id="selected_course.id" stars-only
-                                                @select="$refs.studentNotes.open(student, $event)" />
-                                            <v-icon
-                                                v-if="studentSexIcon(student)"
-                                                size="15"
-                                                :color="studentSexColor(student)"
-                                                :title="studentSexTitle(student)">
-                                                {{ studentSexIcon(student) }}
-                                            </v-icon>
-                                            <CourseStudentIndicators :student="student" :course-id="selected_course.id"
-                                                @select="$refs.studentNotes.open(student, $event)" />
+                                    <div class="student-identity d-flex align-center ga-2">
+                                        <div class="student-presence student-presence--left">
+                                            <v-btn
+                                                v-if="canEditAttendance && selectedCourseDateForCourse"
+                                                :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
+                                                size="x-small"
+                                                :color="studentAttendanceStateForSelectedDate(student.id) === null ? undefined : studentAttendanceStateForSelectedDate(student.id) ? 'success' : 'error'"
+                                                :variant="studentAttendanceStateForSelectedDate(student.id) === null ? 'text' : 'tonal'"
+                                                aria-label="Anwesenheit ändern"
+                                                @click.stop="toggleStudentPresence(student)">
+                                                <v-icon v-if="studentAttendanceStateForSelectedDate(student.id) !== null" size="16">
+                                                    {{ isStudentPresentForSelectedDate(student.id) ? 'mdi-check' : 'mdi-close' }}
+                                                </v-icon>
+                                            </v-btn>
                                         </div>
-                                        <div v-if="studentEmailText(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
-                                            {{ studentEmailText(student) }}
-                                            <v-icon
-                                                size="13"
-                                                class="cursor-pointer"
-                                                :color="copiedEmailId === student.id ? 'success' : undefined"
-                                                :title="copiedEmailId === student.id ? 'Kopiert!' : 'E-Mail kopieren'"
-                                                @click.stop="copyEmail(student)">
-                                                {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
-                                            </v-icon>
-                                        </div>
-                                        <div
-                                            v-if="selected_course?.teaching_show_student_age && studentBirthDetails(student)"
-                                            class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
-                                            <v-icon size="13">mdi-cake-variant-outline</v-icon>
-                                            {{ studentBirthDetails(student) }}
-                                        </div>
-                                        <div
-                                            v-if="selected_course?.teaching_show_student_last_login && studentLastLoginText(student)"
-                                            class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
-                                            <v-icon size="13">mdi-login-variant</v-icon>
-                                            Last Login: {{ studentLastLoginText(student) }}
-                                        </div>
-                                    </div>
-                                    <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
-                                        Storniert{{ student.canceled_at ? `: ${formatCanceledAt(student.canceled_at)}` : '' }}
-                                    </v-chip>
-                                    <div class="student-metrics d-flex flex-wrap align-center ga-2 ml-auto">
-                                        <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
-                                            <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
-                                        </template>
-                                        <v-chip
-                                            v-if="studentOpenNotificationCounts[student.id]"
-                                            size="x-small"
-                                            variant="flat"
-                                            :color="dueDateColor(studentOpenNotificationDueDates[student.id])">
-                                            <v-icon start size="14">mdi-bell-alert</v-icon>
-                                            {{ studentOpenNotificationCounts[student.id] }}
+                                        <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                            {{ student.schoolclass || student.class }}
                                         </v-chip>
-                                        <template v-if="semesterCount === 2">
-                                            <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
-                                            <v-chip v-if="student.sem_2_grade && activeSemester !== 1" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
-                                        </template>
-                                        <template v-else>
-                                            <v-chip v-if="student.sem_grade" size="x-small" variant="tonal" color="success">{{ student.sem_grade }}</v-chip>
-                                        </template>
+                                        <div
+                                            class="student-name"
+                                            :class="studentNameClass(student)">
+                                            <div class="student-name-line">
+                                                <span class="student-name-text">
+                                                    {{ student.last_name }}, {{ student.first_name }}
+                                                </span>
+                                                <CourseStudentIndicators :student="studentForSelectedSemester(student)" :course-id="selected_course.id" stars-only show-empty-stars
+                                                    @select="$refs.studentNotes.open(student, $event)" />
+                                                <v-icon
+                                                    v-if="studentSexIcon(student)"
+                                                    size="15"
+                                                    :color="studentSexColor(student)"
+                                                    :title="studentSexTitle(student)">
+                                                    {{ studentSexIcon(student) }}
+                                                </v-icon>
+                                                <CourseStudentIndicators :student="studentForSelectedSemester(student)" :course-id="selected_course.id"
+                                                    :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
+                                                    :schoolyear="config.selected_schoolyear"
+                                                    @select="$refs.studentNotes.open(student, $event)" />
+                                            </div>
+                                            <div v-if="studentEmailText(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                                {{ studentEmailText(student) }}
+                                                <v-icon
+                                                    size="13"
+                                                    class="cursor-pointer"
+                                                    :color="copiedEmailId === student.id ? 'success' : undefined"
+                                                    :title="copiedEmailId === student.id ? 'Kopiert!' : 'E-Mail kopieren'"
+                                                    @click.stop="copyEmail(student)">
+                                                    {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
+                                                </v-icon>
+                                            </div>
+                                            <div
+                                                v-if="selected_course?.teaching_show_student_age && studentBirthDetails(student)"
+                                                class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                                <v-icon size="13">mdi-cake-variant-outline</v-icon>
+                                                {{ studentBirthDetails(student) }}
+                                            </div>
+                                            <div
+                                                v-if="selected_course?.teaching_show_student_last_login && studentLastLoginText(student)"
+                                                class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                                <v-icon size="13">mdi-login-variant</v-icon>
+                                                Last Login: {{ studentLastLoginText(student) }}
+                                            </div>
+                                        </div>
+                                        <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
+                                            Storniert{{ student.canceled_at ? `: ${formatCanceledAt(student.canceled_at)}` : '' }}
+                                        </v-chip>
                                     </div>
+                                    <CourseStudentPerformance
+                                        v-if="!show_bulk_entry"
+                                        :student="student"
+                                        :course="selected_course"
+                                        :entries="performanceData.entries"
+                                        :behaviour-entries="performanceData.behaviourEntries"
+                                        :works="performanceData.works"
+                                        :evaluations="performanceData.evaluations"
+                                        :schema="selectedCourseSchema"
+                                        :uses-entry-areas="usesNewBulkEntryDefinitions"
+                                        :active-semester="activeSemester"
+                                        :semester-two-start-date="countSem2StartDate"
+                                        :semester-count="semesterCount"
+                                        :schoolyear="config.selected_schoolyear"
+                                        :loading="performanceLoading"
+                                        :load-failed="performanceLoadFailed" />
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!selected_course?.students_info?.length">
@@ -265,7 +276,9 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ item.student.last_name }}, {{ item.student.first_name }}
                                         </div>
-                                        <CourseStudentIndicators :student="item.student" :course-id="selected_course.id"
+                                        <CourseStudentIndicators :student="studentForSelectedSemester(item.student)" :course-id="selected_course.id"
+                                            :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
+                                            :schoolyear="config.selected_schoolyear"
                                             @select="$refs.studentNotes.open(item.student, $event)" />
                                         <v-chip size="x-small" variant="tonal" color="secondary">{{ item.entries.length }} Eintrag{{ item.entries.length === 1 ? '' : 'e' }}</v-chip>
                                     </div>
@@ -303,6 +316,7 @@
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
+import { teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
@@ -316,13 +330,16 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
+import CourseStudentPerformance from './CourseStudentPerformance.vue'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
+import { useCourseStudentCategoryEvaluationStore } from '@/stores/admin/teaching/CourseStudentCategoryEvaluationStore'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { ItsGridBox, ItsMenuButton, CourseStudentNotes, CourseStudentIndicators },
+    components: { ItsGridBox, ItsMenuButton, CourseStudentNotes, CourseStudentIndicators, CourseStudentPerformance },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -332,6 +349,8 @@ export default {
         this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.courseWorkStore = useCourseWorkStore()
+        this.categoryEvaluationStore = useCourseStudentCategoryEvaluationStore()
         this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
@@ -342,10 +361,7 @@ export default {
         }
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
         if (this.selected_course?.id) {
-            await Promise.allSettled([
-                this.behaviourEntryStore.indexByCourse(this.selected_course.id),
-                this.entryStore.indexByCourse(this.selected_course.id),
-            ])
+            await this.loadStudentPerformance(this.selected_course.id)
         }
     },
 
@@ -359,6 +375,12 @@ export default {
             courseDateStore: null,
             entryStore: null,
             behaviourEntryStore: null,
+            courseWorkStore: null,
+            categoryEvaluationStore: null,
+            performanceLoading: true,
+            performanceLoadFailed: false,
+            performanceRequestId: 0,
+            performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [] },
             schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
@@ -632,8 +654,10 @@ export default {
             return this.normalizeDateKey(this.selectedCourseDateForCourse?.date)
         },
         dayOverviewStudents() {
+            if (!teachingCourseMatchesSchoolyear(this.selected_course, this.config?.selected_schoolyear)) return []
             const dateKey = this.selectedCourseDateKey
             if (!dateKey) return []
+            if (teachingPerformanceDateScope(dateKey, this.activeSemester, this.countSem2StartDate, this.config?.selected_schoolyear) !== 'included') return []
 
             const entriesByStudent = {}
             const studentEntries = this.entryStore?.courseEntries || []
@@ -730,6 +754,18 @@ export default {
     },
 
     watch: {
+        'config.selected_schoolyear.id'(value, previous) {
+            if (value === previous) return
+            this.performanceRequestId++
+            this.performanceData = { entries: [], behaviourEntries: [], works: [], evaluations: [] }
+            this.performanceLoading = true
+            this.courseStore?.index()
+        },
+        show_bulk_entry(value, previous) {
+            if (previous && !value && this.selected_course?.id) {
+                this.loadStudentPerformance(this.selected_course.id)
+            }
+        },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
@@ -741,8 +777,7 @@ export default {
         selected_course: {
             handler(course) {
                 if (course?.id) {
-                    this.behaviourEntryStore.indexByCourse(course.id)
-                    this.entryStore.indexByCourse(course.id)
+                    this.loadStudentPerformance(course.id)
                     if (this.selected_courseDate?.id) {
                         const dates = Array.isArray(course.course_dates) ? [...course.course_dates] : []
                         const idx = dates.findIndex((d) => String(d?.id) === String(this.selected_courseDate.id))
@@ -803,6 +838,33 @@ export default {
     },
 
     methods: {
+        studentForSelectedSemester(student) {
+            const schoolyear = this.config?.selected_schoolyear
+            const matchesSchoolyear = teachingCourseMatchesSchoolyear(this.selected_course, schoolyear)
+            return {
+                ...student,
+                user_id: matchesSchoolyear ? student.user_id : null,
+                stars: matchesSchoolyear ? (student.stars || []).filter((star) => teachingStarDateScope(star.date, this.activeSemester, this.countSem2StartDate) === 'included') : [],
+            }
+        },
+        async loadStudentPerformance(courseId) {
+            const requestId = ++this.performanceRequestId
+            this.performanceLoading = true
+            this.performanceLoadFailed = false
+            const results = await Promise.allSettled([
+                this.behaviourEntryStore.indexByCourse(courseId).then((success) => ({ success, data: this.behaviourEntryStore.courseEntries || [] })),
+                this.entryStore.indexByCourse(courseId).then((success) => ({ success, data: this.entryStore.courseEntries || [] })),
+                this.courseWorkStore.index(courseId).then((success) => ({ success, data: this.courseWorkStore.courseWorks || [] })),
+                this.categoryEvaluationStore.indexByCourse(courseId).then((success) => ({ success, data: this.categoryEvaluationStore.evaluations || [] })),
+            ])
+            if (requestId !== this.performanceRequestId) return
+            this.performanceLoadFailed = results.some((result) => result.status === 'rejected' || !result.value.success)
+            if (!this.performanceLoadFailed) {
+                const [behaviourEntries, entries, works, evaluations] = results.map((result) => result.value.data)
+                this.performanceData = { behaviourEntries, entries, works, evaluations }
+            }
+            this.performanceLoading = false
+        },
         async copyEmail(student) {
             const email = this.studentEmailText(student)
             if (!email) return
@@ -1141,29 +1203,26 @@ export default {
                 }
             }
         },
-        isStudentPresentForSelectedDate(studentId) {
-            const date = this.selectedCourseDateForCourse
-            if (!date) return true
+        studentAttendanceStateForSelectedDate(studentId) {
+            if (!this.selectedCourseDateForCourse) return null
+            const attendance = this.getAttendanceMap(this.selectedCourseDateForCourse)
             const key = String(studentId)
-            if (Object.prototype.hasOwnProperty.call(this.presence_by_student, key)) {
-                return !!this.presence_by_student[key]
-            }
-            const attendance = this.getAttendanceMap(date)
-            return this.isAttendancePresentValue(attendance[key])
+            if (Object.prototype.hasOwnProperty.call(attendance, key)) return attendance[key]
+
+            return this.attendanceCheckedForSelectedDate ? true : null
+        },
+        isStudentPresentForSelectedDate(studentId) {
+            return this.studentAttendanceStateForSelectedDate(studentId) === true
         },
         syncPresenceMapFromDate(courseDate) {
             if (!courseDate?.id) return
             const dateId = String(courseDate.id)
             const attendance = this.getAttendanceMap(courseDate)
-            const map = { ...this.presence_by_student }
-            // default known keys to present, then apply absences from backend attendance map
-            Object.keys(map).forEach((id) => {
-                map[id] = true
-            })
+            const map = {}
             Object.entries(attendance).forEach(([id, value]) => {
                 const key = String(id || '').trim()
                 if (!key) return
-                map[key] = this.isAttendancePresentValue(value)
+                map[key] = value
             })
             this.presence_date_id = dateId
             this.presence_by_student = map
@@ -1189,7 +1248,7 @@ export default {
                 const studentId = (parts[1] || '').toString().trim()
                 const present = (parts[2] || '').toString().trim()
                 if (!studentId) return
-                attendance[studentId] = ['1', 'true'].includes(present)
+                attendance[studentId] = present === 'null' ? null : ['1', 'true'].includes(present)
             })
             return this.sanitizeAttendanceMap(attendance)
         },
@@ -1246,9 +1305,7 @@ export default {
                     // Ignore obvious positional array indexes from legacy payloads.
                     if (isNumeric && Number.isFinite(numericKey) && numericKey >= 0 && numericKey <= 60) return
                 }
-                if (!this.isAttendancePresentValue(value)) {
-                    sanitized[key] = false
-                }
+                sanitized[key] = value === null ? null : this.isAttendancePresentValue(value)
             })
             return sanitized
         },
@@ -1258,20 +1315,20 @@ export default {
                 : []
             const merged = [...publicStatus]
             Object.entries(attendance || {}).forEach(([studentId, present]) => {
-                if (this.isAttendancePresentValue(present)) return
                 const key = String(studentId || '').trim()
                 if (!key) return
-                merged.push(`att:${key}:0`)
+                merged.push(`att:${key}:${present === null ? 'null' : this.isAttendancePresentValue(present) ? '1' : '0'}`)
             })
             if (attendanceChecked) merged.push('att_checked:1')
             return [...new Set(merged)]
         },
         isAttendancePresentValue(value) {
+            if ([true, 1, '1', 'true'].includes(value)) return true
             if (value === false) return false
             if (value === 0) return false
             if (value === '0') return false
             if (value === 'false') return false
-            return true
+            return null
         },
         async persistAttendance(attendance, attendanceChecked) {
             const date = this.selectedCourseDateForCourse
@@ -1314,14 +1371,10 @@ export default {
             const date = this.selectedCourseDateForCourse
             const attendance = this.getAttendanceMap(date)
             const key = String(student.id)
-            const isPresent = this.isAttendancePresentValue(attendance[key])
+            const currentState = this.studentAttendanceStateForSelectedDate(student.id)
 
             // Toggle locally only - no API call
-            if (isPresent) {
-                attendance[key] = false
-            } else {
-                delete attendance[key]
-            }
+            attendance[key] = currentState === null ? false : currentState === false ? true : null
 
             // Update only selected_courseDate (minimal state change, no watchers triggered)
             this.selected_courseDate = {
@@ -1574,7 +1627,7 @@ export default {
 @media (min-width: 900px) {
     .students-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 680px), 1fr));
     }
 }
 
@@ -1642,9 +1695,14 @@ export default {
 
 .student-name {
     min-width: 0;
-    flex: 0 1 auto;
-    max-width: 60%;
+    flex: 1 1 auto;
     word-break: break-word;
+}
+
+.student-identity {
+    flex: 0 1 290px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .student-meta-line {

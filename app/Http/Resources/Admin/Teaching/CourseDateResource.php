@@ -112,9 +112,6 @@ class CourseDateResource extends JsonResource
 
         $normalized = [];
         foreach ($input as $key => $value) {
-            if ($service->isPresentValue($value)) {
-                continue;
-            }
             $keyStr = trim((string) $key);
             if ($keyStr === '') {
                 continue;
@@ -131,7 +128,7 @@ class CourseDateResource extends JsonResource
                     continue;
                 }
             }
-            $normalized['s_'.$targetId] = false;
+            $normalized['s_'.$targetId] = $service->normalizeAttendanceState($value);
         }
 
         return $normalized;

@@ -49,7 +49,7 @@
                                 <span v-if="attendanceState(student.id, courseDate) === 'free'" class="attendance-free-marker">E</span>
                                 <v-icon v-else-if="attendanceState(student.id, courseDate) === 'present'" size="16">mdi-check</v-icon>
                                 <v-icon v-else-if="attendanceState(student.id, courseDate) === 'absent'" size="16">mdi-close</v-icon>
-                                <v-icon v-else size="16">mdi-minus</v-icon>
+                                <v-icon v-else-if="attendanceState(student.id, courseDate) === 'future'" size="16">mdi-minus</v-icon>
                             </td>
                             <td :class="['attendance-percent-col', 'attendance-percent-cell', 'attendance-percent-sticky', presencePercentClass(student.id)]">
                                 {{ presencePercentLabel(student.id) }}
@@ -148,10 +148,10 @@ export default {
 
             return filtered.sort((a, b) => String(a?.date || '').localeCompare(String(b?.date || '')))
         },
-        absenceMapByDate() {
+        attendanceMapByDate() {
             const result = {}
             this.filteredCourseDates.forEach((courseDate) => {
-                result[String(courseDate.id)] = this.buildAbsenceMap(courseDate)
+                result[String(courseDate.id)] = this.buildAttendanceMap(courseDate)
             })
             return result
         },
@@ -211,11 +211,14 @@ export default {
             }
             return parsed.toLocaleDateString('de-DE', { weekday: 'short' })
         },
-        isPresentValue(value) {
+        normalizeAttendanceValue(value) {
             if (value === false || value === 0 || value === '0' || value === 'false') {
                 return false
             }
-            return true
+            if (value === true || value === 1 || value === '1' || value === 'true') {
+                return true
+            }
+            return null
         },
         normalizeIndexedAttendance(attendanceLike) {
             const input = attendanceLike && typeof attendanceLike === 'object' ? attendanceLike : {}
@@ -243,8 +246,8 @@ export default {
             })
             return remapped
         },
-        buildAbsenceMap(courseDate) {
-            const absences = {}
+        buildAttendanceMap(courseDate) {
+            const attendance = {}
 
             if (courseDate?.attendance && typeof courseDate.attendance === 'object') {
                 const normalizedAttendance = this.normalizeIndexedAttendance(courseDate.attendance)
@@ -257,11 +260,9 @@ export default {
                     if (!this.studentIdSet.has(cleanKey)) {
                         return
                     }
-                    if (!this.isPresentValue(value)) {
-                        absences[cleanKey] = false
-                    }
+                    attendance[cleanKey] = this.normalizeAttendanceValue(value)
                 })
-                return absences
+                return attendance
             }
 
             const statusItems = Array.isArray(courseDate?.status) ? courseDate.status : []
@@ -278,16 +279,21 @@ export default {
                 if (!cleanKey || !this.studentIdSet.has(cleanKey)) {
                     return
                 }
-                if (!this.isPresentValue(String(parts[2] || '').trim())) {
-                    absences[cleanKey] = false
-                }
+                attendance[cleanKey] = this.normalizeAttendanceValue(String(parts[2] || '').trim())
             })
 
-            return absences
+            return attendance
         },
-        isStudentPresent(studentId, courseDateId) {
-            const map = this.absenceMapByDate[String(courseDateId)] || {}
-            return !Object.prototype.hasOwnProperty.call(map, String(studentId))
+        studentAttendanceState(studentId, courseDate) {
+            const map = this.attendanceMapByDate[String(courseDate?.id)] || {}
+            if (Object.prototype.hasOwnProperty.call(map, String(studentId))) {
+                return map[String(studentId)]
+            }
+            const checked = typeof courseDate?.attendance_checked === 'boolean'
+                ? courseDate.attendance_checked
+                : Array.isArray(courseDate?.status) && courseDate.status.includes('att_checked:1')
+
+            return checked ? true : null
         },
         isFreeDate(courseDate) {
             return Array.isArray(courseDate?.status) && (courseDate.status.includes('free') || courseDate.status.includes('entfaellt'))
@@ -316,7 +322,10 @@ export default {
             if (this.isFutureDate(courseDate?.date)) {
                 return 'future'
             }
-            return this.isStudentPresent(studentId, courseDate?.id) ? 'present' : 'absent'
+            const state = this.studentAttendanceState(studentId, courseDate)
+            if (state === null) return 'unchecked'
+
+            return state ? 'present' : 'absent'
         },
         presencePercentLabel(studentId) {
             const percentage = this.presencePercentValue(studentId)
@@ -326,13 +335,14 @@ export default {
             return `${percentage}%`
         },
         presencePercentValue(studentId) {
-            if (!this.countedCourseDates.length) {
+            const states = this.countedCourseDates
+                .map((courseDate) => this.studentAttendanceState(studentId, courseDate))
+                .filter((state) => state !== null)
+            if (!states.length) {
                 return null
             }
-            const presentDays = this.countedCourseDates.reduce((count, courseDate) => {
-                return count + (this.isStudentPresent(studentId, courseDate.id) ? 1 : 0)
-            }, 0)
-            return Math.round((presentDays / this.countedCourseDates.length) * 100)
+            const presentDays = states.filter((state) => state === true).length
+            return Math.round((presentDays / states.length) * 100)
         },
         presencePercentClass(studentId) {
             const percentage = this.presencePercentValue(studentId)

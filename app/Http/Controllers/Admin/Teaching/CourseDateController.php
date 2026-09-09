@@ -105,7 +105,7 @@ class CourseDateController extends Controller
             'status' => 'nullable|array',
             'status.*' => 'string|in:pruefung,entfaellt',
             'attendance' => 'nullable|array',
-            'attendance.*' => 'boolean',
+            'attendance.*' => 'nullable|boolean',
             'attendance_checked' => 'nullable|boolean',
         ]);
 
@@ -210,9 +210,10 @@ class CourseDateController extends Controller
             'status' => 'nullable|array',
             'status.*' => 'string|in:pruefung,entfaellt',
             'attendance' => 'nullable|array',
-            'attendance.*' => 'boolean',
+            'attendance.*' => 'nullable|boolean',
             'attendance_checked' => 'nullable|boolean',
             'toggle_student_id' => 'nullable|integer',
+            'attendance_state' => 'nullable|boolean',
             'client_toggle_version' => 'nullable|string|max:32',
         ]);
 
