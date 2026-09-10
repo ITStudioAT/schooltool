@@ -7,6 +7,7 @@ use App\Services\TeachingBackupService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Validation\ValidationException;
 use JsonException;
 use Throwable;
 
@@ -68,6 +69,7 @@ class RestoreTeachingBackupJob implements ShouldQueue
         }
 
         try {
+            $service->assertRestorable($backup);
             $preRestoreBackup = $service->createForUser($user, 'pre_restore');
             $service->pruneBackupRetention((int) $user->school_id, (int) $user->schoolyear_id);
             $run->update([
@@ -77,6 +79,10 @@ class RestoreTeachingBackupJob implements ShouldQueue
             ]);
 
             $result = $service->restoreFull($backup, $user);
+        } catch (ValidationException $exception) {
+            $this->markFailed($run, $exception->getMessage(), 'invalid_backup');
+
+            return;
         } catch (JsonException) {
             $this->markFailed($run, 'Datensicherung kann nicht gelesen werden', 'invalid_backup');
 

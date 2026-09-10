@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use JsonException;
 use Throwable;
 
@@ -21,6 +22,7 @@ class TeachingBackupService
 
     private const SUPPORTED_FORMAT_VERSIONS = [
         self::LEGACY_FORMAT_VERSION,
+        2,
         TeachingBackupArchiveWriter::FORMAT_VERSION,
     ];
 
@@ -242,7 +244,7 @@ class TeachingBackupService
                 'schoolyear_id' => $payload['meta']['schoolyear_id'] ?? null,
                 'scope' => $payload['meta']['scope'] ?? null,
             ],
-            'validation' => $backup->summary['validation'] ?? $this->validationForPayload($payload),
+            'validation' => $this->validationForPayload($payload),
             'totals' => [
                 'rows' => $backup->summary['total_rows'] ?? collect($tables)->sum(fn (array $rows): int => count($rows)),
                 'files' => $backup->summary['file_count'] ?? count($payload['files'] ?? []),
@@ -291,24 +293,7 @@ class TeachingBackupService
      */
     public function restoreSelection(TeachingBackup $backup, User $user, array $selection): array
     {
-        $payload = $this->readPayload($backup);
-        $validation = $this->validationForPayload($payload);
-
-        if (! $validation['is_valid']) {
-            return [
-                'restored' => [
-                    'courses' => [],
-                    'curricula' => [],
-                    'settings' => [],
-                ],
-                'skipped' => [
-                    'courses' => [],
-                    'curricula' => [],
-                    'settings' => [],
-                ],
-                'warnings' => $validation['issues'],
-            ];
-        }
+        $payload = $this->validatedRestorePayload($backup);
 
         $tables = $payload['tables'] ?? [];
         $files = collect($payload['files'] ?? [])
@@ -336,6 +321,7 @@ class TeachingBackupService
             ];
 
             $curriculumIdMap = [];
+            $entryAreaIdMap = [];
 
             foreach ($this->selectedIds($selection['curricula'] ?? []) as $curriculumId) {
                 $curriculumPreview = $curriculumPreviewRows->get($curriculumId);
@@ -367,7 +353,7 @@ class TeachingBackupService
                     continue;
                 }
 
-                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting);
+                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting, $entryAreaIdMap);
 
                 if (($courseResult['restored'] ?? false) === true) {
                     $result['restored']['courses'][] = $courseResult;
@@ -407,22 +393,35 @@ class TeachingBackupService
     }
 
     /**
-     * @return array<string, mixed>
-     *
      * @throws JsonException
+     * @throws ValidationException
      */
-    public function restoreFull(TeachingBackup $backup, User $user): array
+    public function assertRestorable(TeachingBackup $backup): void
+    {
+        $this->validatedRestorePayload($backup);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedRestorePayload(TeachingBackup $backup): array
     {
         $payload = $this->readPayload($backup);
         $validation = $this->validationForPayload($payload);
 
         if (! $validation['is_valid']) {
-            return [
-                'restored' => false,
-                'counts' => [],
-                'warnings' => $validation['issues'],
-            ];
+            throw ValidationException::withMessages(['backup' => $validation['issues']]);
         }
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function restoreFull(TeachingBackup $backup, User $user): array
+    {
+        $payload = $this->validatedRestorePayload($backup);
 
         $tables = $payload['tables'] ?? [];
         $files = collect($payload['files'] ?? [])
@@ -486,7 +485,12 @@ class TeachingBackupService
             $curriculumIdMap = $this->restoreFullCurricula($tables, $files, $backup, $userIdMap, $user, $result);
             $this->restoreImportedCurricula($tables['teaching_imported_curricula'] ?? [], $backup, $userIdMap, $curriculumIdMap, $user, $result);
 
-            $courseMaps = $this->restoreFullCourses($tables, $files, $backup, $userIdMap, $import116IdMap, $curriculumIdMap, $user, $result);
+            $entryAreaIdMap = $this->restoreEntryAreas($tables, $backup, $userIdMap);
+            foreach (['teaching_entry_areas', 'teaching_entry_grading_parts', 'teaching_entry_definitions'] as $table) {
+                $result['counts'][$table] = count($tables[$table] ?? []);
+            }
+
+            $courseMaps = $this->restoreFullCourses($tables, $files, $backup, $userIdMap, $import116IdMap, $curriculumIdMap, $user, $result, $entryAreaIdMap);
             $this->restoreFullSettings($tables, $backup, $userIdMap, $result);
             $this->restoreTeachingUserGroups($tables, $backup, $userIdMap, $import116IdMap, $courseMaps['courses'], $user, $result);
 
@@ -1386,14 +1390,97 @@ class TeachingBackupService
 
     /**
      * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>|null  $selectedAreaIds
+     * @return array<int, int>
+     */
+    private function restoreEntryAreas(array $tables, TeachingBackup $backup, array $userIdMap, ?array $selectedAreaIds = null): array
+    {
+        if (! array_key_exists('teaching_entry_areas', $tables)) {
+            return [];
+        }
+
+        if ($selectedAreaIds === null) {
+            foreach (['teaching_entry_definitions', 'teaching_entry_grading_parts', 'teaching_entry_areas'] as $table) {
+                DB::table($table)
+                    ->where('school_id', $backup->school_id)
+                    ->where('schoolyear_id', $backup->schoolyear_id)
+                    ->delete();
+            }
+        }
+
+        $areaIdMap = [];
+        $partIdMap = [];
+        foreach ($tables['teaching_entry_areas'] as $area) {
+            $oldAreaId = (int) $area['id'];
+            if ($selectedAreaIds !== null && ! in_array($oldAreaId, $selectedAreaIds, true)) {
+                continue;
+            }
+
+            $ownerId = $userIdMap[(int) $area['user_id']];
+            $name = (string) $area['name'];
+            $baseName = Str::limit($name, 70, '');
+            $suffix = 1;
+            while (DB::table('teaching_entry_areas')
+                ->where('school_id', $backup->school_id)
+                ->where('schoolyear_id', $backup->schoolyear_id)
+                ->where('user_id', $ownerId)
+                ->where('name', $name)->exists()) {
+                $name = "{$baseName} (Sicherung {$suffix})";
+                $suffix++;
+            }
+
+            $areaIdMap[$oldAreaId] = $this->insertRestoredRow('teaching_entry_areas', $area, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $ownerId,
+                'name' => $name,
+            ]);
+        }
+
+        foreach ($tables['teaching_entry_grading_parts'] ?? [] as $part) {
+            $areaId = $areaIdMap[(int) $part['teaching_entry_area_id']] ?? null;
+            if ($areaId === null) {
+                continue;
+            }
+
+            $partIdMap[(int) $part['id']] = $this->insertRestoredRow('teaching_entry_grading_parts', $part, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[(int) $part['user_id']],
+                'teaching_entry_area_id' => $areaId,
+            ]);
+        }
+
+        foreach ($tables['teaching_entry_definitions'] ?? [] as $definition) {
+            $areaId = $areaIdMap[(int) $definition['teaching_entry_area_id']] ?? null;
+            if ($areaId === null) {
+                continue;
+            }
+
+            $this->insertRestoredRow('teaching_entry_definitions', $definition, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[(int) $definition['user_id']],
+                'teaching_entry_area_id' => $areaId,
+                'teaching_entry_grading_part_id' => $partIdMap[(int) ($definition['teaching_entry_grading_part_id'] ?? 0)] ?? null,
+            ]);
+        }
+
+        return $areaIdMap;
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
      * @param  array<string, array<string, mixed>>  $files
      * @param  array<int, int>  $userIdMap
      * @param  array<int, int>  $import116IdMap
      * @param  array<int, int>  $curriculumIdMap
      * @param  array<string, mixed>  $result
+     * @param  array<int, int>  $entryAreaIdMap
      * @return array{courses:array<int, int>, works:array<int, int>}
      */
-    private function restoreFullCourses(array $tables, array $files, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $curriculumIdMap, User $fallbackUser, array &$result): array
+    private function restoreFullCourses(array $tables, array $files, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $curriculumIdMap, User $fallbackUser, array &$result, array $entryAreaIdMap): array
     {
         $courseIdMap = [];
         $dateIdMap = [];
@@ -1413,6 +1500,7 @@ class TeachingBackupService
                 'schoolyear_id' => (int) $backup->schoolyear_id,
                 'user_id' => $userIdMap[$oldTeacherId] ?? (int) $fallbackUser->id,
                 'teaching_curriculum_id' => $curriculumIdMap[$oldCurriculumId] ?? null,
+                'teaching_entry_area_id' => $entryAreaIdMap[(int) ($course['teaching_entry_area_id'] ?? 0)] ?? null,
             ]);
             $result['counts']['courses']++;
         }
@@ -1706,7 +1794,8 @@ class TeachingBackupService
         TeachingBackup $backup,
         User $user,
         array $curriculumIdMap,
-        bool $overwriteExisting = false
+        bool $overwriteExisting = false,
+        array &$entryAreaIdMap = [],
     ): array {
         $course = $this->rowById($tables['teaching_courses'] ?? [], $courseId);
 
@@ -1757,10 +1846,17 @@ class TeachingBackupService
         $validUserIds = $this->activeSchoolUserIds($backup);
         $teacherId = (int) ($course['user_id'] ?? 0);
         $curriculumId = (int) ($course['teaching_curriculum_id'] ?? 0);
+        $restoredTeacherId = isset($validUserIds[$teacherId]) ? $teacherId : (int) $user->id;
+        $entryAreaId = (int) ($course['teaching_entry_area_id'] ?? 0);
+        if ($entryAreaId > 0 && ! isset($entryAreaIdMap[$entryAreaId])) {
+            $entryAreaIdMap += $this->restoreEntryAreas($tables, $backup, [$teacherId => $restoredTeacherId], [$entryAreaId]);
+        }
+
         $newCourseId = $this->insertRestoredRow('teaching_courses', $course, [
             'school_id' => (int) $backup->school_id,
             'schoolyear_id' => (int) $backup->schoolyear_id,
-            'user_id' => isset($validUserIds[$teacherId]) ? $teacherId : (int) $user->id,
+            'user_id' => $restoredTeacherId,
+            'teaching_entry_area_id' => $entryAreaIdMap[$entryAreaId] ?? null,
             'title' => $overwritten
                 ? (string) ($course['title'] ?? '')
                 : $this->restoredTitle('teaching_courses', (string) ($course['title'] ?? ''), (int) $backup->school_id, (int) $backup->schoolyear_id),
@@ -2165,6 +2261,12 @@ class TeachingBackupService
         $tables['school_tools'] = $this->rows('school_tools', fn (Builder $query): Builder => $query->where('school_id', $schoolId));
         $tables['users'] = $this->teachingUsers($schoolId, $schoolyearId);
 
+        foreach (['teaching_entry_areas', 'teaching_entry_grading_parts', 'teaching_entry_definitions'] as $table) {
+            $tables[$table] = $this->rows($table, fn (Builder $query): Builder => $query
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId));
+        }
+
         $tables['teaching_courses'] = $this->rows('teaching_courses', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
@@ -2530,7 +2632,7 @@ class TeachingBackupService
             'total_rows' => $tables->sum(fn (array $rows): int => count($rows)),
             'file_count' => $files->count(),
             'missing_file_count' => $files->where('exists', false)->count(),
-            'container_format' => ((int) ($payload['meta']['format_version'] ?? 0)) === TeachingBackupArchiveWriter::FORMAT_VERSION
+            'container_format' => in_array((int) ($payload['meta']['format_version'] ?? 0), [2, TeachingBackupArchiveWriter::FORMAT_VERSION], true)
                 ? 'zip'
                 : 'json',
         ];
@@ -2590,12 +2692,85 @@ class TeachingBackupService
             $warnings[] = "{$missingFileCount} referenzierte Datei(en) konnten nicht eingebettet werden.";
         }
 
+        $issues = array_merge($issues, $this->entryAreaValidationIssues($payload));
+
         return [
             'status' => $issues !== [] ? 'invalid' : ($warnings !== [] ? 'warning' : 'valid'),
             'is_valid' => $issues === [],
             'issues' => $issues,
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, string>
+     */
+    private function entryAreaValidationIssues(array $payload): array
+    {
+        $tables = $payload['tables'] ?? [];
+        $issues = [];
+        $schoolId = (int) ($payload['meta']['school_id'] ?? 0);
+        $schoolyearId = (int) ($payload['meta']['schoolyear_id'] ?? 0);
+        $users = collect($tables['users'] ?? [])->keyBy('id');
+        $areas = collect($tables['teaching_entry_areas'] ?? [])->keyBy('id');
+        $parts = collect($tables['teaching_entry_grading_parts'] ?? [])->keyBy('id');
+        $hasEntrySettings = array_key_exists('teaching_entry_areas', $tables)
+            || array_key_exists('teaching_entry_grading_parts', $tables)
+            || array_key_exists('teaching_entry_definitions', $tables);
+
+        foreach (['teaching_entry_areas', 'teaching_entry_grading_parts', 'teaching_entry_definitions'] as $table) {
+            if ((($payload['meta']['format_version'] ?? 0) >= 3 || $hasEntrySettings) && ! is_array($tables[$table] ?? null)) {
+                $issues[] = "Pflichtbereich {$table} fehlt.";
+            }
+
+            $seen = [];
+            foreach ($tables[$table] ?? [] as $row) {
+                $id = (int) ($row['id'] ?? 0);
+                $owner = $users->get((int) ($row['user_id'] ?? 0));
+                if ($id <= 0 || isset($seen[$id])
+                    || (int) ($row['user_id'] ?? 0) <= 0
+                    || (int) ($row['school_id'] ?? 0) !== $schoolId
+                    || (int) ($row['schoolyear_id'] ?? 0) !== $schoolyearId
+                    || ! $owner || (int) ($owner['school_id'] ?? 0) !== $schoolId) {
+                    $issues[] = "Ungültige Schul-, Schuljahr- oder Benutzerzuordnung in {$table}.";
+                }
+                $seen[$id] = true;
+
+                if ($table === 'teaching_entry_areas') {
+                    continue;
+                }
+
+                $area = $areas->get((int) ($row['teaching_entry_area_id'] ?? 0));
+                if (! $area || (int) ($area['user_id'] ?? 0) !== (int) ($row['user_id'] ?? 0)) {
+                    $issues[] = "Fehlender oder falsch zugeordneter Eintragsbereich in {$table}.";
+                }
+
+                $partId = (int) ($row['teaching_entry_grading_part_id'] ?? 0);
+                $part = $parts->get($partId);
+                if ($partId > 0 && (! $part
+                    || (int) ($part['teaching_entry_area_id'] ?? 0) !== (int) ($row['teaching_entry_area_id'] ?? 0)
+                    || (int) ($part['user_id'] ?? 0) !== (int) ($row['user_id'] ?? 0))) {
+                    $issues[] = 'Eine Eintragsdefinition verweist auf einen fehlenden oder fremden Benotungsteil.';
+                }
+            }
+        }
+
+        foreach ($tables['teaching_courses'] ?? [] as $course) {
+            $areaId = (int) ($course['teaching_entry_area_id'] ?? 0);
+            if ($areaId <= 0) {
+                continue;
+            }
+
+            $area = $areas->get($areaId);
+            if (! $area) {
+                $issues[] = 'Diese Sicherung enthält nicht alle benötigten Eintragsbereiche. Bitte auf dem Quellsystem mit der aktualisierten Version eine neue vollständige Datensicherung erstellen.';
+            } elseif ((int) ($area['user_id'] ?? 0) !== (int) ($course['user_id'] ?? 0)) {
+                $issues[] = 'Ein Kurs verweist auf den Eintragsbereich einer anderen Lehrkraft.';
+            }
+        }
+
+        return array_values(array_unique($issues));
     }
 
     /**
@@ -2788,6 +2963,33 @@ class TeachingBackupService
             ->map(fn (object $row): array => (array) $row)
             ->all();
         $currentSchoolHourCount = count($currentSchoolHours);
+        $entrySettings = [];
+        $currentEntrySettings = [];
+        foreach (['teaching_entry_areas', 'teaching_entry_grading_parts', 'teaching_entry_definitions'] as $table) {
+            $entrySettings[$table] = $tables[$table] ?? [];
+            $currentEntrySettings[$table] = $this->rows($table, fn (Builder $query): Builder => $query
+                ->where('school_id', $backup->school_id)
+                ->where('schoolyear_id', $backup->schoolyear_id));
+        }
+
+        $entrySection = [
+            'key' => 'entry_areas',
+            'label' => 'Eintragsbereiche & Eintragsdefinitionen',
+            'count' => count($entrySettings['teaching_entry_areas']),
+            'unit' => 'Bereiche',
+            'current_count' => count($currentEntrySettings['teaching_entry_areas']),
+            'secondary_count' => count($entrySettings['teaching_entry_definitions']),
+            'secondary_unit' => 'Definitionen',
+            'current_secondary_count' => count($currentEntrySettings['teaching_entry_definitions']),
+            'description' => 'Bereiche, Benotungsteile und Eintragsdefinitionen werden vollständig oder zusammen mit ausgewählten Kursen wiederhergestellt.',
+            'status' => $this->comparisonStatusForData(
+                count($entrySettings['teaching_entry_areas']),
+                count($currentEntrySettings['teaching_entry_areas']),
+                $entrySettings,
+                $currentEntrySettings
+            ),
+            'restore_scope' => 'full',
+        ];
 
         return [
             [
@@ -2907,6 +3109,7 @@ class TeachingBackupService
                 'status' => $this->comparisonStatusForData($schoolHourCount, $currentSchoolHourCount, $this->normalizeRowsForComparison($tables['teaching_school_hours'] ?? []), $this->normalizeRowsForComparison($currentSchoolHours)),
                 'restore_scope' => 'settings',
             ],
+            $entrySection,
         ];
     }
 
@@ -3380,7 +3583,7 @@ class TeachingBackupService
      */
     private function settingSectionCanBeRestored(?array $section): bool
     {
-        if (! $section || ! $this->isRestoreReasonStatus($section['status'] ?? null)) {
+        if (! $section || ($section['restore_scope'] ?? null) === 'full' || ! $this->isRestoreReasonStatus($section['status'] ?? null)) {
             return false;
         }
 

@@ -89,13 +89,16 @@ PHP,
         ]);
 });
 
-test('version two teaching archives round trip JSONL tables and raw files', function () {
+test('version three teaching archives round trip JSONL tables and raw files', function () {
     Storage::fake('local');
     Storage::disk('local')->put('teaching/source/demo.txt', 'Dateiinhalt');
 
     $tables = array_fill_keys(TeachingBackupArchiveWriter::TABLE_NAMES, []);
     $tables['schools'] = [['id' => 10, 'long_name' => 'Testschule']];
     $tables['schoolyears'] = [['id' => 20, 'school_id' => 10, 'name' => '2026/27']];
+    $tables['teaching_entry_areas'] = [['id' => 30, 'school_id' => 10, 'name' => 'Mitarbeit']];
+    $tables['teaching_entry_grading_parts'] = [['id' => 40, 'teaching_entry_area_id' => 30]];
+    $tables['teaching_entry_definitions'] = [['id' => 50, 'teaching_entry_area_id' => 30, 'teaching_entry_grading_part_id' => 40]];
 
     $payload = [
         'meta' => [
@@ -120,12 +123,12 @@ test('version two teaching archives round trip JSONL tables and raw files', func
     $reader = app(TeachingBackupArchiveReader::class);
     $restored = $reader->readStorage('local', 'teaching-backups/test.zip');
 
-    expect($summary['format_version'])->toBe(2)
+    expect($summary['format_version'])->toBe(3)
         ->and($summary['container_format'])->toBe('zip')
         ->and($summary['table_counts']['schools'])->toBe(1)
         ->and($summary['file_count'])->toBe(1)
-        ->and($restored['meta']['format_version'])->toBe(2)
-        ->and($restored['tables']['schools'])->toBe($tables['schools'])
+        ->and($restored['meta']['format_version'])->toBe(3)
+        ->and($restored['tables'])->toEqual($tables)
         ->and($restored['files'][0])->not->toHaveKey('base64')
         ->and($restored['files'][0]['_archive_entry'])->toBe('files/'.hash('sha256', 'Dateiinhalt'));
 
@@ -164,6 +167,55 @@ test('teaching archive reader rejects unsafe ZIP entry paths', function () {
     }
 })->throws(JsonException::class, 'unsafe entry name');
 
+test('teaching ZIP archives require the table list for their declared version', function (int $version, array $additionalTables, bool $valid) {
+    Storage::fake('local');
+    $path = Storage::disk('local')->path('versioned-backup.zip');
+    $archive = new ZipArchive;
+    expect($archive->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE))->toBeTrue();
+    $tables = [];
+
+    foreach ([...TeachingBackupArchiveWriter::LEGACY_TABLE_NAMES, ...$additionalTables] as $tableName) {
+        $entry = "tables/{$tableName}.jsonl";
+        $archive->addFromString($entry, '');
+        $tables[$tableName] = [
+            'entry' => $entry,
+            'row_count' => 0,
+            'size_bytes' => 0,
+            'sha256' => hash('sha256', ''),
+        ];
+    }
+
+    $manifest = [
+        'format' => 'schooltool-teaching-backup',
+        'format_version' => $version,
+        'meta' => ['format_version' => $version, 'school_id' => 10, 'schoolyear_id' => 20],
+        'tables' => $tables,
+        'files' => [],
+    ];
+    $manifest['content_hash'] = hash('sha256', json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    $archive->addFromString('manifest.json', json_encode($manifest, JSON_THROW_ON_ERROR));
+    $archive->close();
+
+    if (! $valid) {
+        expect(fn () => app(TeachingBackupArchiveReader::class)->readPath($path))
+            ->toThrow(JsonException::class, 'Backup archive table list is invalid.');
+
+        return;
+    }
+
+    $restored = app(TeachingBackupArchiveReader::class)->readPath($path);
+
+    expect($restored['meta']['format_version'])->toBe($version)
+        ->and(array_keys($restored['tables']))->toEqualCanonicalizing(array_keys($tables));
+})->with([
+    'legacy ZIP version two' => [2, [], true],
+    'version two cannot add definition tables' => [2, ['teaching_entry_areas'], false],
+    'version three missing entry areas' => [3, ['teaching_entry_grading_parts', 'teaching_entry_definitions'], false],
+    'version three missing grading parts' => [3, ['teaching_entry_areas', 'teaching_entry_definitions'], false],
+    'version three missing entry definitions' => [3, ['teaching_entry_areas', 'teaching_entry_grading_parts'], false],
+    'version three cannot add arbitrary tables' => [3, ['teaching_entry_areas', 'teaching_entry_grading_parts', 'teaching_entry_definitions', 'unexpected_table'], false],
+]);
+
 test('teaching archive reader keeps version one JSON backups readable', function () {
     $temporaryPath = tempnam(sys_get_temp_dir(), 'legacy-teaching-backup-');
     expect($temporaryPath)->toBeString();
@@ -189,13 +241,13 @@ test('teaching archive reader keeps version one JSON backups readable', function
     expect($restored)->toBe($payload);
 });
 
-test('teaching archive reader rejects raw JSON claiming version two', function () {
+test('teaching archive reader rejects raw JSON claiming a ZIP format version', function (int $version) {
     $temporaryPath = tempnam(sys_get_temp_dir(), 'fake-v2-teaching-backup-');
     expect($temporaryPath)->toBeString();
 
     file_put_contents($temporaryPath, json_encode([
         'meta' => [
-            'format_version' => 2,
+            'format_version' => $version,
             'school_id' => 10,
             'schoolyear_id' => 20,
             'scope' => 'active_school_and_active_schoolyear',
@@ -209,7 +261,7 @@ test('teaching archive reader rejects raw JSON claiming version two', function (
     } finally {
         @unlink($temporaryPath);
     }
-})->throws(JsonException::class, 'legacy version one');
+})->with([2, 3])->throws(JsonException::class, 'legacy version one');
 
 test('teaching archive limits bound restore-time expansion', function () {
     expect(TeachingBackupArchiveReader::MAX_ENTRIES)->toBe(1_000)

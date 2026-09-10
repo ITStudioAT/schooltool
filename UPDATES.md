@@ -12,6 +12,7 @@
 ### System
 
 - Unterricht/Datensicherung gefixt
+- Download Datensicherung gefixt
 
 ## 3.47.2
 

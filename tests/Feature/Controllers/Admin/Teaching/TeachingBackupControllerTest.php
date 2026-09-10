@@ -329,7 +329,7 @@ test('store creates a backup for the active school and schoolyear only', functio
     expect($backup->path)->toEndWith('.zip')
         ->and($backup->filename)->toEndWith('.zip')
         ->and($backup->summary['container_format'])->toBe('zip')
-        ->and($payload['meta']['format_version'])->toBe(2)
+        ->and($payload['meta']['format_version'])->toBe(3)
         ->and($payload['meta']['scope'])->toBe('active_school_and_active_schoolyear')
         ->and($courseTitles)->toContain('Aktiver Kurs')
         ->and($courseTitles)->not->toContain('Altes Schuljahr')
@@ -1463,7 +1463,10 @@ test('restore run is marked failed when partial restore throws unexpectedly', fu
             'schoolyear_id' => $this->schoolyear->id,
             'scope' => 'active_school_and_active_schoolyear',
         ],
-        'tables' => array_fill_keys([
+        'tables' => [
+            'schools' => [$this->school->only(['id', 'long_name', 'short_name'])],
+            'schoolyears' => [$this->schoolyear->only(['id', 'school_id', 'name'])],
+        ] + array_fill_keys([
             'schools',
             'schoolyears',
             'school_tools',

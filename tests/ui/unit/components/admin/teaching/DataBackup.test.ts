@@ -429,6 +429,7 @@ describe('Teaching data backup page', () => {
         expect(methods.isSettingRestoreSelectable({ count: 1, status: 'missing_current' })).toBe(true)
         expect(methods.isSettingRestoreSelectable({ count: 1, status: 'current_exists' })).toBe(false)
         expect(methods.isSettingRestoreSelectable({ count: 0, status: 'different' })).toBe(false)
+        expect(methods.isSettingRestoreSelectable({ count: 1, status: 'missing_current', restore_scope: 'full' })).toBe(false)
     })
 
     it('does not show stale selections for rows that are no longer restoreable', () => {
@@ -462,10 +463,10 @@ describe('Teaching data backup page', () => {
         expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 9, status: 'current_exists' })).toBe(false)
     })
 
-    it('allows full restore once a preview is loaded', () => {
-        const methods = (DataBackup as any).methods
+    it('allows full restore once a valid preview is loaded', () => {
         const ctx = {
             selected_preview: {
+                validation: { is_valid: true },
                 courses: [{ id: 7, status: 'current_exists' }],
                 curricula: [{ id: 8, status: 'current_exists' }],
                 setting_sections: [{ key: 'basic_settings', count: 1, status: 'current_exists' }],
@@ -478,6 +479,39 @@ describe('Teaching data backup page', () => {
         ctx.full_restore_loading = true
 
         expect((DataBackup as any).computed.canRestoreFull.call(ctx)).toBe(false)
+    })
+
+    it('uses fresh preview validation to block restoring previously valid backups', async () => {
+        const { methods, computed } = DataBackup as any
+        const issue = 'Der Sicherung fehlen Eintragsbereiche. Erstelle eine neue Sicherung auf dem Quellsystem.'
+        const ctx = {
+            selected_preview_backup: { id: 12, summary: { validation: { is_valid: true, issues: [], warnings: [] } } },
+            selected_preview: {
+                validation: { is_valid: false, issues: [issue], warnings: ['Eine Datei fehlt.'] },
+            },
+            restoreSelectionCount: 1,
+            restore_loading: false,
+            full_restore_loading: false,
+            full_restore_confirm_open: false,
+            canRestoreSelected: false,
+            canRestoreFull: false,
+        }
+
+        expect(methods.validationIssues(ctx.selected_preview)).toEqual([issue])
+        expect(methods.validationWarnings(ctx.selected_preview)).toEqual(['Eine Datei fehlt.'])
+        expect(computed.canRestoreSelected.call(ctx)).toBe(false)
+        expect(computed.canRestoreFull.call(ctx)).toBe(false)
+        methods.openFullRestoreDialog.call(ctx)
+        await methods.restoreFull.call(ctx)
+        await methods.restoreSelected.call(ctx)
+
+        expect(ctx.full_restore_confirm_open).toBe(false)
+        expect(axios.post).not.toHaveBeenCalled()
+
+        ctx.selected_preview.validation.is_valid = true
+
+        expect(computed.canRestoreSelected.call(ctx)).toBe(true)
+        expect(computed.canRestoreFull.call(ctx)).toBe(true)
     })
 
     it('posts the selected restore plan, closes preview, and refreshes backups', async () => {
@@ -687,6 +721,7 @@ describe('Teaching data backup page', () => {
             },
             full_restore_loading: false,
             full_restore_confirm_open: true,
+            canRestoreFull: true,
             restore_error: '',
             restore_result: null,
             restore_selection: {

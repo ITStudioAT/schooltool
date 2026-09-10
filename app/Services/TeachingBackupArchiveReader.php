@@ -197,7 +197,7 @@ class TeachingBackupArchiveReader
             }
 
             $meta = $manifest['meta'];
-            $meta['format_version'] = TeachingBackupArchiveWriter::FORMAT_VERSION;
+            $meta['format_version'] = $manifest['format_version'];
             $meta['content_hash'] = $manifest['content_hash'];
 
             return [
@@ -292,7 +292,7 @@ class TeachingBackupArchiveReader
         if (
             ! is_array($manifest)
             || ($manifest['format'] ?? null) !== 'schooltool-teaching-backup'
-            || ($manifest['format_version'] ?? null) !== TeachingBackupArchiveWriter::FORMAT_VERSION
+            || ! in_array($manifest['format_version'] ?? null, [2, TeachingBackupArchiveWriter::FORMAT_VERSION], true)
             || ! is_array($manifest['meta'] ?? null)
             || ! is_array($manifest['tables'] ?? null)
             || ! is_array($manifest['files'] ?? null)
@@ -327,7 +327,9 @@ class TeachingBackupArchiveReader
     private function tables(ZipArchive $archive, array $manifest, array $entries): array
     {
         $tableNames = array_keys($manifest['tables']);
-        $requiredTableNames = TeachingBackupArchiveWriter::TABLE_NAMES;
+        $requiredTableNames = $manifest['format_version'] === 2
+            ? TeachingBackupArchiveWriter::LEGACY_TABLE_NAMES
+            : TeachingBackupArchiveWriter::TABLE_NAMES;
         sort($tableNames);
         sort($requiredTableNames);
 
@@ -337,7 +339,7 @@ class TeachingBackupArchiveReader
 
         $tables = [];
 
-        foreach (TeachingBackupArchiveWriter::TABLE_NAMES as $tableName) {
+        foreach ($requiredTableNames as $tableName) {
             $descriptor = $manifest['tables'][$tableName] ?? null;
             $expectedEntry = "tables/{$tableName}.jsonl";
 

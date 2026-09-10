@@ -186,21 +186,21 @@
                         </v-alert>
 
                         <v-alert
-                            v-if="validationIssues(selected_preview_backup).length"
+                            v-if="validationIssues(selected_preview).length"
                             type="error"
                             variant="tonal"
                             density="comfortable"
                             class="mt-4">
-                            <div v-for="issue in validationIssues(selected_preview_backup)" :key="issue">{{ issue }}</div>
+                            <div v-for="issue in validationIssues(selected_preview)" :key="issue">{{ issue }}</div>
                         </v-alert>
 
                         <v-alert
-                            v-if="validationWarnings(selected_preview_backup).length"
+                            v-if="validationWarnings(selected_preview).length"
                             type="warning"
                             variant="tonal"
                             density="comfortable"
                             class="mt-4">
-                            <div v-for="warning in validationWarnings(selected_preview_backup)" :key="warning">{{ warning }}</div>
+                            <div v-for="warning in validationWarnings(selected_preview)" :key="warning">{{ warning }}</div>
                         </v-alert>
 
                         <v-alert v-if="restore_error" type="error" variant="tonal" density="comfortable" class="mt-3">
@@ -499,6 +499,7 @@
                         variant="flat"
                         prepend-icon="mdi-database-refresh-outline"
                         :loading="full_restore_loading"
+                        :disabled="!canRestoreFull"
                         @click="restoreFull">
                         Vollständig wiederherstellen
                     </v-btn>
@@ -554,11 +555,11 @@ export default {
         },
 
         canRestoreSelected() {
-            return this.selected_preview && this.restoreSelectionCount > 0 && !this.restore_loading
+            return this.selected_preview?.validation?.is_valid === true && this.restoreSelectionCount > 0 && !this.restore_loading
         },
 
         canRestoreFull() {
-            return this.selected_preview && !this.full_restore_loading
+            return this.selected_preview?.validation?.is_valid === true && !this.full_restore_loading
         },
 
         allRestoreSelected: {
@@ -854,7 +855,7 @@ export default {
         },
 
         async restoreFull() {
-            if (!this.selected_preview_backup?.id) {
+            if (!this.canRestoreFull || !this.selected_preview_backup?.id) {
                 return
             }
 
@@ -1164,11 +1165,15 @@ export default {
         },
 
         validationIssues(backup) {
-            return Array.isArray(backup?.summary?.validation?.issues) ? backup.summary.validation.issues : []
+            const validation = backup?.validation ?? backup?.summary?.validation
+
+            return Array.isArray(validation?.issues) ? validation.issues : []
         },
 
         validationWarnings(backup) {
-            return Array.isArray(backup?.summary?.validation?.warnings) ? backup.summary.validation.warnings : []
+            const validation = backup?.validation ?? backup?.summary?.validation
+
+            return Array.isArray(validation?.warnings) ? validation.warnings : []
         },
 
         previewStatusLabel(preview) {
@@ -1224,6 +1229,10 @@ export default {
         },
 
         isSettingRestoreSelectable(section) {
+            if (section?.restore_scope === 'full') {
+                return false
+            }
+
             const count = Number(section?.count || 0)
             const secondaryCount = Number(section?.secondary_count || 0)
 

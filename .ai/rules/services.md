@@ -3,6 +3,7 @@ paths:
   - app/Services/AbaLocalDocumentTextExtractor.php
   - 'app/Services/PersonalTeachingBackup*.php'
   - 'app/Services/TeachingBackupArchive*.php'
+  - 'app/Services/TeachingBackup*.php'
 ---
 
 # Services
@@ -15,3 +16,6 @@ Personal teaching snapshots span all schoolyears of one owner/current school and
 
 ## Keep teaching archives compatible with disabled tmpfile
 Cloudways production disables tmpfile(), causing school teaching backup creation and attachment restoration to fail. Use tempnam() plus fopen() for disk-backed streams; register paths before opening and close/unlink them in finally. Keep writer temporary paths until ZIP finalization. TeachingBackupArchiveTest runs archive round-trip and failure cleanup in a child PHP process with disable_functions=tmpfile because PHPUnit itself needs tmpfile().
+
+## Keep school backup entry settings as a complete graph
+School archive v3 includes teaching_entry_areas, teaching_entry_grading_parts and teaching_entry_definitions. Remap their owner and foreign IDs before inserting courses; partial restores clone settings to preserve other courses. Continue reading v1/v2, but reject archives whose courses reference omitted entry areas before queueing or creating safety backups. Refresh preview validation from archive contents, never trust cached summary validation.

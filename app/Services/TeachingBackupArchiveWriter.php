@@ -20,9 +20,9 @@ class TeachingBackupArchiveWriter
 
     private const MAX_JSON_LINE_BYTES = TeachingBackupArchiveReader::MAX_JSON_LINE_BYTES;
 
-    public const FORMAT_VERSION = 2;
+    public const FORMAT_VERSION = 3;
 
-    public const TABLE_NAMES = [
+    public const LEGACY_TABLE_NAMES = [
         'schools',
         'schoolyears',
         'school_tools',
@@ -48,6 +48,13 @@ class TeachingBackupArchiveWriter
         'import116_run_changes',
         'user_groups',
         'user_group_members',
+    ];
+
+    public const TABLE_NAMES = [
+        ...self::LEGACY_TABLE_NAMES,
+        'teaching_entry_areas',
+        'teaching_entry_grading_parts',
+        'teaching_entry_definitions',
     ];
 
     /**

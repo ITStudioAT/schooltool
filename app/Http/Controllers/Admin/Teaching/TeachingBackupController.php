@@ -252,6 +252,12 @@ class TeachingBackupController extends Controller
             'overwrite_existing' => ['sometimes', 'boolean'],
         ]);
 
+        try {
+            $service->assertRestorable($backup);
+        } catch (JsonException) {
+            abort(422, 'Datensicherung kann nicht gelesen werden');
+        }
+
         $run = $this->startRestoreRun($backup, $authUser, 'partial', $selection, 'running', $this->restoreAuditMetadata($request, $backup, $authUser, 'partial', $selection));
 
         try {
@@ -301,6 +307,12 @@ class TeachingBackupController extends Controller
 
         if ($this->hasActiveRestore($backup, $service)) {
             abort(409, 'Eine Wiederherstellung läuft bereits.');
+        }
+
+        try {
+            $service->assertRestorable($backup);
+        } catch (JsonException) {
+            abort(422, 'Datensicherung kann nicht gelesen werden');
         }
 
         $run = $this->startRestoreRun($backup, $authUser, 'full', [], 'pending', $this->restoreAuditMetadata($request, $backup, $authUser, 'full', []));
