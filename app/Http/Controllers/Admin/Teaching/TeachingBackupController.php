@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use JsonException;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -148,9 +149,31 @@ class TeachingBackupController extends Controller
             ? 'application/zip'
             : 'application/json';
 
-        return $disk->download($backup->path, $filename, [
+        $size = $disk->size($backup->path);
+        $stream = $disk->readStream($backup->path);
+
+        if (! is_resource($stream)) {
+            abort(404, 'Datensicherung nicht gefunden');
+        }
+
+        return response()->streamDownload(static function () use ($stream): void {
+            try {
+                while (! feof($stream)) {
+                    $chunk = fread($stream, 8192);
+
+                    if ($chunk === false) {
+                        throw new RuntimeException('Die Datensicherung konnte nicht vollständig gelesen werden.');
+                    }
+
+                    echo $chunk;
+                }
+            } finally {
+                fclose($stream);
+            }
+        }, $filename, [
             'Cache-Control' => 'private, no-store',
             'Content-Type' => $contentType,
+            'Content-Length' => $size,
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

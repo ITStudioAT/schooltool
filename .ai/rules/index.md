@@ -32,7 +32,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/AdminController.php,resources/js/pages/admin/App.vue,resources/js/pages/admin/components/AdminAppBar.vue} | .ai/rules/components.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/controllers-admin-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Jobs/Teaching/Import116Job.php,app/Models/Import116.php,app/Services/StudentsTimetables/RecognitionImportService.php,app/Services/StudentsTimetables/StudentTimetableStudySelectionRefreshService.php,app/Http/Controllers/Admin/StudentsTimetables/**} | .ai/rules/controllers-admin-students-timetables.md |
-| app/Http/Controllers/Admin/Teaching/FileUploadController.php | .ai/rules/controllers-admin-teaching.md |
+| app/Http/Controllers/Admin/Teaching/FileUploadController.php, app/Http/Controllers/Admin/Teaching/TeachingBackupController.php | .ai/rules/controllers-admin-teaching.md |
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
 | {UPDATES.md,public/documentation/**} | .ai/rules/documentation-2.md |
