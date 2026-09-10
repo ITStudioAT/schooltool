@@ -3,9 +3,91 @@
 use App\Services\TeachingBackupArchiveReader;
 use App\Services\TeachingBackupArchiveWriter;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+test('teaching archives round trip and clean up after failures when tmpfile is disabled', function () {
+    Storage::fake('local');
+    $temporaryDirectory = Storage::disk('local')->path('temporary');
+    mkdir($temporaryDirectory, 0700, true);
+
+    $process = new Process([
+        PHP_BINARY,
+        '-d', 'disable_functions=tmpfile',
+        '-d', "sys_temp_dir={$temporaryDirectory}",
+        '-r', <<<'PHP'
+use App\Services\TeachingBackupArchiveReader;
+use App\Services\TeachingBackupArchiveWriter;
+use Illuminate\Support\Facades\Storage;
+
+require 'vendor/autoload.php';
+$app = require 'bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+config(['filesystems.disks.local' => ['driver' => 'local', 'root' => $argv[1], 'throw' => true]]);
+
+$contents = str_repeat('Dateiinhalt', 110000);
+Storage::disk('local')->put('source.txt', $contents);
+$payload = [
+    'meta' => ['school_id' => 10, 'schoolyear_id' => 20],
+    'tables' => ['schools' => [['id' => 10, 'long_name' => 'Testschule']]],
+    'files' => [[
+        'path' => 'source.txt',
+        'exists' => true,
+        '_source_disk' => 'local',
+        '_source_path' => 'source.txt',
+    ]],
+];
+$writer = app(TeachingBackupArchiveWriter::class);
+$reader = app(TeachingBackupArchiveReader::class);
+$writer->write($payload, 'local', 'backup.zip');
+$restored = $reader->readStorage('local', 'backup.zip');
+$reader->copyFileToStorage($restored['files'][0], 'local', 'restored.txt');
+$result = [
+    'tmpfile_available' => function_exists('tmpfile'),
+    'tables_match' => $restored['tables']['schools'] === $payload['tables']['schools'],
+    'files_match' => Storage::disk('local')->get('restored.txt') === $contents,
+    'temporary_files_after_success' => array_values(array_diff(scandir(sys_get_temp_dir()), ['.', '..'])),
+];
+
+$payload['files'][] = ['path' => '../outside.txt', 'exists' => false];
+try {
+    $writer->write($payload, 'local', 'failed.zip');
+} catch (RuntimeException $exception) {
+    $result['write_error'] = $exception->getMessage();
+}
+$result['temporary_files_after_write_failure'] = array_values(array_diff(scandir(sys_get_temp_dir()), ['.', '..']));
+
+$file = $restored['files'][0];
+$file['_archive_sha256'] = str_repeat('0', 64);
+try {
+    $reader->copyFileToStorage($file, 'local', 'rejected.txt');
+} catch (JsonException $exception) {
+    $result['restore_error'] = $exception->getMessage();
+}
+$result['temporary_files_after_restore_failure'] = array_values(array_diff(scandir(sys_get_temp_dir()), ['.', '..']));
+echo json_encode($result, JSON_THROW_ON_ERROR);
+PHP,
+        Storage::disk('local')->path(''),
+    ], base_path(), ['APP_ENV' => 'testing']);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
+    $result = json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($result['tmpfile_available'])->toBeFalse()
+        ->and($result['tables_match'])->toBeTrue()
+        ->and($result['files_match'])->toBeTrue()
+        ->and($result['temporary_files_after_success'])->toBe([])
+        ->and($result['write_error'])->toBe('Teaching backup contains an unsafe logical file path.')
+        ->and($result['temporary_files_after_write_failure'])->toBe([])
+        ->and($result['restore_error'])->toBe('Backup file entry integrity check failed.')
+        ->and($result['temporary_files_after_restore_failure'])->toBe([])
+        ->and(Storage::disk('local')->allFiles())->toEqualCanonicalizing([
+            'source.txt', 'backup.zip', 'restored.txt',
+        ]);
+});
 
 test('version two teaching archives round trip JSONL tables and raw files', function () {
     Storage::fake('local');

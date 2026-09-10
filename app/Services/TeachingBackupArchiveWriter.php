@@ -170,10 +170,12 @@ class TeachingBackupArchiveWriter
 
             throw $exception;
         } finally {
-            foreach ($temporaryStreams as $temporaryStream) {
+            foreach ($temporaryStreams as $streamPath => $temporaryStream) {
                 if (is_resource($temporaryStream)) {
                     fclose($temporaryStream);
                 }
+
+                @unlink($streamPath);
             }
 
             @unlink($temporaryPath);
@@ -182,7 +184,7 @@ class TeachingBackupArchiveWriter
 
     /**
      * @param  array<string, mixed>  $tables
-     * @param  array<int, resource>  $temporaryStreams
+     * @param  array<string, resource|null>  $temporaryStreams
      * @return array<string, array{entry:string,row_count:int,size_bytes:int,sha256:string}>
      */
     private function addTables(ZipArchive $archive, array $tables, array &$temporaryStreams): array
@@ -190,13 +192,7 @@ class TeachingBackupArchiveWriter
         $manifest = [];
 
         foreach (self::TABLE_NAMES as $tableName) {
-            $stream = tmpfile();
-
-            if ($stream === false) {
-                throw new RuntimeException('A temporary table stream could not be created.');
-            }
-
-            $temporaryStreams[] = $stream;
+            $stream = $this->createTemporaryStream($temporaryStreams);
             $hash = hash_init('sha256');
             $rowCount = 0;
             $sizeBytes = 0;
@@ -237,7 +233,7 @@ class TeachingBackupArchiveWriter
 
     /**
      * @param  array<int, array<string, mixed>>  $files
-     * @param  array<int, resource>  $temporaryStreams
+     * @param  array<string, resource|null>  $temporaryStreams
      * @return array<int, array<string, mixed>>
      */
     private function addFiles(ZipArchive $archive, array $files, array &$temporaryStreams): array
@@ -263,18 +259,13 @@ class TeachingBackupArchiveWriter
                 continue;
             }
 
+            $temporaryStream = $this->createTemporaryStream($temporaryStreams);
             $sourceStream = $this->sourceStream($file);
-            $temporaryStream = tmpfile();
 
-            if ($sourceStream === false || $temporaryStream === false) {
-                if (is_resource($sourceStream)) {
-                    fclose($sourceStream);
-                }
-
+            if ($sourceStream === false) {
                 throw new RuntimeException("The backup file {$logicalPath} could not be streamed.");
             }
 
-            $temporaryStreams[] = $temporaryStream;
             $hash = hash_init('sha256');
             $sizeBytes = 0;
 
@@ -324,6 +315,30 @@ class TeachingBackupArchiveWriter
         }
 
         return $manifest;
+    }
+
+    /**
+     * @param  array<string, resource|null>  $temporaryStreams
+     * @return resource
+     */
+    private function createTemporaryStream(array &$temporaryStreams)
+    {
+        $path = tempnam(sys_get_temp_dir(), 'schooltool-teaching-backup-stream-');
+
+        if (! is_string($path)) {
+            throw new RuntimeException('A temporary teaching backup stream could not be created.');
+        }
+
+        $temporaryStreams[$path] = null;
+        $stream = fopen($path, 'w+b');
+
+        if ($stream === false) {
+            throw new RuntimeException('A temporary teaching backup stream could not be opened.');
+        }
+
+        $temporaryStreams[$path] = $stream;
+
+        return $stream;
     }
 
     /**

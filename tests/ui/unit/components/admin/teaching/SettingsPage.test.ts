@@ -29,6 +29,7 @@ describe('Teaching settings page', () => {
             'notifications',
             'schemas',
             'my_holidays',
+            'backup',
         ])
     })
 
@@ -46,6 +47,7 @@ describe('Teaching settings page', () => {
             'notifications',
             'schemas',
             'my_holidays',
+            'backup',
         ])
     })
 
@@ -81,6 +83,7 @@ describe('Teaching settings page', () => {
             'basic',
             'entries',
             'my_holidays',
+            'backup',
         ])
     })
 
@@ -372,7 +375,7 @@ describe('Teaching settings page', () => {
         expect(source).toContain("{ id: 'entries', label: 'Einträge', icon: 'mdi-format-list-bulleted-type' }")
         expect(source).toContain('activeSchoolyearLabel() {')
         expect(source).toContain('<span class="teaching-settings-toolbar-btn-copy">')
-        expect(source).toContain('<span class="teaching-settings-toolbar-btn-meta">{{ activeSchoolyearLabel }}</span>')
+        expect(source).toContain("panel.id === 'backup' ? 'Alle Schuljahre' : activeSchoolyearLabel")
         expect(source).toContain('background: rgba(15, 23, 42, 0.35);')
         expect(source).toContain('border: 1px solid rgba(255, 255, 255, 0.18);')
         expect(source).toContain('prepend-icon="mdi-restore"')

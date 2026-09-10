@@ -9,6 +9,66 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
+describe.each([
+    { label: 'configured school hours', schoolHours: Array.from({ length: 12 }, (_, index) => ({ hour: index + 1 })) },
+    { label: 'missing school hours', schoolHours: [] },
+])('MyTimetable visible hours with $label', ({ schoolHours }) => {
+    it.each([
+        { range: 'week', firstHour: 1, expectedStart: 1 },
+        { range: 'week', firstHour: 3, expectedStart: 1 },
+        { range: 'week', firstHour: 6, expectedStart: 1 },
+        { range: 'week', firstHour: 7, expectedStart: 7 },
+        { range: 'next_week', firstHour: 6, expectedStart: 1 },
+        { range: 'next_week', firstHour: 7, expectedStart: 7 },
+        { range: 'today', firstHour: 6, expectedStart: 6 },
+    ])('starts $range at $expectedStart when teaching starts in hour $firstHour', ({ range, firstHour, expectedStart }) => {
+        const computed = (MyTimetable as any).computed
+        const context = {
+            range,
+            school_hours: schoolHours,
+            filteredItems: [
+                { date: '2026-03-02', hours: [9, 10] },
+                { date: '2026-03-06', hours: [firstHour] },
+            ],
+        }
+
+        const hours = computed.tableHours.call(context)
+        const cells = computed.tableCellItems.call(context)
+
+        expect(hours).toEqual(Array.from({ length: 11 - expectedStart }, (_, index) => expectedStart + index))
+        expect(cells['2026-03-02-1']).toBeUndefined()
+        expect(cells['2026-03-06-1']).toEqual(firstHour === 1 ? [context.filteredItems[1]] : undefined)
+        expect(cells[`2026-03-06-${firstHour}`]).toEqual([context.filteredItems[1]])
+    })
+
+    it('ignores earlier teaching outside the displayed week', () => {
+        const computed = (MyTimetable as any).computed
+        const context: Record<string, any> = {
+            range: 'week',
+            school_hours: schoolHours,
+            currentRangeBounds: () => [new Date(2026, 2, 2), new Date(2026, 2, 8)],
+            timetableItems: [
+                { dateObj: new Date(2026, 1, 27), hours: [1] },
+                { dateObj: new Date(2026, 2, 6), hours: [7, 8] },
+                { dateObj: new Date(2026, 2, 9), hours: [6] },
+            ],
+        }
+        context.filteredItems = computed.filteredItems.call(context)
+
+        expect(computed.tableHours.call(context)).toEqual([7, 8])
+    })
+
+    it('preserves the existing hour range for an empty week', () => {
+        const hours = (MyTimetable as any).computed.tableHours.call({
+            range: 'week',
+            school_hours: schoolHours,
+            filteredItems: [],
+        })
+
+        expect(hours).toEqual(schoolHours.map(({ hour }) => hour))
+    })
+})
+
 describe('MyTimetable time range labels', () => {
     it('labels the next teaching range as the next lesson', () => {
         const source = readFileSync(

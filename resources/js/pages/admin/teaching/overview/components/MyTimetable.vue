@@ -381,7 +381,9 @@ export default {
             if (!itemHours.length) {
                 return schoolHourList.map((sh) => Number(sh.hour)).sort((a, b) => a - b)
             }
-            const minHour = Math.min(...itemHours)
+            const firstTeachingHour = Math.min(...itemHours)
+            const isWeekRange = this.range === RANGE_WEEK || this.range === RANGE_NEXT_WEEK
+            const minHour = isWeekRange && firstTeachingHour >= 1 && firstTeachingHour <= 6 ? 1 : firstTeachingHour
             const maxHour = Math.max(...itemHours)
             if (schoolHourList.length > 0) {
                 return schoolHourList

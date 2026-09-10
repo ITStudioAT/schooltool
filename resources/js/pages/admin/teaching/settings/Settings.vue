@@ -15,7 +15,7 @@
                     :prepend-icon="panel.icon">
                     <span class="teaching-settings-toolbar-btn-copy">
                         <span>{{ panel.label }}</span>
-                        <span class="teaching-settings-toolbar-btn-meta">{{ activeSchoolyearLabel }}</span>
+                        <span class="teaching-settings-toolbar-btn-meta">{{ panel.id === 'backup' ? 'Alle Schuljahre' : activeSchoolyearLabel }}</span>
                     </span>
                 </v-btn>
             </v-btn-toggle>
@@ -274,6 +274,9 @@
                         </v-col>
                     </v-row>
                 </v-window-item>
+                <v-window-item value="backup">
+                    <PersonalDataBackup :locked="isLocked" :can-review-recovery="config?.roles?.some((role) => ['admin', 'super_admin'].includes(role))" />
+                </v-window-item>
             </v-window>
         </section>
     </v-col>
@@ -293,10 +296,11 @@ import Behaviour from './components/Behaviour.vue'
 import Entries from './components/Entries.vue'
 import Notifications from './components/Notifications.vue'
 import MyHolidays from './components/MyHolidays.vue'
+import PersonalDataBackup from './components/PersonalDataBackup.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, CategoryEvaluation, BasicSettings, Behaviour, Entries, Notifications, MyHolidays, ItsGridBox },
+    components: { WorksAndGrades, Grading, CategoryEvaluation, BasicSettings, Behaviour, Entries, Notifications, MyHolidays, PersonalDataBackup, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -440,6 +444,8 @@ export default {
             if (this.canManageOwnHolidays) {
                 panels.push({ id: 'my_holidays', label: 'Eigene freie Tage', icon: 'mdi-calendar-heart' })
             }
+
+            panels.push({ id: 'backup', label: 'Datensicherung', icon: 'mdi-database-check-outline' })
 
             return panels
         },

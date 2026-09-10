@@ -7,6 +7,11 @@
 - SchülerInnen-Einträge adaptiert
 - Auswahl An-/Abwesenheiten angepasst
 - Curricula bei Unterricht: Anzeigen der Anhänge
+- Datensicherung
+
+### System
+
+- Unterricht/Datensicherung gefixt
 
 ## 3.47.2
 

@@ -553,15 +553,22 @@ class TeachingBackupArchiveReader
             throw new JsonException('Backup archive could not be opened while restoring a file.');
         }
 
-        $temporaryStream = tmpfile();
-
-        if ($temporaryStream === false) {
-            $archive->close();
-
-            throw new JsonException('A temporary restore stream could not be created.');
-        }
+        $temporaryPath = null;
+        $temporaryStream = false;
 
         try {
+            $temporaryPath = tempnam(sys_get_temp_dir(), 'schooltool-teaching-backup-restore-');
+
+            if (! is_string($temporaryPath)) {
+                throw new JsonException('A temporary restore stream could not be created.');
+            }
+
+            $temporaryStream = fopen($temporaryPath, 'w+b');
+
+            if ($temporaryStream === false) {
+                throw new JsonException('A temporary restore stream could not be opened.');
+            }
+
             $entryStream = $archive->getStream($entry);
 
             if ($entryStream === false) {
@@ -612,7 +619,14 @@ class TeachingBackupArchiveReader
                 Storage::disk($targetDisk)->delete($partPath);
             }
         } finally {
-            fclose($temporaryStream);
+            if (is_resource($temporaryStream)) {
+                fclose($temporaryStream);
+            }
+
+            if (is_string($temporaryPath)) {
+                @unlink($temporaryPath);
+            }
+
             $archive->close();
         }
     }
