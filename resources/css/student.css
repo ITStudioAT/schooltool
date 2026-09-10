@@ -56,7 +56,7 @@
 .student-workspace .student-course-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
 .student-workspace .student-summary-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; border-radius: 16px; background: #f4f6fb; color: #43516a; padding: 20px; border: 1px solid #e6eaf3; min-width: 0; }
 .student-workspace button.student-summary-card { cursor: pointer; transition: box-shadow .15s; }
-.student-workspace button.student-summary-card:hover { box-shadow: 0 0 0 2px #4056d6; }
+.student-workspace button.student-summary-card:hover { box-shadow: inset 0 0 0 2px #4056d6; border-color: #4056d6; }
 .student-workspace .student-summary-card--next { background: #eef1ff; color: #354abb; border-color: #dce2fc; }
 .student-workspace .student-summary-card--open { background: #fff0f0; color: #c62828; border-color: #f4cccc; }
 .student-workspace .student-summary-card--stars { background: #f6f9e9; color: #546823; border-color: #e7eccf; }

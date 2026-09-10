@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -799,4 +800,137 @@ test('show returns 403 when student is not enrolled in the course', function () 
     $this->actingAs($this->studentB)
         ->getJson("/api/homepage/student/courses/{$course->id}")
         ->assertStatus(403);
+});
+
+test('show reports only the viewing students recorded attendance', function (array $attendanceValues, bool $checked, ?string $expected) {
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [['id' => $this->studentA->id], ['id' => $this->studentB->id]],
+    ]);
+
+    $attendance = ['s_'.$this->studentB->id => false];
+    foreach ($attendanceValues as $key => $value) {
+        $attendance[$key === 'canonical' ? 's_'.$this->studentA->id : $this->studentA->id] = $value;
+    }
+    TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => today()->toDateString(),
+        'hours' => [1],
+        'attendance' => $attendance,
+        'attendance_checked' => $checked,
+        'status' => ['pruefung', 'att:'.$this->studentB->id.':0', 'att_checked:1'],
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.course_dates.0.attendance_status', $expected)
+        ->assertJsonPath('course.course_dates.0.status', ['pruefung'])
+        ->assertJsonMissingPath('course.course_dates.0.attendance')
+        ->assertJsonMissingPath('course.course_dates.0.attendance_checked');
+})->with([
+    'explicit presence on unchecked date' => [['canonical' => true], false, 'present'],
+    'explicit absence on checked date' => [['canonical' => false], true, 'absent'],
+    'explicit unknown overrides checked date' => [['canonical' => null], true, null],
+    'missing state on unchecked date' => [[], false, null],
+    'missing state inherits checked date' => [[], true, 'present'],
+    'raw numeric student key' => [['raw' => false], false, 'absent'],
+    'numeric present value' => [['canonical' => 1], false, 'present'],
+    'string absent value' => [['canonical' => 'false'], false, 'absent'],
+    'canonical key wins over raw alias' => [['canonical' => null, 'raw' => true], true, null],
+]);
+
+test('show uses legacy attendance only when a dedicated attendance map is missing', function (bool $hasDedicatedMap, ?string $expected) {
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [['id' => $this->studentA->id]],
+    ]);
+    TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => today()->subDay()->toDateString(),
+        'hours' => [1],
+        'attendance' => $hasDedicatedMap ? [] : null,
+        'attendance_checked' => false,
+        'status' => ['att:'.$this->studentA->id.':0', 'att:'.$this->studentB->id.':1', 'att_checked:1'],
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.course_dates.0.attendance_status', $expected)
+        ->assertJsonPath('course.course_dates.0.status', []);
+})->with([
+    'legacy own absence' => [false, 'absent'],
+    'dedicated empty map overrides legacy' => [true, null],
+]);
+
+test('show preserves recorded attendance on future lessons but excludes non teaching dates', function (int $daysFromToday, array $status, ?bool $attendance, ?string $expected) {
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [['id' => $this->studentA->id]],
+    ]);
+    TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => today()->addDays($daysFromToday)->toDateString(),
+        'hours' => [1],
+        'attendance' => ['s_'.$this->studentA->id => $attendance],
+        'attendance_checked' => true,
+        'status' => $status,
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.course_dates.0.attendance_status', $expected);
+})->with([
+    'future present' => [1, [], true, 'present'],
+    'future absent' => [1, [], false, 'absent'],
+    'future unrecorded' => [1, [], null, null],
+    'free day' => [-1, ['free'], true, null],
+    'cancelled lesson' => [-1, ['entfaellt'], true, null],
+]);
+
+test('parent course view reports attendance for the selected child', function () {
+    $childImport = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'birth_date' => today()->subYears(12)->toDateString(),
+        'mother_email' => 'parent@example.test',
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+        'user_id' => $this->studentA->id,
+    ]);
+    $this->studentA->update(['import116_id' => $childImport->id]);
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [['id' => $this->studentA->id], ['id' => $this->studentB->id]],
+    ]);
+    TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => today()->subDay()->toDateString(),
+        'hours' => [1],
+        'attendance' => ['s_'.$this->studentA->id => false, 's_'.$this->studentB->id => true],
+        'status' => [],
+    ]);
+
+    $this->withSession(['student_parent_access' => [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'email' => 'parent@example.test',
+        'expires_at' => now()->addHour()->timestamp,
+        'verified_at' => now()->timestamp,
+        'student_import_id' => $childImport->id,
+    ]])->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.course_dates.0.attendance_status', 'absent')
+        ->assertJsonMissingPath('course.course_dates.0.attendance');
 });

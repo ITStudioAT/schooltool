@@ -19,12 +19,94 @@ vi.mock('axios', () => ({
         get: vi.fn(),
         delete: vi.fn(),
         post: vi.fn(),
+        put: vi.fn(),
     },
 }))
 
 describe('CourseTable', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+    })
+
+    it('indexes curriculum plans across both semesters in the selected course without duplicate materials', () => {
+        const earlier = { id: 1, date: '2026-09-14', adopted_materials: [{ title: 'Grundlagen: Einheit' }, { title: ' Grundlagen: Einheit ' }] }
+        const later = { id: 2, date: '2027-04-12', adopted_materials: [{ title: 'Grundlagen: Einheit' }, { title: 'Vertiefung: Einheit' }] }
+        const dates = [later, earlier, { id: 3, date: '2026-10-01' }]
+        const context = { selected_course: { course_dates: dates }, sortedCourseDates: [earlier] }
+        const indexPlans = (CourseTable as any).computed.curriculumPlannedDatesByTitle
+        const plans = indexPlans.call(context)
+
+        expect(plans.get('Grundlagen: Einheit')).toEqual([earlier, later])
+        expect(plans.get('Vertiefung: Einheit')).toEqual([later])
+        expect(dates[0]).toBe(later)
+        const lookupContext = { curriculumPlannedDatesByTitle: plans, curriculumUnitTitle: (CourseTable as any).methods.curriculumUnitTitle }
+        expect((CourseTable as any).methods.curriculumUnitPlannedDates.call(lookupContext, { title: 'Ungeplant' }, { title: 'Einheit' })).toEqual([])
+
+        context.selected_course = { course_dates: [] }
+        expect(indexPlans.call(context).size).toBe(0)
+    })
+
+    it('reads curriculum file visibility only from the current date and matching document', () => {
+        const context = { curriculumDialog: { courseDate: { adopted_materials: [
+            { attachments: [{ source_teaching_curriculum_document_id: 6, student_visible: true }] },
+        ] } } }
+        const isVisible = (CourseTable as any).methods.curriculumFileIsStudentVisible
+
+        expect(isVisible.call(context, { id: 6 })).toBe(true)
+        expect(isVisible.call(context, { id: 7 })).toBe(false)
+        context.curriculumDialog.courseDate.adopted_materials = []
+        expect(isVisible.call(context, { id: 6 })).toBe(false)
+    })
+
+    it.each([true, false])('saves explicit curriculum file visibility %s and refreshes the date', async (visible) => {
+        const updatedDate = { id: 42, adopted_materials: [] }
+        vi.mocked(axios.put).mockResolvedValue({ data: { data: updatedDate } })
+        const context = {
+            curriculumDialog: { courseDate: { id: 42 } },
+            curriculumUnitActionKey: null,
+            curriculumFileError: '',
+            isCurriculumUnitLinkedToDialogDate: () => true,
+            applyCurriculumDialogCourseDate: vi.fn(),
+        }
+
+        await (CourseTable as any).methods.setCurriculumFileVisibility.call(context, { id: 6 }, visible, {}, {})
+
+        expect(axios.put).toHaveBeenCalledWith('/api/admin/teaching/course_dates/42/curriculum-files/6/visibility', { student_visible: visible })
+        expect(context.applyCurriculumDialogCourseDate).toHaveBeenCalledWith(updatedDate)
+        expect(context.curriculumUnitActionKey).toBeNull()
+    })
+
+    it('allows sharing a file before its unit is linked to the date', async () => {
+        const updatedDate = { id: 42, adopted_materials: [{ id: 8, title: 'Unit' }] }
+        vi.mocked(axios.put).mockResolvedValue({ data: { data: updatedDate } })
+        const context = {
+            curriculumDialog: { courseDate: { id: 42 } },
+            curriculumUnitActionKey: null,
+            isCurriculumUnitLinkedToDialogDate: () => false,
+            applyCurriculumDialogCourseDate: vi.fn(),
+        }
+
+        await (CourseTable as any).methods.setCurriculumFileVisibility.call(context, { id: 6 }, true, {}, {})
+
+        expect(axios.put).toHaveBeenCalledWith('/api/admin/teaching/course_dates/42/curriculum-files/6/visibility', { student_visible: true })
+        expect(context.applyCurriculumDialogCourseDate).toHaveBeenCalledWith(updatedDate)
+    })
+
+    it('keeps saved visibility when publishing fails and displays the error', async () => {
+        vi.mocked(axios.put).mockRejectedValue({ response: { data: { message: 'Datei nicht gefunden.' } } })
+        const context = {
+            curriculumDialog: { courseDate: { id: 42 } },
+            curriculumUnitActionKey: null,
+            curriculumFileError: '',
+            isCurriculumUnitLinkedToDialogDate: () => true,
+            applyCurriculumDialogCourseDate: vi.fn(),
+        }
+
+        await (CourseTable as any).methods.setCurriculumFileVisibility.call(context, { id: 6 }, true, {}, {})
+
+        expect(context.applyCurriculumDialogCourseDate).not.toHaveBeenCalled()
+        expect(context.curriculumFileError).toBe('Datei nicht gefunden.')
+        expect(context.curriculumUnitActionKey).toBeNull()
     })
 
     it('sorts course date rows by date', () => {
@@ -237,7 +319,10 @@ describe('CourseTable', () => {
             attachments: [{ id: 99, name: 'Nur-am-Termin.pdf' }],
         }
         useCourseStore(pinia).selected_course = {
-            id: 18, teaching_curriculum_id: 3, students_info: [], course_dates: [courseDate],
+            id: 18, teaching_curriculum_id: 3, students_info: [], course_dates: [courseDate, {
+                id: 2, date: '2027-04-12', hours: [2],
+                adopted_materials: [{ id: 10, title: 'Grundlagen: Verfügbar' }, { id: 11, title: 'Grundlagen: Verfügbar' }],
+            }],
         } as never
         const makeFile = (id, name, mimeType) => ({
             id, name, mime_type: mimeType,
@@ -279,6 +364,22 @@ describe('CourseTable', () => {
             const dialog = new DOMWrapper(document.querySelector('.v-overlay--active')!)
             const rows = dialog.findAll('.v-list-item')
             expect(rows).toHaveLength(3)
+            const visibilitySwitch = rows[1].get('[data-testid="curriculum-file-visibility-3"]')
+            expect(visibilitySwitch.attributes('role')).toBe('switch')
+            expect(visibilitySwitch.attributes('aria-checked')).toBe('false')
+            expect(visibilitySwitch.attributes('disabled')).toBeUndefined()
+            expect(visibilitySwitch.text()).toBe('Verborgen')
+            const setVisibility = vi.spyOn(wrapper.vm as any, 'setCurriculumFileVisibility').mockResolvedValue(undefined)
+            await visibilitySwitch.trigger('click')
+            expect(setVisibility).toHaveBeenCalledWith(expect.objectContaining({ id: 3 }), true)
+            setVisibility.mockRestore()
+            expect(rows[0].get('[data-testid="curriculum-unit-planning"]').text()).toContain('Im Kurs geplant:')
+            expect(rows[0].get('.course-table-curriculum-planned-date--current').text()).toContain('dieser Termin')
+            expect(rows[1].findAll('.course-table-curriculum-planned-date')).toHaveLength(1)
+            expect(rows[1].get('.course-table-curriculum-planned-date').text()).toContain('12.04.')
+            expect(rows[1].get('.course-table-curriculum-planned-date').text()).toContain('2. Std')
+            expect(rows[1].find('.course-table-curriculum-planned-date--current').exists()).toBe(false)
+            expect(rows[2].text()).toContain('Noch nicht geplant')
             expect(dialog.text()).not.toContain('Anhänge')
             expect(dialog.find('.mdi-circle-small').exists()).toBe(false)
             for (const row of rows.slice(0, 2)) {
@@ -321,6 +422,14 @@ describe('CourseTable', () => {
             expect(courseDate.adopted_materials).toEqual([{ id: 9, title: 'Grundlagen: Verknüpft' }])
             expect(dialog.get('[data-testid="curriculum-dialog-date"]').text()).toMatch(/Montag.*14\.9\.2026/)
             expect(dialog.findAll('[data-testid="curriculum-dialog-date"]')).toHaveLength(1)
+            const plannedCourseDate = useCourseStore(pinia).selected_course.course_dates[1]
+            plannedCourseDate.adopted_materials = []
+            await flushPromises()
+            expect(rows[1].text()).toContain('Noch nicht geplant')
+            expect(rows[1].find('.course-table-curriculum-planned-date').exists()).toBe(false)
+            plannedCourseDate.adopted_materials = [{ id: 10, title: 'Grundlagen: Verfügbar' }]
+            await flushPromises()
+            expect(rows[1].findAll('.course-table-curriculum-planned-date')).toHaveLength(1)
             ;(wrapper.vm as any).curriculumDialog.courseDate = { id: 2, date: '2026-09-21' }
             ;(wrapper.vm as any).curriculumDialog.curriculum.topics.push({ id: 'next', title: 'Nächstes Kapitel', units: [] })
             await flushPromises()
@@ -3939,6 +4048,7 @@ describe('CourseTable', () => {
             expect(entryCells[0].find('.course-table-entry-cell-attendance-marker').exists()).toBe(false)
             expect(entryCells[1].find('.course-table-entry-cell-attendance-marker.mdi-close').exists()).toBe(true)
             expect(entryCells[2].find('.course-table-entry-cell-attendance-marker.mdi-check').exists()).toBe(true)
+            expect(entryCells[2].get('.course-table-entry-cell-attendance-marker').classes()).toContain('text-success')
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -4365,6 +4475,7 @@ describe('CourseTable', () => {
         expect(source).toContain('class="course-table-entry-cell-attendance-marker"')
         expect(source).toContain(":aria-label=\"studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'\"")
         expect(source).toContain('.course-table-entry-cell-attendance-marker {')
+        expect(source).toMatch(/\.course-table-entry-cell\s*\{[^}]*position:\s*relative;/)
         expect(source).toContain('right: 3px;')
         expect(source).toContain('top: 3px;')
         expect(source).not.toContain('background: rgba(var(--v-theme-error), 0.14) !important;')

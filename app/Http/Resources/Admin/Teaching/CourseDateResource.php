@@ -74,6 +74,7 @@ class CourseDateResource extends JsonResource
                 'attachments' => $m->attachments->map(fn ($a) => [
                     'id' => $a->id,
                     'source_material_card_attachment_id' => $a->source_material_card_attachment_id,
+                    'source_teaching_curriculum_document_id' => $a->source_teaching_curriculum_document_id,
                     'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                     'mime_type' => $a->mime_type,
                     'size_bytes' => $a->size_bytes,

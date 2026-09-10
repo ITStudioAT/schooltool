@@ -282,8 +282,8 @@
                             </header>
                             <div class="feedback-tools">
                                 <div class="feedback-jumps">
-                                    <a href="#student-performance" class="feedback-jump"><strong>{{ sortedEntries.length }}</strong><span>Leistungen</span><v-icon size="16">mdi-arrow-down</v-icon></a>
-                                    <a v-if="showBehaviourEnabled" href="#student-behaviour" class="feedback-jump feedback-jump--behaviour"><strong>{{ filteredBehaviourEntries.length }}</strong><span>Verhalten</span><v-icon size="16">mdi-arrow-down</v-icon></a>
+                                    <a href="#student-performance" class="feedback-jump"><strong>{{ sortedEntries.length }}</strong><span>Leistungen</span></a>
+                                    <a v-if="showBehaviourEnabled" href="#student-behaviour" class="feedback-jump feedback-jump--behaviour"><strong>{{ filteredBehaviourEntries.length }}</strong><span>Verhalten</span></a>
                                 </div>
                                 <v-btn-toggle v-if="hasTwoSemesters" v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="#4056d6" aria-label="Semester für Leistungen und Verhalten">
                                     <v-btn :value="1" size="small">1. Sem</v-btn>
@@ -487,6 +487,12 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    <v-chip v-if="dateAttendanceIndicator(dateEntry)" size="small" variant="tonal"
+                                                        class="date-attendance"
+                                                        :color="dateAttendanceIndicator(dateEntry).color"
+                                                        :prepend-icon="dateAttendanceIndicator(dateEntry).icon">
+                                                        {{ dateAttendanceIndicator(dateEntry).label }}
+                                                    </v-chip>
                                                 </div>
                                             </v-list-item>
                                         </v-list>
@@ -1372,6 +1378,20 @@ export default {
         getDateLeadingIcon(dateValue) {
             return this.isDatePast(dateValue) ? 'mdi-check-circle' : 'mdi-calendar'
         },
+        dateAttendanceIndicator(dateEntry) {
+            if (this.hasFreeStatus(dateEntry.status)) {
+                return null
+            }
+
+            if (dateEntry.attendance_status === 'present') {
+                return { label: 'Anwesend', color: 'success', icon: 'mdi-account-check-outline' }
+            }
+            if (dateEntry.attendance_status === 'absent') {
+                return { label: 'Abwesend', color: 'error', icon: 'mdi-account-off-outline' }
+            }
+
+            return null
+        },
         isLiveTimerTestMode() {
             const liveTimerQuery = this.$route?.query?.live_timer
             const timerQuery = this.$route?.query?.timer
@@ -1946,6 +1966,11 @@ export default {
     color: #314d5d;
 }
 
+.date-attendance {
+    margin-inline-start: auto;
+    flex-shrink: 0;
+}
+
 .date-content {
     font-size: 0.9rem;
     font-weight: 400;
@@ -1972,22 +1997,42 @@ export default {
 
 .date-adopted-attachments {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 7px;
     padding-left: 22px;
 }
 
 .date-adopted-attachment {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    color: #1976d2;
+    gap: 7px;
+    width: fit-content;
+    max-width: 100%;
+    padding: 6px 11px;
+    border: 1px solid #dce4f4;
+    border-radius: 10px;
+    background: #f3f6fc;
+    color: #3155a6;
     text-decoration: none;
     font-size: 0.84rem;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.date-adopted-attachment > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .date-adopted-attachment:hover {
-    text-decoration: underline;
+    background: #e8eefb;
+    border-color: #b5c5e8;
+}
+
+.student-workspace .date-adopted-attachment:focus-visible {
+    outline: 2px solid #4056d6;
+    outline-offset: 2px;
 }
 
 .hero-badge.grade {

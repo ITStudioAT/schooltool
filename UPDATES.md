@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.47.3 !!!
+## 3.47.3
 
 ### Unterricht
 
@@ -8,6 +8,8 @@
 - Auswahl An-/Abwesenheiten angepasst
 - Curricula bei Unterricht: Anzeigen der Anhänge
 - Datensicherung
+- Zuweisung von Schüler:innen
+- Curriculum: Toggle Attachment: Sichtbar/Nicht sichtbar für Schüler:in
 
 ### System
 

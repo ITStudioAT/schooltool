@@ -27,9 +27,6 @@
             variant="tonal">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
-                <span v-if="tableView === 'attendance'" class="text-caption text-medium-emphasis">
-                    Zellklick: ungeprüft → abwesend → anwesend → ungeprüft
-                </span>
                 <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary" variant="tonal">
                     <v-btn :value="1" size="small">1. Sem</v-btn>
                     <v-btn :value="2" size="small">2. Sem</v-btn>
@@ -618,6 +615,18 @@
                                         <span class="course-table-curriculum-unit-title" :class="{ 'text-error': unit.isExam }">{{ unit.title }}</span>
                                     </div>
                                 </template>
+                                <div v-if="curriculumUnitPlannedDates(topic, unit).length"
+                                    class="course-table-curriculum-planning" data-testid="curriculum-unit-planning">
+                                    <span>Im Kurs geplant:</span>
+                                    <span v-for="plannedDate in curriculumUnitPlannedDates(topic, unit)" :key="plannedDate.id"
+                                        class="course-table-curriculum-planned-date"
+                                        :class="{ 'course-table-curriculum-planned-date--current': Number(plannedDate.id) === Number(curriculumDialog.courseDate?.id) }">
+                                        {{ compactCourseDateTitle(plannedDate) }}
+                                        <template v-if="courseDateHoursLabel(plannedDate)"> · {{ courseDateHoursLabel(plannedDate) }}</template>
+                                        <template v-if="Number(plannedDate.id) === Number(curriculumDialog.courseDate?.id)"> · dieser Termin</template>
+                                    </span>
+                                </div>
+                                <div v-else class="course-table-curriculum-planning text-medium-emphasis">Noch nicht geplant</div>
                                 <div v-if="unit.files.length" class="course-table-curriculum-files" data-testid="course-table-curriculum-files">
                                     <div v-for="file in unit.files" :key="file.id" class="course-table-curriculum-file">
                                         <v-icon size="17" color="primary">{{ curriculumFileIcon(file) }}</v-icon>
@@ -629,15 +638,31 @@
                                             :title="file.preview_url ? `${file.name} – Vorschau` : `${file.name} – Herunterladen`"
                                             @click.stop="openCurriculumFile(file, Boolean(file.preview_url))">{{ file.name }}</button>
                                         <span v-else class="course-table-curriculum-file-name">{{ file.name }}</span>
-                                        <v-btn
-                                            v-if="file.download_url"
-                                            icon="mdi-download-outline"
-                                            :title="`${file.name} herunterladen`"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="Boolean(curriculumFilePending)"
-                                            :loading="curriculumFilePending === file.id"
-                                            @click.stop="openCurriculumFile(file)" />
+                                        <div class="course-table-curriculum-file-actions">
+                                            <v-btn
+                                                v-if="file.download_url"
+                                                icon="mdi-download-outline"
+                                                :title="`${file.name} herunterladen`"
+                                                size="x-small"
+                                                variant="text"
+                                                :disabled="Boolean(curriculumFilePending)"
+                                                :loading="curriculumFilePending === file.id"
+                                                @click.stop="openCurriculumFile(file)" />
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                :aria-checked="curriculumFileIsStudentVisible(file)"
+                                                :data-testid="`curriculum-file-visibility-${file.id}`"
+                                                :aria-label="`${file.name}: Für Schüler:innen sichtbar`"
+                                                :title="curriculumFileIsStudentVisible(file) ? 'Für Schüler:innen verbergen' : 'Für Schüler:innen an diesem Termin freigeben'"
+                                                class="course-table-curriculum-file-visibility"
+                                                :class="{ 'course-table-curriculum-file-visibility--active': curriculumFileIsStudentVisible(file) }"
+                                                :disabled="Boolean(curriculumUnitActionKey)"
+                                                @click.stop="setCurriculumFileVisibility(file, !curriculumFileIsStudentVisible(file))">
+                                                <v-icon size="15">{{ curriculumFileIsStudentVisible(file) ? 'mdi-eye-outline' : 'mdi-eye-off-outline' }}</v-icon>
+                                                <span>{{ curriculumFileIsStudentVisible(file) ? 'Sichtbar' : 'Verborgen' }}</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <template #append>
@@ -2203,6 +2228,7 @@ import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
+import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
 import { parseLocalDate } from '@/helpers/date'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -2527,6 +2553,23 @@ export default {
             return [...new Set((Array.isArray(materials) ? materials : [])
                 .map((material) => String(material?.title || '').trim())
                 .filter((title) => title && !currentTitles.has(title)))]
+        },
+        curriculumPlannedDatesByTitle() {
+            const plannedDates = new Map()
+            const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
+            dates.sort((first, second) => String(first.date || '').localeCompare(String(second.date || ''))
+                || Number(first.id) - Number(second.id))
+
+            dates.forEach((courseDate) => {
+                const materials = Array.isArray(courseDate.adopted_materials) ? courseDate.adopted_materials : []
+                const titles = new Set(materials.map((material) => String(material?.title || '').trim()).filter(Boolean))
+                titles.forEach((title) => {
+                    if (!plannedDates.has(title)) plannedDates.set(title, [])
+                    plannedDates.get(title).push(courseDate)
+                })
+            })
+
+            return plannedDates
         },
         curriculumDialogTopics() {
             const topics = Array.isArray(this.curriculumDialog.curriculum?.topics)
@@ -2958,8 +3001,36 @@ export default {
         curriculumDialogUnitActionKey(topic, unit) {
             return `${topic?.key || topic?.title || 'topic'}:${unit?.key || unit?.title || 'unit'}`
         },
+        curriculumFileIsStudentVisible(file) {
+            return (this.curriculumDialog.courseDate?.adopted_materials || []).some((material) =>
+                (material.attachments || []).some((attachment) =>
+                    Number(attachment.source_teaching_curriculum_document_id) === Number(file.id)
+                    && attachment.student_visible === true,
+                ),
+            )
+        },
+        async setCurriculumFileVisibility(file, visible) {
+            const courseDate = this.curriculumDialog.courseDate
+            if (this.curriculumUnitActionKey || !courseDate?.id || !file?.id) return
+
+            this.curriculumUnitActionKey = `visibility:${file.id}`
+            this.curriculumFileError = ''
+            try {
+                const response = await axios.put(curriculumFileVisibility.url({ course_date: courseDate.id, file: file.id }), {
+                    student_visible: visible === true,
+                })
+                this.applyCurriculumDialogCourseDate(response.data?.data)
+            } catch (error) {
+                this.curriculumFileError = error?.response?.data?.message || 'Die Freigabe konnte nicht gespeichert werden.'
+            } finally {
+                this.curriculumUnitActionKey = null
+            }
+        },
         isCurriculumUnitActionPending(topic, unit) {
             return this.curriculumUnitActionKey === this.curriculumDialogUnitActionKey(topic, unit)
+        },
+        curriculumUnitPlannedDates(topic, unit) {
+            return this.curriculumPlannedDatesByTitle.get(this.curriculumUnitTitle(topic, unit)) || []
         },
         curriculumUnitAdoptedMaterials(topic, unit) {
             const adoptedMaterials = Array.isArray(this.curriculumDialog.courseDate?.adopted_materials)
@@ -5991,6 +6062,30 @@ export default {
     gap: 6px;
 }
 
+.course-table-curriculum-planning {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin: 6px 0;
+    font-size: 0.75rem;
+    font-weight: 400;
+}
+
+.course-table-curriculum-planned-date {
+    padding: 2px 7px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-primary), 0.1);
+    color: rgb(var(--v-theme-primary));
+    overflow-wrap: anywhere;
+}
+
+.course-table-curriculum-planned-date--current {
+    background: rgba(var(--v-theme-success), 0.14);
+    color: rgb(var(--v-theme-success));
+    font-weight: 700;
+}
+
 .course-table-curriculum-dialog-unit + .course-table-curriculum-dialog-unit {
     border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
@@ -6650,6 +6745,7 @@ export default {
 }
 
 .course-table-entry-cell {
+    position: relative;
     background: #ffffff;
     text-align: center;
 }
@@ -6951,6 +7047,57 @@ export default {
     gap: 6px;
     grid-template-columns: 18px minmax(0, 1fr) auto;
     margin-top: 3px;
+}
+
+.course-table-curriculum-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.course-table-curriculum-file-visibility {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 3px 9px;
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
+    border-radius: 999px;
+    background: rgba(var(--v-theme-surface), 0.75);
+    color: rgba(var(--v-theme-on-surface), 0.65);
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.course-table-curriculum-file-visibility--active {
+    border-color: rgba(var(--v-theme-success), 0.3);
+    background: rgba(var(--v-theme-success), 0.12);
+    color: rgb(var(--v-theme-success));
+}
+
+.course-table-curriculum-file-visibility:hover:not(:disabled) {
+    border-color: currentColor;
+    background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.course-table-curriculum-file-visibility:focus-visible {
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: 2px;
+}
+
+.course-table-curriculum-file-visibility:disabled {
+    opacity: 0.55;
+    cursor: progress;
+}
+
+@media (max-width: 480px) {
+    .course-table-curriculum-file-actions {
+        grid-column: 2 / -1;
+    }
 }
 
 .course-table-curriculum-file-name {

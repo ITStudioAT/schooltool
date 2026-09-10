@@ -668,6 +668,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
         Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
+        Route::put('/admin/teaching/course_dates/{course_date}/curriculum-files/{file}/visibility', [CourseDateController::class, 'setCurriculumFileVisibility']);
         Route::post('/admin/teaching/course_date_materials/attachments/{attachment}/toggle-visibility', [CourseDateController::class, 'toggleAttachmentVisibility']);
         Route::delete('/admin/teaching/course_date_materials/{material}', [CourseDateController::class, 'destroyAdoptedMaterial']);
         Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/preview', [CourseDateController::class, 'previewAdoptedAttachment']);

@@ -244,12 +244,12 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
-                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                            <v-list-item v-for="(student, studentIndex) in sortedSelectedStudents" :key="student.id">
                                 <div class="d-flex align-center ga-2 w-100 flex-wrap">
                                     <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
-                                    <div class="text-body-2" :class="studentNameClass(student)">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <div class="text-body-2" :class="studentNameClass(student)">{{ studentIndex + 1 }}. {{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
                                         Storniert: {{ formatDateTime(student.canceled_at) }}
                                     </v-chip>
@@ -303,12 +303,12 @@
                             <v-btn color="primary" variant="tonal" icon="mdi-magnify" :loading="student_search_loading" @click="searchStudents" />
                         </div>
                         <v-list density="compact" class="mt-1 pa-0" v-if="student_search_results.length">
-                            <v-list-item v-for="student in student_search_results" :key="student.id">
+                            <v-list-item v-for="(student, studentIndex) in student_search_results" :key="student.id">
                                 <div class="course-student-candidate d-flex align-center ga-2 w-100">
                                     <v-chip v-if="student.class" size="x-small" variant="tonal" color="secondary">
                                         {{ student.class }}
                                     </v-chip>
-                                    <div class="course-student-candidate__name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <div class="course-student-candidate__name text-body-2">{{ studentIndex + 1 }}. {{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-btn
                                         size="x-small"
                                         class="course-student-candidate__action"
@@ -343,12 +343,12 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
-                            <v-list-item v-for="student in filteredImport116Students" :key="student.id">
+                            <v-list-item v-for="(student, studentIndex) in filteredImport116Students" :key="student.id">
                                 <div class="course-student-candidate d-flex align-center ga-2 w-100">
                                     <v-chip v-if="student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.class }}
                                     </v-chip>
-                                    <div class="course-student-candidate__name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <div class="course-student-candidate__name text-body-2">{{ studentIndex + 1 }}. {{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-btn
                                         size="x-small"
                                         class="course-student-candidate__action"

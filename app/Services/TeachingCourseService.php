@@ -217,46 +217,57 @@ class TeachingCourseService
         $markedDeleted = 0;
         $softDeleted = 0;
 
-        foreach ($existingByKey as $key => $courseStudent) {
-            if (isset($activeByKey[$key])) {
-                $courseStudent->fill($this->buildCourseStudentPayload($activeByKey[$key]));
+        foreach ($existing as $courseStudent) {
+            $keys = $this->courseStudentModelKeys($courseStudent);
+            if ($keys === []) {
+                continue;
+            }
+
+            $activeKey = collect($keys)->first(fn (string $key): bool => isset($activeByKey[$key]));
+            $deletedKey = collect($keys)->first(fn (string $key): bool => isset($deletedByKey[$key]));
+            $activeEntry = $activeKey !== null ? $activeByKey[$activeKey] : null;
+            $deletedEntry = $deletedKey !== null ? $deletedByKey[$deletedKey] : null;
+            $isProtected = collect($keys)->contains(fn (string $key): bool => isset($protectedRemovalReasons[$key]));
+
+            foreach ($keys as $key) {
+                unset($activeByKey[$key], $deletedByKey[$key]);
+            }
+
+            if ($activeEntry !== null) {
+                $courseStudent->fill($this->buildCourseStudentPayload($activeEntry));
                 $courseStudent->save();
                 if ($courseStudent->trashed()) {
                     $courseStudent->restore();
                     $restored++;
                 }
                 $updated++;
-                unset($activeByKey[$key], $deletedByKey[$key]);
 
                 continue;
             }
 
-            if (isset($deletedByKey[$key])) {
-                if (isset($protectedRemovalReasons[$key])) {
-                    $payload = $this->buildCourseStudentPayload($deletedByKey[$key]);
+            if ($deletedEntry !== null) {
+                if ($isProtected) {
+                    $payload = $this->buildCourseStudentPayload($deletedEntry);
                     if (array_key_exists('canceled_at', $payload)) {
                         $courseStudent->fill(['canceled_at' => $payload['canceled_at']]);
                         $courseStudent->save();
                     }
 
-                    unset($deletedByKey[$key]);
-
                     continue;
                 }
 
-                $courseStudent->fill($this->buildCourseStudentPayload($deletedByKey[$key]));
+                $courseStudent->fill($this->buildCourseStudentPayload($deletedEntry));
                 $courseStudent->save();
                 if (! $courseStudent->trashed()) {
                     $courseStudent->delete();
                     $markedDeleted++;
                 }
-                unset($deletedByKey[$key]);
 
                 continue;
             }
 
             if (! $courseStudent->trashed()) {
-                if (isset($protectedRemovalReasons[$key])) {
+                if ($isProtected) {
                     continue;
                 }
 

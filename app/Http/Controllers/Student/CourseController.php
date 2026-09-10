@@ -12,6 +12,7 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use Illuminate\Support\Collection;
@@ -280,14 +281,15 @@ class CourseController extends Controller
 
         // Get course dates (TeachingCourseDate)
         $holidaySync = app(TeachingHolidaySyncService::class);
+        $courseDateService = app(TeachingCourseDateService::class);
         $courseDateModels = $course->teachingCourseDates()
             ->with('materials.attachments')
             ->orderBy('date', 'asc')
             ->get();
         $courseDates = $courseDateModels
-            ->map(function ($courseDate) use ($course, $holidaySync) {
+            ->map(function ($courseDate) use ($course, $holidaySync, $courseDateService, $auth_user) {
                 $date = $courseDate->date?->format('Y-m-d');
-                $status = is_array($courseDate->status) ? $courseDate->status : [];
+                $status = $courseDateService->stripAttendanceMetaFromStatus($courseDate->status);
                 $freeReason = in_array('free', $status, true)
                     ? $holidaySync->resolveFreeReason(
                         (int) $course->school_id,
@@ -317,6 +319,7 @@ class CourseController extends Controller
                     'hours' => $courseDate->hours,
                     'content' => $courseDate->content,
                     'status' => $status,
+                    'attendance_status' => $this->studentAttendanceStatus($courseDate, $auth_user, $courseDateService),
                     'free_reason' => $freeReason,
                     'adopted_materials' => $adoptedMaterials,
                 ];
@@ -367,6 +370,37 @@ class CourseController extends Controller
         return response()->json([
             'course' => $courseData,
         ], 200);
+    }
+
+    private function studentAttendanceStatus(
+        TeachingCourseDate $courseDate,
+        User $student,
+        TeachingCourseDateService $courseDateService,
+    ): ?string {
+        $date = $courseDate->date?->format('Y-m-d');
+        $status = is_array($courseDate->status) ? $courseDate->status : [];
+        if (! $date || array_intersect(['free', 'entfaellt'], $status)) {
+            return null;
+        }
+
+        $attendance = is_array($courseDate->attendance)
+            ? $courseDate->attendance
+            : $courseDateService->attendanceFromStatus($status);
+
+        foreach (['s_'.$student->id, (string) $student->id] as $studentKey) {
+            if (array_key_exists($studentKey, $attendance)) {
+                return match ($courseDateService->normalizeAttendanceState($attendance[$studentKey])) {
+                    true => 'present',
+                    false => 'absent',
+                    null => null,
+                };
+            }
+        }
+
+        $attendanceChecked = $courseDate->attendance_checked
+            ?? $courseDateService->attendanceCheckedFromStatus($status);
+
+        return $attendanceChecked ? 'present' : null;
     }
 
     public function previewAdoptedAttachment(

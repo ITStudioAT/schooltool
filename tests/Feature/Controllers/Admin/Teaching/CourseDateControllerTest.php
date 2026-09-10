@@ -9,12 +9,53 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCurriculum;
+use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
+use App\Services\Teaching\CurriculumUnitFileService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+function curriculumVisibilityFixture(object $test): array
+{
+    Storage::fake('local');
+    SchoolTool::where('school_id', $test->school->id)->update(['active_schoolyear_id' => $test->schoolyear->id]);
+    $curriculum = TeachingCurriculum::create([
+        'school_id' => $test->school->id,
+        'schoolyear_id' => $test->schoolyear->id,
+        'user_id' => $test->admin->id,
+        'title' => 'Curriculum',
+        'topics' => [['id' => 'topic-1', 'title' => ' Grundlagen ', 'units' => [['id' => 'unit-1', 'title' => ' Einstieg ']]]],
+    ]);
+    $test->course->update([
+        'teaching_curriculum_id' => $curriculum->id,
+        'students' => [['id' => $test->studentA->id], ['id' => $test->studentB->id]],
+    ]);
+    $date = TeachingCourseDate::create([
+        'teaching_course_id' => $test->course->id,
+        'date' => now()->toDateString(),
+        'hours' => [1],
+        'status' => [],
+    ]);
+    $material = $date->materials()->create(['title' => 'Grundlagen: Einstieg']);
+    $file = TeachingCurriculumDocument::create([
+        'teaching_curriculum_id' => $curriculum->id,
+        'topic_id' => 'topic-1',
+        'unit_id' => 'unit-1',
+        'source_type' => 'unit_file',
+        'name' => 'Übung.txt',
+        'file_path' => 'teaching/curriculum_unit_files/source.txt',
+        'storage_disk' => 'local',
+        'mime_type' => 'text/plain',
+        'size_bytes' => 13,
+    ]);
+    Storage::disk('local')->put($file->file_path, 'private bytes');
+
+    return [$date, $file, $material, "/api/admin/teaching/course_dates/{$date->id}/curriculum-files/{$file->id}/visibility"];
+}
 
 beforeEach(function () {
     collect([
@@ -355,6 +396,135 @@ it('update and destroy course date', function () {
 
     $this->deleteJson('/api/admin/teaching/course_dates/'.$courseDate->id)->assertNoContent();
     $this->assertDatabaseMissing('teaching_course_dates', ['id' => $courseDate->id]);
+});
+
+it('sets curriculum file visibility idempotently and copies source bytes privately', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])
+        ->assertOk()
+        ->assertJsonPath('data.adopted_materials.0.attachments.0.source_teaching_curriculum_document_id', $file->id)
+        ->assertJsonPath('data.adopted_materials.0.attachments.0.student_visible', true);
+    $this->putJson($url, ['student_visible' => true])->assertOk();
+
+    $attachment = $material->attachments()->sole();
+    expect(Storage::disk('local')->get($attachment->file_path))->toBe('private bytes')
+        ->and($attachment->file_path)->toStartWith('teaching/course_date_materials/')
+        ->and($attachment->file_path)->not->toBe($file->file_path);
+
+    $this->putJson($url, ['student_visible' => false])->assertOk();
+    $this->putJson($url, ['student_visible' => false])->assertOk();
+    expect($material->attachments()->sole()->student_visible)->toBeFalse();
+    Storage::disk('local')->assertExists($attachment->file_path);
+});
+
+it('keeps curriculum attachment visibility separate for each date', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $otherDate = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => now()->addDay()->toDateString(), 'hours' => [1]]);
+    $otherMaterial = $otherDate->materials()->create(['title' => 'Grundlagen: Einstieg']);
+    $otherUrl = "/api/admin/teaching/course_dates/{$otherDate->id}/curriculum-files/{$file->id}/visibility";
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertOk();
+    $this->putJson($otherUrl, ['student_visible' => true])->assertOk();
+    $this->putJson($url, ['student_visible' => false])->assertOk();
+
+    expect($material->attachments()->sole()->student_visible)->toBeFalse()
+        ->and($otherMaterial->attachments()->sole()->student_visible)->toBeTrue();
+});
+
+it('enforces curriculum file visibility in student listing and direct downloads', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertOk();
+    $attachment = $material->attachments()->sole();
+    $download = "/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download";
+    $this->actingAs($this->studentA, 'web')->getJson("/api/homepage/student/courses/{$this->course->id}")
+        ->assertOk()->assertJsonCount(1, 'course.course_dates.0.adopted_materials.0.attachments');
+    $this->get($download)->assertOk();
+
+    $this->actingAs($this->admin, 'web')->putJson($url, ['student_visible' => false])->assertOk();
+    $this->actingAs($this->studentA, 'web')->getJson("/api/homepage/student/courses/{$this->course->id}")
+        ->assertOk()->assertJsonCount(0, 'course.course_dates.0.adopted_materials.0.attachments');
+    $this->get($download)->assertForbidden();
+});
+
+it('forbids curriculum file changes for unauthorized teachers and students', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $this->actingAs($this->teacher)->putJson($url, ['student_visible' => true])->assertForbidden();
+    $this->actingAs($this->studentA)->putJson($url, ['student_visible' => true])->assertForbidden();
+    expect($material->attachments()->count())->toBe(0);
+});
+
+it('links an unlinked curriculum unit only when showing its requested file', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $material->update(['title' => 'Andere Einheit']);
+    $otherFile = $file->replicate();
+    $otherFile->name = 'Andere Datei.txt';
+    $otherFile->save();
+
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => false])->assertOk();
+    expect($date->materials()->count())->toBe(1);
+
+    $this->putJson($url, ['student_visible' => true])->assertOk();
+    $this->putJson($url, ['student_visible' => true])->assertOk();
+    $linkedMaterial = $date->materials()->where('title', 'Grundlagen: Einstieg')->sole();
+    expect($date->materials()->count())->toBe(2)
+        ->and($linkedMaterial->attachments()->sole()->source_teaching_curriculum_document_id)->toBe($file->id)
+        ->and($linkedMaterial->attachments()->sole()->student_visible)->toBeTrue()
+        ->and($material->attachments()->count())->toBe(0);
+});
+
+it('rejects missing units and foreign curriculum files without linking them', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $material->update(['title' => 'Andere Einheit']);
+    $file->update(['unit_id' => 'missing']);
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertNotFound();
+    $file->update(['unit_id' => 'unit-1']);
+    $this->course->update(['teaching_curriculum_id' => null]);
+    $this->putJson($url, ['student_visible' => true])->assertNotFound();
+    expect($material->attachments()->count())->toBe(0)
+        ->and($date->materials()->count())->toBe(1);
+});
+
+it('rejects missing curriculum source files and missing visibility values', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $material->update(['title' => 'Andere Einheit']);
+    Storage::disk('local')->delete($file->file_path);
+    $this->actingAs($this->admin)->putJson($url, [])->assertUnprocessable();
+    $this->putJson($url, ['student_visible' => true])->assertUnprocessable();
+    $this->putJson($url, ['student_visible' => false])->assertOk();
+    expect($material->attachments()->count())->toBe(0)
+        ->and($date->materials()->count())->toBe(1);
+});
+
+it('keeps an adopted curriculum attachment when its source document is deleted', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertOk();
+    $attachment = $material->attachments()->sole();
+    app(CurriculumUnitFileService::class)->delete($file);
+
+    expect($attachment->refresh()->source_teaching_curriculum_document_id)->toBeNull()
+        ->and($attachment->student_visible)->toBeTrue()
+        ->and(Storage::disk('local')->get($attachment->file_path))->toBe('private bytes');
+    $this->actingAs($this->studentA, 'web')
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download")->assertOk();
+});
+
+it('cleans up a failed curriculum attachment write without exposing a phantom file', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $material->update(['title' => 'Andere Einheit']);
+    $disk = Storage::disk('local');
+    $failedDisk = Mockery::mock($disk);
+    $failedDisk->shouldReceive('put')->once()->andReturnUsing(function ($path, $stream, $options) use ($disk): bool {
+        $disk->put($path, $stream, $options);
+
+        return false;
+    });
+    Storage::shouldReceive('disk')->with('local')->andReturn($failedDisk);
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertUnprocessable();
+
+    expect($material->attachments()->count())->toBe(0)
+        ->and($date->materials()->count())->toBe(1)
+        ->and($disk->allFiles('teaching/course_date_materials'))->toBe([])
+        ->and($disk->get($file->file_path))->toBe('private bytes');
 });
 
 it('deletes all dates for one authorized course with their adopted materials', function () {

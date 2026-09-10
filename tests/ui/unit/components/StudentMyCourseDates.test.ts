@@ -2,6 +2,68 @@ import { describe, expect, it } from 'vitest'
 import MyCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 
 describe('Student MyCourse date status display', () => {
+    it.each([
+        ['present', 'Anwesend', 'success'],
+        ['absent', 'Abwesend', 'error'],
+    ])('labels own attendance %s without assuming presence', (attendanceStatus, label, color) => {
+        const context = {
+            hasFreeStatus: (MyCourse as any).methods.hasFreeStatus,
+            isDatePast: () => true,
+            isDateToday: () => false,
+        }
+
+        const indicator = (MyCourse as any).methods.dateAttendanceIndicator.call(context, {
+            date: '2026-09-09', status: [], attendance_status: attendanceStatus,
+        })
+
+        expect(indicator).toMatchObject({ label, color })
+    })
+
+    it.each([null, undefined])('hides unrecorded attendance %s', (attendanceStatus) => {
+        const indicator = (MyCourse as any).methods.dateAttendanceIndicator.call({
+            hasFreeStatus: () => false,
+        }, { attendance_status: attendanceStatus })
+
+        expect(indicator).toBeNull()
+    })
+
+    it('shows recorded attendance for today', () => {
+        const indicator = (MyCourse as any).methods.dateAttendanceIndicator.call({
+            hasFreeStatus: () => false,
+            isDatePast: () => false,
+            isDateToday: () => true,
+        }, { attendance_status: 'absent' })
+
+        expect(indicator?.label).toBe('Abwesend')
+    })
+
+    it.each([
+        ['present', 'Anwesend'],
+        ['absent', 'Abwesend'],
+        [null, undefined],
+    ])('shows future lesson attendance %s instead of hiding the status', (attendanceStatus, label) => {
+        const indicator = (MyCourse as any).methods.dateAttendanceIndicator.call({
+            hasFreeStatus: () => false,
+            isDatePast: () => false,
+            isDateToday: () => false,
+        }, { date: '2099-09-15', status: [], attendance_status: attendanceStatus })
+
+        expect(indicator?.label).toBe(label)
+    })
+
+    it.each([
+        [true, ['free']],
+        [true, ['entfaellt']],
+    ])('hides attendance for cancelled dates (%s, %s)', (isPast, status) => {
+        const indicator = (MyCourse as any).methods.dateAttendanceIndicator.call({
+            hasFreeStatus: (MyCourse as any).methods.hasFreeStatus,
+            isDatePast: () => isPast,
+            isDateToday: () => false,
+        }, { date: '2026-09-15', status, attendance_status: 'present' })
+
+        expect(indicator).toBeNull()
+    })
+
     it('treats entfaellt status as free-like status', () => {
         const hasFreeStatus = (MyCourse as any).methods.hasFreeStatus.call({}, ['entfaellt'])
 

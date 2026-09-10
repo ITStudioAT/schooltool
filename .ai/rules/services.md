@@ -4,6 +4,7 @@ paths:
   - 'app/Services/PersonalTeachingBackup*.php'
   - 'app/Services/TeachingBackupArchive*.php'
   - 'app/Services/TeachingBackup*.php'
+  - app/Services/TeachingCourseService.php
 ---
 
 # Services
@@ -19,3 +20,6 @@ Cloudways production disables tmpfile(), causing school teaching backup creation
 
 ## Keep school backup entry settings as a complete graph
 School archive v3 includes teaching_entry_areas, teaching_entry_grading_parts and teaching_entry_definitions. Remap their owner and foreign IDs before inserting courses; partial restores clone settings to preserve other courses. Continue reading v1/v2, but reject archives whose courses reference omitted entry areas before queueing or creating safety backups. Refresh preview validation from archive contents, never trust cached summary validation.
+
+## Synchronize course student rows once across identity aliases
+A TeachingCourseStudent may have user, Import116 and linked-import-user identity keys. Process each stored row once, match all aliases before choosing active/deleted/omitted state, give active selection priority and consume all matched aliases. Looping mutations over the alias map can immediately soft-delete a row just updated or restored. Preserve removal protection across every alias.

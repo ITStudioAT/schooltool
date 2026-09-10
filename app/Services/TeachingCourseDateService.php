@@ -7,12 +7,17 @@ use App\Models\MaterialCardAttachment;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterial;
+use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\TeachingCurriculumDocument;
+use App\Services\Teaching\CurriculumUnitFileService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class TeachingCourseDateService
 {
@@ -633,6 +638,98 @@ class TeachingCourseDateService
             ->filter(fn (int $id): bool => $id > 0)
             ->mapWithKeys(fn (int $id): array => [$id => true])
             ->all();
+    }
+
+    public function setCurriculumFileVisibility(
+        TeachingCourseDate $courseDate,
+        TeachingCurriculumDocument $file,
+        bool $studentVisible,
+    ): void {
+        $targetPath = null;
+
+        try {
+            DB::transaction(function () use ($courseDate, $file, $studentVisible, &$targetPath): void {
+                $lockedDate = TeachingCourseDate::query()->lockForUpdate()->findOrFail($courseDate->id);
+                $course = $lockedDate->teachingCourse;
+                $curriculum = $file->curriculum;
+                abort_unless(
+                    $course && $curriculum
+                    && (int) $course->teaching_curriculum_id === (int) $curriculum->id
+                    && (int) $course->school_id === (int) $curriculum->school_id
+                    && (int) $course->schoolyear_id === (int) $curriculum->schoolyear_id
+                    && $file->source_type === 'unit_file',
+                    404,
+                );
+
+                $unitTitle = null;
+                foreach ($curriculum->topics ?? [] as $topicIndex => $topic) {
+                    if ((string) ($topic['id'] ?? '') !== (string) $file->topic_id) {
+                        continue;
+                    }
+                    foreach ($topic['units'] ?? [] as $unitIndex => $unit) {
+                        if ((string) ($unit['id'] ?? '') === (string) $file->unit_id) {
+                            $topicTitle = trim((string) ($topic['title'] ?? '')) ?: 'Thema '.($topicIndex + 1);
+                            $title = trim((string) ($unit['title'] ?? '')) ?: 'Einheit '.($unitIndex + 1);
+                            $unitTitle = $topicTitle.': '.$title;
+                            break 2;
+                        }
+                    }
+                }
+                abort_unless($unitTitle !== null, 404);
+
+                $materials = $lockedDate->materials()->with('attachments')->get();
+                $material = $materials->first(fn (TeachingCourseDateMaterial $material): bool => trim($material->title) === $unitTitle);
+                if (! $material && $studentVisible) {
+                    $material = $lockedDate->materials()->create(['title' => $unitTitle]);
+                }
+
+                $attachment = $materials->flatMap->attachments->first(
+                    fn (TeachingCourseDateMaterialAttachment $attachment): bool => (int) $attachment->source_teaching_curriculum_document_id === (int) $file->id,
+                );
+                if ($attachment) {
+                    $attachment->update(['student_visible' => $studentVisible]);
+
+                    return;
+                }
+                if (! $studentVisible) {
+                    return;
+                }
+
+                $sourceDisk = Storage::disk(app(CurriculumUnitFileService::class)->diskName($file));
+                $sourcePath = trim((string) $file->file_path);
+                if ($sourcePath === '' || ! $sourceDisk->exists($sourcePath)) {
+                    throw ValidationException::withMessages(['student_visible' => 'Die Datei wurde nicht gefunden und konnte nicht freigegeben werden.']);
+                }
+                $stream = $sourceDisk->readStream($sourcePath);
+                if (! is_resource($stream)) {
+                    throw ValidationException::withMessages(['student_visible' => 'Die Datei konnte nicht gelesen werden.']);
+                }
+                try {
+                    $extension = pathinfo($sourcePath, PATHINFO_EXTENSION);
+                    $targetPath = 'teaching/course_date_materials/'.$material->id.'/'.Str::uuid().($extension !== '' ? '.'.$extension : '');
+                    if (! Storage::disk('local')->put($targetPath, $stream, ['visibility' => 'private'])) {
+                        throw ValidationException::withMessages(['student_visible' => 'Die Datei konnte nicht freigegeben werden.']);
+                    }
+                } finally {
+                    fclose($stream);
+                }
+
+                $material->attachments()->create([
+                    'source_teaching_curriculum_document_id' => $file->id,
+                    'name' => $file->name,
+                    'file_path' => $targetPath,
+                    'mime_type' => $file->mime_type,
+                    'size_bytes' => $file->size_bytes,
+                    'student_visible' => true,
+                ]);
+            });
+        } catch (Throwable $exception) {
+            if ($targetPath !== null) {
+                Storage::disk('local')->delete($targetPath);
+            }
+
+            throw $exception;
+        }
     }
 
     public function deleteAdoptedMaterial(TeachingCourseDateMaterial $material): void

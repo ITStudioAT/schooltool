@@ -321,6 +321,7 @@ class TeachingBackupService
             ];
 
             $curriculumIdMap = [];
+            $curriculumDocumentIdMap = [];
             $entryAreaIdMap = [];
 
             foreach ($this->selectedIds($selection['curricula'] ?? []) as $curriculumId) {
@@ -332,7 +333,7 @@ class TeachingBackupService
                     continue;
                 }
 
-                $curriculumResult = $this->restoreMissingCurriculum($tables, $files, $curriculumId, $backup, $user, $overwriteExisting);
+                $curriculumResult = $this->restoreMissingCurriculum($tables, $files, $curriculumId, $backup, $user, $overwriteExisting, $curriculumDocumentIdMap);
 
                 if (($curriculumResult['restored'] ?? false) === true) {
                     $curriculumIdMap[$curriculumId] = (int) $curriculumResult['new_id'];
@@ -353,7 +354,7 @@ class TeachingBackupService
                     continue;
                 }
 
-                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting, $entryAreaIdMap);
+                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting, $entryAreaIdMap, $curriculumDocumentIdMap);
 
                 if (($courseResult['restored'] ?? false) === true) {
                     $result['restored']['courses'][] = $courseResult;
@@ -482,7 +483,8 @@ class TeachingBackupService
             $importRunIdMap = $this->restoreImport116Runs($tables['import116_runs'] ?? [], $backup, $userIdMap, $user, $result);
             $this->restoreImport116RunChanges($tables['import116_run_changes'] ?? [], $backup, $importRunIdMap, $result);
 
-            $curriculumIdMap = $this->restoreFullCurricula($tables, $files, $backup, $userIdMap, $user, $result);
+            $curriculumDocumentIdMap = [];
+            $curriculumIdMap = $this->restoreFullCurricula($tables, $files, $backup, $userIdMap, $user, $result, $curriculumDocumentIdMap);
             $this->restoreImportedCurricula($tables['teaching_imported_curricula'] ?? [], $backup, $userIdMap, $curriculumIdMap, $user, $result);
 
             $entryAreaIdMap = $this->restoreEntryAreas($tables, $backup, $userIdMap);
@@ -490,7 +492,7 @@ class TeachingBackupService
                 $result['counts'][$table] = count($tables[$table] ?? []);
             }
 
-            $courseMaps = $this->restoreFullCourses($tables, $files, $backup, $userIdMap, $import116IdMap, $curriculumIdMap, $user, $result, $entryAreaIdMap);
+            $courseMaps = $this->restoreFullCourses($tables, $files, $backup, $userIdMap, $import116IdMap, $curriculumIdMap, $user, $result, $entryAreaIdMap, $curriculumDocumentIdMap);
             $this->restoreFullSettings($tables, $backup, $userIdMap, $result);
             $this->restoreTeachingUserGroups($tables, $backup, $userIdMap, $import116IdMap, $courseMaps['courses'], $user, $result);
 
@@ -1294,9 +1296,10 @@ class TeachingBackupService
      * @param  array<string, array<string, mixed>>  $files
      * @param  array<int, int>  $userIdMap
      * @param  array<string, mixed>  $result
+     * @param  array<int, int>  $curriculumDocumentIdMap
      * @return array<int, int>
      */
-    private function restoreFullCurricula(array $tables, array $files, TeachingBackup $backup, array $userIdMap, User $fallbackUser, array &$result): array
+    private function restoreFullCurricula(array $tables, array $files, TeachingBackup $backup, array $userIdMap, User $fallbackUser, array &$result, array &$curriculumDocumentIdMap): array
     {
         $curriculumIdMap = [];
 
@@ -1324,7 +1327,7 @@ class TeachingBackupService
             }
 
             $newPath = $this->restoreFilePath($document['file_path'] ?? null, $files, "teaching/curriculum_documents/{$curriculumIdMap[$oldCurriculumId]}");
-            $this->insertRestoredRow('teaching_curriculum_documents', $document, [
+            $curriculumDocumentIdMap[(int) $document['id']] = $this->insertRestoredRow('teaching_curriculum_documents', $document, [
                 'teaching_curriculum_id' => $curriculumIdMap[$oldCurriculumId],
                 'file_path' => $newPath,
                 'storage_disk' => $newPath !== null ? 'local' : null,
@@ -1335,6 +1338,36 @@ class TeachingBackupService
         }
 
         return $curriculumIdMap;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<int, int>  $curriculumDocumentIdMap
+     */
+    private function restoredCurriculumDocumentId(array $attachment, array $tables, array $curriculumDocumentIdMap, TeachingBackup $backup): ?int
+    {
+        $sourceId = (int) ($attachment['source_teaching_curriculum_document_id'] ?? 0);
+
+        if (isset($curriculumDocumentIdMap[$sourceId])) {
+            return $curriculumDocumentIdMap[$sourceId];
+        }
+
+        $document = $this->rowById($tables['teaching_curriculum_documents'] ?? [], $sourceId);
+
+        if (! $document || ! $this->currentCurriculumExists($backup, (int) $document['teaching_curriculum_id'])) {
+            return null;
+        }
+
+        $query = DB::table('teaching_curriculum_documents')
+            ->where('id', $sourceId)
+            ->where('teaching_curriculum_id', $document['teaching_curriculum_id']);
+
+        foreach (['topic_id', 'unit_id', 'source_type', 'name', 'file_path'] as $column) {
+            $query->where($column, $document[$column] ?? null);
+        }
+
+        return $query->exists() ? $sourceId : null;
     }
 
     private function restorableExportKey(mixed $exportKey): string
@@ -1478,9 +1511,10 @@ class TeachingBackupService
      * @param  array<int, int>  $curriculumIdMap
      * @param  array<string, mixed>  $result
      * @param  array<int, int>  $entryAreaIdMap
+     * @param  array<int, int>  $curriculumDocumentIdMap
      * @return array{courses:array<int, int>, works:array<int, int>}
      */
-    private function restoreFullCourses(array $tables, array $files, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $curriculumIdMap, User $fallbackUser, array &$result, array $entryAreaIdMap): array
+    private function restoreFullCourses(array $tables, array $files, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $curriculumIdMap, User $fallbackUser, array &$result, array $entryAreaIdMap, array $curriculumDocumentIdMap): array
     {
         $courseIdMap = [];
         $dateIdMap = [];
@@ -1577,6 +1611,7 @@ class TeachingBackupService
             $this->insertRestoredRow('teaching_course_date_material_attachments', $row, [
                 'teaching_course_date_material_id' => $materialIdMap[$oldMaterialId],
                 'source_material_card_attachment_id' => null,
+                'source_teaching_curriculum_document_id' => $curriculumDocumentIdMap[(int) ($row['source_teaching_curriculum_document_id'] ?? 0)] ?? null,
                 'file_path' => $newPath,
             ]);
             $result['counts']['course_material_attachments']++;
@@ -1785,6 +1820,8 @@ class TeachingBackupService
      * @param  array<string, array<int, array<string, mixed>>>  $tables
      * @param  array<string, array<string, mixed>>  $files
      * @param  array<int, int>  $curriculumIdMap
+     * @param  array<int, int>  $entryAreaIdMap
+     * @param  array<int, int>  $curriculumDocumentIdMap
      * @return array<string, mixed>
      */
     private function restoreMissingCourse(
@@ -1796,6 +1833,7 @@ class TeachingBackupService
         array $curriculumIdMap,
         bool $overwriteExisting = false,
         array &$entryAreaIdMap = [],
+        array $curriculumDocumentIdMap = [],
     ): array {
         $course = $this->rowById($tables['teaching_courses'] ?? [], $courseId);
 
@@ -1994,6 +2032,7 @@ class TeachingBackupService
             $this->insertRestoredRow('teaching_course_date_material_attachments', $row, [
                 'teaching_course_date_material_id' => $materialIdMap[$oldMaterialId],
                 'source_material_card_attachment_id' => null,
+                'source_teaching_curriculum_document_id' => $this->restoredCurriculumDocumentId($row, $tables, $curriculumDocumentIdMap, $backup),
                 'file_path' => $newPath,
             ]);
             $counts['attachments']++;
@@ -2012,6 +2051,7 @@ class TeachingBackupService
     /**
      * @param  array<string, array<int, array<string, mixed>>>  $tables
      * @param  array<string, array<string, mixed>>  $files
+     * @param  array<int, int>  $curriculumDocumentIdMap
      * @return array<string, mixed>
      */
     private function restoreMissingCurriculum(
@@ -2020,7 +2060,8 @@ class TeachingBackupService
         int $curriculumId,
         TeachingBackup $backup,
         User $user,
-        bool $overwriteExisting = false
+        bool $overwriteExisting,
+        array &$curriculumDocumentIdMap,
     ): array {
         $curriculum = $this->rowById($tables['teaching_curricula'] ?? [], $curriculumId);
 
@@ -2084,7 +2125,7 @@ class TeachingBackupService
 
         foreach ($this->rowsByColumn($tables['teaching_curriculum_documents'] ?? [], 'teaching_curriculum_id', $curriculumId) as $row) {
             $newPath = $this->restoreFilePath($row['file_path'] ?? null, $files, "teaching/curriculum_documents/{$newCurriculumId}");
-            $this->insertRestoredRow('teaching_curriculum_documents', $row, [
+            $curriculumDocumentIdMap[(int) $row['id']] = $this->insertRestoredRow('teaching_curriculum_documents', $row, [
                 'teaching_curriculum_id' => $newCurriculumId,
                 'file_path' => $newPath,
                 'storage_disk' => $newPath !== null ? 'local' : null,

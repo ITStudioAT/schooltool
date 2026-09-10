@@ -8,8 +8,10 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
 use App\Services\TeachingCourseDateService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -241,6 +243,24 @@ class CourseDateController extends Controller
         $attachment->update(['student_visible' => ! $attachment->student_visible]);
 
         return response()->json(['student_visible' => $attachment->student_visible]);
+    }
+
+    public function setCurriculumFileVisibility(
+        Request $request,
+        TeachingCourseDate $course_date,
+        TeachingCurriculumDocument $file,
+        TeachingCourseDateService $service,
+    ): JsonResponse {
+        $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($authUser && $course_date->teachingCourse, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeTeachingCourseAccess($course_date->teachingCourse, $authUser);
+
+        $validated = $request->validate([
+            'student_visible' => ['required', 'boolean'],
+        ]);
+        $service->setCurriculumFileVisibility($course_date, $file, (bool) $validated['student_visible']);
+
+        return response()->json(['data' => new CourseDateResource($course_date->refresh())]);
     }
 
     public function destroyAdoptedMaterial(TeachingCourseDateMaterial $material, TeachingCourseDateService $service)

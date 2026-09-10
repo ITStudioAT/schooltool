@@ -464,6 +464,87 @@ describe('resolveCourseStudentEntries', function () {
     });
 });
 
+describe('syncCourseStudents identity aliases', function () {
+    beforeEach(function () {
+        $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id];
+        $this->teacher = User::factory()->create($scope);
+        $this->student = User::factory()->create($scope);
+        $this->import = Import116::factory()->create($scope + [
+            'import_user_id' => $this->teacher->id,
+            'user_id' => $this->student->id,
+            'email' => $this->student->email,
+        ]);
+        $this->course = TeachingCourse::factory()->create($scope + ['user_id' => $this->teacher->id]);
+        $this->studentPayload = [[
+            'user_id' => $this->student->id,
+            'import116_id' => $this->import->id,
+        ]];
+    });
+
+    test('keeps a linked student assigned after repeated saves', function () {
+        $this->service->syncCourseStudents($this->course, $this->studentPayload);
+        $assignment = $this->course->teachingCourseStudents()->sole();
+
+        foreach (range(1, 2) as $save) {
+            $this->service->syncCourseStudents($this->course, $this->studentPayload);
+
+            expect($assignment->fresh()->trashed())->toBeFalse()
+                ->and($this->course->teachingCourseStudents()->sole()->id)->toBe($assignment->id)
+                ->and($this->course->teachingCourseStudents()->withTrashed()->count())->toBe(1);
+        }
+    });
+
+    test('keeps a restored linked student active after saving', function () {
+        $assignment = $this->course->teachingCourseStudents()->create($this->studentPayload[0]);
+        $assignment->delete();
+
+        $this->service->syncCourseStudents($this->course, $this->studentPayload);
+
+        expect($assignment->fresh()->trashed())->toBeFalse()
+            ->and($this->course->teachingCourseStudents()->sole()->id)->toBe($assignment->id)
+            ->and($this->course->teachingCourseStudents()->withTrashed()->count())->toBe(1);
+    });
+
+    test('matches an import only assignment through its linked user alias', function () {
+        $assignment = $this->course->teachingCourseStudents()->create(['import116_id' => $this->import->id]);
+
+        $this->service->syncCourseStudents($this->course, [['user_id' => $this->student->id]]);
+
+        expect($assignment->fresh()->trashed())->toBeFalse()
+            ->and($assignment->fresh()->user_id)->toBe($this->student->id)
+            ->and($this->course->teachingCourseStudents()->sole()->id)->toBe($assignment->id)
+            ->and($this->course->teachingCourseStudents()->withTrashed()->count())->toBe(1);
+    });
+
+    test('soft deletes a linked assignment when it is removed', function (bool $explicitRemoval) {
+        $assignment = $this->course->teachingCourseStudents()->create($this->studentPayload[0]);
+
+        $this->service->syncCourseStudents($this->course, [], $explicitRemoval ? $this->studentPayload : []);
+
+        $this->assertSoftDeleted('teaching_course_students', ['id' => $assignment->id]);
+        expect($this->course->teachingCourseStudents()->count())->toBe(0)
+            ->and($this->course->teachingCourseStudents()->withTrashed()->count())->toBe(1);
+    })->with([true, false]);
+
+    test('preserves protected data when a linked assignment is removed', function (bool $explicitRemoval) {
+        $assignment = $this->course->teachingCourseStudents()->create($this->studentPayload[0] + [
+            'sem_1_grade' => '2',
+            'comment' => 'Keep this assessment',
+        ]);
+        $assignment->special_information = 'Sensitive teaching information';
+        $assignment->save();
+        $encryptedInformation = $assignment->getRawOriginal('special_information');
+
+        $this->service->syncCourseStudents($this->course, [], $explicitRemoval ? $this->studentPayload : []);
+
+        expect($assignment->fresh()->trashed())->toBeFalse()
+            ->and($assignment->fresh()->sem_1_grade)->toBe('2')
+            ->and($assignment->fresh()->comment)->toBe('Keep this assessment')
+            ->and($assignment->fresh()->getRawOriginal('special_information'))->toBe($encryptedInformation)
+            ->and($this->course->teachingCourseStudents()->count())->toBe(1);
+    })->with([true, false]);
+});
+
 // ============================================================================
 // resolveStudentIdFromNumeric Tests
 // ============================================================================

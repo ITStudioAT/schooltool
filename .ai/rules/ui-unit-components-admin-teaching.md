@@ -28,3 +28,6 @@ Supersedes the earlier sparse-absence-only storage assumption. The existing atte
 
 ## Fetch protected curriculum files through the session client
 API navigation with noreferrer loses the Referer/Origin Sanctum needs for stateful session detection and can redirect to login. Fetch curriculum downloads/previews with the configured Axios client, credentials and JSON error responses before creating local blobs; preserve server authorization. Reuse CurriculumPdfPreview for PDF blobs and a sandboxed iframe without scripts/same-origin permissions for other previews, so converting a protected response to a blob does not lose its isolation.
+
+## Show curriculum planning across the entire selected course
+The curriculum dialog opened from a date shows unit assignments from selected_course.course_dates across both semesters, not the semester-filtered sortedCourseDates. Match the same topic/unit titles used by adoption, deduplicate materials within each date, and keep the current-date marker separate from plans on other dates. Recompute immediately when date links change.

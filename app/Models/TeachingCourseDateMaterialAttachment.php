@@ -10,6 +10,7 @@ class TeachingCourseDateMaterialAttachment extends Model
     protected $fillable = [
         'teaching_course_date_material_id',
         'source_material_card_attachment_id',
+        'source_teaching_curriculum_document_id',
         'name',
         'file_path',
         'mime_type',

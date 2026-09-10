@@ -61,6 +61,7 @@ class PersonalTeachingBackupService
         'teaching_imported_curricula' => ['adopted_curriculum_id' => 'teaching_curricula'],
         'teaching_course_student_entries' => ['teaching_course_work_id' => 'teaching_course_works'],
         'teaching_course_work_group_students' => ['teaching_course_id' => 'teaching_courses'],
+        'teaching_course_date_material_attachments' => ['source_teaching_curriculum_document_id' => 'teaching_curriculum_documents'],
     ];
 
     public function __construct(private PersonalTeachingBackupRecoveryService $recovery) {}
