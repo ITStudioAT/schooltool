@@ -1,16 +1,51 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { exportFile, importFile } from '@/actions/App/Http/Controllers/Admin/Teaching/HolidayController'
 
 export const useHolidayStore = defineStore('AdminHolidayStore', {
     state: () => {
         return {
             holidays: [],
             my_holidays: [],
+            import_errors: [],
         }
     },
 
     actions: {
+        async exportHolidays() {
+            const notification = useNotificationStore()
+            try {
+                const response = await axios.get(exportFile.url())
+                return new Blob([JSON.stringify(response.data, null, 4)], { type: 'application/json;charset=utf-8' })
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Die Ferien konnten nicht exportiert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            }
+        },
+
+        async importHolidays(file) {
+            this.import_errors = []
+            const data = new FormData()
+            data.append('file', file)
+
+            try {
+                const response = await axios.post(importFile.url(), data)
+                return response.data
+            } catch (error) {
+                this.import_errors = Object.values(error.response?.data?.errors || {}).flat()
+                if (!this.import_errors.length) {
+                    this.import_errors = [error.response?.data?.message || 'Die Ferien konnten nicht importiert werden.']
+                }
+                return false
+            }
+        },
+
         async index() {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

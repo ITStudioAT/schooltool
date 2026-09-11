@@ -1,6 +1,33 @@
 <template>
     <v-col cols="12" class="teaching-admin-holidays-col">
         <ItsGridBox variant="overview" color="primary" title="Ferien" subtitle="Freie Tage erfassen und bereinigen" icon="mdi-beach" class="w-100" :disabled="isSavingHolidays">
+            <div class="d-flex flex-wrap ga-2 mb-3">
+                <v-btn color="primary" variant="tonal" prepend-icon="mdi-download" :loading="holidays_save_action === 'export'" :disabled="isSavingHolidays" @click="exportHolidays">
+                    Ferien exportieren
+                </v-btn>
+                <v-btn color="primary" variant="tonal" prepend-icon="mdi-upload" :disabled="isSavingHolidays" @click="show_import_form = !show_import_form">
+                    Ferien importieren
+                </v-btn>
+            </div>
+            <v-expand-transition>
+                <div v-if="show_import_form" class="mb-4 text-start">
+                    <p class="text-body-2 mb-3">
+                        Eine Ferien-Exportdatei (JSON, maximal 2 MB) in die aktuelle Schule und das ausgewählte Schuljahr importieren.
+                        Die Datumsangaben werden unverändert übernommen. Bei bereits erfassten Tagen wird nur der Grund aktualisiert
+                        (auch ein leerer Grund wird übernommen). Neue Tage werden ergänzt; andere Termine bleiben erhalten.
+                    </p>
+                    <v-file-input v-model="import_file" label="Ferien-Datei auswählen" accept=".json,application/json" :disabled="isSavingHolidays" show-size hide-details="auto" @update:model-value="clearImportFeedback" />
+                    <v-alert v-if="import_errors.length" type="error" variant="tonal" class="mt-3" role="alert">
+                        <ul class="pl-4"><li v-for="(error, index) in import_errors" :key="index">{{ error }}</li></ul>
+                    </v-alert>
+                    <v-alert v-if="import_result" type="success" variant="tonal" class="mt-3" role="status">
+                        Import abgeschlossen: {{ import_result.created }} freie Tage ergänzt, {{ import_result.updated }} aktualisiert, {{ import_result.unchanged }} unverändert.
+                    </v-alert>
+                    <v-btn color="success" class="mt-3" :loading="holidays_save_action === 'import'" :disabled="!selectedImportFile || isSavingHolidays" @click="importHolidays">
+                        Datei importieren
+                    </v-btn>
+                </div>
+            </v-expand-transition>
             <div class="d-flex align-center justify-space-between ga-2">
                 <div class="text-subtitle-2">Freie Tage erstellen</div>
                 <v-btn
@@ -116,6 +143,9 @@ export default {
             holidayStore: null,
             is_valid: false,
             show_create_form: false,
+            show_import_form: false,
+            import_file: null,
+            import_result: null,
             selected_holiday_ids: [],
             data: {
                 date_from: '',
@@ -128,7 +158,10 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
-        ...mapWritableState(useHolidayStore, ['holidays']),
+        ...mapWritableState(useHolidayStore, ['holidays', 'import_errors']),
+        selectedImportFile() {
+            return Array.isArray(this.import_file) ? this.import_file[0] : this.import_file
+        },
         isSavingHolidays() {
             return this.holidays_save_action !== null
         },
@@ -168,6 +201,39 @@ export default {
     },
 
     methods: {
+        clearImportFeedback() {
+            this.import_errors = []
+            this.import_result = null
+        },
+        async exportHolidays() {
+            await this.runHolidayMutation('export', async () => {
+                const blob = await this.holidayStore.exportHolidays()
+                if (!blob) return
+
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = 'ferien.json'
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+            })
+        },
+        async importHolidays() {
+            if (!this.selectedImportFile) return
+            await this.runHolidayMutation('import', async () => {
+                this.clearImportFeedback()
+                const result = await this.holidayStore.importHolidays(this.selectedImportFile)
+                if (!result) return
+
+                this.import_file = null
+                this.import_result = result
+                await this.holidayStore.index()
+                await this.courseStore.index()
+                this.selected_holiday_ids = []
+            })
+        },
         async runHolidayMutation(action, callback) {
             if (this.holidays_save_action) {
                 return false

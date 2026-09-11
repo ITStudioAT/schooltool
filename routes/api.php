@@ -673,6 +673,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/course_date_materials/{material}', [CourseDateController::class, 'destroyAdoptedMaterial']);
         Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/preview', [CourseDateController::class, 'previewAdoptedAttachment']);
         Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
+        Route::get('/admin/teaching/holidays/export', [HolidayController::class, 'exportFile'])->name('teaching.holidays.export');
+        Route::post('/admin/teaching/holidays/import', [HolidayController::class, 'importFile'])->name('teaching.holidays.import');
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
         Route::apiResource('/admin/teaching/school_hours', SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::post('/admin/teaching/school-hour-imports', [SchoolHourImportsController::class, 'store']);

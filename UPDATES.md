@@ -1,6 +1,14 @@
 # UPDATES
 
-## 3.47.4
+## 3.47.4 !!!
+
+### Unterricht/Admin/Ferien
+
+- Import/Export der Ferientermine
+
+### Import 116
+
+- Import Sokrates 116 Datei
 
 ## 3.47.3
 

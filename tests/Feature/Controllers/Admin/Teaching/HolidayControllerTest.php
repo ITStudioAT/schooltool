@@ -7,7 +7,9 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingHoliday;
 use App\Models\User;
+use App\Services\TeachingHolidaySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -276,4 +278,182 @@ test('teaching_admin can delete school holidays', function () {
     $this->assertDatabaseMissing('teaching_holidays', [
         'id' => $holiday->id,
     ]);
+});
+
+function holidayTransferFile(array $holidays, array $metadata = []): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent('ferien.json', json_encode([
+        'export_type' => 'teaching_holidays',
+        'schema_version' => 1,
+        'holidays' => $holidays,
+        ...$metadata,
+    ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+}
+
+test('holiday transfer requires an authenticated administrator', function () {
+    $this->getJson(route('teaching.holidays.export'))->assertUnauthorized();
+    $this->postJson(route('teaching.holidays.import'))->assertUnauthorized();
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->getJson(route('teaching.holidays.export'))->assertForbidden();
+    $this->postJson(route('teaching.holidays.import'))->assertForbidden();
+});
+
+test('holiday export roundtrips dates and reasons in the selected school and year', function (string $actor) {
+    $this->actingAs($this->{$actor}, 'sanctum');
+    $rows = [
+        ['date' => '2026-12-24', 'reason' => 'Weihnachten – Grüße, "Ferien"'],
+        ['date' => '2026-12-25', 'reason' => null],
+    ];
+    foreach ($rows as $row) {
+        TeachingHoliday::create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'school',
+            ...$row,
+        ]);
+    }
+    foreach ([
+        ['scope' => 'teacher', 'user_id' => $this->teacher->id],
+        ['school_id' => School::factory()->create()->id],
+        ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id],
+    ] as $scope) {
+        TeachingHoliday::create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'school',
+            'date' => '2026-12-26',
+            'reason' => 'Nicht exportieren',
+            ...$scope,
+        ]);
+    }
+
+    $export = $this->getJson(route('teaching.holidays.export'))
+        ->assertOk()->assertDownload("ferien-{$this->schoolyear->id}.json")
+        ->streamedContent();
+    $payload = json_decode($export, true, flags: JSON_THROW_ON_ERROR);
+    expect($payload)->toBe([
+        'export_type' => 'teaching_holidays', 'schema_version' => 1, 'holidays' => $rows,
+    ]);
+
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => UploadedFile::fake()->createWithContent('ferien.json', $export),
+    ])->assertOk()->assertExactJson(['created' => 0, 'updated' => 0, 'unchanged' => 2]);
+
+    $targetYear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $this->{$actor}->update(['schoolyear_id' => $targetYear->id]);
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => UploadedFile::fake()->createWithContent('ferien.json', $export),
+    ])->assertOk()->assertExactJson(['created' => 2, 'updated' => 0, 'unchanged' => 0]);
+    foreach ($rows as $row) {
+        $this->assertDatabaseHas('teaching_holidays', [
+            'school_id' => $this->school->id, 'schoolyear_id' => $targetYear->id,
+            'scope' => 'school', 'user_id' => null, ...$row,
+        ]);
+    }
+    $this->assertDatabaseCount('teaching_holidays', 7);
+})->with(['admin', 'teachingAdmin', 'superAdmin']);
+
+test('holiday import updates reasons in place and preserves unrelated days and course status', function () {
+    $this->actingAs($this->admin, 'sanctum');
+    $existing = TeachingHoliday::create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school', 'date' => '2026-05-05', 'reason' => 'Alter Grund',
+    ]);
+    $unrelated = TeachingHoliday::create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school', 'date' => '2026-05-07', 'reason' => 'Beibehalten',
+    ]);
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'classes' => ['2A'], 'students' => [],
+    ]);
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $course->id, 'date' => '2026-05-06', 'hours' => [2], 'status' => ['pruefung'],
+    ]);
+    $rows = [
+        ['date' => '2026-05-05', 'reason' => 'Neuer Grund'],
+        ['date' => '2026-05-06', 'reason' => null],
+        ['date' => '2026-05-06', 'reason' => null],
+    ];
+    $this->postJson(route('teaching.holidays.import'), ['file' => holidayTransferFile($rows)])
+        ->assertOk()->assertExactJson(['created' => 1, 'updated' => 1, 'unchanged' => 0]);
+    expect($existing->refresh()->reason)->toBe('Neuer Grund')
+        ->and($unrelated->refresh()->reason)->toBe('Beibehalten')
+        ->and($courseDate->refresh()->status)->toBe(['pruefung', 'free']);
+    $this->assertDatabaseCount('teaching_holidays', 3);
+
+    $savedAt = $existing->updated_at;
+    $this->travel(1)->minutes();
+    $this->postJson(route('teaching.holidays.import'), ['file' => holidayTransferFile($rows)])
+        ->assertOk()->assertExactJson(['created' => 0, 'updated' => 0, 'unchanged' => 2]);
+    expect($existing->refresh()->updated_at->eq($savedAt))->toBeTrue();
+
+    $this->postJson(route('teaching.holidays.import'), ['file' => holidayTransferFile([
+        ['date' => '2026-05-05', 'reason' => null],
+    ])])->assertOk()->assertJsonPath('updated', 1);
+    expect($existing->refresh()->reason)->toBeNull();
+});
+
+test('invalid holiday rows reject the entire import before changing records', function (array $invalidRow, string $errorKey) {
+    $this->actingAs($this->admin, 'sanctum');
+    $holiday = TeachingHoliday::create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school', 'date' => '2026-05-05', 'reason' => 'Bestand',
+    ]);
+    $this->postJson(route('teaching.holidays.import'), ['file' => holidayTransferFile([
+        ['date' => '2026-05-05', 'reason' => 'Änderung'],
+        ['date' => '2026-05-06', 'reason' => 'Neu'],
+        $invalidRow,
+    ])])->assertUnprocessable()->assertJsonValidationErrors($errorKey);
+    expect($holiday->refresh()->reason)->toBe('Bestand');
+    $this->assertDatabaseCount('teaching_holidays', 1);
+})->with([
+    'invalid calendar date' => [['date' => '2026-02-30', 'reason' => null], 'holidays.2.date'],
+    'ambiguous date' => [['date' => '01.05.2026', 'reason' => null], 'holidays.2.date'],
+    'long reason' => [['date' => '2026-05-08', 'reason' => str_repeat('a', 256)], 'holidays.2.reason'],
+    'missing reason' => [['date' => '2026-05-08'], 'holidays.2.reason'],
+    'foreign scope' => [['date' => '2026-05-08', 'reason' => null, 'school_id' => 42], 'holidays.2'],
+    'conflicting duplicate' => [['date' => '2026-05-06', 'reason' => 'Anderer Grund'], 'holidays.2.reason'],
+]);
+
+test('holiday import validates the file format and supports an empty export', function () {
+    $this->actingAs($this->admin, 'sanctum');
+    $this->postJson(route('teaching.holidays.import'))->assertUnprocessable()->assertJsonValidationErrors('file');
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => UploadedFile::fake()->createWithContent('ferien.json', '{broken'),
+    ])->assertUnprocessable()->assertJsonValidationErrors('file');
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => holidayTransferFile([], ['schema_version' => 99]),
+    ])->assertUnprocessable()->assertJsonValidationErrors('schema_version');
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => holidayTransferFile([], ['export_type' => 'other']),
+    ])->assertUnprocessable()->assertJsonValidationErrors('export_type');
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => UploadedFile::fake()->create('ferien.json', 2049, 'application/json'),
+    ])->assertUnprocessable()->assertJsonValidationErrors('file');
+
+    $export = $this->getJson(route('teaching.holidays.export'))->assertOk()->streamedContent();
+    $this->postJson(route('teaching.holidays.import'), [
+        'file' => UploadedFile::fake()->createWithContent('ferien.json', $export),
+    ])->assertOk()->assertExactJson(['created' => 0, 'updated' => 0, 'unchanged' => 0]);
+    $this->assertDatabaseCount('teaching_holidays', 0);
+});
+
+test('holiday import rolls back reason updates and new days when course synchronization fails', function () {
+    $this->actingAs($this->admin, 'sanctum');
+    $existing = TeachingHoliday::create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school', 'date' => '2026-05-05', 'reason' => 'Bestand',
+    ]);
+    $this->mock(TeachingHolidaySyncService::class)->shouldReceive('syncForSchoolyear')
+        ->once()->andThrow(new RuntimeException('Synchronization failed'));
+
+    $this->postJson(route('teaching.holidays.import'), ['file' => holidayTransferFile([
+        ['date' => '2026-05-05', 'reason' => 'Änderung'],
+        ['date' => '2026-05-06', 'reason' => 'Neu'],
+    ])])->assertServerError();
+
+    expect($existing->refresh()->reason)->toBe('Bestand');
+    $this->assertDatabaseCount('teaching_holidays', 1);
 });

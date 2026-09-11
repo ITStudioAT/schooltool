@@ -2,13 +2,124 @@
 
 namespace App\Services;
 
+use App\Models\Schoolyear;
 use App\Models\TeachingHoliday;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use JsonException;
 
 class HolidayService
 {
+    /** @return array{export_type: string, schema_version: int, holidays: array<int, array{date: string, reason: ?string}>} */
+    public function exportForUser(User $authUser): array
+    {
+        return [
+            'export_type' => 'teaching_holidays',
+            'schema_version' => 1,
+            'holidays' => $this->listForUser($authUser)
+                ->map(fn (TeachingHoliday $holiday): array => [
+                    'date' => $holiday->date->format('Y-m-d'),
+                    'reason' => $holiday->reason,
+                ])->all(),
+        ];
+    }
+
+    /** @return array{created: int, updated: int, unchanged: int} */
+    public function importForUser(User $authUser, string $json): array
+    {
+        try {
+            $payload = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw ValidationException::withMessages(['file' => 'Die Datei enthält kein gültiges JSON.']);
+        }
+
+        if (! is_array($payload)) {
+            throw ValidationException::withMessages(['file' => 'Bitte verwenden Sie eine Ferien-Exportdatei aus Schooltool.']);
+        }
+
+        $validated = Validator::make($payload, [
+            'export_type' => ['required', 'in:teaching_holidays'],
+            'schema_version' => ['required', 'integer', 'in:1'],
+            'holidays' => ['present', 'array', 'list', 'max:10000'],
+            'holidays.*' => ['required', 'array:date,reason'],
+            'holidays.*.date' => ['required', 'date_format:Y-m-d'],
+            'holidays.*.reason' => ['present', 'nullable', 'string', 'max:255'],
+        ], [
+            'export_type.*' => 'Die Datei ist kein Schooltool-Ferienexport.',
+            'schema_version.*' => 'Die Version dieser Ferien-Datei wird nicht unterstützt.',
+            'holidays.present' => 'Die Datei muss eine Liste mit freien Tagen enthalten.',
+            'holidays.array' => 'Die freien Tage müssen als Liste angegeben werden.',
+            'holidays.list' => 'Die freien Tage müssen als Liste angegeben werden.',
+            'holidays.max' => 'Die Datei darf höchstens 10.000 freie Tage enthalten.',
+            'holidays.*.required' => 'Eintrag :position: Der freie Tag ist ungültig.',
+            'holidays.*.array' => 'Eintrag :position: Erlaubt sind nur Datum und Grund.',
+            'holidays.*.date.required' => 'Eintrag :position: Das Datum fehlt.',
+            'holidays.*.date.date_format' => 'Eintrag :position: Das Datum muss ein gültiges Datum im Format JJJJ-MM-TT sein.',
+            'holidays.*.reason.present' => 'Eintrag :position: Der Grund fehlt (ohne Grund bitte null verwenden).',
+            'holidays.*.reason.string' => 'Eintrag :position: Der Grund muss ein Text sein.',
+            'holidays.*.reason.max' => 'Eintrag :position: Der Grund darf höchstens 255 Zeichen enthalten.',
+        ])->validate();
+
+        $incoming = [];
+        foreach ($validated['holidays'] as $index => $holiday) {
+            if (isset($incoming[$holiday['date']]) && $incoming[$holiday['date']]['reason'] !== $holiday['reason']) {
+                throw ValidationException::withMessages([
+                    "holidays.{$index}.reason" => 'Eintrag '.($index + 1).': Dieses Datum kommt mit unterschiedlichen Gründen vor.',
+                ]);
+            }
+            $incoming[$holiday['date']] = $holiday;
+        }
+
+        return DB::transaction(function () use ($authUser, $incoming): array {
+            Schoolyear::query()->where('school_id', $authUser->school_id)
+                ->whereKey($authUser->schoolyear_id)->lockForUpdate()->firstOrFail();
+
+            $dates = $this->listForUser($authUser)->keyBy(fn (TeachingHoliday $holiday): string => $holiday->date->format('Y-m-d'));
+            $createdDates = [];
+            $updated = 0;
+            $unchanged = 0;
+
+            foreach ($incoming as $holiday) {
+                if (isset($dates[$holiday['date']])) {
+                    $existing = $dates[$holiday['date']];
+                    if ($existing->reason === $holiday['reason']) {
+                        $unchanged++;
+
+                        continue;
+                    }
+
+                    $existing->reason = $holiday['reason'];
+                    $existing->save();
+                    $updated++;
+
+                    continue;
+                }
+
+                TeachingHoliday::create([
+                    'school_id' => $authUser->school_id,
+                    'schoolyear_id' => $authUser->schoolyear_id,
+                    'scope' => 'school',
+                    'user_id' => null,
+                    'date' => $holiday['date'],
+                    'reason' => $holiday['reason'],
+                ]);
+                $createdDates[] = $holiday['date'];
+            }
+
+            if ($createdDates !== []) {
+                app(TeachingHolidaySyncService::class)->syncForSchoolyear(
+                    $authUser->school_id, $authUser->schoolyear_id, $createdDates,
+                );
+            }
+
+            return ['created' => count($createdDates), 'updated' => $updated, 'unchanged' => $unchanged];
+        });
+    }
+
     public function listForUser(User $authUser): Collection
     {
         return TeachingHoliday::query()
