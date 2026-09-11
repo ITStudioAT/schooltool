@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.48.1 !!!
+
+### SEPP
+
+- Responsivität Admin/User geupdated
+
 ## 3.48.0
 
 ### SEPP

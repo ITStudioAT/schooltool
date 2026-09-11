@@ -739,6 +739,7 @@ export default {
 <style scoped>
 .timetable-v3-results {
     display: grid;
+    min-width: 0;
     gap: 12px;
     padding-top: 18px;
     margin-top: 8px;
@@ -785,6 +786,7 @@ export default {
 .timetable-v3-results__selected {
     position: relative;
     display: grid;
+    min-width: 0;
     gap: 8px;
 }
 

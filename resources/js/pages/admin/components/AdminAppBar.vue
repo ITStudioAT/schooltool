@@ -2,6 +2,8 @@
     <v-app-bar
         v-if="isVisible"
         flat
+        class="admin-app-bar"
+        :height="$vuetify?.display.xs ? 104 : 64"
         :color="shellColor"
         :style="shellTextColor ? { color: shellTextColor } : undefined">
         <template #prepend>
@@ -10,14 +12,14 @@
                 :src="`${selectedSchoolLogoSrc}?t=${Date.now()}`"
                 alt="Logo"
                 height="60px"
-                class="pl-2"
+                class="admin-app-bar__logo pl-2"
                 v-if="selectedSchoolLogoSrc" />
         </template>
         <template #title>
             <span class="d-none d-sm-inline">{{ title }}</span>
         </template>
         <template #append>
-            <div class="d-flex align-center ga-1 ga-sm-2 pr-2 pr-sm-4">
+            <div class="admin-app-bar__schoolyears d-flex align-center ga-1 ga-sm-2 pr-2 pr-sm-4">
                 <v-btn
                     v-if="schoolwideActiveSchoolyearLabel"
                     :aria-label="`Schulweit aktives Schuljahr ${schoolwideActiveSchoolyearLabel}`"
@@ -76,7 +78,7 @@
         persistent
         max-width="560"
         aria-labelledby="schoolyear-dialog-title">
-        <v-card rounded="lg">
+        <v-card rounded="lg" class="schoolyear-dialog">
             <v-card-title id="schoolyear-dialog-title" class="d-flex align-center ga-2">
                 <v-icon :icon="schoolyearDialogIcon" color="primary" />
                 {{ schoolyearDialogTitle }}
@@ -331,3 +333,64 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.admin-app-bar__logo {
+    max-width: 180px;
+    object-fit: contain;
+}
+
+.schoolyear-dialog .v-card-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.schoolyear-option {
+    height: auto;
+    min-height: 44px;
+    padding-block: 8px;
+}
+
+.schoolyear-option :deep(.v-btn__content) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 599px) {
+    .admin-app-bar__logo {
+        max-width: 48px;
+        height: 44px;
+    }
+
+    .admin-app-bar :deep(.v-toolbar-title) {
+        display: none;
+    }
+
+    .admin-app-bar :deep(.v-toolbar__append) {
+        min-width: 0;
+        flex: 1 1 0;
+    }
+
+    .admin-app-bar__schoolyears {
+        flex-direction: column;
+        width: 100%;
+        min-width: 0;
+        padding-left: 8px;
+    }
+
+    .admin-app-bar__schoolyears > .v-btn {
+        width: 100%;
+        min-width: 0;
+        height: 44px;
+        padding-inline: 8px;
+    }
+
+    .admin-app-bar__schoolyears :deep(.v-btn__content) {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.2;
+    }
+}
+</style>

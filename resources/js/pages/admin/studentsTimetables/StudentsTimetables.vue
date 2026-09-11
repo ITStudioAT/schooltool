@@ -91,7 +91,7 @@
                 v-model="subjectPlanCarryForwardDialog"
                 persistent
                 max-width="760">
-                <v-card rounded="lg">
+                <v-card rounded="lg" class="subject-plan-carry-forward-dialog">
                     <v-card-title class="d-flex align-center ga-3 text-wrap">
                         <v-icon icon="mdi-alert-circle-outline" color="warning" />
                         Soll-/Fachplan für {{ personalSchoolyearLabel }} übernehmen?
@@ -723,6 +723,37 @@ export default {
 }
 
 @media (max-width: 640px) {
+    .subject-plan-carry-forward-warning__copy {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .subject-plan-carry-forward-warning__content > :deep(.v-btn) {
+        max-width: 100%;
+        height: auto;
+        min-height: 44px;
+        padding-block: 10px;
+        white-space: normal;
+    }
+
+    .subject-plan-carry-forward-warning__content :deep(.v-btn__content) {
+        min-width: 0;
+        white-space: normal;
+    }
+
+    .subject-plan-carry-forward-dialog :deep(.v-card-actions) {
+        flex-wrap: wrap;
+    }
+
+    .subject-plan-carry-forward-dialog :deep(.v-card-actions > .v-btn) {
+        flex: 1 1 160px;
+        margin-inline-start: 0;
+    }
+
+    .subject-plan-carry-forward-dialog :deep(.v-card-actions > .v-spacer) {
+        display: none;
+    }
+
     .st-nav {
         padding: 10px 12px 0;
     }

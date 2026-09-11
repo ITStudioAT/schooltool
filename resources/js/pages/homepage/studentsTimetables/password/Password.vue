@@ -68,7 +68,7 @@
 
         <v-dialog v-model="showSuccessDialog" max-width="400">
             <v-card>
-                <v-card-title class="d-flex align-center ga-2">
+                <v-card-title class="student-password-dialog-title d-flex align-center ga-2">
                     <v-icon color="success" icon="mdi-check-circle" />
                     <span>Erfolgreich geändert</span>
                 </v-card-title>
@@ -161,3 +161,16 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.hero-title,
+.hero-badge,
+.student-password-dialog-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.hero-badge {
+    max-width: 100%;
+}
+</style>

@@ -143,3 +143,25 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.profile-fields {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+}
+
+.profile-field,
+.profile-section,
+.profile-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.hero-badge {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.content-head {
+    flex-wrap: wrap;
+}
+</style>

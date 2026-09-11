@@ -410,3 +410,33 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.hero-subtitle,
+.hero-badge,
+.school-selected-name,
+.school-long,
+.login-copy {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.hero-badge,
+.school-selected-info {
+    max-width: 100%;
+}
+
+.login-fields {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.login-fields :deep(.v-otp-input__content) {
+    width: 100%;
+    max-width: 320px;
+    min-width: 0;
+}
+
+.login-fields :deep(.v-otp-input .v-field) {
+    min-width: 0;
+}
+</style>

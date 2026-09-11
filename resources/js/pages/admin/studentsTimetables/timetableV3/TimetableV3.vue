@@ -1857,7 +1857,7 @@
         </div>
 
         <v-dialog v-model="publishedTimetableDeleteDialogOpen" max-width="540" persistent>
-            <v-card rounded="lg">
+            <v-card rounded="lg" class="timetable-v3__responsive-dialog">
                 <v-card-title class="text-wrap">Stundenplan löschen?</v-card-title>
                 <v-card-text>
                     <p>
@@ -1889,7 +1889,7 @@
         </v-dialog>
 
         <v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>
-            <v-card rounded="lg" class="timetable-v3__module-courses-dialog">
+            <v-card rounded="lg" class="timetable-v3__module-courses-dialog timetable-v3__responsive-dialog">
                 <v-card-title class="timetable-v3__module-courses-dialog-title d-flex align-center ga-3 pa-5 pb-2">
                     <span class="timetable-v3__module-courses-dialog-icon">
                         <v-icon icon="mdi-book-open-variant-outline" size="23" />
@@ -2049,8 +2049,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent>
-            <v-card rounded="lg" class="timetable-v3__info-dialog">
+        <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent scrollable>
+            <v-card rounded="lg" class="timetable-v3__info-dialog timetable-v3__responsive-dialog">
                 <v-card-title class="timetable-v3__info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-information-outline" color="primary" />
                     Studierenden-Information
@@ -2134,7 +2134,7 @@
         </v-dialog>
 
         <v-dialog v-model="studyInfoDialogOpen" max-width="960" persistent scrollable>
-            <v-card rounded="lg" class="timetable-v3__info-dialog timetable-v3__study-info-dialog">
+            <v-card rounded="lg" class="timetable-v3__info-dialog timetable-v3__study-info-dialog timetable-v3__responsive-dialog">
                 <v-card-title class="timetable-v3__info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-school-outline" color="teal-darken-1" />
                     Informationen zum Studium
@@ -2211,8 +2211,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="schoolLevelDialogOpen" max-width="640" persistent>
-            <v-card rounded="lg" class="timetable-v3__school-level-dialog">
+        <v-dialog v-model="schoolLevelDialogOpen" max-width="640" persistent scrollable>
+            <v-card rounded="lg" class="timetable-v3__school-level-dialog timetable-v3__responsive-dialog">
                 <v-card-title class="timetable-v3__school-level-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-school-outline" color="error" />
                     Schulstufe korrigieren
@@ -2287,8 +2287,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="studentDialogOpen" max-width="620">
-            <v-card rounded="lg" class="timetable-v3__student-dialog">
+        <v-dialog v-model="studentDialogOpen" max-width="620" scrollable>
+            <v-card rounded="lg" class="timetable-v3__student-dialog timetable-v3__responsive-dialog">
                 <v-card-title class="timetable-v3__student-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-account-school-outline" />
                     Studierenden auswählen
@@ -7144,6 +7144,7 @@ export default {
 <style scoped>
 .timetable-v3 {
     display: flex;
+    min-width: 0;
     flex-direction: column;
     min-height: clamp(560px, calc(100vh - 220px), 760px);
     border: 1px solid rgba(30, 36, 51, 0.1);
@@ -7159,9 +7160,15 @@ export default {
 
 .timetable-v3__page-header {
     display: flex;
+    flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
     justify-content: space-between;
+}
+
+.timetable-v3__page-header > div:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .timetable-v3__title-row {
@@ -7264,6 +7271,7 @@ export default {
     position: relative;
     isolation: isolate;
     display: flex;
+    flex-wrap: wrap;
     gap: 14px;
     align-items: center;
     padding: 18px 20px;
@@ -7301,7 +7309,7 @@ export default {
 }
 
 .timetable-v3__selection-summary-copy {
-    flex: 1 1 auto;
+    flex: 1 1 260px;
     min-width: 0;
 }
 
@@ -7756,10 +7764,27 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__adoption-actions {
     display: flex;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     flex-wrap: wrap;
     gap: 10px;
     justify-content: flex-end;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.timetable-v3__adoption-actions > :deep(.v-btn) {
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 44px;
+    padding-block: 10px;
+    white-space: normal;
+}
+
+.timetable-v3__adoption-actions :deep(.v-btn__content) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .timetable-v3__adoption-pdf-button {
@@ -9293,6 +9318,7 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__selection-value {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
     color: #1e1b4b;
@@ -9304,6 +9330,10 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__selection-value > span {
     min-width: 0;
+}
+
+.timetable-v3__selection-value > span:first-child {
+    flex: 1 1 220px;
 }
 
 .timetable-v3__selection-value > .timetable-v3__selection-religion {
@@ -9796,6 +9826,7 @@ button.timetable-v3__student-data-field:focus-visible {
 
 .timetable-v3__page-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     align-items: center;
     justify-content: flex-end;
@@ -9851,6 +9882,102 @@ button.timetable-v3__student-data-field:focus-visible {
 }
 
 @media (max-width: 700px) {
+    .timetable-v3 {
+        padding: 12px !important;
+    }
+
+    .timetable-v3__selection-summary {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 12px;
+    }
+
+    .timetable-v3__selection-summary-copy {
+        flex-basis: calc(100% - 60px);
+    }
+
+    .timetable-v3__selection-value {
+        flex-wrap: wrap;
+        font-size: 1.35rem;
+    }
+
+    .timetable-v3__selection-value > span:first-child {
+        flex: 1 1 100%;
+    }
+
+    .timetable-v3__student-info-actions {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .timetable-v3__choice-copy,
+    .timetable-v3__schedule-mode-copy {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .timetable-v3__adoption-card--manual {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .timetable-v3__responsive-dialog :deep(.v-card-title) {
+        flex-wrap: wrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .timetable-v3__responsive-dialog :deep(.v-card-actions) {
+        flex-wrap: wrap;
+    }
+
+    .timetable-v3__responsive-dialog :deep(.v-card-actions > .v-btn) {
+        flex: 1 1 140px;
+        min-width: 0;
+        margin-inline-start: 0;
+    }
+
+    .timetable-v3__responsive-dialog :deep(.v-card-actions > .v-spacer) {
+        display: none;
+    }
+
+    .timetable-v3__info-item,
+    .timetable-v3__info-secondary-row,
+    .timetable-v3__study-module-row,
+    .timetable-v3__study-module-grades {
+        flex-wrap: wrap;
+        white-space: normal;
+    }
+
+    .timetable-v3__info-value {
+        overflow-wrap: anywhere;
+    }
+
+    .timetable-v3__selected-module-chip {
+        max-width: 100%;
+        height: auto;
+        min-height: 32px;
+    }
+
+    .timetable-v3__selected-module-chip :deep(.v-chip__content) {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .timetable-v3__schedule-create-button {
+        max-width: 100%;
+        height: auto;
+        min-height: 44px;
+        padding-block: 10px;
+        white-space: normal;
+    }
+
+    .timetable-v3__schedule-create-button :deep(.v-btn__content) {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
     .timetable-v3__choice-grid {
         grid-template-columns: 1fr;
     }
@@ -9936,11 +10063,12 @@ button.timetable-v3__student-data-field:focus-visible {
 
     .timetable-v3__choice {
         min-height: 108px;
-        padding: 17px;
+        gap: 10px;
+        padding: 12px;
     }
 
     .timetable-v3__page-actions > :deep(.v-btn) {
-        flex: 1 1 0;
+        flex: 1 1 140px;
     }
 
     .timetable-v3__info-grid {

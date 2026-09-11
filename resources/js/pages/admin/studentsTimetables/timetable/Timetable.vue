@@ -1292,7 +1292,7 @@
                             {{ previewActionError }}
                         </v-alert>
                     </v-card-text>
-                    <v-card-actions class="px-4 pb-4">
+                    <v-card-actions class="st-import-preview-actions px-4 pb-4">
                         <v-btn
                             color="error"
                             variant="outlined"
@@ -1328,8 +1328,8 @@
             </v-card-text>
         </v-card>
 
-        <v-dialog v-model="schoolyearDialog" max-width="500" persistent>
-            <v-card rounded="lg">
+        <v-dialog v-model="schoolyearDialog" max-width="500" persistent scrollable>
+            <v-card rounded="lg" class="st-import-dialog">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-calendar-edit" />
                     Schuljahr ändern
@@ -1373,8 +1373,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="deleteDialog" max-width="440" persistent>
-            <v-card rounded="lg">
+        <v-dialog v-model="deleteDialog" max-width="440" persistent scrollable>
+            <v-card rounded="lg" class="st-import-dialog">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-delete-alert-outline" color="error" />
                     Import löschen
@@ -1400,8 +1400,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="recognitionDeleteDialog" max-width="440" persistent>
-            <v-card rounded="lg">
+        <v-dialog v-model="recognitionDeleteDialog" max-width="440" persistent scrollable>
+            <v-card rounded="lg" class="st-import-dialog">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-delete-alert-outline" color="error" />
                     Anrechnungs-Import löschen
@@ -1425,8 +1425,8 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="import116DeleteDialog" max-width="440" persistent>
-            <v-card rounded="lg">
+        <v-dialog v-model="import116DeleteDialog" max-width="440" persistent scrollable>
+            <v-card rounded="lg" class="st-import-dialog">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-delete-alert-outline" color="error" />
                     Sokrates-Import löschen
@@ -3282,6 +3282,32 @@ export default {
 }
 
 @media (max-width: 640px) {
+    .st-import-dialog :deep(.v-card-title) {
+        flex-wrap: wrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .st-import-dialog :deep(.v-card-text) {
+        overflow-wrap: anywhere;
+    }
+
+    .st-import-preview-actions,
+    .st-import-dialog :deep(.v-card-actions) {
+        flex-wrap: wrap;
+    }
+
+    .st-import-preview-actions > :deep(.v-btn),
+    .st-import-dialog :deep(.v-card-actions > .v-btn) {
+        flex: 1 1 160px;
+        margin-inline-start: 0;
+    }
+
+    .st-import-preview-actions > :deep(.v-spacer),
+    .st-import-dialog :deep(.v-card-actions > .v-spacer) {
+        display: none;
+    }
+
     .st-import-page-title {
         flex-wrap: wrap;
     }

@@ -258,7 +258,7 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('@media (max-width: 380px)')
         expect(source).toContain('box-shadow: none;')
         expect(source).toContain('color: #f8fafc;')
-        expect(source).toContain('grid-template-columns: 30px repeat(var(--published-timetable-weekday-count, 6), minmax(0, 1fr));')
+        expect(source).not.toContain('grid-template-columns: 30px repeat(var(--published-timetable-weekday-count, 6), minmax(0, 1fr));')
         expect(source).toContain('showManualTimetable')
         expect(source).toContain('manual_timetable')
         expect(source).toContain('manualTimetableSelection()')

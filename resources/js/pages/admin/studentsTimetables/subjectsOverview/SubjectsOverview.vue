@@ -16,6 +16,7 @@
 
         <div class="d-flex flex-wrap align-center ga-3 mb-4">
             <v-btn-toggle
+                class="subject-study-program-toggle"
                 :model-value="studyProgram"
                 mandatory
                 density="compact"
@@ -3640,6 +3641,24 @@ export default {
 }
 
 @media (max-width: 599px) {
+    .subject-study-program-toggle {
+        display: flex;
+        flex-wrap: wrap;
+        width: 100%;
+        height: auto;
+    }
+
+    .subject-study-program-toggle > :deep(.v-btn) {
+        flex: 1 1 180px;
+        min-height: 44px;
+    }
+
+    .subject-overview-card__title {
+        flex-wrap: wrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
     .subject-plan-wrap {
         overflow-x: auto;
     }

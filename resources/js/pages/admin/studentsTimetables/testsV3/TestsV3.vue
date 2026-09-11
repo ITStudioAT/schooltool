@@ -701,8 +701,8 @@
             scrollable
             max-width="760"
             data-testid="student-v3-test-summary-dialog">
-            <v-card rounded="lg">
-                <v-card-title class="d-flex align-center ga-2">
+            <v-card rounded="lg" class="tests-v3-test-summary">
+                <v-card-title class="d-flex flex-wrap align-center ga-2 text-wrap">
                     <v-icon
                         :color="failedStudentV3TestCount || invalidStudentV3TestCount ? 'error' : 'success'"
                         :icon="failedStudentV3TestCount || invalidStudentV3TestCount ? 'mdi-alert-circle' : 'mdi-check-circle'" />
@@ -2593,6 +2593,19 @@ export default {
 }
 
 @media (max-width: 600px) {
+    .tests-v3-test-summary :deep(.v-card-actions) {
+        flex-wrap: wrap;
+    }
+
+    .tests-v3-test-summary :deep(.v-card-actions > .v-btn) {
+        flex: 1 1 140px;
+        margin-inline-start: 0;
+    }
+
+    .tests-v3-test-summary :deep(.v-card-actions > .v-spacer) {
+        display: none;
+    }
+
     .tests-v3-study-plan__semester {
         grid-template-columns: 1fr;
         gap: 7px;

@@ -2544,6 +2544,11 @@ describe('Students timetable subjects overview', () => {
                 return computed.activeSubjectRows.call(ctx)
             },
         })
+        Object.defineProperty(ctx, 'selectableSubjectRows', {
+            get() {
+                return computed.selectableSubjectRows.call(ctx)
+            },
+        })
         Object.defineProperty(ctx, 'metaCourseItems', {
             get() {
                 return computed.metaCourseItems.call(ctx)

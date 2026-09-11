@@ -1386,9 +1386,9 @@
             </div>
             </section>
 
-            <v-dialog v-model="studentSelectionDialogOpen" max-width="460" persistent>
-            <v-card rounded="lg">
-                <v-card-title class="d-flex align-center ga-2 pa-5 pb-2">
+            <v-dialog v-model="studentSelectionDialogOpen" max-width="460" persistent scrollable>
+            <v-card rounded="lg" class="overview-v2-selection-dialog">
+                <v-card-title class="overview-v2-info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-tune-variant" color="primary" />
                     {{ studentSelectionDraftLabel }} bearbeiten
                 </v-card-title>
@@ -1584,7 +1584,7 @@
             </v-card>
             </v-dialog>
 
-            <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent>
+            <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent scrollable>
             <v-card rounded="lg" class="overview-v2-info-dialog">
                 <v-card-title class="overview-v2-info-dialog-title d-flex align-center ga-2 pa-5 pb-2">
                     <v-icon icon="mdi-information-outline" color="primary" />
@@ -5033,6 +5033,7 @@ export default {
 
 .overview-v2-creation-mode-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     align-items: center;
     justify-content: flex-end;
@@ -5699,6 +5700,8 @@ export default {
     color: #1e1b4b;
     font-size: 1.2rem;
     font-weight: 850;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-module-courses-dialog-icon {
@@ -5829,6 +5832,7 @@ export default {
 .overview-v2-module-course-copy {
     display: grid;
     min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-module-course-title {
@@ -6017,9 +6021,7 @@ export default {
 
 .overview-v2-current-selection__email-address {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font-size: 0.9rem;
 }
 
@@ -6046,6 +6048,8 @@ export default {
     color: #1e1b4b;
     font-size: 1.05rem;
     font-weight: 800;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-info-hover-grid {
@@ -6080,6 +6084,8 @@ export default {
     color: #134e4a;
     font-size: 1.05rem;
     font-weight: 800;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-study-info-hover-content,
@@ -6091,6 +6097,19 @@ export default {
 .overview-v2-info-dialog-title {
     font-size: 1.35rem;
     font-weight: 800;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.overview-v2-info-dialog :deep(.v-card-actions),
+.overview-v2-selection-dialog :deep(.v-card-actions),
+.overview-v2-module-courses-dialog :deep(.v-card-actions) {
+    flex-wrap: wrap;
+}
+
+.overview-v2-selection-dialog :deep(.v-card-text),
+.overview-v2-info-dialog :deep(.v-card-text) {
+    min-height: 0;
 }
 
 .overview-v2-info-grid {
@@ -6107,16 +6126,17 @@ export default {
 
 .overview-v2-info-item {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: 7px;
     align-items: baseline;
     min-width: 0;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-info-primary-row {
     display: grid;
     flex: 1 0 100%;
-    grid-template-columns: max-content max-content minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: 32px;
     align-items: baseline;
 }
@@ -6154,6 +6174,8 @@ export default {
 
 .overview-v2-info-value {
     color: #1e1b4b;
+    min-width: 0;
+    overflow-wrap: anywhere;
     overflow: visible;
     font-size: 1rem;
     font-weight: 750;
@@ -6304,6 +6326,7 @@ export default {
 
 .overview-v2-compact-planning-heading {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
     margin-bottom: 10px;
@@ -6571,7 +6594,9 @@ export default {
 }
 
 .overview-v2-selection-option :deep(.v-chip__content) {
+    min-width: 0;
     white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .overview-v2-selection-option--selected {
@@ -6595,6 +6620,7 @@ export default {
 
 .timetable-v3__adoption-heading {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     align-items: center;
     justify-content: space-between;
@@ -6633,6 +6659,7 @@ export default {
     flex-wrap: wrap;
     gap: 10px;
     justify-content: flex-end;
+    max-width: 100%;
 }
 
 .timetable-v3__adoption-pdf-button {
@@ -7309,8 +7336,16 @@ export default {
 
 @media (max-width: 960px) {
     .overview-v2-creation-mode-options,
-    .overview-v2-timetable-start-options {
+    .overview-v2-timetable-start-options,
+    .timetable-v3__creation-summary-cards {
         grid-template-columns: 1fr;
+    }
+
+    .timetable-v3__creation-summary-card--automatic,
+    .timetable-v3__creation-summary-card--manual,
+    .timetable-v3__creation-summary-card--options {
+        grid-column: 1;
+        grid-row: auto;
     }
 }
 
@@ -7371,17 +7406,6 @@ export default {
         margin-inline: 12px;
     }
 
-    .timetable-v3__creation-summary-cards {
-        grid-template-columns: 1fr;
-    }
-
-    .timetable-v3__creation-summary-card--automatic,
-    .timetable-v3__creation-summary-card--manual,
-    .timetable-v3__creation-summary-card--options {
-        grid-column: 1;
-        grid-row: auto;
-    }
-
     .timetable-v3__calculation-led-progress {
         gap: 3px !important;
         padding: 10px;
@@ -7395,6 +7419,50 @@ export default {
         padding: 20px 16px;
     }
 
+    .overview-v2-creation-mode-card,
+    .overview-v2-timetable-start-card,
+    .timetable-v3__schedule-mode-card {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 16px;
+    }
+
+    .overview-v2-creation-mode-title,
+    .overview-v2-creation-mode-description,
+    .overview-v2-timetable-start-title,
+    .overview-v2-introduction h1,
+    .timetable-v3__schedule-mode-title,
+    .timetable-v3__schedule-mode-description,
+    .timetable-v3__calculation-heading h3 {
+        overflow-wrap: anywhere;
+    }
+
+    .overview-v2-creation-mode-actions > .v-btn {
+        flex: 1 1 120px;
+    }
+
+    .overview-v2-schedule-create-button,
+    .timetable-v3__manual-timetable-button {
+        max-width: 100%;
+        height: auto;
+        min-height: 48px;
+        padding-block: 10px;
+    }
+
+    .overview-v2-schedule-create-button :deep(.v-btn__content),
+    .timetable-v3__manual-timetable-button :deep(.v-btn__content) {
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .timetable-v3__adoption-actions {
+        flex: 1 1 100%;
+    }
+
+    .timetable-v3__calculation-content {
+        padding: 16px;
+    }
+
     .overview-v2-module-selected-total {
         justify-self: start;
     }
@@ -7402,6 +7470,11 @@ export default {
     .overview-v2-module-group-cards {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .overview-v2-module-group-card-title {
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .overview-v2-manual-module-catalog {
@@ -7459,8 +7532,12 @@ export default {
     }
 
     .overview-v2-info-primary-row {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         row-gap: 12px;
+    }
+
+    .overview-v2-info-primary-row > .overview-v2-info-item::before {
+        display: none;
     }
 
     .overview-v2-info-primary-row > .overview-v2-info-item:last-child {

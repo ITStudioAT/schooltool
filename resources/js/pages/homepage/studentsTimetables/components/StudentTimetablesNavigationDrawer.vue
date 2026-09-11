@@ -1,6 +1,9 @@
 <template>
-    <v-navigation-drawer v-model="drawerModel" temporary location="right" width="320">
+    <v-navigation-drawer v-model="drawerModel" class="student-timetables-drawer" temporary location="right" width="320">
         <div class="drawer-header">
+            <div class="drawer-close-row">
+                <v-btn variant="text" icon="mdi-close" aria-label="Menü schließen" @click="drawerModel = false" />
+            </div>
             <div class="drawer-user-info">
                 <v-avatar color="#fd802e" size="56">
                     <span class="text-h6">{{ userInitials }}</span>
@@ -113,3 +116,19 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.student-timetables-drawer {
+    max-width: 100vw;
+}
+
+.drawer-close-row {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.drawer-user-details {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+</style>
