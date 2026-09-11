@@ -311,10 +311,40 @@ export default {
                 .filter((mapping) => mapping?.is_active !== false)
                 .filter((mapping) => this.normalizedCourseCode(mapping?.json_subject) && mapping?.tt_subject)
         },
+        selectableSubjectRows() {
+            const knownCourseAliases = (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .flatMap(subject => this.courseCodeAliases({ code: this.selectedCourseCodeForSubject(subject) }))
+            const importedSubjects = new Map()
+            const courseGroups = Array.isArray(this.courseGroups) ? this.courseGroups : []
+
+            courseGroups.forEach(courseGroup => {
+                if (courseGroup?.is_active === false || this.courseGroupMatchesCourseAliases(courseGroup, knownCourseAliases)) {
+                    return
+                }
+
+                const code = this.courseDisplayLabel(courseGroup?.module_code)
+                const key = this.normalizedCourseCode(code)
+                if (!key || importedSubjects.has(key)) {
+                    return
+                }
+
+                importedSubjects.set(key, {
+                    id: `imported:${key}`,
+                    json_code: code,
+                    json_subject: this.courseCodeWithoutModule(code),
+                    name: code,
+                    semester: null,
+                    hours_per_week: null,
+                    is_active: true,
+                })
+            })
+
+            return [...this.activeSubjectRows, ...importedSubjects.values()]
+        },
         metaCourseItems() {
             const coursesByKey = new Map()
 
-            this.activeSubjectRows.forEach((subject) => {
+            this.selectableSubjectRows.forEach((subject) => {
                 const key = this.metaCourseKey(subject)
                 if (!key) {
                     return

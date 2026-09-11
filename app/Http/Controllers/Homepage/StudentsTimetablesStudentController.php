@@ -91,7 +91,7 @@ class StudentsTimetablesStudentController extends Controller
             return response()->json($data);
         }
 
-        (new UserService)->sendCode($user, 'Ihr Login-Code für die Schülerstundenpläne', $email);
+        (new UserService)->sendCode($user, 'Ihr Login-Code für SEPP', $email);
         $data['status'] = 'code_sent';
 
         return response()->json($data);

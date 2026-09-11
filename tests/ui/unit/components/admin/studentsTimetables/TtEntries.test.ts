@@ -33,6 +33,14 @@ function buildContext(overrides: Record<string, unknown> = {}) {
         },
     })
 
+    for (const property of ['activeSubjectRows', 'selectableSubjectRows', 'metaCourseItems']) {
+        Object.defineProperty(context, property, {
+            get() {
+                return component.computed[property].call(context)
+            },
+        })
+    }
+
     Object.defineProperty(context, 'selectedSubjectOffers', {
         get() {
             return component.computed.selectedSubjectOffers.call(context)
@@ -55,6 +63,61 @@ function buildContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TT entries overview', () => {
+    it('offers imported modules without subject-plan rows and lets their lessons be remembered', () => {
+        const context = buildContext({
+            courseGroups: [
+                {
+                    key: 'gus1-12', module_code: 'GuS1', course: 'GuS', subject: 'GuS',
+                    class_name: 'GuS1-2RU+3QS-PLA', display_label: 'GuS1-2RU+3QS-PLA',
+                    weekday: 4, hour: 12, dates: ['2026-09-17', '2026-09-24'],
+                },
+                {
+                    key: 'gus1-13', module_code: 'GuS1', course: 'GuS', subject: 'GuS',
+                    class_name: 'GuS1-2RU+3QS-PLA', display_label: 'GuS1-2RU+3QS-PLA',
+                    weekday: 4, hour: 13, dates: ['2026-09-24'],
+                },
+                {
+                    key: 'gus2-12', module_code: 'GuS2', course: 'GuS', subject: 'GuS',
+                    class_name: 'GuS2-PLA', display_label: 'GuS2-PLA',
+                    weekday: 4, hour: 12, dates: ['2026-09-17'],
+                },
+            ],
+            persistRememberedOffers: () => {},
+        })
+
+        expect(context.metaCourseItems).toHaveLength(1)
+        expect(context.metaCourseItems[0].rows.map((row: any) => row.json_code.toUpperCase())).toEqual(['GUS1', 'GUS2'])
+        context.selectedSubjectRow = context.metaCourseItems[0].rows[0]
+        expect(context.selectedSubjectRow.hours_per_week).toBeNull()
+        expect(context.selectedSubjectRow.semester).toBeNull()
+        expect(context.selectedSubjectOffers).toHaveLength(1)
+        expect(context.selectedSubjectOffer.entries.map((entry: any) => entry.key)).toEqual(['gus1-12', 'gus1-13'])
+        expect(context.selectedSubjectOfferEntries.map((entry: any) => entry.dateValue))
+            .toEqual(['2026-09-17', '2026-09-24'])
+
+        context.toggleSelectedSubjectOfferEntry(context.selectedSubjectOfferEntries[0])
+
+        expect(context.rememberedOffers).toHaveLength(1)
+        expect(context.rememberedOffers[0].entries).toHaveLength(2)
+        expect(context.subjectRows).toEqual([])
+    })
+
+    it('keeps mapped aliases and explicitly inactive subjects from being added as imported-only modules', () => {
+        const mappedSubject = { id: 1, json_code: 'GW1', json_subject: 'GW', name: 'Geographie', is_active: true }
+        const context = buildContext({
+            subjectRows: [mappedSubject, { id: 2, json_code: 'GuS1', json_subject: 'GuS', is_active: false }],
+            subjectMappings: [{ json_subject: 'GW', tt_subject: 'GWB', is_active: true }],
+            courseGroups: [
+                { key: 'gw1', module_code: 'GWB1', class_name: 'GWB1-1A-HUB' },
+                { key: 'gus1', module_code: 'GuS1', class_name: 'GuS1-PLA' },
+                { key: 'inactive', module_code: 'YOGA1', is_active: false },
+                { key: 'missing-code', class_name: 'PLA' },
+            ],
+        })
+
+        expect(context.selectableSubjectRows).toEqual([mappedSubject])
+    })
+
     it('shows and loads the personal schoolyear', () => {
         const component = TtEntries as any
         const context = buildContext({

@@ -1,5 +1,19 @@
 # UPDATES
 
+## 3.48.0
+
+### SEPP
+
+- Umbenannt to SEPP
+
+### Import
+
+- In der Stundentabelle nicht aufgeführte Fächer werden importiert (z. B. Gus)
+
+### Berechnung
+
+- Falsche Stundenplanberechnung gefixt
+
 ## 3.47.5
 
 ### Stundenplan
@@ -62,7 +76,7 @@
 
 - Portrait-Handy-Format für Restaurant angepasst
 
-### Schülerstundenpläne
+### SEPP
 
 - Dokumentation für Admins ergänzt
 
@@ -89,7 +103,7 @@
 
 ### Dokumentation
 
-- Dokumentation für Schülerstundenpläne für Lehrpersonen und Studierende ergänzt.
+- Dokumentation für SEPP für Lehrpersonen und Studierende ergänzt.
 
 ### Unterricht
 
@@ -113,7 +127,7 @@
 - Farbauswahl unter Profil
 - Wechseln in die Studierenden-Ansicht möglich
 
-### Schülerstundenpläne
+### SEPP
 
 - Import Lehrer adaptiert, Import auch ohne Kürzel möglich
 - Ändern, Löschen von Lehrer:innen auf Lehrerliste
@@ -126,7 +140,7 @@
 
 - DERZEIT NICHT IMPLEMENTIERT!
 
-### Schülerstundenpläne
+### SEPP
 
 - Neue Benennungen für einige Module
 - Unterrichtssortierung in Module vereinheitlicht
@@ -139,7 +153,7 @@
 
 ## 3.46.3
 
-### Schülerstundenpläne
+### SEPP
 
 ### Fächer
 
@@ -340,7 +354,7 @@
 
 ## 3.42.2
 
-### Schülerstundenpläne
+### SEPP
 
 - Geschwindigkeit der Berechnungen verbessert
 - Bei Übernahme: Alle Konflikte werden genau aufgeschlüsselt

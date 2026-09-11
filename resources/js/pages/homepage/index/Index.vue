@@ -199,7 +199,7 @@
                             </div>
                         </div>
 
-                        <!-- Schülerstundenpläne Card -->
+                        <!-- SEPP Card -->
                         <div
                             class="tool-card card-students-timetables"
                             :class="{ 'card-disabled': isStudentsTimetablesDisabled }"
@@ -210,8 +210,8 @@
                                 <div class="card-icon">
                                     <v-icon size="40">mdi-calendar-clock-outline</v-icon>
                                 </div>
-                                <h3 class="card-title">Schülerstundenpläne</h3>
-                                <p class="card-description">Login zu deinen Schülerstundenplänen.</p>
+                                <h3 class="card-title">SEPP</h3>
+                                <p class="card-description">Stundenplanerstellungs- und -planungsprogramm</p>
                                 <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
@@ -467,7 +467,7 @@ export default {
                 Anmeldetool: 'Anmeldetool',
                 Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
-                StudentsTimetables: 'Schülerstundenpläne',
+                StudentsTimetables: 'SEPP',
                 Restaurant: 'Restaurant',
             }
             return labels[this.selected_tool] || this.selected_tool || ''
@@ -748,7 +748,7 @@ export default {
                 Anmeldetool: 'Anmeldetool',
                 Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
-                StudentsTimetables: 'Schülerstundenpläne',
+                StudentsTimetables: 'SEPP',
                 Restaurant: 'Restaurant',
             }[tool] || tool
 

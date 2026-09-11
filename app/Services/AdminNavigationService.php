@@ -166,12 +166,12 @@ class AdminNavigationService
         if ($user->hasAnyRole(self::STUDENTS_TIMETABLES_DASHBOARD_ROLES)) {
             if ($studentsTimetablesLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('students_timetables', $user->selectedSchool)) {
                 $menu[] = [
-                    'title' => 'Schülerstundenpläne',
+                    'title' => 'SEPP',
                     'icon' => 'mdi-calendar-clock',
                     'to' => '/admin/students-timetables',
                     'active_paths' => ['/admin/students-timetables'],
                     'is_active' => ($studentsTimetablesLicenceStatus === 'active'),
-                ] + $this->dashboardStatusMeta($studentsTimetablesLicenceStatus, $studentsTimetablesModuleStatus, 'Schülerstundenpläne');
+                ] + $this->dashboardStatusMeta($studentsTimetablesLicenceStatus, $studentsTimetablesModuleStatus, 'SEPP');
             }
         }
 

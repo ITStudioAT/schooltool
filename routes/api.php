@@ -273,6 +273,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->middleware('throttle:10,1');
         Route::get('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishedStudentTimetable']);
         Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
+        Route::delete('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'deletePublishedStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);
         Route::get('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'index']);
         Route::post('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'upload'])

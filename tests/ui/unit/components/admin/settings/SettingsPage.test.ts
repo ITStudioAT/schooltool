@@ -586,7 +586,7 @@ describe('Admin settings page', () => {
         expect(navigationItems.map((item: { key: string }) => item.key)).not.toContain('teaching')
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, true))
             .not.toContain('students_timetables')
-        expect(componentSource).not.toContain("label: 'Schülerstundenpläne'")
+        expect(componentSource).not.toContain("label: 'SEPP'")
         expect(componentSource).not.toContain('StudentsTimetablesTeachers')
         expect(componentSource).not.toContain("main_action === 'students_timetables'")
     })
@@ -642,7 +642,7 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
+        expect(screen.queryByText('SEPP')).not.toBeInTheDocument()
         expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
@@ -1112,7 +1112,7 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
+        expect(screen.queryByText('SEPP')).not.toBeInTheDocument()
         expect(screen.queryByText(/StudentsTimetablesTeachers Component/)).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/profile')
     })

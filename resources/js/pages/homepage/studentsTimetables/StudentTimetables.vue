@@ -9,8 +9,8 @@
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/')">Zur Startseite</v-btn>
                 </div>
 
-                <h1 class="hero-title">Schülerstundenpläne</h1>
-                <p class="hero-subtitle">Ihr Stundenplanbereich.</p>
+                <h1 class="hero-title">SEPP</h1>
+                <p class="hero-subtitle">Stundenplanerstellungs- und -planungsprogramm</p>
 
                 <div class="hero-badges">
                     <span class="hero-badge">{{ weekdayLabel }}</span>

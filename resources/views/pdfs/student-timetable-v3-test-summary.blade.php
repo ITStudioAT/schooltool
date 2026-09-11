@@ -206,7 +206,7 @@
 </head>
 <body>
     <main class="summary-page">
-        <p class="kicker">Schülerstundenpläne</p>
+        <p class="kicker">SEPP</p>
         <h1>Testzusammenfassung Stundenplan V3</h1>
         <p class="meta">
             @foreach(array_filter([$data['school_name'] ?? null, $data['schoolyear'] ?? null, $data['generated_at'] ?? null]) as $meta)

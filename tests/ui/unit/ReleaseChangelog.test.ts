@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -32,6 +32,29 @@ afterEach(() => {
 })
 
 describe('release changelog', () => {
+    it.each(['', 'en/'])('publishes the SEPP documentation name and description for locale %s', (locale) => {
+        const documentationRoot = resolve('public/documentation')
+        const moduleRoot = join(documentationRoot, locale, 'schuelerstundenplaene')
+        const landingPage = readFileSync(join(moduleRoot, 'index.html'), 'utf8')
+
+        expect(landingPage).toContain('<h1>SEPP</h1>')
+        expect(landingPage).toContain('Stundenplanerstellungs- und -planungsprogramm')
+
+        const pages = readdirSync(moduleRoot, { recursive: true }).filter((path) => String(path).endsWith('.html'))
+        expect(pages.length).toBeGreaterThan(1)
+        for (const path of pages) {
+            const html = readFileSync(join(moduleRoot, String(path)), 'utf8')
+            expect(html).toContain('>SEPP</a>')
+            expect(html).not.toContain('Schülerstundenpläne')
+        }
+
+        for (const path of ['index.html', 'releases/index.html']) {
+            const html = readFileSync(join(documentationRoot, locale, path), 'utf8')
+            expect(html).toContain('>SEPP</a>')
+            expect(html).not.toContain('Schülerstundenpläne')
+        }
+    })
+
     it('upserts exactly the requested release without duplicating history or sidebar links', () => {
         const first = prepareReleaseChangelog(updates, changelog, sidebar, '3.47.1')
         const second = prepareReleaseChangelog(updates, first.changelog, first.sidebar, '3.47.1')

@@ -693,7 +693,7 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
     expect($created)
         ->status->toBe('created')
         ->reused->toBeFalse()
-        ->summary->algorithm_version->toBe(9)
+        ->summary->algorithm_version->toBe(10)
         ->summary->timetable_count->toBe(4)
         ->summary->timetable_variation_count->toBe(4)
         ->summary->full_green_timetable_count->toBe(4)
@@ -746,7 +746,7 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
         ->id->toBe($created['id'])
         ->status->toBe('updated')
         ->reused->toBeFalse()
-        ->summary->algorithm_version->toBe(9)
+        ->summary->algorithm_version->toBe(10)
         ->summary->timetable_count->toBe(2)
         ->timetables->toHaveCount(2)
         ->fingerprint->not->toBe($created['fingerprint'])
@@ -891,7 +891,7 @@ it('marks distance learning in generated v3 timetables using normal study hours'
     $slots = collect($result['timetables'][0]['slots']);
 
     expect($result)
-        ->summary->algorithm_version->toBe(9)
+        ->summary->algorithm_version->toBe(10)
         ->timetables->toHaveCount(1)
         ->and($slots)->toHaveCount(2)
         ->and($slots->every(
@@ -1080,6 +1080,65 @@ it('generates only selected F2 when the compact subject plan also contains Latin
         ->and($slotCodes)->toBe(['F2'])
         ->and(StudentTimetableV3Timetable::query()->count())->toBe(1);
 });
+
+it('generates selected arts modules shared by both subject-plan branches', function (string $branch, bool $reverseOrder) {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    $studentCode = 'student-arts';
+    $branches = $reverseOrder ? ['wirtschaftskundlich', 'gymnasial'] : ['gymnasial', 'wirtschaftskundlich'];
+
+    foreach ($branches as $subjectBranch) {
+        foreach (['BE', 'ME'] as $subjectCode) {
+            $subject = v3TimetableServiceSubjectRow($user, $schoolyear, "{$subjectCode}1", $subjectCode, "{$subjectCode} 1", 7);
+            $subject->update(['branch' => $subjectBranch]);
+        }
+    }
+
+    StudentTimetableSubjectMapping::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'json_subject' => 'ME',
+        'tt_subject' => 'MU',
+        'is_active' => true,
+        'source' => 'test',
+    ]);
+    $information = v3TimetableServiceInformation(includeMathematics: false);
+    $information['student_code'] = $studentCode;
+    $information['semester'] = 7;
+    $information['selection_fields'] = [
+        ['key' => 'branch', 'selected_value' => $branch],
+        ['key' => 'arts_subject', 'selected_value' => 'ME'],
+    ];
+    $information['module_selection_groups'][0]['modules'] = collect(['BE1', 'ME1'])
+        ->map(fn (string $code): array => [
+            'selection_key' => "current:{$code}",
+            'code' => $code,
+            'name' => $code,
+            'hours' => 1,
+            'courses' => [['key' => "{$code}-a", 'keys' => ["{$code}-a"]]],
+        ])->all();
+    $service = v3TimetableService($user, $information, [
+        v3TimetableServiceCourseGroup('BE1-a', 'BE1-7A', 'BE1', 1, 1),
+        v3TimetableServiceCourseGroup('ME1-a', 'MU1-7A', 'MU1', 2, 1),
+    ], $studentCode);
+
+    $result = $service->createOrUpdateForUser($user, ['current:BE1', 'current:ME1'], [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+        'selected_course_keys' => ['BE1-a', 'ME1-a'],
+    ]);
+
+    expect($result)
+        ->summary->selected_module_count->toBe(2)
+        ->summary->timetable_count->toBe(1)
+        ->and(collect($result['timetables'][0]['slots'])->pluck('code')->unique()->sort()->values()->all())
+        ->toBe(['BE1', 'ME1'])
+        ->and(StudentTimetableV3Timetable::query()->count())->toBe(1);
+})->with([
+    'gymnasial first' => ['gymnasial', false],
+    'gymnasial second' => ['gymnasial', true],
+    'wirtschaftskundlich first' => ['wirtschaftskundlich', true],
+    'wirtschaftskundlich second' => ['wirtschaftskundlich', false],
+]);
 
 it('builds a generation catalog without student eligibility filters', function () {
     [$user, $schoolyear] = v3TimetableServiceUser();

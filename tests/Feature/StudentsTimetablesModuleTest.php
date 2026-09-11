@@ -56,7 +56,7 @@ it('registers StudentsTimetables as a configured licence', function () {
 
     expect($licence)
         ->not->toBeNull()
-        ->and($licence['long_name'])->toBe('Tool zum Verwalten von Schülerstundenplänen')
+        ->and($licence['long_name'])->toBe('SEPP – Stundenplanerstellungs- und -planungsprogramm')
         ->and($licence['school_licence_enabled'])->toBeTrue();
 });
 
@@ -66,7 +66,7 @@ it('shows the admin navigation item for an active StudentsTimetables school lice
     Auth::login($user);
 
     $menu = app(AdminNavigationService::class)->dashboardMenu();
-    $item = collect($menu)->firstWhere('title', 'Schülerstundenpläne');
+    $item = collect($menu)->firstWhere('title', 'SEPP');
 
     expect($item)
         ->not->toBeNull()
@@ -80,7 +80,7 @@ it('allows the studentstimetables admin role to use the dummy module', function 
     Auth::login($user);
 
     $menu = app(AdminNavigationService::class)->dashboardMenu();
-    $item = collect($menu)->firstWhere('title', 'Schülerstundenpläne');
+    $item = collect($menu)->firstWhere('title', 'SEPP');
 
     expect($item)
         ->not->toBeNull()
@@ -206,7 +206,7 @@ it('lets timetable admins open the linked students timetables account', function
 
     $this->getJson('/api/homepage/student/user')
         ->assertForbidden()
-        ->assertJsonPath('message', 'Diese Benutzer-Übernahme ist auf Schülerstundenpläne beschränkt.');
+        ->assertJsonPath('message', 'Diese Benutzer-Übernahme ist auf SEPP beschränkt.');
 
     $this->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful();
@@ -4917,6 +4917,132 @@ it('keeps student status modules outside the current subject plan in the admin a
         ->and($failedModule['status_label'])->toBe('Negativ')
         ->and(data_get($failedModule, 'courses.0'))->not->toHaveKey('teacher');
 });
+
+it('offers imported modules without a subject plan only in the manual v3 catalog', function (bool $withStudent) {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $user->school_id]);
+    SchoolTool::query()->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $otherSchoolyear->id]);
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4A',
+        'school_level' => '09_1',
+        'student_code' => 'imported-manual-student',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    foreach (['D1' => true, 'OFF1' => false] as $code => $active) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => $code,
+            'json_subject' => preg_replace('/\d+$/', '', $code),
+            'name' => $code,
+            'hours_per_week' => 3,
+            'is_active' => $active,
+            'sort_order' => 1,
+        ]);
+    }
+    StudentTimetableSubjectMapping::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'json_subject' => 'OFF',
+        'tt_subject' => 'HIDDEN',
+        'is_active' => true,
+    ]);
+
+    foreach (range(0, 8) as $week) {
+        foreach ([10, 11, 12] as $period) {
+            StudentTimetableEntry::factory()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyear->id,
+                'date' => now()->setDate(2026, 9, 15)->addWeeks($week)->toDateString(),
+                'semester' => 1,
+                'period' => (string) $period,
+                'subject' => 'GuS',
+                'course' => 'GuS1',
+                'module_code' => 'GuS1',
+                'class_name' => 'GuS1-2RU+3QS-PLA',
+                'is_active' => true,
+            ]);
+        }
+    }
+    foreach ([
+        ['module_code' => 'D1', 'course' => 'D1'],
+        ['module_code' => 'HIDDEN1', 'course' => 'HIDDEN1'],
+        ['module_code' => 'INACTIVE1', 'course' => 'INACTIVE1', 'is_active' => false],
+        ['module_code' => 'OTHER1', 'course' => 'OTHER1', 'schoolyear_id' => $otherSchoolyear->id],
+        ['module_code' => 'FOREIGN1', 'course' => 'FOREIGN1', 'school_id' => School::factory()->create()->id],
+        ['module_code' => 'LPT', 'course' => 'LPT'],
+    ] as $entry) {
+        StudentTimetableEntry::factory()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'date' => '2026-09-15',
+            'semester' => 1,
+            'period' => '13',
+            'subject' => $entry['course'],
+            'class_name' => $entry['course'].'-4A-TEST',
+            'is_active' => true,
+            ...$entry,
+        ]);
+    }
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+    $courseGroups = collect(app(StudentTimetableOverviewService::class)->courseGroupsForUser($user));
+    $gusCourseGroup = $courseGroups->firstWhere('module_code', 'GuS1');
+    StudentTimetableRememberedTtEntry::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'offer_key_hash' => hash('sha256', 'GuS1-2RU+3QS-PLA'),
+        'entry_key_hash' => hash('sha256', "{$gusCourseGroup['key']}|2026-09-15|10"),
+        'offer_key' => 'GuS1-2RU+3QS-PLA',
+        'entry_key' => "{$gusCourseGroup['key']}|2026-09-15|10",
+        'offer_name' => 'GuS1-2RU+3QS-PLA',
+        'entry_date' => '2026-09-15',
+        'is_active' => false,
+    ]);
+    $subjectRowCount = StudentTimetableSubjectRow::query()->count();
+    $mappingCount = StudentTimetableSubjectMapping::query()->count();
+    $url = '/api/admin/students-timetables/timetable-v3/student-information'
+        .($withStudent ? '?student_code=imported-manual-student' : '');
+
+    $response = $this->actingAs($user)->getJson($url)->assertSuccessful();
+    $manualModules = collect($response->json('data.main_module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules']);
+    $automaticModules = collect($response->json('data.module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules']);
+    $gus = $manualModules->firstWhere('code', 'GUS1');
+    $gusEntries = collect($gus['courses'][0]['timetable_entries']);
+
+    expect($manualModules->pluck('code')->all())->toBe(['D1', 'GUS1', 'LPT'])
+        ->and($gus['selection_key'])->toBe('imported:GUS1')
+        ->and($gus['semester'])->toBeNull()
+        ->and($gus['hours'])->toBeNull()
+        ->and($gus['hours_label'])->toBeNull()
+        ->and($gus['selected_by_default'])->toBeFalse()
+        ->and($gus['courses'])->toHaveCount(1)
+        ->and($gus['courses'][0]['keys'])->toHaveCount(3)
+        ->and($gus['courses'][0]['regular_hours'])->toBeNull()
+        ->and($gus['courses'][0]['hours_label'])->toBe('')
+        ->and($gus['courses'][0]['is_distance_learning'])->toBeFalse()
+        ->and($gusEntries->sum(fn (array $entry): int => count($entry['dates'])))->toBe(26)
+        ->and($automaticModules->pluck('code')->all())->not->toContain('GUS1', 'LPT')
+        ->and(StudentTimetableSubjectRow::query()->count())->toBe($subjectRowCount)
+        ->and(StudentTimetableSubjectMapping::query()->count())->toBe($mappingCount);
+})->with([true, false]);
 
 it('returns the shared student overview summary for a selected robot student', function () {
     $user = createStudentsTimetablesUserWithLicence();

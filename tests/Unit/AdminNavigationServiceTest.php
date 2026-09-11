@@ -628,7 +628,7 @@ describe('dashboardMenu', function () {
         expect($menuByTitle->get('Anmeldetool')['active_paths'])->toBe(['/admin/register_system'])
             ->and($menuByTitle->get('Nachhilfe')['active_paths'])->toBe(['/admin/tutoring'])
             ->and($menuByTitle->get('Materialien')['active_paths'])->toBe(['/admin/materials'])
-            ->and($menuByTitle->get('Schülerstundenpläne')['active_paths'])->toBe(['/admin/students-timetables'])
+            ->and($menuByTitle->get('SEPP')['active_paths'])->toBe(['/admin/students-timetables'])
             ->and($menuByTitle->get('ABA')['active_paths'])->toBe(['/admin/aba']);
     });
 

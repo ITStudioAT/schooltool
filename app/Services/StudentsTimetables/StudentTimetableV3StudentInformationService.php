@@ -5,6 +5,7 @@ namespace App\Services\StudentsTimetables;
 use App\Enums\StudentTimetableModuleSelectionGroup;
 use App\Enums\StudentTimetableStudyProgram;
 use App\Models\Import116;
+use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -24,6 +25,8 @@ class StudentTimetableV3StudentInformationService
         protected StudentTimetablesStudentOverviewService $studentOverviewService,
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
         protected StudentTimetableCompactSubjectPlanService $compactSubjectPlanService,
+        protected StudentTimetableOverviewService $overviewService,
+        protected StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
     ) {}
 
     /** @return list<array<string, mixed>> */
@@ -110,6 +113,10 @@ class StudentTimetableV3StudentInformationService
         $mainModuleSelectionGroups = $this->mainModuleSelectionGroups([
             ...$mainModuleCatalogGroups,
             ...(trim((string) $studentCode) !== '' ? $moduleSelectionGroups : []),
+        ]);
+        $mainModuleSelectionGroups = $this->mainModuleSelectionGroups([
+            ...$mainModuleSelectionGroups,
+            ['modules' => $this->importedManualModules($user, $studyProgram, $mainModuleSelectionGroups)],
         ]);
 
         return [
@@ -453,6 +460,61 @@ class StudentTimetableV3StudentInformationService
             ->toString();
 
         return $moduleCode !== '' ? $moduleCode : (string) ($module['selection_key'] ?? '');
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $catalogGroups
+     * @return list<array<string, mixed>>
+     */
+    private function importedManualModules(User $user, StudentTimetableStudyProgram $studyProgram, array $catalogGroups): array
+    {
+        $catalogModules = collect($catalogGroups)->flatMap(fn (array $group): array => $group['modules']);
+        $representedCourseKeys = $catalogModules
+            ->flatMap(fn (array $module): array => $module['courses'])
+            ->flatMap(fn (array $course): array => $course['keys'])
+            ->flip();
+        $knownModuleCodes = StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $user->schoolyear_id)
+            ->pluck('json_code')
+            ->flatMap(fn (?string $code): array => explode('/', (string) $code))
+            ->concat($catalogModules->pluck('code'))
+            ->map(fn (mixed $code): string => $this->moduleCatalogIdentity(['code' => $code]))
+            ->filter()
+            ->flip();
+
+        return collect($this->rememberedTtEntryService->activeCourseGroupsForUser(
+            $user,
+            $this->overviewService->courseGroupsForUser($user),
+        ))
+            ->filter(function (array $courseGroup) use ($representedCourseKeys, $knownModuleCodes): bool {
+                $moduleCode = $this->moduleCatalogIdentity(['code' => $courseGroup['module_code'] ?? '']);
+                $mappedCode = $this->moduleCatalogIdentity(['code' => $courseGroup['title'] ?? '']);
+
+                return $moduleCode !== ''
+                    && ! $representedCourseKeys->has((string) ($courseGroup['key'] ?? ''))
+                    && ! $knownModuleCodes->has($moduleCode)
+                    && ! $knownModuleCodes->has($mappedCode);
+            })
+            ->groupBy(fn (array $courseGroup): string => $this->moduleCatalogIdentity(['code' => $courseGroup['module_code']]))
+            ->map(fn (Collection $courseGroups, string $moduleCode): array => [
+                'selection_key' => "imported:{$moduleCode}",
+                'code' => $moduleCode,
+                'name' => $moduleCode,
+                'semester' => null,
+                'semester_label' => null,
+                'hours' => null,
+                'hours_label' => null,
+                'status_label' => null,
+                'grades' => [],
+                'courses' => $this->moduleCourses(['course_groups' => $courseGroups->all()]),
+                'selected_by_default' => false,
+                'is_intended_for_selection' => null,
+            ])
+            ->filter(fn (array $module): bool => $module['courses'] !== [])
+            ->values()
+            ->all();
     }
 
     private function mainModuleCode(string $moduleCode): string

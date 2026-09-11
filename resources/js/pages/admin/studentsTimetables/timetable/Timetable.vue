@@ -2968,10 +2968,20 @@ export default {
 
 .st-import-history-title {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     width: 100%;
     min-width: 0;
+}
+
+.st-import-history-title > .flex-grow-1 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.st-import-history-title > .v-chip {
+    flex-shrink: 0;
 }
 
 .st-import-history-delete-button {
@@ -3292,10 +3302,6 @@ export default {
         margin-left: 0;
         width: 100%;
         justify-content: flex-start;
-    }
-
-    .st-import-history-title {
-        flex-wrap: wrap;
     }
 
     .st-import-history-delete-button {

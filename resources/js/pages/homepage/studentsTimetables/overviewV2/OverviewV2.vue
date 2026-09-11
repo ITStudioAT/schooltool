@@ -17,7 +17,7 @@
             <section class="hero overview-v2-hero">
             <div class="overview-v2-panel">
                 <nav class="overview-v2-navigation" aria-label="Seitennavigation">
-                    <span class="overview-v2-wordmark">Schülerstundenpläne</span>
+                    <span class="overview-v2-wordmark">SEPP</span>
 
                     <div class="overview-v2-navigation__actions">
                         <v-btn

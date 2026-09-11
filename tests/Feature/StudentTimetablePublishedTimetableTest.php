@@ -7,6 +7,7 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
+use App\Models\StudentTimetablePersonalTimetable;
 use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\StudentTimetableV2State;
@@ -146,6 +147,176 @@ it('returns a published timetable state for the selected admin student', functio
         ->assertJsonPath('data.state.activeCourseGroupFilterKeys.0', 'd-1')
         ->assertJsonPath('data.state.manualPanelOpen', true)
         ->assertJsonPath('data.timetable.semesters.0.weeks.0.hours.0.cells.0.courses.0.label', 'D1');
+});
+
+it('deletes only the selected published timetable and preserves personal and other saved plans', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+    $otherStudent = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'student_code' => 'other-student',
+        'import_user_id' => $user->id,
+    ]);
+    $otherTimetable = createPublishedTimetableForDeletion($user, $otherStudent);
+    $personalTimetable = StudentTimetablePersonalTimetable::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'user_id' => $user->id,
+        'student_code' => $student->student_code,
+        'timetable' => publishedTimetablePayload('D1'),
+        'adopted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $publishedTimetable->id,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Stundenplan für SCHROLL Lukas wurde gelöscht.');
+
+    $this->assertModelMissing($publishedTimetable);
+    $this->assertModelExists($otherTimetable);
+    $this->assertModelExists($personalTimetable);
+    expect($personalTimetable->fresh()->timetable)->toEqual(publishedTimetablePayload('D1'));
+
+    $this->getJson("/api/admin/students-timetables/overview/student-timetable?student_code={$student->student_code}")
+        ->assertNotFound();
+    $response = $this->getJson('/api/admin/students-timetables/robot/students')->assertSuccessful();
+    $studentData = collect($response->json('data'))->firstWhere('student_code', $student->student_code);
+    expect($studentData['has_published_timetable'])->toBeFalse()
+        ->and($studentData['published_timetable_id'])->toBeNull();
+});
+
+it('allows existing timetable management roles to delete a published timetable', function (string $role) {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+    Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
+    $user->syncRoles([$role]);
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $publishedTimetable->id,
+        ])
+        ->assertSuccessful();
+
+    $this->assertModelMissing($publishedTimetable);
+})->with(['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator']);
+
+it('forbids unrelated roles from deleting a published timetable', function (string $role) {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+    Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
+    $user->syncRoles([$role]);
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $publishedTimetable->id,
+        ])
+        ->assertForbidden();
+
+    $this->assertModelExists($publishedTimetable);
+})->with(['teacher', 'studentstimetables_user']);
+
+it('requires authentication to delete a published timetable', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+
+    $this->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+        'student_code' => $student->student_code,
+        'timetable_id' => $publishedTimetable->id,
+    ])->assertUnauthorized();
+
+    $this->assertModelExists($publishedTimetable);
+});
+
+it('validates published timetable deletion identifiers', function (array $invalid, string $field) {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $publishedTimetable->id,
+            ...$invalid,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$field]);
+
+    $this->assertModelExists($publishedTimetable);
+})->with([
+    'missing student' => [['student_code' => null], 'student_code'],
+    'invalid student' => [['student_code' => []], 'student_code'],
+    'missing timetable' => [['timetable_id' => null], 'timetable_id'],
+    'invalid timetable' => [['timetable_id' => 'invalid'], 'timetable_id'],
+    'nonpositive timetable' => [['timetable_id' => 0], 'timetable_id'],
+]);
+
+it('does not delete a published timetable outside its exact school year student and id scope', function (string $mismatch) {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+
+    if ($mismatch === 'school') {
+        $publishedTimetable->update(['school_id' => School::factory()->create()->id]);
+    }
+
+    if ($mismatch === 'schoolyear') {
+        $publishedTimetable->update([
+            'schoolyear_id' => Schoolyear::factory()->create(['school_id' => $user->school_id])->id,
+        ]);
+    }
+
+    if ($mismatch === 'student') {
+        $publishedTimetable->update(['student_code' => 'another-student']);
+    }
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $mismatch === 'id' ? $publishedTimetable->id + 1 : $publishedTimetable->id,
+        ])
+        ->assertNotFound();
+
+    $this->assertModelExists($publishedTimetable);
+})->with(['school', 'schoolyear', 'student', 'id']);
+
+it('requires an existing imported student in the selected school and year before deleting a timetable', function (string $mismatch) {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $publishedTimetable = createPublishedTimetableForDeletion($user, $student);
+
+    $student->update(match ($mismatch) {
+        'school' => ['school_id' => School::factory()->create()->id],
+        'schoolyear' => ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $user->school_id])->id],
+        'inactive' => ['exists_date' => null],
+    });
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $publishedTimetable->id,
+        ])
+        ->assertUnprocessable();
+
+    $this->assertModelExists($publishedTimetable);
+})->with(['school', 'schoolyear', 'inactive']);
+
+it('preserves a recreated published timetable when deletion confirms an old id', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+    $oldTimetable = createPublishedTimetableForDeletion($user, $student);
+    $oldTimetable->delete();
+    $newTimetable = createPublishedTimetableForDeletion($user, $student);
+
+    $this->actingAs($user)
+        ->deleteJson('/api/admin/students-timetables/overview/student-timetable', [
+            'student_code' => $student->student_code,
+            'timetable_id' => $oldTimetable->id,
+        ])
+        ->assertNotFound();
+
+    $this->assertModelExists($newTimetable);
 });
 
 it('keeps published timetable names unique within a school and retries collisions', function () {
@@ -288,6 +459,19 @@ it('rejects publishing a timetable for a student outside the selected schoolyear
         ->assertUnprocessable()
         ->assertJsonPath('message', 'Der ausgewählte Schüler wurde nicht gefunden.');
 });
+
+function createPublishedTimetableForDeletion(User $user, Import116 $student): StudentTimetablePublishedTimetable
+{
+    return StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'published_by_user_id' => $user->id,
+        'student_code' => $student->student_code,
+        'student_label' => trim("{$student->last_name} {$student->first_name}"),
+        'timetable' => publishedTimetablePayload('D1'),
+        'published_at' => now(),
+    ]);
+}
 
 function createPublishedTimetableAdminUser(): array
 {

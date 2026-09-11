@@ -3,7 +3,7 @@
         <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
             <div class="admin-card-head crud-head mb-4">
                 <div>
-                    <div class="admin-card-eyebrow">Schülerstundenpläne</div>
+                    <div class="admin-card-eyebrow">SEPP</div>
                     <div class="d-flex align-center flex-wrap ga-2">
                         <h2 class="admin-card-title crud-title">{{ title }}</h2>
                         <v-chip
@@ -151,7 +151,7 @@
         <v-card class="crud-dialog-card ai-glass-panel">
             <div class="crud-dialog-head">
                 <div>
-                    <div class="admin-card-eyebrow">Schülerstundenpläne</div>
+                    <div class="admin-card-eyebrow">SEPP</div>
                     <div class="admin-card-title" style="margin-top: 4px">{{ adminUserDialogTitle }}</div>
                 </div>
 

@@ -33,7 +33,7 @@ class RestrictStudentsTimetablesImpersonation
         }
 
         if ($request->expectsJson() || $request->is('api/*')) {
-            abort(403, 'Diese Benutzer-Übernahme ist auf Schülerstundenpläne beschränkt.');
+            abort(403, 'Diese Benutzer-Übernahme ist auf SEPP beschränkt.');
         }
 
         return redirect('/students-timetables/overview');

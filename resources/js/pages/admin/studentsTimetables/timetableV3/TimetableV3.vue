@@ -294,11 +294,30 @@
                         size="small"
                         color="primary"
                         variant="tonal"
-                        :disabled="publishedTimetableOpenLoading || isLoadingState || isSavingState"
+                        :disabled="publishedTimetableOpenLoading || publishedTimetableDeleting || isLoadingState || isSavingState"
                         :loading="publishedTimetableOpenLoading"
                         @click="openPublishedStudentTimetable">
                         {{ publishedStudentTimetableOpenLabel }}
                     </v-btn>
+                    <v-btn
+                        v-if="publishedStudentTimetableOpenVisible"
+                        class="timetable-v3__published-timetable-delete-button"
+                        prepend-icon="mdi-delete-outline"
+                        size="small"
+                        color="error"
+                        variant="tonal"
+                        :disabled="publishedTimetableOpenLoading || publishedTimetableDeleting || isLoadingState || isSavingState"
+                        @click="openPublishedTimetableDeleteDialog">
+                        Stundenplan löschen
+                    </v-btn>
+                    <v-alert
+                        v-if="publishedTimetableDeleteMessage"
+                        type="success"
+                        variant="tonal"
+                        density="compact"
+                        role="status">
+                        {{ publishedTimetableDeleteMessage }}
+                    </v-alert>
                     <span
                         v-if="publishedTimetableOpenError"
                         class="timetable-v3__published-timetable-open-error"
@@ -1837,6 +1856,38 @@
             </div>
         </div>
 
+        <v-dialog v-model="publishedTimetableDeleteDialogOpen" max-width="540" persistent>
+            <v-card rounded="lg">
+                <v-card-title class="text-wrap">Stundenplan löschen?</v-card-title>
+                <v-card-text>
+                    <p>
+                        Soll der gespeicherte Stundenplan
+                        <strong>{{ publishedTimetableDeleteTarget?.name }}</strong> für
+                        <strong>{{ publishedTimetableDeleteTarget?.studentLabel }}</strong>
+                        wirklich gelöscht werden?
+                    </p>
+                    <p class="mt-3">Diese Aktion kann nicht rückgängig gemacht werden.</p>
+                    <v-alert v-if="publishedTimetableDeleteError" type="error" variant="tonal" class="mt-3">
+                        {{ publishedTimetableDeleteError }}
+                    </v-alert>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn :disabled="publishedTimetableDeleting" @click="cancelPublishedTimetableDelete">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        :loading="publishedTimetableDeleting"
+                        :disabled="publishedTimetableDeleting"
+                        @click="deletePublishedTimetable">
+                        Stundenplan löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>
             <v-card rounded="lg" class="timetable-v3__module-courses-dialog">
                 <v-card-title class="timetable-v3__module-courses-dialog-title d-flex align-center ga-3 pa-5 pb-2">
@@ -1959,7 +2010,7 @@
                                         <v-icon icon="mdi-laptop" size="12" />
                                         {{ course.instruction_label }}
                                     </span>
-                                    <span v-if="course.block_label">{{ course.block_label }}</span>
+                                    <span v-if="course.block_label">{{ courseBlockLabel(course) }}</span>
                                     <span v-if="course.dates_count">
                                         {{ course.dates_count }} {{ course.dates_count === 1 ? 'Termin' : 'Termine' }}
                                     </span>
@@ -2316,6 +2367,7 @@ import {
     overviewPdf as downloadStudentTimetableOverviewPdf,
     impersonateStudent as openStudentTimetableView,
     publishedStudentTimetable as loadPublishedStudentTimetable,
+    deletePublishedStudentTimetable,
     publishStudentTimetable,
     robotStudents as loadRobotStudents,
     schoolHours as loadStudentTimetableSchoolHours,
@@ -3518,6 +3570,11 @@ export default {
             publishedTimetableAdoptionModuleKeys: [],
             publishedTimetableOpenLoading: false,
             publishedTimetableOpenError: '',
+            publishedTimetableDeleteDialogOpen: false,
+            publishedTimetableDeleteTarget: null,
+            publishedTimetableDeleting: false,
+            publishedTimetableDeleteError: '',
+            publishedTimetableDeleteMessage: '',
             publishedTimetableReport: {
                 type: 'success',
                 message: '',
@@ -3627,8 +3684,8 @@ export default {
         },
         manualModuleCatalogGroups() {
             if (
-                this.planningMode === WITH_STUDENT
-                && this.manualModuleCatalogView === MANUAL_MAIN_MODULE_CATALOG
+                this.planningMode === WITHOUT_STUDENT
+                || this.manualModuleCatalogView === MANUAL_MAIN_MODULE_CATALOG
             ) {
                 return this.mainModuleSelectionGroups
             }
@@ -4579,6 +4636,65 @@ export default {
                 return null
             }
         },
+        openPublishedTimetableDeleteDialog() {
+            if (
+                !this.publishedStudentTimetableOpenVisible
+                || this.publishedTimetableOpenLoading
+                || this.publishedTimetableDeleting
+                || this.isLoadingState
+                || this.isSavingState
+            ) return
+
+            this.publishedTimetableDeleteTarget = {
+                id: this.publishedStudentTimetable.id,
+                studentCode: this.selectedStudentCode,
+                name: this.publishedTimetableName,
+                studentLabel: this.selectedStudentFullName || this.selectedStudentCode,
+            }
+            this.publishedTimetableDeleteError = ''
+            this.publishedTimetableDeleteMessage = ''
+            this.publishedTimetableDeleteDialogOpen = true
+        },
+        cancelPublishedTimetableDelete() {
+            if (this.publishedTimetableDeleting) return
+
+            this.publishedTimetableDeleteDialogOpen = false
+            this.publishedTimetableDeleteTarget = null
+            this.publishedTimetableDeleteError = ''
+        },
+        async deletePublishedTimetable() {
+            const target = this.publishedTimetableDeleteTarget
+            if (!this.publishedTimetableDeleteDialogOpen || !target?.id || this.publishedTimetableDeleting) return
+
+            if (target.studentCode !== this.selectedStudentCode || target.id !== this.publishedStudentTimetable?.id) {
+                this.publishedTimetableDeleteError = 'Die Auswahl hat sich geändert. Bitte öffnen Sie die Bestätigung erneut.'
+
+                return
+            }
+
+            this.publishedTimetableDeleting = true
+            this.publishedTimetableDeleteError = ''
+
+            try {
+                const response = await axios.delete(deletePublishedStudentTimetable.url(), {
+                    data: { student_code: target.studentCode, timetable_id: target.id },
+                })
+
+                if (target.studentCode === this.selectedStudentCode && target.id === this.publishedStudentTimetable?.id) {
+                    this.publishedStudentTimetable = null
+                    this.publishedTimetableName = ''
+                    this.publishedTimetableOpenError = ''
+                    this.publishedTimetableDeleteMessage = response?.data?.message || 'Stundenplan wurde gelöscht.'
+                }
+
+                this.publishedTimetableDeleteDialogOpen = false
+                this.publishedTimetableDeleteTarget = null
+            } catch (error) {
+                this.publishedTimetableDeleteError = error?.response?.data?.message || 'Stundenplan konnte nicht gelöscht werden.'
+            } finally {
+                this.publishedTimetableDeleting = false
+            }
+        },
         resetPublishedTimetableAdoption() {
             this.publishedTimetableAdoption = null
             this.publishedTimetableAdoptionBase = null
@@ -4670,6 +4786,7 @@ export default {
             if (
                 !this.publishedStudentTimetableOpenVisible
                 || this.publishedTimetableOpenLoading
+                || this.publishedTimetableDeleting
                 || this.isLoadingState
                 || this.isSavingState
             ) return
@@ -6390,6 +6507,23 @@ export default {
         },
         courseScheduleRows(course) {
             return normalizedCourseScheduleRows(course)
+        },
+        courseBlockLabel(course) {
+            const label = String(course?.block_label || '').trim()
+            if (!label) return ''
+
+            const entries = Array.isArray(course?.timetable_entries) ? course.timetable_entries : []
+            const dates = entries
+                .filter(entry => entry?.is_block === true)
+                .flatMap(entry => timetableEntryDates(entry))
+                .filter(date => /^\d{4}-\d{2}-\d{2}$/u.test(date))
+                .sort()
+            if (!dates.length) return label
+
+            const from = `${dates[0].split('-').slice(1).reverse().join('.')}.`
+            const until = `${dates[dates.length - 1].split('-').slice(1).reverse().join('.')}.`
+
+            return `${label}: ${from}–${until}`
         },
         courseScheduleRowOverlapLabels(course, scheduleRow) {
             const activeCourseKeys = this.moduleCoursesDialogReadOnly
@@ -9228,11 +9362,13 @@ button.timetable-v3__student-data-field:focus-visible {
 }
 
 .timetable-v3__published-timetable-open-button,
+.timetable-v3__published-timetable-delete-button,
 .timetable-v3__published-timetable-open-error {
     flex: 1 0 100%;
 }
 
-.timetable-v3__published-timetable-open-button {
+.timetable-v3__published-timetable-open-button,
+.timetable-v3__published-timetable-delete-button {
     text-transform: none;
 }
 

@@ -3770,6 +3770,71 @@ it('resolves only the selected authoritative language module when sibling langua
         ->and($slotCodes)->toBe(['F2']);
 });
 
+it('resolves authoritative arts modules by branch without filtering explicit selections', function (array $branches, ?string $selectedBranch, bool $resolves) {
+    $subjects = collect($branches)->map(fn (string $branch, int $index): array => [
+        'id' => $index + 1,
+        'semester' => 7,
+        'branch' => $branch,
+        'json_code' => 'ME1',
+        'json_subject' => 'ME',
+        'name' => 'Musikerziehung 1',
+        'hours_per_week' => 2,
+        'is_active' => true,
+    ])->all();
+    $calculate = fn (): array => app(RobotTimetableBackendSetupService::class)->calculateAllPossibleTimetableVariations(
+        subjectRows: $subjects,
+        subjectMappings: [['json_subject' => 'ME', 'tt_subject' => 'MU', 'is_active' => true]],
+        courseGroups: [[
+            'key' => 'mu1-a',
+            'weekday' => 1,
+            'hour' => 1,
+            'class_name' => 'MU1-7A-RIT',
+            'display_label' => 'MU1-7A-RIT',
+            'title' => 'MU1-7A-RIT',
+            'course' => 'MU1',
+            'subject' => 'MU',
+            'module_code' => 'MU1',
+            'dates' => [],
+            'dates_count' => 0,
+        ]],
+        settings: [
+            'selection' => ['semester' => 7, 'branch' => $selectedBranch, 'artsSubject' => 'BE'],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['ME1'],
+            'selected_modules_are_authoritative' => true,
+            'selected_additional_course_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        requiredCourseGroupsByModule: ['ME1' => ['mu1-a']],
+    );
+
+    if (! $resolves) {
+        expect($calculate)->toThrow(ValidationException::class);
+
+        return;
+    }
+
+    $result = $calculate();
+
+    expect($result)
+        ->selected_course_count->toBe(1)
+        ->timetables->toHaveCount(1)
+        ->and(collect($result['timetables'][0]['slots'])->pluck('code')->unique()->all())->toBe(['ME1']);
+})->with([
+    'gymnasial second' => [['wirtschaftskundlich', 'gymnasial'], 'gymnasial', true],
+    'gymnasial first' => [['gymnasial', 'wirtschaftskundlich'], 'gymnasial', true],
+    'wirtschaftskundlich' => [['gymnasial', 'wirtschaftskundlich'], 'wirtschaftskundlich', true],
+    'explicit other branch' => [['wirtschaftskundlich'], 'gymnasial', true],
+    'missing branch remains ambiguous' => [['gymnasial', 'wirtschaftskundlich'], null, false],
+    'same branch remains ambiguous' => [['gymnasial', 'gymnasial', 'wirtschaftskundlich'], 'gymnasial', false],
+]);
+
 it('resolves an unnumbered authoritative module through its active timetable alias', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 

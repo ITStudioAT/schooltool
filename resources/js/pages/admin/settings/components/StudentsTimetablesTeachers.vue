@@ -3,7 +3,7 @@
         <section class="crud-shell admin-card ai-glass-panel">
             <div class="admin-card-head crud-head mb-4">
                 <div>
-                    <div class="admin-card-eyebrow">Schülerstundenpläne</div>
+                    <div class="admin-card-eyebrow">SEPP</div>
                     <h2 class="admin-card-title crud-title">Lehrerliste</h2>
                 </div>
 

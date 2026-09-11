@@ -396,6 +396,44 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
+    public function deletePublishedStudentTimetable(Request $request): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:255'],
+            'timetable_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $student = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->whereNotNull('exists_date')
+            ->first();
+
+        if (! $student) {
+            abort(422, 'Der ausgewählte Schüler wurde nicht gefunden.');
+        }
+
+        $publishedTimetable = StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->whereKey($validated['timetable_id'])
+            ->first();
+
+        if (! $publishedTimetable) {
+            abort(404, 'Für diesen Schüler ist kein gespeicherter Stundenplan vorhanden.');
+        }
+
+        $publishedTimetable->delete();
+
+        return response()->json([
+            'message' => "Stundenplan für {$publishedTimetable->student_label} wurde gelöscht.",
+        ]);
+    }
+
     public function robotFullGreenCount(
         Request $request,
         RobotTimetableGeneratorService $generatorService,

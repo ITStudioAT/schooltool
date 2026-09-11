@@ -12,7 +12,7 @@
                     <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
                 </div>
 
-                <h1 class="hero-title">Schülerstundenpläne</h1>
+                <h1 class="hero-title">SEPP</h1>
                 <p class="hero-subtitle">Ihr Stundenplanbereich.</p>
 
                 <div class="hero-badges">

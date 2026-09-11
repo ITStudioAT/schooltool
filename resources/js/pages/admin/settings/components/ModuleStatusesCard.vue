@@ -76,7 +76,7 @@
 
         <div class="module-status-card__version">
             <div class="module-status-card__copy">
-                <div class="module-status-card__module">Schülerstundenpläne</div>
+                <div class="module-status-card__module">SEPP</div>
                 <div class="module-status-card__meta">
                     Aktive Admin-Version. Version 2 bleibt unabhängig erreichbar und kann jederzeit wieder aktiviert werden.
                 </div>

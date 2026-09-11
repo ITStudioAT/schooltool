@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.47.5',
+    'version' => '3.48.0',
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),
         'npm' => env('APP_NPM_VERSION'),
@@ -238,7 +238,7 @@ return [
         ],
         [
             'name' => 'StudentsTimetables',
-            'long_name' => 'Tool zum Verwalten von Schülerstundenplänen',
+            'long_name' => 'SEPP – Stundenplanerstellungs- und -planungsprogramm',
             'price_per_year' => 200,
             'start_day_month' => '01.08.',
             'school_licence_enabled' => true,

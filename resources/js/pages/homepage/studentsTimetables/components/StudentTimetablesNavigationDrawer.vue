@@ -35,7 +35,7 @@
 
             <v-list-item prepend-icon="mdi-logout" @click="handleLogout">
                 <v-list-item-title>Abmelden</v-list-item-title>
-                <v-list-item-subtitle>Vom Schülerstundenplan-Bereich abmelden</v-list-item-subtitle>
+                <v-list-item-subtitle>Von SEPP abmelden</v-list-item-subtitle>
             </v-list-item>
         </v-list>
     </v-navigation-drawer>

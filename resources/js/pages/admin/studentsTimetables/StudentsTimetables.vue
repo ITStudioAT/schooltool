@@ -4,7 +4,7 @@
             <AdminSectionHero
                 class="students-timetables-hero"
                 eyebrow="Stundenpläne"
-                title="Schülerstundenpläne"
+                title="SEPP"
                 primary-color="#1e2433"
                 secondary-color="#1e2433"
                 :active-section="activeSection"
@@ -99,8 +99,8 @@
                     <v-card-text class="d-grid ga-4">
                         <p class="ma-0">
                             Für das persönliche Schuljahr <strong>{{ personalSchoolyearLabel }}</strong>
-                            gibt es noch keinen Soll-/Fachplan. Er wird in mehreren Bereichen der
-                            Schülerstundenpläne benötigt.
+                            gibt es noch keinen Soll-/Fachplan. Er wird in mehreren Bereichen von
+                            SEPP benötigt.
                         </p>
                         <v-alert type="info" variant="tonal">
                             Aus <strong>{{ subjectPlanPreviousSchoolyear?.name }}</strong> werden gemeinsam

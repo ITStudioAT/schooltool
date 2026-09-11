@@ -2187,6 +2187,147 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="openPublishedStudentTimetable"')
     })
 
+    function publishedTimetableDeletionContext() {
+        return {
+            ...(TimetableV3 as any).data(),
+            ...(TimetableV3 as any).methods,
+            isLoadingState: false,
+            isSavingState: false,
+            publishedStudentTimetableOpenVisible: true,
+            publishedStudentTimetable: { id: 7, name: '26ABC' },
+            publishedTimetableName: '26ABC',
+            selectedStudentCode: '1001',
+            selectedStudentFullName: 'Muster Mia',
+        }
+    }
+
+    it('asks in a persistent dialog and does not delete when cancelled', async () => {
+        const context = publishedTimetableDeletionContext()
+        const remove = vi.fn()
+        vi.stubGlobal('axios', { delete: remove })
+
+        try {
+            await context.deletePublishedTimetable()
+            context.openPublishedTimetableDeleteDialog()
+
+            expect(context.publishedTimetableDeleteDialogOpen).toBe(true)
+            expect(context.publishedTimetableDeleteTarget).toEqual({
+                id: 7, studentCode: '1001', name: '26ABC', studentLabel: 'Muster Mia',
+            })
+            expect(remove).not.toHaveBeenCalled()
+
+            context.cancelPublishedTimetableDelete()
+            await context.deletePublishedTimetable()
+
+            expect(remove).not.toHaveBeenCalled()
+            expect(context.publishedTimetableDeleteDialogOpen).toBe(false)
+            expect(context.publishedTimetableDeleteTarget).toBeNull()
+            expect(context.publishedStudentTimetable.id).toBe(7)
+
+            const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue', 'utf8')
+            expect(source).toMatch(/<v-dialog\s+v-model="publishedTimetableDeleteDialogOpen"[^>]*\spersistent>/)
+            expect(source).toMatch(/v-if="publishedStudentTimetableOpenVisible"[\s\S]*?@click="openPublishedTimetableDeleteDialog"/)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('deletes the confirmed timetable once and removes its open and delete actions', async () => {
+        const context = publishedTimetableDeletionContext()
+        let complete: (response: unknown) => void = () => {}
+        const remove = vi.fn(() => new Promise(resolve => { complete = resolve }))
+        vi.stubGlobal('axios', { delete: remove })
+
+        try {
+            context.openPublishedTimetableDeleteDialog()
+            const deletion = context.deletePublishedTimetable()
+            await context.deletePublishedTimetable()
+            context.cancelPublishedTimetableDelete()
+
+            expect(remove).toHaveBeenCalledExactlyOnceWith(
+                '/api/admin/students-timetables/overview/student-timetable',
+                { data: { student_code: '1001', timetable_id: 7 } },
+            )
+            expect(context.publishedTimetableDeleting).toBe(true)
+            expect(context.publishedTimetableDeleteDialogOpen).toBe(true)
+
+            complete({ data: { message: 'Stundenplan wurde gelöscht.' } })
+            await deletion
+
+            expect(context.publishedTimetableDeleting).toBe(false)
+            expect(context.publishedTimetableDeleteDialogOpen).toBe(false)
+            expect(context.publishedStudentTimetable).toBeNull()
+            expect(context.publishedTimetableName).toBe('')
+            expect(context.publishedTimetableDeleteMessage).toBe('Stundenplan wurde gelöscht.')
+            expect((TimetableV3 as any).computed.publishedStudentTimetableOpenVisible.call({
+                ...context, currentStep: 'selection',
+            })).toBe(false)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('keeps the confirmation open and the timetable available after a failed deletion', async () => {
+        const context = publishedTimetableDeletionContext()
+        const remove = vi.fn().mockRejectedValue({ response: { data: { message: 'Löschen fehlgeschlagen.' } } })
+        vi.stubGlobal('axios', { delete: remove })
+
+        try {
+            context.openPublishedTimetableDeleteDialog()
+            await context.deletePublishedTimetable()
+
+            expect(context.publishedTimetableDeleteDialogOpen).toBe(true)
+            expect(context.publishedTimetableDeleting).toBe(false)
+            expect(context.publishedTimetableDeleteError).toBe('Löschen fehlgeschlagen.')
+            expect(context.publishedStudentTimetable.id).toBe(7)
+            expect(context.publishedTimetableName).toBe('26ABC')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([
+        { selectedStudentCode: '1002' },
+        { publishedStudentTimetable: { id: 8, name: '26XYZ' } },
+    ])('rejects confirmation after the selection changes: %j', async (changedSelection) => {
+        const context = publishedTimetableDeletionContext()
+        const remove = vi.fn()
+        vi.stubGlobal('axios', { delete: remove })
+
+        try {
+            context.openPublishedTimetableDeleteDialog()
+            Object.assign(context, changedSelection)
+            await context.deletePublishedTimetable()
+
+            expect(remove).not.toHaveBeenCalled()
+            expect(context.publishedTimetableDeleteError).toContain('Auswahl hat sich geändert')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('does not clear another student timetable when an earlier deletion completes', async () => {
+        const context = publishedTimetableDeletionContext()
+        let complete: (response: unknown) => void = () => {}
+        vi.stubGlobal('axios', { delete: vi.fn(() => new Promise(resolve => { complete = resolve })) })
+
+        try {
+            context.openPublishedTimetableDeleteDialog()
+            const deletion = context.deletePublishedTimetable()
+            context.selectedStudentCode = '1002'
+            context.publishedStudentTimetable = { id: 8, name: '26XYZ' }
+            context.publishedTimetableName = '26XYZ'
+            complete({ data: {} })
+            await deletion
+
+            expect(context.publishedStudentTimetable.id).toBe(8)
+            expect(context.publishedTimetableName).toBe('26XYZ')
+            expect(context.publishedTimetableDeleteMessage).toBe('')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
     it('loads a stored PDF timetable into the manual timetable editor', () => {
         const methods = (TimetableV3 as any).methods
         const course = {
@@ -2596,7 +2737,7 @@ describe('TimetableV3', () => {
 
         methods.showManualModuleCatalog.call(withoutStudentContext, 'main')
         expect(withoutStudentContext.manualModuleCatalogView).toBe('student')
-        expect(computed.manualModuleCatalogGroups.call(withoutStudentContext)).toBe(studentGroups)
+        expect(computed.manualModuleCatalogGroups.call(withoutStudentContext)).toBe(mainGroups)
         expect(computed.manualModuleCatalogUsesMainGroups.call(withoutStudentContext)).toBe(true)
 
         const selectionResetContext = (TimetableV3 as any).data()
@@ -2617,6 +2758,47 @@ describe('TimetableV3', () => {
         expect(selectionResetContext.manualSelectedCourseKeys).toEqual([])
         expect(selectionResetContext.manualPendingCourseKeys).toEqual([])
         expect(selectionResetContext.adoptionRemovedCourseKeys).toEqual([])
+    })
+
+    it.each(['with_student', 'without_student'])('manually places an imported-only module in %s mode', async (planningMode) => {
+        const component = TimetableV3 as any
+        const course = {
+            key: 'gus1',
+            keys: ['gus1'],
+            title: 'GuS1-2RU+3QS-PLA',
+            timetable_entries: [{
+                key: 'gus1', module_code: 'GuS1', weekday: 4, hour: 12,
+                dates: ['2026-09-17'], starts_at: '18:45', ends_at: '19:30',
+            }],
+        }
+        const importedModule = { selection_key: 'imported:GUS1', code: 'GuS1', hours: null, courses: [course] }
+        const groups = [{ key: 'GUS', modules: [importedModule] }]
+        const context = {
+            ...component.methods,
+            planningMode,
+            manualModuleCatalogView: 'main',
+            moduleSelectionGroups: [],
+            mainModuleSelectionGroups: groups,
+            moduleCourseDialogModule: importedModule,
+            manualPendingCourseKeys: [],
+            manualSelectedCourseKeys: [],
+            adoptionPlacedCourseKeys: [],
+            selectedCourseKeys: [],
+            selectedModuleKeys: [],
+            saveState: vi.fn().mockResolvedValue(undefined),
+        }
+
+        expect(component.computed.manualModuleCatalogGroups.call(context)).toBe(groups)
+        context.toggleManualModuleCourse(course)
+        expect(context.manualSelectedCourseKeys).toEqual([])
+        expect(context.manualPendingCourseKeys).toEqual(['gus1'])
+        await context.planManualModuleCourses()
+
+        expect(context.manualSelectedCourseKeys).toEqual(['gus1'])
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.selectedModuleKeys).toEqual([])
+        expect(importedModule.hours).toBeNull()
     })
 
     it('selects a student course on page 3A and overlays it on the transferred timetable', async () => {
@@ -4926,6 +5108,30 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('mdi-chevron-up')
         expect(source).not.toContain('toggleModuleGroupCollapse')
         expect(source).not.toContain('@click="openModuleGroup(group)"')
+    })
+
+    it('shows the full date range of only the block entries on a grouped course', () => {
+        const course = {
+            block_label: 'Block',
+            timetable_entries: [
+                { is_block: true, dates: ['2027-01-16', '2026-10-03'] },
+                { is_block: true, dates: ['2026-09-19', '2026-10-03'] },
+                { is_block: false, dates: ['2026-09-01', '2027-07-01'] },
+            ],
+        }
+
+        expect((TimetableV3 as any).methods.courseBlockLabel(course))
+            .toBe('Block: 19.09.–16.01.')
+        expect(course.timetable_entries[0].dates).toEqual(['2027-01-16', '2026-10-03'])
+    })
+
+    it.each([
+        [{ block_label: 'Block' }, 'Block'],
+        [{ block_label: 'Block', timetable_entries: [{ is_block: true, dates: [] }] }, 'Block'],
+        [{ block_label: 'Block', timetable_entries: [{ is_block: true, dates: ['2026-09-19'] }] }, 'Block: 19.09.–19.09.'],
+        [{ timetable_entries: [{ is_block: false, dates: ['2026-09-19'] }] }, ''],
+    ])('keeps block date labels safe for incomplete and ordinary courses: %j', (course, expected) => {
+        expect((TimetableV3 as any).methods.courseBlockLabel(course)).toBe(expected)
     })
 
     it('shows the overlapping course below only the affected dialog schedule line', () => {

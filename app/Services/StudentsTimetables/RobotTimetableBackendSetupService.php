@@ -520,6 +520,10 @@ class RobotTimetableBackendSetupService
                 $settings,
                 'selected_course_keys',
             ))
+            ->when(
+                $this->selectedModulesAreAuthoritative($settings),
+                fn (Collection $courses): Collection => $this->resolveAuthoritativeCourseBranches($courses, $settings),
+            )
             ->reduce(function (array $coursesByKey, array $course) use ($settings): array {
                 foreach ($this->availabilityCourseLookupKeys($course, $settings) as $courseKey) {
                     $coursesByKey[$courseKey] ??= $course;
@@ -4810,6 +4814,10 @@ class RobotTimetableBackendSetupService
                 $selectedCourseSettingsKey,
             ))
             ->when(
+                $this->selectedModulesAreAuthoritative($settings),
+                fn (Collection $courses): Collection => $this->resolveAuthoritativeCourseBranches($courses, $settings),
+            )
+            ->when(
                 $selectedCourseKeys->isNotEmpty(),
                 fn (Collection $courses): Collection => $courses
                     ->filter(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, $selectedCourseKeyValues)),
@@ -4863,6 +4871,35 @@ class RobotTimetableBackendSetupService
                 implode(', ', $unresolvedCourseKeys),
             ),
         ]);
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $courses
+     * @param  array<string, mixed>  $settings
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function resolveAuthoritativeCourseBranches(Collection $courses, array $settings): Collection
+    {
+        $selectedBranch = trim((string) data_get($settings, 'selection.branch', ''));
+
+        if ($selectedBranch === '' || $selectedBranch === 'common') {
+            return $courses;
+        }
+
+        return $courses
+            ->groupBy(fn (array $course): string => $this->normalizedCourseCode((string) $course['code']))
+            ->flatMap(function (Collection $candidates) use ($selectedBranch): Collection {
+                if ($candidates->count() === 1) {
+                    return $candidates;
+                }
+
+                $matchingBranch = $candidates->filter(
+                    fn (array $course): bool => ($course['branch'] ?? '') === $selectedBranch,
+                );
+
+                return $matchingBranch->count() === 1 ? $matchingBranch : $candidates;
+            })
+            ->values();
     }
 
     /**
@@ -5306,6 +5343,7 @@ class RobotTimetableBackendSetupService
             ]),
             'code' => $courseCode,
             'name' => $subject['name'] ?? $subject['json_subject'] ?? $subject['json_code'] ?? '',
+            'branch' => $subject['branch'] ?? '',
             'ttCodes' => $this->selectedCourseTimetableCodes(
                 $subject,
                 $subjectMappings,
