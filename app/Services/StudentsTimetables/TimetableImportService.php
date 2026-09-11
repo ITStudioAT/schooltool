@@ -13,6 +13,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Throwable;
 
 class TimetableImportService
 {
@@ -115,6 +116,48 @@ class TimetableImportService
         );
     }
 
+    /**
+     * @return array{source_available: bool, records: list<array<string, mixed>>}
+     */
+    public function previewDiagnosticsFor(TimetableImport $import): array
+    {
+        $sourcePath = PrivateImportSourceFile::resolve(
+            $import->file_path,
+            "app/private/{$import->school_id}/timetable-imports/{$import->schoolyear_id}",
+        );
+        $lines = $sourcePath !== null ? $this->readNormalizedLines($sourcePath, true) : null;
+
+        if ($lines === null) {
+            return ['source_available' => false, 'records' => []];
+        }
+
+        $records = [];
+        foreach ($lines as $index => $line) {
+            $parts = explode("\t", $line);
+            if (trim($parts[0] ?? '') !== 'TT') {
+                continue;
+            }
+
+            $errors = $this->timetableRecordErrors($parts);
+            if ($errors === []) {
+                continue;
+            }
+
+            $records[] = [
+                'line_number' => $index + 1,
+                'source_identifier' => $parts[1] ?? null,
+                'date' => $parts[2] ?? null,
+                'period' => $parts[3] ?? null,
+                'starts_at' => $parts[4] ?? null,
+                'ends_at' => $parts[5] ?? null,
+                'course' => $parts[7] ?? null,
+                'errors' => $errors,
+            ];
+        }
+
+        return ['source_available' => true, 'records' => $records];
+    }
+
     public function createImport(User $user, string $storedFilename, string $originalFilename, string $filePath, ?int $schoolyearId = null): TimetableImport
     {
         $schoolyear = $this->schoolyearWithSemesterTwoStart($user, $schoolyearId);
@@ -170,8 +213,12 @@ class TimetableImportService
         );
     }
 
-    public function confirmPreview(TimetableImport $import): TimetableImport
+    public function confirmPreview(TimetableImport $import, string $mode = 'strict'): TimetableImport
     {
+        if (! in_array($mode, ['strict', 'partial'], true)) {
+            throw ValidationException::withMessages(['mode' => 'Bitte wählen Sie Vollimport oder Teilimport.']);
+        }
+
         $analysis = $this->analyzeFile(storage_path($import->file_path));
 
         if ($this->importableTimetableRows($analysis) === 0) {
@@ -180,7 +227,7 @@ class TimetableImportService
             ]);
         }
 
-        if ($analysis['tt_skipped_invalid'] > 0) {
+        if ($analysis['tt_skipped_invalid'] > 0 && $mode !== 'partial') {
             throw ValidationException::withMessages([
                 'file' => 'Semantische Prüfung fehlgeschlagen: '.$analysis['tt_skipped_invalid'].' TT-Datensätze entsprechen nicht dem erwarteten Format. Korrigieren Sie die Quelldatei; bestehende Daten wurden nicht verändert.',
             ]);
@@ -206,10 +253,14 @@ class TimetableImportService
             ->where('import_status', 'preview')
             ->update([
                 ...$analysis,
+                'import_mode' => $mode,
+                'tt_imported_rows' => 0,
                 'import_status' => 'pending',
                 'progress_current' => 0,
                 'progress_total' => 0,
-                'import_message' => 'Import wartet auf Verarbeitung.',
+                'import_message' => $mode === 'partial'
+                    ? 'Teilimport wartet auf Verarbeitung. Nicht zuordenbare TT-Datensätze werden ausgelassen.'
+                    : 'Import wartet auf Verarbeitung.',
                 'import_error' => null,
                 'started_at' => null,
                 'finished_at' => null,
@@ -285,7 +336,7 @@ class TimetableImportService
             return $import->refresh();
         }
 
-        if ($analysis['tt_skipped_invalid'] > 0) {
+        if ($analysis['tt_skipped_invalid'] > 0 && ! $import->isPartialImport()) {
             $this->markFailed(
                 $import,
                 'Semantische Prüfung fehlgeschlagen: '.$analysis['tt_skipped_invalid'].' TT-Datensätze entsprechen nicht dem erwarteten Format. Bestehende Daten wurden nicht verändert.',
@@ -309,9 +360,27 @@ class TimetableImportService
 
         $this->markRunning($import, $totalLines);
 
+        try {
+            $result = DB::transaction(fn (): TimetableImport => $this->persistTimetableRows($import, $schoolyear, $lines, $totalLines));
+        } catch (Throwable $exception) {
+            $this->markFailed($import, 'Import fehlgeschlagen. Änderungen dieses Laufs wurden zurückgerollt: '.mb_substr($exception->getMessage(), 0, 150));
+
+            throw $exception;
+        }
+
+        StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
+
+        return $result;
+    }
+
+    /** @param iterable<int, string> $lines */
+    private function persistTimetableRows(TimetableImport $import, Schoolyear $schoolyear, iterable $lines, int $totalLines): TimetableImport
+    {
+
         $sections = [];
         $ttCourses = [];
         $ttSkippedInvalid = 0;
+        $ttImportedRows = 0;
         $ttFirstDate = null;
         $ttLastDate = null;
         $rows = [];
@@ -349,6 +418,7 @@ class TimetableImportService
                 }
 
                 $rows[] = $this->timetableEntryPayload($import, $schoolyear, $parts, $line, $index + 1);
+                $ttImportedRows++;
             }
 
             if (count($rows) >= 500) {
@@ -365,6 +435,10 @@ class TimetableImportService
             $this->updateOrCreateTimetableEntries($rows);
         }
 
+        if ($ttImportedRows === 0 || ($ttSkippedInvalid > 0 && ! $import->isPartialImport())) {
+            throw new RuntimeException('Die gelesenen TT-Datensätze erfüllen die gewählte Importart nicht.');
+        }
+
         ksort($sections);
 
         $import->update($this->importCompletionPayload([
@@ -372,17 +446,18 @@ class TimetableImportService
             'total_lines' => $totalLines,
             'tt_courses' => count($ttCourses),
             'tt_skipped_invalid' => $ttSkippedInvalid,
+            'tt_imported_rows' => $ttImportedRows,
             'tt_first_date' => $ttFirstDate,
             'tt_last_date' => $ttLastDate,
             'import_status' => 'completed',
             'progress_current' => $totalLines,
             'progress_total' => $totalLines,
-            'import_message' => 'Import abgeschlossen.',
+            'import_message' => $import->isPartialImport()
+                ? "Teilimport abgeschlossen: {$ttImportedRows} TT-Datensätze verarbeitet, {$ttSkippedInvalid} nach aktuellen Prüfregeln ausgelassen. Übriger Bestand beibehalten."
+                : 'Import abgeschlossen.',
             'import_error' => null,
             'finished_at' => now(),
         ]));
-
-        StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
 
         return $import->refresh();
     }
@@ -769,15 +844,6 @@ class TimetableImportService
         return null;
     }
 
-    /**
-     * @param  list<string>  $parts
-     */
-    private function hasUntisTimeColumns(array $parts): bool
-    {
-        return $this->isTimeColumn($parts[4] ?? null)
-            && $this->isTimeColumn($parts[5] ?? null);
-    }
-
     private function isTimeColumn(?string $value): bool
     {
         return preg_match('/^\d{1,2}:\d{2}$/', trim((string) $value)) === 1;
@@ -809,10 +875,62 @@ class TimetableImportService
      */
     private function isImportableTimetableRecord(array $parts): bool
     {
-        return trim($parts[1] ?? '') !== '0'
-            && $this->normalizeDate($parts[2] ?? null) !== null
-            && $this->hasUntisTimeColumns($parts)
-            && $this->timetableCourseName($parts) !== '';
+        return $this->timetableRecordErrors($parts) === [];
+    }
+
+    /**
+     * @param  list<string>  $parts
+     * @return list<array{column: int, field: string, value: ?string, reason: string, expected: string}>
+     */
+    private function timetableRecordErrors(array $parts): array
+    {
+        $errors = [];
+
+        if (trim($parts[1] ?? '') === '0') {
+            $errors[] = [
+                'column' => 2,
+                'field' => 'Quellkennung',
+                'value' => $parts[1],
+                'reason' => 'Der Importer lässt Datensätze mit dem Wert 0 in Feld 2 nach den aktuellen Prüfregeln aus.',
+                'expected' => 'Für die aktuelle Zuordnung: ein Wert ungleich 0 in Feld 2.',
+            ];
+        }
+
+        if ($this->normalizeDate($parts[2] ?? null) === null) {
+            $errors[] = [
+                'column' => 3,
+                'field' => 'Datum',
+                'value' => $parts[2] ?? null,
+                'reason' => 'Das Datum fehlt oder entspricht keinem unterstützten Datumsformat.',
+                'expected' => 'JJJJMMTT oder JJJJ-MM-TT, z. B. 20260914 oder 2026-09-14.',
+            ];
+        }
+
+        foreach ([4 => 'Beginn', 5 => 'Ende'] as $index => $field) {
+            if ($this->isTimeColumn($parts[$index] ?? null)) {
+                continue;
+            }
+
+            $errors[] = [
+                'column' => $index + 1,
+                'field' => $field,
+                'value' => $parts[$index] ?? null,
+                'reason' => 'Die Zeit fehlt oder entspricht keinem unterstützten Zeitformat.',
+                'expected' => 'H:MM oder HH:MM mit Doppelpunkt, z. B. 8:00 oder 08:00.',
+            ];
+        }
+
+        if ($this->timetableCourseName($parts) === '') {
+            $errors[] = [
+                'column' => 8,
+                'field' => 'Kurs-/Klassenbezeichnung',
+                'value' => $parts[7] ?? null,
+                'reason' => 'Die Kurs-/Klassenbezeichnung fehlt oder enthält nur Leerzeichen; der TT-Datensatz kann keinem Kurs zugeordnet werden.',
+                'expected' => 'Eine nicht leere Kurs-/Klassenbezeichnung in Feld 8.',
+            ];
+        }
+
+        return $errors;
     }
 
     /**
@@ -872,6 +990,12 @@ class TimetableImportService
                     'imports' => "Der verbleibende Import {$import->original_filename} kann nicht wiederhergestellt werden: Die Quelldatei fehlt, ist unlesbar oder enthält keine gültigen Stundenplan-Einträge. Es wurde nichts gelöscht.",
                 ]);
             }
+
+            if ($analysis['tt_skipped_invalid'] > 0 && ! $import->isPartialImport()) {
+                throw ValidationException::withMessages([
+                    'imports' => "Der verbleibende Vollimport {$import->original_filename} enthält nicht zuordenbare TT-Datensätze. Es wurde nichts gelöscht.",
+                ]);
+            }
         }
     }
 
@@ -908,22 +1032,25 @@ class TimetableImportService
     /**
      * @return iterable<int, string>|null
      */
-    private function readNormalizedLines(string $filePath): ?iterable
+    private function readNormalizedLines(string $filePath, bool $preserveSourceLineNumbers = false): ?iterable
     {
         $handle = @fopen($filePath, 'rb');
         if ($handle === false) {
             return null;
         }
 
-        return (function () use ($handle): iterable {
+        return (function () use ($handle, $preserveSourceLineNumbers): iterable {
+            $sourceIndex = -1;
+            $recordIndex = 0;
             try {
                 while (($line = fgets($handle)) !== false) {
+                    $sourceIndex++;
                     $line = rtrim($line, "\r\n");
                     if ($line === '') {
                         continue;
                     }
 
-                    yield $this->toUtf8($line);
+                    yield ($preserveSourceLineNumbers ? $sourceIndex : $recordIndex++) => $this->toUtf8($line);
                 }
             } finally {
                 fclose($handle);
@@ -959,6 +1086,7 @@ class TimetableImportService
     {
         $import->update([
             'import_status' => 'running',
+            'tt_imported_rows' => 0,
             'progress_current' => 0,
             'progress_total' => $totalLines,
             'import_message' => $totalLines > 0
@@ -984,6 +1112,7 @@ class TimetableImportService
     {
         $import->update([
             ...$context,
+            'tt_imported_rows' => 0,
             'import_status' => 'failed',
             'import_message' => $message,
             'import_error' => $message,

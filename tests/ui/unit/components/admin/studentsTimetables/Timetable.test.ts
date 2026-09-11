@@ -1,29 +1,146 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
+import { createVuetify } from 'vuetify'
+import { VBtn } from 'vuetify/components/VBtn'
 import { createTestingPinia } from '@pinia/testing'
 import { reactive } from 'vue'
 import DataRefresh from '@/pages/admin/studentsTimetables/timetable/DataRefresh.vue'
 import Timetable from '@/pages/admin/studentsTimetables/timetable/Timetable.vue'
 
+vi.mock('@/pages/admin/studentsTimetables/overview/Overview.vue', () => ({
+    default: { name: 'Overview', template: '<div />' },
+}))
+
 describe('Students timetable timetable page', () => {
+
+    it('shows partial counts and sends partial mode only after the explicit action', async () => {
+        const preview = {
+            id: 10, import_status: 'preview', original_filename: 'stundenplan.txt', sections: { TT: 9343 },
+            tt_skipped_invalid: 72, date_plausibility: { is_plausible: true, message: 'Zeitraum passt.' },
+            tt_diagnostics: { source_available: true, records: [] },
+        }
+        const post = vi.fn().mockResolvedValue({ data: {} })
+        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })), post })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'] },
+            true,
+        )
+
+        try {
+            await flushPromises()
+            expect(wrapper.text()).toContain('9271 gültige TT-Quelldatensätze werden verarbeitet')
+            expect(wrapper.text()).toContain('72 nicht zuordenbare Datensätze werden ausgelassen')
+            expect(wrapper.text()).toContain('Alle übrigen vorhandenen Einträge bleiben erhalten')
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
+            const partialButton = wrapper.get('[data-testid="partial-timetable-preview"]')
+            expect(partialButton.attributes('disabled')).toBeUndefined()
+            expect(post).not.toHaveBeenCalled()
+            await partialButton.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/students-timetables/imports/10/confirm', { mode: 'partial' })
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([
+        { ttTotal: 72, isPlausible: true },
+        { ttTotal: 73, isPlausible: false },
+    ])('blocks partial import when no rows are usable or dates mismatch: %j', async ({ ttTotal, isPlausible }) => {
+        const preview = {
+            id: 10, import_status: 'preview', sections: { TT: ttTotal }, tt_skipped_invalid: 72,
+            date_plausibility: { is_plausible: isPlausible },
+            tt_diagnostics: { source_available: false, records: [] },
+        }
+        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })) })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'] },
+            true,
+        )
+        try {
+            await flushPromises()
+            expect(wrapper.get('[data-testid="partial-timetable-preview"]').attributes('disabled')).toBeDefined()
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('labels completed partial history and loads skipped-record diagnostics on demand', async () => {
+        const imported = {
+            id: 10, import_status: 'completed', import_mode: 'partial', original_filename: 'teilimport.txt',
+            sections: { TT: 3 }, tt_imported_rows: 2, tt_skipped_invalid: 1,
+            import_message: 'Teilimport abgeschlossen: 2 TT-Datensätze verarbeitet, 1 nach aktuellen Prüfregeln ausgelassen.',
+        }
+        const get = vi.fn(async (url: string) => {
+            if (url === '/api/admin/students-timetables/imports/10') {
+                return { data: { data: { ...imported, tt_diagnostics: { source_available: true, records: [{
+                    line_number: 72, source_identifier: '0', errors: [{
+                        column: 2, field: 'Quellkennung', value: '0', reason: 'Nach aktuellen Regeln ausgelassen.', expected: 'Wert ungleich 0.',
+                    }],
+                }] } } } }
+            }
+            return { data: { data: url === '/api/admin/students-timetables/imports' ? [imported] : [], preview: null } }
+        })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan' },
+            { roles: ['admin'] },
+            true,
+        )
+        try {
+            await flushPromises()
+            expect(wrapper.text()).toContain(imported.import_message)
+            expect(wrapper.text()).toContain('kein vollständiger Import')
+            expect(get.mock.calls.some(([url]) => url.endsWith('/imports/10'))).toBe(false)
+            const details = wrapper.get('[data-testid="tt-diagnostics"]')
+            ;(details.element as HTMLDetailsElement).open = true
+            await details.trigger('toggle')
+            await flushPromises()
+            expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/imports/10')
+            expect(details.text()).toContain('Zeile 72')
+            expect(details.text()).toContain('Nach aktuellen Regeln ausgelassen.')
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('never reports pending or failed rows as imported', () => {
+        const count = (Timetable as any).methods.importedTtCount
+        expect(count({ import_status: 'pending', sections: { TT: 73 }, tt_skipped_invalid: 1 })).toBe(0)
+        expect(count({ import_status: 'failed', sections: { TT: 73 }, tt_skipped_invalid: 1 })).toBe(0)
+        expect(count({ import_status: 'completed', sections: { TT: 73 }, tt_imported_rows: 71, tt_skipped_invalid: 1 })).toBe(71)
+        expect(count({ import_status: 'completed', sections: { TT: 73 }, tt_imported_rows: null, tt_skipped_invalid: 1 })).toBe(72)
+    })
     function mountImport116Page(
-        routeParams = { section: 'timetable', subsection: 'imports', detail: 'import116' },
+        routeParams: Record<string, string> = { section: 'timetable', subsection: 'imports', detail: 'import116' },
         config: Record<string, unknown> = { roles: ['admin'] },
+        renderDiagnostics = false,
     ) {
-        return shallowMount(Timetable, {
+        return (renderDiagnostics ? mount : shallowMount)(Timetable, {
             global: {
-                plugins: [createTestingPinia({
+                components: renderDiagnostics ? { 'v-btn': VBtn } : {},
+                plugins: [createVuetify({ components: renderDiagnostics ? { VBtn } : {} }), createTestingPinia({
                     createSpy: vi.fn,
                     initialState: { AdminAdminStore: { config } },
                 })],
                 mocks: {
                     $route: { params: routeParams },
-                    $router: { replace: vi.fn() },
+                    $router: { replace: vi.fn(), push: vi.fn() },
                 },
                 renderStubDefaultSlot: true,
                 stubs: {
+                    ...(renderDiagnostics ? { 'v-table': false, VTable: false, 'v-btn': false, VBtn: false } : {}),
                     FileUpload: true,
+                    TimetableImportDiagnostics: false,
+                    Overview: true,
+                    LoadingAnimation: true,
+                    DataRefresh: true,
                     'v-checkbox': true,
                     'v-divider': true,
                     'v-expansion-panel': true,
@@ -35,6 +152,76 @@ describe('Students timetable timetable page', () => {
             },
         })
     }
+
+    it('renders all TT rejection reasons and lets users reach the last page while keeping import disabled', async () => {
+        const records = Array.from({ length: 72 }, (_, index) => ({
+            line_number: 1000 + index,
+            source_identifier: '0', date: '20260914', period: '11', starts_at: '17:50', ends_at: '18:35', course: '',
+            errors: [
+                { column: 2, field: 'Quellkennung', value: '0', reason: 'Quellkennung 0 ist nicht importierbar.', expected: 'Kennung ungleich 0.' },
+                { column: 8, field: 'Kurs-/Klassenbezeichnung', value: '', reason: 'Kurszuordnung fehlt.', expected: 'Nicht leere Bezeichnung.' },
+            ],
+        }))
+        records[71].errors[0].value = '<img src=x onerror=alert(1)>'
+        const preview = {
+            id: 9, original_filename: 'stundenplan.txt', sections: { TT: 73 }, tt_skipped_invalid: 72,
+            date_plausibility: { is_plausible: true, message: 'Zeitraum passt.' },
+            tt_diagnostics: { source_available: true, records },
+        }
+        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })), post: vi.fn() })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'] },
+            true,
+        )
+
+        try {
+            await flushPromises()
+            const details = wrapper.get('[data-testid="tt-diagnostics"]')
+            expect(details.text()).toContain('Betroffene TT-Datensätze und Prüfgründe (72)')
+            expect(details.text()).toContain('einschließlich Leerzeilen')
+            await details.get('summary').trigger('click')
+            expect(details.text()).toContain('Zeile 1000')
+            expect(details.text()).toContain('Feld 2: Quellkennung')
+            expect(details.text()).toContain('Feld 8: Kurs-/Klassenbezeichnung')
+            expect(details.text()).toContain('Wert: (leer)')
+            expect(details.text()).toContain('Erwartet: Nicht leere Bezeichnung.')
+            expect(details.text()).not.toContain('Zeile 1071')
+
+            const pagination = details.get('.v-data-table-footer__pagination')
+            const buttons = pagination.findAll('button')
+            await buttons[buttons.length - 1].trigger('click')
+            await flushPromises()
+            expect(details.text()).toContain('Zeile 1071')
+            expect(details.text()).toContain('<img src=x onerror=alert(1)>')
+            expect(details.find('img').exists()).toBe(false)
+            expect(details.text()).not.toContain('Zeile 1000')
+            const importButton = wrapper.get('[data-testid="confirm-timetable-preview"]')
+            expect(importButton.attributes('disabled')).toBeDefined()
+            expect(axios.post).not.toHaveBeenCalled()
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('explains unavailable archived TT diagnostics without hiding the import block', async () => {
+        const preview = {
+            id: 9, tt_skipped_invalid: 72, sections: { TT: 73 },
+            tt_diagnostics: { source_available: false, records: [] },
+        }
+        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })) })
+        const wrapper = mountImport116Page({ section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' })
+
+        try {
+            await flushPromises()
+            expect(wrapper.get('[data-testid="tt-diagnostics"]').text()).toContain('Quelldatei ist nicht verfügbar')
+            expect(wrapper.text()).toContain('Der Vollimport bleibt gesperrt')
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
 
     it('shows every affected student row when opening import 116 details on the timetable page', async () => {
         const warnings = [652, 653].map(row =>

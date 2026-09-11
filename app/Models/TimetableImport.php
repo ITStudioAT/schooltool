@@ -13,6 +13,10 @@ class TimetableImport extends Model
     /** @use HasFactory<TimetableImportFactory> */
     use HasFactory;
 
+    protected $attributes = [
+        'import_mode' => 'strict',
+    ];
+
     protected $fillable = [
         'school_id',
         'schoolyear_id',
@@ -24,6 +28,8 @@ class TimetableImport extends Model
         'total_lines',
         'tt_courses',
         'tt_skipped_invalid',
+        'import_mode',
+        'tt_imported_rows',
         'tt_first_date',
         'tt_last_date',
         'import_status',
@@ -43,6 +49,7 @@ class TimetableImport extends Model
             'total_lines' => 'integer',
             'tt_courses' => 'integer',
             'tt_skipped_invalid' => 'integer',
+            'tt_imported_rows' => 'integer',
             'tt_first_date' => 'date:Y-m-d',
             'tt_last_date' => 'date:Y-m-d',
             'progress_current' => 'integer',
@@ -51,6 +58,11 @@ class TimetableImport extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    public function isPartialImport(): bool
+    {
+        return $this->import_mode === 'partial';
     }
 
     public function school(): BelongsTo

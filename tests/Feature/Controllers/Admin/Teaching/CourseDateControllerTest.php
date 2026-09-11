@@ -418,6 +418,39 @@ it('sets curriculum file visibility idempotently and copies source bytes private
     Storage::disk('local')->assertExists($attachment->file_path);
 });
 
+it('reports only copied curriculum attachment visibility in timetable summaries', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $this->actingAs($this->admin);
+
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', true)
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+
+    $this->putJson($url, ['student_visible' => true])->assertOk();
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+
+    $this->putJson($url, ['student_visible' => false])->assertOk();
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', true);
+
+    $attachment = $material->attachments()->sole();
+    $this->postJson("/api/admin/teaching/course_date_materials/attachments/{$attachment->id}/toggle-visibility")
+        ->assertOk()->assertJsonPath('student_visible', true);
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+
+    $this->deleteJson("/api/admin/teaching/course_date_materials/{$material->id}")->assertNoContent();
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', false)
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+});
+
 it('keeps curriculum attachment visibility separate for each date', function () {
     [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
     $otherDate = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => now()->addDay()->toDateString(), 'hours' => [1]]);
@@ -429,6 +462,12 @@ it('keeps curriculum attachment visibility separate for each date', function () 
 
     expect($material->attachments()->sole()->student_visible)->toBeFalse()
         ->and($otherMaterial->attachments()->sole()->student_visible)->toBeTrue();
+
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.1.has_shared_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.1.has_private_curriculum_attachments', false);
 });
 
 it('enforces curriculum file visibility in student listing and direct downloads', function () {
@@ -588,6 +627,32 @@ it('validates and authorizes deleting all course dates', function () {
         ->assertForbidden();
 });
 
+it('reports curriculum assignments after linking and unlinking a unit without files', function () {
+    $this->actingAs($this->admin, 'sanctum');
+    $date = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-04',
+        'hours' => [2],
+        'content' => 'Manueller Inhalt',
+        'status' => [],
+    ]);
+    $indexUrl = '/api/admin/teaching/course_dates?course_id='.$this->course->id;
+    $this->getJson($indexUrl)->assertOk()
+        ->assertJsonPath('data.0.has_curriculum_assignment', false);
+
+    $this->postJson("/api/admin/teaching/course_dates/{$date->id}/adopt-curriculum-content", [
+        'content' => 'Grammatik: Satzbau',
+        'material_card_ids' => [],
+    ])->assertOk()
+        ->assertJsonPath('data.has_curriculum_assignment', true)
+        ->assertJsonCount(0, 'data.adopted_materials.0.attachments');
+
+    $material = $date->materials()->sole();
+    $this->deleteJson("/api/admin/teaching/course_date_materials/{$material->id}")->assertNoContent();
+    $this->getJson($indexUrl)->assertOk()
+        ->assertJsonPath('data.0.has_curriculum_assignment', false);
+});
+
 it('adopts only selected curriculum material attachments', function () {
     Storage::fake('local');
     $this->actingAs($this->admin, 'sanctum');
@@ -631,6 +696,7 @@ it('adopts only selected curriculum material attachments', function () {
         ],
     ])->assertOk()
         ->assertJsonPath('adopted_materials.0.attachments_count', 1)
+        ->assertJsonPath('data.has_curriculum_assignment', true)
         ->assertJsonPath('data.adopted_materials.0.material_title', 'Word - Einführung')
         ->assertJsonPath('data.adopted_materials.0.attachments.0.source_material_card_attachment_id', $selectedAttachment->id);
 

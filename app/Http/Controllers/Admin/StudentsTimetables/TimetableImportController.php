@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ConfirmTimetableImportRequest;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
@@ -40,6 +41,7 @@ class TimetableImportController extends Controller
 
         if ($preview) {
             $preview->setAttribute('date_plausibility', $service->datePlausibilityFor($preview));
+            $preview->setAttribute('tt_diagnostics', $service->previewDiagnosticsFor($preview));
         }
 
         if ($request->boolean('summary')) {
@@ -55,6 +57,8 @@ class TimetableImportController extends Controller
                     'stored_filename',
                     'sections',
                     'tt_skipped_invalid',
+                    'import_mode',
+                    'tt_imported_rows',
                     'import_status',
                     'progress_current',
                     'progress_total',
@@ -97,7 +101,7 @@ class TimetableImportController extends Controller
         ]);
     }
 
-    public function show(TimetableImport $timetableImport): JsonResponse
+    public function show(TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -109,7 +113,8 @@ class TimetableImportController extends Controller
             abort(403, 'Kein Zugriff auf diesen Import.');
         }
 
-        $timetableImport->load('user:id,name');
+        $timetableImport->load('user:id,first_name,last_name');
+        $timetableImport->setAttribute('tt_diagnostics', $service->previewDiagnosticsFor($timetableImport));
 
         return response()->json(['data' => $timetableImport]);
     }
@@ -146,7 +151,7 @@ class TimetableImportController extends Controller
         ], 202);
     }
 
-    public function confirm(TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
+    public function confirm(ConfirmTimetableImportRequest $request, TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -158,10 +163,12 @@ class TimetableImportController extends Controller
             abort(403, 'Kein Zugriff auf diesen Import.');
         }
 
-        $queuedImport = $service->confirmPreview($timetableImport);
+        $queuedImport = $service->confirmPreview($timetableImport, $request->validated('mode', 'strict'));
 
         return response()->json([
-            'message' => 'Import wurde bestätigt und in die Warteschlange gestellt.',
+            'message' => $queuedImport->isPartialImport()
+                ? 'Teilimport wurde bestätigt und in die Warteschlange gestellt.'
+                : 'Import wurde bestätigt und in die Warteschlange gestellt.',
             'data' => $queuedImport,
         ], 202);
     }

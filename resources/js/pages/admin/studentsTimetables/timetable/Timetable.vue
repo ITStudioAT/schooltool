@@ -959,6 +959,9 @@
                                     <v-chip size="x-small" :color="statusColor(importItem)" variant="tonal">
                                         {{ statusText(importItem) }}
                                     </v-chip>
+                                    <v-chip v-if="importItem.import_mode === 'partial'" size="x-small" color="warning" variant="tonal">
+                                        Teilimport
+                                    </v-chip>
                                     <div class="d-flex flex-column align-end ga-1 flex-shrink-0">
                                         <v-btn
                                             prepend-icon="mdi-database-remove-outline"
@@ -995,7 +998,7 @@
                                         <strong>{{ importItem.total_lines || 0 }}</strong>
                                     </div>
                                     <div class="st-import-history-meta-item">
-                                        <span>Importierte TT-Einträge</span>
+                                        <span>Verarbeitete TT-Quelldatensätze</span>
                                         <strong>{{ importedTtCount(importItem) }}</strong>
                                     </div>
                                     <div class="st-import-history-meta-item">
@@ -1027,6 +1030,17 @@
                                 <v-alert v-if="importItem.import_status === 'failed'" type="error" variant="tonal" class="mb-3">
                                     {{ importItem.import_message || 'Import fehlgeschlagen.' }}
                                 </v-alert>
+
+                                <v-alert
+                                    v-if="importItem.import_mode === 'partial' && importItem.import_status === 'completed'"
+                                    type="warning" variant="tonal" class="mb-3">
+                                    {{ importItem.import_message }}
+                                    Dies ist kein vollständiger Import der Quelldatei. Der Zähler zählt verarbeitete
+                                    Quelldatensätze, nicht ausschließlich neu angelegte Einträge.
+                                </v-alert>
+                                <TimetableImportDiagnostics
+                                    v-if="importItem.tt_skipped_invalid"
+                                    :import-record="importItem" />
 
                                 <v-table v-if="importItem.import_status === 'completed'" density="comfortable">
                                     <thead>
@@ -1199,8 +1213,35 @@
                             border="start"
                             title="Semantische Prüfung fehlgeschlagen"
                             class="mb-4">
-                            {{ timetablePreview.tt_skipped_invalid }} TT-Datensätze entsprechen nicht dem erwarteten Format.
-                            Der Import bleibt gesperrt. Korrigieren Sie die Quelldatei und laden Sie sie erneut hoch.
+                            {{ timetablePreview.tt_skipped_invalid }} TT-Datensätze sind nach den aktuellen Prüfregeln nicht zuordenbar.
+                            Der Vollimport bleibt gesperrt. Sie können die Quelle korrigieren und erneut hochladen
+                            oder ausdrücklich den Teilimport wählen.
+                        </v-alert>
+
+                        <TimetableImportDiagnostics
+                            v-if="timetablePreviewHasSemanticErrors"
+                            :key="timetablePreview.id"
+                            :import-record="timetablePreview" />
+
+                        <v-alert v-if="timetablePreviewHasSemanticErrors" type="warning" variant="tonal" class="mb-4">
+                            <strong>Alternative: Teilimport</strong>
+                            <p>
+                                {{ importedTtCount(timetablePreview) }} gültige TT-Quelldatensätze werden verarbeitet;
+                                {{ timetablePreview.tt_skipped_invalid }} nicht zuordenbare Datensätze werden ausgelassen.
+                                Gültige Einträge werden ergänzt oder aktualisiert. Alle übrigen vorhandenen Einträge
+                                bleiben erhalten, auch wenn sie in dieser Datei fehlen oder nicht zuordenbar sind.
+                                Es entsteht kein vollständiger Ersatz des bisherigen Stundenplans.
+                            </p>
+                            <v-btn
+                                class="mt-3"
+                                color="warning"
+                                variant="flat"
+                                data-testid="partial-timetable-preview"
+                                :loading="confirmingPreview"
+                                :disabled="confirmingPreview || deletingPreview || !timetablePreviewDateIsPlausible || importedTtCount(timetablePreview) === 0"
+                                @click="confirmTimetablePreview('partial')">
+                                Teilimport starten
+                            </v-btn>
                         </v-alert>
 
                         <div class="st-import-history-meta-grid mb-4">
@@ -1267,8 +1308,9 @@
                             variant="flat"
                             prepend-icon="mdi-database-import-outline"
                             :loading="confirmingPreview"
+                            data-testid="confirm-timetable-preview"
                             :disabled="deletingPreview || !timetablePreviewDateIsPlausible || timetablePreviewHasSemanticErrors"
-                            @click="confirmTimetablePreview">
+                            @click="confirmTimetablePreview()">
                             Jetzt importieren
                         </v-btn>
                     </v-card-actions>
@@ -1407,6 +1449,7 @@
 
 <script>
 import { defineAsyncComponent } from 'vue'
+import TimetableImportDiagnostics from './TimetableImportDiagnostics.vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
@@ -1440,7 +1483,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { DataRefresh, FileUpload, LoadingAnimation, Overview },
+    components: { DataRefresh, FileUpload, LoadingAnimation, Overview, TimetableImportDiagnostics },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -2013,13 +2056,17 @@ export default {
             this.uploadError = serverMessage || 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
             this.refreshFilePond++
         },
-        async confirmTimetablePreview() {
+        async confirmTimetablePreview(mode = 'strict') {
             if (!this.timetablePreview) return
 
             this.confirmingPreview = true
             this.previewActionError = ''
             try {
-                await axios.post(confirmTimetableImport.url(this.timetablePreview.id))
+                if (mode === 'partial') {
+                    await axios.post(confirmTimetableImport.url(this.timetablePreview.id), { mode: 'partial' })
+                } else {
+                    await axios.post(confirmTimetableImport.url(this.timetablePreview.id))
+                }
                 this.timetablePreview = null
                 this.uploadedFilename = ''
                 await this.loadImportButtonInfo()
@@ -2211,6 +2258,11 @@ export default {
             return SECTION_LABELS[code] || code
         },
         importedTtCount(importItem) {
+            if (importItem?.import_status && !['preview', 'completed'].includes(importItem.import_status)) return 0
+            if (importItem?.import_status === 'completed' && importItem.tt_imported_rows !== null && importItem.tt_imported_rows !== undefined) {
+                return Number(importItem.tt_imported_rows)
+            }
+
             const timetableRecords = Number(importItem?.sections?.TT || 0)
             const skippedRecords = Number(importItem?.tt_skipped_invalid || 0)
 

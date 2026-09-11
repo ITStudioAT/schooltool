@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.47.4 !!!
+## 3.47.4
 
 ### Unterricht/Admin/Ferien
 
@@ -9,6 +9,14 @@
 ### Import 116
 
 - Import Sokrates 116 Datei
+
+### Import Unterrichte
+
+- Teilimporte zugelassen
+
+### Stundenplan
+
+- Pdf-Fächerübersicht gefixt
 
 ## 3.47.3
 

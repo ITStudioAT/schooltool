@@ -48,6 +48,9 @@ class CourseSummaryResource extends JsonResource
                     'status' => $courseDate->status ?? [],
                     'free_reason' => null,
                     'attendance_checked' => (bool) $courseDate->attendance_checked,
+                    'has_curriculum_assignment' => (bool) $courseDate->materials_exists,
+                    'has_shared_curriculum_attachments' => (bool) $courseDate->has_shared_curriculum_attachments,
+                    'has_private_curriculum_attachments' => (bool) $courseDate->has_private_curriculum_attachments,
                 ])
                 ->values()),
             'details_loaded' => false,

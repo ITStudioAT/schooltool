@@ -57,6 +57,13 @@ class TeachingCourseController extends Controller
                     'status',
                     'attendance_checked',
                 ])
+                ->withExists([
+                    'materials',
+                    'materials as has_shared_curriculum_attachments' => fn ($query) => $query
+                        ->whereRelation('attachments', 'student_visible', true),
+                    'materials as has_private_curriculum_attachments' => fn ($query) => $query
+                        ->whereRelation('attachments', 'student_visible', false),
+                ])
                 ->orderBy('date')
                 ->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseStudents' => fn ($query) => $query->select([

@@ -63,6 +63,23 @@
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
+                                        <v-icon
+                                            v-if="item.hasCurriculumAssignment"
+                                            size="10"
+                                            color="green-darken-2"
+                                            role="img"
+                                            :aria-hidden="false"
+                                            aria-label="Curriculum-Eintrag zugeordnet"
+                                            title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
+                                        <v-icon
+                                            v-if="item.curriculumAttachmentVisibility"
+                                            :icon="item.curriculumAttachmentVisibility.icon"
+                                            :color="item.curriculumAttachmentVisibility.color"
+                                            size="14"
+                                            role="img"
+                                            :aria-hidden="false"
+                                            :aria-label="item.curriculumAttachmentVisibility.label"
+                                            :title="item.curriculumAttachmentVisibility.label" />
                                         <v-chip
                                             v-if="hasFreeStatus(item) && item.freeReason"
                                             size="x-small"
@@ -119,7 +136,26 @@
                                                 :key="item.key"
                                                 :class="['timetable-grid-item', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
                                                 @click="openCourse(item)">
-                                                <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                <div class="d-flex align-center ga-1">
+                                                    <v-icon
+                                                        v-if="item.hasCurriculumAssignment"
+                                                        size="10"
+                                                        color="green-darken-2"
+                                                        role="img"
+                                                        :aria-hidden="false"
+                                                        aria-label="Curriculum-Eintrag zugeordnet"
+                                                        title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
+                                                    <v-icon
+                                                        v-if="item.curriculumAttachmentVisibility"
+                                                        :icon="item.curriculumAttachmentVisibility.icon"
+                                                        :color="item.curriculumAttachmentVisibility.color"
+                                                        size="14"
+                                                        role="img"
+                                                        :aria-hidden="false"
+                                                        :aria-label="item.curriculumAttachmentVisibility.label"
+                                                        :title="item.curriculumAttachmentVisibility.label" />
+                                                    <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                </div>
                                                 <div class="timetable-grid-class">{{ item.classLabel }}</div>
                                                 <div v-if="range === RANGE_TODAY && item.content" class="timetable-grid-content" v-html="contentHtml(item.content)"></div>
                                                 <v-icon v-if="isAttendanceChecked(item)" size="12" color="success">mdi-check-circle</v-icon>
@@ -153,6 +189,37 @@ const RANGE_WEEK = 'week'
 const RANGE_NEXT_WEEK = 'next_week'
 const RANGE_MONTH = 'month'
 const RANGE_CURRENT_SEMESTER = 'current_semester'
+
+function curriculumAttachmentVisibility(courseDate) {
+    let hasShared = courseDate?.has_shared_curriculum_attachments === true
+    let hasPrivate = courseDate?.has_private_curriculum_attachments === true
+
+    if (Array.isArray(courseDate?.adopted_materials)) {
+        const attachments = courseDate.adopted_materials.flatMap((material) =>
+            Array.isArray(material?.attachments) ? material.attachments : [],
+        )
+        hasShared = attachments.some((attachment) => attachment.student_visible === true)
+        hasPrivate = attachments.some((attachment) => attachment.student_visible !== true)
+    }
+
+    if (!hasShared && !hasPrivate) return null
+    if (!hasShared) {
+        return {
+            icon: 'mdi-eye-off', color: 'grey',
+            label: 'Keine Curriculum-Anhänge für Schüler:innen freigegeben',
+        }
+    }
+    if (hasPrivate) {
+        return {
+            icon: 'mdi-eye-outline', color: 'warning',
+            label: 'Curriculum-Anhänge teilweise für Schüler:innen freigegeben',
+        }
+    }
+    return {
+        icon: 'mdi-eye', color: 'success',
+        label: 'Alle Curriculum-Anhänge für Schüler:innen freigegeben',
+    }
+}
 
 export default {
     components: { ItsGridBox },
@@ -249,6 +316,10 @@ export default {
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
+                            hasCurriculumAssignment: Array.isArray(courseDate?.adopted_materials)
+                                ? courseDate.adopted_materials.length > 0
+                                : courseDate?.has_curriculum_assignment === true,
+                            curriculumAttachmentVisibility: curriculumAttachmentVisibility(courseDate),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
                             attendanceChecked: typeof courseDate?.attendance_checked === 'boolean'

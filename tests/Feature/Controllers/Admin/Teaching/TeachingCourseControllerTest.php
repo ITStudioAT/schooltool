@@ -179,12 +179,21 @@ describe('index', function () {
     test('courses index returns lightweight timetable summaries', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $curriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch Curriculum',
+            'semester_count' => 2,
+            'topics' => [],
+        ]);
         $course = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'user_id' => $this->teacher->id,
             'title' => 'Deutsch',
             'classes' => ['1A'],
+            'teaching_curriculum_id' => $curriculum->id,
         ]);
 
         $students = User::factory()
@@ -201,7 +210,7 @@ describe('index', function () {
         ]));
 
         foreach (range(1, 20) as $day) {
-            TeachingCourseDate::query()->create([
+            $courseDate = TeachingCourseDate::query()->create([
                 'teaching_course_id' => (int) $course->id,
                 'date' => now()->startOfMonth()->addDays($day)->toDateString(),
                 'hours' => [1],
@@ -209,6 +218,19 @@ describe('index', function () {
                 'attendance' => ['s_'.$students->first()->id => false],
                 'attendance_checked' => true,
             ]);
+            if ($day === 1) {
+                $courseDate->materials()->create(['title' => 'Grammatik: Satzbau']);
+            }
+            if (in_array($day, [3, 4, 5], true)) {
+                foreach ([true, false] as $firstAttachment) {
+                    $material = $courseDate->materials()->create(['title' => 'Grammatik: Übungen']);
+                    $material->attachments()->create([
+                        'name' => 'Übung.pdf',
+                        'file_path' => 'teaching/course_date_materials/exercise.pdf',
+                        'student_visible' => $day === 3 || ($day === 4 && $firstAttachment),
+                    ]);
+                }
+            }
         }
 
         DB::flushQueryLog();
@@ -225,6 +247,19 @@ describe('index', function () {
             ->assertJsonMissingPath('data.0.students_deleted_info')
             ->assertJsonMissingPath('data.0.course_dates.0.attendance')
             ->assertJsonMissingPath('data.0.course_dates.0.adopted_materials')
+            ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', true)
+            ->assertJsonPath('data.0.course_dates.1.has_curriculum_assignment', false)
+            ->assertJsonPath('data.0.course_dates.19.has_curriculum_assignment', false)
+            ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.1.has_shared_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.1.has_private_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.2.has_shared_curriculum_attachments', true)
+            ->assertJsonPath('data.0.course_dates.2.has_private_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.3.has_shared_curriculum_attachments', true)
+            ->assertJsonPath('data.0.course_dates.3.has_private_curriculum_attachments', true)
+            ->assertJsonPath('data.0.course_dates.4.has_shared_curriculum_attachments', false)
+            ->assertJsonPath('data.0.course_dates.4.has_private_curriculum_attachments', true)
             ->assertJsonMissingPath('data.0.teacher_teaching_schema');
 
         $queryCount = count(DB::getQueryLog());
@@ -3020,6 +3055,13 @@ describe('curriculum assignment removal', function () {
         }
 
         $this->putJson("/api/admin/teaching/courses/{$course->id}", $payload)->assertOk();
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertOk()
+            ->assertJsonPath('data.course_dates.0.has_curriculum_assignment', ! $cleared);
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', ! $cleared);
 
         expect($course->fresh()->teaching_curriculum_id)->toBe($expectedCurriculumId);
         expect($date->fresh()->content)->toBe('Manual lesson notes')

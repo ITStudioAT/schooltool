@@ -61,6 +61,7 @@ class CourseDateResource extends JsonResource
             'free_reason' => $freeReason,
             'attendance' => $attendance,
             'attendance_checked' => $attendanceChecked,
+            'has_curriculum_assignment' => $adoptedMaterials->isNotEmpty(),
             'adopted_materials' => $adoptedMaterials->map(fn ($m) => [
                 'id' => $m->id,
                 'title' => $m->title,

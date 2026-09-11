@@ -2,11 +2,144 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { mount } from '@vue/test-utils'
 import MyTimetable from '@/pages/admin/teaching/overview/components/MyTimetable.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 
 afterEach(() => {
     vi.useRealTimers()
+})
+
+describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', (viewMode) => {
+    it('distinguishes attachment visibility and reacts to individual toggles and refreshed dates', async () => {
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 2, 2, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }, { hour: 2 }] as any
+        const courseStore = useCourseStore()
+        courseStore.timetable_view_mode = viewMode
+        courseStore.courses = [{
+            id: 18, user_id: 7, title: 'Deutsch', classes: ['1A'], teaching_curriculum_id: 9,
+            course_dates: [
+                { id: 1, date: '2026-03-02', hours: [1, 2], has_curriculum_assignment: true,
+                    has_shared_curriculum_attachments: true, has_private_curriculum_attachments: false },
+                { id: 2, date: '2026-03-03', hours: [1], has_curriculum_assignment: true,
+                    has_shared_curriculum_attachments: true, has_private_curriculum_attachments: true },
+                { id: 3, date: '2026-03-04', hours: [1], has_curriculum_assignment: true,
+                    has_shared_curriculum_attachments: false, has_private_curriculum_attachments: true },
+                { id: 4, date: '2026-03-05', hours: [1], has_curriculum_assignment: true,
+                    has_shared_curriculum_attachments: false, has_private_curriculum_attachments: false },
+            ],
+        }] as any
+        const wrapper = mount(MyTimetable, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true } },
+        })
+
+        try {
+            const sharedLabel = 'Alle Curriculum-Anhänge für Schüler:innen freigegeben'
+            const partialLabel = 'Curriculum-Anhänge teilweise für Schüler:innen freigegeben'
+            const privateLabel = 'Keine Curriculum-Anhänge für Schüler:innen freigegeben'
+            const firstDateCellCount = viewMode === 'table' ? 2 : 1
+            const visibilitySelector = '[aria-label*="Curriculum-Anhänge"]'
+            expect(wrapper.findAll(`[aria-label="${sharedLabel}"]`)).toHaveLength(firstDateCellCount)
+            expect(wrapper.findAll(`[aria-label="${partialLabel}"]`)).toHaveLength(1)
+            expect(wrapper.findAll(`[aria-label="${privateLabel}"]`)).toHaveLength(1)
+            for (const [label, icon, color] of [
+                [sharedLabel, 'mdi-eye', 'success'],
+                [partialLabel, 'mdi-eye-outline', 'warning'],
+                [privateLabel, 'mdi-eye-off', 'grey'],
+            ]) {
+                expect(wrapper.get(`[aria-label="${label}"]`).attributes()).toMatchObject({
+                    icon, color, title: label, role: 'img', 'aria-hidden': 'false',
+                })
+            }
+
+            const course = courseStore.courses[0] as any
+            course.course_dates = course.course_dates.map((date: any) => ({ ...date, adopted_materials: [] }))
+            course.course_dates[0].adopted_materials = [
+                { id: 10, attachments: [{ id: 1, student_visible: false }] },
+                { id: 11, attachments: [{ id: 2, student_visible: false }] },
+            ]
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount)
+            expect(wrapper.findAll(`[aria-label="${privateLabel}"]`)).toHaveLength(firstDateCellCount)
+
+            const materials = course.course_dates[0].adopted_materials
+            materials[0].attachments[0].student_visible = true
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(`[aria-label="${partialLabel}"]`)).toHaveLength(firstDateCellCount)
+            materials[1].attachments[0].student_visible = true
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(`[aria-label="${sharedLabel}"]`)).toHaveLength(firstDateCellCount)
+
+            course.course_dates[0] = { ...course.course_dates[0], adopted_materials: [{ id: 10, attachments: [] }] }
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(visibilitySelector)).toHaveLength(0)
+            expect(wrapper.findAll('[aria-label="Curriculum-Eintrag zugeordnet"]')).toHaveLength(firstDateCellCount)
+            course.course_dates[0].adopted_materials = []
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(visibilitySelector)).toHaveLength(0)
+            expect(wrapper.findAll('[aria-label="Curriculum-Eintrag zugeordnet"]')).toHaveLength(0)
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
+    it('marks only assigned dates and reacts to linking and unlinking in loaded details', async () => {
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 2, 2, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }, { hour: 2 }] as any
+        const courseStore = useCourseStore()
+        courseStore.timetable_view_mode = viewMode
+        courseStore.courses = [{
+            id: 18, user_id: 7, title: 'Deutsch', classes: ['1A'], teaching_curriculum_id: 9,
+            course_dates: [
+                { id: 1, date: '2026-03-02', hours: [1, 2], has_curriculum_assignment: true },
+                { id: 2, date: '2026-03-03', hours: [1], has_curriculum_assignment: false },
+                { id: 3, date: '2026-03-04', hours: [1], content: 'Manueller Inhalt' },
+            ],
+        }] as any
+        const wrapper = mount(MyTimetable, {
+            global: {
+                stubs: {
+                    ItsGridBox: { template: '<div><slot /></div>' },
+                    VDivider: true,
+                    VListItemTitle: true,
+                },
+            },
+        })
+
+        try {
+            const indicatorSelector = '[aria-label="Curriculum-Eintrag zugeordnet"]'
+            const indicators = wrapper.findAll(indicatorSelector)
+            expect(indicators).toHaveLength(viewMode === 'table' ? 2 : 1)
+            expect(indicators[0].attributes()).toMatchObject({
+                title: 'Curriculum-Eintrag zugeordnet', role: 'img', 'aria-hidden': 'false',
+                color: 'green-darken-2', size: '10',
+            })
+            expect(indicators[0].text()).toBe('mdi-circle')
+
+            const course = courseStore.courses[0] as any
+            course.course_dates = course.course_dates.map((date: any) => ({ ...date, adopted_materials: [] }))
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(indicatorSelector)).toHaveLength(0)
+
+            course.course_dates[1].adopted_materials = [{ id: 5, title: 'Thema: Einheit ohne Datei' }]
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(indicatorSelector)).toHaveLength(1)
+
+            course.course_dates[1].adopted_materials = []
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll(indicatorSelector)).toHaveLength(0)
+        } finally {
+            wrapper.unmount()
+        }
+    })
 })
 
 describe.each([

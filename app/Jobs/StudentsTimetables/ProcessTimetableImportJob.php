@@ -32,7 +32,7 @@ class ProcessTimetableImportJob implements ShouldQueue
     {
         $import = TimetableImport::find($this->timetableImportId);
 
-        if (! $import || ! in_array($import->import_status, ['pending', 'running'], true)) {
+        if (! $import || ! in_array($import->import_status, ['pending', 'running', 'failed'], true)) {
             return;
         }
 
@@ -41,11 +41,14 @@ class ProcessTimetableImportJob implements ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        TimetableImport::whereKey($this->timetableImportId)->update([
-            'import_status' => 'failed',
-            'import_error' => mb_substr($exception->getMessage(), 0, 1000),
-            'import_message' => 'Import fehlgeschlagen.',
-            'finished_at' => now(),
-        ]);
+        TimetableImport::whereKey($this->timetableImportId)
+            ->whereIn('import_status', ['pending', 'running', 'failed'])
+            ->update([
+                'import_status' => 'failed',
+                'tt_imported_rows' => 0,
+                'import_error' => mb_substr($exception->getMessage(), 0, 1000),
+                'import_message' => 'Import fehlgeschlagen.',
+                'finished_at' => now(),
+            ]);
     }
 }

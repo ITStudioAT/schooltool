@@ -9,6 +9,7 @@ use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -17,6 +18,119 @@ use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
+
+it('preserves omitted entries through partial imports and replay', function (string $removedRun) {
+    $basePath = "{$this->storageDirectory}/partial-base.txt";
+    File::put($basePath, implode("\n", [
+        "TT\t100\t20260215\t1\t08:00\t08:45\t1A\tMATH1-1A-AB\tMATH",
+        "TT\t200\t20260216\t2\t08:55\t09:40\t1A\tBIO1-1A-CD\tBIO",
+    ]));
+    $base = $this->service->createImport($this->user, 'partial-base.txt', 'partial-base.txt',
+        'app/private/testing/student-timetables/partial-base.txt', $this->schoolyear->id);
+    $untouched = StudentTimetableEntry::where('source_identifier', '200')->firstOrFail();
+    $before = $untouched->getRawOriginal();
+
+    $partialPath = "{$this->storageDirectory}/partial-run.txt";
+    File::put($partialPath, implode("\n", [
+        "TT\t100\t20260215\t1\t08:05\t08:50\t1A\tMATH1-1A-AB\tMATH",
+        "TT\t100\t20260215\t1\t08:05\t08:50\t1A\tMATH1-1A-AB\tMATH",
+        "TT\t200\t20260216\t2\tINVALID\t09:40\t1A\tBIO1-1A-CD\tBIO",
+        "TT\t0\t20260216\t2\t08:55\t09:40\tD\t\t\tTEST",
+        "TT\t300\t20260217\t3\t09:50\t10:35\t1A\tHIST1-1A-GH\tHIST",
+    ]));
+    $partial = TimetableImport::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->user->id,
+        'file_path' => 'app/private/testing/student-timetables/partial-run.txt',
+        'import_mode' => 'partial', 'import_status' => 'pending',
+    ]);
+    $this->service->processImport($partial);
+    expect($partial->refresh()->import_status)->toBe('completed')
+        ->and($partial->tt_imported_rows)->toBe(3)
+        ->and($partial->tt_skipped_invalid)->toBe(2)
+        ->and($untouched->refresh()->getRawOriginal())->toBe($before)
+        ->and(StudentTimetableEntry::where('school_id', $this->school->id)->count())->toBe(3);
+
+    $laterPath = "{$this->storageDirectory}/partial-later.txt";
+    File::put($laterPath, "TT\t400\t20260218\t4\t10:45\t11:30\t1A\tGEO1-1A-AB\tGEO");
+    $later = $this->service->createImport($this->user, 'partial-later.txt', 'partial-later.txt',
+        'app/private/testing/student-timetables/partial-later.txt', $this->schoolyear->id);
+    $this->service->unimport($removedRun === 'partial' ? $partial : $later);
+
+    $identifiers = StudentTimetableEntry::where('school_id', $this->school->id)->orderBy('source_identifier')->pluck('source_identifier')->all();
+    expect($identifiers)->toBe($removedRun === 'partial' ? ['100', '200', '400'] : ['100', '200', '300']);
+    expect(StudentTimetableEntry::where('source_identifier', '100')->firstOrFail()->starts_at)
+        ->toBe($removedRun === 'partial' ? '08:00' : '08:05');
+    expect(StudentTimetableEntry::where('source_identifier', '200')->firstOrFail()->starts_at)->toBe('08:55');
+    if ($removedRun === 'later') {
+        expect($partial->refresh()->import_mode)->toBe('partial')
+            ->and($partial->tt_imported_rows)->toBe(3)
+            ->and($partial->tt_skipped_invalid)->toBe(2);
+    }
+})->with(['partial', 'later']);
+
+it('rolls back a failed partial batch and retries in the persisted mode without duplicating entries', function () {
+    File::put("{$this->storageDirectory}/retry-base.txt", "TT\t100\t20260215\t1\t08:00\t08:45\t1A\tMATH1-1A-AB\tMATH");
+    $this->service->createImport($this->user, 'retry-base.txt', 'retry-base.txt',
+        'app/private/testing/student-timetables/retry-base.txt', $this->schoolyear->id);
+    $existing = StudentTimetableEntry::where('source_identifier', '100')->firstOrFail();
+    $before = $existing->getRawOriginal();
+    $lines = ["TT\t0"];
+    foreach (range(100, 600) as $identifier) {
+        $lines[] = "TT\t{$identifier}\t20260215\t1\t08:05\t08:50\t1A\tMATH1-1A-AB\tMATH";
+    }
+    File::put("{$this->storageDirectory}/partial-retry.txt", implode("\n", $lines));
+    $partial = TimetableImport::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->user->id,
+        'file_path' => 'app/private/testing/student-timetables/partial-retry.txt',
+        'import_mode' => 'partial', 'import_status' => 'pending',
+    ]);
+    $job = new ProcessTimetableImportJob($partial->id);
+    $connection = DB::connection();
+    $originalDispatcher = $connection->getEventDispatcher();
+    $dispatcher = clone $originalDispatcher;
+    $connection->setEventDispatcher($dispatcher);
+    $batches = 0;
+    $dispatcher->listen(QueryExecuted::class, function (QueryExecuted $event) use (&$batches): void {
+        if (str_starts_with($event->sql, 'insert into `student_timetable_entries`') && ++$batches === 2) {
+            throw new RuntimeException('Injected second-batch failure');
+        }
+    });
+    try {
+        expect(fn () => $job->handle($this->service))->toThrow(RuntimeException::class, 'Injected second-batch failure');
+    } finally {
+        $connection->setEventDispatcher($originalDispatcher);
+    }
+
+    expect($batches)->toBe(2)
+        ->and($partial->refresh()->import_status)->toBe('failed')
+        ->and($partial->tt_imported_rows)->toBe(0)
+        ->and($existing->refresh()->getRawOriginal())->toBe($before)
+        ->and(StudentTimetableEntry::where('school_id', $this->school->id)->count())->toBe(1);
+    $job->handle($this->service);
+    $job->handle($this->service);
+    expect($partial->refresh()->import_status)->toBe('completed')
+        ->and($partial->import_mode)->toBe('partial')
+        ->and($partial->tt_imported_rows)->toBe(501)
+        ->and($partial->tt_skipped_invalid)->toBe(1)
+        ->and(StudentTimetableEntry::where('school_id', $this->school->id)->count())->toBe(501);
+});
+
+it('keeps existing entries when a queued partial import has no usable rows', function () {
+    File::put("{$this->storageDirectory}/empty-partial.txt", "TT\t0\nTT\tBROKEN");
+    $existing = StudentTimetableEntry::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $before = $existing->refresh()->getRawOriginal();
+    $partial = TimetableImport::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->user->id,
+        'file_path' => 'app/private/testing/student-timetables/empty-partial.txt',
+        'import_mode' => 'partial', 'import_status' => 'pending',
+    ]);
+    (new ProcessTimetableImportJob($partial->id))->handle($this->service);
+    expect($partial->refresh()->import_status)->toBe('failed')
+        ->and($partial->tt_imported_rows)->toBe(0)
+        ->and($existing->refresh()->getRawOriginal())->toBe($before);
+});
 
 beforeEach(function () {
     $this->school = School::factory()->create();

@@ -494,6 +494,7 @@
                 $slot['label'] ?? '',
                 $slot['short_label'] ?? '',
                 $slot['weekday_index'] ?? '',
+                $slotRecurrenceSignature($slot),
             ]))
             ->map(function ($slots) use ($compactSubjectOverviewTimes, $subjectOverviewHintDates, $subjectOverviewHints, $subjectOverviewWeekdays): array {
                 $slots = $slots
