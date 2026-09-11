@@ -164,6 +164,8 @@ class Import116Job implements ShouldQueue
             );
             $report['counts']['processed_rows'] = $stagingCounts['processed_rows'];
             $report['counts']['seen_students'] = $stagingCounts['seen_students'];
+            $report['counts']['warning_rows'] = $stagingCounts['warning_rows'];
+            $report['warnings'] = $stagingCounts['warnings'];
 
             if ($stagingCounts['seen_students'] === 0) {
                 $details = $stagingCounts['invalid_examples'] === []
@@ -245,7 +247,7 @@ class Import116Job implements ShouldQueue
                     $report['counts'],
                 );
 
-                $this->completeRun($run, $report['counts']);
+                $this->completeRun($run, $report['counts'], $report['warnings']);
 
                 $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);
                 $schoolTool->import_166_at = $now;
@@ -275,13 +277,16 @@ class Import116Job implements ShouldQueue
         broadcast(new Import116FinishedEvent(
             200,
             $this->user->id,
-            'Import 116 wurde abgeschlossen.',
+            $report['counts']['warning_rows'] > 0
+                ? 'Import 116 wurde mit Warnungen abgeschlossen. '.$report['counts']['warning_rows'].' Datenzeilen wurden trotz unplausibler Schülerdaten importiert.'
+                : 'Import 116 wurde abgeschlossen.',
             [
                 'run_id' => $run?->id,
                 'created' => (int) ($report['counts']['inserted'] ?? 0),
                 'updated' => (int) ($report['counts']['updated'] ?? 0),
                 'deleted' => (int) ($report['counts']['deleted'] ?? 0),
                 'counts' => $report['counts'] ?? [],
+                'warnings' => array_slice($report['warnings'], 0, 10),
             ]
         ));
     }
@@ -326,7 +331,7 @@ class Import116Job implements ShouldQueue
     /**
      * @param  iterable<int, array<string, mixed>>  $rows
      * @param  array<string, string>  $headerMapping
-     * @return array{processed_rows: int, seen_students: int, invalid_rows: int, invalid_examples: list<string>}
+     * @return array{processed_rows: int, seen_students: int, invalid_rows: int, invalid_examples: list<string>, warning_rows: int, warnings: list<string>}
      */
     private function stageStudentRows(
         iterable $rows,
@@ -341,6 +346,8 @@ class Import116Job implements ShouldQueue
         $processedRows = 0;
         $invalidRows = 0;
         $invalidExamples = [];
+        $warningRows = 0;
+        $warnings = [];
         $excelRowNumber = 1;
 
         foreach ($rows as $row) {
@@ -361,12 +368,8 @@ class Import116Job implements ShouldQueue
 
             $studentTimetableIssues = $this->studentTimetableDataIssues($data, $studentOverviewService);
             if ($studentTimetableIssues !== []) {
-                $invalidRows++;
-                if (count($invalidExamples) < 10) {
-                    $invalidExamples[] = "Excel-Zeile {$excelRowNumber}: ".collect($studentTimetableIssues)->join(' ');
-                }
-
-                continue;
+                $warningRows++;
+                $warnings[] = "Excel-Zeile {$excelRowNumber}: {$data['last_name']} {$data['first_name']} (Klasse {$data['class']}, Schülerkennzahl {$data['student_code']}): ".collect($studentTimetableIssues)->join(' ');
             }
 
             $processedRows++;
@@ -391,6 +394,8 @@ class Import116Job implements ShouldQueue
             'seen_students' => DB::table($stagingTable)->distinct()->count('student_code'),
             'invalid_rows' => $invalidRows,
             'invalid_examples' => $invalidExamples,
+            'warning_rows' => $warningRows,
+            'warnings' => $warnings,
         ];
     }
 
@@ -884,8 +889,9 @@ class Import116Job implements ShouldQueue
 
     /**
      * @param  array<string, int>  $counts
+     * @param  list<string>  $warnings
      */
-    private function completeRun(?Import116Run $run, array $counts): void
+    private function completeRun(?Import116Run $run, array $counts, array $warnings): void
     {
         if (! $run) {
             return;
@@ -897,10 +903,11 @@ class Import116Job implements ShouldQueue
         $run->error_message = null;
         $run->save();
 
-        $this->streamRunSummaryToDatabase($run);
+        $this->streamRunSummaryToDatabase($run, $warnings);
     }
 
-    private function streamRunSummaryToDatabase(Import116Run $run): void
+    /** @param list<string> $warnings */
+    private function streamRunSummaryToDatabase(Import116Run $run, array $warnings): void
     {
         $types = ['inserted', 'updated', 'deleted'];
         $streams = [];
@@ -953,7 +960,7 @@ class Import116Job implements ShouldQueue
                 stream_copy_to_stream($streams[$type], $summaryStream);
                 fwrite($summaryStream, ']');
             }
-            fwrite($summaryStream, '}');
+            fwrite($summaryStream, ',"warnings":'.json_encode($warnings, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE).'}');
             rewind($summaryStream);
 
             $connection = DB::connection();

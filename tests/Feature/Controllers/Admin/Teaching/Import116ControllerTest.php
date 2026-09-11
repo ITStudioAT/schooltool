@@ -541,6 +541,7 @@ describe('import run history integration', function () {
 
     test('lists created runs and returns grouped run details for a selected run', function () {
         $this->actingAs($this->admin, 'sanctum');
+        $warning = 'Excel-Zeile 2: Abel Anna (Klasse 2U, Schülerkennzahl STU-001): Im Kompaktstudium ist die Schulstufe 10_1 nicht zulässig.';
 
         $run = Import116Run::query()->create([
             'school_id' => $this->school->id,
@@ -558,11 +559,13 @@ describe('import run history integration', function () {
                 'changes_total' => 1,
                 'processed_rows' => 1,
                 'seen_students' => 1,
+                'warning_rows' => 12,
             ],
             'report_summary' => [
                 'inserted' => ['STU-001'],
                 'updated' => [],
                 'deleted' => [],
+                'warnings' => array_fill(0, 12, $warning),
             ],
         ]);
 
@@ -590,11 +593,16 @@ describe('import run history integration', function () {
         $runsResponse->assertStatus(200)
             ->assertJsonPath('data.0.id', $run->id)
             ->assertJsonPath('data.0.status', 'completed')
+            ->assertJsonPath('data.0.counts.warning_rows', 12)
+            ->assertJsonCount(10, 'data.0.report_summary_preview.warnings')
+            ->assertJsonPath('data.0.report_summary_preview.warnings.0', $warning)
             ->assertJsonPath('meta.available_reset_runs', 1);
 
         $detailsResponse = $this->getJson("/api/admin/teaching/import116/runs/{$run->id}");
         $detailsResponse->assertStatus(200)
             ->assertJsonPath('run.id', $run->id)
+            ->assertJsonPath('run.report_summary.warnings.0', $warning)
+            ->assertJsonCount(12, 'run.report_summary.warnings')
             ->assertJsonPath('changes.inserted.0.student_code', 'STU-001')
             ->assertJsonPath('changes.inserted.0.class', '5A')
             ->assertJsonPath('changes.inserted.0.name', 'Abel Anna');

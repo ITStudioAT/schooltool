@@ -1128,11 +1128,11 @@ describe('exists_date clearing', function () {
             ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('Excel-Zeile 3');
     });
 
-    test('rejects invalid Test V3 school levels before importing student timetable data', function () {
+    test('imports Test V3 school level issues as warnings without losing students', function (bool $includeValidRow, int $warningRowCount) {
         $existingRecord = Import116::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
-            'student_code' => 'KEEP-V3',
+            'student_code' => 'INVALID-V3-001',
             'exists_date' => now(),
             'import_user_id' => $this->admin->id,
         ]);
@@ -1146,6 +1146,31 @@ describe('exists_date clearing', function () {
             'Vorname' => 'Schulstufe',
             'Schulstufe' => '10_1',
         ]);
+        $writer->addRow([
+            'Klasse' => '2U',
+            'Schülerkennzahl' => 'INVALID-V3-002',
+            'Familienname' => 'Weitere',
+            'Vorname' => 'Schulstufe',
+            'Schulstufe' => '10_1',
+        ]);
+        for ($index = 3; $index <= $warningRowCount; $index++) {
+            $writer->addRow([
+                'Klasse' => '2U',
+                'Schülerkennzahl' => "INVALID-V3-{$index}",
+                'Familienname' => "Studierende {$index}",
+                'Vorname' => 'Anna',
+                'Schulstufe' => '10_1',
+            ]);
+        }
+        if ($includeValidRow) {
+            $writer->addRow([
+                'Klasse' => '1A',
+                'Schülerkennzahl' => 'VALID-V3-001',
+                'Familienname' => 'Gültig',
+                'Vorname' => 'Vera',
+                'Schulstufe' => '09_1',
+            ]);
+        }
         $writer->close();
 
         $job = new Import116Job(
@@ -1157,11 +1182,25 @@ describe('exists_date clearing', function () {
         );
         $job->handle();
 
+        $run = Import116Run::query()->latest('id')->firstOrFail();
+
         expect($existingRecord->refresh()->exists_date)->not->toBeNull()
-            ->and(Import116::query()->where('student_code', 'INVALID-V3-001')->exists())->toBeFalse()
-            ->and(Import116Run::query()->latest('id')->value('status'))->toBe('failed')
-            ->and(Import116Run::query()->latest('id')->value('error_message'))->toContain('Schulstufe 10_1 nicht zulässig');
-    });
+            ->and($existingRecord->school_level)->toBe('10_1')
+            ->and(Import116::query()->where('student_code', 'INVALID-V3-002')->value('school_level'))->toBe('10_1')
+            ->and(Import116::query()->where('student_code', 'VALID-V3-001')->exists())->toBe($includeValidRow)
+            ->and($run->status)->toBe('completed')
+            ->and($run->error_message)->toBeNull()
+            ->and($run->counts['warning_rows'])->toBe($warningRowCount)
+            ->and($run->counts['processed_rows'])->toBe($warningRowCount + (int) $includeValidRow)
+            ->and($run->counts['deleted'])->toBe(0)
+            ->and($run->report_summary['warnings'])->toHaveCount($warningRowCount)
+            ->and($run->report_summary['warnings'][0])->toContain('Excel-Zeile 2', 'Falsche Schulstufe', 'Klasse 2U', 'Schülerkennzahl INVALID-V3-001', 'Schulstufe 10_1 nicht zulässig')
+            ->and($run->report_summary['warnings'][1])->toContain('Excel-Zeile 3', 'Weitere Schulstufe', 'Klasse 2U', 'Schülerkennzahl INVALID-V3-002');
+
+        Event::assertDispatched(Import116FinishedEvent::class, fn (Import116FinishedEvent $event): bool => $event->status === 200
+            && $event->broadcastWith()['data']['counts']['warning_rows'] === $warningRowCount
+            && count($event->broadcastWith()['data']['warnings']) === min($warningRowCount, 10));
+    })->with([[true, 2], [false, 2], [false, 12]]);
 
     test('only affects records from the same school', function () {
         $otherSchool = School::factory()->create();

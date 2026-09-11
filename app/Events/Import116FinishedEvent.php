@@ -47,6 +47,7 @@ class Import116FinishedEvent implements ShouldBroadcast
                 'updated',
                 'deleted',
                 'counts',
+                'warnings',
             ]),
         ];
     }

@@ -1,9 +1,174 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, shallowMount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
+import { reactive } from 'vue'
 import DataRefresh from '@/pages/admin/studentsTimetables/timetable/DataRefresh.vue'
 import Timetable from '@/pages/admin/studentsTimetables/timetable/Timetable.vue'
 
 describe('Students timetable timetable page', () => {
+    function mountImport116Page(
+        routeParams = { section: 'timetable', subsection: 'imports', detail: 'import116' },
+        config: Record<string, unknown> = { roles: ['admin'] },
+    ) {
+        return shallowMount(Timetable, {
+            global: {
+                plugins: [createTestingPinia({
+                    createSpy: vi.fn,
+                    initialState: { AdminAdminStore: { config } },
+                })],
+                mocks: {
+                    $route: { params: routeParams },
+                    $router: { replace: vi.fn() },
+                },
+                renderStubDefaultSlot: true,
+                stubs: {
+                    FileUpload: true,
+                    'v-checkbox': true,
+                    'v-divider': true,
+                    'v-expansion-panel': true,
+                    'v-expansion-panel-text': true,
+                    'v-expansion-panel-title': true,
+                    'v-expansion-panels': true,
+                    'v-list-item-title': true,
+                },
+            },
+        })
+    }
+
+    it('shows every affected student row when opening import 116 details on the timetable page', async () => {
+        const warnings = [652, 653].map(row =>
+            `Excel-Zeile ${row}: Muster Anna (Klasse 2U, Schülerkennzahl STU-002): Schulstufe 10_1 nicht zulässig.`,
+        )
+        const run = {
+            id: 24,
+            status: 'completed',
+            counts: { inserted: 0, unchanged: 1, warning_rows: 2 },
+            report_summary_preview: { warnings: [warnings[0]] },
+        }
+        const get = vi.fn(async (url: string) => {
+            if (url === '/api/admin/students-timetables/import116/runs/24') {
+                return { data: { run: { ...run, report_summary: { warnings } }, changes: {} } }
+            }
+            if (url === '/api/admin/students-timetables/import116/runs') {
+                return { data: { data: [run] } }
+            }
+            return { data: { data: [] } }
+        })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page()
+
+        try {
+            await flushPromises()
+            expect(get.mock.calls.filter(([url]) => url.endsWith('/import116/runs'))).toHaveLength(1)
+
+            expect(wrapper.get('[data-testid="import116-run-warnings"]').text()).toContain('2 Excel-Zeilen')
+            expect(wrapper.find('[data-testid="import116-warning-details"]').exists()).toBe(false)
+
+            await wrapper.findAll('v-btn').find(button => button.text() === 'Details anzeigen')!.trigger('click')
+            await flushPromises()
+
+            const details = wrapper.get('[data-testid="import116-warning-details"]')
+            expect(details.text()).toContain('Betroffene Studierende')
+            expect(details.text()).toContain('Muster Anna')
+            expect(details.text()).toContain('Klasse 2U')
+            expect(details.text()).toContain('Schülerkennzahl STU-002')
+            for (const warning of warnings) {
+                expect(details.text()).toContain(warning)
+            }
+            expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/import116/runs/24')
+
+            await wrapper.findAll('v-btn').find(button => button.text() === 'Details ausblenden')!.trigger('click')
+            expect(wrapper.find('[data-testid="import116-warning-details"]').exists()).toBe(false)
+
+            await wrapper.findAll('v-btn').find(button => button.text() === 'Aktualisieren')!.trigger('click')
+            await flushPromises()
+            await wrapper.findAll('v-btn').find(button => button.text() === 'Details anzeigen')!.trigger('click')
+            await flushPromises()
+
+            expect(wrapper.get('[data-testid="import116-warning-details"]').text()).toContain(warnings[1])
+            expect(get.mock.calls.filter(([url]) => url.endsWith('/runs/24'))).toHaveLength(1)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('opens legacy import 116 details without warning metadata', async () => {
+        const run = { id: 23, status: 'completed', counts: { inserted: 1 } }
+        const get = vi.fn(async (url: string) => {
+            if (url === '/api/admin/students-timetables/import116/runs/23') {
+                return { data: { run, changes: {} } }
+            }
+            return { data: { data: url.endsWith('/import116/runs') ? [run] : [] } }
+        })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page()
+
+        try {
+            await flushPromises()
+            await wrapper.findAll('v-btn').find(button => button.text() === 'Details anzeigen')!.trigger('click')
+            await flushPromises()
+
+            expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/import116/runs/23')
+            expect(wrapper.find('[data-testid="import116-run-warnings"]').exists()).toBe(false)
+            expect(wrapper.find('[data-testid="import116-warning-details"]').exists()).toBe(false)
+            expect(wrapper.text()).toContain('Eingefügt (0)')
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('loads import 116 history on navigation, re-entry and schoolyear changes', async () => {
+        const routeParams = reactive({ section: 'timetable', subsection: 'overview', detail: '' })
+        const get = vi.fn(async (_url: string) => ({ data: { data: [] } }))
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(routeParams, { roles: ['admin'], selected_schoolyear: { id: 25 } })
+        const historyRequests = () => get.mock.calls.filter(([url]) => url === '/api/admin/students-timetables/import116/runs')
+
+        try {
+            await flushPromises()
+            expect(historyRequests()).toHaveLength(0)
+
+            routeParams.subsection = 'imports'
+            routeParams.detail = 'import116'
+            await flushPromises()
+            expect(historyRequests()).toHaveLength(1)
+
+            routeParams.detail = 'anrechnungen'
+            await flushPromises()
+            expect(historyRequests()).toHaveLength(1)
+            routeParams.detail = 'import116'
+            await flushPromises()
+            expect(historyRequests()).toHaveLength(2)
+
+            ;(wrapper.vm as any).config.selected_schoolyear.id = 26
+            await flushPromises()
+            expect(historyRequests()).toHaveLength(3)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('loads import 116 history when role configuration arrives after mounting', async () => {
+        const get = vi.fn(async (_url: string) => ({ data: { data: [] } }))
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(undefined, {})
+
+        try {
+            await flushPromises()
+            expect(get).not.toHaveBeenCalledWith('/api/admin/students-timetables/import116/runs')
+            ;(wrapper.vm as any).config = { roles: ['admin'] }
+            await flushPromises()
+            expect(get.mock.calls.filter(([url]) => url === '/api/admin/students-timetables/import116/runs')).toHaveLength(1)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
     it('shows the timetable overview on the timetable overview subpage', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue',

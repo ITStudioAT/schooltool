@@ -320,6 +320,7 @@ class Import116Controller extends Controller
                 'changes_total' => (int) ($counts['changes_total'] ?? 0),
                 'processed_rows' => (int) ($counts['processed_rows'] ?? 0),
                 'seen_students' => (int) ($counts['seen_students'] ?? 0),
+                'warning_rows' => (int) ($counts['warning_rows'] ?? 0),
             ],
             'error_message' => $run->error_message,
         ];
@@ -331,6 +332,7 @@ class Import116Controller extends Controller
                 'inserted' => array_slice(is_array($summary['inserted'] ?? null) ? $summary['inserted'] : [], 0, 5),
                 'updated' => array_slice(is_array($summary['updated'] ?? null) ? $summary['updated'] : [], 0, 5),
                 'deleted' => array_slice(is_array($summary['deleted'] ?? null) ? $summary['deleted'] : [], 0, 5),
+                'warnings' => array_slice(is_array($summary['warnings'] ?? null) ? $summary['warnings'] : [], 0, 10),
             ];
         }
 

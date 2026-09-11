@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, shallowMount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import Import116 from '@/pages/admin/teaching/admin/import116/Import116.vue'
 
 describe('Teaching import116 page', () => {
@@ -23,6 +25,7 @@ describe('Teaching import116 page', () => {
             run_action_message: '',
             run_action_error: 'old error',
             stopImportStatusPolling,
+            runWarnings: (Import116 as any).methods.runWarnings,
         }
 
         ;(Import116 as any).methods.reconcileImportRun.call(ctx, {
@@ -36,6 +39,78 @@ describe('Teaching import116 page', () => {
         expect(ctx.last_import_116_at).toBe('2026-07-14T05:00:00.000Z')
         expect(ctx.run_action_error).toBe('')
         expect(ctx.run_action_message).toBe('Import abgeschlossen: +4 / ~2 / -1')
+        expect(ctx.run_action_warning_rows).toBe(0)
+        expect(ctx.run_action_warnings).toEqual([])
+    })
+
+    it('retains completion warnings received through the event', async () => {
+        const warning = 'Excel-Zeile 652: Schulstufe 10_1 nicht zulässig.'
+        const reconcileImportRun = vi.fn()
+        await (Import116 as any).methods.handleImportFinished.call({
+            reconcileImportRun,
+            loadRuns: vi.fn().mockResolvedValue(undefined),
+        }, {
+            detail: {
+                status: 200,
+                data: { run_id: 116, counts: { warning_rows: 2 }, warnings: [warning] },
+            },
+        })
+
+        expect(reconcileImportRun).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'completed',
+            counts: { warning_rows: 2 },
+            report_summary: { warnings: [warning] },
+        }))
+    })
+
+    it('renders imported row warnings after reload, polling and opening details', async () => {
+        const warning = 'Excel-Zeile 652: Schulstufe 10_1 nicht zulässig.'
+        const detailedWarning = 'Excel-Zeile 653: Müller Anna (Klasse 2U, Schülerkennzahl STU-002): Schulstufe 10_1 nicht zulässig.'
+        const run = {
+            id: 116,
+            status: 'completed',
+            counts: { inserted: 3, warning_rows: 2 },
+            report_summary_preview: { warnings: [warning] },
+        }
+        axiosMock.get.mockResolvedValue({ data: { data: [run] } })
+        const wrapper = shallowMount(Import116, {
+            global: {
+                plugins: [createTestingPinia({ createSpy: vi.fn })],
+                renderStubDefaultSlot: true,
+                stubs: { 'v-divider': true, 'v-list-item-title': true },
+            },
+        })
+
+        try {
+            await flushPromises()
+            expect(wrapper.get('[data-testid="import116-run-warnings"]').text()).toContain(warning)
+            expect(wrapper.get('[data-testid="import116-run-warnings"]').text()).toContain('2 Datenzeilen wurden trotz fachlicher Hinweise importiert.')
+
+            await wrapper.setData({ is_importing: true, active_import_run_id: 116 })
+            await (wrapper.vm as any).pollImportStatus((wrapper.vm as any).import_poll_generation)
+            await flushPromises()
+            expect(wrapper.get('[data-testid="import116-completion-warnings"]').text()).toContain(warning)
+            expect((wrapper.vm as any).run_action_message).toContain('Import abgeschlossen')
+
+            axiosMock.get.mockResolvedValue({
+                data: { run: { ...run, report_summary: { warnings: [warning, detailedWarning] } }, changes: {} },
+            })
+            await (wrapper.vm as any).toggleRunDetails(116)
+            await flushPromises()
+            expect(wrapper.get('[data-testid="import116-run-warnings"]').text()).toContain(warning)
+            expect(wrapper.get('[data-testid="import116-warning-details"]').text()).toContain(detailedWarning)
+            expect(wrapper.get('[data-testid="import116-warning-details"]').text()).toContain('Betroffene Studierende')
+
+            await (wrapper.vm as any).toggleRunDetails(116)
+            await flushPromises()
+            expect(wrapper.find('[data-testid="import116-warning-details"]').exists()).toBe(false)
+
+            ;(wrapper.vm as any).onUploadStart()
+            await flushPromises()
+            expect(wrapper.find('[data-testid="import116-completion-warnings"]').exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+        }
     })
 
     it('shows failed imports as errors instead of successes', async () => {

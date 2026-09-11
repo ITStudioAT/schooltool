@@ -7,6 +7,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/pages/admin/auth/Login.vue,resources/js/pages/admin/auth/UnknownPassword.vue} | .ai/rules/admin-auth.md |
 | {resources/js/pages/admin/App.vue,resources/js/pages/admin/components/AdminAppBar.vue} | .ai/rules/admin-components.md |
 | {app/Http/Controllers/Admin/SchoolToolController.php,resources/js/pages/admin/App.vue,tests/Feature/SchoolToolControllerTest.php} | .ai/rules/admin-feature.md |
+| {resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue,resources/js/pages/admin/teaching/admin/import116/Import116.vue} | .ai/rules/admin-import116.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,app/Http/Requests/Admin/*StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/admin-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Http/Requests/Admin/StudentsTimetables/UpdateTeacherRosterEntryRequest.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue}, {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,app/Http/Requests/Admin/StudentsTimetables/*TeacherRosterEntryRequest.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue} | .ai/rules/admin-settings-components.md |
 | {app/Services/AdminNavigationService.php,resources/routes/admin.js,resources/js/pages/admin/settings/Settings.vue} | .ai/rules/admin-settings.md |
@@ -50,6 +51,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/pages/homepage/** | .ai/rules/homepage.md |
 | app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php | .ai/rules/http-controllers-admin-students-timetables.md |
 | {app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/http-controllers-homepage-feature.md |
+| {app/Jobs/Teaching/Import116Job.php,app/Http/Controllers/Admin/Teaching/Import116Controller.php,resources/js/pages/admin/teaching/admin/import116/Import116.vue} | .ai/rules/import116.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/**,app/Http/Controllers/Admin/Teaching/FileUploadController.php,app/Http/Controllers/Admin/Teaching/Import116Controller.php,app/Jobs/Teaching/Import116Job.php,resources/js/pages/admin/studentsTimetables/**} | .ai/rules/jobs-teaching-js-pages-admin-students-timetables.md |
 | app/Jobs/Teaching/Import116Job.php | .ai/rules/jobs-teaching.md |
 | app/Jobs/ImportTeachersListJob.php,tests/Unit/ImportTeachersListJobTest.php, app/Jobs/ImportTeachersListJob.php,tests/Unit/ImportTeachersListHeadersTest.php | .ai/rules/jobs-unit.md |

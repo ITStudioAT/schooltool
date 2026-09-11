@@ -1,5 +1,7 @@
 # UPDATES
 
+## 3.47.4
+
 ## 3.47.3
 
 ### Unterricht

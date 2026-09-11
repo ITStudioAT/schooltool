@@ -20,7 +20,7 @@
                         Wählen Sie zuerst das persönliche Schuljahr. Verwenden Sie ausschließlich die unveränderte
                         Sokrates-Abfrage 116. Pflichtspalten und mindestens ein vollständiger Studierendendatensatz
                         werden vor jeder Änderung geprüft; bei Abweichungen bleibt der bestehende Datenbestand erhalten.
-                        Für Test V3 ist zusätzlich bei jeder Person eine zur Studienform passende Schulstufe erforderlich.
+                        Unpassende Schulstufen werden als Hinweise gemeldet; die betroffenen Personen werden trotzdem importiert.
                     </v-alert>
 
                     <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
@@ -66,6 +66,10 @@
                     </div>
 
                     <v-alert v-if="run_action_message" type="success" class="mt-2" density="compact">{{ run_action_message }}</v-alert>
+                    <v-alert v-if="run_action_warning_rows" type="warning" variant="tonal" class="mt-2" data-testid="import116-completion-warnings">
+                        <div>{{ run_action_warning_rows }} Datenzeilen wurden trotz fachlicher Hinweise importiert.</div>
+                        <div v-for="warning in run_action_warnings" :key="warning">{{ warning }}</div>
+                    </v-alert>
                     <v-alert
                         v-if="run_action_error"
                         type="error"
@@ -152,6 +156,10 @@
                                 <div class="text-caption mt-2">
                                     Zeilen: {{ run.counts?.processed_rows || 0 }}, Änderungen gesamt: {{ run.counts?.changes_total || 0 }}
                                 </div>
+                                <v-alert v-if="run.status === 'completed' && run.counts?.warning_rows" type="warning" variant="tonal" density="compact" class="mt-2" data-testid="import116-run-warnings">
+                                    <div>{{ run.counts.warning_rows }} Datenzeilen wurden trotz fachlicher Hinweise importiert.</div>
+                                    <div v-for="warning in runWarnings(run)" :key="warning">{{ warning }}</div>
+                                </v-alert>
 
                                 <div class="d-flex flex-row ga-2 mt-2">
                                     <v-btn size="small" variant="text" @click.stop="toggleRunDetails(run.id)">
@@ -173,6 +181,10 @@
                                 <div v-if="expanded_run_ids[run.id]" class="mt-2">
                                     <div v-if="!run_details[run.id]" class="text-caption">Details werden geladen ...</div>
                                     <div v-else class="d-flex flex-column ga-3">
+                                        <div v-if="runWarnings(run_details[run.id]?.run).length" data-testid="import116-warning-details">
+                                            <div class="text-body-2 font-weight-medium">Betroffene Studierende – fachliche Hinweise</div>
+                                            <div v-for="warning in runWarnings(run_details[run.id]?.run)" :key="warning" class="text-body-2 mt-2">{{ warning }}</div>
+                                        </div>
                                         <div v-for="type in changeTypes" :key="`${run.id}-${type}`">
                                             <div class="d-flex align-center justify-space-between ga-2">
                                                 <div class="text-body-2 font-weight-medium">
@@ -262,6 +274,8 @@ export default {
             run_tracking_error: '',
             run_action_message: '',
             run_action_error: '',
+            run_action_warning_rows: 0,
+            run_action_warnings: [],
         }
     },
 
@@ -297,6 +311,10 @@ export default {
     },
 
     methods: {
+        runWarnings(run) {
+            const warnings = run?.report_summary?.warnings ?? run?.report_summary_preview?.warnings
+            return Array.isArray(warnings) ? warnings : []
+        },
         isActiveImport(run) {
             return !!run && run.status === 'completed' && !run.undone_at
         },
@@ -320,6 +338,7 @@ export default {
                 status: Number(detail?.status) === 200 ? 'completed' : 'failed',
                 finished_at: new Date().toISOString(),
                 counts: payload?.counts || payload,
+                report_summary: { warnings: payload?.warnings || [] },
                 error_message: detail?.message || 'Import 116 fehlgeschlagen.',
             })
             await this.loadRuns()
@@ -377,9 +396,13 @@ export default {
         reconcileImportRun(run) {
             this.stopImportStatusPolling()
             this.is_importing = false
+            this.run_action_warning_rows = 0
+            this.run_action_warnings = []
 
             if (run?.status === 'completed') {
                 const counts = run?.counts || {}
+                this.run_action_warning_rows = Number(counts.warning_rows || 0)
+                this.run_action_warnings = this.runWarnings(run)
                 this.last_import_116_at = run?.finished_at || new Date().toISOString()
                 this.run_action_error = ''
                 this.run_action_message = `Import abgeschlossen: +${counts.inserted ?? counts.created ?? 0} / ~${counts.updated ?? 0} / -${counts.deleted ?? 0}`
@@ -522,6 +545,8 @@ export default {
             this.is_upload_error = false
             this.run_action_message = ''
             this.run_action_error = ''
+            this.run_action_warning_rows = 0
+            this.run_action_warnings = []
             this.upload_error_message = ''
             this.import_run_baseline_id = Math.max(0, ...(this.runs || []).map((run) => Number(run?.id || 0)))
             this.active_import_run_id = null

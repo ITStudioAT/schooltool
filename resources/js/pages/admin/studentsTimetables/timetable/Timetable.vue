@@ -200,6 +200,9 @@
                                 <div class="text-caption mt-2">
                                     Zeilen: {{ run.counts?.processed_rows || 0 }}, Änderungen gesamt: {{ run.counts?.changes_total || 0 }}
                                 </div>
+                                <v-alert v-if="run.counts?.warning_rows" type="warning" variant="tonal" density="compact" class="mt-2" data-testid="import116-run-warnings">
+                                    {{ run.counts.warning_rows }} Excel-Zeilen mit fachlichen Hinweisen. Betroffene Studierende unter „Details anzeigen“.
+                                </v-alert>
 
                                 <div class="d-flex flex-row ga-2 mt-2">
                                     <v-btn size="small" variant="text" @click.stop="import116ToggleRunDetails(run.id)">
@@ -233,6 +236,11 @@
                                 <div v-if="import116ExpandedRunIds[run.id]" class="mt-2">
                                     <div v-if="!import116RunDetails[run.id]" class="text-caption">Details werden geladen ...</div>
                                     <div v-else class="d-flex flex-column ga-3">
+                                        <v-alert v-if="import116RunWarnings(import116RunDetails[run.id]?.run).length" type="warning" variant="tonal" density="compact" data-testid="import116-warning-details">
+                                            <div class="text-body-2 font-weight-medium">Betroffene Studierende – fachliche Hinweise</div>
+                                            <div class="text-caption">Mehrere Excel-Zeilen können dieselbe Person betreffen.</div>
+                                            <div v-for="warning in import116RunWarnings(import116RunDetails[run.id]?.run)" :key="warning" class="text-body-2 mt-2">{{ warning }}</div>
+                                        </v-alert>
                                         <div v-for="type in ['inserted', 'updated', 'deleted']" :key="`${run.id}-${type}`">
                                             <div class="d-flex align-center justify-space-between ga-2">
                                                 <div class="text-body-2 font-weight-medium">
@@ -1773,6 +1781,17 @@ export default {
     watch: {
         'config.selected_schoolyear.id'() {
             this.loadImportButtonInfo()
+            if (this.activeImportPage === 'import116') {
+                this.import116LoadRuns()
+            }
+        },
+        activeImportPage: {
+            immediate: true,
+            handler(page) {
+                if (page === 'import116') {
+                    this.import116LoadRuns()
+                }
+            },
         },
         configuredRoleNames() {
             this.syncRouteStateFromParams()
@@ -2535,6 +2554,11 @@ export default {
                 hour: '2-digit',
                 minute: '2-digit',
             })
+        },
+        import116RunWarnings(run) {
+            const warnings = run?.report_summary?.warnings ?? run?.report_summary_preview?.warnings
+
+            return Array.isArray(warnings) ? warnings : []
         },
         import116IsActiveImport(run) {
             return !!run && run.status === 'completed' && !run.undone_at
