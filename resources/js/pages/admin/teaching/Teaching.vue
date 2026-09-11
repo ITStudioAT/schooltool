@@ -233,6 +233,13 @@ export default {
         this.courseStore = this.ensureCourseStore()
         this.schoolHourStore = useSchoolHourStore()
 
+        if (this.lessonContextKey && this.courseStore.courses.some((course) =>
+            Number(course.school_id) !== Number(this.config.selected_school.id)
+            || Number(course.schoolyear_id) !== Number(this.config.selected_schoolyear.id))) {
+            await this.reloadLessonContext(this.lessonContextKey)
+            return
+        }
+
         const requests = []
         if (!this.courseStore.courses.length) {
             requests.push(this.courseStore.index())
@@ -249,6 +256,7 @@ export default {
     },
 
     unmounted() {
+        useCourseStore().clearTimetableNavigation()
         this.action = ''
         this.action_2 = ''
         if (this.nowTimer) clearInterval(this.nowTimer)
@@ -267,6 +275,7 @@ export default {
             hopper_switching_id: null,
             nowTs: Date.now(),
             nowTimer: null,
+            lessonContextLoading: false,
             _urlRestored: false,
         }
     },
@@ -367,64 +376,47 @@ export default {
 
             return this.isFreeCourseDate(this.selected_courseDate) && this.isCourseDateToday(this.selected_courseDate, todayKey)
         },
+        lessonContextKey() {
+            const userId = this.config?.user?.id
+            const schoolId = this.config?.selected_school?.id
+            const schoolyearId = this.config?.selected_schoolyear?.id
+            return userId && schoolId && schoolyearId ? `${userId}:${schoolId}:${schoolyearId}` : null
+        },
+        lessonSlots() {
+            if (!this.lessonContextKey || this.lessonContextLoading) return []
+            const { user, selected_school: school, selected_schoolyear: schoolyear } = this.config
+            return (Array.isArray(this.courses) ? this.courses : [])
+                .filter((course) => Number(course.user_id) === Number(user.id)
+                    && Number(course.school_id) === Number(school.id)
+                    && Number(course.schoolyear_id) === Number(schoolyear.id))
+                .flatMap((course) => (Array.isArray(course.course_dates) ? course.course_dates : []).flatMap((courseDate) => {
+                    if (this.isFreeCourseDate(courseDate)) return []
+                    const date = String(courseDate.date || '').slice(0, 10)
+                    if (!date || (schoolyear.from && date < schoolyear.from.slice(0, 10))
+                        || (schoolyear.until && date > schoolyear.until.slice(0, 10))) return []
+                    // Inspect actual hours so breaks and non-consecutive hours are not treated as teaching.
+                    return (Array.isArray(courseDate.hours) ? courseDate.hours : []).map((hour) => ({
+                        start: this.lessonStartFromHour(date, hour),
+                        end: this.lessonEndFromHour(date, hour),
+                    })).filter((slot) => slot.start && (!slot.end || slot.end > slot.start))
+                }))
+        },
         nextLessonStartAt() {
-            const now = new Date(this.nowTs)
-            let nearestTs = null
-            this.myCourses.forEach((course) => {
-                ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
-                    if (this.isFreeCourseDate(cd)) return
-                    const date = (cd?.date || '').toString().slice(0, 10)
-                    const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
-                    if (!hours.length) return
-                    const start = this.lessonStartFromHour(date, hours[0])
-                    if (!start || start <= now) return
-                    if (nearestTs === null || start.getTime() < nearestTs) nearestTs = start.getTime()
-                })
-            })
-            return nearestTs ? new Date(nearestTs) : null
+            const starts = this.lessonSlots.filter((slot) => slot.start.getTime() > this.nowTs)
+                .map((slot) => slot.start.getTime())
+            return starts.length ? new Date(Math.min(...starts)) : null
         },
         activeLessonEndAt() {
-            const now = new Date(this.nowTs)
-            let nearestEndTs = null
-            this.myCourses.forEach((course) => {
-                ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
-                    if (this.isFreeCourseDate(cd)) return
-                    const date = (cd?.date || '').toString().slice(0, 10)
-                    const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
-                    if (!hours.length) return
-                    const start = this.lessonStartFromHour(date, hours[0])
-                    const end = this.lessonEndFromHour(date, hours[hours.length - 1])
-                    if (!start || !end || end <= start) return
-                    if (now < start || now >= end) return
-                    if (nearestEndTs === null || end.getTime() < nearestEndTs) nearestEndTs = end.getTime()
-                })
-            })
-            return nearestEndTs ? new Date(nearestEndTs) : null
+            const ends = this.lessonSlots.filter((slot) => slot.end && slot.start.getTime() <= this.nowTs && slot.end.getTime() > this.nowTs)
+                .map((slot) => slot.end.getTime())
+            return ends.length ? new Date(Math.min(...ends)) : null
         },
         lessonStatusNote() {
-            if (this.hasFreeLessonToday) {
-                return 'Unterricht entfallen'
-            }
             if (this.activeLessonEndAt) {
-                const diffS = Math.max(0, Math.floor((this.activeLessonEndAt.getTime() - this.nowTs) / 1000))
-                const h = Math.floor(diffS / 3600)
-                const m = Math.floor((diffS % 3600) / 60)
-                const s = diffS % 60
-                const remaining = h > 0
-                    ? `${this.padTwo(h)}h ${this.padTwo(m)}m`
-                    : `${this.padTwo(m)}m ${this.padTwo(s)}s`
-                return `Aktiver Unterricht – noch ${remaining}`
+                return `Unterricht läuft – noch ${this.formatLessonDuration(this.activeLessonEndAt)}`
             }
             if (this.nextLessonStartAt) {
-                const diffS = Math.max(0, Math.floor((this.nextLessonStartAt.getTime() - this.nowTs) / 1000))
-                const days = Math.floor(diffS / 86400)
-                const h = Math.floor((diffS % 86400) / 3600)
-                const m = Math.floor((diffS % 3600) / 60)
-                const parts = []
-                if (days > 0) parts.push(`${days}d`)
-                if (h > 0) parts.push(`${this.padTwo(h)}h`)
-                parts.push(`${this.padTwo(m)}m`)
-                return `Nächster Unterricht in ${parts.join(' ')}`
+                return `Nächster Unterricht in ${this.formatLessonDuration(this.nextLessonStartAt)}`
             }
             return null
         },
@@ -520,9 +512,13 @@ export default {
             return chips
         },
         headerStatusItems() {
-            return [
+            const items = [
                 { key: 'current-date-time', text: this.nowLabel, icon: 'mdi-clock-outline' },
             ]
+            if (this.lessonStatusNote) {
+                items.push({ key: 'next-lesson', text: this.lessonStatusNote, icon: 'mdi-calendar-clock' })
+            }
+            return items
         },
         schoolyearProgressLabel() {
             return this.schoolyearStats !== null
@@ -635,6 +631,12 @@ export default {
     },
 
     watch: {
+        lessonContextKey: 'reloadLessonContext',
+        main_action(section) {
+            if (section !== 'overview') {
+                useCourseStore().clearTimetableNavigation()
+            }
+        },
         '$route.params.section'(section) {
             this.syncSection(section)
         },
@@ -695,6 +697,29 @@ export default {
     },
 
     methods: {
+        async reloadLessonContext(contextKey) {
+            this.lessonContextLoading = true
+            if (!contextKey) return
+            const courses = useCourseStore()
+            const schoolHours = useSchoolHourStore()
+            // Finish old-context requests before the stores start requests for the new context.
+            await Promise.all([courses.courses_request_promise, schoolHours.school_hours_request_promise])
+            if (contextKey !== this.lessonContextKey) return
+            const results = await Promise.all([courses.index(), schoolHours.index()])
+            if (contextKey === this.lessonContextKey && !results.includes(false)) this.lessonContextLoading = false
+        },
+        formatLessonDuration(until) {
+            const remaining = until.getTime() - this.nowTs
+            if (remaining < 60_000) return 'weniger als 1 Minute'
+            const minutes = Math.floor(remaining / 60_000)
+            const days = remaining > 86_400_000 ? Math.floor(minutes / 1440) : 0
+            const hours = Math.floor((minutes - days * 1440) / 60)
+            const parts = []
+            if (days) parts.push(`${days} ${days === 1 ? 'Tag' : 'Tagen'}`)
+            if (hours) parts.push(`${hours} Std.`)
+            parts.push(`${minutes % 60} Min.`)
+            return parts.join(' ')
+        },
         normalizedSection(section) {
             if (section === 'administration' && !this.canManageTeachingAdministration) {
                 return 'overview'
@@ -777,25 +802,20 @@ export default {
             this.action_2 = ''
         },
         lessonStartFromHour(dateStr, hour) {
-            const schoolHour = this.schoolHoursByHour[Number(hour)]
-            const from = (schoolHour?.from || '').toString().trim()
-            if (!dateStr || !from) return null
-            const date = parseLocalDate(dateStr)
-            if (isNaN(date.getTime())) return null
-            const parts = from.split(':').map(Number)
-            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
-            date.setHours(parts[0], parts[1], parts[2] ?? 0, 0)
-            return date
+            return this.lessonTimeFromHour(dateStr, hour, 'from')
         },
         lessonEndFromHour(dateStr, hour) {
+            return this.lessonTimeFromHour(dateStr, hour, 'until')
+        },
+        lessonTimeFromHour(dateStr, hour, field) {
             const schoolHour = this.schoolHoursByHour[Number(hour)]
-            const until = (schoolHour?.until || '').toString().trim()
-            if (!dateStr || !until) return null
+            const time = String(schoolHour?.[field] || '').trim()
+            if (!dateStr || !/^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) return null
             const date = parseLocalDate(dateStr)
             if (isNaN(date.getTime())) return null
-            const parts = until.split(':').map(Number)
-            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
-            date.setHours(parts[0], parts[1], parts[2] ?? 0, 0)
+            const [hours, minutes, seconds = 0] = time.split(':').map(Number)
+            if (hours > 23 || minutes > 59 || seconds > 59) return null
+            date.setHours(hours, minutes, seconds, 0)
             return date
         },
         padTwo(v) {
@@ -835,11 +855,12 @@ export default {
             this.$router.replace({ query }).catch(() => {})
         },
         handleCourseClear() {
+            const returnState = useCourseStore().getTimetableReturn(this.$route.path)
             this.selected_course = null
             this.selected_course_id = null
             this.selected_courseDate = null
-            const query = {}
-            if (this.$route.query.grades) query.grades = this.$route.query.grades
+            const query = returnState ? { ...returnState.query } : {}
+            if (!returnState && this.$route.query.grades) query.grades = this.$route.query.grades
             this.$router.replace({ query }).catch(() => {})
         },
         async handleDeleteCourse() {
@@ -908,6 +929,10 @@ export default {
 .teaching-page {
     background: linear-gradient(180deg, #f1f6fd 0%, #e8f1fb 100%);
     min-height: 100vh;
+}
+
+.teaching-page :deep(.admin-compact-section-hero__status-item) {
+    white-space: normal;
 }
 
 .teaching-nav {

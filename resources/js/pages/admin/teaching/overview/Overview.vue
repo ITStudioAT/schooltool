@@ -38,7 +38,7 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
+        <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
                 <CourseStudents />
             </v-col>

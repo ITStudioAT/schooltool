@@ -1,9 +1,53 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { shallowMount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import Overview from '@/pages/admin/teaching/overview/Overview.vue'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
+    it('keeps the timetable grid rows stable before and after clearing a selected course', async () => {
+        setActivePinia(createPinia())
+        const courseStore = useCourseStore()
+        const wrapper = shallowMount({
+            ...Overview,
+            components: {
+                ...(Overview as any).components,
+                MyTimetable: { name: 'MyTimetable', template: '<div />' },
+                CourseStudents: { name: 'CourseStudents', template: '<div />' },
+            },
+        }, {
+            global: {
+                mocks: { $route: { query: { panel: 'students' } }, $router: { replace: vi.fn().mockResolvedValue(undefined) } },
+                stubs: {
+                    'v-row': { template: '<div class="test-grid-row"><slot /></div>' },
+                    'v-col': { template: '<div><slot /></div>' },
+                    'v-dialog': true,
+                    'v-autocomplete': true,
+                },
+            },
+        })
+        try {
+            expect(courseStore.show_students).toBe(true)
+            expect(wrapper.findAll('.test-grid-row')).toHaveLength(1)
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
+
+            courseStore.selected_course = { id: 18, details_loaded: true, course_dates: [] } as any
+            await nextTick()
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
+
+            courseStore.selected_course = null
+            courseStore.show_students = false
+            await nextTick()
+            expect(wrapper.findAll('.test-grid-row')).toHaveLength(1)
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
     it.each([7, null])('saves curriculum assignment %s without clearing adopted lesson content', async (curriculumId) => {
         const course = { id: 18, teaching_curriculum_id: 4, course_dates: [{ id: 2, adopted_materials: [{ id: 9 }] }] }
         const update = vi.fn().mockResolvedValue(true)

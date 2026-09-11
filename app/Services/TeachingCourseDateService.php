@@ -12,6 +12,7 @@ use App\Models\TeachingCurriculumDocument;
 use App\Services\Teaching\CurriculumUnitFileService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +22,87 @@ use Throwable;
 
 class TeachingCourseDateService
 {
+    /**
+     * @param  Collection<int, TeachingCourseDate>  $dates
+     */
+    public function loadCurriculumAttachmentCounts(Collection $dates): void
+    {
+        if ($dates->isEmpty()) {
+            return;
+        }
+
+        $materialsByDate = TeachingCourseDateMaterial::query()
+            ->whereIn('teaching_course_date_id', $dates->modelKeys())
+            ->select(['id', 'teaching_course_date_id', 'title'])
+            ->with('attachments:id,teaching_course_date_material_id,source_teaching_curriculum_document_id,student_visible')
+            ->get()
+            ->groupBy('teaching_course_date_id');
+
+        $courses = $materialsByDate->isEmpty() ? collect() : TeachingCourse::query()
+            ->whereKey($dates->pluck('teaching_course_id')->unique())
+            ->select(['id', 'school_id', 'schoolyear_id', 'teaching_curriculum_id'])
+            ->with([
+                'teachingCurriculum:id,school_id,schoolyear_id,topics',
+                'teachingCurriculum.documents' => fn ($query) => $query
+                    ->where('source_type', 'unit_file')
+                    ->select(['id', 'teaching_curriculum_id', 'topic_id', 'unit_id']),
+            ])
+            ->get()
+            ->keyBy('id');
+
+        $documentIdsByCourseTitle = [];
+        foreach ($courses as $course) {
+            $curriculum = $course->teachingCurriculum;
+            if (! $curriculum
+                || (int) $curriculum->school_id !== (int) $course->school_id
+                || (int) $curriculum->schoolyear_id !== (int) $course->schoolyear_id) {
+                continue;
+            }
+
+            $documentsByUnit = $curriculum->documents->groupBy(
+                fn (TeachingCurriculumDocument $document): string => json_encode([$document->topic_id, $document->unit_id], JSON_THROW_ON_ERROR),
+            );
+            foreach ($curriculum->topics as $topicIndex => $topic) {
+                $topicTitle = trim((string) ($topic['title'] ?? '')) ?: 'Thema '.($topicIndex + 1);
+                foreach ($topic['units'] ?? [] as $unitIndex => $unit) {
+                    $unitTitle = trim((string) ($unit['title'] ?? '')) ?: 'Einheit '.($unitIndex + 1);
+                    $key = json_encode([(string) ($topic['id'] ?? ''), (string) ($unit['id'] ?? '')], JSON_THROW_ON_ERROR);
+                    foreach ($documentsByUnit->get($key, collect()) as $document) {
+                        $documentIdsByCourseTitle[$course->id][$topicTitle.': '.$unitTitle][(int) $document->id] = true;
+                    }
+                }
+            }
+        }
+
+        foreach ($dates as $date) {
+            $materials = $materialsByDate->get($date->id, collect());
+            $visibilityByFile = [];
+            foreach ($materials as $material) {
+                foreach ($material->attachments as $attachment) {
+                    $documentId = (int) $attachment->source_teaching_curriculum_document_id;
+                    $key = $documentId > 0 ? 'document:'.$documentId : 'attachment:'.$attachment->id;
+                    $visibilityByFile[$key] = ($visibilityByFile[$key] ?? false) || (bool) $attachment->student_visible;
+                }
+            }
+
+            $unadoptedCount = 0;
+            foreach ($materials->pluck('title')->map(fn ($title): string => trim((string) $title))->unique() as $title) {
+                foreach ($documentIdsByCourseTitle[$date->teaching_course_id][$title] ?? [] as $documentId => $unused) {
+                    $key = 'document:'.$documentId;
+                    if (! array_key_exists($key, $visibilityByFile)) {
+                        $visibilityByFile[$key] = false;
+                        $unadoptedCount++;
+                    }
+                }
+            }
+
+            $sharedCount = count(array_filter($visibilityByFile));
+            $date->setAttribute('shared_curriculum_attachments_count', $sharedCount);
+            $date->setAttribute('private_curriculum_attachments_count', count($visibilityByFile) - $sharedCount);
+            $date->setAttribute('unadopted_curriculum_attachments_count', $unadoptedCount);
+        }
+    }
+
     public function createDates(int $course_id, string $from, ?string $until, array $hours, int $interval): array
     {
         $course = TeachingCourse::select(['id', 'school_id', 'schoolyear_id', 'user_id'])->find($course_id);

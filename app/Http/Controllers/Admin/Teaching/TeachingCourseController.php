@@ -23,6 +23,7 @@ use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Contracts\Support\Responsable;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -57,13 +58,7 @@ class TeachingCourseController extends Controller
                     'status',
                     'attendance_checked',
                 ])
-                ->withExists([
-                    'materials',
-                    'materials as has_shared_curriculum_attachments' => fn ($query) => $query
-                        ->whereRelation('attachments', 'student_visible', true),
-                    'materials as has_private_curriculum_attachments' => fn ($query) => $query
-                        ->whereRelation('attachments', 'student_visible', false),
-                ])
+                ->withExists('materials')
                 ->orderBy('date')
                 ->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseStudents' => fn ($query) => $query->select([
@@ -98,6 +93,10 @@ class TeachingCourseController extends Controller
         $courses = $coursesQuery
             ->orderBy('title')
             ->get();
+
+        app(TeachingCourseDateService::class)->loadCurriculumAttachmentCounts(
+            new EloquentCollection($courses->flatMap->teachingCourseDates->all()),
+        );
 
         $authEntryAreas = $this->teachingEntryAreasForUser($auth_user, $auth_user->schoolyear_id, $auth_user->school_id);
 

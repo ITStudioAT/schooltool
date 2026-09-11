@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.47.5
+
+### Stundenplan
+
+- Übersicht zeigen Zuordnung zu Curricula und veröffentlichte Dokumente
+
+### System
+
+- Countdown bis zum nächsten Unterricht
+
 ## 3.47.4
 
 ### Unterricht/Admin/Ferien

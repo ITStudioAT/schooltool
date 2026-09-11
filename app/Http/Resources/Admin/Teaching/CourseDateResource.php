@@ -5,6 +5,7 @@ namespace App\Http\Resources\Admin\Teaching;
 use App\Models\TeachingCourse;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -52,6 +53,10 @@ class CourseDateResource extends JsonResource
             ? $this->materials
             : $this->materials()->with('attachments')->get();
 
+        if (! array_key_exists('unadopted_curriculum_attachments_count', $this->resource->getAttributes())) {
+            $service->loadCurriculumAttachmentCounts(new Collection([$this->resource]));
+        }
+
         return [
             'id' => $this->id,
             'date' => $this->date?->format('Y-m-d'),
@@ -62,6 +67,11 @@ class CourseDateResource extends JsonResource
             'attendance' => $attendance,
             'attendance_checked' => $attendanceChecked,
             'has_curriculum_assignment' => $adoptedMaterials->isNotEmpty(),
+            'shared_curriculum_attachments_count' => (int) $this->shared_curriculum_attachments_count,
+            'private_curriculum_attachments_count' => (int) $this->private_curriculum_attachments_count,
+            'unadopted_curriculum_attachments_count' => (int) $this->unadopted_curriculum_attachments_count,
+            'has_shared_curriculum_attachments' => (int) $this->shared_curriculum_attachments_count > 0,
+            'has_private_curriculum_attachments' => (int) $this->private_curriculum_attachments_count > 0,
             'adopted_materials' => $adoptedMaterials->map(fn ($m) => [
                 'id' => $m->id,
                 'title' => $m->title,

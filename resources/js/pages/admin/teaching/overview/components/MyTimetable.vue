@@ -71,15 +71,21 @@
                                             :aria-hidden="false"
                                             aria-label="Curriculum-Eintrag zugeordnet"
                                             title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                        <v-icon
+                                        <span
                                             v-if="item.curriculumAttachmentVisibility"
-                                            :icon="item.curriculumAttachmentVisibility.icon"
-                                            :color="item.curriculumAttachmentVisibility.color"
-                                            size="14"
-                                            role="img"
-                                            :aria-hidden="false"
-                                            :aria-label="item.curriculumAttachmentVisibility.label"
-                                            :title="item.curriculumAttachmentVisibility.label" />
+                                            class="d-inline-flex align-center ga-2"
+                                            :title="item.curriculumAttachmentVisibility.label">
+                                            <span
+                                                v-for="indicator in item.curriculumAttachmentVisibility.indicators"
+                                                :key="indicator.key"
+                                                class="d-inline-flex align-center ga-1 text-caption"
+                                                :class="`text-${indicator.color}`"
+                                                role="img"
+                                                :aria-label="indicator.label">
+                                                <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
+                                                <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
+                                            </span>
+                                        </span>
                                         <v-chip
                                             v-if="hasFreeStatus(item) && item.freeReason"
                                             size="x-small"
@@ -145,15 +151,21 @@
                                                         :aria-hidden="false"
                                                         aria-label="Curriculum-Eintrag zugeordnet"
                                                         title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                                    <v-icon
+                                                    <span
                                                         v-if="item.curriculumAttachmentVisibility"
-                                                        :icon="item.curriculumAttachmentVisibility.icon"
-                                                        :color="item.curriculumAttachmentVisibility.color"
-                                                        size="14"
-                                                        role="img"
-                                                        :aria-hidden="false"
-                                                        :aria-label="item.curriculumAttachmentVisibility.label"
-                                                        :title="item.curriculumAttachmentVisibility.label" />
+                                                        class="d-inline-flex align-center ga-2"
+                                                        :title="item.curriculumAttachmentVisibility.label">
+                                                        <span
+                                                            v-for="indicator in item.curriculumAttachmentVisibility.indicators"
+                                                            :key="indicator.key"
+                                                            class="d-inline-flex align-center ga-1 text-caption"
+                                                            :class="`text-${indicator.color}`"
+                                                            role="img"
+                                                            :aria-label="indicator.label">
+                                                            <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
+                                                            <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
+                                                        </span>
+                                                    </span>
                                                     <div class="timetable-grid-course">{{ item.courseTitle }}</div>
                                                 </div>
                                                 <div class="timetable-grid-class">{{ item.classLabel }}</div>
@@ -190,45 +202,95 @@ const RANGE_NEXT_WEEK = 'next_week'
 const RANGE_MONTH = 'month'
 const RANGE_CURRENT_SEMESTER = 'current_semester'
 
-function curriculumAttachmentVisibility(courseDate) {
-    let hasShared = courseDate?.has_shared_curriculum_attachments === true
-    let hasPrivate = courseDate?.has_private_curriculum_attachments === true
+function curriculumAttachmentVisibility(courseDate, hasAssignment) {
+    if (!hasAssignment) return null
+
+    let sharedCount = Number(courseDate?.shared_curriculum_attachments_count ?? 0)
+    let privateCount = Number(courseDate?.private_curriculum_attachments_count ?? 0)
 
     if (Array.isArray(courseDate?.adopted_materials)) {
         const attachments = courseDate.adopted_materials.flatMap((material) =>
             Array.isArray(material?.attachments) ? material.attachments : [],
         )
-        hasShared = attachments.some((attachment) => attachment.student_visible === true)
-        hasPrivate = attachments.some((attachment) => attachment.student_visible !== true)
+        const visibilityByFile = new Map()
+        attachments.forEach((attachment, index) => {
+            const key = attachment.source_teaching_curriculum_document_id
+                ? `document-${attachment.source_teaching_curriculum_document_id}`
+                : `attachment-${attachment.id ?? index}`
+            visibilityByFile.set(key, visibilityByFile.get(key) === true || attachment.student_visible === true)
+        })
+        sharedCount = [...visibilityByFile.values()].filter(Boolean).length
+        privateCount = visibilityByFile.size - sharedCount + Number(courseDate?.unadopted_curriculum_attachments_count ?? 0)
     }
 
-    if (!hasShared && !hasPrivate) return null
-    if (!hasShared) {
+    const indicators = [
+        {
+            key: 'shared', icon: 'mdi-eye', color: 'success', count: sharedCount,
+            label: sharedCount === 1 ? '1 veröffentlichter Anhang' : `${sharedCount} veröffentlichte Anhänge`,
+            summary: `${sharedCount} veröffentlicht`,
+        },
+        {
+            key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: privateCount,
+            label: privateCount === 1 ? '1 verborgener Anhang' : `${privateCount} verborgene Anhänge`,
+            summary: `${privateCount} verborgen`,
+        },
+    ].filter((indicator) => indicator.count > 0)
+
+    if (indicators.length === 0) {
         return {
-            icon: 'mdi-eye-off', color: 'grey',
-            label: 'Keine Curriculum-Anhänge für Schüler:innen freigegeben',
+            indicators: [{ key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: 0, label: 'Keine Anhänge veröffentlicht' }],
+            label: 'Keine Anhänge veröffentlicht',
         }
     }
-    if (hasPrivate) {
-        return {
-            icon: 'mdi-eye-outline', color: 'warning',
-            label: 'Curriculum-Anhänge teilweise für Schüler:innen freigegeben',
-        }
-    }
-    return {
-        icon: 'mdi-eye', color: 'success',
-        label: 'Alle Curriculum-Anhänge für Schüler:innen freigegeben',
-    }
+
+    return { indicators, label: indicators.map((indicator) => indicator.summary).join(', ') }
 }
 
 export default {
     components: { ItsGridBox },
 
-    async beforeMount() {
+    beforeMount() {
+        const courseStore = useCourseStore()
+        const returnState = courseStore.getTimetableReturn(this.$route?.path)
+            || courseStore.getTimetableView(this.$route?.path, this.$route?.query)
+        this.pendingTimetableRestore = returnState
+        if (returnState) {
+            this.range = returnState.range
+            this.offset = returnState.offset
+            this.timetable_view_mode = returnState.viewMode
+        }
         this.schoolHourStore = useSchoolHourStore()
         if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
-            await this.schoolHourStore.index()
+            this.schoolHoursRequest = this.schoolHourStore.index()
         }
+    },
+
+    async mounted() {
+        const courseStore = useCourseStore()
+        const returnState = this.pendingTimetableRestore
+        courseStore.timetable_return_state = null
+        window.addEventListener('scroll', this.persistTimetableView, { capture: true, passive: true })
+        window.addEventListener('pagehide', this.persistTimetableView)
+        const loadResults = await Promise.all([courseStore.courses_request_promise, this.schoolHoursRequest])
+        await this.$nextTick()
+        if (this.timetableDisposed || this.selected_course || loadResults.includes(false)) return
+        if (returnState && courseStore.isTimetableStateCurrent(returnState, this.$route?.path)) {
+            const table = this.$el.querySelector('.timetable-table-wrapper')
+            if (table) {
+                table.scrollLeft = returnState.tableLeft
+                table.scrollTop = returnState.tableTop
+            }
+            window.scrollTo({ left: returnState.left, top: returnState.top, behavior: 'instant' })
+        }
+        this.pendingTimetableRestore = null
+        this.timetableReady = true
+        this.persistTimetableView()
+    },
+
+    beforeUnmount() {
+        this.timetableDisposed = true
+        window.removeEventListener('scroll', this.persistTimetableView, true)
+        window.removeEventListener('pagehide', this.persistTimetableView)
     },
 
     data() {
@@ -238,9 +300,13 @@ export default {
             RANGE_NEXT_WEEK,
             RANGE_MONTH,
             RANGE_CURRENT_SEMESTER,
-            range: RANGE_WEEK,
+            range: RANGE_NEXT_WEEK,
             offset: 0,
             schoolHourStore: null,
+            schoolHoursRequest: null,
+            pendingTimetableRestore: null,
+            timetableReady: false,
+            timetableDisposed: false,
         }
     },
 
@@ -303,6 +369,9 @@ export default {
                         const timeRangeLabel = this.formatHoursTimeRange(hours)
 
                         const status = Array.isArray(courseDate?.status) ? courseDate.status : []
+                        const hasCurriculumAssignment = Array.isArray(courseDate?.adopted_materials)
+                            ? courseDate.adopted_materials.length > 0
+                            : courseDate?.has_curriculum_assignment === true
 
                         return {
                             key: `${course?.id || 'x'}-${courseDate?.id || date}-${hoursLabel}`,
@@ -316,10 +385,8 @@ export default {
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
-                            hasCurriculumAssignment: Array.isArray(courseDate?.adopted_materials)
-                                ? courseDate.adopted_materials.length > 0
-                                : courseDate?.has_curriculum_assignment === true,
-                            curriculumAttachmentVisibility: curriculumAttachmentVisibility(courseDate),
+                            hasCurriculumAssignment,
+                            curriculumAttachmentVisibility: curriculumAttachmentVisibility(courseDate, hasCurriculumAssignment),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
                             attendanceChecked: typeof courseDate?.attendance_checked === 'boolean'
@@ -481,7 +548,29 @@ export default {
         },
     },
 
+    watch: {
+        range: { handler: 'persistTimetableView', flush: 'post' },
+        offset: { handler: 'persistTimetableView', flush: 'post' },
+        timetable_view_mode: { handler: 'persistTimetableView', flush: 'post' },
+        '$route.query': { handler: 'persistTimetableView', deep: true, flush: 'post' },
+    },
+
     methods: {
+        persistTimetableView() {
+            if (!this.timetableReady || this.timetableDisposed || this.selected_course) return
+            const table = this.$el.querySelector('.timetable-table-wrapper')
+            useCourseStore().rememberTimetableView({
+                path: this.$route?.path,
+                query: { ...this.$route?.query },
+                range: this.range,
+                offset: this.offset,
+                viewMode: this.timetable_view_mode,
+                left: window.scrollX,
+                top: window.scrollY,
+                tableLeft: table?.scrollLeft || 0,
+                tableTop: table?.scrollTop || 0,
+            })
+        },
         normalizeDay(date) {
             const d = new Date(date)
             d.setHours(0, 0, 0, 0)
@@ -612,6 +701,18 @@ export default {
             if (!course) return
 
             const courseStore = useCourseStore()
+            const table = this.$el?.querySelector('.timetable-table-wrapper')
+            courseStore.rememberTimetableReturn({
+                path: this.$route.path,
+                query: { ...this.$route.query },
+                range: this.range,
+                offset: this.offset,
+                viewMode: this.timetable_view_mode,
+                left: window.scrollX,
+                top: window.scrollY,
+                tableLeft: table?.scrollLeft || 0,
+                tableTop: table?.scrollTop || 0,
+            })
             courseStore.ensureCourseStudentCollections(course)
 
             this.selected_course = course
@@ -786,9 +887,9 @@ export default {
 }
 
 .timetable-grid-table {
-    width: 100%;
+    /* Size each day from its widest entry without distributing unused container space. */
+    width: max-content;
     border-collapse: collapse;
-    min-width: 300px;
     font-size: 0.8rem;
 }
 
@@ -807,7 +908,7 @@ export default {
 
 .timetable-day-header-cell {
     text-align: center;
-    min-width: 90px;
+    min-width: 130px;
     background-color: #f5f5f5;
     font-weight: 600;
     padding: 6px 4px;
@@ -843,7 +944,7 @@ export default {
 }
 
 .timetable-grid-cell {
-    min-width: 90px;
+    min-width: 130px;
     height: 52px;
     padding: 2px;
 }
@@ -865,10 +966,8 @@ export default {
 .timetable-grid-course {
     font-weight: 600;
     font-size: 0.75rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 120px;
+    flex-shrink: 0;
 }
 
 .timetable-grid-class {

@@ -9,6 +9,12 @@ import {
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
+const timetableSessionKey = 'schooltool:teaching:timetable'
+
+function timetableQueryKey(query = {}) {
+    return JSON.stringify(Object.keys(query).sort().map((key) => [key, query[key]]))
+}
+
 export const useCourseStore = defineStore('AdminCourseStore', {
     state: () => {
         return {
@@ -43,12 +49,78 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             infos_show_grade_sem2: false,
             infos_show_grade_year: false,
             timetable_view_mode: 'table',
+            timetable_return_state: null,
             courses_request_promise: null,
             course_detail_request_promises: {},
         }
     },
 
     actions: {
+        rememberTimetableReturn(state) {
+            const config = useAdminStore().config
+            this.timetable_return_state = {
+                ...state,
+                userId: config?.user?.id,
+                schoolId: config?.school?.id,
+                schoolyearId: config?.selected_schoolyear?.id,
+                savedDate: new Date().toDateString(),
+            }
+            this.rememberTimetableView(state)
+        },
+        isTimetableStateCurrent(state, path) {
+            const config = useAdminStore().config
+            return state?.path === path
+                && state?.savedDate === new Date().toDateString()
+                && state?.userId === config?.user?.id
+                && state?.schoolId === config?.school?.id
+                && state?.schoolyearId === config?.selected_schoolyear?.id
+        },
+        getTimetableReturn(path) {
+            const state = this.timetable_return_state
+            if (state && !this.isTimetableStateCurrent(state, path)) {
+                this.timetable_return_state = null
+            }
+            return this.timetable_return_state
+        },
+        rememberTimetableView(state) {
+            if (!state.path) return
+            const config = useAdminStore().config
+            try {
+                sessionStorage.setItem(timetableSessionKey, JSON.stringify({
+                    ...state,
+                    userId: config?.user?.id,
+                    schoolId: config?.school?.id,
+                    schoolyearId: config?.selected_schoolyear?.id,
+                    savedDate: new Date().toDateString(),
+                }))
+            } catch {
+                // The in-memory course return remains available if tab storage is disabled.
+            }
+        },
+        getTimetableView(path, query) {
+            try {
+                const state = JSON.parse(sessionStorage.getItem(timetableSessionKey) || 'null')
+                if (state && this.isTimetableStateCurrent(state, path)
+                    && timetableQueryKey(state.query) === timetableQueryKey(query)
+                    && ['today', 'week', 'next_week', 'month', 'current_semester'].includes(state.range)
+                    && ['table', 'list'].includes(state.viewMode)
+                    && ['offset', 'left', 'top', 'tableLeft', 'tableTop'].every((key) => Number.isFinite(state[key]))) {
+                    return state
+                }
+                sessionStorage.removeItem(timetableSessionKey)
+            } catch {
+                return null
+            }
+            return null
+        },
+        clearTimetableNavigation() {
+            this.timetable_return_state = null
+            try {
+                sessionStorage.removeItem(timetableSessionKey)
+            } catch {
+                // Tab storage may be unavailable in restricted browser sessions.
+            }
+        },
         applyStudentMetadata(courseId, studentId, changes) {
             const courses = [...this.courses, this.selected_course].filter(Boolean)
             for (const course of courses) {

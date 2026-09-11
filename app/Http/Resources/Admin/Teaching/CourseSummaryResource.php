@@ -49,8 +49,11 @@ class CourseSummaryResource extends JsonResource
                     'free_reason' => null,
                     'attendance_checked' => (bool) $courseDate->attendance_checked,
                     'has_curriculum_assignment' => (bool) $courseDate->materials_exists,
-                    'has_shared_curriculum_attachments' => (bool) $courseDate->has_shared_curriculum_attachments,
-                    'has_private_curriculum_attachments' => (bool) $courseDate->has_private_curriculum_attachments,
+                    'shared_curriculum_attachments_count' => (int) $courseDate->shared_curriculum_attachments_count,
+                    'private_curriculum_attachments_count' => (int) $courseDate->private_curriculum_attachments_count,
+                    'unadopted_curriculum_attachments_count' => (int) $courseDate->unadopted_curriculum_attachments_count,
+                    'has_shared_curriculum_attachments' => (int) $courseDate->shared_curriculum_attachments_count > 0,
+                    'has_private_curriculum_attachments' => (int) $courseDate->private_curriculum_attachments_count > 0,
                 ])
                 ->values()),
             'details_loaded' => false,

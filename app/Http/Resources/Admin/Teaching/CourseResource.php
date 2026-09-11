@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Admin\Teaching;
 
+use App\Services\TeachingCourseDateService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,6 +15,10 @@ class CourseResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        if ($this->relationLoaded('teachingCourseDates')) {
+            app(TeachingCourseDateService::class)->loadCurriculumAttachmentCounts($this->teachingCourseDates);
+        }
+
         $data = parent::toArray($request);
         unset($data['teaching_course_dates']);
         unset($data['teaching_course_students']);
