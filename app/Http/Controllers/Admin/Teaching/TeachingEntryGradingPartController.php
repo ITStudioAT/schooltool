@@ -22,6 +22,7 @@ class TeachingEntryGradingPartController extends Controller
         $user = $this->authorizedUser();
 
         $gradingParts = TeachingEntryGradingPart::query()
+            ->withSum(['entryDefinitions as overall_maximum_points' => fn ($query) => $query->where('properties_mode', 'points')], 'maximum_points')
             ->whereBelongsTo($user)
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $user->schoolyear_id)
@@ -59,13 +60,27 @@ class TeachingEntryGradingPartController extends Controller
         DB::transaction(function () use ($request, $entryGradingPart, $user): void {
             $this->lockArea($user, $entryGradingPart->teaching_entry_area_id);
             $entryGradingPart->refresh();
+            if ($request->validated('allowed_entry_types', $entryGradingPart->allowed_entry_types) === 'points'
+                && $entryGradingPart->entryDefinitions()->where('properties_mode', '!=', 'points')->exists()) {
+                throw ValidationException::withMessages([
+                    'allowed_entry_types' => 'Bitte zuerst alle anderen Eintragstypen aus diesem Benotungsteil entfernen oder in Punktetypen ändern.',
+                ]);
+            }
             $this->ensureFixedPercentageTotal(
                 $user,
                 $entryGradingPart->teaching_entry_area_id,
                 $request->validated('fixed_percentage', $entryGradingPart->fixed_percentage),
                 $entryGradingPart->id,
             );
-            $entryGradingPart->update($request->validated());
+            $payload = $request->validated();
+            if (($payload['allowed_entry_types'] ?? $entryGradingPart->allowed_entry_types) !== 'points') {
+                $payload['points_assessment_mode'] = 'individual';
+                $payload['overall_points_grade_thresholds'] = null;
+            }
+            if (isset($payload['overall_points_grade_thresholds'])) {
+                $payload['overall_points_grade_thresholds'] = array_map(fn (mixed $value): float => (float) $value, $payload['overall_points_grade_thresholds']);
+            }
+            $entryGradingPart->update($payload);
         });
 
         return new TeachingEntryGradingPartResource($entryGradingPart->refresh());

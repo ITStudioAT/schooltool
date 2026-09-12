@@ -12,6 +12,10 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        if ($this->exists('property_evaluations')) {
+            $this->merge(['property_evaluations' => UpdateTeachingEntryCalculationSettingsRequest::normalizeEvaluations($this->input('property_evaluations'))]);
+        }
+
         $fixedProperties = collect($this->input('fixed_properties', []))
             ->map(fn (mixed $property): string => trim((string) $property))
             ->all();
@@ -41,6 +45,7 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             'name' => Str::of((string) $this->input('name'))->trim()->toString(),
             'description' => $description,
             'fixed_properties' => $fixedProperties,
+            'has_properties' => $this->input('category') === 'Benotung',
             'has_notifications' => $this->input('has_notifications', false),
             'notification_recipients' => $notificationRecipients,
             'has_table_marking' => $this->input('has_table_marking', false),
@@ -67,6 +72,7 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
         $entryDefinition = $this->route('entryDefinition');
 
         return [
+            ...UpdateTeachingEntryCalculationSettingsRequest::definitionEvaluationRules($this->input('category'), $this->input('properties_mode'), $this->input('fixed_properties', []), $this->input('enabled_special_properties', $this->route('entryDefinition')?->enabled_special_properties ?? TeachingEntryDefinition::SpecialProperties)),
             'teaching_entry_area_id' => [
                 'required',
                 'integer',
@@ -91,7 +97,18 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:1024'],
             'category' => ['required', 'string', Rule::in(['Benotung', 'Verhalten', 'Weitere'])],
             'has_properties' => ['required', 'boolean'],
-            'properties_mode' => ['required', 'string', Rule::in(['fixed', 'free'])],
+            'enabled_special_properties' => ['sometimes', 'array', 'list', 'max:3'],
+            'enabled_special_properties.*' => ['required', 'string', Rule::in(TeachingEntryDefinition::SpecialProperties), 'distinct:strict'],
+            'properties_mode' => ['required', 'string', Rule::in(['fixed', 'free', 'plus', 'plus_minus', 'points'])],
+            'maximum_points' => [
+                Rule::requiredIf(fn (): bool => $this->boolean('has_properties') && $this->input('properties_mode') === 'points'),
+                'nullable', 'numeric', 'gt:0',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_numeric($value) || ! is_finite((float) $value)) {
+                        $fail('Bitte eine endliche positive maximale Punktzahl eingeben.');
+                    }
+                },
+            ],
             'fixed_properties' => [
                 Rule::requiredIf(fn () => $this->boolean('has_properties') && $this->input('properties_mode') === 'fixed'),
                 'array',

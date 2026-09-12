@@ -8,14 +8,17 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
-    it('places Auswertungen after students and renders the same list when selected or restored', async () => {
+    it('places Auswertungen after students and renders the dedicated report when selected or restored', async () => {
         setActivePinia(createPinia())
         const courseStore = useCourseStore()
         const replace = vi.fn().mockResolvedValue(undefined)
         courseStore.selected_course = { id: 18, details_loaded: true, course_dates: [] } as any
         const wrapper = shallowMount({
             ...Overview,
-            components: { ...(Overview as any).components, CourseStudents: { name: 'CourseStudents', props: ['showPerformances'], template: '<div />' } },
+            components: { ...(Overview as any).components,
+                CourseStudents: { name: 'CourseStudents', template: '<div />' },
+                CourseEvaluations: { name: 'CourseEvaluations', props: ['course', 'schoolyear', 'activeSemester'], template: '<div />' },
+            },
         }, {
             global: {
                 mocks: { $route: { path: '/admin/teaching/overview', query: { panel: 'evaluations' } }, $router: { replace } },
@@ -27,13 +30,13 @@ describe('Teaching overview controls', () => {
             const vm = wrapper.vm as any
             expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'evaluations', 'infos', 'works', 'print'])
             expect(vm.functionalPanelSelection).toBe('evaluations')
-            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
-            expect(wrapper.findComponent({ name: 'CourseStudents' }).props('showPerformances')).toBe(false)
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
+            expect(wrapper.findComponent({ name: 'CourseEvaluations' }).props('course').id).toBe(18)
             vm.functionalPanelSelection = 'students'
             await nextTick()
             expect(vm.functionalPanelSelection).toBe('students')
             expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
-            expect(wrapper.findComponent({ name: 'CourseStudents' }).props('showPerformances')).toBe(true)
+            expect(wrapper.findComponent({ name: 'CourseEvaluations' }).exists()).toBe(false)
             vm.functionalPanelSelection = 'evaluations'
             await nextTick()
             expect(replace).toHaveBeenLastCalledWith({ path: '/admin/teaching/overview', query: { panel: 'evaluations' } })

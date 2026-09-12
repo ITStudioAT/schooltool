@@ -23,6 +23,7 @@ class TeachingCourseWork extends Model
         'is_random_groups',
         'date_for_all_groups',
         'finish_until_date',
+        'maximum_plus',
         'groups',
         'status',
     ];
@@ -32,6 +33,7 @@ class TeachingCourseWork extends Model
         'finish_until_date' => 'date:Y-m-d',
         'is_group_work' => 'boolean',
         'group_size' => 'integer',
+        'maximum_plus' => 'integer',
         'is_random_groups' => 'boolean',
         'groups' => 'array',
         'status' => 'array',

@@ -1113,6 +1113,10 @@
                                         label="Titel"
                                         maxlength="255"
                                         :disabled="workSaving" />
+                                    <v-text-field v-if="dateWorkRequiresMaximumPlus" v-model="workDialogForm.maximum_plus"
+                                        label="Maximale Plusanzahl" type="text" inputmode="numeric" variant="outlined"
+                                        hint="So viele Plus sind bei dieser Arbeit insgesamt möglich." persistent-hint
+                                        :error-messages="dateWorkMaximumPlusError" :disabled="workSaving" />
                                     <v-textarea
                                         v-model="workDialogForm.description"
                                         label="Beschreibung"
@@ -1165,10 +1169,14 @@
                                                     </div>
                                                 </div>
                                                 <v-text-field
-                                                    v-else-if="availableWorkGradeInputMode === 'free'"
+                                                    v-else-if="['free', 'plus', 'plus_minus', 'points'].includes(availableWorkGradeInputMode)"
                                                     :model-value="row.grade"
                                                     density="compact"
-                                                    hide-details
+                                                    hide-details="auto"
+                                                    :hint="gradeInputHint(availableWorkGradeInputMode, workDialogForm.type)"
+                                                    :inputmode="availableWorkGradeInputMode === 'points' ? 'decimal' : undefined"
+                                                    persistent-hint
+                                                    :rules="[value => gradeInputValidation(value, availableWorkGradeInputMode, workDialogForm.type)]"
                                                     label="Note"
                                                     :maxlength="50"
                                                     variant="outlined"
@@ -1176,6 +1184,17 @@
                                                     @update:model-value="setIndividualWorkStudentGrade(row.studentId, $event)" />
                                                 <div v-else class="text-caption text-medium-emphasis">
                                                     Keine Bewertung vorgesehen.
+                                                </div>
+                                                <div v-if="specialGradeItemsForType(workDialogForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
+                                                    <v-chip
+                                                        v-for="item in specialGradeItemsForType(workDialogForm.type)"
+                                                        :key="item.value"
+                                                        size="small"
+                                                        :variant="row.grade === item.value ? 'flat' : 'outlined'"
+                                                        :color="row.grade === item.value ? 'primary' : undefined"
+                                                        @click="setIndividualWorkStudentGrade(row.studentId, toggledCourseWorkGrade(row.grade, item.value))">
+                                                        {{ item.title }}
+                                                    </v-chip>
                                                 </div>
                                             </div>
                                         </v-card>
@@ -1464,10 +1483,14 @@
                                         </div>
                                     </div>
                                     <v-text-field
-                                        v-else-if="availableWorkGradeInputMode === 'free'"
+                                        v-else-if="['free', 'plus', 'plus_minus', 'points'].includes(availableWorkGradeInputMode)"
                                         :model-value="row.grade"
                                         density="compact"
-                                        hide-details
+                                        hide-details="auto"
+                                        :hint="gradeInputHint(availableWorkGradeInputMode, workDialogForm.type)"
+                                        :inputmode="availableWorkGradeInputMode === 'points' ? 'decimal' : undefined"
+                                        persistent-hint
+                                        :rules="[value => gradeInputValidation(value, availableWorkGradeInputMode, workDialogForm.type)]"
                                         label="Note"
                                         :maxlength="50"
                                         variant="outlined"
@@ -1475,6 +1498,17 @@
                                         @update:model-value="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
                                     <div v-else class="text-caption text-medium-emphasis">
                                         Keine Bewertung vorgesehen.
+                                    </div>
+                                    <div v-if="specialGradeItemsForType(workDialogForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
+                                        <v-chip
+                                            v-for="item in specialGradeItemsForType(workDialogForm.type)"
+                                            :key="item.value"
+                                            size="small"
+                                            :variant="row.grade === item.value ? 'flat' : 'outlined'"
+                                            :color="row.grade === item.value ? 'primary' : undefined"
+                                            @click="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, toggledCourseWorkGrade(row.grade, item.value))">
+                                            {{ item.title }}
+                                        </v-chip>
                                     </div>
                                 </div>
                             </v-card>
@@ -1833,12 +1867,16 @@
                                             </div>
                                         </div>
                                         <v-text-field
-                                            v-else-if="courseWorkEntryGradeInputMode(entry) === 'free'"
+                                            v-else-if="['free', 'plus', 'plus_minus', 'points'].includes(courseWorkEntryGradeInputMode(entry))"
                                             :model-value="courseWorkEntryDraft(entry).grade"
                                             clearable
                                             :data-testid="`course-table-cell-work-grade-${entry.uid}`"
                                             density="compact"
-                                            hide-details
+                                            hide-details="auto"
+                                            :hint="gradeInputHint(courseWorkEntryGradeInputMode(entry), courseWorkForCellEntry(entry)?.type)"
+                                            :inputmode="courseWorkEntryGradeInputMode(entry) === 'points' ? 'decimal' : undefined"
+                                            persistent-hint
+                                            :rules="[value => gradeInputValidation(value, courseWorkEntryGradeInputMode(entry), courseWorkForCellEntry(entry)?.type)]"
                                             label="Note"
                                             :maxlength="50"
                                             variant="outlined"
@@ -1846,6 +1884,17 @@
                                             @update:model-value="updateCourseWorkEntryDraft(entry, 'grade', $event)" />
                                         <div v-else class="text-caption text-medium-emphasis align-self-center">
                                             Für diesen Eintragstyp ist keine Bewertung vorgesehen.
+                                        </div>
+                                        <div v-if="specialGradeItemsForType(courseWorkForCellEntry(entry)?.type).length" class="d-flex flex-wrap ga-1 mt-2">
+                                            <v-chip
+                                                v-for="item in specialGradeItemsForType(courseWorkForCellEntry(entry)?.type)"
+                                                :key="item.value"
+                                                size="small"
+                                                :variant="courseWorkEntryDraft(entry).grade === item.value ? 'flat' : 'outlined'"
+                                                :color="courseWorkEntryDraft(entry).grade === item.value ? 'primary' : undefined"
+                                                @click="updateCourseWorkEntryDraft(entry, 'grade', toggledCourseWorkGrade(courseWorkEntryDraft(entry).grade, item.value))">
+                                                {{ item.title }}
+                                            </v-chip>
                                         </div>
                                     </div>
                                     <div class="d-flex align-center flex-wrap ga-2 mt-3">
@@ -1902,7 +1951,38 @@
                                                 {{ item.title }}
                                             </v-btn>
                                         </div>
-                                        <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+                                        <v-text-field
+                                            v-else-if="['free', 'plus', 'plus_minus', 'points'].includes(availableEntryGradeInputMode)"
+                                            v-model="entryForm.grade"
+                                            label="Wert"
+                                            :maxlength="50"
+                                            :hint="gradeInputHint(availableEntryGradeInputMode, entryForm.type)"
+                                            :inputmode="availableEntryGradeInputMode === 'points' ? 'decimal' : undefined"
+                                            persistent-hint
+                                            :rules="[value => gradeInputValidation(value, availableEntryGradeInputMode, entryForm.type)]" />
+                                        <div v-else class="text-caption text-medium-emphasis mb-3">Keine Bewertung vorgesehen.</div>
+                                <div v-if="specialGradeItemsForType(entryForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
+                                    <v-chip
+                                        v-for="item in specialGradeItemsForType(entryForm.type)"
+                                        :key="item.value"
+                                        size="small"
+                                        :variant="entryForm.grade === item.value ? 'flat' : 'outlined'"
+                                        :color="entryForm.grade === item.value ? 'primary' : undefined"
+                                        @click="entryForm.grade = toggledCourseWorkGrade(entryForm.grade, item.value)">
+                                        {{ item.title }}
+                                    </v-chip>
+                                </div>
+                                        <div v-if="specialGradeItemsForType(entryForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
+                                            <v-chip
+                                                v-for="item in specialGradeItemsForType(entryForm.type)"
+                                                :key="item.value"
+                                                size="small"
+                                                :variant="entryForm.grade === item.value ? 'flat' : 'outlined'"
+                                                :color="entryForm.grade === item.value ? 'primary' : undefined"
+                                                @click="entryForm.grade = toggledCourseWorkGrade(entryForm.grade, item.value)">
+                                                {{ item.title }}
+                                            </v-chip>
+                                        </div>
                                     </template>
 
                                     <v-textarea
@@ -2112,7 +2192,16 @@
                                         {{ item.title }}
                                     </v-btn>
                                 </div>
-                                <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+                                <v-text-field
+                                    v-else-if="['free', 'plus', 'plus_minus', 'points'].includes(availableEntryGradeInputMode)"
+                                    v-model="entryForm.grade"
+                                    label="Wert"
+                                    :maxlength="50"
+                                    :hint="gradeInputHint(availableEntryGradeInputMode, entryForm.type)"
+                                    :inputmode="availableEntryGradeInputMode === 'points' ? 'decimal' : undefined"
+                                    persistent-hint
+                                    :rules="[value => gradeInputValidation(value, availableEntryGradeInputMode, entryForm.type)]" />
+                                <div v-else class="text-caption text-medium-emphasis mb-3">Keine Bewertung vorgesehen.</div>
                             </template>
 
                             <v-textarea
@@ -2231,6 +2320,7 @@ import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching
 import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
 import { parseLocalDate } from '@/helpers/date'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
+import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -2359,6 +2449,7 @@ export default {
             workDialogDateEditing: false,
             workDialogFinishDateEditing: false,
             workDialogForm: {
+                maximum_plus: null,
                 date_for_all_groups: '',
                 description: '',
                 finish_until_date: '',
@@ -2689,6 +2780,10 @@ export default {
 
             return this.courseWorkGradeConfigurationForType(this.entryForm.type).items
         },
+        availableEntryGradeInputMode() {
+            if (this.selectedEntryTypeCategory !== 'Benotung') return 'none'
+            return this.courseWorkGradeInputModeForType(this.entryForm.type)
+        },
         availableWorkTypes() {
             const assignedEntryArea = this.selected_course?.teaching_entry_area || null
             const entryDefinitions = Array.isArray(assignedEntryArea?.entry_definitions)
@@ -2773,6 +2868,12 @@ export default {
                 ? '1 Tag'
                 : `${this.workDialogDurationDays} Tage`
         },
+        dateWorkRequiresMaximumPlus() {
+            return requiresWorkMaximumPlus(this.selected_course, this.workDialogForm.type)
+        },
+        dateWorkMaximumPlusError() {
+            return requiresWorkMaximumPlus(this.selected_course, this.workDialogForm.type) ? workMaximumPlusError(this.workDialogForm.maximum_plus) : ''
+        },
         canSaveDateWork() {
             const hasAvailableType = this.availableWorkTypes.some((item) => item.value === this.workDialogForm.type)
             const hasIncompleteNewGroup = this.workDialogForm.is_group_work
@@ -2780,6 +2881,7 @@ export default {
 
             return Boolean(
                 hasAvailableType
+                && !this.dateWorkMaximumPlusError
                 && !hasIncompleteNewGroup
                 && !this.workSaving
                 && !this.workDialogTypeEditing
@@ -2879,6 +2981,8 @@ export default {
         },
         canSaveCellEntry() {
             const hasAvailableType = this.availableEntryTypes.some((item) => item.value === this.entryForm.type)
+            if ((['plus', 'plus_minus', 'points'].includes(this.availableEntryGradeInputMode) || ['NA', 'VL', 'F'].includes(String(this.entryForm.grade ?? '').trim()))
+                && this.gradeInputValidation(this.entryForm.grade, this.availableEntryGradeInputMode, this.entryForm.type) !== true) return false
 
             return Boolean(this.registeredEntryStudentId && hasAvailableType && !this.entrySaving)
         },
@@ -3702,6 +3806,7 @@ export default {
             const workDate = this.normalizeDateKey(this.workDialog.courseDate?.date)
 
             return {
+                maximum_plus: null,
                 date_for_all_groups: workDate,
                 description: '',
                 finish_until_date: workDate,
@@ -3963,6 +4068,16 @@ export default {
         },
         async saveDateWork() {
             if (!this.canSaveDateWork) return
+            const requiresMaximum = requiresWorkMaximumPlus(this.selected_course, this.workDialogForm.type)
+            if (requiresMaximum && workMaximumPlusError(this.workDialogForm.maximum_plus)) return
+            const mode = this.courseWorkGradeInputModeForType(this.workDialogForm.type)
+            if (this.workDialogForm.groups.some((group) => {
+                const grades = group.use_individual_grades ? (group.grades || []).map((item) => item.grade) : [group.grade]
+                return grades.some((grade) => (
+                    (['plus', 'plus_minus', 'points'].includes(mode) || ['NA', 'VL', 'F'].includes(String(grade ?? '').trim()))
+                    && this.gradeInputValidation(grade, mode, this.workDialogForm.type) !== true
+                ))
+            })) return
 
             this.workSaving = true
             try {
@@ -3979,6 +4094,8 @@ export default {
                     title: String(this.workDialogForm.title || '').trim() || null,
                     type: this.workDialogForm.type || null,
                 }
+                if (requiresMaximum) payload.maximum_plus = Number(this.workDialogForm.maximum_plus)
+                else delete payload.maximum_plus
                 const response = payload.id
                     ? await this.courseWorkStore.update(payload)
                     : await this.courseWorkStore.store(payload)
@@ -4020,7 +4137,7 @@ export default {
                 if (String(this.workDialogForm.id) === String(work.id)) {
                     this.cancelDateWorkForm()
                 }
-                await this.loadCourseWorks()
+                await this.loadCourseTableData(this.selected_course?.id, true)
                 this.deleteWorkDialog = {
                     open: false,
                     work: null,
@@ -4936,12 +5053,14 @@ export default {
                 }
 
                 if (workDefinition.properties_mode !== 'fixed') {
-                    return { items: [], mode: 'free' }
+                    const mode = ['plus', 'plus_minus', 'points'].includes(workDefinition.properties_mode)
+                        ? workDefinition.properties_mode : 'free'
+                    return { items: [], mode }
                 }
 
                 const items = (Array.isArray(workDefinition.fixed_properties) ? workDefinition.fixed_properties : [])
                     .map((property) => String(property || '').trim())
-                    .filter(Boolean)
+                    .filter((property) => property && !['NA', 'VL', 'F'].includes(property))
                     .map((property) => ({
                         title: property,
                         value: property,
@@ -4965,6 +5084,13 @@ export default {
         },
         courseWorkGroupsForGradeInputMode(groups, gradeInputMode) {
             const workGroups = Array.isArray(groups) ? groups : []
+            if (gradeInputMode === 'points') {
+                return workGroups.map((group) => ({
+                    ...group,
+                    grade: this.normalizedPointsGrade(group.grade),
+                    grades: (group.grades || []).map((item) => ({ ...item, grade: this.normalizedPointsGrade(item.grade) })),
+                }))
+            }
             if (gradeInputMode !== 'none') return workGroups
 
             return workGroups.map((group) => ({
@@ -4972,6 +5098,51 @@ export default {
                 grade: null,
                 grades: [],
             }))
+        },
+        normalizedPointsGrade(value) {
+            if (value === null || value === undefined) return value
+            return String(value).trim().replace(',', '.')
+        },
+        maximumPointsForType(type) {
+            const definition = this.selected_course?.teaching_entry_area?.entry_definitions
+                ?.find((entry) => entry.category === 'Benotung' && entry.short_name === type)
+            return Number(definition?.maximum_points)
+        },
+        gradeInputHint(mode, type) {
+            if (mode === 'points') return `Punkte von 0 bis ${this.maximumPointsForType(type)}; Dezimalstellen sind möglich.`
+            if (mode === 'plus') return 'Nur Pluszeichen, z. B. +, ++, +++ (max. 50).'
+            if (mode === 'plus_minus') return 'Nur Pluszeichen oder nur Minuszeichen, z. B. +++, -- (max. 50).'
+            return ''
+        },
+        specialGradeItemsForType(type) {
+            if (!this.uses_entry_areas_for_grading_schema) return []
+            const definition = this.selected_course?.teaching_entry_area?.entry_definitions
+                ?.find((entry) => entry.category === 'Benotung' && entry.short_name === type)
+            if (!definition?.has_properties) return []
+            const enabled = definition.enabled_special_properties ?? ['NA', 'VL', 'F']
+            return [
+                { title: 'NA · Nicht angetreten', value: 'NA' },
+                { title: 'VL · Vorgetäuschte Leistung', value: 'VL' },
+                { title: 'F · Gefehlt', value: 'F' },
+            ].filter((item) => enabled.includes(item.value))
+        },
+        gradeInputValidation(value, mode, type) {
+            const grade = String(value ?? '').trim()
+            if (this.uses_entry_areas_for_grading_schema && ['NA', 'VL', 'F'].includes(grade)) {
+                return this.specialGradeItemsForType(type).some((item) => item.value === grade)
+                    || 'Diese Zusatzeigenschaft ist für diesen Eintrag nicht aktiviert.'
+            }
+            if (!['plus', 'plus_minus', 'points'].includes(mode)) return true
+            if (!grade) return true
+            if (mode === 'points') {
+                const normalized = this.normalizedPointsGrade(grade)
+                const maximum = this.maximumPointsForType(type)
+                return (/^\d+(?:\.\d+)?$/.test(normalized) && normalized.length <= 50
+                    && Number.isFinite(maximum) && maximum > 0 && Number(normalized) <= maximum)
+                    || this.gradeInputHint(mode, type)
+            }
+            const pattern = mode === 'plus' ? /^\+{1,50}$/ : /^(?:\+{1,50}|-{1,50})$/
+            return pattern.test(grade) || this.gradeInputHint(mode)
         },
         toggledCourseWorkGrade(currentGrade, selectedGrade) {
             const selectedValue = String(selectedGrade ?? '')
@@ -5088,9 +5259,11 @@ export default {
             const work = this.courseWorkForCellEntry(entry)
             const draft = this.courseWorkEntryDraft(entry)
             const gradeInputMode = this.courseWorkEntryGradeInputMode(entry)
+            if ((['plus', 'plus_minus', 'points'].includes(gradeInputMode) || ['NA', 'VL', 'F'].includes(String(draft.grade ?? '').trim()))
+                && this.gradeInputValidation(draft.grade, gradeInputMode, work?.type) !== true) return
             const updatedWork = this.courseWorkWithStudentEvaluation(work, this.registeredEntryStudentId, {
                 ...draft,
-                grade: gradeInputMode === 'none' ? '' : draft.grade,
+                grade: gradeInputMode === 'none' ? '' : gradeInputMode === 'points' ? this.normalizedPointsGrade(draft.grade) : draft.grade,
             })
             if (!updatedWork) return
 
@@ -5225,7 +5398,11 @@ export default {
                         teaching_course_id: this.selected_course.id,
                         user_id: this.registeredEntryStudentId,
                         type: this.entryForm.type,
-                        grade: this.selectedEntryTypeCategory === 'Benotung' ? this.entryForm.grade || null : null,
+                        grade: this.selectedEntryTypeCategory === 'Benotung'
+                            ? this.availableEntryGradeInputMode === 'points'
+                                ? this.normalizedPointsGrade(this.entryForm.grade) || null
+                                : this.entryForm.grade || null
+                            : null,
                         date,
                         description,
                     })
@@ -5233,7 +5410,11 @@ export default {
                     response = await this.entryStore.update({
                         id: this.entryForm.id,
                         type: this.entryForm.type,
-                        grade: this.selectedEntryTypeCategory === 'Benotung' ? this.entryForm.grade || null : null,
+                        grade: this.selectedEntryTypeCategory === 'Benotung'
+                            ? this.availableEntryGradeInputMode === 'points'
+                                ? this.normalizedPointsGrade(this.entryForm.grade) || null
+                                : this.entryForm.grade || null
+                            : null,
                         date,
                         description,
                     })

@@ -28,6 +28,10 @@ class StoreTeachingEntryGradingPartRequest extends FormRequest
         $areaId = $this->integer('teaching_entry_area_id');
 
         return [
+            ...UpdateTeachingEntryGradingPartRequest::overallThresholdRules(0, $this->input('allowed_entry_types', 'all') === 'points', false),
+            'allowed_entry_types' => ['sometimes', 'required', Rule::in(['all', 'points'])],
+            'individual_points_weighting_mode' => ['sometimes', 'required', Rule::in(['points', 'weighted']), Rule::prohibitedIf($this->input('allowed_entry_types', 'all') !== 'points' || $this->input('points_assessment_mode', 'individual') !== 'individual')],
+            'points_assessment_mode' => ['sometimes', 'required', Rule::in($this->input('allowed_entry_types', 'all') === 'points' ? ['overall', 'individual'] : ['individual'])],
             'weight' => ['sometimes', 'required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:9999999.999'],
             'is_required' => ['sometimes', 'required', 'boolean'],
             'fixed_percentage' => ['sometimes', 'nullable', 'numeric', 'decimal:0,3', 'min:0.001', 'max:100'],

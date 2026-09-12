@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
@@ -93,6 +94,12 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
             adminStore.is_loading++
             try {
                 await axios.delete(`/api/admin/teaching/course_works/${workId}`)
+                this.courseWorks = this.courseWorks.filter((work) => String(work.id) !== String(workId))
+                if (String(this.selected_courseWork?.id) === String(workId)) this.selected_courseWork = null
+                const entryStore = useCourseStudentEntryStore()
+                const keepEntry = (entry) => entry.source !== 'course_work' || String(entry.teaching_course_work_id) !== String(workId)
+                entryStore.entries = entryStore.entries.filter(keepEntry)
+                entryStore.courseEntries = entryStore.courseEntries.filter(keepEntry)
                 return true
             } catch (error) {
                 notification.notify({

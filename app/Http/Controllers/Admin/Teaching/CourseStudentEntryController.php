@@ -13,7 +13,9 @@ use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class CourseStudentEntryController extends Controller
 {
@@ -95,7 +97,7 @@ class CourseStudentEntryController extends Controller
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
             'user_id' => 'required|integer|exists:users,id',
             'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
-            'grade' => 'nullable|string|max:50',
+            'grade' => $entryService->gradeRulesForCourse($this->teachingCourseActor($auth_user, $course), $course, $request->input('type')),
             'date' => 'nullable|date',
             'description' => 'nullable|string|max:1024',
             'teaching_course_work_id' => 'nullable|integer|exists:teaching_course_works,id',
@@ -110,6 +112,7 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $this->validateLinkedWorkMaximumPlus($validated, $course, $this->teachingCourseActor($auth_user, $course), $entryService);
         $entry = TeachingCourseStudentEntry::create($validated);
         $this->loadPendingNotificationConfirmationState($entry);
         $this->attachEffectiveGrade($entry, $this->defaultGradesByType($course, $auth_user));
@@ -141,23 +144,62 @@ class CourseStudentEntryController extends Controller
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
-            'grade' => 'nullable|string|max:50',
+            'grade' => $entryService->gradeRulesForCourse($this->teachingCourseActor($auth_user, $course), $course, $request->input('type')),
             'date' => 'nullable|date',
             'description' => 'nullable|string|max:1024',
             'teaching_course_work_id' => 'nullable|integer|exists:teaching_course_works,id',
             'status' => 'nullable|array',
         ]);
 
+        if (! array_key_exists('grade', $validated) && $validated['type'] !== $course_student_entry->type) {
+            Validator::make(['grade' => $course_student_entry->grade], [
+                'grade' => $entryService->gradeRulesForCourse($this->teachingCourseActor($auth_user, $course), $course, $validated['type']),
+            ])->validate();
+        }
+
         $student = $course_student_entry->user;
         if (! $student || $student->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $this->validateLinkedWorkMaximumPlus([
+            'teaching_course_work_id' => $course_student_entry->teaching_course_work_id,
+            'grade' => $course_student_entry->grade,
+            ...$validated,
+        ], $course, $this->teachingCourseActor($auth_user, $course), $entryService);
         $course_student_entry->update($validated);
         $this->loadPendingNotificationConfirmationState($course_student_entry);
         $this->attachEffectiveGrade($course_student_entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $course_student_entry]);
+    }
+
+    private function validateLinkedWorkMaximumPlus(array $validated, TeachingCourse $course, User $actor, TeachingCourseStudentEntryService $entryService): void
+    {
+        if (empty($validated['teaching_course_work_id'])) {
+            return;
+        }
+
+        $work = $course->teachingCourseWorks()->find($validated['teaching_course_work_id']);
+        if (! $work) {
+            throw ValidationException::withMessages(['teaching_course_work_id' => 'Die Arbeit gehört nicht zu diesem Kurs.']);
+        }
+
+        $definition = $entryService->entryDefinitionsForCourse($actor, $course)->firstWhere('short_name', $work->type);
+        if ($definition?->properties_mode !== 'plus' || ! $definition->allows_maximum_plus) {
+            return;
+        }
+
+        $grade = trim((string) ($validated['grade'] ?? ''));
+        if (preg_match('/^\++$/', $grade) !== 1) {
+            return;
+        }
+
+        if (! $work->maximum_plus || strlen($grade) > $work->maximum_plus) {
+            throw ValidationException::withMessages(['grade' => ! $work->maximum_plus
+                ? 'Bitte zuerst die maximal erreichbare Anzahl an Plus bei der Arbeit festlegen.'
+                : 'Die Anzahl an Plus darf die maximal erreichbare Anzahl nicht überschreiten.']);
+        }
     }
 
     public function destroy(TeachingCourseStudentEntry $course_student_entry)

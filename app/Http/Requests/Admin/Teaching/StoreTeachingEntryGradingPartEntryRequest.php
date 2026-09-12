@@ -9,6 +9,11 @@ use Illuminate\Validation\Rule;
 
 class StoreTeachingEntryGradingPartEntryRequest extends FormRequest
 {
+    public function messages(): array
+    {
+        return ['teaching_entry_definition_id.exists' => 'Bitte einen noch nicht zugeordneten, für diesen Benotungsteil zulässigen Eintragstyp aus demselben Bereich auswählen.'];
+    }
+
     public function authorize(): bool
     {
         $user = $this->user();
@@ -38,6 +43,7 @@ class StoreTeachingEntryGradingPartEntryRequest extends FormRequest
                     ->where('schoolyear_id', $user?->schoolyear_id)
                     ->where('teaching_entry_area_id', $gradingPart?->teaching_entry_area_id)
                     ->where('category', 'Benotung')
+                    ->when($gradingPart?->allowed_entry_types === 'points', fn ($query) => $query->where('properties_mode', 'points'))
                     ->whereNull('teaching_entry_grading_part_id')),
             ],
         ];

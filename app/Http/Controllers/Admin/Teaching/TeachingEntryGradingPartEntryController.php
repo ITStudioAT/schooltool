@@ -9,6 +9,7 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
 use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
 
 class TeachingEntryGradingPartEntryController extends Controller
 {
@@ -28,6 +29,10 @@ class TeachingEntryGradingPartEntryController extends Controller
             ->where('category', 'Benotung')
             ->whereNull('teaching_entry_grading_part_id')
             ->firstOrFail();
+
+        if ($entryGradingPart->allowed_entry_types === 'points' && $entryDefinition->properties_mode !== 'points') {
+            throw ValidationException::withMessages(['teaching_entry_definition_id' => 'Dieser Benotungsteil erlaubt nur Punktetypen.']);
+        }
 
         $entryDefinition->update([
             'teaching_entry_grading_part_id' => $entryGradingPart->id,

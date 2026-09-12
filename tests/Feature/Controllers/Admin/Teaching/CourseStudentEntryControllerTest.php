@@ -18,6 +18,83 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+test('honors linked work maximum plus on manual entry creation and updates', function () {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'plus', 'allows_maximum_plus' => true,
+    ]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'type' => 'MA', 'maximum_plus' => 3]);
+    $this->actingAs($this->admin, 'sanctum');
+    $payload = ['teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'type' => 'MA', 'teaching_course_work_id' => $work->id];
+    $this->postJson('/api/admin/teaching/course_student_entries', [...$payload, 'grade' => '++++'])
+        ->assertUnprocessable()->assertJsonValidationErrors('grade');
+    $response = $this->postJson('/api/admin/teaching/course_student_entries', [...$payload, 'grade' => '+++'])->assertCreated();
+    $entryId = $response->json('data.id');
+    $this->putJson("/api/admin/teaching/course_student_entries/{$entryId}", ['type' => 'MA', 'grade' => '++++'])
+        ->assertUnprocessable()->assertJsonValidationErrors('grade');
+    $this->putJson("/api/admin/teaching/course_student_entries/{$entryId}", ['type' => 'MA', 'grade' => '++'])
+        ->assertOk()->assertJsonPath('data.grade', '++');
+    $work->update(['maximum_plus' => null]);
+    $this->postJson('/api/admin/teaching/course_student_entries', [...$payload, 'grade' => '+'])
+        ->assertUnprocessable()->assertJsonValidationErrors('grade');
+    $work->update(['teaching_course_id' => $this->otherCourse->id]);
+    $this->postJson('/api/admin/teaching/course_student_entries', [...$payload, 'grade' => '+'])
+        ->assertUnprocessable()->assertJsonValidationErrors('teaching_course_work_id');
+});
+
+test('validates repeated sign grades on entry create and update', function (string $mode, ?string $grade, bool $valid, array $specialProperties = ['NA', 'VL', 'F']) {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => $mode,
+        'maximum_points' => $mode === 'points' ? 10.5 : null,
+        'enabled_special_properties' => $specialProperties,
+    ]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $this->actingAs($this->admin, 'sanctum');
+    $payload = ['teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'type' => 'MA', 'grade' => $grade];
+    $response = $this->postJson('/api/admin/teaching/course_student_entries', $payload);
+    if ($valid) {
+        $response->assertCreated()->assertJsonPath('data.grade', $grade);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('grade');
+    }
+    $entry = TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'type' => 'MA', 'grade' => '+',
+    ]);
+    if (! $valid) {
+        $entry->update(['type' => 'OLD', 'grade' => $grade]);
+        $this->putJson("/api/admin/teaching/course_student_entries/{$entry->id}", ['type' => 'MA'])
+            ->assertUnprocessable()->assertJsonValidationErrors('grade');
+        $entry->update(['type' => 'MA', 'grade' => '+']);
+    }
+    $response = $this->putJson("/api/admin/teaching/course_student_entries/{$entry->id}", ['type' => 'MA', 'grade' => $grade]);
+    if ($valid) {
+        $response->assertOk()->assertJsonPath('data.grade', $grade);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('grade');
+        expect($entry->fresh()->grade)->toBe('+');
+    }
+})->with([
+    ['points', '0', true], ['points', '10.5', true], ['points', 'NA', true],
+    ['points', '-1', false], ['points', '10.6', false], ['points', 'abc', false], ['points', '1e999', false],
+    ['plus', '+++', true], ['plus', '-', false], ['plus', '1', false],
+    ['plus_minus', '+++', true], ['plus_minus', '---', true], ['plus_minus', '+-', false],
+    ['plus_minus', null, true], ['plus', str_repeat('+', 51), false],
+    ['plus', 'NA', true], ['plus_minus', 'VL', true], ['fixed', 'F', true], ['free', 'F', false, []],
+    ['plus', 'NA', false, []],
+]);
+
 beforeEach(function () {
     collect([
         'super_admin',

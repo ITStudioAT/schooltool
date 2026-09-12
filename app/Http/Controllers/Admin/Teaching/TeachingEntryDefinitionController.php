@@ -8,10 +8,12 @@ use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryDefinitionRequest;
 use App\Http\Resources\Admin\Teaching\TeachingEntryDefinitionResource;
 use App\Models\TeachingEntryDefinition;
 use App\Models\User;
+use App\Services\TeachingCourseStudentEntryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class TeachingEntryDefinitionController extends Controller
 {
@@ -54,13 +56,38 @@ class TeachingEntryDefinitionController extends Controller
         $this->ensureEntryBelongsToUser($entryDefinition, $authUser);
 
         $payload = $this->entryPayload($request->validated());
+        if (! in_array($entryDefinition->grading_part_other_assessment_mode, TeachingEntryDefinition::allowedOtherAssessmentModes($payload['properties_mode']), true)) {
+            $payload['grading_part_other_assessment_mode'] = null;
+        }
+        if ($entryDefinition->gradingPart?->allowed_entry_types === 'points' && $payload['properties_mode'] !== 'points') {
+            throw ValidationException::withMessages(['properties_mode' => 'Dieser Benotungsteil erlaubt nur Punktetypen. Bitte zuerst die Zuordnung entfernen.']);
+        }
+        if ($payload['properties_mode'] !== 'points'
+            || collect($entryDefinition->points_grade_thresholds ?? [])->contains(fn (mixed $threshold): bool => $threshold > $payload['maximum_points'])) {
+            $payload['points_grade_thresholds'] = null;
+        }
+        if (! (new TeachingEntryDefinition($payload))->supportsFreeGrading()) {
+            $payload['free_grading_mode'] = null;
+            $payload['free_deficit_grade_thresholds'] = null;
+            $payload['free_points_grade_thresholds'] = null;
+        }
+        if ($payload['properties_mode'] !== 'plus') {
+            $payload['allows_maximum_plus'] = false;
+            $payload['sum_plus_evaluations'] = false;
+            $payload['maximum_plus_grading_mode'] = null;
+            $payload['maximum_plus_grade_thresholds'] = null;
+        }
         $hasFreeProperties = $payload['has_properties'] && $payload['properties_mode'] === 'free';
+        $propertyPattern = $payload['has_properties'] ? TeachingCourseStudentEntryService::propertyPattern($payload['properties_mode']) : null;
+        $specialProperties = $payload['enabled_special_properties'] ?? $entryDefinition->enabled_special_properties;
         if (! $payload['has_properties']) {
             $payload['calculation_mode'] = 'individual';
         }
 
-        $payload['property_evaluations'] = collect($entryDefinition->property_evaluations ?? [])
-            ->filter(fn (array $evaluation): bool => $hasFreeProperties || in_array($evaluation['property'], $payload['fixed_properties'], true))
+        $payload['property_evaluations'] = collect($payload['property_evaluations'] ?? $entryDefinition->property_evaluations ?? [])
+            ->filter(fn (array $evaluation): bool => ($payload['has_properties'] && in_array($evaluation['property'], $specialProperties, true)) || $hasFreeProperties || ($propertyPattern !== null
+                ? preg_match($propertyPattern, $evaluation['property']) === 1
+                : in_array($evaluation['property'], $payload['fixed_properties'], true)))
             ->values()
             ->all();
 
@@ -107,7 +134,7 @@ class TeachingEntryDefinitionController extends Controller
         $isGradingEntry = $validated['category'] === 'Benotung';
         $hasProperties = $isGradingEntry && (bool) $validated['has_properties'];
         $propertiesMode = $hasProperties ? $validated['properties_mode'] : 'free';
-        $fixedProperties = $hasProperties && $propertiesMode === 'fixed'
+        $fixedProperties = $hasProperties && in_array($propertiesMode, ['fixed', 'free'], true)
             ? collect($validated['fixed_properties'] ?? [])
                 ->map(fn (string $property): string => trim($property))
                 ->filter(fn (string $property): bool => $property !== '')
@@ -126,6 +153,8 @@ class TeachingEntryDefinitionController extends Controller
         $tableMarkingColor = $hasTableMarking ? $validated['table_marking_color'] : null;
 
         return [
+            ...(array_key_exists('property_evaluations', $validated) ? ['property_evaluations' => $validated['property_evaluations']] : []),
+            ...(array_key_exists('enabled_special_properties', $validated) ? ['enabled_special_properties' => $validated['enabled_special_properties']] : []),
             'teaching_entry_area_id' => (int) $validated['teaching_entry_area_id'],
             'short_name' => Str::of($validated['short_name'])->trim()->upper()->toString(),
             'name' => Str::of($validated['name'])->trim()->toString(),
@@ -133,6 +162,7 @@ class TeachingEntryDefinitionController extends Controller
             'category' => $validated['category'],
             'has_properties' => $hasProperties,
             'properties_mode' => $propertiesMode,
+            'maximum_points' => $propertiesMode === 'points' ? (float) $validated['maximum_points'] : null,
             'fixed_properties' => $fixedProperties,
             'has_notifications' => $hasNotifications,
             'notification_recipients' => $notificationRecipients,

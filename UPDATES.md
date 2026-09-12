@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.48.2 !!!
+
+### Unterricht
+
+- Berechnung der Noten
+
 ## 3.48.1
 
 ### SEPP

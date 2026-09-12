@@ -64,6 +64,177 @@ trait RefreshTeachingEntryGradingPartDatabase
 
 uses(RefreshTeachingEntryGradingPartDatabase::class);
 
+test('stores individual points weighting selection and preserves inactive choices', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $id = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Punkte', 'allowed_entry_types' => 'points',
+    ])->assertCreated()->assertJsonPath('data.individual_points_weighting_mode', 'weighted')->json('data.id');
+    $url = "/api/admin/teaching/entry_grading_parts/{$id}";
+    $this->putJson($url, ['name' => 'Punkte', 'individual_points_weighting_mode' => 'points'])->assertOk()->assertJsonPath('data.individual_points_weighting_mode', 'points');
+    $this->putJson($url, ['name' => 'Punkte', 'points_assessment_mode' => 'overall'])->assertOk()->assertJsonPath('data.individual_points_weighting_mode', 'points');
+    $this->putJson($url, ['name' => 'Punkte', 'allowed_entry_types' => 'all'])->assertOk()->assertJsonPath('data.individual_points_weighting_mode', 'points');
+    $this->putJson($url, ['name' => 'Punkte', 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'individual'])->assertOk()->assertJsonPath('data.individual_points_weighting_mode', 'points');
+});
+
+test('validates individual points weighting selection on create and update', function (string $types, string $assessment, mixed $weighting, bool $valid) {
+    $this->actingAs($this->teacher, 'sanctum');
+    $payload = ['teaching_entry_area_id' => $this->area->id, 'name' => 'Punkte', 'allowed_entry_types' => $types,
+        'points_assessment_mode' => $assessment, 'individual_points_weighting_mode' => $weighting];
+    $response = $this->postJson('/api/admin/teaching/entry_grading_parts', $payload);
+    if ($valid) {
+        $response->assertCreated()->assertJsonPath('data.individual_points_weighting_mode', $weighting);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('individual_points_weighting_mode');
+    }
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $response = $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", [...$payload, 'name' => 'Weitere Punkte']);
+    if ($valid) {
+        $response->assertOk()->assertJsonPath('data.individual_points_weighting_mode', $weighting);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('individual_points_weighting_mode');
+    }
+})->with([
+    ['points', 'individual', 'points', true], ['points', 'individual', 'weighted', true],
+    ['points', 'overall', 'points', false], ['all', 'individual', 'weighted', false],
+    ['points', 'individual', 'invalid', false], ['points', 'individual', null, false],
+]);
+
+test('configures overall point boundaries against assigned maximum and preserves inactive values', function () {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'points',
+    ]);
+    foreach ([10.5, 9.5] as $maximum) {
+        TeachingEntryDefinition::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+            'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => 'points', 'maximum_points' => $maximum,
+        ]);
+    }
+    $this->actingAs($this->teacher, 'sanctum');
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'overall'])
+        ->assertUnprocessable()->assertJsonValidationErrors('overall_points_grade_thresholds');
+    $boundaries = [1 => 17.5, 2 => 15, 3 => 12.5, 4 => 10];
+    $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'overall', 'overall_points_grade_thresholds' => $boundaries])
+        ->assertOk()->assertJsonPath('data.overall_maximum_points', 20)->assertJsonPath('data.overall_points_grade_thresholds.1', 17.5);
+    $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'individual'])->assertOk()->assertJsonPath('data.overall_points_grade_thresholds.1', 17.5);
+    $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'overall'])->assertOk();
+    $this->putJson($url, ['name' => $part->name, 'allowed_entry_types' => 'all'])->assertOk()->assertJsonPath('data.overall_points_grade_thresholds', null);
+});
+
+test('invalidates overall boundaries after assigned maximum shrinks or an entry is removed', function (string $change) {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'points',
+    ]);
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => 'points', 'maximum_points' => 20,
+    ]);
+    $part->update(['overall_points_grade_thresholds' => [1 => 17.5, 2 => 15, 3 => 12.5, 4 => 10]]);
+    if ($change === 'delete') {
+        $entry->delete();
+    } elseif ($change === 'detach') {
+        $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/admin/teaching/entry_grading_parts/{$part->id}/entries/{$entry->id}")->assertNoContent();
+    } else {
+        $entry->update(['maximum_points' => 15]);
+    }
+    expect($part->fresh()->overall_points_grade_thresholds)->toBeNull();
+})->with(['delete', 'detach', 'reduce']);
+
+test('rejects invalid overall point boundaries', function (mixed $boundaries) {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'points',
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => 'points', 'maximum_points' => 20,
+    ]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", [
+        'name' => $part->name, 'points_assessment_mode' => 'overall', 'overall_points_grade_thresholds' => $boundaries,
+    ])->assertUnprocessable();
+})->with([[null], [[1 => 18, 2 => 15, 3 => 12]], [[1 => 21, 2 => 15, 3 => 12, 4 => 10]], [[1 => 18, 2 => 18, 3 => 12, 4 => 10]], [[1 => 18, 2 => 15, 3 => 12, 4 => -1]], [[1 => '1e999', 2 => 15, 3 => 12, 4 => 10]]]);
+
+test('persists points assessment selection preserving omitted settings and resetting unrestricted parts', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $id = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Punkte', 'allowed_entry_types' => 'points',
+    ])->assertCreated()->assertJsonPath('data.points_assessment_mode', 'individual')->json('data.id');
+    $url = "/api/admin/teaching/entry_grading_parts/{$id}";
+    $this->putJson($url, ['name' => 'Punkte', 'points_assessment_mode' => 'overall'])->assertOk()->assertJsonPath('data.points_assessment_mode', 'overall');
+    $this->putJson($url, ['name' => 'Punkte', 'weight' => 2])->assertOk()->assertJsonPath('data.points_assessment_mode', 'overall');
+    expect(TeachingEntryGradingPart::findOrFail($id)->points_assessment_mode)->toBe('overall');
+    $this->putJson($url, ['name' => 'Punkte', 'allowed_entry_types' => 'all'])->assertOk()->assertJsonPath('data.points_assessment_mode', 'individual');
+    expect(TeachingEntryGradingPart::findOrFail($id)->points_assessment_mode)->toBe('individual');
+});
+
+test('validates points assessment selection on create and update', function (string $types, mixed $mode, bool $valid) {
+    $this->actingAs($this->teacher, 'sanctum');
+    $payload = ['teaching_entry_area_id' => $this->area->id, 'name' => 'Punkte', 'allowed_entry_types' => $types, 'points_assessment_mode' => $mode];
+    $response = $this->postJson('/api/admin/teaching/entry_grading_parts', $payload);
+    if ($valid) {
+        $response->assertCreated()->assertJsonPath('data.points_assessment_mode', $mode);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    }
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $response = $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", [...$payload, 'name' => 'Weitere Punkte']);
+    if ($valid) {
+        $response->assertOk()->assertJsonPath('data.points_assessment_mode', $mode);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    }
+})->with([['points', 'overall', true], ['points', 'individual', true], ['all', 'individual', true], ['all', 'overall', false], ['points', 'invalid', false], ['points', null, false]]);
+
+test('persists allowed entry types and enforces assignment restrictions', function (string $mode, bool $allowed) {
+    $this->actingAs($this->teacher, 'sanctum');
+    $id = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Punkte', 'allowed_entry_types' => 'points',
+    ])->assertCreated()->assertJsonPath('data.allowed_entry_types', 'points')->json('data.id');
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode,
+    ]);
+    $response = $this->postJson("/api/admin/teaching/entry_grading_parts/{$id}/entries", ['teaching_entry_definition_id' => $entry->id]);
+    if ($allowed) {
+        $response->assertSuccessful();
+        expect($entry->fresh()->teaching_entry_grading_part_id)->toBe($id);
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('teaching_entry_definition_id');
+        expect($entry->fresh()->teaching_entry_grading_part_id)->toBeNull();
+    }
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Punkte neu'])
+        ->assertOk()->assertJsonPath('data.allowed_entry_types', 'points');
+})->with([['points', true], ['fixed', false], ['free', false], ['plus', false], ['plus_minus', false]]);
+
+test('rejects restricting an occupied incompatible grading part without detaching entries', function () {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => 'free',
+    ]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'allowed_entry_types' => 'points'])
+        ->assertUnprocessable()->assertJsonValidationErrors('allowed_entry_types');
+    expect($part->fresh()->allowed_entry_types)->toBe('all')->and($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id);
+    $entry->update(['properties_mode' => 'points']);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'allowed_entry_types' => 'points'])->assertOk();
+});
+
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);

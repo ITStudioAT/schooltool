@@ -4,6 +4,24 @@ import { describe, expect, it, vi } from 'vitest'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 
 describe('CourseWorks defaults', () => {
+    it('uses the current grading types and requires the enabled maximum plus value', () => {
+        const computed = (CourseWorks as any).computed
+        const definition = { category: 'Benotung', short_name: 'A', properties_mode: 'plus', allows_maximum_plus: true }
+        const ctx = {
+            selected_course: { teaching_entry_area: { id: 1, entry_definitions: [definition, { category: 'Verhalten' }] } },
+            selectedCourseSchema: { works: [{ short_name: 'OLD' }] },
+            work_form: { type: 'A', maximum_plus: null as string | null },
+        }
+
+        expect(computed.teachingWorks.call(ctx)).toEqual([definition])
+        expect(computed.workRequiresMaximumPlus.call(ctx)).toBe(true)
+        expect(computed.workMaximumError.call(ctx)).toContain('positive ganze Zahl')
+        ctx.work_form.maximum_plus = '6'
+        expect(computed.workMaximumError.call(ctx)).toBe('')
+        definition.allows_maximum_plus = false
+        expect(computed.workRequiresMaximumPlus.call(ctx)).toBe(false)
+    })
+
     it('defaults student sort mode to name', () => {
         const data = (CourseWorks as any).data.call({
             emptyWorkForm: () => ({}),

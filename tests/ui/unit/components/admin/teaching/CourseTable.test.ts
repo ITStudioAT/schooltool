@@ -14,6 +14,136 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
+describe('CourseTable sign properties', () => {
+    it('requires and saves a per-work maximum for the enabled Nur-Plus type', async () => {
+        const methods = (CourseTable as any).methods
+        const computed = (CourseTable as any).computed
+        const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const ctx: any = { ...methods, canSaveDateWork: true, courseWorks: [],
+            courseWorkGradeInputModeForType: () => 'plus', courseWorkStore: { store },
+            cancelDateWorkForm: vi.fn(), loadCourseTableData: vi.fn(),
+            selected_course: { id: 20, teaching_entry_area: { entry_definitions: [{ category: 'Benotung', short_name: 'A', properties_mode: 'plus', allows_maximum_plus: true }] } },
+            workDialog: { courseDate: { date: '2026-09-14' } }, workDialogForm: { type: 'A', maximum_plus: null, groups: [] } }
+        expect(computed.dateWorkRequiresMaximumPlus.call(ctx)).toBe(true)
+        for (const maximum of [null, '', '0', '-1', '1,5', '1.5', true, 'Infinity']) {
+            ctx.workDialogForm.maximum_plus = maximum
+            expect(computed.dateWorkMaximumPlusError.call(ctx)).toContain('positive ganze Zahl')
+            await methods.saveDateWork.call(ctx)
+            expect(store).not.toHaveBeenCalled()
+        }
+        ctx.workDialogForm.maximum_plus = '8'
+        expect(computed.dateWorkMaximumPlusError.call(ctx)).toBe('')
+        await methods.saveDateWork.call(ctx)
+        expect(store).toHaveBeenCalledWith(expect.objectContaining({ maximum_plus: 8 }))
+        ctx.selected_course.teaching_entry_area.entry_definitions[0].allows_maximum_plus = false
+        expect(computed.dateWorkRequiresMaximumPlus.call(ctx)).toBe(false)
+        expect(computed.dateWorkMaximumPlusError.call(ctx)).toBe('')
+    })
+
+    it('normalizes group and individual points without changing special codes or the original draft', () => {
+        const methods = (CourseTable as any).methods
+        const groups = [{ grade: '12,5', grades: [{ student_id: 1, grade: '6,25' }, { student_id: 2, grade: 'NA' }] }]
+        expect(methods.courseWorkGroupsForGradeInputMode.call(methods, groups, 'points')).toEqual([
+            { grade: '12.5', grades: [{ student_id: 1, grade: '6.25' }, { student_id: 2, grade: 'NA' }] },
+        ])
+        expect(groups[0].grade).toBe('12,5')
+        expect(methods.courseWorkGroupsForGradeInputMode.call(methods, groups, 'free')).toBe(groups)
+    })
+
+    it.each([
+        ['0', true], ['12,5', true], ['12.5', true], ['6,25', true],
+        ['12.51', false], ['-1', false], ['Infinity', false], ['NaN', false],
+        ['1,2,3', false], ['Text', false], ['1e1', false],
+    ])('validates points %s against the configured decimal maximum', (value, valid) => {
+        const methods = (CourseTable as any).methods
+        const context = { ...methods, maximumPointsForType: () => 12.5 }
+        expect(context.gradeInputValidation(value, 'points', 'M') === true).toBe(valid)
+    })
+
+    it.each(['fixed', 'free', 'plus', 'plus_minus', 'points'])('offers and validates selected specials for %s', (mode) => {
+        const methods = (CourseTable as any).methods
+        const definition: any = { category: 'Benotung', short_name: 'M', has_properties: true, properties_mode: mode }
+        const context = {
+            ...methods, uses_entry_areas_for_grading_schema: true,
+            selected_course: { teaching_entry_area: { id: 1, entry_definitions: [definition] } },
+        }
+        expect(context.specialGradeItemsForType('M').map((item) => item.value)).toEqual(['NA', 'VL', 'F'])
+        for (const code of ['NA', 'VL', 'F']) expect(context.gradeInputValidation(code, mode, 'M')).toBe(true)
+        definition.enabled_special_properties = ['VL']
+        expect(context.specialGradeItemsForType('M').map((item) => item.value)).toEqual(['VL'])
+        expect(context.gradeInputValidation('VL', mode, 'M')).toBe(true)
+        expect(context.gradeInputValidation('NA', mode, 'M')).not.toBe(true)
+        expect(context.gradeInputValidation('F', mode, 'M')).not.toBe(true)
+        definition.enabled_special_properties = []
+        expect(context.specialGradeItemsForType('M')).toEqual([])
+        expect(context.gradeInputValidation('VL', mode, 'M')).not.toBe(true)
+    })
+
+    it('renders special choices next to manual, group, individual and work-cell inputs', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseTable.vue'), 'utf8')
+        expect(source.match(/v-for="item in specialGradeItemsForType\(entryForm.type\)"/g)).toHaveLength(2)
+        expect(source.match(/v-for="item in specialGradeItemsForType\(workDialogForm.type\)"/g)).toHaveLength(2)
+        expect(source).toContain('v-for="item in specialGradeItemsForType(courseWorkForCellEntry(entry)?.type)"')
+    })
+
+    it('blocks invalid signs in manual entry saving', () => {
+        const component = CourseTable as any
+        const context = {
+            ...component.methods,
+            availableEntryTypes: [{ value: 'M' }],
+            entryForm: { type: 'M', grade: '+-' },
+            availableEntryGradeInputMode: 'plus_minus',
+            registeredEntryStudentId: 10,
+            entrySaving: false,
+        }
+        expect(component.computed.canSaveCellEntry.call(context)).toBe(false)
+        context.entryForm.grade = '---'
+        expect(component.computed.canSaveCellEntry.call(context)).toBe(true)
+    })
+
+    it.each([false, true])('blocks invalid work grades with individual grading %s', async (individual) => {
+        const methods = (CourseTable as any).methods
+        const store = vi.fn()
+        const context = {
+            ...methods,
+            canSaveDateWork: true,
+            courseWorkGradeInputModeForType: () => 'plus',
+            workDialogForm: {
+                type: 'M',
+                groups: [{ use_individual_grades: individual, grade: '--', grades: [{ student_id: 10, grade: '--' }] }],
+            },
+            courseWorkStore: { store },
+        }
+        await methods.saveDateWork.call(context)
+        expect(store).not.toHaveBeenCalled()
+    })
+
+    it.each([
+        ['plus', '+++', true],
+        ['plus', '---', false],
+        ['plus_minus', '---', true],
+        ['plus_minus', '+++', true],
+        ['plus_minus', '+-', false],
+        ['plus_minus', '2', false],
+        ['plus', '+'.repeat(50), true],
+        ['plus', '+'.repeat(51), false],
+    ])('validates %s value %s', (mode, grade, valid) => {
+        const methods = (CourseTable as any).methods
+        expect(methods.gradeInputValidation.call(methods, grade, mode) === true).toBe(valid)
+    })
+
+    it.each(['plus', 'plus_minus'])('preserves the %s property mode for course evaluations', (mode) => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            uses_entry_areas_for_grading_schema: true,
+            selected_course: { teaching_entry_area: { id: 1, entry_definitions: [
+                { category: 'Benotung', short_name: 'M', has_properties: true, properties_mode: mode },
+            ] } },
+        }
+        expect(methods.courseWorkGradeConfigurationForType.call(context, 'M')).toEqual({ items: [], mode })
+    })
+})
+
 vi.mock('axios', () => ({
     default: {
         get: vi.fn(),
@@ -1702,8 +1832,8 @@ describe('CourseTable', () => {
         expect(availableEntryGrades.call(context)).toEqual([
             { title: '+', value: '+' },
             { title: '0', value: '0' },
-            { title: 'F', value: 'F' },
         ])
+        expect(methods.specialGradeItemsForType.call(context, 'TW').map((item) => item.value)).toEqual(['NA', 'VL', 'F'])
     })
 
     it('styles entry type categories as separate color-coded cards', () => {
@@ -2726,13 +2856,14 @@ describe('CourseTable', () => {
     it('removes a work from the date dialog after confirmation', async () => {
         const methods = (CourseTable as any).methods
         const destroy = vi.fn().mockResolvedValue(true)
-        const loadCourseWorks = vi.fn().mockResolvedValue(true)
+        const loadCourseTableData = vi.fn().mockResolvedValue(true)
         const cancelDateWorkForm = vi.fn()
         const work = { id: 12, title: 'Schularbeit' }
         const ctx = {
             courseWorkStore: { destroy },
             deleteWorkDialog: { open: true, work },
-            loadCourseWorks,
+            loadCourseTableData,
+            selected_course: { id: 20 },
             cancelDateWorkForm,
             workDeleting: false,
             workDialogForm: { id: 12 },
@@ -2741,7 +2872,7 @@ describe('CourseTable', () => {
         await methods.confirmDeleteDateWork.call(ctx)
 
         expect(destroy).toHaveBeenCalledWith(12)
-        expect(loadCourseWorks).toHaveBeenCalledTimes(1)
+        expect(loadCourseTableData).toHaveBeenCalledWith(20, true)
         expect(cancelDateWorkForm).toHaveBeenCalledTimes(1)
         expect(ctx.deleteWorkDialog).toEqual({ open: false, work: null })
         expect(ctx.workDeleting).toBe(false)
@@ -4339,7 +4470,7 @@ describe('CourseTable', () => {
         expect(source).toContain('label="Beschreibung"')
         expect(source).toContain('v-for="row in workGroupGradeRows(workDialogGroupDetailsGroup)"')
         expect(source).toContain("v-if=\"availableWorkGradeInputMode === 'fixed'\"")
-        expect(source).toContain("v-else-if=\"availableWorkGradeInputMode === 'free'\"")
+        expect(source).toContain("['free', 'plus', 'plus_minus', 'points'].includes(availableWorkGradeInputMode)")
         expect(source).toContain('Keine Bewertung vorgesehen.')
         expect(source).toContain('toggledCourseWorkGrade(row.grade, item.value)')
         expect(source).toContain('label="Kommentar"')
@@ -4547,7 +4678,7 @@ describe('CourseTable', () => {
         expect(source).toContain('course-table-cell-work-save-${entry.uid}')
         expect(source).toContain('course-table-cell-work-open-${entry.uid}')
         expect(source).toContain("v-if=\"courseWorkEntryGradeInputMode(entry) === 'fixed'\"")
-        expect(source).toContain("v-else-if=\"courseWorkEntryGradeInputMode(entry) === 'free'\"")
+        expect(source).toContain("['free', 'plus', 'plus_minus', 'points'].includes(courseWorkEntryGradeInputMode(entry))")
         expect(source).toContain('Für diesen Eintragstyp ist keine Bewertung vorgesehen.')
         expect(source).toContain('Weitere Gruppenmitglieder')
         expect(source).toContain('v-for="member in courseWorkEntryOtherGroupMembers(entry)"')

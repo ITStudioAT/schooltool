@@ -184,6 +184,10 @@
                                 @click="startDetailsEdit" />
                         </div>
 
+                        <v-text-field v-if="workRequiresMaximumPlus" v-model="work_form.maximum_plus"
+                            label="Maximale Plusanzahl" type="text" inputmode="numeric" variant="outlined"
+                            hint="So viele Plus sind bei dieser Arbeit insgesamt möglich." persistent-hint
+                            :error-messages="workMaximumError" :disabled="is_saving" />
                         <template v-if="action === 'new_course_work' || details_editable">
                             <v-text-field v-model="work_form.title" label="Titel" />
                             <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
@@ -791,6 +795,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
+import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
@@ -877,6 +882,9 @@ export default {
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
         teachingWorks() {
+            if (this.selected_course?.teaching_entry_area?.id) {
+                return (this.selected_course.teaching_entry_area.entry_definitions || []).filter((entry) => entry.category === 'Benotung')
+            }
             return this.selectedCourseSchema?.works || []
         },
         activeCourseStudents() {
@@ -936,8 +944,14 @@ export default {
         hasSelectedWorkType() {
             return !!this.selectedTypeWork
         },
+        workRequiresMaximumPlus() {
+            return requiresWorkMaximumPlus(this.selected_course, this.work_form.type)
+        },
+        workMaximumError() {
+            return requiresWorkMaximumPlus(this.selected_course, this.work_form.type) ? workMaximumPlusError(this.work_form.maximum_plus) : ''
+        },
         canSaveWork() {
-            return !this.is_saving && !this.isEditingExistingDetails && this.hasSelectedWorkType
+            return !this.is_saving && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
         },
         canChangeGroupWorkMode() {
             return this.action === 'new_course_work' && !this.work_form.id
@@ -1478,6 +1492,7 @@ export default {
         },
         emptyWorkForm() {
             return {
+                maximum_plus: null,
                 id: null,
                 teaching_course_id: null,
                 type: '',
@@ -1702,6 +1717,8 @@ export default {
             this.$router.replace({ query }).catch(() => {})
         },
         async saveWork(stayOnPage = false) {
+            const requiresMaximum = requiresWorkMaximumPlus(this.selected_course, this.work_form.type)
+            if (requiresMaximum && workMaximumPlusError(this.work_form.maximum_plus)) return
             if (!this.hasSelectedWorkType) {
                 useNotificationStore().notify({
                     message: 'Bitte zuerst einen Typ auswählen.',
@@ -1754,6 +1771,8 @@ export default {
                 }
 
                 let ok = false
+                if (requiresMaximum) payload.maximum_plus = Number(this.work_form.maximum_plus)
+                else delete payload.maximum_plus
                 let savedWorkId = this.work_form.id
                 if (this.work_form.id) {
                     // Update existing work

@@ -40,7 +40,10 @@
 
         <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
-                <CourseStudents :key="studentPanel" :show-performances="studentPanel !== 'evaluations'" />
+                <CourseEvaluations v-if="studentPanel === 'evaluations'"
+                    :course="selected_course" :schoolyear="config?.selected_schoolyear"
+                    :active-semester="activeSemester" @update:active-semester="activeSemester = $event" />
+                <CourseStudents v-else />
             </v-col>
         </v-row>
 
@@ -194,6 +197,7 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 
 const MyCourses = defineAsyncComponent(() => import('./components/MyCourses.vue'))
 const CourseStudents = defineAsyncComponent(() => import('./components/CourseStudents.vue'))
+const CourseEvaluations = defineAsyncComponent(() => import('./components/CourseEvaluations.vue'))
 const CourseStudent = defineAsyncComponent(() => import('./components/CourseStudent.vue'))
 const CourseInfos = defineAsyncComponent(() => import('./components/CourseInfos.vue'))
 const CourseDates = defineAsyncComponent(() => import('./components/CourseDates.vue'))
@@ -208,6 +212,7 @@ export default {
     components: {
         MyCourses,
         CourseStudents,
+        CourseEvaluations,
         CourseStudent,
         CourseInfos,
         CourseDates,

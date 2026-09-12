@@ -2,6 +2,83 @@ import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 
 describe('CourseStudents complete performance loading', () => {
+    it.each(['6,25', '0', 'NA'])('saves bulk points %s as a normalized value', async (grade) => {
+        const methods = (CourseStudents as any).methods
+        const store = vi.fn().mockResolvedValue(true)
+        const context = {
+            ...methods, usesNewBulkEntryDefinitions: true,
+            selected_course: { id: 1, students_info: [{ id: 10 }] },
+            bulk_entry_form: { type: 'M', grade, student_ids: [10], date: '2026-09-13', description: '' },
+            bulkGradeInputMode: 'points', bulkMaximumPoints: 12.5,
+            bulkSpecialGradeItems: [{ value: 'NA' }], entryStore: { store },
+            cancelBulkEntry: vi.fn(),
+        }
+        await methods.saveBulkEntry.call(context)
+        expect(store).toHaveBeenCalledWith(expect.objectContaining({ grade: grade.replace(',', '.') }))
+    })
+
+    it.each([
+        ['0', true], ['12,5', true], ['12.5', true], ['6,25', true],
+        ['12.51', false], ['-1', false], ['Infinity', false], ['NaN', false],
+        ['1,2,3', false], ['Text', false], ['1e1', false],
+    ])('validates points %s against the configured decimal maximum', (value, valid) => {
+        const methods = (CourseStudents as any).methods
+        const context = { ...methods, bulkGradeInputMode: 'points', bulkMaximumPoints: 12.5, bulkGradeHint: 'Punkte 0 bis 12,5' }
+        expect(context.validateBulkGrade(value) === true).toBe(valid)
+    })
+
+    it.each(['fixed', 'free', 'plus', 'plus_minus', 'points'])('offers and validates selected bulk specials for %s', (mode) => {
+        const component = CourseStudents as any
+        const definition: any = { short_name: 'M', has_properties: true, properties_mode: mode }
+        const context: any = {
+            ...component.methods, usesNewBulkEntryDefinitions: true,
+            bulk_entry_form: { type: 'M' }, bulkGradeInputMode: mode,
+            teachingWorks: [definition],
+        }
+        context.bulkSpecialGradeItems = component.computed.bulkSpecialGradeItems.call(context)
+        expect(context.bulkSpecialGradeItems.map((item) => item.value)).toEqual(['NA', 'VL', 'F'])
+        for (const code of ['NA', 'VL', 'F']) expect(context.validateBulkGrade(code)).toBe(true)
+        definition.enabled_special_properties = ['F']
+        context.bulkSpecialGradeItems = component.computed.bulkSpecialGradeItems.call(context)
+        expect(context.validateBulkGrade('F')).toBe(true)
+        expect(context.validateBulkGrade('VL')).not.toBe(true)
+        definition.enabled_special_properties = []
+        context.bulkSpecialGradeItems = component.computed.bulkSpecialGradeItems.call(context)
+        expect(context.bulkSpecialGradeItems).toEqual([])
+        expect(context.validateBulkGrade('F')).not.toBe(true)
+    })
+
+    it.each([
+        ['plus', '+++', true],
+        ['plus', '--', false],
+        ['plus_minus', '+++', true],
+        ['plus_minus', '---', true],
+        ['plus_minus', '+-', false],
+        ['plus_minus', 'gut', false],
+        ['plus', '+'.repeat(50), true],
+        ['plus', '+'.repeat(51), false],
+    ])('validates bulk %s value %s', (mode, grade, valid) => {
+        const methods = (CourseStudents as any).methods
+        const context = { bulkGradeInputMode: mode, bulkGradeHint: 'Ungültiger Wert' }
+        expect(methods.validateBulkGrade.call(context, grade) === true).toBe(valid)
+    })
+
+    it('does not submit invalid plus-only bulk values', async () => {
+        const methods = (CourseStudents as any).methods
+        const store = vi.fn()
+        const context = {
+            ...methods,
+            bulk_entry_saving: false,
+            selected_course: { id: 1, students_info: [{ id: 10 }] },
+            bulk_entry_form: { student_ids: [10], grade: '--' },
+            bulkGradeInputMode: 'plus',
+            bulkGradeHint: 'Nur Pluszeichen',
+            entryStore: { store },
+        }
+        await methods.saveBulkEntry.call(context)
+        expect(store).not.toHaveBeenCalled()
+    })
+
     it('skips performance requests for the evaluations list', async () => {
         const index = vi.fn()
         const context = { showPerformances: false, performanceLoading: true, entryStore: { index }, behaviourEntryStore: { index }, courseWorkStore: { index }, categoryEvaluationStore: { index } }
@@ -312,37 +389,23 @@ describe('CourseStudents sorting', () => {
         expect(source).toContain('@select="$refs.studentNotes.open(student, $event)"')
     })
 
-    it('opens student details from the complete student card outside bulk mode', async () => {
+    it('keeps student cards and day overview rows from opening student details', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
         )
-        const methods = (CourseStudents as any).methods
-        const openStudent = vi.fn()
-        const context = {
-            openStudent,
-            show_bulk_entry: false,
-        }
-
-        methods.openStudentFromCard.call(context, { id: 11 })
-
-        expect(openStudent).toHaveBeenCalledWith({ id: 11 })
-        expect(source).toContain(':link="!show_bulk_entry"')
-        expect(source).toContain(':class="{ \'student-list-item--clickable\': !show_bulk_entry }"')
-        expect(source).toContain('@click="openStudentFromCard(student)"')
-        expect(source).toContain('@click="openStudent(item.student)"')
-        expect(source).toContain('.student-list-item--clickable:focus-visible .student-row')
+        expect(source).not.toContain('@click="openStudent')
+        expect(source).not.toContain('student-list-item--clickable')
+        expect(source.match(/:link="false"/g)).toHaveLength(2)
+        expect((CourseStudents as any).methods.openStudent).toBeUndefined()
     })
 
-    it('does not open student details when bulk selection is active', () => {
-        const methods = (CourseStudents as any).methods
-        const openStudent = vi.fn()
-
-        methods.openStudentFromCard.call({
-            openStudent,
-            show_bulk_entry: true,
-        }, { id: 11 })
-
-        expect(openStudent).not.toHaveBeenCalled()
+    it('retains explicit bulk selection and attendance controls on non-navigating cards', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+        expect(source).toContain('v-model="bulk_entry_form.student_ids"')
+        expect(source).toContain('@click.stop="toggleStudentPresence(student)"')
+        expect(source).not.toContain('openStudentFromCard')
     })
 
     it('shows the bulk entry button loading state before saving entries', async () => {

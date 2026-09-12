@@ -1,0 +1,19 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('teaching_entry_definitions', function (Blueprint $table) {
+            $table->string('grading_part_assessment_mode', 10)->default('weighted');
+            $table->decimal('grading_part_weight', 10, 3)->default(1);
+        });
+    }
+};

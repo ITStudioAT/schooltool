@@ -18,6 +18,106 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+function enableCourseWorkMaximumPlus(object $context): TeachingEntryDefinition
+{
+    $context->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id, 'user_id' => $context->admin->id,
+    ]);
+    $context->course->update(['teaching_entry_area_id' => $area->id]);
+    $context->actingAs($context->admin, 'sanctum');
+
+    return TeachingEntryDefinition::factory()->create([
+        'school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id, 'user_id' => $context->admin->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'plus', 'allows_maximum_plus' => true,
+    ]);
+}
+
+test('requires a strict positive maximum plus for eligible course works', function (mixed $maximum) {
+    enableCourseWorkMaximumPlus($this);
+    $this->postJson('/api/admin/teaching/course_works', [
+        'teaching_course_id' => $this->course->id, 'type' => 'MA', 'maximum_plus' => $maximum,
+    ])->assertUnprocessable()->assertJsonValidationErrors('maximum_plus');
+})->with([null, false, true, 0, -1, 1.5, '3']);
+
+test('persists maximum plus on works and validates groups without discarding existing grades', function () {
+    enableCourseWorkMaximumPlus($this);
+    $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+    $response = $this->postJson('/api/admin/teaching/course_works', [
+        'teaching_course_id' => $this->course->id, 'type' => 'MA', 'maximum_plus' => 5,
+        'groups' => [['student_ids' => [$this->student->id], 'grade' => '+++']],
+    ])->assertCreated()->assertJsonPath('data.maximum_plus', 5);
+    $work = TeachingCourseWork::findOrFail($response->json('data.id'));
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.maximum_plus', 5);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['maximum_plus' => 2])
+        ->assertUnprocessable();
+    expect($work->fresh()->maximum_plus)->toBe(5);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['title' => 'Renamed'])
+        ->assertOk()->assertJsonPath('data.maximum_plus', 5);
+    expect($work->fresh()->teachingCourseStudentEntries()->first()->grade)->toBe('+++');
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", [
+        'groups' => [['student_ids' => [$this->student->id], 'grades' => [['student_id' => $this->student->id, 'grade' => '++++++']]]],
+    ])->assertUnprocessable()->assertJsonValidationErrors('groups.0.grades.0.grade');
+});
+
+test('allows missing legacy maximum plus to be read and repaired', function () {
+    $definition = enableCourseWorkMaximumPlus($this);
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => []]);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.maximum_plus', null);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['title' => 'Repair'])
+        ->assertUnprocessable()->assertJsonValidationErrors('maximum_plus');
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['maximum_plus' => 4])
+        ->assertOk()->assertJsonPath('data.maximum_plus', 4);
+    $definition->update(['allows_maximum_plus' => false]);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['maximum_plus' => 8])
+        ->assertOk()->assertJsonPath('data.maximum_plus', null);
+});
+
+test('validates repeated sign grades for work groups and students on create and update', function (string $mode, ?string $grade, bool $valid) {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => $mode,
+        'maximum_points' => $mode === 'points' ? 10.5 : null,
+    ]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $this->actingAs($this->admin, 'sanctum');
+    $groups = [['student_ids' => [$this->student->id], 'grade' => $grade, 'grades' => [['student_id' => $this->student->id, 'grade' => $grade]]]];
+    $response = $this->postJson('/api/admin/teaching/course_works', [
+        'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+    ]);
+    if ($valid) {
+        $response->assertCreated();
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors(['groups.0.grade', 'groups.0.grades.0.grade']);
+    }
+    $work = TeachingCourseWork::query()->create(['teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => []]);
+    if (! $valid) {
+        $work->update(['type' => 'OLD', 'groups' => $groups]);
+        $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['type' => 'MA'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['groups.0.grade', 'groups.0.grades.0.grade']);
+        $work->update(['type' => 'MA', 'groups' => []]);
+    }
+    $response = $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['groups' => $groups]);
+    if ($valid) {
+        $response->assertOk();
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors(['groups.0.grade', 'groups.0.grades.0.grade']);
+        expect($work->fresh()->groups)->toBe([]);
+    }
+})->with([
+    ['points', '0', true], ['points', '10.5', true], ['points', 'NA', true],
+    ['points', '-1', false], ['points', '10.6', false], ['points', 'abc', false], ['points', '1e999', false],
+    ['plus', '+++', true], ['plus', '--', false], ['plus_minus', '---', true],
+    ['plus_minus', '+-', false], ['plus_minus', '', true], ['plus', null, true],
+    ['plus', 'NA', true], ['plus_minus', 'F', true],
+]);
+
 beforeEach(function () {
     collect([
         'super_admin',
@@ -554,18 +654,22 @@ describe('show update destroy', function () {
 
     test('destroy deletes work and derived entries', function () {
         $this->actingAs($this->admin, 'sanctum');
+        $secondStudent = User::factory()->create(['school_id' => $this->school->id]);
 
         $work = TeachingCourseWork::query()->create([
             'teaching_course_id' => $this->course->id,
             'type' => 'MA',
             'title' => 'Delete me',
+            'is_group_work' => true,
             'groups' => [[
-                'student_ids' => [$this->student->id],
+                'student_ids' => [$this->student->id, $secondStudent->id],
                 'grade' => '3',
                 'comment' => 'Remove',
             ]],
         ]);
         app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+        expect(TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)->where('source', 'course_work')->count())->toBe(2);
 
         $this->deleteJson('/api/admin/teaching/course_works/'.$work->id)->assertNoContent();
 

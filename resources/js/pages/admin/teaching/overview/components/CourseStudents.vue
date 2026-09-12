@@ -103,12 +103,16 @@
                                         class="d-flex flex-column ga-1 align-end">
                                         <div class="text-caption text-medium-emphasis">{{ bulkGradeLabel }}</div>
                                         <v-text-field
-                                            v-if="bulkGradeInputMode === 'free'"
+                                            v-if="['free', 'plus', 'plus_minus', 'points'].includes(bulkGradeInputMode)"
                                             v-model="bulk_entry_form.grade"
                                             density="compact"
-                                            hide-details
+                                            hide-details="auto"
+                                            :hint="bulkGradeHint"
+                                            :inputmode="bulkGradeInputMode === 'points' ? 'decimal' : undefined"
+                                            persistent-hint
+                                            :rules="[validateBulkGrade]"
                                             label="Wert"
-                                            maxlength="255" />
+                                            maxlength="50" />
                                         <div v-else class="d-flex flex-wrap ga-1 justify-end">
                                             <v-chip
                                                 size="small"
@@ -127,6 +131,17 @@
                                                 :color="bulk_entry_form.grade === grade.value ? 'success' : 'default'"
                                                 @click="bulk_entry_form.grade = grade.value">
                                                 {{ grade.value }}
+                                            </v-chip>
+                                        </div>
+                                        <div v-if="bulkSpecialGradeItems.length" class="d-flex flex-wrap ga-1 justify-end">
+                                            <v-chip
+                                                v-for="grade in bulkSpecialGradeItems"
+                                                :key="grade.value"
+                                                size="small"
+                                                :variant="bulk_entry_form.grade === grade.value ? 'flat' : 'outlined'"
+                                                :color="bulk_entry_form.grade === grade.value ? 'primary' : undefined"
+                                                @click="bulk_entry_form.grade = bulk_entry_form.grade === grade.value ? null : grade.value">
+                                                {{ grade.title }}
                                             </v-chip>
                                         </div>
                                     </div>
@@ -159,9 +174,7 @@
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
-                                :link="!show_bulk_entry"
-                                :class="{ 'student-list-item--clickable': !show_bulk_entry }"
-                                @click="openStudentFromCard(student)">
+                                :link="false">
                                 <div class="student-row d-flex flex-wrap align-center ga-2 w-100" :class="{ 'student-row--canceled': isStudentCanceled(student) }">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
@@ -265,9 +278,7 @@
                             <v-list-item
                                 v-for="item in dayOverviewStudents"
                                 :key="`day-overview-${item.student.id}`"
-                                link
-                                class="student-list-item--clickable"
-                                @click="openStudent(item.student)">
+                                :link="false">
                                 <div class="d-flex flex-column ga-2 w-100 py-1">
                                     <div class="d-flex align-center ga-2 flex-wrap">
                                         <v-chip v-if="item.student.schoolclass || item.student.class" size="x-small" variant="tonal" color="primary">
@@ -481,7 +492,7 @@ export default {
 
                 return (Array.isArray(work.fixed_properties) ? work.fixed_properties : [])
                     .map((property) => String(property || '').trim())
-                    .filter(Boolean)
+                    .filter((property) => property && !['NA', 'VL', 'F'].includes(property))
                     .map((property) => ({ title: property, value: property }))
             }
 
@@ -491,6 +502,17 @@ export default {
                 value: grade.grade,
             }))
         },
+        bulkSpecialGradeItems() {
+            if (!this.usesNewBulkEntryDefinitions) return []
+            const definition = this.teachingWorks.find((work) => work.short_name === this.bulk_entry_form.type)
+            if (!definition?.has_properties) return []
+            const enabled = definition.enabled_special_properties ?? ['NA', 'VL', 'F']
+            return [
+                { title: 'NA · Nicht angetreten', value: 'NA' },
+                { title: 'VL · Vorgetäuschte Leistung', value: 'VL' },
+                { title: 'F · Gefehlt', value: 'F' },
+            ].filter((item) => enabled.includes(item.value))
+        },
         bulkGradeInputMode() {
             if (!this.bulk_entry_form.type) return 'none'
             if (!this.usesNewBulkEntryDefinitions) return 'fixed'
@@ -498,7 +520,17 @@ export default {
             const definition = this.teachingWorks.find((work) => work.short_name === this.bulk_entry_form.type)
             if (!definition?.has_properties) return 'none'
 
-            return definition.properties_mode === 'fixed' ? 'fixed' : 'free'
+            return ['fixed', 'plus', 'plus_minus', 'points'].includes(definition.properties_mode)
+                ? definition.properties_mode : 'free'
+        },
+        bulkMaximumPoints() {
+            return Number(this.teachingWorks.find((work) => work.short_name === this.bulk_entry_form.type)?.maximum_points)
+        },
+        bulkGradeHint() {
+            if (this.bulkGradeInputMode === 'points') return `Punkte von 0 bis ${this.bulkMaximumPoints}; Dezimalstellen sind möglich.`
+            if (this.bulkGradeInputMode === 'plus') return 'Nur Pluszeichen, z. B. +, ++, +++ (max. 50).'
+            if (this.bulkGradeInputMode === 'plus_minus') return 'Nur Pluszeichen oder nur Minuszeichen, z. B. +++, -- (max. 50).'
+            return ''
         },
         bulkGradeLabel() {
             return this.usesNewBulkEntryDefinitions ? 'Eigenschaft' : 'Note'
@@ -522,6 +554,7 @@ export default {
             const grade = (this.bulk_entry_form.grade || '').toString().trim()
             const desc = (this.bulk_entry_form.description || '').toString().trim()
             if (type && this.bulkGradeInputMode !== 'none' && !grade) return false
+            if ((['plus', 'plus_minus', 'points'].includes(this.bulkGradeInputMode) || ['NA', 'VL', 'F'].includes(String(this.bulk_entry_form.grade ?? '').trim())) && this.validateBulkGrade(grade) !== true) return false
             return !!(type || desc)
         },
         filteredImport116Students() {
@@ -958,6 +991,7 @@ export default {
         },
         async saveBulkEntry() {
             if (this.bulk_entry_saving || !this.selected_course) return
+            if ((['plus', 'plus_minus', 'points'].includes(this.bulkGradeInputMode) || ['NA', 'VL', 'F'].includes(String(this.bulk_entry_form.grade ?? '').trim())) && this.validateBulkGrade(this.bulk_entry_form.grade) !== true) return
             const allIds = (this.selected_course?.students_info || []).map((s) => s.id)
             const targetIds = this.bulk_entry_form.student_ids.length ? this.bulk_entry_form.student_ids : allIds
             if (!targetIds.length) return
@@ -971,7 +1005,9 @@ export default {
                 const basePayload = {
                     teaching_course_id: this.selected_course.id,
                     type: this.bulk_entry_form.type,
-                    grade: this.bulk_entry_form.grade,
+                    grade: this.bulkGradeInputMode === 'points'
+                        ? String(this.bulk_entry_form.grade ?? '').trim().replace(',', '.')
+                        : this.bulk_entry_form.grade,
                     date,
                     description: this.bulk_entry_form.description,
                 }
@@ -991,6 +1027,23 @@ export default {
         },
         selectAllBulkStudents() {
             this.bulk_entry_form.student_ids = (this.selected_course?.students_info || []).map((s) => s.id)
+        },
+        validateBulkGrade(value) {
+            const grade = String(value ?? '').trim()
+            if (this.usesNewBulkEntryDefinitions && ['NA', 'VL', 'F'].includes(grade)) {
+                return this.bulkSpecialGradeItems.some((item) => item.value === grade)
+                    || 'Diese Zusatzeigenschaft ist für diesen Eintrag nicht aktiviert.'
+            }
+            if (!['plus', 'plus_minus', 'points'].includes(this.bulkGradeInputMode)) return true
+            if (!grade) return true
+            if (this.bulkGradeInputMode === 'points') {
+                const normalized = grade.replace(',', '.')
+                return (/^\d+(?:\.\d+)?$/.test(normalized) && normalized.length <= 50
+                    && Number.isFinite(this.bulkMaximumPoints) && this.bulkMaximumPoints > 0
+                    && Number(normalized) <= this.bulkMaximumPoints) || this.bulkGradeHint
+            }
+            const pattern = this.bulkGradeInputMode === 'plus' ? /^\+{1,50}$/ : /^(?:\+{1,50}|-{1,50})$/
+            return pattern.test(grade) || this.bulkGradeHint
         },
         clearBulkStudents() {
             this.bulk_entry_form.student_ids = []
@@ -1577,17 +1630,6 @@ export default {
             this.selected_course = null
             this.delete_level = 0
         },
-        openStudent(student) {
-            if (!student) return
-            this.action = ''
-            this.selected_course_student = student
-            this.action_2 = 'course_student_view'
-        },
-        openStudentFromCard(student) {
-            if (this.show_bulk_entry) return
-
-            this.openStudent(student)
-        },
         selectPrevCourseDate() {
             if (!this.hasPrevCourseDate) return
             const date = this.sortedCourseDates[this.selectedCourseDateIndex - 1] || null
@@ -1617,19 +1659,6 @@ export default {
 .students-grid {
     padding: 8px;
     gap: 8px;
-}
-
-.student-list-item--clickable {
-    cursor: pointer;
-}
-
-.student-list-item--clickable:focus-visible {
-    outline: none;
-}
-
-.student-list-item--clickable:focus-visible .student-row {
-    border-color: rgba(37, 99, 235, 0.5);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 @media (min-width: 900px) {

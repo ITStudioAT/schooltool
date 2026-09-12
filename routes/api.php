@@ -71,6 +71,7 @@ use App\Http\Controllers\Admin\TeacherController;
 use App\Http\Controllers\Admin\TeachersListController;
 use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
+use App\Http\Controllers\Admin\Teaching\CourseEvaluationController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentEntryNotificationController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentSpecialInformationController;
@@ -706,6 +707,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
+        Route::get('/admin/teaching/courses/{course}/evaluations', [CourseEvaluationController::class, 'show'])->name('admin.teaching.courses.evaluations');
         Route::get('/admin/teaching/course_student_entry_notification_recipients', [CourseStudentEntryNotificationController::class, 'preview']);
         Route::get('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'index']);
         Route::post('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'store']);
