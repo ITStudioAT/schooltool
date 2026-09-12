@@ -13,7 +13,22 @@ class TeachingEntryArea extends Model
     /** @use HasFactory<TeachingEntryAreaFactory> */
     use HasFactory;
 
-    protected $fillable = ['school_id', 'schoolyear_id', 'user_id', 'name'];
+    protected $fillable = ['school_id', 'schoolyear_id', 'user_id', 'name', 'semester_count', 'semester_1_weight', 'semester_2_weight'];
+
+    protected $attributes = [
+        'semester_count' => 1,
+        'semester_1_weight' => 100,
+        'semester_2_weight' => 0,
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'semester_count' => 'integer',
+            'semester_1_weight' => 'integer',
+            'semester_2_weight' => 'integer',
+        ];
+    }
 
     public function school(): BelongsTo
     {

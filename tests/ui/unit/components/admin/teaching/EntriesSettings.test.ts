@@ -24,6 +24,217 @@ function entryFixture(overrides = {}) {
 }
 
 describe('Teaching entries settings', () => {
+    it('shows an extra mapped to grade 5 as a negative grade without a plus sign', () => {
+        const entry = { calculation_mode: 'grades', property_evaluations: [{ property: 'F', evaluation: 5 }] }
+        expect((Entries as any).methods.propertyEvaluationLabel.call({}, entry, 'F')).toBe('Note 5')
+        expect((Entries as any).methods.propertyEvaluationClass.call({}, entry, 'F')).toBe('calculation-evaluation--negative')
+    })
+
+    it('uses Standard Noten for grades 1 to 5 and keeps F as an editable extra', () => {
+        const ctx: any = {}
+        const entry = entryFixture({ calculation_mode: 'grades', fixed_properties: ['1', '2', '3', '4', '5', 'F'], property_evaluations: [] })
+        ;(Entries as any).methods.openCalculationEntryDialog.call(ctx, entry)
+        expect(ctx.calculationMode).toBe('grades')
+        expect((Entries as any).computed.calculationEvaluationRows.call(ctx)).toEqual([])
+        ctx.showUnassignedCalculationProperties = true
+        expect((Entries as any).computed.calculationEvaluationRows.call(ctx)).toEqual([{ property: 'F', evaluation: null }])
+        expect((Entries as any).methods.standardCalculationLabel.call({}, entry)).toBe('Standard Noten')
+    })
+
+    it('keeps standard signs hidden and makes blank predefined extras available without retyping them', () => {
+        const ctx: any = {}
+        const entry = entryFixture({
+            calculation_mode: 'plus_minus', properties_mode: 'fixed',
+            fixed_properties: ['++++', '+++', '++', '+', '0', 'F'], property_evaluations: [],
+        })
+        const open = (Entries as any).methods.openCalculationEntryDialog
+        const rows = (Entries as any).computed.calculationEvaluationRows
+        open.call(ctx, entry)
+        expect(rows.call(ctx)).toEqual([])
+        ctx.showUnassignedCalculationProperties = true
+        expect(rows.call(ctx)).toEqual([{ property: 'F', evaluation: null }])
+        open.call(ctx, { ...entry, property_evaluations: [{ property: 'F', evaluation: 'ignored' }] })
+        expect(rows.call(ctx)).toEqual([{ property: 'F', evaluation: 'ignored' }])
+    })
+
+    it('loads free input mappings only from the selected entry', () => {
+        const ctx: any = {}
+        const mappings = [{ property: '++++', evaluation: 4 }, { property: '~', evaluation: 0 }, { property: 'x', evaluation: 'ignored' }]
+        const open = (Entries as any).methods.openCalculationEntryDialog
+        open.call(ctx, entryFixture({ properties_mode: 'free', property_evaluations: mappings }))
+        expect(ctx.calculationEvaluationForm).toEqual(mappings)
+        open.call(ctx, entryFixture({ id: 2, properties_mode: 'free', property_evaluations: [] }))
+        expect(ctx.calculationEvaluationForm).toEqual([])
+    })
+
+    it.each([
+        [[{ property: '++++', evaluation: 4 }, { property: '~', evaluation: 0 }], true],
+        [[{ property: 'x', evaluation: 'ignored' }], true],
+        [[{ property: '', evaluation: 1 }], false],
+        [[{ property: '+', evaluation: null }], false],
+        [[{ property: '+', evaluation: 1 }, { property: ' + ', evaluation: 2 }], false],
+        [[{ property: '+', evaluation: Infinity }], false],
+    ])('validates free input mappings %j', (form, valid) => {
+        const result = (Entries as any).computed.calculationSettingsValidationMessage.call({
+            calculationEntryForEditing: { properties_mode: 'free' }, calculationEvaluationForm: form,
+        })
+        expect(result === '').toBe(valid)
+    })
+
+    it.each([
+        ['positive', '+1'], ['negative', '-1'], ['neutral', '0'], [0, '0'], [4, '+4'], [-2.5, '-2,5'],
+        ['ignored', 'NB'], [null, ''],
+    ])('shows the configured evaluation %s in the overview', (evaluation, expected) => {
+        const entry = { property_evaluations: evaluation !== null ? [{ property: 'erledigt', evaluation }] : [] }
+        expect((Entries as any).methods.propertyEvaluationLabel.call({}, entry, 'erledigt')).toBe(expected)
+    })
+
+    it('loads classifications without guessing from property names and discards unsaved edits when reopened', () => {
+        const ctx: any = {}
+        const entry = entryFixture({
+            properties_mode: 'fixed', fixed_properties: ['erledigt', 'nicht erledigt', 'gefehlt'],
+            property_evaluations: [{ property: 'gefehlt', evaluation: 'neutral' }],
+        })
+        const open = (Entries as any).methods.openCalculationEntryDialog
+        open.call(ctx, entry)
+        expect(ctx.calculationEvaluationForm).toEqual([
+            { property: 'erledigt', evaluation: null },
+            { property: 'nicht erledigt', evaluation: null },
+            { property: 'gefehlt', evaluation: 0 },
+        ])
+        ctx.calculationEvaluationForm[0].evaluation = 1
+        open.call(ctx, entry)
+        expect(ctx.calculationEvaluationForm[0].evaluation).toBeNull()
+        expect(ctx.calculationEntryDialogOpen).toBe(true)
+    })
+
+    it('saves only explicitly selected property classifications', async () => {
+        const saved = entryFixture()
+        const put = vi.fn().mockResolvedValue({ data: { data: saved } })
+        vi.stubGlobal('axios', { put })
+        const ctx: any = {
+            calculationEntryForEditing: saved,
+            calculationEntryDialogOpen: true,
+            isSavingCalculationSettings: false,
+            calculationEvaluationForm: [
+                { property: '+', evaluation: 1 },
+                { property: '-', evaluation: null },
+                { property: 'gefehlt', evaluation: 0 },
+            ],
+            replaceGradingEntry: vi.fn(), notifyError: vi.fn(),
+        }
+        try {
+            await (Entries as any).methods.saveCalculationSettings.call(ctx)
+            expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_definitions/1/calculation-settings', {
+                calculation_mode: 'individual',
+                property_evaluations: [
+                    { property: '+', evaluation: 1 },
+                    { property: 'gefehlt', evaluation: 0 },
+                ],
+            })
+            expect(ctx.replaceGradingEntry).toHaveBeenCalledWith(saved)
+            expect(ctx.calculationEntryDialogOpen).toBe(false)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('loads saved semester settings for the selected area and keeps drafts separate', () => {
+        const ctx: any = {
+            activeAreaId: 10,
+            areas: [{ id: 10, semester_count: 2, semester_1_weight: 40, semester_2_weight: 60 }, { id: 20 }],
+            semesterDrafts: {},
+        }
+        const form = (Entries as any).computed.semesterForm
+        ctx.semesterForm = form.call(ctx)
+        expect(ctx.semesterForm).toEqual({ semester_count: 2, semester_1_weight: 40, semester_2_weight: 60 })
+        ;(Entries as any).methods.updateSemesterField.call(ctx, 'semester_2_weight', '30')
+        expect(form.call(ctx).semester_2_weight).toBe('30')
+        expect(form.call(ctx).semester_1_weight).toBe(70)
+        ctx.activeAreaId = 20
+        expect(form.call(ctx)).toEqual({ semester_count: 1, semester_1_weight: 50, semester_2_weight: 50 })
+    })
+
+    it.each([
+        ['0', 100], ['100', 0], ['40', 60], ['', ''], [null, ''], ['101', ''], ['-1', ''], ['40.5', ''],
+    ])('automatically complements the second semester percentage %s', (value, expected) => {
+        const ctx: any = {
+            activeAreaId: 10,
+            semesterDrafts: {},
+            semesterForm: { semester_count: 2, semester_1_weight: 50, semester_2_weight: 50 },
+        }
+        ;(Entries as any).methods.updateSemesterField.call(ctx, 'semester_2_weight', value)
+        expect(ctx.semesterDrafts[10].semester_1_weight).toBe(expected)
+    })
+
+    it.each([
+        [2, 40, 60, true],
+        [2, 0, 100, true],
+        [2, 100, 0, true],
+        [2, 30, 60, false],
+        [2, '', 100, false],
+        [2, -1, 101, false],
+        [2, 40.5, 59.5, false],
+        [1, '', '', true],
+    ])('validates semester count %s with weights %s/%s', (count, first, second, valid) => {
+        const message = (Entries as any).computed.semesterValidationMessage.call({
+            semesterForm: { semester_count: count, semester_1_weight: first, semester_2_weight: second },
+        })
+        expect(message === '').toBe(valid)
+    })
+
+    it.each([1, 2])('saves %s semester configuration for its original area', async (count) => {
+        const saved = { id: 10, name: 'Unterstufe', semester_count: count, semester_1_weight: count === 1 ? 100 : 40, semester_2_weight: count === 1 ? 0 : 60 }
+        const put = vi.fn().mockResolvedValue({ data: { data: saved } })
+        vi.stubGlobal('axios', { put })
+        const ctx: any = {
+            activeAreaId: 10,
+            areas: [{ id: 10, name: 'Unterstufe' }],
+            semesterForm: { semester_count: count, semester_1_weight: '40', semester_2_weight: '60' },
+            semesterDrafts: { 10: {} },
+            semesterValidationMessage: '',
+            isSavingSemesters: false,
+            notifyError: vi.fn(),
+        }
+        try {
+            await (Entries as any).methods.saveSemesterSettings.call(ctx)
+            expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_areas/10', {
+                name: saved.name,
+                semester_count: count,
+                semester_1_weight: saved.semester_1_weight,
+                semester_2_weight: saved.semester_2_weight,
+            })
+            expect(ctx.areas[0]).toEqual(saved)
+            expect(ctx.semesterDrafts[10]).toBeUndefined()
+            expect(ctx.isSavingSemesters).toBe(false)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('retains semester inputs when saving fails', async () => {
+        const error = new Error('Save failed')
+        vi.stubGlobal('axios', { put: vi.fn().mockRejectedValue(error) })
+        const draft = { semester_count: 2, semester_1_weight: 40, semester_2_weight: 60 }
+        const ctx: any = {
+            activeAreaId: 10,
+            areas: [{ id: 10, name: 'Unterstufe' }],
+            semesterForm: draft,
+            semesterDrafts: { 10: draft },
+            semesterValidationMessage: '',
+            isSavingSemesters: false,
+            notifyError: vi.fn(),
+        }
+        try {
+            await (Entries as any).methods.saveSemesterSettings.call(ctx)
+            expect(ctx.semesterDrafts[10]).toEqual(draft)
+            expect(ctx.notifyError).toHaveBeenCalledWith(error)
+            expect(ctx.isSavingSemesters).toBe(false)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
     it('filters entries by area and category', () => {
         const ctx = {
             activeAreaId: 20,
@@ -439,7 +650,8 @@ describe('Teaching entries settings', () => {
         const ctx: any = {
             gradingParts: [],
             activeAreaId: 10,
-            gradingPartForm: { name: 'Mündlich' },
+            gradingPartForm: { name: 'Mündlich', weight: 6, is_required: false },
+            gradingPartWeightValid: true,
             gradingPartFormErrors: {},
             gradingPartDialogOpen: true,
             isSavingGradingPart: false,
@@ -454,12 +666,15 @@ describe('Teaching entries settings', () => {
         expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts', {
             teaching_entry_area_id: 10,
             name: 'Mündlich',
+            weight: 6,
+            is_required: false,
+            fixed_percentage: null,
         })
     })
 
     it('prefills and updates an existing grading part', async () => {
         const methods = (Entries as any).methods
-        const updatedGradingPart = { id: 20, teaching_entry_area_id: 10, name: 'Mitarbeit' }
+        const updatedGradingPart = { id: 20, teaching_entry_area_id: 10, name: 'Mitarbeit', weight: 2.5, is_required: false }
         const put = vi.fn().mockResolvedValue({ data: { data: updatedGradingPart } })
         ;(globalThis as any).axios = { put }
         const ctx: any = {
@@ -467,6 +682,7 @@ describe('Teaching entries settings', () => {
             activeAreaId: 10,
             editingGradingPartId: null,
             gradingPartForm: { name: '' },
+            gradingPartWeightValid: true,
             gradingPartFormErrors: {},
             gradingPartDialogOpen: false,
             isSavingGradingPart: false,
@@ -477,20 +693,90 @@ describe('Teaching entries settings', () => {
         methods.openEditGradingPartDialog.call(ctx, {
             gradingPartId: 20,
             name: 'Mündlich',
+            weight: 6,
+            is_required: true,
         })
 
         expect(ctx.editingGradingPartId).toBe(20)
         expect(ctx.gradingPartForm.name).toBe('Mündlich')
+        expect(ctx.gradingPartForm.weight).toBe(6)
+        expect(ctx.gradingPartForm.is_required).toBe(true)
         expect(ctx.gradingPartDialogOpen).toBe(true)
 
         ctx.gradingPartForm.name = 'Mitarbeit'
+        ctx.gradingPartForm.weight = '2.5'
+        ctx.gradingPartForm.is_required = false
         await methods.saveGradingPart.call(ctx)
 
         expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20', {
             name: 'Mitarbeit',
+            weight: 2.5,
+            is_required: false,
+            fixed_percentage: null,
         })
         expect(ctx.gradingParts).toEqual([updatedGradingPart])
         expect(ctx.editingGradingPartId).toBeNull()
+    })
+
+    it.each([['6', true], ['2.5', true], ['0.001', true], ['', false], [null, false], ['0', false], ['-1', false], ['1.0001', false], ['Infinity', false], ['10000000', false]])('validates grading weight %s', (weight, valid) => {
+        expect((Entries as any).computed.gradingPartWeightValid.call({ gradingPartForm: { weight } })).toBe(valid)
+    })
+
+    it('starts new and legacy grading parts with equal weight', () => {
+        const methods = (Entries as any).methods
+        const ctx: any = { activeAreaId: 10 }
+        methods.openCreateGradingPartDialog.call(ctx)
+        expect(ctx.gradingPartForm.weight).toBe(1)
+        expect(ctx.gradingPartForm.is_required).toBe(false)
+        methods.openEditGradingPartDialog.call(ctx, { gradingPartId: 20, name: 'Mitarbeit' })
+        expect(ctx.gradingPartForm.weight).toBe(1)
+        expect(ctx.gradingPartForm.is_required).toBe(false)
+    })
+
+    it('does not submit an invalid grading weight', async () => {
+        const post = vi.fn()
+        ;(globalThis as any).axios = { post }
+        await (Entries as any).methods.saveGradingPart.call({ activeAreaId: 10, gradingPartForm: { name: 'Mitarbeit', weight: '' }, gradingPartWeightValid: false })
+        expect(post).not.toHaveBeenCalled()
+    })
+
+    it('loads, saves and clears a fixed percentage without replacing the saved relative weight', async () => {
+        const methods = (Entries as any).methods
+        const put = vi.fn().mockResolvedValue({ data: { data: { id: 20, name: 'Prüfung', weight: 3, fixed_percentage: 30 } } })
+        ;(globalThis as any).axios = { put }
+        const ctx: any = { activeAreaId: 10, gradingParts: [], gradingPartWeightValid: true, closeGradingPartDialog: vi.fn(), notifyError: vi.fn() }
+        methods.openEditGradingPartDialog.call(ctx, { gradingPartId: 20, name: 'Prüfung', weight: 3, fixed_percentage: 30 })
+        expect(ctx.gradingPartForm.weighting_mode).toBe('fixed')
+        expect(ctx.gradingPartForm.fixed_percentage).toBe(30)
+        await methods.saveGradingPart.call(ctx)
+        expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/entry_grading_parts/20', { name: 'Prüfung', fixed_percentage: 30, is_required: false })
+        ctx.gradingPartForm.weighting_mode = 'relative'
+        await methods.saveGradingPart.call(ctx)
+        expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/entry_grading_parts/20', { name: 'Prüfung', weight: 3, fixed_percentage: null, is_required: false })
+    })
+
+    it.each([['30', false], ['100', false], ['0.001', false], ['', true], ['0', true], ['101', true], ['1.0001', true]])('validates fixed percentage %s', (fixedPercentage, invalid) => {
+        const ctx = { gradingPartForm: { weighting_mode: 'fixed', fixed_percentage: fixedPercentage }, gradingParts: [], activeAreaId: 10 }
+        const error = (Entries as any).computed.gradingPartPercentageError.call(ctx)
+        expect(Boolean(error)).toBe(invalid)
+        expect((Entries as any).computed.gradingPartWeightValid.call({ ...ctx, gradingPartPercentageError: error })).toBe(!invalid)
+    })
+
+    it('limits fixed percentages to 100 in the active area and excludes the edited part', () => {
+        const ctx: any = { activeAreaId: 10, editingGradingPartId: 20, gradingPartForm: { weighting_mode: 'fixed', fixed_percentage: 30 }, gradingParts: [
+            { id: 20, teaching_entry_area_id: 10, fixed_percentage: 50 },
+            { id: 21, teaching_entry_area_id: 10, fixed_percentage: 70 },
+            { id: 22, teaching_entry_area_id: 11, fixed_percentage: 100 },
+        ] }
+        expect((Entries as any).computed.gradingPartPercentageError.call(ctx)).toBe('')
+        ctx.gradingPartForm.fixed_percentage = 30.001
+        expect((Entries as any).computed.gradingPartPercentageError.call(ctx)).toContain('100 %')
+    })
+
+    it('distinguishes fixed percentages from weights in the overview', () => {
+        const label = (Entries as any).methods.gradingPartWeightLabel
+        expect(label({ weight: 3, fixed_percentage: 30 })).toBe('30 % fest')
+        expect(label({ weight: 6, fixed_percentage: null })).toBe('Gewicht 6')
     })
 
     it('deletes a grading part without removing entries', async () => {
@@ -710,7 +996,7 @@ describe('Teaching entries settings', () => {
 
     it('renders all area cards in a wrapping grid and persistent CRUD dialogs without dropdowns', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
-        const areasTitleIndex = source.indexOf('title="Bereiche"')
+        const areasTitleIndex = source.indexOf(':title="assignGradingPartId ? \'Zuordnung\' : \'Bereiche\'"')
         const selectedAreaTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">{{ activeAreaName }}</div>')
         const entryListIndex = source.indexOf('<v-list class="bg-transparent pa-0 mt-2">')
         const addEntryButtonIndex = source.indexOf('@click="openCreateDialog"')
@@ -832,7 +1118,7 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('.entry-properties-combobox :deep(.v-chip)')
         expect(source).toContain('height: 42px !important')
         expect(source).not.toContain('teaching_schema_id')
-        expect(source).not.toContain('<v-select')
+        expect(source.slice(0, source.indexOf('<v-dialog v-model="calculationEntryDialogOpen"'))).not.toContain('<v-select')
         expect(source).not.toContain('Feste Eigenschaften')
         expect(source).not.toContain('areaExamples')
         expect(source).not.toContain('area-example-row')

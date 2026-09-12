@@ -28,6 +28,9 @@ class StoreTeachingEntryGradingPartRequest extends FormRequest
         $areaId = $this->integer('teaching_entry_area_id');
 
         return [
+            'weight' => ['sometimes', 'required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:9999999.999'],
+            'is_required' => ['sometimes', 'required', 'boolean'],
+            'fixed_percentage' => ['sometimes', 'nullable', 'numeric', 'decimal:0,3', 'min:0.001', 'max:100'],
             'teaching_entry_area_id' => [
                 'required',
                 'integer',

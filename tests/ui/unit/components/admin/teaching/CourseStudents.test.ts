@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 
 describe('CourseStudents complete performance loading', () => {
+    it('skips performance requests for the evaluations list', async () => {
+        const index = vi.fn()
+        const context = { showPerformances: false, performanceLoading: true, entryStore: { index }, behaviourEntryStore: { index }, courseWorkStore: { index }, categoryEvaluationStore: { index } }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(index).not.toHaveBeenCalled()
+        expect(context.performanceLoading).toBe(false)
+        expect((CourseStudents as any).props.showPerformances.default).toBe(true)
+    })
+
     it('keeps the three local card states through normalization and legacy serialization', () => {
         const methods = (CourseStudents as any).methods
         const context = {

@@ -1,17 +1,17 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Bereiche" icon="mdi-layers-triple-outline" class="w-100">
+    <ItsGridBox variant="overview" color="primary" :title="assignGradingPartId ? 'Zuordnung' : 'Bereiche'" icon="mdi-layers-triple-outline" class="w-100">
         <template #header-actions>
-            <v-btn color="primary" variant="tonal" rounded="lg" prepend-icon="mdi-shape-square-plus" @click="openCreateAreaDialog">Neuer Bereich</v-btn>
+            <v-btn v-if="!assignGradingPartId" color="primary" variant="tonal" rounded="lg" prepend-icon="mdi-shape-square-plus" :disabled="isEditing" @click="openCreateAreaDialog">Neuer Bereich</v-btn>
         </template>
 
-        <div class="text-body-2 text-medium-emphasis mt-2">Gruppieren Sie Einträge passend zu Schulstufe oder Fach.</div>
+        <div v-if="!assignGradingPartId" class="text-body-2 text-medium-emphasis mt-2">Gruppieren Sie Einträge passend zu Schulstufe oder Fach.</div>
 
         <v-progress-linear v-if="isLoading" indeterminate color="primary" class="mt-4" />
 
-        <div v-if="areas.length" class="entry-area-grid mt-4">
+        <div v-if="areas.length" v-show="!assignGradingPartId" class="entry-area-grid mt-4">
             <template v-for="area in areas" :key="area.id">
                 <div class="entry-area-card" :class="{ 'entry-area-card-active': activeAreaId === area.id }">
-                    <button type="button" class="entry-area-select" :aria-pressed="activeAreaId === area.id" @click="activeAreaId = area.id">
+                    <button type="button" class="entry-area-select" :disabled="isEditing" :aria-pressed="activeAreaId === area.id" @click="activeAreaId = area.id">
                         <span class="entry-area-icon"><v-icon icon="mdi-layers-triple-outline" size="24" /></span>
                         <span class="entry-area-content">
                             <span class="entry-area-name">{{ area.name }}</span>
@@ -24,6 +24,7 @@
                             height="42"
                             rounded="0"
                             variant="text"
+                            :disabled="isEditing"
                             @click="openEditAreaDialog(area)">
                             <v-icon icon="mdi-pencil-outline" size="18" />
                             <span>Bearbeiten</span>
@@ -34,7 +35,7 @@
                             rounded="0"
                             variant="text"
                             color="error"
-                            :disabled="entryCountForArea(area.id) > 0"
+                            :disabled="isEditing || entryCountForArea(area.id) > 0"
                             :title="entryCountForArea(area.id) ? 'Zuerst alle Einträge entfernen' : 'Bereich löschen'"
                             @click="openDeleteAreaDialog(area)">
                             <v-icon icon="mdi-delete-outline" size="18" />
@@ -109,7 +110,7 @@
         </v-dialog>
 
         <template v-if="areas.length">
-            <div class="entry-section-header mt-7">
+            <div v-show="!assignGradingPartId" class="entry-section-header mt-7">
                 <div>
                     <div class="text-h6 font-weight-bold">{{ activeAreaName }}</div>
                 </div>
@@ -120,19 +121,68 @@
                         variant="tonal"
                         rounded="lg"
                         prepend-icon="mdi-content-copy"
-                        :disabled="isLoading || !availableSourceAreas.length"
+                        :disabled="isEditing || isLoading || !availableSourceAreas.length"
                         @click="openEntryCopyDialog">
                         Übernehmen
                     </v-btn>
                 </div>
             </div>
 
-            <v-tabs v-model="activeCategory" class="entry-tabs mt-3" color="primary" show-arrows>
-                <v-tab v-for="category in categoryOptions" :key="category" :value="category">{{ category }}</v-tab>
+            <v-tabs v-if="!assignGradingPartId" v-model="activeCategory" class="entry-tabs mt-3" color="primary" show-arrows>
+                <v-tab v-for="category in categoryOptions" :key="category" :value="category" :disabled="isEditing">{{ category }}</v-tab>
             </v-tabs>
 
             <template v-if="activeCategory === 'Berechnung'">
-                <header class="calculation-semester-grade-header mt-4">
+                <section v-if="!assignGradingPartId" class="calculation-area-card mt-4" aria-label="Semester-Einstellungen">
+                    <div class="text-subtitle-1 font-weight-bold mb-4">Semester</div>
+                    <v-btn-toggle
+                        :model-value="semesterForm.semester_count"
+                        aria-label="Anzahl der Semester"
+                        class="semester-count-toggle mb-4"
+                        color="primary"
+                        variant="outlined"
+                        mandatory
+                        :disabled="isSavingSemesters || (isEditing && activeEdit !== 'semesters')"
+                        @update:model-value="updateSemesterField('semester_count', $event)">
+                        <v-btn :value="1">1 Semester</v-btn>
+                        <v-btn :value="2">2 Semester</v-btn>
+                    </v-btn-toggle>
+                    <div v-if="semesterForm.semester_count === 2" class="semester-weight-inputs">
+                        <v-text-field
+                            v-for="semester in [1, 2]"
+                            :key="semester"
+                            class="semester-percentage"
+                            :style="{ '--semester-value-width': `${Math.max(1, String(semesterForm[`semester_${semester}_weight`] ?? '').length)}ch` }"
+                            :model-value="semesterForm[`semester_${semester}_weight`]"
+                            :label="`${semester}. Semester`"
+                            type="number"
+                            inputmode="numeric"
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                            variant="outlined"
+                            :readonly="semester === 1"
+                            :hint="semester === 1 ? 'Automatisch: 100 % minus 2. Semester' : 'Anteil eingeben'"
+                            persistent-hint
+                            :disabled="isSavingSemesters || (isEditing && activeEdit !== 'semesters')"
+                            @update:model-value="updateSemesterField(`semester_${semester}_weight`, $event)" />
+                    </div>
+                    <div v-if="semesterValidationMessage" class="text-error text-body-2 mb-3" role="status">
+                        {{ semesterValidationMessage }}
+                    </div>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        rounded="lg"
+                        :loading="isSavingSemesters"
+                        :disabled="Boolean(semesterValidationMessage) || !semesterDrafts[activeAreaId] || (isEditing && activeEdit !== 'semesters')"
+                        @click="saveSemesterSettings">
+                        Speichern
+                    </v-btn>
+                    <v-btn v-if="activeEdit === 'semesters'" class="ml-2" variant="text" :disabled="isSavingSemesters" @click="delete semesterDrafts[activeAreaId]">Abbrechen</v-btn>
+                </section>
+                <header v-if="!assignGradingPartId" class="calculation-semester-grade-header mt-4">
                     <div class="text-h6 font-weight-bold">Semesternote</div>
                 </header>
 
@@ -176,23 +226,23 @@
                             <div class="calculation-entry-details">
                                 <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
                                 <div class="calculation-entry-values">
+                                    <span v-if="standardCalculationLabel(entry)" class="calculation-evaluation calculation-evaluation--neutral">{{ standardCalculationLabel(entry) }}</span>
                                     <v-chip
-                                        v-if="entry.has_properties && entry.properties_mode === 'free'"
+                                        v-if="entry.has_properties && entry.properties_mode === 'free' && !standardCalculationLabel(entry) && !entry.property_evaluations?.length"
                                         class="calculation-entry-value"
                                         color="info"
                                         variant="tonal"
                                         size="x-small">
                                         Freie Eingabe
                                     </v-chip>
-                                    <v-chip
-                                        v-for="property in entry.fixed_properties"
+                                    <span
+                                        v-for="property in calculationProperties(entry)"
                                         v-else-if="entry.has_properties"
                                         :key="property"
-                                        class="calculation-entry-value"
-                                        variant="tonal"
-                                        size="x-small">
-                                        {{ property }}
-                                    </v-chip>
+                                        class="calculation-entry-value calculation-property">
+                                        <span class="calculation-property-name">{{ property }}</span>
+                                        <span v-if="propertyEvaluationLabel(entry, property)" class="calculation-evaluation" :class="propertyEvaluationClass(entry, property)">{{ propertyEvaluationLabel(entry, property) }}</span>
+                                    </span>
                                     <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
                                 </div>
                                 <span
@@ -219,7 +269,7 @@
                     </div>
                 </section>
 
-                <div v-if="calculationAreas.length" class="calculation-area-list mt-3">
+                <div v-if="calculationAreas.length && !assignGradingPartId" class="calculation-area-list mt-3">
                     <section
                         v-for="area in calculationAreas"
                         :key="area.id"
@@ -229,6 +279,7 @@
                             <span class="calculation-area-icon"><v-icon icon="mdi-folder-outline" size="20" /></span>
                             <div class="calculation-area-heading">
                                 <div class="calculation-area-name">{{ area.name }}</div>
+                                <div class="text-caption text-medium-emphasis">{{ gradingPartWeightLabel(area) }} · {{ area.is_required ? 'Verpflichtend' : 'Optional' }}</div>
                             </div>
                             <div class="calculation-part-actions">
                                 <v-btn
@@ -236,7 +287,7 @@
                                     variant="tonal"
                                     size="small"
                                     :prepend-icon="assignGradingPartId === area.gradingPartId ? 'mdi-close' : 'mdi-link-plus'"
-                                    :disabled="isAssigningGradingEntry || (!calculationEntries.length && assignGradingPartId !== area.gradingPartId)"
+                                    :disabled="isAssigningGradingEntry || (isEditing && assignGradingPartId !== area.gradingPartId) || (!calculationEntries.length && assignGradingPartId !== area.gradingPartId)"
                                     @click="toggleGradingEntryAssignment(area)">
                                     {{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnung' }}
                                 </v-btn>
@@ -246,6 +297,7 @@
                                     variant="tonal"
                                     size="x-small"
                                     title="Benotungsteil bearbeiten"
+                                    :disabled="isEditing"
                                     @click="openEditGradingPartDialog(area)" />
                                 <v-btn
                                     icon="mdi-delete-outline"
@@ -253,48 +305,56 @@
                                     variant="tonal"
                                     size="x-small"
                                     title="Benotungsteil löschen"
+                                    :disabled="isEditing"
                                     @click="openDeleteGradingPartDialog(area)" />
                             </div>
                         </header>
 
                         <ul v-if="area.entries.length" class="calculation-entry-list">
-                            <li v-for="entry in area.entries" :key="entry.id" class="calculation-entry-item">
+                            <li v-for="entry in area.entries" :key="entry.id">
+                                <button
+                                    type="button"
+                                    class="calculation-entry-item calculation-entry-edit"
+                                    :disabled="isEditing"
+                                    :aria-label="`${entry.name} bearbeiten`"
+                                    @click="openCalculationEntryDialog(entry)">
                                 <v-chip class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
                                 <div class="calculation-entry-details">
                                     <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
                                     <div class="calculation-entry-values">
+                                        <span v-if="standardCalculationLabel(entry)" class="calculation-evaluation calculation-evaluation--neutral">{{ standardCalculationLabel(entry) }}</span>
                                         <v-chip
-                                            v-if="entry.has_properties && entry.properties_mode === 'free'"
+                                            v-if="entry.has_properties && entry.properties_mode === 'free' && !standardCalculationLabel(entry) && !entry.property_evaluations?.length"
                                             class="calculation-entry-value"
                                             color="info"
                                             variant="tonal"
                                             size="x-small">
                                             Freie Eingabe
                                         </v-chip>
-                                        <v-chip
-                                            v-for="property in entry.fixed_properties"
+                                        <span
+                                            v-for="property in calculationProperties(entry)"
                                             v-else-if="entry.has_properties"
                                             :key="property"
-                                            class="calculation-entry-value"
-                                            variant="tonal"
-                                            size="x-small">
-                                            {{ property }}
-                                        </v-chip>
+                                            class="calculation-entry-value calculation-property">
+                                            <span class="calculation-property-name">{{ property }}</span>
+                                            <span v-if="propertyEvaluationLabel(entry, property)" class="calculation-evaluation" :class="propertyEvaluationClass(entry, property)">{{ propertyEvaluationLabel(entry, property) }}</span>
+                                        </span>
                                         <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
                                     </div>
                                 </div>
+                                </button>
                             </li>
                         </ul>
                     </section>
                 </div>
 
-                <div class="entry-list-actions mt-4">
+                <div v-if="!assignGradingPartId" class="entry-list-actions mt-4">
                     <v-btn
                         color="primary"
                         variant="flat"
                         rounded="lg"
                         prepend-icon="mdi-shape-square-plus"
-                        :disabled="isLoading"
+                        :disabled="isEditing || isLoading"
                         @click="openCreateGradingPartDialog">
                         Benotungsteil hinzufügen
                     </v-btn>
@@ -317,8 +377,8 @@
                                     </span>
                                 </div>
                                 <div class="entry-actions">
-                                    <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" @click="openEditDialog(entry)" />
-                                    <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" @click="openDeleteDialog(entry)" />
+                                    <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" :disabled="isEditing" @click="openEditDialog(entry)" />
+                                    <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" :disabled="isEditing" @click="openDeleteDialog(entry)" />
                                 </div>
                             </div>
                             <div v-if="entry.category === 'Benotung' && entry.has_properties" class="entry-properties">
@@ -351,10 +411,127 @@
                 </v-alert>
 
                 <div class="entry-list-actions mt-4">
-                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" :disabled="isLoading" @click="openCreateDialog">Eintrag</v-btn>
+                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" :disabled="isEditing || isLoading" @click="openCreateDialog">Eintrag</v-btn>
                 </div>
             </template>
         </template>
+
+        <v-dialog v-model="calculationEntryDialogOpen" persistent :max-width="calculationEntryForEditing?.properties_mode === 'free' ? 680 : 520" aria-labelledby="calculation-entry-dialog-title">
+            <v-card rounded="xl">
+                <v-card-title id="calculation-entry-dialog-title" class="text-wrap">
+                    {{ calculationEntryForEditing?.name }} bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <template v-if="calculationEntryForEditing?.has_properties">
+                        <div class="calculation-mode-options mb-4" role="group" aria-label="Berechnungsart">
+                            <v-btn
+                                color="primary"
+                                :variant="calculationMode === 'individual' ? 'flat' : 'outlined'"
+                                :aria-pressed="calculationMode === 'individual'"
+                                :disabled="isSavingCalculationSettings"
+                                @click="calculationMode = 'individual'">Eigene Werte</v-btn>
+                            <v-btn
+                                color="primary"
+                                :variant="calculationMode === 'plus_minus' ? 'flat' : 'outlined'"
+                                :aria-pressed="calculationMode === 'plus_minus'"
+                                :disabled="isSavingCalculationSettings"
+                                @click="calculationMode = 'plus_minus'">Standard +/−</v-btn>
+                            <v-btn
+                                color="primary"
+                                :variant="calculationMode === 'grades' ? 'flat' : 'outlined'"
+                                :aria-pressed="calculationMode === 'grades'"
+                                :disabled="isSavingCalculationSettings"
+                                @click="calculationMode = 'grades'">Standard Noten</v-btn>
+                        </div>
+                        <div v-if="calculationMode === 'plus_minus'" class="calculation-standard-preview">
+                            <p>Jedes + zählt +1, jedes − zählt −1. Plus und Minus werden gegeneinander verrechnet. 0 wird nicht gewertet.</p>
+                        </div>
+                        <div v-if="calculationMode === 'grades'" class="calculation-standard-preview">
+                            <p>Die Noten 1 bis 5 werden direkt als Noten berücksichtigt. Dafür sind keine eigenen Werte nötig.</p>
+                        </div>
+                        <div>
+                        <p class="text-body-2 mb-5" :class="{ 'mt-4': hasStandardCalculationMode }">{{ hasStandardCalculationMode ? 'Zusätzliche Zeichen, z. B. F, brauchen eine eigene Zuordnung.' : 'Legen Sie für jede Ausprägung fest, wie sie berücksichtigt werden soll.' }}</p>
+                        <fieldset
+                            v-for="(item, index) in calculationEvaluationRows"
+                            :key="index"
+                            class="calculation-score-choice"
+                            :disabled="isSavingCalculationSettings">
+                            <legend>{{ calculationEntryForEditing.properties_mode === 'free' ? `Eingabe ${index + 1}` : item.property }}</legend>
+                            <div class="calculation-score-row" :class="{ 'calculation-score-row--free': calculationEntryForEditing.properties_mode === 'free' }">
+                                <v-text-field
+                                    v-if="calculationEntryForEditing.properties_mode === 'free'"
+                                    v-model="item.property"
+                                    label="Mögliche Eingabe"
+                                    placeholder="z. B. erledigt"
+                                    maxlength="50"
+                                    density="compact"
+                                    hide-details="auto"
+                                    variant="outlined" />
+                                <v-text-field
+                                    :model-value="item.evaluation === 'ignored' ? null : item.evaluation"
+                                    label="Wert"
+                                    type="number"
+                                    inputmode="decimal"
+                                    step="any"
+                                    variant="outlined"
+                                    density="compact"
+                                    hide-details="auto"
+                                    clearable
+                                    :disabled="isSavingCalculationSettings"
+                                    @update:model-value="item.evaluation = $event === '' || $event === null ? null : Number($event)" />
+                                <v-btn
+                                    class="calculation-ignore-button"
+                                    :color="item.evaluation === 'ignored' ? 'primary' : undefined"
+                                    :variant="item.evaluation === 'ignored' ? 'flat' : 'outlined'"
+                                    :aria-pressed="item.evaluation === 'ignored'"
+                                    @click="item.evaluation = item.evaluation === 'ignored' ? null : 'ignored'">Nicht berücksichtigen</v-btn>
+                                <v-btn
+                                    v-if="calculationEntryForEditing.properties_mode === 'free'"
+                                    icon="mdi-delete-outline"
+                                    size="small"
+                                    variant="text"
+                                    color="error"
+                                    aria-label="Eingabe entfernen"
+                                    title="Eingabe entfernen"
+                                    @click="calculationEvaluationForm.splice(calculationEvaluationForm.indexOf(item), 1)" />
+                            </div>
+                        </fieldset>
+                        <v-btn
+                            v-if="hasStandardCalculationMode && hasUnassignedCalculationProperties && !showUnassignedCalculationProperties"
+                            class="mb-4"
+                            color="primary"
+                            variant="tonal"
+                            @click="showUnassignedCalculationProperties = true">Weitere Zeichen zuordnen</v-btn>
+                        <v-btn
+                            v-if="calculationEntryForEditing.properties_mode === 'free'"
+                            class="mb-4"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-plus"
+                            :disabled="isSavingCalculationSettings || calculationEvaluationForm.length >= 20"
+                            @click="showUnassignedCalculationProperties = true; calculationEvaluationForm.push({ property: '', evaluation: null })">{{ hasStandardCalculationMode ? 'Zusatzzeichen hinzufügen' : 'Eingabe hinzufügen' }}</v-btn>
+                        <div class="text-body-2 text-medium-emphasis">
+                            <p class="mb-2">0: Das Ereignis bleibt erfasst, zählt aber nicht zur Quote.</p>
+                            <p>Nicht berücksichtigen: Das Ereignis wird vollständig aus der Auswertung herausgenommen.</p>
+                        </div>
+                        </div>
+                    </template>
+                    <p v-else class="text-body-2">Für diesen Eintrag sind keine Ausprägungen hinterlegt.</p>
+                    <p v-if="calculationSettingsValidationMessage" class="text-error text-body-2 mt-3" role="status">{{ calculationSettingsValidationMessage }}</p>
+                </v-card-text>
+                <v-card-actions class="dialog-actions">
+                    <v-btn variant="text" :disabled="isSavingCalculationSettings" @click="calculationEntryDialogOpen = false">Schließen</v-btn>
+                    <v-btn
+                        v-if="calculationEntryForEditing?.has_properties"
+                        color="primary"
+                        variant="flat"
+                        rounded="lg"
+                        :loading="isSavingCalculationSettings"
+                        :disabled="Boolean(calculationSettingsValidationMessage)"
+                        @click="saveCalculationSettings">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="entryCopyDialogOpen" persistent max-width="620">
             <v-card rounded="xl" class="entry-copy-dialog">
@@ -481,6 +658,63 @@
                         maxlength="100"
                         autofocus
                         :error-messages="gradingPartFormErrors.name" />
+                    <v-btn-toggle
+                        v-model="gradingPartForm.weighting_mode"
+                        class="grading-weight-mode-toggle mb-4"
+                        aria-label="Art der Gewichtung"
+                        color="primary"
+                        variant="outlined"
+                        mandatory
+                        :disabled="isSavingGradingPart">
+                        <v-btn value="relative" :aria-pressed="gradingPartForm.weighting_mode === 'relative'" :variant="gradingPartForm.weighting_mode === 'relative' ? 'flat' : 'outlined'">Gewichtung</v-btn>
+                        <v-btn value="fixed" :aria-pressed="gradingPartForm.weighting_mode === 'fixed'" :variant="gradingPartForm.weighting_mode === 'fixed' ? 'flat' : 'outlined'">Fester Prozentanteil</v-btn>
+                    </v-btn-toggle>
+                    <v-text-field
+                        v-if="gradingPartForm.weighting_mode === 'relative'"
+                        v-model="gradingPartForm.weight"
+                        label="Gewichtung"
+                        type="number"
+                        inputmode="decimal"
+                        min="0.001"
+                        max="9999999.999"
+                        step="0.001"
+                        variant="outlined"
+                        color="primary"
+                        hint="Der verbleibende Anteil wird nach diesen Gewichten verteilt, z. B. 6 : 4."
+                        persistent-hint
+                        :disabled="isSavingGradingPart"
+                        :error-messages="gradingPartFormErrors.weight || (gradingPartWeightValid ? [] : ['Bitte eine positive Zahl mit höchstens drei Nachkommastellen eingeben.'])" />
+                    <v-text-field
+                        v-else
+                        v-model="gradingPartForm.fixed_percentage"
+                        label="Fester Anteil"
+                        type="number"
+                        inputmode="decimal"
+                        min="0.001"
+                        max="100"
+                        step="0.001"
+                        suffix="%"
+                        variant="outlined"
+                        color="primary"
+                        hint="Dieser Anteil bleibt fest, sobald eine Bewertung vorliegt."
+                        persistent-hint
+                        :disabled="isSavingGradingPart"
+                        :error-messages="gradingPartFormErrors.fixed_percentage || gradingPartPercentageError" />
+                    <v-btn-toggle
+                        v-model="gradingPartForm.is_required"
+                        class="grading-requirement-toggle mt-4"
+                        aria-label="Teilnahme am Benotungsteil"
+                        color="primary"
+                        variant="outlined"
+                        mandatory
+                        :disabled="isSavingGradingPart">
+                        <v-btn :value="false" :aria-pressed="!gradingPartForm.is_required" :variant="!gradingPartForm.is_required ? 'flat' : 'outlined'">Optional</v-btn>
+                        <v-btn :value="true" :aria-pressed="gradingPartForm.is_required" :variant="gradingPartForm.is_required ? 'flat' : 'outlined'">Verpflichtend</v-btn>
+                    </v-btn-toggle>
+                    <div class="text-caption text-medium-emphasis mt-2">
+                        {{ gradingPartForm.is_required ? 'Eine Bewertung ist erforderlich. Fehlend bedeutet offen, nicht automatisch negativ.' : 'Ohne Bewertung wird dieser Teil nicht berücksichtigt.' }}
+                    </div>
+                    <div v-if="gradingPartFormErrors.is_required" class="text-caption text-error mt-1" role="alert">{{ gradingPartFormErrors.is_required.join(' ') }}</div>
                 </v-card-text>
                 <v-card-actions class="dialog-actions">
                     <v-btn variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog">Abbrechen</v-btn>
@@ -490,7 +724,7 @@
                         variant="flat"
                         rounded="lg"
                         :loading="isSavingGradingPart"
-                        :disabled="!gradingPartForm.name.trim()">
+                        :disabled="!gradingPartForm.name.trim() || !gradingPartWeightValid">
                         Speichern
                     </v-btn>
                 </v-card-actions>
@@ -703,6 +937,8 @@ import {
     store as storeGradingEntryAssignment,
 } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryGradingPartEntryController'
 import { update as updateGradingPart } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryGradingPartController'
+import { update as updateEntryArea } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryAreaController'
+import { update as updateCalculationSettings } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryCalculationSettingsController'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
@@ -715,6 +951,24 @@ const tableMarkingColors = [
     { value: 'red', label: 'Rot', swatch: '#ef4444' },
 ]
 
+function isStandardCalculationValue(mode, value) {
+    if (mode === 'grades') return /^[1-5]$/.test(String(value).trim())
+    if (mode !== 'plus_minus') return false
+
+    const normalized = String(value).trim().replaceAll('−', '-')
+
+    return normalized === '0' || /^[+-]+$/.test(normalized)
+}
+
+function normalizePropertyEvaluation(value) {
+    if (value === 'positive') return 1
+    if (value === 'negative') return -1
+    if (value === 'neutral') return 0
+    if (value === 'ignored' || (typeof value === 'number' && Number.isFinite(value))) return value
+
+    return null
+}
+
 export default {
     components: { ItsGridBox },
 
@@ -723,6 +977,15 @@ export default {
             areas: [],
             entries: [],
             gradingParts: [],
+            calculationEntryForEditing: null,
+            calculationEntryDialogOpen: false,
+            calculationEvaluationForm: [],
+            calculationMode: 'individual',
+            showUnassignedCalculationProperties: false,
+            visibleCalculationProperties: [],
+            isSavingCalculationSettings: false,
+            semesterDrafts: {},
+            isSavingSemesters: false,
             courseStore: null,
             activeAreaId: null,
             activeCategory: 'Benotung',
@@ -761,7 +1024,7 @@ export default {
             gradingPartFormErrors: {},
             entryCopyErrors: {},
             areaForm: { name: '' },
-            gradingPartForm: { name: '' },
+            gradingPartForm: { name: '', weight: 1, is_required: false, weighting_mode: 'relative', fixed_percentage: null },
             entryForm: {
                 teaching_entry_area_id: null,
                 short_name: '',
@@ -780,6 +1043,88 @@ export default {
     },
 
     computed: {
+        gradingPartWeightValid() {
+            if (this.gradingPartForm.weighting_mode === 'fixed') return !this.gradingPartPercentageError
+            const weight = Number(this.gradingPartForm.weight)
+            return Number.isFinite(weight) && weight >= 0.001 && weight <= 9999999.999
+                && /^\d+(\.\d{1,3})?$/.test(String(this.gradingPartForm.weight))
+        },
+        gradingPartPercentageError() {
+            if (this.gradingPartForm.weighting_mode !== 'fixed') return ''
+            const percentage = Number(this.gradingPartForm.fixed_percentage)
+            if (!Number.isFinite(percentage) || percentage < 0.001 || percentage > 100
+                || !/^\d+(\.\d{1,3})?$/.test(String(this.gradingPartForm.fixed_percentage))) {
+                return 'Bitte einen Anteil über 0 bis 100 mit höchstens drei Nachkommastellen eingeben.'
+            }
+            const otherPartsTotal = this.gradingParts
+                .filter((part) => part.teaching_entry_area_id === this.activeAreaId && part.id !== this.editingGradingPartId)
+                .reduce((total, part) => total + Math.round(Number(part.fixed_percentage ?? 0) * 1000), 0)
+            return otherPartsTotal + Math.round(percentage * 1000) > 100000
+                ? 'Die festen Anteile dieses Bereichs dürfen zusammen höchstens 100 % ergeben.' : ''
+        },
+        hasStandardCalculationMode() {
+            return ['plus_minus', 'grades'].includes(this.calculationMode)
+        },
+        calculationEvaluationRows() {
+            return ['plus_minus', 'grades'].includes(this.calculationMode)
+                ? this.calculationEvaluationForm.filter((item) => !isStandardCalculationValue(this.calculationMode, item.property)
+                    && (this.showUnassignedCalculationProperties || item.evaluation !== null || this.visibleCalculationProperties.includes(item.property)))
+                : this.calculationEvaluationForm
+        },
+        hasUnassignedCalculationProperties() {
+            return this.calculationEvaluationForm.some((item) => !isStandardCalculationValue(this.calculationMode, item.property) && item.evaluation === null)
+        },
+        activeEdit() {
+            if (this.calculationEntryDialogOpen || this.editDialogOpen || this.deleteDialogOpen || this.areaDialogOpen
+                || this.areaDeleteDialogOpen || this.gradingPartDialogOpen || this.gradingPartDeleteDialogOpen
+                || this.entryCopyDialogOpen || this.previousYearImportDialogOpen
+                || this.isSavingCalculationSettings || this.isSaving || this.isDeleting || this.isSavingArea
+                || this.isDeletingArea || this.isSavingGradingPart || this.isDeletingGradingPart
+                || this.isCopyingEntries || this.isImportingPreviousYear) return 'dialog'
+            if (this.semesterDrafts[this.activeAreaId] || this.isSavingSemesters) return 'semesters'
+            if (this.assignGradingPartId || this.isAssigningGradingEntry) return 'assignment'
+
+            return null
+        },
+        isEditing() {
+            return this.activeEdit !== null
+        },
+        calculationSettingsValidationMessage() {
+            const isFree = this.calculationEntryForEditing?.properties_mode === 'free'
+            const form = ['plus_minus', 'grades'].includes(this.calculationMode)
+                ? this.calculationEvaluationForm.filter((item) => !isStandardCalculationValue(this.calculationMode, item.property))
+                : this.calculationEvaluationForm
+            const properties = form.map((item) => item.property.trim())
+            if (isFree && (properties.some((property) => !property) || new Set(properties).size !== properties.length)) {
+                return 'Bitte unterschiedliche, nicht leere Eingaben festlegen.'
+            }
+            if (form.some((item) => {
+                if (item.evaluation === 'ignored') return false
+                if (item.evaluation === null || item.evaluation === '') return isFree
+                return typeof item.evaluation !== 'number' || !Number.isFinite(item.evaluation)
+            })) return 'Bitte für jede Eingabe eine Zahl oder „Nicht berücksichtigen“ wählen.'
+
+            return ''
+        },
+        semesterForm() {
+            const area = this.areas.find((area) => area.id === this.activeAreaId)
+
+            return this.semesterDrafts[this.activeAreaId] || {
+                semester_count: area?.semester_count ?? 1,
+                semester_1_weight: area?.semester_count === 2 ? area.semester_1_weight : 50,
+                semester_2_weight: area?.semester_count === 2 ? area.semester_2_weight : 50,
+            }
+        },
+        semesterValidationMessage() {
+            if (this.semesterForm.semester_count === 1) return ''
+
+            const weights = [this.semesterForm.semester_1_weight, this.semesterForm.semester_2_weight]
+            if (weights.some((weight) => weight === '' || weight === null || !Number.isInteger(Number(weight)) || Number(weight) < 0 || Number(weight) > 100)) {
+                return 'Bitte für beide Semester ganze Prozentwerte zwischen 0 und 100 eingeben.'
+            }
+
+            return Number(weights[0]) + Number(weights[1]) === 100 ? '' : 'Die Anteile beider Semester müssen zusammen 100 % ergeben.'
+        },
         calculationEntries() {
             return this.entries.filter((entry) => entry.teaching_entry_area_id === this.activeAreaId && entry.category === 'Benotung')
         },
@@ -884,6 +1229,107 @@ export default {
     },
 
     methods: {
+        gradingPartWeightLabel(part) {
+            return part.fixed_percentage !== null && part.fixed_percentage !== undefined
+                ? `${Number(part.fixed_percentage).toLocaleString('de-AT')} % fest`
+                : `Gewicht ${Number(part.weight ?? 1).toLocaleString('de-AT')}`
+        },
+        standardCalculationLabel(entry) {
+            return entry.calculation_mode === 'grades' ? 'Standard Noten' : entry.calculation_mode === 'plus_minus' ? 'Standard +/−' : ''
+        },
+        calculationProperties(entry) {
+            const properties = entry.properties_mode === 'fixed' ? entry.fixed_properties || [] : (entry.property_evaluations || []).map((item) => item.property)
+
+            return ['plus_minus', 'grades'].includes(entry.calculation_mode) ? properties.filter((property) => !isStandardCalculationValue(entry.calculation_mode, property)
+                && normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation) !== null) : properties
+        },
+        propertyEvaluationClass(entry, property) {
+            const evaluation = normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation)
+            if (typeof evaluation !== 'number') return ''
+            if (entry.calculation_mode === 'grades') {
+                if (evaluation === 5) return 'calculation-evaluation--negative'
+                if (evaluation === 1 || evaluation === 2) return 'calculation-evaluation--positive'
+                if (evaluation === 3 || evaluation === 4) return 'calculation-evaluation--grade-middle'
+                return 'calculation-evaluation--neutral'
+            }
+
+            return `calculation-evaluation--${evaluation > 0 ? 'positive' : evaluation < 0 ? 'negative' : 'neutral'}`
+        },
+        propertyEvaluationLabel(entry, property) {
+            const evaluation = normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation)
+            if (evaluation === 'ignored') return 'NB'
+            if (typeof evaluation !== 'number') return ''
+            if (entry.calculation_mode === 'grades' && evaluation >= 1 && evaluation <= 5) return `Note ${evaluation.toLocaleString('de-AT')}`
+
+            return `${evaluation > 0 && entry.calculation_mode !== 'grades' ? '+' : ''}${evaluation.toLocaleString('de-AT')}`
+        },
+        openCalculationEntryDialog(entry) {
+            this.showUnassignedCalculationProperties = false
+            this.calculationEntryForEditing = entry
+            this.calculationMode = entry.calculation_mode || 'individual'
+            const properties = !entry.has_properties ? [] : entry.properties_mode === 'fixed'
+                ? entry.fixed_properties || []
+                : (entry.property_evaluations || []).map((item) => item.property)
+            this.calculationEvaluationForm = properties.map((property) => ({
+                property,
+                evaluation: normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation),
+            }))
+            this.visibleCalculationProperties = this.calculationEvaluationForm.filter((item) => item.evaluation !== null).map((item) => item.property)
+            this.calculationEntryDialogOpen = true
+        },
+        async saveCalculationSettings() {
+            if (!this.calculationEntryForEditing || this.isSavingCalculationSettings || this.calculationSettingsValidationMessage) return
+
+            this.isSavingCalculationSettings = true
+            try {
+                const payload = { calculation_mode: this.calculationMode || 'individual' }
+                payload.property_evaluations = this.calculationEvaluationForm
+                        .filter((item) => item.evaluation !== null && item.evaluation !== '')
+                        .map((item) => ({ property: item.property.trim(), evaluation: item.evaluation }))
+                const response = await axios.put(updateCalculationSettings.url(this.calculationEntryForEditing.id), payload)
+                this.replaceGradingEntry(response.data.data)
+                this.calculationEntryDialogOpen = false
+            } catch (error) {
+                this.notifyError(error)
+            } finally {
+                this.isSavingCalculationSettings = false
+            }
+        },
+        updateSemesterField(field, value) {
+            const form = { ...this.semesterForm, [field]: value }
+            if (field === 'semester_2_weight') {
+                const weight = Number(value)
+                form.semester_1_weight = value !== '' && value !== null && Number.isInteger(weight) && weight >= 0 && weight <= 100
+                    ? 100 - weight
+                    : ''
+            }
+            this.semesterDrafts[this.activeAreaId] = form
+        },
+        async saveSemesterSettings() {
+            if (this.semesterValidationMessage || this.isSavingSemesters) return
+
+            const areaId = this.activeAreaId
+            const area = this.areas.find((area) => area.id === areaId)
+            if (!area) return
+
+            const form = this.semesterForm
+            this.isSavingSemesters = true
+            try {
+                const response = await axios.put(updateEntryArea.url(areaId), {
+                    name: area.name,
+                    semester_count: form.semester_count,
+                    semester_1_weight: form.semester_count === 1 ? 100 : Number(form.semester_1_weight),
+                    semester_2_weight: form.semester_count === 1 ? 0 : Number(form.semester_2_weight),
+                })
+                const index = this.areas.findIndex((area) => area.id === areaId)
+                if (index !== -1) this.areas.splice(index, 1, response.data.data)
+                delete this.semesterDrafts[areaId]
+            } catch (error) {
+                this.notifyError(error)
+            } finally {
+                this.isSavingSemesters = false
+            }
+        },
         formatEntryDescription(description) {
             return String(description || '').replace(/<br\s*\/?>/gi, '\n')
         },
@@ -1127,34 +1573,45 @@ export default {
             if (!this.activeAreaId) return
 
             this.editingGradingPartId = null
-            this.gradingPartForm = { name: '' }
+            this.gradingPartForm = { name: '', weight: 1, is_required: false, weighting_mode: 'relative', fixed_percentage: null }
             this.gradingPartFormErrors = {}
             this.gradingPartDialogOpen = true
         },
         openEditGradingPartDialog(gradingPartArea) {
             this.editingGradingPartId = gradingPartArea.gradingPartId
-            this.gradingPartForm = { name: gradingPartArea.name }
+            this.gradingPartForm = {
+                name: gradingPartArea.name,
+                weight: gradingPartArea.weight ?? 1,
+                is_required: gradingPartArea.is_required ?? false,
+                weighting_mode: gradingPartArea.fixed_percentage !== null && gradingPartArea.fixed_percentage !== undefined ? 'fixed' : 'relative',
+                fixed_percentage: gradingPartArea.fixed_percentage ?? null,
+            }
             this.gradingPartFormErrors = {}
             this.gradingPartDialogOpen = true
         },
         closeGradingPartDialog() {
             this.gradingPartDialogOpen = false
             this.editingGradingPartId = null
-            this.gradingPartForm = { name: '' }
+            this.gradingPartForm = { name: '', weight: 1, is_required: false, weighting_mode: 'relative', fixed_percentage: null }
             this.gradingPartFormErrors = {}
         },
         async saveGradingPart() {
-            if (!this.activeAreaId || !this.gradingPartForm.name.trim()) return
+            if (!this.activeAreaId || !this.gradingPartForm.name.trim() || !this.gradingPartWeightValid || this.isSavingGradingPart) return
 
             this.isSavingGradingPart = true
             this.gradingPartFormErrors = {}
             try {
                 const name = this.gradingPartForm.name.trim()
+                const weight = Number(this.gradingPartForm.weight)
+                const isRequired = this.gradingPartForm.is_required
+                const fixedPercentage = this.gradingPartForm.weighting_mode === 'fixed' ? Number(this.gradingPartForm.fixed_percentage) : null
+                const payload = { name, is_required: isRequired, fixed_percentage: fixedPercentage }
+                if (fixedPercentage === null) payload.weight = weight
                 const response = this.editingGradingPartId
-                    ? await axios.put(updateGradingPart.url(this.editingGradingPartId), { name })
+                    ? await axios.put(updateGradingPart.url(this.editingGradingPartId), payload)
                     : await axios.post('/api/admin/teaching/entry_grading_parts', {
                         teaching_entry_area_id: this.activeAreaId,
-                        name,
+                        ...payload,
                     })
 
                 const gradingPartIndex = this.gradingParts.findIndex((gradingPart) => gradingPart.id === response.data.data.id)
@@ -1368,6 +1825,63 @@ export default {
     display: flex;
     justify-content: flex-end;
 }
+.semester-count-toggle,
+.grading-requirement-toggle,
+.grading-weight-mode-toggle {
+    display: flex;
+    max-width: 320px;
+}
+
+.semester-count-toggle :deep(.v-btn),
+.grading-requirement-toggle :deep(.v-btn),
+.grading-weight-mode-toggle :deep(.v-btn) {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 8px;
+}
+.grading-weight-mode-toggle {
+    max-width: 100%;
+}
+.grading-weight-mode-toggle :deep(.v-btn) {
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    white-space: normal;
+}
+
+.semester-weight-inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.semester-percentage :deep(.v-field) {
+    background: rgba(var(--v-theme-primary), 0.06);
+    border-radius: 12px;
+}
+
+.semester-percentage :deep(input),
+.semester-percentage :deep(.v-text-field__suffix) {
+    color: rgb(var(--v-theme-primary));
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+.semester-percentage :deep(input) {
+    flex: none;
+    width: calc(var(--semester-value-width) + var(--v-field-padding-start, 16px) + 4px);
+    padding-inline-end: 0;
+    appearance: textfield;
+}
+.semester-percentage :deep(input::-webkit-inner-spin-button),
+.semester-percentage :deep(input::-webkit-outer-spin-button) {
+    appearance: none;
+    margin: 0;
+}
+.semester-percentage :deep(.v-text-field__suffix) {
+    margin-inline-start: 4px;
+}
+
 .calculation-semester-grade-header {
     display: flex;
     align-items: flex-start;
@@ -1584,6 +2098,26 @@ export default {
         box-shadow 150ms ease,
         opacity 150ms ease;
 }
+.calculation-entry-edit {
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+}
+.calculation-entry-edit:hover,
+.calculation-entry-edit:focus-visible {
+    border-color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.06);
+}
+.calculation-entry-edit:disabled,
+.entry-area-select:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.calculation-entry-edit:focus-visible {
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: 2px;
+}
 .calculation-entry-selection-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1669,18 +2203,114 @@ export default {
     font-size: 0.72rem;
 }
 .calculation-entry-values {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
     align-items: center;
     flex-wrap: wrap;
     min-width: 0;
-    gap: 5px;
+    gap: 6px 16px;
+    width: 100%;
+    margin-top: 6px;
 }
 .calculation-entry-no-values {
     color: rgba(var(--v-theme-on-surface), 0.62);
     font-size: 0.72rem;
 }
 .calculation-entry-value {
-    font-weight: 600;
+    font-weight: 400;
+    max-width: 100%;
+    height: auto;
+    min-height: 20px;
+    padding-block: 3px;
+}
+.calculation-entry-value :deep(.v-chip__content) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.calculation-score-choice {
+    min-width: 0;
+    margin-bottom: 12px;
+    padding: 8px;
+    border: 1px solid rgba(var(--v-border-color), 0.2);
+    border-radius: 12px;
+}
+.calculation-mode-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.calculation-standard-preview {
+    font-size: 0.9rem;
+}
+.calculation-score-choice legend {
+    max-width: 100%;
+    padding-inline: 6px;
+    overflow-wrap: anywhere;
+}
+.calculation-score-choice :deep(.v-btn__content) {
+    white-space: normal;
+}
+.calculation-score-row {
+    display: grid;
+    grid-template-columns: minmax(64px, 1fr) minmax(0, 1.4fr);
+    align-items: start;
+    gap: 8px;
+}
+.calculation-score-row--free {
+    grid-template-columns: minmax(0, 1.5fr) minmax(48px, 0.7fr) minmax(0, 1.4fr) 36px;
+}
+.calculation-score-row :deep(.v-input) {
+    min-width: 0;
+}
+.calculation-score-row--free .calculation-ignore-button {
+    padding-inline: 4px;
+    overflow-wrap: anywhere;
+}
+.calculation-ignore-button {
+    height: auto !important;
+    min-height: 40px;
+    min-width: 0;
+    padding: 8px;
+    font-size: 0.75rem;
+    letter-spacing: normal;
+}
+.calculation-property {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgb(var(--v-theme-surface));
+}
+.calculation-property-name {
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+.calculation-evaluation {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: rgba(var(--v-theme-on-surface), 0.65);
+    background: rgba(var(--v-theme-on-surface), 0.06);
+}
+.calculation-evaluation--positive {
+    color: rgb(var(--v-theme-success));
+    background: rgba(var(--v-theme-success), 0.1);
+}
+.calculation-evaluation--negative {
+    color: rgb(var(--v-theme-error));
+    background: rgba(var(--v-theme-error), 0.08);
+}
+.calculation-evaluation--grade-middle {
+    color: rgb(var(--v-theme-warning));
+    background: rgba(var(--v-theme-warning), 0.08);
+}
+.calculation-evaluation--neutral {
+    color: rgb(var(--v-theme-info));
+    background: rgba(var(--v-theme-info), 0.08);
 }
 .entry-row {
     border: 1px solid rgba(var(--v-border-color), 0.16);
@@ -1809,9 +2439,18 @@ export default {
     padding: 22px 24px;
     border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
     font-weight: 750;
+    white-space: normal;
 }
 .dialog-title-group {
     gap: 13px;
+    min-width: 0;
+}
+.dialog-title-group > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.dialog-header > .v-btn {
+    flex-shrink: 0;
 }
 .dialog-eyebrow {
     color: rgb(var(--v-theme-primary));

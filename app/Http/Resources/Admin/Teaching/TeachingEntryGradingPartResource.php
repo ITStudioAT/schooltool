@@ -18,6 +18,9 @@ class TeachingEntryGradingPartResource extends JsonResource
             'id' => (int) $this->id,
             'teaching_entry_area_id' => (int) $this->teaching_entry_area_id,
             'name' => $this->name,
+            'weight' => (float) $this->weight,
+            'is_required' => (bool) $this->is_required,
+            'fixed_percentage' => $this->fixed_percentage === null ? null : (float) $this->fixed_percentage,
         ];
     }
 }

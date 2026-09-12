@@ -7,6 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateTeachingEntryAreaRequest extends FormRequest
 {
@@ -42,6 +43,29 @@ class UpdateTeachingEntryAreaRequest extends FormRequest
                         ->where('schoolyear_id', Auth::user()?->schoolyear_id))
                     ->ignore($this->route('entryArea')),
             ],
+            'semester_count' => ['sometimes', 'required', 'integer', 'in:1,2'],
+            'semester_1_weight' => ['sometimes', 'required', 'integer', 'between:0,100'],
+            'semester_2_weight' => ['sometimes', 'required', 'integer', 'between:0,100'],
+        ];
+    }
+
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty()) {
+                    return;
+                }
+
+                $area = $this->route('entryArea');
+                $semesterCount = (int) $this->input('semester_count', $area->semester_count);
+                $firstWeight = (int) $this->input('semester_1_weight', $area->semester_1_weight);
+                $secondWeight = (int) $this->input('semester_2_weight', $area->semester_2_weight);
+
+                if ($semesterCount === 2 && $firstWeight + $secondWeight !== 100) {
+                    $validator->errors()->add('semester_2_weight', 'Die Gewichtungen der beiden Semester müssen zusammen 100 % ergeben.');
+                }
+            },
         ];
     }
 }

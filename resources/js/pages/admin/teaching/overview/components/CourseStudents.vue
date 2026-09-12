@@ -238,7 +238,7 @@
                                         </v-chip>
                                     </div>
                                     <CourseStudentPerformance
-                                        v-if="!show_bulk_entry"
+                                        v-if="showPerformances && !show_bulk_entry"
                                         :student="student"
                                         :course="selected_course"
                                         :entries="performanceData.entries"
@@ -340,6 +340,10 @@ export default {
     },
 
     components: { ItsGridBox, ItsMenuButton, CourseStudentNotes, CourseStudentIndicators, CourseStudentPerformance },
+
+    props: {
+        showPerformances: { type: Boolean, default: true },
+    },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -848,6 +852,10 @@ export default {
             }
         },
         async loadStudentPerformance(courseId) {
+            if (this.showPerformances === false) {
+                this.performanceLoading = false
+                return
+            }
             const requestId = ++this.performanceRequestId
             this.performanceLoading = true
             this.performanceLoadFailed = false

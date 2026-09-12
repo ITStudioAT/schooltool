@@ -8,10 +8,61 @@ use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Grammars\SQLiteGrammar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Fluent;
 use Spatie\Permission\Models\Role;
 
-uses(RefreshDatabase::class);
+trait RefreshTeachingEntryGradingPartDatabase
+{
+    use RefreshDatabase;
+
+    protected function migrateFreshUsing(): array
+    {
+        if (config('database.default') !== 'sqlite') {
+            return [];
+        }
+
+        return [
+            '--realpath' => true,
+            '--path' => array_values(array_filter(
+                glob(database_path('migrations/*.php')),
+                fn (string $path): bool => basename($path) !== '2026_07_27_154239_enforce_restaurant_booking_slot_uniqueness.php',
+            )),
+        ];
+    }
+
+    public function beforeRefreshingDatabase(): void
+    {
+        if (config('database.default') !== 'sqlite') {
+            return;
+        }
+
+        $pdo = DB::connection()->getPdo();
+        $pdo->sqliteCreateFunction('DATE_FORMAT', fn (?string $date, string $format): ?string => $date === null
+            ? null
+            : date(strtr($format, ['%Y' => 'Y', '%m' => 'm', '%d' => 'd']), strtotime($date)), 2);
+        $pdo->sqliteCreateFunction('CONCAT_WS', fn (string $separator, mixed ...$values): string => implode($separator, array_filter($values, fn (mixed $value): bool => $value !== null)));
+        $pdo->sqliteCreateFunction('SHA2', fn (?string $value, int $bits): ?string => $value === null ? null : hash('sha'.$bits, $value), 2);
+        $pdo->sqliteCreateFunction('NOW', fn (): string => date('Y-m-d H:i:s'), 0);
+        DB::connection()->setSchemaGrammar(new class(DB::connection()) extends SQLiteGrammar
+        {
+            public function compileFulltext(Blueprint $blueprint, Fluent $command): string
+            {
+                return $this->compileIndex($blueprint, $command);
+            }
+
+            public function compileDropFullText(Blueprint $blueprint, Fluent $command): string
+            {
+                return $this->compileDropIndex($blueprint, $command);
+            }
+        });
+    }
+}
+
+uses(RefreshTeachingEntryGradingPartDatabase::class);
 
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
@@ -95,7 +146,7 @@ test('store trims names and scopes uniqueness to the selected area', function ()
     $this->postJson('/api/admin/teaching/entry_grading_parts', [
         'teaching_entry_area_id' => $this->area->id,
         'name' => '  Mündlich  ',
-    ])->assertCreated()->assertJsonPath('data.name', 'Mündlich');
+    ])->assertCreated()->assertJsonPath('data.name', 'Mündlich')->assertJsonPath('data.weight', 1)->assertJsonPath('data.is_required', false);
 
     $this->postJson('/api/admin/teaching/entry_grading_parts', [
         'teaching_entry_area_id' => $this->area->id,
@@ -331,3 +382,151 @@ test('assignment and removal reject resources owned by another teacher', functio
     $this->deleteJson("/api/admin/teaching/entry_grading_parts/{$foreignPart->id}/entries/{$ownedEntry->id}")
         ->assertForbidden();
 });
+
+test('grading part weights persist independently and survive renaming', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $response = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Mitarbeit', 'weight' => 6,
+    ])->assertCreated()->assertJsonPath('data.weight', 6);
+    $id = $response->json('data.id');
+
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Mitarbeit gesamt', 'weight' => 4.125])
+        ->assertOk()->assertJsonPath('data.weight', 4.125);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Renamed'])
+        ->assertOk()->assertJsonPath('data.weight', 4.125);
+    $this->getJson('/api/admin/teaching/entry_grading_parts')
+        ->assertOk()->assertJsonPath('data.0.weight', 4.125);
+    expect(TeachingEntryGradingPart::findOrFail($id)->weight)->toBe('4.125');
+
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Prüfung',
+    ])->assertCreated()->assertJsonPath('data.weight', 1);
+    expect($this->area->createInitialGradingPart()->weight)->toBe('1.000');
+});
+
+test('grading part weights reject invalid input on create and update', function (mixed $weight) {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'New', 'weight' => $weight,
+    ])->assertUnprocessable()->assertJsonValidationErrors('weight');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'weight' => $weight])
+        ->assertUnprocessable()->assertJsonValidationErrors('weight');
+    expect($part->refresh()->weight)->toBe('1.000');
+})->with([0, -1, null, 'invalid', '1e999', 0.0001, 10000000, 1.2345]);
+
+test('grading part weight updates reject other owners schools and schoolyears', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    foreach ([
+        ['user_id' => $this->otherTeacher->id],
+        ['school_id' => School::factory()->create()->id],
+        ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id],
+    ] as $overrides) {
+        $part = TeachingEntryGradingPart::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+            ...$overrides,
+        ]);
+        $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'weight' => 6])
+            ->assertForbidden();
+        expect($part->refresh()->weight)->toBe('1.000');
+    }
+});
+
+test('grading part requirement persists through renaming and can return to optional', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $response = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Prüfung', 'is_required' => true,
+    ])->assertCreated()->assertJsonPath('data.is_required', true);
+    $id = $response->json('data.id');
+
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Renamed'])
+        ->assertOk()->assertJsonPath('data.is_required', true);
+    $this->getJson('/api/admin/teaching/entry_grading_parts')
+        ->assertOk()->assertJsonPath('data.0.is_required', true);
+    expect(TeachingEntryGradingPart::findOrFail($id)->is_required)->toBeTrue();
+
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Renamed', 'is_required' => false])
+        ->assertOk()->assertJsonPath('data.is_required', false);
+    expect(TeachingEntryGradingPart::findOrFail($id)->is_required)->toBeFalse()
+        ->and($this->area->createInitialGradingPart()->is_required)->toBeFalse();
+});
+
+test('grading part requirement rejects invalid values on create and update', function (mixed $isRequired) {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'New', 'is_required' => $isRequired,
+    ])->assertUnprocessable()->assertJsonValidationErrors('is_required');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'is_required' => $isRequired])
+        ->assertUnprocessable()->assertJsonValidationErrors('is_required');
+    expect($part->refresh()->is_required)->toBeFalse();
+})->with([null, 'required', 2]);
+
+test('fixed percentages persist and can be cleared without losing relative weight', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $response = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Prüfung', 'weight' => 6,
+    ])->assertCreated()->assertJsonPath('data.fixed_percentage', null);
+    $id = $response->json('data.id');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Prüfung', 'fixed_percentage' => 30.125])
+        ->assertOk()->assertJsonPath('data.fixed_percentage', 30.125)->assertJsonPath('data.weight', 6);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Renamed'])
+        ->assertOk()->assertJsonPath('data.fixed_percentage', 30.125);
+    $this->getJson('/api/admin/teaching/entry_grading_parts')
+        ->assertOk()->assertJsonPath('data.0.fixed_percentage', 30.125);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$id}", ['name' => 'Renamed', 'fixed_percentage' => null])
+        ->assertOk()->assertJsonPath('data.fixed_percentage', null)->assertJsonPath('data.weight', 6);
+    expect(TeachingEntryGradingPart::findOrFail($id)->fixed_percentage)->toBeNull();
+});
+
+test('fixed percentage totals are limited per area and exclude the part being edited', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $first = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'First', 'fixed_percentage' => 33.333,
+    ])->assertCreated()->json('data.id');
+    $second = $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Second', 'fixed_percentage' => 66.667,
+    ])->assertCreated()->json('data.id');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$first}", ['name' => 'First renamed', 'fixed_percentage' => 33.333])
+        ->assertOk();
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$first}", ['name' => 'First renamed', 'fixed_percentage' => 33.334])
+        ->assertUnprocessable()->assertJsonValidationErrors('fixed_percentage');
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'Third', 'fixed_percentage' => 0.001,
+    ])->assertUnprocessable()->assertJsonValidationErrors('fixed_percentage');
+
+    $otherArea = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id,
+    ]);
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $otherArea->id, 'name' => 'Separate', 'fixed_percentage' => 100,
+    ])->assertCreated();
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$second}", ['name' => 'Second', 'fixed_percentage' => null])
+        ->assertOk();
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$first}", ['name' => 'First', 'fixed_percentage' => 100])
+        ->assertOk();
+});
+
+test('fixed percentages reject invalid values on create and update', function (mixed $percentage) {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->postJson('/api/admin/teaching/entry_grading_parts', [
+        'teaching_entry_area_id' => $this->area->id, 'name' => 'New', 'fixed_percentage' => $percentage,
+    ])->assertUnprocessable()->assertJsonValidationErrors('fixed_percentage');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'fixed_percentage' => $percentage])
+        ->assertUnprocessable()->assertJsonValidationErrors('fixed_percentage');
+    expect($part->refresh()->fixed_percentage)->toBeNull();
+})->with([0, -1, 100.001, 0.0001, 1.2345, 'invalid', '1e999']);

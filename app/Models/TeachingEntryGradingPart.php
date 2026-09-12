@@ -19,7 +19,17 @@ class TeachingEntryGradingPart extends Model
         'user_id',
         'teaching_entry_area_id',
         'name',
+        'weight',
+        'is_required',
+        'fixed_percentage',
     ];
+
+    protected $attributes = ['weight' => 1, 'is_required' => false];
+
+    protected function casts(): array
+    {
+        return ['weight' => 'decimal:3', 'is_required' => 'boolean', 'fixed_percentage' => 'decimal:3'];
+    }
 
     public function school(): BelongsTo
     {

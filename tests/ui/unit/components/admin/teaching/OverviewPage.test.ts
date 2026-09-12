@@ -8,6 +8,44 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
+    it('places Auswertungen after students and renders the same list when selected or restored', async () => {
+        setActivePinia(createPinia())
+        const courseStore = useCourseStore()
+        const replace = vi.fn().mockResolvedValue(undefined)
+        courseStore.selected_course = { id: 18, details_loaded: true, course_dates: [] } as any
+        const wrapper = shallowMount({
+            ...Overview,
+            components: { ...(Overview as any).components, CourseStudents: { name: 'CourseStudents', props: ['showPerformances'], template: '<div />' } },
+        }, {
+            global: {
+                mocks: { $route: { path: '/admin/teaching/overview', query: { panel: 'evaluations' } }, $router: { replace } },
+                stubs: { 'v-row': { template: '<div><slot /></div>' }, 'v-col': { template: '<div><slot /></div>' }, 'v-dialog': true, 'v-autocomplete': true },
+            },
+        })
+        try {
+            await nextTick()
+            const vm = wrapper.vm as any
+            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'evaluations', 'infos', 'works', 'print'])
+            expect(vm.functionalPanelSelection).toBe('evaluations')
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).props('showPerformances')).toBe(false)
+            vm.functionalPanelSelection = 'students'
+            await nextTick()
+            expect(vm.functionalPanelSelection).toBe('students')
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).props('showPerformances')).toBe(true)
+            vm.functionalPanelSelection = 'evaluations'
+            await nextTick()
+            expect(replace).toHaveBeenLastCalledWith({ path: '/admin/teaching/overview', query: { panel: 'evaluations' } })
+            expect(vm.secondaryOverviewPanelSelection).toBeNull()
+            vm.functionalPanelSelection = 'infos'
+            await nextTick()
+            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+        }
+    })
+
     it('keeps the timetable grid rows stable before and after clearing a selected course', async () => {
         setActivePinia(createPinia())
         const courseStore = useCourseStore()

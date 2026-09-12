@@ -9,10 +9,61 @@ use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Grammars\SQLiteGrammar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Fluent;
 use Spatie\Permission\Models\Role;
 
-uses(RefreshDatabase::class);
+trait RefreshTeachingEntryAreaDatabase
+{
+    use RefreshDatabase;
+
+    protected function migrateFreshUsing(): array
+    {
+        if (config('database.default') !== 'sqlite') {
+            return [];
+        }
+
+        return [
+            '--realpath' => true,
+            '--path' => array_values(array_filter(
+                glob(database_path('migrations/*.php')),
+                fn (string $path): bool => basename($path) !== '2026_07_27_154239_enforce_restaurant_booking_slot_uniqueness.php',
+            )),
+        ];
+    }
+
+    public function beforeRefreshingDatabase(): void
+    {
+        if (config('database.default') !== 'sqlite') {
+            return;
+        }
+
+        $pdo = DB::connection()->getPdo();
+        $pdo->sqliteCreateFunction('DATE_FORMAT', fn (?string $date, string $format): ?string => $date === null
+            ? null
+            : date(strtr($format, ['%Y' => 'Y', '%m' => 'm', '%d' => 'd']), strtotime($date)), 2);
+        $pdo->sqliteCreateFunction('CONCAT_WS', fn (string $separator, mixed ...$values): string => implode($separator, array_filter($values, fn (mixed $value): bool => $value !== null)));
+        $pdo->sqliteCreateFunction('SHA2', fn (?string $value, int $bits): ?string => $value === null ? null : hash('sha'.$bits, $value), 2);
+        $pdo->sqliteCreateFunction('NOW', fn (): string => date('Y-m-d H:i:s'), 0);
+        DB::connection()->setSchemaGrammar(new class(DB::connection()) extends SQLiteGrammar
+        {
+            public function compileFulltext(Blueprint $blueprint, Fluent $command): string
+            {
+                return $this->compileIndex($blueprint, $command);
+            }
+
+            public function compileDropFullText(Blueprint $blueprint, Fluent $command): string
+            {
+                return $this->compileDropIndex($blueprint, $command);
+            }
+        });
+    }
+}
+
+uses(RefreshTeachingEntryAreaDatabase::class);
 
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
@@ -115,6 +166,7 @@ test('imports owned areas and entries from the previous schoolyear', function ()
         'concerns' => '2025/26',
     ]);
     $underSchoolArea = teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Unterstufe');
+    $underSchoolArea->update(['semester_count' => 2, 'semester_1_weight' => 40, 'semester_2_weight' => 60]);
     $upperSchoolArea = teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Oberstufe');
     $foreignArea = teachingEntryAreaFor($this->otherTeacher, $previousSchoolyear, 'Fremd');
     TeachingEntryDefinition::factory()->create([
@@ -164,6 +216,9 @@ test('imports owned areas and entries from the previous schoolyear', function ()
         ->firstOrFail();
 
     expect($underSchoolArea->entryDefinitions()->count())->toBe(1)
+        ->and($copiedUnderSchoolArea->semester_count)->toBe(2)
+        ->and($copiedUnderSchoolArea->semester_1_weight)->toBe(40)
+        ->and($copiedUnderSchoolArea->semester_2_weight)->toBe(60)
         ->and($upperSchoolArea->entryDefinitions()->count())->toBe(1)
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->fixed_properties)->toBe(['+', '-'])
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->has_table_marking)->toBeTrue()
@@ -208,6 +263,9 @@ test('store trims names and rejects duplicate names', function () {
         ->postJson('/api/admin/teaching/entry_areas', ['name' => '  Oberstufe  '])
         ->assertCreated()
         ->assertJsonPath('data.name', 'Oberstufe')
+        ->assertJsonPath('data.semester_count', 1)
+        ->assertJsonPath('data.semester_1_weight', 100)
+        ->assertJsonPath('data.semester_2_weight', 0)
         ->assertJsonPath('data.entry_count', 0)
         ->assertJsonPath('grading_part.name', 'Oberstufe');
 
@@ -230,6 +288,91 @@ test('update renames an owned area but rejects a foreign area', function () {
         ->assertJsonPath('data.name', 'Mittelstufe');
     $this->putJson("/api/admin/teaching/entry_areas/{$foreignArea->id}", ['name' => 'Geändert'])
         ->assertForbidden();
+});
+
+test('semester settings persist per area and survive name-only updates', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Unterstufe');
+    $otherArea = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Oberstufe');
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", [
+        'name' => 'Unterstufe',
+        'semester_count' => 2,
+        'semester_1_weight' => 40,
+        'semester_2_weight' => 60,
+    ])->assertOk()
+        ->assertJsonPath('data.semester_count', 2)
+        ->assertJsonPath('data.semester_1_weight', 40)
+        ->assertJsonPath('data.semester_2_weight', 60);
+
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => 'Mittelstufe'])
+        ->assertOk()
+        ->assertJsonPath('data.semester_count', 2)
+        ->assertJsonPath('data.semester_1_weight', 40)
+        ->assertJsonPath('data.semester_2_weight', 60);
+
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonFragment([
+        'id' => $area->id,
+        'name' => 'Mittelstufe',
+        'semester_count' => 2,
+        'semester_1_weight' => 40,
+        'semester_2_weight' => 60,
+        'entry_count' => 0,
+    ]);
+
+    expect($otherArea->refresh()->semester_count)->toBe(1)
+        ->and($otherArea->semester_1_weight)->toBe(100)
+        ->and($otherArea->semester_2_weight)->toBe(0);
+
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", [
+        'name' => 'Mittelstufe',
+        'semester_count' => 1,
+        'semester_1_weight' => 100,
+        'semester_2_weight' => 0,
+    ])->assertOk()->assertJsonPath('data.semester_count', 1);
+});
+
+test('semester settings reject invalid values without changing the area', function (array $settings, string $error) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Unterstufe');
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => 'Unterstufe', ...$settings])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors($error);
+
+    expect($area->refresh()->semester_count)->toBe(1)
+        ->and($area->semester_1_weight)->toBe(100)
+        ->and($area->semester_2_weight)->toBe(0);
+})->with([
+    'zero semesters' => [['semester_count' => 0], 'semester_count'],
+    'three semesters' => [['semester_count' => 3], 'semester_count'],
+    'missing semester choice' => [['semester_count' => null], 'semester_count'],
+    'negative weight' => [['semester_1_weight' => -1], 'semester_1_weight'],
+    'excess weight' => [['semester_2_weight' => 101], 'semester_2_weight'],
+    'fractional weight' => [['semester_1_weight' => 49.5], 'semester_1_weight'],
+    'missing weight' => [['semester_2_weight' => null], 'semester_2_weight'],
+    'incomplete total' => [['semester_count' => 2, 'semester_1_weight' => 40, 'semester_2_weight' => 50], 'semester_2_weight'],
+    'partial update checks stored weight' => [['semester_count' => 2, 'semester_1_weight' => 40], 'semester_2_weight'],
+]);
+
+test('semester settings cannot be changed for another teacher or schoolyear', function () {
+    $previousYear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $areas = [
+        teachingEntryAreaFor($this->otherTeacher, $this->schoolyear, 'Fremd'),
+        teachingEntryAreaFor($this->teacher, $previousYear, 'Vorjahr'),
+    ];
+    $this->actingAs($this->teacher, 'sanctum');
+
+    foreach ($areas as $area) {
+        $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", [
+            'name' => $area->name,
+            'semester_count' => 2,
+            'semester_1_weight' => 50,
+            'semester_2_weight' => 50,
+        ])->assertForbidden();
+
+        expect($area->refresh()->semester_count)->toBe(1);
+    }
 });
 
 test('destroy removes an empty area and protects an area with entries', function () {

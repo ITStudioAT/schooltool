@@ -17,6 +17,9 @@ class TeachingEntryAreaResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'semester_count' => $this->semester_count,
+            'semester_1_weight' => $this->semester_1_weight,
+            'semester_2_weight' => $this->semester_2_weight,
             'entry_count' => (int) ($this->entry_definitions_count ?? 0),
         ];
     }

@@ -34,6 +34,9 @@ class UpdateTeachingEntryGradingPartRequest extends FormRequest
         $gradingPart = $this->route('entryGradingPart');
 
         return [
+            'weight' => ['sometimes', 'required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:9999999.999'],
+            'is_required' => ['sometimes', 'required', 'boolean'],
+            'fixed_percentage' => ['sometimes', 'nullable', 'numeric', 'decimal:0,3', 'min:0.001', 'max:100'],
             'name' => [
                 'required',
                 'string',

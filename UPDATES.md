@@ -6,6 +6,11 @@
 
 - Responsivität Admin/User geupdated
 
+### Unterricht/Berechnung der Noten
+
+- Auswahl 1/2 Semester, Wertigkeit
+- Bewertung der einzelnen Leistungen
+
 ## 3.48.0
 
 ### SEPP

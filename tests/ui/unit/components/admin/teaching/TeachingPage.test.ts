@@ -726,7 +726,8 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })")
         expect(source).not.toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
         expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })")
-        expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
+        expect(source).not.toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
+        expect(source).not.toContain("panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })")
         expect(source).toContain("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })")
         expect(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })"))
@@ -739,8 +740,6 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
         expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
-            .toBeLessThan(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
-        expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
         const validPanels = source.match(/const validPanels = \[([\s\S]*?)\]/)?.[1] || ''
@@ -750,6 +749,14 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
         expect(source).not.toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')
         expect(source).not.toContain('data-testid="teaching-curriculum-card"')
+    })
+
+    it('removes the performance menu items from More as well', () => {
+        const source = readFileSync('resources/js/pages/admin/teaching/more/More.vue', 'utf8')
+        const menuItems = source.match(/menu_items: \[([\s\S]*?)\]/)?.[1] || ''
+        expect(menuItems).toContain("label: 'Anwesenheiten'")
+        expect(menuItems).not.toContain("label: 'Leistungen'")
+        expect(menuItems).not.toContain("label: 'Leistungen Plus'")
     })
 
     it('keeps the overview panel menu at full width', async () => {

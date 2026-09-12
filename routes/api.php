@@ -95,6 +95,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingCourseCurriculumController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryCalculationSettingsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
@@ -679,6 +680,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
         Route::apiResource('/admin/teaching/school_hours', SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::post('/admin/teaching/school-hour-imports', [SchoolHourImportsController::class, 'store']);
+        Route::put('/admin/teaching/entry_definitions/{entryDefinition}/calculation-settings', [TeachingEntryCalculationSettingsController::class, 'update']);
         Route::apiResource('/admin/teaching/entry_definitions', TeachingEntryDefinitionController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['entry_definitions' => 'entryDefinition']);

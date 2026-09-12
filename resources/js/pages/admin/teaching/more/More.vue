@@ -96,8 +96,6 @@ export default {
             activeSemester: 1,
             menu_items: [
                 { id: 'dummy_1', label: 'Anwesenheiten' },
-                { id: 'dummy_2', label: 'Leistungen' },
-                { id: 'dummy_3', label: 'Leistungen Plus' },
             ],
         }
     },

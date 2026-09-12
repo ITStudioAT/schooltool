@@ -60,7 +60,7 @@ class TeachingEntryAreaController extends Controller
     public function update(UpdateTeachingEntryAreaRequest $request, TeachingEntryArea $entryArea): TeachingEntryAreaResource
     {
         $this->ensureAreaBelongsToUser($entryArea, $this->authorizedUser());
-        $entryArea->update(['name' => $request->validated('name')]);
+        $entryArea->update($request->validated());
 
         return new TeachingEntryAreaResource($entryArea->refresh()->loadCount('entryDefinitions'));
     }

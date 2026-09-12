@@ -40,7 +40,7 @@
 
         <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
-                <CourseStudents />
+                <CourseStudents :key="studentPanel" :show-performances="studentPanel !== 'evaluations'" />
             </v-col>
         </v-row>
 
@@ -240,6 +240,7 @@ export default {
             schoolHourStore: null,
             teachingStore: null,
             activeSemester: 1,
+            studentPanel: 'students',
             _urlPanelRestored: false,
             curriculumSelectionId: null,
             curriculumLoading: false,
@@ -448,10 +449,9 @@ export default {
                 panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
+                panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
-                panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
-                panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
             }
             return panels
@@ -462,7 +462,7 @@ export default {
         functionalPanelSelection: {
             get() {
                 if (!this.selected_course) return undefined
-                if (this.show_students) return 'students'
+                if (this.show_students) return this.studentPanel === 'evaluations' ? 'evaluations' : 'students'
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
@@ -474,7 +474,8 @@ export default {
                 return undefined
             },
             set(value) {
-                this.show_students = value === 'students'
+                this.studentPanel = value === 'evaluations' ? 'evaluations' : 'students'
+                this.show_students = ['students', 'evaluations'].includes(value)
                 this.show_infos = value === 'infos'
                 this.show_works = value === 'works'
                 this.show_print = value === 'print'
@@ -504,6 +505,7 @@ export default {
             immediate: true,
             async handler(newCourse, oldCourse) {
             if (!newCourse) {
+                this.studentPanel = 'students'
                 this._lastCourseId = null
                 this.curriculumSelectionId = null
                 this.curriculumEditMode = false
@@ -524,6 +526,7 @@ export default {
                     : requestedPanel
                 const urlGrades = this.$route?.query?.grades
                 if (urlPanel === 'curriculum') {
+                    this.studentPanel = 'students'
                     this._urlPanelRestored = true
                     this._lastCourseId = newCourse.id
                     this.show_students = true
@@ -550,6 +553,7 @@ export default {
                     'table',
                     'attendance',
                     'students',
+                    'evaluations',
                     'dates',
                     'infos',
                     'works',
@@ -576,7 +580,8 @@ export default {
                             query,
                         }).catch(() => {})
                     }
-                    this.show_students = urlPanel === 'students'
+                    this.studentPanel = urlPanel === 'evaluations' ? 'evaluations' : 'students'
+                    this.show_students = ['students', 'evaluations'].includes(urlPanel)
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
@@ -589,6 +594,7 @@ export default {
                     return
                 }
                 if (urlGrades) {
+                    this.studentPanel = 'students'
                     this.show_students = true
                     this.show_infos = false
                     this.show_works = false
@@ -608,6 +614,7 @@ export default {
             }
             this._lastCourseId = newCourse.id
             this._urlPanelRestored = true
+            this.studentPanel = 'students'
             this.show_students = false
             this.show_infos = false
             this.show_works = false

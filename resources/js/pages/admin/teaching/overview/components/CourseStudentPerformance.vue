@@ -32,14 +32,14 @@
                     </div>
                     <div v-for="group in groups" :key="group.category" class="performance-group" role="group" :aria-label="group.category">
                         <CourseStudentHoverDetails v-for="summary in group.summaries" :key="summary.key" :title="summary.label"
-                            :subtitle="`${group.category} · ${summary.count} ${summary.count === 1 ? 'Eintrag' : 'Einträge'}`"
-                            :details-label="`Einzelne Einträge: ${summary.label}`"
+                            :subtitle="`${group.category} · ${formatDate(summary.details[0].date)}`"
+                            :details-label="`Eintrag: ${summary.label}`"
                             content-class="student-performance-tooltip">
                             <template #activator="{ props: activatorProps }">
                                 <v-chip v-bind="activatorProps" size="x-small" tabindex="0"
                                     :color="group.category === 'Benotung' ? 'primary' : 'warning'" variant="tonal"
-                                    :aria-label="summary.label + ': ' + summary.count + (summary.count === 1 ? ' Eintrag' : ' Einträge') + (summary.values ? ', ' + summary.values : '')">
-                                    {{ summary.type }}: {{ summary.values || `${summary.count}×` }}
+                                    :aria-label="summary.label + ': ' + (summary.values || 'Eintrag') + ', ' + formatDate(summary.details[0].date)">
+                                    {{ summary.type }}{{ summary.values ? `: ${summary.values}` : '' }}
                                 </v-chip>
                             </template>
                             <div class="performance-detail-list">
@@ -142,7 +142,7 @@ const summaryData = computed(() => {
         ...props.entries.filter(belongsToStudent).map((entry) => ({ entry, legacy: false })),
         ...props.behaviourEntries.filter(belongsToStudent).map((entry) => ({ entry, legacy: true })),
     ]
-    for (const { entry, legacy } of entries) {
+    for (const [index, { entry, legacy }] of entries.entries()) {
         const work = props.works.find((item) => sameId(item.teaching_course_id, props.course.id) && sameId(item.id, entry.teaching_course_work_id))
         const finishDate = teachingDateKey(work?.finish_until_date)
         const displayDate = !legacy && entry.source === 'course_work' && finishDate ? finishDate : entry.date
@@ -155,26 +155,25 @@ const summaryData = computed(() => {
             : (props.usesEntryAreas ? props.course.teaching_entry_area?.entry_definitions || [] : props.schema?.works || [])
         const definition = definitions.find((item) => item.short_name === entry.type)
         const category = legacy ? (entry.kind === 'notification' ? 'Erinnerungen' : 'Verhalten') : definition?.category || 'Benotung'
-        const key = `${legacy ? 'legacy' : 'entry'}-${entry.type || ''}`
+        const key = `${legacy ? 'legacy' : 'entry'}-${entry.kind || ''}-${entry.id ?? index}-${index}`
         if (!grouped.has(category)) grouped.set(category, new Map())
         const summaries = grouped.get(category)
-        if (!summaries.has(key)) summaries.set(key, {
+        summaries.set(key, {
             key,
             type: entry.type || 'Eintrag',
             label: definition?.name ? `${entry.type} · ${definition.name}` : entry.type || 'Eintrag',
-            count: 0,
-            grades: new Map(),
+            sortName: definition?.name || entry.type || 'Eintrag',
+            values: '',
             details: [],
         })
         const summary = summaries.get(key)
-        summary.count++
         const defaultGrade = !props.usesEntryAreas && definition?.grades?.some((grade) => String(grade.grade) === String(definition.default_grade))
             ? definition.default_grade : ''
         const directGrade = String(entry.effective_grade ?? '').trim() || String(entry.grade ?? '').trim()
         const grade = legacy && entry.kind === 'notification'
             ? (entry.done_date ? 'Erledigt' : 'Offen')
             : directGrade || defaultGrade || (legacy || definition?.has_properties === false ? '' : 'Offen')
-        if (grade !== '') summary.grades.set(String(grade), (summary.grades.get(String(grade)) || 0) + 1)
+        summary.values = String(grade)
         const sourceWork = !legacy && entry.source === 'course_work' ? work : null
         summary.details.push({
             date: teachingDateKey(displayDate),
@@ -193,15 +192,11 @@ const summaryData = computed(() => {
         (categoryOrder.indexOf(left) + 1 || 99) - (categoryOrder.indexOf(right) + 1 || 99),
     ).map(([category, summaries]) => ({
         category,
-        summaries: [...summaries.values()].map((summary) => ({
-            ...summary,
-            values: summary.grades.size ? [
-                ...[...summary.grades].map(([grade, count]) => `${count}× ${grade}`),
-                ...(summary.count > [...summary.grades.values()].reduce((total, count) => total + count, 0)
-                    ? [`${summary.count - [...summary.grades.values()].reduce((total, count) => total + count, 0)}× weitere Einträge`] : []),
-            ].join(', ') : '',
-            details: summary.details.sort((left, right) => left.date.localeCompare(right.date)),
-        })),
+        summaries: [...summaries.values()].sort((left, right) =>
+            left.sortName.localeCompare(right.sortName, 'de-AT', { sensitivity: 'base', numeric: true })
+            || left.type.localeCompare(right.type, 'de-AT')
+            || left.details[0].date.localeCompare(right.details[0].date),
+        ),
     }))
     return { groups, unassignedCount }
 })

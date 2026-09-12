@@ -71,7 +71,26 @@ let component
 const state = { pageLoading: false, studentTimetablesStore: studentStore }
 let props = {}
 
-if (scenario === 'admin-subjects') {
+if (scenario === 'admin-teaching-semesters') {
+    component = (await import('@/pages/admin/teaching/settings/components/Entries.vue')).default
+    route.query = { panel: 'entries', entry_category: 'Berechnung' }
+    Object.assign(state, {
+        activeAreaId: 10, activeCategory: 'Berechnung',
+        areas: [{ id: 10, name: 'Unterstufe', semester_count: 1, semester_1_weight: 100, semester_2_weight: 0 }],
+        gradingParts: [{ id: 1, teaching_entry_area_id: 10, name: 'Mitarbeit gesamt' }],
+        entries: ['Auftrag', 'Mitarbeit', 'Typewriter', 'Prüfung'].map((name, index) => ({
+            id: index + 1, name, short_name: name.slice(0, 2), category: 'Benotung',
+            teaching_entry_area_id: 10, teaching_entry_grading_part_id: 1,
+            has_properties: name !== 'Mitarbeit', properties_mode: name === 'Auftrag' ? 'free' : 'fixed',
+            fixed_properties: name === 'Typewriter' ? ['erledigt', 'nicht erledigt', 'erledigt und gefehlt'] : name === 'Prüfung' ? ['1', '2', '3', '4', '5', 'F'] : [],
+            property_evaluations: name === 'Typewriter' ? [
+                { property: 'erledigt', evaluation: 'positive' },
+                { property: 'nicht erledigt', evaluation: 'negative' },
+                { property: 'erledigt und gefehlt', evaluation: 'neutral' },
+            ] : [],
+        })),
+    })
+} else if (scenario === 'admin-subjects') {
     component = (await import('@/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue')).default
     route.params = { subsection: 'subject-plan-v2' }
     Object.assign(state, { subject_action: 'subject-plan-v2', studyProgram: 'normalstudium', subjectRows: [], settingsLoading: false })

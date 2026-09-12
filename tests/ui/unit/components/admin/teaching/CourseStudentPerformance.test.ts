@@ -70,18 +70,19 @@ function entry(overrides = {}) {
 }
 
 describe('Compact course student performance', () => {
-    it('opens all detail rows on hover and keeps the infobox open while the pointer enters it', async () => {
+    it('renders each repeated entry separately and opens only its details on hover', async () => {
         const wrapper = await mountInteractive({
             schema: { works: [{ short_name: 'MA', name: 'Mitarbeit' }] },
             entries: Array.from({ length: 35 }, (_, index) => entry({ id: index + 1, grade: '+', description: `Kommentar ${index + 1}` })),
         })
-        expect(wrapper.text()).toBe('MA: 35× +')
+        expect(wrapper.findAll('.v-chip').map((item) => item.text())).toEqual(Array(35).fill('MA: +'))
         expect(document.querySelector('[role="tooltip"]')).toBeNull()
         const tooltip = await hoverDetails(wrapper)
         expect(tooltip.textContent).toContain('MA · Mitarbeit')
         expect(tooltip.textContent).not.toContain('2025/26')
-        expect(tooltip.querySelectorAll('.performance-detail-item')).toHaveLength(35)
-        expect(tooltip.textContent).toContain('Kommentar 35')
+        expect(tooltip.querySelectorAll('.performance-detail-item')).toHaveLength(1)
+        expect(tooltip.textContent).toContain('Kommentar 1')
+        expect(tooltip.textContent).not.toContain('Kommentar 35')
         expect(tooltip.querySelector('[role="region"]').getAttribute('tabindex')).toBe('0')
         await chip(wrapper, 'MA').trigger('mouseleave')
         tooltip.querySelector('.v-overlay__content').dispatchEvent(new MouseEvent('mouseenter'))
@@ -169,7 +170,7 @@ describe('Compact course student performance', () => {
                 { student_ids: ['12', '99'], comment: 'GROUP-FALLBACK', comments },
             ] }],
         })
-        expect(wrapper.text()).toBe('MA: 1× 1')
+        expect(wrapper.text()).toBe('MA: 1')
         const tooltip = await hoverDetails(wrapper)
         expect(tooltip.textContent).toContain(expectedComment)
         expect(tooltip.textContent).toContain('03.02.2026')
@@ -179,14 +180,13 @@ describe('Compact course student performance', () => {
         if (expectedComment === 'INDIVIDUAL') expect(tooltip.textContent).not.toContain('GROUP-FALLBACK')
     })
 
-    it('preserves ungraded counts beside recorded values without redundant totals', () => {
+    it('shows ungraded records separately beside recorded values', () => {
         const wrapper = mountPerformance({ props: {
             student, course, usesEntryAreas: true,
             behaviourEntries: [entry({ type: 'V', kind: 'behaviour', grade: '+' }), entry({ id: 2, type: 'V', kind: 'behaviour' })],
             entries: [entry({ type: 'PÜ', grade: 0 }), entry({ id: 2, type: 'PÜ', grade: '++++' })],
         } })
-        expect(chip(wrapper, 'V').text()).toBe('V: 1× +, 1× weitere Einträge')
-        expect(chip(wrapper, 'PÜ').text()).toBe('PÜ: 1× 0, 1× ++++')
+        expect(wrapper.findAll('v-chip').map((item) => item.text())).toEqual(['PÜ: 0', 'PÜ: ++++', 'V: +', 'V'])
     })
 
     it('shows ungraded behaviour dates and comments without an invented result label', async () => {
@@ -195,7 +195,7 @@ describe('Compact course student performance', () => {
             course: { ...course, teaching_entry_area: { entry_definitions: [{ short_name: 'D', name: 'Disziplinarbogen', category: 'Verhalten', has_properties: false }] } },
             entries: [entry({ type: 'D', description: 'Vereinbarung eingehalten' })],
         })
-        expect(wrapper.text()).toBe('D: 1×')
+        expect(wrapper.text()).toBe('D')
         const tooltip = await hoverDetails(wrapper, 'D')
         expect(tooltip.textContent).toContain('03.02.2026')
         expect(tooltip.textContent).toContain('Vereinbarung eingehalten')
@@ -248,8 +248,8 @@ describe('Compact course student performance', () => {
             behaviourEntries: [entry({ kind: 'behaviour', date: '2025-08-31', type: 'OLD-BEHAVIOUR' }), entry({ id: 2, kind: 'notification', date: '2026-09-01', type: 'FUTURE-REMINDER' })],
         } })
         for (const type of ['PREVIOUS', 'FOLLOWING', 'OLD-BEHAVIOUR', 'FUTURE-REMINDER']) expect(wrapper.text()).not.toContain(type)
-        expect(wrapper.text().includes('FIRST: 1×')).toBe(activeSemester !== 2)
-        expect(wrapper.text().includes('LAST: 1×')).toBe(activeSemester !== 1)
+        expect(wrapper.text().includes('FIRST')).toBe(activeSemester !== 2)
+        expect(wrapper.text().includes('LAST')).toBe(activeSemester !== 1)
     })
 
     it('hides all stale course-year totals immediately when the selected schoolyear changes', async () => {
@@ -257,9 +257,9 @@ describe('Compact course student performance', () => {
             student: { ...student, sem_1_grade: '1', stars: [{ date: '2026-01-01' }] }, course,
             entries: [entry()], evaluations: [{ id: 1, teaching_course_id: 18, user_id: 12, semester: 1, category_name: 'Kompetenz', value: 'Bestanden' }],
         } })
-        expect(wrapper.text()).toContain('MA: 1×')
+        expect(wrapper.text()).toContain('MA')
         await wrapper.setProps({ schoolyear: { id: 4, from: '2026-09-01', until: '2027-08-31' } })
-        for (const text of ['MA: 1×', 'Note Sem 1', 'Kompetenz', 'Bestanden']) expect(wrapper.text()).not.toContain(text)
+        for (const text of ['MA', 'Note Sem 1', 'Kompetenz', 'Bestanden']) expect(wrapper.text()).not.toContain(text)
         expect(wrapper.text()).toContain('ausgewählte Schuljahr')
     })
 
@@ -274,7 +274,7 @@ describe('Compact course student performance', () => {
         const wrapper = mountPerformance({ props: { student, course, schoolyear: { id: 3 }, entries: [entry()] } })
         expect(wrapper.text()).toContain('Schuljahresgrenzen fehlen')
         expect(wrapper.text()).toContain('nicht mitgezählt')
-        expect(wrapper.text()).not.toContain('MA: 1×')
+        expect(wrapper.text()).not.toContain('MA')
     })
 
     it('uses the completion year of work results and never includes an out-of-year result twice', () => {
@@ -283,23 +283,42 @@ describe('Compact course student performance', () => {
             entries: [entry({ source: 'course_work', teaching_course_work_id: 7, date: '2025-08-20', type: 'CURRENT' }), entry({ id: 2, source: 'course_work', teaching_course_work_id: 8, date: '2026-08-20', type: 'NEXT' })],
             works: [{ id: 7, teaching_course_id: 18, finish_until_date: '2025-09-01' }, { id: 8, teaching_course_id: 18, finish_until_date: '2026-09-01' }],
         } })
-        expect(wrapper.text()).toContain('CURRENT: 1×')
+        expect(wrapper.text()).toContain('CURRENT')
         expect(wrapper.text()).not.toContain('NEXT')
     })
-    it('summarizes all records by type and effective grade without long details or tables', () => {
+    it('shows all records separately with effective grades and without long details or tables', () => {
         const wrapper = mountPerformance({ props: {
             student, course,
             entries: [entry({ grade: '4', effective_grade: '+', description: 'Langer individueller Kommentar' }), entry({ id: 2, grade: '+' }), entry({ id: 3, grade: '-' }), entry({ id: 4, type: 'ALT' }), entry({ id: 5, type: null, date: null, description: 'Nur Beschreibung' })],
             schema: { works: [{ short_name: 'MA', name: 'Mitarbeit' }] },
         } })
-        expect(chip(wrapper, 'MA').text()).toBe('MA: 2× +, 1× -')
-        expect(chip(wrapper, 'MA').text()).toContain('2× +, 1× -')
-        expect(wrapper.text()).toContain('ALT: 1×')
+        expect(wrapper.findAll('v-chip').filter((item) => item.text().startsWith('MA:')).map((item) => item.text())).toEqual(['MA: +', 'MA: +', 'MA: -'])
+        expect(wrapper.text()).toContain('ALT')
         expect(wrapper.text()).toContain('Ohne Zeitraumzuordnung: 1 (nicht mitgezählt)')
-        expect(wrapper.text()).toContain('1× Offen')
+        expect(wrapper.text()).toContain('Offen')
         expect(wrapper.text()).not.toContain('Langer individueller Kommentar')
         expect(wrapper.text()).not.toContain('Nur Beschreibung')
         expect(wrapper.find('table, v-table').exists()).toBe(false)
+    })
+
+    it('sorts individual records by their full type name and then date', () => {
+        const wrapper = mountPerformance({ props: {
+            student, usesEntryAreas: true,
+            course: { ...course, teaching_entry_area: { entry_definitions: [
+                { short_name: 'Z', name: 'Mitarbeit', category: 'Benotung' },
+                { short_name: 'A', name: 'Praktische Übung', category: 'Benotung' },
+                { short_name: 'P', name: 'Prüfung', category: 'Benotung' },
+            ] } },
+            entries: [
+                entry({ id: 1, type: 'P', grade: '2' }),
+                entry({ id: 2, type: 'Z', grade: '-', date: '2026-02-05' }),
+                entry({ id: 3, type: 'A', grade: '+' }),
+                entry({ id: 4, type: 'Z', grade: '+', date: '2026-02-01' }),
+                entry({ id: 5, type: 'P', grade: '2' }),
+            ],
+        } })
+        expect(wrapper.findAll('v-chip').map((item) => item.text())).toEqual(['Z: +', 'Z: -', 'A: +', 'P: 2', 'P: 2'])
+        expect(wrapper.text()).not.toContain('×')
     })
 
     it('keeps grading, discipline, warnings and legacy reminders distinct', () => {
@@ -313,7 +332,7 @@ describe('Compact course student performance', () => {
             entries: [entry({ type: 'PÜ', grade: '++++' }), entry({ id: 2, type: 'D' }), entry({ id: 3, type: 'FW' })],
             behaviourEntries: [entry({ kind: 'behaviour', type: 'V' }), entry({ id: 2, kind: 'notification', due_date: '2026-02-10', done_date: '2026-02-11' })],
         } })
-        for (const text of ['PÜ: 1× ++++', 'D: 1×', 'FW: 1×', 'V: 1×', 'MA: 1× Erledigt']) expect(wrapper.text()).toContain(text)
+        for (const text of ['PÜ: ++++', 'D', 'FW', 'V', 'MA: Erledigt']) expect(wrapper.text()).toContain(text)
         expect(wrapper.findAll('[role="group"]').map((group) => group.attributes('aria-label'))).toEqual(['Benotung', 'Verhalten', 'Weitere', 'Erinnerungen'])
         expect(wrapper.findAll('.performance-row').map((row) => row.findAll('[role="group"]').map((group) => group.attributes('aria-label')))).toEqual([['Benotung'], ['Verhalten'], ['Weitere', 'Erinnerungen']])
         for (const label of ['Benotung:', 'Verhalten:', 'Weitere:', 'Erinnerungen:']) expect(wrapper.text()).not.toContain(label)
@@ -328,8 +347,8 @@ describe('Compact course student performance', () => {
             student, course, entries: [entry({ source: 'course_work', teaching_course_work_id: '7', grade: '1', description: 'Zusammenarbeit' })],
             works: [{ id: 7, teaching_course_id: 18, title: 'Projekt', description: 'Recherche', is_group_work: true, groups: [{ student_ids: ['12'], grades: [{ student_id: 12, grade: '1' }], comment: 'Zusammenarbeit', comments }] }],
         } })
-        expect(chip(wrapper, 'MA').text()).toContain('MA: 1×')
-        expect(chip(wrapper, 'MA').text()).toContain('1× 1')
+        expect(chip(wrapper, 'MA').text()).toContain('MA')
+        expect(chip(wrapper, 'MA').text()).toContain('1')
         for (const text of ['Projekt', 'Recherche', 'Zusammenarbeit', 'Gut erklärt']) expect(wrapper.text()).not.toContain(text)
     })
 
@@ -349,12 +368,12 @@ describe('Compact course student performance', () => {
             evaluations: [1, 2, 3].map((semester) => ({ id: semester, user_id: '12', teaching_course_id: '18', semester, category_name: 'Kompetenz', value: 'Wert' + semester })),
         } })
         const text = wrapper.text()
-        expect(text).not.toContain('1× 0')
+        expect(text).not.toContain('0')
         expect(text).toContain('Ohne Zeitraumzuordnung: 1 (nicht mitgezählt)')
-        expect(text.includes('1× +')).toBe(activeSemester !== 2)
-        expect(text.includes('1× -')).toBe(activeSemester !== 1)
-        expect(text.includes('V1: 1×')).toBe(activeSemester !== 2)
-        expect(text.includes('E2: 1×')).toBe(activeSemester !== 1)
+        expect(text.includes('+')).toBe(activeSemester !== 2)
+        expect(text.includes('-')).toBe(activeSemester !== 1)
+        expect(text.includes('V1')).toBe(activeSemester !== 2)
+        expect(text.includes('E2')).toBe(activeSemester !== 1)
         expect(text.includes('Note Sem 1: 2')).toBe(activeSemester !== 2)
         expect(text.includes('Note Sem 2: 1')).toBe(activeSemester !== 1)
         for (const semester of [1, 2, 3]) expect(text.includes('Wert' + semester)).toBe(activeSemester === 3 || activeSemester === semester)
@@ -367,14 +386,14 @@ describe('Compact course student performance', () => {
             entries: [entry({ source: 'course_work', teaching_course_work_id: 7, date: '2026-02-01', grade: '1' }), entry({ id: 2, type: 'ALT', source: 'course_work', teaching_course_work_id: 8, date: '2026-02-01', grade: '2' })],
             works: [{ id: 7, teaching_course_id: 18, finish_until_date: '2026-02-09' }, { id: 8, teaching_course_id: 18, finish_until_date: null }],
         } })
-        expect(wrapper.text()).not.toContain('MA: 1×')
-        expect(wrapper.text()).toContain('ALT: 1×')
+        expect(wrapper.text()).not.toContain('MA')
+        expect(wrapper.text()).toContain('ALT')
         await wrapper.setProps({ activeSemester: 2 })
-        expect(wrapper.text()).toContain('MA: 1×')
-        expect(wrapper.text()).not.toContain('ALT: 1×')
+        expect(wrapper.text()).toContain('MA')
+        expect(wrapper.text()).not.toContain('ALT')
         await wrapper.setProps({ activeSemester: 3 })
-        expect(wrapper.text()).toContain('MA: 1×')
-        expect(wrapper.text()).toContain('ALT: 1×')
+        expect(wrapper.text()).toContain('MA')
+        expect(wrapper.text()).toContain('ALT')
     })
 
     it.each([1, 2, 3])('filters modern behaviour and warnings for each student in semester %s', async (activeSemester) => {
@@ -386,11 +405,11 @@ describe('Compact course student performance', () => {
             ] } },
             entries: [entry({ type: 'D', date: '2026-02-08' }), entry({ id: 2, type: 'FW', date: '2026-02-09' }), entry({ id: 3, user_id: 13, type: 'D', date: '2026-02-09' })],
         } })
-        expect(wrapper.text().includes('D: 1×')).toBe(activeSemester !== 2)
-        expect(wrapper.text().includes('FW: 1×')).toBe(activeSemester !== 1)
+        expect(wrapper.text().includes('D')).toBe(activeSemester !== 2)
+        expect(wrapper.text().includes('FW')).toBe(activeSemester !== 1)
         await wrapper.setProps({ student: { ...student, id: 13, user_id: 13 } })
-        expect(wrapper.text().includes('D: 1×')).toBe(activeSemester !== 1)
-        expect(wrapper.text()).not.toContain('FW: 1×')
+        expect(wrapper.text().includes('D')).toBe(activeSemester !== 1)
+        expect(wrapper.text()).not.toContain('FW')
     })
 
     it('retains undated records and all dates when the semester boundary is missing or invalid', () => {
@@ -409,7 +428,7 @@ describe('Compact course student performance', () => {
         const wrapper = mountPerformance({ props: { student, course, entries: [entry({ teaching_course_id: 99 }), entry({ user_id: 13 })] } })
         expect(wrapper.text()).toContain('Keine Leistungen im Zeitraum.')
         await wrapper.setProps({ student: { ...student, user_id: null, import116_id: 12 }, entries: [entry()] })
-        expect(wrapper.text()).not.toContain('MA: 1×')
+        expect(wrapper.text()).not.toContain('MA')
     })
 
     it('distinguishes empty data from loading and failure', async () => {
@@ -427,6 +446,6 @@ describe('Compact course student performance', () => {
             schema: { works: [{ short_name: 'MA', default_grade: '2', grades: [{ grade: '2' }] }] },
             entries: [entry(), entry({ id: 2, effective_grade: '', grade: 0 })],
         } })
-        expect(wrapper.text()).toContain('1× 2, 1× 0')
+        expect(wrapper.findAll('v-chip').map((item) => item.text())).toEqual(['MA: 2', 'MA: 0'])
     })
 })

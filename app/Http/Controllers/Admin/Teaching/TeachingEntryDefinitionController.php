@@ -54,6 +54,15 @@ class TeachingEntryDefinitionController extends Controller
         $this->ensureEntryBelongsToUser($entryDefinition, $authUser);
 
         $payload = $this->entryPayload($request->validated());
+        $hasFreeProperties = $payload['has_properties'] && $payload['properties_mode'] === 'free';
+        if (! $payload['has_properties']) {
+            $payload['calculation_mode'] = 'individual';
+        }
+
+        $payload['property_evaluations'] = collect($entryDefinition->property_evaluations ?? [])
+            ->filter(fn (array $evaluation): bool => $hasFreeProperties || in_array($evaluation['property'], $payload['fixed_properties'], true))
+            ->values()
+            ->all();
 
         if ($entryDefinition->teaching_entry_grading_part_id !== null
             && ($payload['category'] !== 'Benotung'
