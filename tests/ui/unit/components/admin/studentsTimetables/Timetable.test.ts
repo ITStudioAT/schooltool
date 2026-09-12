@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components/VBtn'
+import { VRadioGroup, VSelect } from 'vuetify/components'
 import { createTestingPinia } from '@pinia/testing'
 import { reactive } from 'vue'
 import DataRefresh from '@/pages/admin/studentsTimetables/timetable/DataRefresh.vue'
@@ -14,14 +15,22 @@ vi.mock('@/pages/admin/studentsTimetables/overview/Overview.vue', () => ({
 
 describe('Students timetable timetable page', () => {
 
-    it('shows partial counts and sends partial mode only after the explicit action', async () => {
+    it('automatically skips invalid entries when merging after reviewing the comparison', async () => {
         const preview = {
             id: 10, import_status: 'preview', original_filename: 'stundenplan.txt', sections: { TT: 9343 },
             tt_skipped_invalid: 72, date_plausibility: { is_plausible: true, message: 'Zeitraum passt.' },
             tt_diagnostics: { source_available: true, records: [] },
         }
+        const comparison = {
+            operation: 'merge', scope: null, can_confirm: true, fingerprint: 'merge-fingerprint',
+            new_entries: 9271, updated_entries: 0, unchanged_entries: 0,
+            removed_entries: 0, removed_appointment_count: 0, removed_appointments: [],
+        }
         const post = vi.fn().mockResolvedValue({ data: {} })
-        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })), post })
+        const get = vi.fn(async (url: string) => url.endsWith('/comparison')
+            ? { data: { data: comparison } }
+            : { data: { data: [], preview } })
+        vi.stubGlobal('axios', { get, post })
         const wrapper = mountImport116Page(
             { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
             { roles: ['admin'] },
@@ -30,16 +39,20 @@ describe('Students timetable timetable page', () => {
 
         try {
             await flushPromises()
-            expect(wrapper.text()).toContain('9271 gültige TT-Quelldatensätze werden verarbeitet')
-            expect(wrapper.text()).toContain('72 nicht zuordenbare Datensätze werden ausgelassen')
-            expect(wrapper.text()).toContain('Alle übrigen vorhandenen Einträge bleiben erhalten')
+            expect(wrapper.text()).toContain('72 TT-Einträge werden automatisch übersprungen')
+            expect(wrapper.text()).toContain('Für den Import und den Vergleich werden die 9271 gültigen TT-Einträge verwendet')
+            expect(wrapper.find('[data-testid="timetable-valid-only"]').exists()).toBe(false)
             expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
-            const partialButton = wrapper.get('[data-testid="partial-timetable-preview"]')
-            expect(partialButton.attributes('disabled')).toBeUndefined()
+            expect(get.mock.calls.some(([url]) => url.endsWith('/comparison'))).toBe(false)
             expect(post).not.toHaveBeenCalled()
-            await partialButton.trigger('click')
+            await wrapper.get('input[type="radio"][value="merge"]').setValue(true)
             await flushPromises()
-            expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/students-timetables/imports/10/confirm', { mode: 'partial' })
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeUndefined()
+            await wrapper.get('[data-testid="confirm-timetable-preview"]').trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/students-timetables/imports/10/confirm', {
+                operation: 'merge', mode: 'partial', fingerprint: 'merge-fingerprint',
+            })
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -47,15 +60,19 @@ describe('Students timetable timetable page', () => {
     })
 
     it.each([
-        { ttTotal: 72, isPlausible: true },
-        { ttTotal: 73, isPlausible: false },
-    ])('blocks partial import when no rows are usable or dates mismatch: %j', async ({ ttTotal, isPlausible }) => {
+        { operation: 'merge', ttTotal: 72, isPlausible: true },
+        { operation: 'merge', ttTotal: 73, isPlausible: false },
+        { operation: 'replace', ttTotal: 72, isPlausible: true },
+        { operation: 'replace', ttTotal: 73, isPlausible: false },
+    ])('blocks partial import when no rows are usable or dates mismatch: %j', async ({ operation, ttTotal, isPlausible }) => {
         const preview = {
             id: 10, import_status: 'preview', sections: { TT: ttTotal }, tt_skipped_invalid: 72,
             date_plausibility: { is_plausible: isPlausible },
             tt_diagnostics: { source_available: false, records: [] },
         }
-        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [], preview } })) })
+        vi.stubGlobal('axios', { get: vi.fn(async (url: string) => url.endsWith('/comparison')
+            ? { data: { data: { can_confirm: true, fingerprint: 'fingerprint', removed_entries: 0 } } }
+            : { data: { data: [], preview } }) })
         const wrapper = mountImport116Page(
             { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
             { roles: ['admin'] },
@@ -63,7 +80,12 @@ describe('Students timetable timetable page', () => {
         )
         try {
             await flushPromises()
-            expect(wrapper.get('[data-testid="partial-timetable-preview"]').attributes('disabled')).toBeDefined()
+            await wrapper.get(`input[type="radio"][value="${operation}"]`).setValue(true)
+            if (operation === 'replace') {
+                wrapper.getComponent(VSelect).vm.$emit('update:modelValue', 'semester1')
+            }
+            await flushPromises()
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -95,7 +117,8 @@ describe('Students timetable timetable page', () => {
         try {
             await flushPromises()
             expect(wrapper.text()).toContain(imported.import_message)
-            expect(wrapper.text()).toContain('kein vollständiger Import')
+            expect(wrapper.text()).toContain('1 nicht übernehmbare TT-Einträge wurden übersprungen')
+            expect(wrapper.text()).not.toContain('kein vollständiger Import')
             expect(get.mock.calls.some(([url]) => url.endsWith('/imports/10'))).toBe(false)
             const details = wrapper.get('[data-testid="tt-diagnostics"]')
             ;(details.element as HTMLDetailsElement).open = true
@@ -104,6 +127,210 @@ describe('Students timetable timetable page', () => {
             expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/imports/10')
             expect(details.text()).toContain('Zeile 72')
             expect(details.text()).toContain('Nach aktuellen Regeln ausgelassen.')
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([0, 72])('previews every removed appointment and confirms replacement while skipping %i invalid entries', async (skippedInvalid) => {
+        const scope = { key: 'semester1', label: 'Wintersemester', from: '2026-09-01', until: '2027-02-14' }
+        const preview = {
+            id: 19, import_status: 'preview', original_filename: 'sokrates.txt', sections: { TT: 70 + skippedInvalid },
+            tt_skipped_invalid: skippedInvalid, tt_courses: 2, replacement_scopes: [scope],
+            date_plausibility: { is_plausible: true, message: 'Zeitraum passt.' },
+        }
+        const removedAppointments = Array.from({ length: 36 }, (_, index) => ({
+            course: index === 35 ? 'Letzter Kurs' : 'M6 - 4R - SCHM', date: '2026-12-01', weekday: 'Di',
+            starts_at: '18:45', ends_at: '20:15', entry_count: 2,
+        }))
+        const comparison = {
+            operation: 'replace', scope, can_confirm: true, fingerprint: 'replacement-fingerprint',
+            new_entries: 34, updated_entries: 0, unchanged_entries: 36,
+            removed_entries: 72, removed_appointment_count: 36, removed_appointments: removedAppointments,
+        }
+        const post = vi.fn().mockResolvedValue({ data: {} })
+        const get = vi.fn(async (url: string) => url.endsWith('/comparison')
+            ? { data: { data: comparison } }
+            : { data: { data: [], preview } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'], selected_schoolyear: { id: 14, concerns: '2026/27' } },
+            true,
+        )
+
+        try {
+            await flushPromises()
+            expect(wrapper.text()).toContain('1. Datei geprüft')
+            expect(wrapper.text()).toContain('2. Übernahme wählen')
+            expect(wrapper.text()).toContain('3. Änderungen prüfen')
+            expect(wrapper.text()).toContain('70 gültige TT-Einträge')
+            expect(wrapper.find('[data-testid="timetable-valid-only"]').exists()).toBe(false)
+            if (skippedInvalid > 0) {
+                expect(wrapper.text()).toContain('72 TT-Einträge werden automatisch übersprungen')
+            }
+            expect(wrapper.get('input[type="radio"][value="replace"]').attributes('disabled')).toBeUndefined()
+            await wrapper.get('input[type="radio"][value="replace"]').setValue(true)
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
+            wrapper.getComponent(VSelect).vm.$emit('update:modelValue', 'semester1')
+            await flushPromises()
+            expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/imports/19/comparison', {
+                params: { operation: 'replace', scope: 'semester1' },
+            })
+            const removed = wrapper.get('[data-testid="timetable-removed-appointments"]')
+            expect(removed.text()).toContain('36 Termine mit 72 TT-Einträgen würden gestrichen')
+            expect(removed.text()).toContain('M6 - 4R - SCHM')
+            expect(removed.text()).toContain('Di, 01.12.2026')
+            expect(removed.text()).toContain('18:45–20:15')
+            expect(removed.text()).not.toContain('Letzter Kurs')
+            const paginationButtons = removed.get('.v-data-table-footer__pagination').findAll('button')
+            await paginationButtons[paginationButtons.length - 1].trigger('click')
+            await flushPromises()
+            expect(removed.text()).toContain('Letzter Kurs')
+            expect(post).not.toHaveBeenCalled()
+            const confirm = wrapper.get('[data-testid="confirm-timetable-preview"]')
+            expect(confirm.text()).toContain('Plan ersetzen – Änderungen übernehmen')
+            expect(confirm.attributes('disabled')).toBeUndefined()
+            await confirm.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/students-timetables/imports/19/confirm', {
+                operation: 'replace', scope: 'semester1', fingerprint: 'replacement-fingerprint',
+                mode: skippedInvalid > 0 ? 'partial' : 'strict',
+            })
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('shows the replacement range, skipped entries and resulting changes in import history', async () => {
+        const imported = {
+            id: 19, import_status: 'completed', import_operation: 'replace', import_mode: 'partial',
+            original_filename: 'sokrates.txt', tt_skipped_invalid: 72, tt_imported_rows: 70,
+            replacement_from: '2026-09-01', replacement_until: '2027-02-14',
+            change_summary: { removed_appointment_count: 18, removed_entries: 36, new_entries: 34, updated_entries: 2 },
+        }
+        vi.stubGlobal('axios', { get: vi.fn(async () => ({ data: { data: [imported] } })) })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan' },
+            { roles: ['admin'] }, true,
+        )
+
+        try {
+            await flushPromises()
+            expect(wrapper.text()).toContain('Plan ersetzt · 01.09.2026–14.02.2027')
+            expect(wrapper.text()).toContain('18 Termine gestrichen · 34 TT-Einträge neu · 2 aktualisiert')
+            expect(wrapper.text()).toContain('Bereits gespeicherte Stundenpläne bitte prüfen.')
+            expect(wrapper.text()).toContain('72 nicht übernehmbare TT-Einträge wurden übersprungen')
+            expect(wrapper.text()).not.toContain('kein vollständiger Import')
+            expect(wrapper.text()).not.toContain('Teilimport')
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('discards an outdated comparison response after switching to a different operation', async () => {
+        const scope = { key: 'semester1', label: 'Wintersemester', from: '2026-09-01', until: '2027-02-14' }
+        const preview = {
+            id: 19, import_status: 'preview', sections: { TT: 70 }, replacement_scopes: [scope],
+            date_plausibility: { is_plausible: true },
+        }
+        let finishReplacement: (value: unknown) => void = () => {}
+        const get = vi.fn(async (url: string, options: any) => {
+            if (!url.endsWith('/comparison')) return { data: { data: [], preview } }
+            if (options.params.operation === 'replace') return new Promise(resolve => { finishReplacement = resolve })
+
+            return { data: { data: { operation: 'merge', can_confirm: true, fingerprint: 'merge', removed_entries: 0 } } }
+        })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'] }, true,
+        )
+
+        try {
+            await flushPromises()
+            wrapper.getComponent(VRadioGroup).vm.$emit('update:modelValue', 'replace')
+            await flushPromises()
+            wrapper.getComponent(VSelect).vm.$emit('update:modelValue', 'semester1')
+            await flushPromises()
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
+            wrapper.getComponent(VRadioGroup).vm.$emit('update:modelValue', 'merge')
+            await flushPromises()
+            finishReplacement({ data: { data: { operation: 'replace', can_confirm: true, fingerprint: 'old', removed_entries: 72 } } })
+            await flushPromises()
+            expect((wrapper.vm as any).timetableComparison.fingerprint).toBe('merge')
+            expect(wrapper.text()).toContain('Es werden keine bestehenden Termine gestrichen')
+            expect(wrapper.find('[data-testid="timetable-removed-appointments"]').exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('clears the selected import and comparison immediately when the personal schoolyear changes', async () => {
+        const preview = {
+            id: 19, import_status: 'preview', sections: { TT: 70 }, date_plausibility: { is_plausible: true },
+        }
+        const get = vi.fn(async (url: string) => url.endsWith('/comparison')
+            ? { data: { data: { operation: 'merge', can_confirm: true, fingerprint: 'old-year', removed_entries: 0 } } }
+            : { data: { data: [], preview } })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'], selected_schoolyear: { id: 14, concerns: '2026/27' } }, true,
+        )
+
+        try {
+            await flushPromises()
+            wrapper.getComponent(VRadioGroup).vm.$emit('update:modelValue', 'merge')
+            await flushPromises()
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeUndefined()
+            get.mockImplementation(async () => ({ data: { data: [], preview: null } }))
+            ;(wrapper.vm as any).config.selected_schoolyear = { id: 15, concerns: '2027/28' }
+            expect((wrapper.vm as any).canConfirmTimetablePreview).toBe(false)
+            await flushPromises()
+            expect((wrapper.vm as any).timetablePreview).toBeNull()
+            expect((wrapper.vm as any).timetableComparison).toBeNull()
+            expect((wrapper.vm as any).timetableImportOperation).toBe('')
+            expect(wrapper.find('[data-testid="confirm-timetable-preview"]').exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('discards pending import metadata from the previous personal schoolyear and reloads the new scope', async () => {
+        const oldPreview = { id: 19, original_filename: 'altes-schuljahr.txt', sections: { TT: 70 } }
+        const newPreview = { id: 20, original_filename: 'neues-schuljahr.txt', sections: { TT: 72 } }
+        let finishOldMetadata: (value: unknown) => void = () => {}
+        let timetableRequestCount = 0
+        const get = vi.fn(async (url: string) => {
+            if (url !== '/api/admin/students-timetables/imports') return { data: { data: [] } }
+            timetableRequestCount++
+            if (timetableRequestCount === 1) return new Promise(resolve => { finishOldMetadata = resolve })
+
+            return { data: { data: [], preview: newPreview } }
+        })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountImport116Page(
+            { section: 'timetable', subsection: 'imports', detail: 'stundenplan', action: 'import' },
+            { roles: ['admin'], selected_schoolyear: { id: 14, concerns: '2026/27' } }, true,
+        )
+
+        try {
+            await flushPromises()
+            ;(wrapper.vm as any).config.selected_schoolyear = { id: 15, concerns: '2027/28' }
+            await flushPromises()
+            finishOldMetadata({ data: { data: [], preview: oldPreview } })
+            await flushPromises()
+            expect(timetableRequestCount).toBe(2)
+            expect(wrapper.text()).not.toContain('altes-schuljahr.txt')
+            expect(wrapper.text()).toContain('neues-schuljahr.txt')
+            expect((wrapper.vm as any).timetableImportOperation).toBe('')
+            expect(wrapper.get('[data-testid="confirm-timetable-preview"]').attributes('disabled')).toBeDefined()
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -141,7 +368,7 @@ describe('Students timetable timetable page', () => {
                     Overview: true,
                     LoadingAnimation: true,
                     DataRefresh: true,
-                    'v-checkbox': true,
+                    'v-checkbox': !renderDiagnostics,
                     'v-divider': true,
                     'v-expansion-panel': true,
                     'v-expansion-panel-text': true,
@@ -153,7 +380,7 @@ describe('Students timetable timetable page', () => {
         })
     }
 
-    it('renders all TT rejection reasons and lets users reach the last page while keeping import disabled', async () => {
+    it('renders all skipped TT records and lets users reach the last page before choosing an operation', async () => {
         const records = Array.from({ length: 72 }, (_, index) => ({
             line_number: 1000 + index,
             source_identifier: '0', date: '20260914', period: '11', starts_at: '17:50', ends_at: '18:35', course: '',
@@ -205,7 +432,7 @@ describe('Students timetable timetable page', () => {
         }
     })
 
-    it('explains unavailable archived TT diagnostics without hiding the import block', async () => {
+    it('explains unavailable archived TT diagnostics and shows the skipped count', async () => {
         const preview = {
             id: 9, tt_skipped_invalid: 72, sections: { TT: 73 },
             tt_diagnostics: { source_available: false, records: [] },
@@ -216,7 +443,7 @@ describe('Students timetable timetable page', () => {
         try {
             await flushPromises()
             expect(wrapper.get('[data-testid="tt-diagnostics"]').text()).toContain('Quelldatei ist nicht verfügbar')
-            expect(wrapper.text()).toContain('Der Vollimport bleibt gesperrt')
+            expect(wrapper.text()).toContain('72 TT-Einträge werden automatisch übersprungen')
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -838,15 +1065,15 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('Pflichtspalten und mindestens ein vollständiger Studierendendatensatz')
         expect(componentSource).toContain("'Voraussetzung fehlt'")
         expect(componentSource).toContain('Vor dem Löschen prüft das System alle verbleibenden Quelldateien.')
-        expect(componentSource).toContain('Vorimport – noch nicht übernommen')
-        expect(componentSource).toContain('Die Datei wurde geprüft. Der aktive Stundenplan wurde noch nicht verändert.')
-        expect(componentSource).toContain('Gültige TT-Einträge')
+        expect(componentSource).toContain('1. Datei geprüft')
+        expect(componentSource).toContain('Der aktive Stundenplan wurde noch nicht verändert.')
+        expect(componentSource).toContain('gültige TT-Einträge')
         expect(componentSource).toContain('<strong>Datumsprüfung:</strong>')
         expect(componentSource).toContain('timetablePreview.date_plausibility.message')
         expect(componentSource).toContain(":type=\"timetablePreviewDateIsPlausible ? 'success' : 'error'\"")
-        expect(componentSource).toContain(':disabled="deletingPreview || !timetablePreviewDateIsPlausible || timetablePreviewHasSemanticErrors"')
-        expect(componentSource).toContain('Semantische Prüfung fehlgeschlagen')
-        expect(componentSource).toContain('Jetzt importieren')
+        expect(componentSource).toContain(':disabled="!canConfirmTimetablePreview"')
+        expect(componentSource).toContain('Nicht übernehmbare Einträge werden übersprungen')
+        expect(componentSource).toContain('Plan ersetzen – Änderungen übernehmen')
         expect(componentSource).toContain('Datei löschen')
         expect(componentSource).toContain('confirmTimetablePreview()')
         expect(componentSource).toContain('deleteTimetablePreview()')
@@ -1053,6 +1280,10 @@ describe('Students timetable timetable page', () => {
         try {
             const confirmContext: any = {
                 timetablePreview: { id: 41 },
+                canConfirmTimetablePreview: true,
+                timetableImportOperation: 'merge',
+                timetableComparison: { fingerprint: 'confirmed-comparison' },
+                timetablePreviewHasSemanticErrors: false,
                 confirmingPreview: false,
                 previewActionError: 'alt',
                 uploadedFilename: 'preview.txt',
@@ -1063,7 +1294,9 @@ describe('Students timetable timetable page', () => {
 
             await methods.confirmTimetablePreview.call(confirmContext)
 
-            expect(post).toHaveBeenCalledWith('/api/admin/students-timetables/imports/41/confirm')
+            expect(post).toHaveBeenCalledWith('/api/admin/students-timetables/imports/41/confirm', {
+                operation: 'merge', fingerprint: 'confirmed-comparison', mode: 'strict',
+            })
             expect(confirmContext.timetablePreview).toBeNull()
             expect(confirmContext.loadImportButtonInfo).toHaveBeenCalledOnce()
             expect(confirmContext.schedulePolling).toHaveBeenCalledOnce()

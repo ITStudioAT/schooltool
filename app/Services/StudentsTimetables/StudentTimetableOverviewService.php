@@ -147,6 +147,7 @@ class StudentTimetableOverviewService
         $subjectMappings = $this->activeSubjectMappings($schoolId, $schoolyearId);
 
         return DB::table('student_timetable_entries')
+            ->whereNull('superseded_by_import_id')
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)

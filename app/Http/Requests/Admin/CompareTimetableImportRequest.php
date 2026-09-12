@@ -2,23 +2,29 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class ConfirmTimetableImportRequest extends FormRequest
+class CompareTimetableImportRequest extends FormRequest
 {
+    /**
+     * Determine if the user is authorized to make this request.
+     */
     public function authorize(): bool
     {
         return $this->user() !== null;
     }
 
-    /** @return array<string, list<string>> */
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
     public function rules(): array
     {
         return [
-            'mode' => ['sometimes', 'required', 'string', 'in:strict,partial'],
-            'operation' => ['sometimes', 'required', 'string', 'in:merge,replace'],
+            'operation' => ['required', 'string', 'in:merge,replace'],
             'scope' => ['required_if:operation,replace', 'nullable', 'string', 'in:semester1,semester2,schoolyear'],
-            'fingerprint' => ['required_with:operation', 'nullable', 'string', 'size:64'],
         ];
     }
 
@@ -26,11 +32,10 @@ class ConfirmTimetableImportRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'operation.required' => 'Bitte wählen Sie Plan ersetzen oder Daten ergänzen.',
             'operation.in' => 'Bitte wählen Sie Plan ersetzen oder Daten ergänzen.',
             'scope.required_if' => 'Bitte wählen Sie den Zeitraum, den die Datei ersetzt.',
             'scope.in' => 'Bitte wählen Sie einen gültigen Zeitraum.',
-            'fingerprint.required_with' => 'Bitte laden Sie die Änderungsvorschau erneut, bevor Sie den Import übernehmen.',
-            'fingerprint.size' => 'Die Änderungsvorschau ist ungültig. Bitte prüfen Sie die Änderungen erneut.',
         ];
     }
 }

@@ -74,6 +74,16 @@
                 class="tt-entries-card__remembered-detail-card">
                 <strong>{{ offer.name }}</strong>
 
+                <v-alert
+                    v-if="offer.outdated === true"
+                    type="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="my-2"
+                    data-testid="remembered-offer-outdated">
+                    Dieses Angebot hat sich geändert. Bitte prüfen Sie die aktuellen Termine und merken Sie es erneut.
+                </v-alert>
+
                 <div class="tt-entries-card__remembered-detail-entries">
                     <button
                         v-for="entry in offer.entries"

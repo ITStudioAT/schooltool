@@ -1,10 +1,11 @@
 # UPDATES
 
-## 3.48.1 !!!
+## 3.48.1
 
 ### SEPP
 
 - Responsivität Admin/User geupdated
+- Import mit Bereinigung des Stundenplans
 
 ### Unterricht/Berechnung der Noten
 

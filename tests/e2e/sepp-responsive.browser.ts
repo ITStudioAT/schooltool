@@ -43,6 +43,90 @@ for (const viewport of viewports) {
             await page.route('**/sanctum/**', route => route.abort())
         })
 
+        if ([390, 1280].includes(viewport.width)) {
+            test('timetable replacement preview lists removed appointments before confirmation', async ({ page }, testInfo) => {
+                test.setTimeout(60_000)
+                const errors: string[] = []
+                const comparisons: string[] = []
+                const confirmations: Record<string, unknown>[] = []
+                const dates = [
+                    '2026-09-15', '2026-12-01', '2026-12-03', '2026-12-10', '2026-12-15', '2026-12-17',
+                    '2026-12-22', '2027-01-07', '2027-01-12', '2027-01-14', '2027-01-19', '2027-01-21',
+                    '2027-01-26', '2027-01-28', '2027-02-02', '2027-02-04', '2027-02-09', '2027-02-11',
+                ]
+                const removedAppointments = dates.map(date => ({
+                    course: 'M6 - 4R - SCHM', date, entry_count: 2,
+                    starts_at: new Date(`${date}T12:00:00`).getDay() === 2 ? '18:45' : '20:25',
+                    ends_at: new Date(`${date}T12:00:00`).getDay() === 2 ? '20:15' : '21:55',
+                }))
+                page.on('pageerror', error => errors.push(error.message))
+                await page.route('**/api/admin/students-timetables/**', async route => {
+                    const request = route.request()
+                    const url = new URL(request.url())
+                    if (url.pathname.endsWith('/42/comparison')) {
+                        comparisons.push(url.search)
+                        await route.fulfill({ json: { data: {
+                            operation: 'replace', can_confirm: true, fingerprint: 'reviewed-semester-1',
+                            scope: { key: 'semester1', label: '1. Semester', from: '2026-09-01', until: '2027-02-14' },
+                            new_entries: 34, updated_entries: 0, unchanged_entries: 36,
+                            removed_entries: 36, removed_appointment_count: 18, removed_appointments: removedAppointments,
+                        } } })
+                    } else if (url.pathname.endsWith('/42/confirm')) {
+                        confirmations.push(request.postDataJSON())
+                        await route.fulfill({ json: { message: 'Import gestartet.' } })
+                    } else if (url.pathname.endsWith('/imports') || url.pathname.endsWith('/recognitions-csv')) {
+                        await route.fulfill({ json: { data: [], preview: null } })
+                    } else {
+                        await route.abort()
+                    }
+                })
+                await page.goto('/?scenario=admin-import-preview')
+                await expect(page.locator('html')).toHaveAttribute('data-fixture-ready', 'true')
+                const confirm = page.getByTestId('confirm-timetable-preview')
+                await expect(confirm).toBeDisabled()
+                await expect(page.getByRole('heading', { name: '2. Übernahme wählen' })).toBeVisible()
+                await page.getByRole('radio', { name: /^Plan ersetzen/ }).check()
+                await expect(confirm).toBeDisabled()
+                expect(comparisons).toEqual([])
+                await page.getByTestId('timetable-replacement-scope').click()
+                await page.getByRole('option', { name: /1\. Semester/ }).click()
+                const removals = page.getByTestId('timetable-removed-appointments')
+                await expect(removals).toContainText('18 Termine mit 36 TT-Einträgen würden gestrichen.')
+                await expect(removals.locator('tbody tr')).toHaveCount(18)
+                const firstRow = removals.locator('tbody tr').first()
+                await expect(firstRow).toContainText('M6 - 4R - SCHM')
+                await expect(firstRow).toContainText('15.09.2026')
+                await expect(firstRow).toContainText('18:45–20:15')
+                await expect(removals.locator('tbody tr').last()).toContainText('11.02.2027')
+                await expect(removals.locator('tbody tr').last()).toContainText('20:25–21:55')
+                await expect(confirm).toBeEnabled()
+                await expect(confirm).toHaveText('Plan ersetzen – Änderungen übernehmen')
+                expect(comparisons).toEqual(['?operation=replace&scope=semester1'])
+                expect(confirmations).toEqual([])
+                await page.evaluate(() => document.fonts.ready)
+                await expectContainedLayout(page)
+                const clippedCells = await removals.locator('tbody td, tbody strong, tbody span').evaluateAll(elements => {
+                    const width = document.documentElement.clientWidth
+                    return elements.filter(element => {
+                        const box = element.getBoundingClientRect()
+                        return box.width > 0 && box.height > 0
+                            && (box.left < 0 || box.right > width || element.scrollWidth > element.clientWidth + 1)
+                    }).map(element => element.textContent)
+                })
+                expect(clippedCells).toEqual([])
+                if (viewport.width === 390) {
+                    await expect(firstRow.getByText('2 TT-Einträge', { exact: true })).toBeVisible()
+                }
+                await page.screenshot({ path: testInfo.outputPath(`import-preview-${viewport.width}.png`), fullPage: true })
+                await confirm.click()
+                await expect(confirm).toHaveCount(0)
+                expect(confirmations).toEqual([{
+                    operation: 'replace', scope: 'semester1', fingerprint: 'reviewed-semester-1', mode: 'strict',
+                }])
+                expect(errors).toEqual([])
+            })
+        }
+
         test('teaching semester inputs fit and toggle correctly', async ({ page }) => {
             test.setTimeout(60_000)
             await page.goto('/?scenario=admin-teaching-semesters')

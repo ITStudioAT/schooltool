@@ -13,18 +13,70 @@ class StudentTimetableRememberedTtEntryService
      */
     public function offersForUser(User $authUser): array
     {
-        return StudentTimetableRememberedTtEntry::query()
+        $entries = StudentTimetableRememberedTtEntry::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $this->schoolyearIdForUser($authUser))
             ->where('user_id', $authUser->id)
             ->orderBy('offer_name')
             ->orderBy('entry_date')
             ->orderBy('entry_time_from')
-            ->get()
-            ->groupBy('offer_key_hash')
-            ->map(fn ($entries): array => $this->offerPayload($entries))
+            ->get();
+
+        if ($entries->isEmpty()) {
+            return [];
+        }
+
+        $courseGroups = collect(app(StudentTimetableOverviewService::class)->courseGroupsForUser($authUser))->keyBy('key')->all();
+
+        return $entries->groupBy('offer_key_hash')
+            ->map(fn ($offerEntries): array => [
+                ...$this->offerPayload($offerEntries),
+                'outdated' => $this->offerIsOutdated($offerEntries, $courseGroups),
+            ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  iterable<int, StudentTimetableRememberedTtEntry>  $entries
+     * @param  array<string, array<string, mixed>>  $courseGroups
+     */
+    private function offerIsOutdated(iterable $entries, array $courseGroups): bool
+    {
+        $rememberedDates = [];
+        foreach ($entries as $entry) {
+            $date = $entry->entry_date?->toDateString() ?? '';
+            $keys = $this->courseGroupKeysFromEntryKey($entry->entry_key, $date);
+            if ($keys === []) {
+                continue;
+            }
+
+            $starts = [];
+            $ends = [];
+            foreach ($keys as $key) {
+                $group = $courseGroups[$key] ?? null;
+                if (! $group || ! in_array($date, $this->courseGroupDates($group), true)) {
+                    return true;
+                }
+
+                $rememberedDates[$key][$date] = true;
+                $starts[] = $this->shortTime($group['starts_at'] ?? null);
+                $ends[] = $this->shortTime($group['ends_at'] ?? null);
+            }
+
+            if (min($starts) !== $this->shortTime($entry->entry_time_from)
+                || max($ends) !== $this->shortTime($entry->entry_time_until)) {
+                return true;
+            }
+        }
+
+        foreach ($rememberedDates as $key => $dates) {
+            if (array_diff($this->courseGroupDates($courseGroups[$key]), array_keys($dates)) !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

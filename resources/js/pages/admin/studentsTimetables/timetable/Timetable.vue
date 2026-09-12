@@ -1,7 +1,7 @@
 <template>
     <Overview v-if="subAction === 'overview'" />
 
-    <v-col v-else cols="12" md="6" lg="7" xl="4">
+    <v-col v-else cols="12" :md="isTimetableUploadPage ? 12 : 6" :lg="isTimetableUploadPage ? 10 : 7" :xl="isTimetableUploadPage ? 8 : 4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
             <v-card-title class="d-flex flex-wrap align-center ga-2 pt-4 px-4">
                 <v-icon color="primary" size="22">mdi-import</v-icon>
@@ -959,8 +959,8 @@
                                     <v-chip size="x-small" :color="statusColor(importItem)" variant="tonal">
                                         {{ statusText(importItem) }}
                                     </v-chip>
-                                    <v-chip v-if="importItem.import_mode === 'partial'" size="x-small" color="warning" variant="tonal">
-                                        Teilimport
+                                    <v-chip v-if="importItem.tt_skipped_invalid" size="x-small" color="info" variant="tonal">
+                                        {{ importItem.tt_skipped_invalid }} Einträge übersprungen
                                     </v-chip>
                                     <div class="d-flex flex-column align-end ga-1 flex-shrink-0">
                                         <v-btn
@@ -989,6 +989,15 @@
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
                                 <div class="st-import-history-meta-grid mb-3">
+                                    <div class="st-import-history-meta-item st-import-history-meta-item--wide">
+                                        <span>Übernahme</span>
+                                        <strong>{{ timetableImportOperationLabel(importItem) }}</strong>
+                                        <span v-if="importItem.change_summary && importItem.import_status === 'completed'" class="mt-1">
+                                            {{ importItem.change_summary.removed_appointment_count || 0 }} Termine gestrichen ·
+                                            {{ importItem.change_summary.new_entries || 0 }} TT-Einträge neu ·
+                                            {{ importItem.change_summary.updated_entries || 0 }} aktualisiert
+                                        </span>
+                                    </div>
                                     <div class="st-import-history-meta-item">
                                         <span>Dateiname</span>
                                         <strong>{{ importItem.original_filename }}</strong>
@@ -1019,6 +1028,15 @@
                                     </div>
                                 </div>
 
+                                <v-alert
+                                    v-if="importItem.import_operation === 'replace' && importItem.import_status === 'completed' && (importItem.change_summary?.removed_entries > 0 || importItem.change_summary?.updated_entries > 0)"
+                                    type="info"
+                                    variant="tonal"
+                                    density="compact"
+                                    class="mb-3">
+                                    Bereits gespeicherte Stundenpläne bitte prüfen.
+                                </v-alert>
+
                                 <v-alert v-if="importIsProcessing(importItem)" type="info" variant="tonal" class="mb-3">
                                     <div class="mb-2">{{ importStatusText(importItem) }}</div>
                                     <v-progress-linear
@@ -1032,11 +1050,10 @@
                                 </v-alert>
 
                                 <v-alert
-                                    v-if="importItem.import_mode === 'partial' && importItem.import_status === 'completed'"
-                                    type="warning" variant="tonal" class="mb-3">
+                                    v-if="importItem.tt_skipped_invalid && importItem.import_status === 'completed'"
+                                    type="info" variant="tonal" class="mb-3">
                                     {{ importItem.import_message }}
-                                    Dies ist kein vollständiger Import der Quelldatei. Der Zähler zählt verarbeitete
-                                    Quelldatensätze, nicht ausschließlich neu angelegte Einträge.
+                                    {{ importItem.tt_skipped_invalid }} nicht übernehmbare TT-Einträge wurden übersprungen.
                                 </v-alert>
                                 <TimetableImportDiagnostics
                                     v-if="importItem.tt_skipped_invalid"
@@ -1167,7 +1184,7 @@
                     oder Lehrkraftkennung und einen Anrechnungswert enthalten. Für einen gültigen Test V3 müssen
                     davor außerdem Import 116 und die benötigten Fachpläne vollständig vorhanden sein.
                 </v-alert>
-                <v-alert type="info" variant="tonal" class="mb-3">
+                <v-alert v-if="activeImportPage !== 'stundenplan'" type="info" variant="tonal" class="mb-3">
                     Die Datei wird vor jeder Datenänderung vollständig geprüft. Enthält sie keine gültigen
                     {{ activeImportPage === 'anrechnungen' ? 'Anrechnungsdaten' : 'Stundenplan-Einträge' }},
                     wird der Import abgebrochen und der bestehende Datenbestand bleibt unverändert.
@@ -1184,16 +1201,19 @@
                     class="mb-4">
                     <v-card-title class="d-flex flex-wrap align-center ga-2">
                         <v-icon icon="mdi-file-eye-outline" color="warning" />
-                        <span>Vorimport – noch nicht übernommen</span>
+                        <span>1. Datei geprüft</span>
                         <v-spacer />
                         <v-chip size="small" color="primary" variant="tonal">
                             Schuljahr: {{ personalImportSchoolyearLabel }}
                         </v-chip>
                     </v-card-title>
                     <v-card-text>
-                        <v-alert type="warning" variant="tonal" density="compact" class="mb-4">
-                            Die Datei wurde geprüft. Der aktive Stundenplan wurde noch nicht verändert.
-                        </v-alert>
+                        <p class="mb-4">
+                            <strong>{{ timetablePreview.original_filename }}</strong><br>
+                            {{ importedTtCount(timetablePreview) }} gültige TT-Einträge · {{ timetablePreview.tt_courses || 0 }} Kurse<br>
+                            Termine in der Datei: {{ formatDateOnly(timetablePreview.tt_first_date) }}–{{ formatDateOnly(timetablePreview.tt_last_date) }}<br>
+                            <span class="text-medium-emphasis">Der aktive Stundenplan wurde noch nicht verändert.</span>
+                        </p>
 
                         <v-alert
                             v-if="timetablePreview.date_plausibility"
@@ -1207,15 +1227,12 @@
 
                         <v-alert
                             v-if="timetablePreviewHasSemanticErrors"
-                            type="error"
+                            type="info"
                             variant="tonal"
-                            prominent
-                            border="start"
-                            title="Semantische Prüfung fehlgeschlagen"
+                            title="Nicht übernehmbare Einträge werden übersprungen"
                             class="mb-4">
-                            {{ timetablePreview.tt_skipped_invalid }} TT-Datensätze sind nach den aktuellen Prüfregeln nicht zuordenbar.
-                            Der Vollimport bleibt gesperrt. Sie können die Quelle korrigieren und erneut hochladen
-                            oder ausdrücklich den Teilimport wählen.
+                            {{ timetablePreview.tt_skipped_invalid }} TT-Einträge werden automatisch übersprungen.
+                            Für den Import und den Vergleich werden die {{ importedTtCount(timetablePreview) }} gültigen TT-Einträge verwendet.
                         </v-alert>
 
                         <TimetableImportDiagnostics
@@ -1223,70 +1240,111 @@
                             :key="timetablePreview.id"
                             :import-record="timetablePreview" />
 
-                        <v-alert v-if="timetablePreviewHasSemanticErrors" type="warning" variant="tonal" class="mb-4">
-                            <strong>Alternative: Teilimport</strong>
-                            <p>
-                                {{ importedTtCount(timetablePreview) }} gültige TT-Quelldatensätze werden verarbeitet;
-                                {{ timetablePreview.tt_skipped_invalid }} nicht zuordenbare Datensätze werden ausgelassen.
-                                Gültige Einträge werden ergänzt oder aktualisiert. Alle übrigen vorhandenen Einträge
-                                bleiben erhalten, auch wenn sie in dieser Datei fehlen oder nicht zuordenbar sind.
-                                Es entsteht kein vollständiger Ersatz des bisherigen Stundenplans.
-                            </p>
-                            <v-btn
-                                class="mt-3"
-                                color="warning"
-                                variant="flat"
-                                data-testid="partial-timetable-preview"
-                                :loading="confirmingPreview"
-                                :disabled="confirmingPreview || deletingPreview || !timetablePreviewDateIsPlausible || importedTtCount(timetablePreview) === 0"
-                                @click="confirmTimetablePreview('partial')">
-                                Teilimport starten
-                            </v-btn>
-                        </v-alert>
+                        <section class="st-import-step" aria-labelledby="timetable-import-operation-title">
+                            <h3 id="timetable-import-operation-title" class="text-subtitle-1 font-weight-bold mb-2">2. Übernahme wählen</h3>
+                            <v-radio-group
+                                v-model="timetableImportOperation"
+                                :disabled="confirmingPreview || deletingPreview"
+                                hide-details
+                                data-testid="timetable-import-operation">
+                                <v-radio value="replace">
+                                    <template #label>
+                                        <div class="py-2">
+                                            <strong>Plan ersetzen</strong>
+                                            <div class="text-body-2">Für einen vollständigen Plan: Fehlende Termine im gewählten Zeitraum werden gestrichen.</div>
+                                        </div>
+                                    </template>
+                                </v-radio>
+                                <v-radio value="merge">
+                                    <template #label>
+                                        <div class="py-2">
+                                            <strong>Daten ergänzen</strong>
+                                            <div class="text-body-2">Für Ergänzungen: Einträge hinzufügen oder aktualisieren. Bestehende Termine bleiben erhalten.</div>
+                                        </div>
+                                    </template>
+                                </v-radio>
+                            </v-radio-group>
+                            <template v-if="timetableImportOperation === 'replace'">
+                                <v-select
+                                    v-model="timetableReplacementScope"
+                                    :items="timetableReplacementScopes"
+                                    :item-title="timetableScopeLabel"
+                                    item-value="key"
+                                    label="Welchen Zeitraum ersetzt die vollständige Datei?"
+                                    variant="outlined"
+                                    class="mt-4"
+                                    hide-details
+                                    :disabled="confirmingPreview || deletingPreview"
+                                    data-testid="timetable-replacement-scope" />
+                                <p class="text-body-2 mt-2">Der Ersatz gilt für diese Schule und das persönliche Schuljahr {{ personalImportSchoolyearLabel }}. Termine außerhalb des gewählten Zeitraums bleiben erhalten.</p>
+                            </template>
+                        </section>
 
-                        <div class="st-import-history-meta-grid mb-4">
-                            <div class="st-import-history-meta-item st-import-history-meta-item--wide">
-                                <span>Datei</span>
-                                <strong>{{ timetablePreview.original_filename }}</strong>
-                            </div>
-                            <div class="st-import-history-meta-item">
-                                <span>Gesamtzeilen</span>
-                                <strong>{{ timetablePreview.total_lines || 0 }}</strong>
-                            </div>
-                            <div class="st-import-history-meta-item">
-                                <span>Gültige TT-Einträge</span>
-                                <strong>{{ importedTtCount(timetablePreview) }}</strong>
-                            </div>
-                            <div class="st-import-history-meta-item">
-                                <span>Nicht importierbare TT-Einträge</span>
-                                <strong>{{ timetablePreview.tt_skipped_invalid || 0 }}</strong>
-                            </div>
-                            <div class="st-import-history-meta-item">
-                                <span>Verschiedene Kurse</span>
-                                <strong>{{ timetablePreview.tt_courses || 0 }}</strong>
-                            </div>
-                            <div class="st-import-history-meta-item">
-                                <span>Zeitraum</span>
-                                <strong>{{ dateRangeLabel(timetablePreview) }}</strong>
-                            </div>
-                        </div>
-
-                        <v-table density="compact">
-                            <thead>
-                                <tr>
-                                    <th>Sektion</th>
-                                    <th>Beschreibung</th>
-                                    <th class="text-right">Anzahl</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="(count, code) in timetablePreview.sections" :key="`preview-${code}`">
-                                    <td><v-chip size="small" color="primary" variant="tonal">{{ code }}</v-chip></td>
-                                    <td>{{ sectionLabel(code) }}</td>
-                                    <td class="text-right font-weight-medium">{{ count }}</td>
-                                </tr>
-                            </tbody>
-                        </v-table>
+                        <section class="st-import-step" aria-labelledby="timetable-import-comparison-title" aria-live="polite">
+                            <h3 id="timetable-import-comparison-title" class="text-subtitle-1 font-weight-bold mb-3">3. Änderungen prüfen</h3>
+                            <p v-if="!timetableImportOperation" class="text-medium-emphasis">Wählen Sie zuerst, wie die Datei übernommen werden soll.</p>
+                            <p v-else-if="timetableImportOperation === 'replace' && !timetableReplacementScope" class="text-medium-emphasis">Wählen Sie den Zeitraum, um die betroffenen Termine zu sehen.</p>
+                            <p v-else-if="loadingTimetableComparison">Änderungen werden berechnet …</p>
+                            <v-alert v-else-if="timetableComparisonError" type="error" variant="tonal">
+                                {{ timetableComparisonError }}
+                                <v-btn variant="text" @click="loadTimetableComparison">Erneut prüfen</v-btn>
+                            </v-alert>
+                            <template v-else-if="timetableComparison">
+                                <p v-if="timetableComparison.scope" class="mb-3 font-weight-medium">{{ timetableScopeLabel(timetableComparison.scope) }}</p>
+                                <div class="st-import-change-counts mb-4" data-testid="timetable-change-counts">
+                                    <div><strong>{{ timetableComparison.new_entries }}</strong><span>TT-Einträge neu</span></div>
+                                    <div><strong>{{ timetableComparison.updated_entries }}</strong><span>TT-Einträge aktualisiert</span></div>
+                                    <div><strong>{{ timetableComparison.unchanged_entries }}</strong><span>TT-Einträge unverändert</span></div>
+                                </div>
+                                <v-alert v-if="!timetableComparison.can_confirm" type="error" variant="tonal" class="mb-3">
+                                    {{ timetableComparison.message }}
+                                </v-alert>
+                                <div v-if="timetableComparison.removed_entries > 0" data-testid="timetable-removed-appointments">
+                                    <v-alert type="warning" variant="tonal" class="mb-3">
+                                        <strong>{{ timetableComparison.removed_appointment_count }} Termine mit {{ timetableComparison.removed_entries }} TT-Einträgen würden gestrichen.</strong>
+                                        <div>Diese Termine sind im neuen Import nicht mehr enthalten. Sie bleiben in der Importhistorie nachvollziehbar.</div>
+                                    </v-alert>
+                                    <v-text-field
+                                        v-if="timetableComparison.removed_appointment_count > 10"
+                                        v-model="timetableRemovalSearch"
+                                        label="Kurs suchen"
+                                        prepend-inner-icon="mdi-magnify"
+                                        variant="outlined"
+                                        density="compact"
+                                        hide-details
+                                        class="mb-2" />
+                                    <v-data-table
+                                        class="st-import-removal-table"
+                                        :headers="timetableRemovalHeaders"
+                                        :items="timetableComparison.removed_appointments"
+                                        :search="timetableRemovalSearch"
+                                        :items-per-page="25"
+                                        :items-per-page-options="[25, 50, 100]"
+                                        items-per-page-text="Termine pro Seite"
+                                        page-text="{0}–{1} von {2}"
+                                        no-data-text="Keine passenden Termine."
+                                        density="compact">
+                                        <template #item="{ item }">
+                                            <tr>
+                                                <td class="st-import-removal-table__desktop">{{ item.course }}</td>
+                                                <td class="st-import-removal-table__desktop text-no-wrap">{{ formatDateWithWeekdayLabel(item.date) }}</td>
+                                                <td class="st-import-removal-table__desktop text-no-wrap">{{ item.starts_at }}–{{ item.ends_at }}</td>
+                                                <td class="st-import-removal-table__desktop text-right">{{ item.entry_count }}</td>
+                                                <td class="st-import-removal-table__mobile" colspan="4">
+                                                    <strong>{{ item.course }}</strong>
+                                                    <div>{{ formatDateWithWeekdayLabel(item.date) }}</div>
+                                                    <div class="st-import-removal-table__mobile-time">
+                                                        <span>{{ item.starts_at }}–{{ item.ends_at }}</span>
+                                                        <span>{{ item.entry_count }} TT-Einträge</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </v-data-table>
+                                </div>
+                                <v-alert v-else type="success" variant="tonal">Es werden keine bestehenden Termine gestrichen.</v-alert>
+                            </template>
+                        </section>
 
                         <v-alert v-if="previewActionError" type="error" variant="tonal" prominent border="start" class="mt-4">
                             {{ previewActionError }}
@@ -1309,12 +1367,16 @@
                             prepend-icon="mdi-database-import-outline"
                             :loading="confirmingPreview"
                             data-testid="confirm-timetable-preview"
-                            :disabled="deletingPreview || !timetablePreviewDateIsPlausible || timetablePreviewHasSemanticErrors"
+                            :disabled="!canConfirmTimetablePreview"
                             @click="confirmTimetablePreview()">
-                            Jetzt importieren
+                            {{ timetableImportOperation === 'replace' ? 'Plan ersetzen – Änderungen übernehmen' : timetableImportOperation === 'merge' ? 'Daten ergänzen – Änderungen übernehmen' : 'Änderungen übernehmen' }}
                         </v-btn>
                     </v-card-actions>
                 </v-card>
+                <div v-if="activeImportPage === 'stundenplan' && !timetablePreview" class="mb-3">
+                    <h3 class="text-subtitle-1 font-weight-bold">1. TXT-Datei auswählen</h3>
+                    <p>Danach wählen Sie die Übernahme und prüfen alle Änderungen, bevor der Plan gespeichert wird.</p>
+                </div>
                 <FileUpload
                     v-if="activeImportUploadVisible"
                     :path="activeImportUploadPath"
@@ -1449,6 +1511,7 @@
 
 <script>
 import { defineAsyncComponent } from 'vue'
+import { VDataTable, VRadio, VRadioGroup, VSelect, VTextField } from 'vuetify/components'
 import TimetableImportDiagnostics from './TimetableImportDiagnostics.vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -1456,6 +1519,7 @@ import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { downloadSource as downloadRecognitionImportSource } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/RecognitionCsvUploadController'
 import {
+    comparison as compareTimetableImport,
     confirm as confirmTimetableImport,
     destroy as destroyTimetableImport,
     downloadSource as downloadTimetableImportSource,
@@ -1483,7 +1547,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { DataRefresh, FileUpload, LoadingAnimation, Overview, TimetableImportDiagnostics },
+    components: { DataRefresh, FileUpload, LoadingAnimation, Overview, TimetableImportDiagnostics, VDataTable, VRadio, VRadioGroup, VSelect, VTextField },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1498,6 +1562,20 @@ export default {
             },
             imports: [],
             timetablePreview: null,
+            timetableImportOperation: '',
+            timetableReplacementScope: '',
+            timetableComparison: null,
+            timetableComparedSelection: '',
+            timetableComparisonRequestId: 0,
+            loadingTimetableComparison: false,
+            timetableComparisonError: '',
+            timetableRemovalSearch: '',
+            timetableRemovalHeaders: [
+                { title: 'Kurs', key: 'course', sortable: false },
+                { title: 'Datum', key: 'date', sortable: false },
+                { title: 'Uhrzeit', key: 'starts_at', sortable: false },
+                { title: 'TT-Einträge', key: 'entry_count', align: 'end', sortable: false },
+            ],
             recognitionImports: [],
             deleteTargetImport: null,
             deleteDialog: false,
@@ -1569,6 +1647,28 @@ export default {
         },
         timetablePreviewHasSemanticErrors() {
             return Number(this.timetablePreview?.tt_skipped_invalid || 0) > 0
+        },
+        isTimetableUploadPage() {
+            return this.activeImportPage === 'stundenplan' && this.activeImportSubPage === 'import'
+        },
+        timetableReplacementScopes() {
+            return this.timetablePreview?.replacement_scopes || []
+        },
+        timetableComparisonSelection() {
+            return JSON.stringify([
+                this.timetablePreview?.id,
+                this.timetableImportOperation,
+                this.timetableImportOperation === 'replace' ? this.timetableReplacementScope : '',
+                this.config?.selected_schoolyear,
+            ])
+        },
+        canConfirmTimetablePreview() {
+            if (this.confirmingPreview || this.deletingPreview || this.loadingTimetableComparison) return false
+            if (!this.timetablePreviewDateIsPlausible || this.importedTtCount(this.timetablePreview) === 0) return false
+            if (!this.timetableComparison?.can_confirm || !this.timetableComparison?.fingerprint) return false
+            if (this.timetableComparedSelection !== this.timetableComparisonSelection) return false
+
+            return true
         },
         import116LastImportDisplay() {
             const value = this.import116LastImportAt || this.config?.teaching?.last_import_116_at
@@ -1822,7 +1922,16 @@ export default {
         },
     },
     watch: {
+        'timetablePreview.id'() {
+            this.timetableImportOperation = ''
+            this.timetableReplacementScope = ''
+            this.previewActionError = ''
+        },
+        timetableComparisonSelection() {
+            this.loadTimetableComparison()
+        },
         'config.selected_schoolyear.id'() {
+            this.timetablePreview = null
             this.loadImportButtonInfo()
             if (this.activeImportPage === 'import116') {
                 this.import116LoadRuns()
@@ -1882,6 +1991,52 @@ export default {
         }
     },
     methods: {
+        timetableScopeLabel(scope) {
+            if (!scope) return ''
+
+            return `${scope.label} · ${this.formatDateOnly(scope.from)}–${this.formatDateOnly(scope.until)}`
+        },
+        formatDateOnly(value) {
+            if (!value) return ''
+
+            const date = new Date(`${String(value).slice(0, 10)}T12:00:00`)
+
+            return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        timetableImportOperationLabel(importItem) {
+            const completed = importItem.import_status === 'completed'
+            if (importItem.import_operation !== 'replace') return completed ? 'Daten ergänzt' : 'Daten ergänzen'
+
+            return `${completed ? 'Plan ersetzt' : 'Plan ersetzen'} · ${this.formatDateOnly(importItem.replacement_from)}–${this.formatDateOnly(importItem.replacement_until)}`
+        },
+        async loadTimetableComparison() {
+            const requestId = ++this.timetableComparisonRequestId
+            const selection = this.timetableComparisonSelection
+            this.timetableComparison = null
+            this.timetableComparedSelection = ''
+            this.timetableComparisonError = ''
+            this.timetableRemovalSearch = ''
+            this.loadingTimetableComparison = false
+            if (!this.timetablePreview || !this.timetableImportOperation) return
+            if (this.timetableImportOperation === 'replace' && !this.timetableReplacementScope) return
+
+            this.loadingTimetableComparison = true
+            try {
+                const params = { operation: this.timetableImportOperation }
+                if (this.timetableImportOperation === 'replace') params.scope = this.timetableReplacementScope
+                const response = await axios.get(compareTimetableImport.url(this.timetablePreview.id), { params })
+                if (requestId !== this.timetableComparisonRequestId || selection !== this.timetableComparisonSelection) return
+
+                this.timetableComparison = response.data?.data || null
+                this.timetableComparedSelection = selection
+            } catch (error) {
+                if (requestId !== this.timetableComparisonRequestId) return
+
+                this.timetableComparisonError = error?.response?.data?.message || 'Die Änderungen konnten nicht berechnet werden.'
+            } finally {
+                if (requestId === this.timetableComparisonRequestId) this.loadingTimetableComparison = false
+            }
+        },
         timetableSourceDownloadUrl(importItem) {
             return importItem?.source_available
                 ? downloadTimetableImportSource.url(importItem.id)
@@ -2056,17 +2211,19 @@ export default {
             this.uploadError = serverMessage || 'Der Import konnte nicht durchgeführt werden. Bitte prüfen Sie die TXT-Datei und das Semester-2-Startdatum.'
             this.refreshFilePond++
         },
-        async confirmTimetablePreview(mode = 'strict') {
-            if (!this.timetablePreview) return
+        async confirmTimetablePreview() {
+            if (!this.timetablePreview || !this.canConfirmTimetablePreview) return
 
             this.confirmingPreview = true
             this.previewActionError = ''
             try {
-                if (mode === 'partial') {
-                    await axios.post(confirmTimetableImport.url(this.timetablePreview.id), { mode: 'partial' })
-                } else {
-                    await axios.post(confirmTimetableImport.url(this.timetablePreview.id))
+                const payload = {
+                    operation: this.timetableImportOperation,
+                    fingerprint: this.timetableComparison.fingerprint,
+                    mode: this.timetablePreviewHasSemanticErrors ? 'partial' : 'strict',
                 }
+                if (this.timetableImportOperation === 'replace') payload.scope = this.timetableReplacementScope
+                await axios.post(confirmTimetableImport.url(this.timetablePreview.id), payload)
                 this.timetablePreview = null
                 this.uploadedFilename = ''
                 await this.loadImportButtonInfo()
@@ -2074,6 +2231,7 @@ export default {
                 this.closeImportUploadPage()
             } catch (error) {
                 this.previewActionError = error?.response?.data?.message || 'Der Vorimport konnte nicht gestartet werden.'
+                if (error?.response?.status === 409) await this.loadTimetableComparison()
             } finally {
                 this.confirmingPreview = false
             }
@@ -2122,6 +2280,7 @@ export default {
         async loadImportButtonInfo() {
             if (this.subAction !== 'imports' || this.loadingImportButtonInfo) return
 
+            const schoolyearId = this.config?.selected_schoolyear?.id
             this.loadingImportButtonInfo = true
             try {
                 const shouldLoadFullTimetableImports = this.activeImportPage === 'stundenplan'
@@ -2142,6 +2301,8 @@ export default {
                         },
                     }),
                 ])
+                if (schoolyearId !== this.config?.selected_schoolyear?.id) return
+
                 this.imports = timetableResponse.data?.data || []
                 this.timetablePreview = timetableResponse.data?.preview || null
                 this.recognitionImports = recognitionsResponse.data?.data || []
@@ -2157,6 +2318,8 @@ export default {
                 }
                 this.updatePolling()
             } catch {
+                if (schoolyearId !== this.config?.selected_schoolyear?.id) return
+
                 this.imports = []
                 this.timetablePreview = null
                 this.importButtonInfo = {
@@ -2171,6 +2334,7 @@ export default {
                 this.clearPolling()
             } finally {
                 this.loadingImportButtonInfo = false
+                if (schoolyearId !== this.config?.selected_schoolyear?.id) await this.loadImportButtonInfo()
             }
         },
         openDeleteDialog(importItem) {
@@ -2785,6 +2949,85 @@ export default {
 </script>
 
 <style scoped>
+.st-import-step {
+    border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+    padding-top: 20px;
+    margin-top: 20px;
+}
+
+.st-import-step :deep(.v-selection-control .v-label) {
+    opacity: 1;
+    white-space: normal;
+}
+
+.st-import-change-counts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.st-import-change-counts > div {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.st-import-change-counts strong {
+    font-size: 1.3rem;
+}
+
+.st-import-change-counts span {
+    font-size: 0.85rem;
+}
+
+.st-import-preview-actions :deep(.v-btn) {
+    height: auto;
+    min-height: 40px;
+    padding-block: 10px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.st-import-preview-actions :deep(.v-btn__content) {
+    white-space: normal;
+    text-align: center;
+}
+
+.st-import-removal-table__mobile {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .st-import-removal-table :deep(thead),
+    .st-import-removal-table__desktop {
+        display: none;
+    }
+
+    .st-import-removal-table__mobile {
+        display: table-cell;
+        padding: 10px 4px !important;
+        line-height: 1.6;
+    }
+
+    .st-import-removal-table__mobile strong {
+        display: block;
+        overflow-wrap: anywhere;
+    }
+
+    .st-import-removal-table__mobile-time {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        column-gap: 12px;
+    }
+
+    .st-import-removal-table__mobile-time span {
+        white-space: nowrap;
+    }
+}
+
 .st-dummy-card {
     border: 1px solid rgba(37, 99, 235, 0.12);
     background: rgba(255, 255, 255, 0.92);

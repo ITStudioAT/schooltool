@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\CompareTimetableImportRequest;
 use App\Http\Requests\Admin\ConfirmTimetableImportRequest;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
@@ -42,6 +43,7 @@ class TimetableImportController extends Controller
         if ($preview) {
             $preview->setAttribute('date_plausibility', $service->datePlausibilityFor($preview));
             $preview->setAttribute('tt_diagnostics', $service->previewDiagnosticsFor($preview));
+            $preview->setAttribute('replacement_scopes', $service->replacementScopesFor($preview));
         }
 
         if ($request->boolean('summary')) {
@@ -58,6 +60,10 @@ class TimetableImportController extends Controller
                     'sections',
                     'tt_skipped_invalid',
                     'import_mode',
+                    'import_operation',
+                    'replacement_from',
+                    'replacement_until',
+                    'change_summary',
                     'tt_imported_rows',
                     'import_status',
                     'progress_current',
@@ -151,6 +157,28 @@ class TimetableImportController extends Controller
         ], 202);
     }
 
+    public function comparison(CompareTimetableImportRequest $request, TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $this->ensurePersonalSchoolyear($authUser);
+        if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(403, 'Kein Zugriff auf diesen Import.');
+        }
+
+        if ($timetableImport->import_status !== 'preview') {
+            abort(409, 'Dieser Import ist keine offene Vorschau mehr.');
+        }
+
+        return response()->json(['data' => $service->comparisonFor(
+            $timetableImport,
+            $request->validated('operation'),
+            $request->validated('scope'),
+        )]);
+    }
+
     public function confirm(ConfirmTimetableImportRequest $request, TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
@@ -163,7 +191,13 @@ class TimetableImportController extends Controller
             abort(403, 'Kein Zugriff auf diesen Import.');
         }
 
-        $queuedImport = $service->confirmPreview($timetableImport, $request->validated('mode', 'strict'));
+        $queuedImport = $service->confirmPreview(
+            $timetableImport,
+            $request->validated('mode', 'strict'),
+            $request->validated('operation', 'merge'),
+            $request->validated('scope'),
+            $request->validated('fingerprint'),
+        );
 
         return response()->json([
             'message' => $queuedImport->isPartialImport()
@@ -230,7 +264,7 @@ class TimetableImportController extends Controller
                 continue;
             }
 
-            StudentTimetableEntry::query()
+            StudentTimetableEntry::current()
                 ->where('school_id', $schoolId)
                 ->where('schoolyear_id', $schoolyearId)
                 ->whereIn('id', $entryIds)
@@ -247,7 +281,7 @@ class TimetableImportController extends Controller
 
     private function mainDatasetMetadata(int $schoolId, int $schoolyearId, bool $includeSingleDateCourses = true): array
     {
-        $baseQuery = StudentTimetableEntry::where('school_id', $schoolId)
+        $baseQuery = StudentTimetableEntry::current()->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true);
         $courses = $this->mainDatasetCourses($schoolId, $schoolyearId);
@@ -274,7 +308,7 @@ class TimetableImportController extends Controller
     {
         $weeklyHoursByCourse = $this->weeklyHoursByCourse($schoolId, $schoolyearId);
 
-        return StudentTimetableEntry::query()
+        return StudentTimetableEntry::current()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)
@@ -299,7 +333,7 @@ class TimetableImportController extends Controller
      */
     private function weeklyHoursByCourse(int $schoolId, int $schoolyearId): array
     {
-        return StudentTimetableEntry::query()
+        return StudentTimetableEntry::current()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)
@@ -331,7 +365,7 @@ class TimetableImportController extends Controller
      */
     private function mainDatasetSingleDateCourses(int $schoolId, int $schoolyearId): array
     {
-        return StudentTimetableEntry::query()
+        return StudentTimetableEntry::current()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->whereNotNull('class_name')

@@ -15,6 +15,7 @@ class TimetableImport extends Model
 
     protected $attributes = [
         'import_mode' => 'strict',
+        'import_operation' => 'merge',
     ];
 
     protected $fillable = [
@@ -29,6 +30,12 @@ class TimetableImport extends Model
         'tt_courses',
         'tt_skipped_invalid',
         'import_mode',
+        'import_operation',
+        'replacement_scope',
+        'replacement_from',
+        'replacement_until',
+        'comparison_fingerprint',
+        'change_summary',
         'tt_imported_rows',
         'tt_first_date',
         'tt_last_date',
@@ -50,6 +57,9 @@ class TimetableImport extends Model
             'tt_courses' => 'integer',
             'tt_skipped_invalid' => 'integer',
             'tt_imported_rows' => 'integer',
+            'replacement_from' => 'date:Y-m-d',
+            'replacement_until' => 'date:Y-m-d',
+            'change_summary' => 'array',
             'tt_first_date' => 'date:Y-m-d',
             'tt_last_date' => 'date:Y-m-d',
             'progress_current' => 'integer',

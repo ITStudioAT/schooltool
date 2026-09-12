@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Database\Factories\StudentTimetableEntryFactory;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +30,7 @@ class StudentTimetableEntry extends Model
         'course',
         'module_code',
         'is_active',
+        'superseded_by_import_id',
         'identity_hash',
         'raw_columns',
         'raw_line',
@@ -42,6 +45,12 @@ class StudentTimetableEntry extends Model
             'is_active' => 'boolean',
             'raw_columns' => 'array',
         ];
+    }
+
+    #[Scope]
+    protected function current(Builder $query): void
+    {
+        $query->whereNull('superseded_by_import_id');
     }
 
     public function school(): BelongsTo

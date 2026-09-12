@@ -213,7 +213,64 @@ class TimetableImportService
         );
     }
 
-    public function confirmPreview(TimetableImport $import, string $mode = 'strict'): TimetableImport
+    /** @return list<array{key: string, label: string, from: string, until: string}> */
+    public function replacementScopesFor(TimetableImport $import): array
+    {
+        $schoolyear = Schoolyear::where('school_id', $import->school_id)->find($import->schoolyear_id);
+
+        return $schoolyear ? app(TimetableImportComparisonService::class)->replacementScopes($schoolyear) : [];
+    }
+
+    /** @return array<string, mixed> */
+    public function comparisonFor(TimetableImport $import, string $operation = 'merge', ?string $scope = null): array
+    {
+        if (! in_array($operation, ['merge', 'replace'], true)) {
+            throw ValidationException::withMessages(['operation' => 'Bitte wählen Sie Plan ersetzen oder Daten ergänzen.']);
+        }
+
+        $schoolyear = Schoolyear::where('school_id', $import->school_id)->findOrFail($import->schoolyear_id);
+        $scopes = $this->replacementScopesFor($import);
+        $range = $operation === 'replace' ? collect($scopes)->firstWhere('key', $scope) : null;
+        $comparison = $this->compareSource($import, $schoolyear, $operation, $range);
+        $plausibility = $this->datePlausibilityFor($import);
+
+        if (! $plausibility['is_plausible']) {
+            $comparison['can_confirm'] = false;
+            $comparison['message'] = $plausibility['message'];
+        }
+
+        return [...$comparison, 'replacement_scopes' => $scopes];
+    }
+
+    /**
+     * @param  array{key: string, label: string, from: string, until: string}|null  $range
+     * @return array<string, mixed>
+     */
+    private function compareSource(TimetableImport $import, Schoolyear $schoolyear, string $operation, ?array $range): array
+    {
+        $path = storage_path($import->file_path);
+        $rows = [];
+        foreach ($this->readNormalizedLines($path) ?? [] as $index => $line) {
+            $parts = explode("\t", $line);
+            if (trim($parts[0] ?? '') === 'TT' && $this->isImportableTimetableRecord($parts)) {
+                $rows[] = $this->timetableEntryPayload($import, $schoolyear, $parts, $line, $index + 1);
+            }
+        }
+
+        return app(TimetableImportComparisonService::class)->compare($import, $rows, $this->analyzeFile($path), $operation, $range);
+    }
+
+    public function confirmPreview(TimetableImport $import, string $mode = 'strict', string $operation = 'merge', ?string $scope = null, ?string $fingerprint = null): TimetableImport
+    {
+        return DB::transaction(function () use ($import, $mode, $operation, $scope, $fingerprint): TimetableImport {
+            $this->lockSchoolyear($import);
+            $this->assertNoPendingImport($import);
+
+            return $this->confirmLockedPreview($import, $mode, $operation, $scope, $fingerprint);
+        });
+    }
+
+    private function confirmLockedPreview(TimetableImport $import, string $mode, string $operation, ?string $scope, ?string $fingerprint): TimetableImport
     {
         if (! in_array($mode, ['strict', 'partial'], true)) {
             throw ValidationException::withMessages(['mode' => 'Bitte wählen Sie Vollimport oder Teilimport.']);
@@ -248,18 +305,34 @@ class TimetableImportService
             ]);
         }
 
+        $comparison = $this->comparisonFor($import, $operation, $scope);
+        if (! $comparison['can_confirm']) {
+            throw ValidationException::withMessages(['operation' => $comparison['message']]);
+        }
+
+        if (($operation === 'replace' || $fingerprint !== null)
+            && (! $fingerprint || ! hash_equals($comparison['fingerprint'], $fingerprint))) {
+            throw ValidationException::withMessages(['fingerprint' => 'Der Plan oder die Datei hat sich geändert. Bitte prüfen Sie die aktualisierte Vorschau erneut.']);
+        }
+
         $updated = TimetableImport::query()
             ->whereKey($import->id)
             ->where('import_status', 'preview')
             ->update([
                 ...$analysis,
                 'import_mode' => $mode,
+                'import_operation' => $operation,
+                'replacement_scope' => $comparison['scope']['key'] ?? null,
+                'replacement_from' => $comparison['scope']['from'] ?? null,
+                'replacement_until' => $comparison['scope']['until'] ?? null,
+                'comparison_fingerprint' => $fingerprint !== null ? $comparison['fingerprint'] : null,
+                'change_summary' => $this->changeSummary($comparison),
                 'tt_imported_rows' => 0,
                 'import_status' => 'pending',
                 'progress_current' => 0,
                 'progress_total' => 0,
                 'import_message' => $mode === 'partial'
-                    ? 'Teilimport wartet auf Verarbeitung. Nicht zuordenbare TT-Datensätze werden ausgelassen.'
+                    ? 'Import wartet auf Verarbeitung. Fehlerhafte TT-Einträge werden übersprungen.'
                     : 'Import wartet auf Verarbeitung.',
                 'import_error' => null,
                 'started_at' => null,
@@ -272,7 +345,7 @@ class TimetableImportService
             ]);
         }
 
-        ProcessTimetableImportJob::dispatch((int) $import->id);
+        ProcessTimetableImportJob::dispatch((int) $import->id)->afterCommit();
 
         return $import->refresh();
     }
@@ -301,6 +374,32 @@ class TimetableImportService
     }
 
     public function processImport(TimetableImport $import): TimetableImport
+    {
+        try {
+            $result = DB::transaction(function () use ($import): TimetableImport {
+                $this->lockSchoolyear($import);
+                $current = $import->fresh();
+                if (! $current || ! in_array($current->import_status, ['pending', 'running', 'failed'], true)) {
+                    return $current ?? $import;
+                }
+
+                return $this->processImportRun($current);
+            });
+
+        } catch (Throwable $exception) {
+            if ($import->fresh()) {
+                $this->markFailed($import, 'Import fehlgeschlagen. Änderungen dieses Laufs wurden zurückgerollt: '.mb_substr($exception->getMessage(), 0, 150));
+            }
+
+            throw $exception;
+        }
+
+        StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
+
+        return $result;
+    }
+
+    private function processImportRun(TimetableImport $import, bool $replaying = false): TimetableImport
     {
         $schoolyear = Schoolyear::where('school_id', $import->school_id)->find($import->schoolyear_id);
 
@@ -361,14 +460,62 @@ class TimetableImportService
         $this->markRunning($import, $totalLines);
 
         try {
-            $result = DB::transaction(fn (): TimetableImport => $this->persistTimetableRows($import, $schoolyear, $lines, $totalLines));
+            $result = DB::transaction(function () use ($import, $schoolyear, $lines, $totalLines, $replaying): TimetableImport {
+                $this->lockSchoolyear($import);
+                $range = $import->import_operation === 'replace' ? [
+                    'key' => $import->replacement_scope,
+                    'label' => match ($import->replacement_scope) {
+                        'semester1' => '1. Semester',
+                        'semester2' => '2. Semester',
+                        default => 'Ganzes Schuljahr',
+                    },
+                    'from' => $import->replacement_from?->toDateString(),
+                    'until' => $import->replacement_until?->toDateString(),
+                ] : null;
+
+                if ($range && (! $range['from'] || ! $range['until'])) {
+                    throw ValidationException::withMessages(['import' => 'Plan ersetzen benötigt einen bestätigten Zeitraum.']);
+                }
+
+                $comparison = ! $replaying && $import->comparison_fingerprint
+                    ? $this->comparisonFor($import, $import->import_operation, $import->replacement_scope)
+                    : $this->compareSource($import, $schoolyear, $import->import_operation, $range);
+                if (! $comparison['can_confirm']) {
+                    throw ValidationException::withMessages(['import' => $comparison['message']]);
+                }
+
+                if (! $replaying && $import->comparison_fingerprint
+                    && ! hash_equals($import->comparison_fingerprint, $comparison['fingerprint'])) {
+                    throw ValidationException::withMessages(['import' => 'Der Plan oder die Datei hat sich seit der Vorschau geändert. Bitte laden Sie die Datei erneut hoch und prüfen Sie die Änderungen.']);
+                }
+
+                if (! $replaying && $range && ! $import->comparison_fingerprint) {
+                    throw ValidationException::withMessages(['import' => 'Plan ersetzen benötigt eine bestätigte Änderungsvorschau.']);
+                }
+
+                $result = $this->persistTimetableRows($import, $schoolyear, $lines, $totalLines);
+                if ($range) {
+                    StudentTimetableEntry::current()
+                        ->where('school_id', $import->school_id)
+                        ->where('schoolyear_id', $import->schoolyear_id)
+                        ->whereBetween('date', [$range['from'], $range['until']])
+                        ->where('timetable_import_id', '!=', $import->id)
+                        ->update(['superseded_by_import_id' => $import->id]);
+                }
+
+                $result->update(['change_summary' => $this->changeSummary($comparison)]);
+
+                return $result;
+            });
+        } catch (ValidationException $exception) {
+            $this->markFailed($import, $exception->getMessage());
+
+            return $import->refresh();
         } catch (Throwable $exception) {
             $this->markFailed($import, 'Import fehlgeschlagen. Änderungen dieses Laufs wurden zurückgerollt: '.mb_substr($exception->getMessage(), 0, 150));
 
             throw $exception;
         }
-
-        StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
 
         return $result;
     }
@@ -452,9 +599,11 @@ class TimetableImportService
             'import_status' => 'completed',
             'progress_current' => $totalLines,
             'progress_total' => $totalLines,
-            'import_message' => $import->isPartialImport()
-                ? "Teilimport abgeschlossen: {$ttImportedRows} TT-Datensätze verarbeitet, {$ttSkippedInvalid} nach aktuellen Prüfregeln ausgelassen. Übriger Bestand beibehalten."
-                : 'Import abgeschlossen.',
+            'import_message' => match (true) {
+                $import->import_operation === 'replace' => "Plan ersetzt: {$ttImportedRows} TT-Einträge verarbeitet, {$ttSkippedInvalid} fehlerhafte TT-Einträge übersprungen.",
+                $import->isPartialImport() => "Teilimport abgeschlossen: {$ttImportedRows} TT-Datensätze verarbeitet, {$ttSkippedInvalid} nach aktuellen Prüfregeln ausgelassen. Übriger Bestand beibehalten.",
+                default => 'Import abgeschlossen.',
+            },
             'import_error' => null,
             'finished_at' => now(),
         ]));
@@ -464,6 +613,21 @@ class TimetableImportService
 
     public function queueUnimport(TimetableImport $import): TimetableImport
     {
+        return DB::transaction(function () use ($import): TimetableImport {
+            $this->lockSchoolyear($import);
+            $this->assertNoPendingImport($import);
+
+            return $this->queueLockedUnimport($import);
+        });
+    }
+
+    private function queueLockedUnimport(TimetableImport $import): TimetableImport
+    {
+        $import->refresh();
+        if (! in_array($import->import_status, ['completed', 'failed'], true)) {
+            throw ValidationException::withMessages(['import' => 'Dieser Import wird bereits verarbeitet oder wurde bereits zurückgenommen.']);
+        }
+
         $this->assertRemainingImportsCanBeReplayed($import);
 
         $import->update([
@@ -476,7 +640,7 @@ class TimetableImportService
             'finished_at' => null,
         ]);
 
-        ProcessTimetableUnimportJob::dispatch((int) $import->id);
+        ProcessTimetableUnimportJob::dispatch((int) $import->id)->afterCommit();
 
         return $import->refresh();
     }
@@ -505,6 +669,20 @@ class TimetableImportService
         $this->assertImportsCanBeReplayed($remainingImports);
 
         DB::transaction(function () use ($import, $remainingImports, $schoolId, $schoolyearId): void {
+            $this->lockSchoolyear($import);
+            $this->assertRemainingImportsCanBeReplayed($import);
+            $remainingImports = TimetableImport::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->whereKeyNot($import->id)
+                ->where('import_status', 'completed')
+                ->orderBy('imported_at')
+                ->orderBy('id')
+                ->get();
+            $this->assertImportsCanBeReplayed($remainingImports);
+            $inactiveIdentities = StudentTimetableEntry::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('is_active', false)
+                ->pluck('identity_hash');
             StudentTimetableEntry::where('school_id', $schoolId)
                 ->where('schoolyear_id', $schoolyearId)
                 ->delete();
@@ -512,7 +690,7 @@ class TimetableImportService
             $import->delete();
 
             $remainingImports->each(function (TimetableImport $remainingImport): void {
-                $replayedImport = $this->processImport($remainingImport);
+                $replayedImport = $this->processImportRun($remainingImport, true);
 
                 if ($replayedImport->import_status !== 'completed') {
                     throw new RuntimeException(
@@ -521,6 +699,13 @@ class TimetableImportService
                     );
                 }
             });
+
+            foreach ($inactiveIdentities->chunk(500) as $identities) {
+                StudentTimetableEntry::where('school_id', $schoolId)
+                    ->where('schoolyear_id', $schoolyearId)
+                    ->whereIn('identity_hash', $identities)
+                    ->update(['is_active' => false]);
+            }
         });
 
         StudentTimetableOverviewService::forgetCacheFor($schoolId, $schoolyearId);
@@ -534,7 +719,7 @@ class TimetableImportService
             'removed_import_id' => $importId,
             'removed_import_entries' => $removedImportEntries,
             'replayed_imports' => $remainingImports->count(),
-            'active_entries' => StudentTimetableEntry::where('school_id', $schoolId)
+            'active_entries' => StudentTimetableEntry::current()->where('school_id', $schoolId)
                 ->where('schoolyear_id', $schoolyearId)
                 ->count(),
         ];
@@ -587,6 +772,35 @@ class TimetableImportService
                 'finished_at' => null,
             ]));
         });
+    }
+
+    private function lockSchoolyear(TimetableImport $import): void
+    {
+        Schoolyear::where('school_id', $import->school_id)
+            ->whereKey($import->schoolyear_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    private function assertNoPendingImport(TimetableImport $import): void
+    {
+        if (TimetableImport::where('school_id', $import->school_id)
+            ->where('schoolyear_id', $import->schoolyear_id)
+            ->whereKeyNot($import->id)
+            ->whereIn('import_status', ['pending', 'running', 'deleting'])
+            ->exists()) {
+            throw ValidationException::withMessages(['import' => 'Für dieses Schuljahr läuft bereits ein Import oder eine Rücknahme. Bitte warten Sie auf den Abschluss.']);
+        }
+    }
+
+    /** @param array<string, mixed> $comparison
+     * @return array<string, int>
+     */
+    private function changeSummary(array $comparison): array
+    {
+        return collect($comparison)->only([
+            'new_entries', 'updated_entries', 'unchanged_entries', 'removed_entries', 'removed_appointment_count',
+        ])->all();
     }
 
     private function schoolyearWithSemesterTwoStart(User $user, ?int $schoolyearId): Schoolyear
@@ -686,6 +900,7 @@ class TimetableImportService
                     'course' => $row['course'],
                     'module_code' => $row['module_code'],
                     'is_active' => $row['is_active'],
+                    'superseded_by_import_id' => null,
                     'identity_hash' => $row['identity_hash'],
                     'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
                     'raw_line' => $row['raw_line'],
@@ -707,7 +922,7 @@ class TimetableImportService
                 'class_name',
                 'course',
                 'module_code',
-                'is_active',
+                'superseded_by_import_id',
                 'raw_columns',
                 'raw_line',
                 'updated_at',

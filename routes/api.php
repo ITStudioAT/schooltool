@@ -307,6 +307,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/imports/{timetableImport}/download', [TimetableImportController::class, 'downloadSource'])
             ->whereNumber('timetableImport');
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
+        Route::get('/admin/students-timetables/imports/{timetableImport}/comparison', [TimetableImportController::class, 'comparison'])
+            ->whereNumber('timetableImport');
         Route::post('/admin/students-timetables/imports/{timetableImport}/confirm', [TimetableImportController::class, 'confirm'])
             ->whereNumber('timetableImport');
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);

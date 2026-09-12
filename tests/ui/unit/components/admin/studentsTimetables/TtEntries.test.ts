@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, shallowMount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import TtEntries from '@/pages/admin/studentsTimetables/ttEntries/TtEntries.vue'
 
 function buildContext(overrides: Record<string, unknown> = {}) {
@@ -63,6 +65,51 @@ function buildContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TT entries overview', () => {
+    it('warns about an outdated remembered offer while preserving its saved dates and activation', async () => {
+        const outdatedOffer = {
+            key: 'remembered-m6', name: 'M6 - 4R - SCHM', outdated: true,
+            entries: [{
+                key: 'old-date', dateValue: '2026-12-01', dateLabel: 'Di, 01.12.2026',
+                scheduleLabel: '18:45–20:15', active: false,
+            }],
+        }
+        const currentOffer = {
+            key: 'remembered-m7', name: 'M7 - 4R - SCHM', outdated: false,
+            entries: [{ key: 'current-date', dateLabel: 'Do, 03.12.2026', scheduleLabel: '20:25–21:55', active: true }],
+        }
+        const put = vi.fn()
+        vi.stubGlobal('axios', {
+            get: vi.fn(async (url: string) => url.endsWith('/tt-entry-remembered-offers')
+                ? { data: { data: { offers: [outdatedOffer, currentOffer] } } }
+                : { data: { data: [] } }),
+            put,
+        })
+        const wrapper = shallowMount(TtEntries, {
+            global: {
+                plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: {} } } })],
+                renderStubDefaultSlot: true,
+                stubs: { 'v-card': true, 'v-card-title': true, 'v-card-text': true, 'v-alert': true, 'v-btn': true, 'v-chip': true, 'v-progress-linear': true },
+            },
+        })
+
+        try {
+            await flushPromises()
+            await wrapper.setData({ rememberedOffersDetailsVisible: true })
+            expect(wrapper.findAll('[data-testid="remembered-offer-outdated"]')).toHaveLength(1)
+            expect(wrapper.get('[data-testid="remembered-offer-outdated"]').text())
+                .toBe('Dieses Angebot hat sich geändert. Bitte prüfen Sie die aktuellen Termine und merken Sie es erneut.')
+            expect((wrapper.vm as any).rememberedOffers[0]).toEqual(outdatedOffer)
+            const savedDates = wrapper.findAll('.tt-entries-card__remembered-detail-entry')
+            expect(savedDates[0].text()).toContain('Di, 01.12.2026')
+            expect(savedDates[0].attributes('aria-pressed')).toBe('false')
+            expect(savedDates[1].attributes('aria-pressed')).toBe('true')
+            expect(put).not.toHaveBeenCalled()
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
     it('offers imported modules without subject-plan rows and lets their lessons be remembered', () => {
         const context = buildContext({
             courseGroups: [

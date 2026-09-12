@@ -1,4 +1,5 @@
 import { createApp, h, ref } from 'vue'
+import axios from 'axios'
 import { createPinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import { VApp, VMain } from 'vuetify/components'
@@ -98,6 +99,27 @@ if (scenario === 'admin-teaching-semesters') {
     component = (await import('@/pages/admin/studentsTimetables/testsV3/TestsV3.vue')).default
     route.params = { subsection: 'students' }
     Object.assign(state, { studentV3TestSummaryDialog: true, testReadiness: { ready: true }, students: [] })
+} else if (scenario === 'admin-import-preview') {
+    window.axios = axios
+    component = (await import('@/pages/admin/studentsTimetables/timetable/Timetable.vue')).default
+    route.path = '/admin/students-timetables/timetable/imports/stundenplan/import'
+    route.params = { subsection: 'imports', detail: 'stundenplan', action: 'import' }
+    useAdminStore(pinia).config.selected_schoolyear = {
+        id: 1, name: '2026/2027', concerns: '2026/2027', sem_2_start: '2027-02-15',
+    }
+    Object.assign(state, {
+        subAction: 'imports', importPage: 'stundenplan', importSubPage: 'import',
+        timetablePreview: {
+            id: 42, original_filename: 'sokrates_ws26_3_260911.txt', import_status: 'preview',
+            sections: { TT: 70 }, tt_courses: 2, tt_skipped_invalid: 0,
+            tt_first_date: '2026-09-17', tt_last_date: '2027-02-11',
+            date_plausibility: { is_plausible: true, message: 'Alle Termine liegen im persönlichen Schuljahr.' },
+            replacement_scopes: [
+                { key: 'semester1', label: '1. Semester', from: '2026-09-01', until: '2027-02-14' },
+                { key: 'semester2', label: '2. Semester', from: '2027-02-15', until: '2027-08-31' },
+            ],
+        },
+    })
 } else if (scenario === 'admin-import-dialog') {
     component = (await import('@/pages/admin/studentsTimetables/timetable/Timetable.vue')).default
     route.params = { subsection: 'imports', detail: 'stundenplan', action: 'import' }
@@ -190,7 +212,11 @@ if (dialog === 'drawer') state.showDrawer = true
 // network initialization and persistence; fixtures must never access live records.
 const fixture = {
     ...component,
-    created: undefined, beforeMount: undefined, mounted: undefined, watch: {}, beforeRouteUpdate: undefined,
+    created: undefined, beforeMount: undefined, mounted: undefined, beforeRouteUpdate: undefined,
+    watch: scenario === 'admin-import-preview' ? {
+        'timetablePreview.id': component.watch['timetablePreview.id'],
+        timetableComparisonSelection: component.watch.timetableComparisonSelection,
+    } : {},
     data() { return { ...component.data?.call(this), ...state } },
 }
 const selectedIndex = ref(0)
