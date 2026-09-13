@@ -1,10 +1,14 @@
 # UPDATES
 
-## 3.48.2 !!!
+## 3.48.2
 
 ### Unterricht
 
 - Berechnung der Noten
+
+### SEPP
+
+- Limit 10 Module / 30 Stunden aufgehoben: 100.000 Kombinationen ist das neue Limit
 
 ## 3.48.1
 

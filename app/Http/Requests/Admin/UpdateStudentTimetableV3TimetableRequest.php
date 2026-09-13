@@ -25,7 +25,7 @@ class UpdateStudentTimetableV3TimetableRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'modules' => ['required', 'array', 'min:1', 'max:10'],
+            'modules' => ['required', 'array', 'min:1'],
             'modules.*' => ['required', 'string', 'distinct', 'max:255'],
             'parameters' => ['required', 'array:workspace_id,planning_mode,student_code,selection,selected_course_keys'],
             'parameters.workspace_id' => ['required', 'uuid'],

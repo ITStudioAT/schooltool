@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { computed, reactive } from 'vue'
 import TimetableV3 from '@/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue'
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111'
@@ -144,6 +145,187 @@ function timetableCalculationContext(methods: Record<string, (...args: any[]) =>
 }
 
 describe('TimetableV3', () => {
+    it('reactively counts selected logical courses and theoretical combinations without generating timetables', () => {
+        const component = TimetableV3 as any
+        const state = reactive({
+            selectedModuleKeys: [] as string[],
+            selectedCourseKeys: [] as string[],
+            moduleSelectionGroups: [{
+                key: 'current',
+                modules: [
+                    {
+                        selection_key: 'current:M1',
+                        code: 'M1',
+                        hours: 4,
+                        courses: [
+                            { key: 'm1-a', keys: ['m1-a', 'm1-b'] },
+                            { key: 'm1-c' },
+                        ],
+                    },
+                    {
+                        selection_key: 'current:D1',
+                        code: 'D1',
+                        hours: 3,
+                        courses: [{ key: 'd1-a' }, { key: 'd1-b' }, { key: 'd1-c' }],
+                    },
+                ],
+            }],
+        })
+        const selectedModules = computed(() => component.computed.selectedModules.call(state))
+        const selectedCourseCount = computed(() => component.computed.selectedCourseCount.call({
+            selectedModules: selectedModules.value,
+            selectedCourseCountForModule: (module: unknown) => (
+                component.methods.selectedCourseCountForModule.call(state, module)
+            ),
+        }))
+        const theoreticalCombinationCount = computed(() => component.computed.theoreticalCombinationCount.call({
+            selectedModules: selectedModules.value,
+            selectedCourseCountForModule: (module: unknown) => (
+                component.methods.selectedCourseCountForModule.call(state, module)
+            ),
+        }))
+        const theoreticalCombinationCountLabel = computed(() => component.computed.theoreticalCombinationCountLabel.call({
+            theoreticalCombinationCount: theoreticalCombinationCount.value,
+        }))
+
+        expect(selectedCourseCount.value).toBe(0)
+        expect(theoreticalCombinationCountLabel.value).toBe('0')
+
+        state.selectedModuleKeys = ['current:M1']
+        state.selectedCourseKeys = ['m1-a', 'm1-b']
+        expect(selectedCourseCount.value).toBe(1)
+        expect(theoreticalCombinationCountLabel.value).toBe('1')
+
+        state.selectedCourseKeys.push('m1-c')
+        expect(selectedCourseCount.value).toBe(2)
+        expect(theoreticalCombinationCountLabel.value).toBe('2')
+
+        state.selectedModuleKeys.push('current:D1')
+        state.selectedCourseKeys.push('d1-a')
+        expect(selectedCourseCount.value).toBe(3)
+        expect(selectedModules.value).toHaveLength(2)
+        expect(component.computed.selectedModuleHours.call({ selectedModules: selectedModules.value })).toBe(7)
+        expect(theoreticalCombinationCountLabel.value).toBe('2')
+
+        state.selectedCourseKeys.push('d1-b', 'd1-c')
+        expect(selectedCourseCount.value).toBe(5)
+        expect(theoreticalCombinationCountLabel.value).toBe('6')
+
+        state.selectedCourseKeys = ['m1-c', 'd1-a']
+        expect(selectedCourseCount.value).toBe(2)
+        expect(theoreticalCombinationCountLabel.value).toBe('1')
+
+        state.selectedModuleKeys = ['current:D1']
+        expect(selectedCourseCount.value).toBe(1)
+        expect(theoreticalCombinationCountLabel.value).toBe('1')
+
+        state.selectedModuleKeys = ['current:M1', 'current:D1']
+        state.selectedCourseKeys = ['d1-a']
+        expect(selectedCourseCount.value).toBe(1)
+        expect(theoreticalCombinationCountLabel.value).toBe('0')
+
+        state.selectedModuleKeys = ['current:M1', 'current:D1']
+        state.selectedCourseKeys = ['m1-a', 'unknown']
+        expect(selectedCourseCount.value).toBe(0)
+        expect(theoreticalCombinationCountLabel.value).toBe('0')
+
+        state.selectedModuleKeys = []
+        state.selectedCourseKeys = []
+        expect(selectedCourseCount.value).toBe(0)
+        expect(theoreticalCombinationCountLabel.value).toBe('0')
+
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        expect(source.match(/\{\{ selectedCourseCount \}\}/g)).toHaveLength(2)
+        expect(source).toContain("{{ selectedCourseCount === 1 ? 'Unterricht' : 'Unterrichte' }}")
+        expect(source).toContain("{{ theoreticalCombinationCountLabel === '1' ? 'Kombination' : 'Kombinationen' }}")
+        expect(source).toContain('Theoretische Kombinationen: je ein Unterricht pro Modul, vor Zeit- und Konfliktprüfung.')
+        const summaries = source.match(/{{ selectedModuleCount }}[\s\S]*?{{ theoreticalCombinationCountLabel }}/g)
+        expect(summaries).toHaveLength(2)
+        summaries?.forEach(summary => {
+            expect(summary.indexOf('{{ selectedCourseCount }}')).toBeGreaterThan(0)
+            expect(summary).not.toContain('selectedModuleHoursLabel')
+        })
+    })
+
+    it('formats theoretical combinations exactly beyond safe integers without enumerating candidates', () => {
+        const selectedCourseCountForModule = vi.fn(() => 101)
+        const count = (TimetableV3 as any).computed.theoreticalCombinationCount.call({
+            selectedModules: Array.from({ length: 10 }, (_, index) => ({ selection_key: `module-${index}` })),
+            selectedCourseCountForModule,
+        })
+        const label = (TimetableV3 as any).computed.theoreticalCombinationCountLabel.call({
+            theoreticalCombinationCount: count,
+        })
+
+        expect(label).toBe(110462212541120451001n.toLocaleString('de-AT'))
+        expect(selectedCourseCountForModule).toHaveBeenCalledTimes(10)
+    })
+
+    it('allows exactly 100000 combinations and prevents generation above the limit while retaining the draft', async () => {
+        const component = TimetableV3 as any
+        const modules = Array.from({ length: 5 }, (_, moduleIndex) => ({
+            selection_key: `module-${moduleIndex}`,
+            courses: Array.from({ length: 11 }, (_, courseIndex) => ({
+                key: `course-${moduleIndex}-${courseIndex}`,
+            })),
+        }))
+        const state = reactive({
+            selectedModules: modules,
+            selectedCourseKeys: modules.flatMap(module => module.courses.slice(0, 10).map(course => course.key)),
+        })
+        const count = computed(() => component.computed.theoreticalCombinationCount.call({
+            selectedModules: state.selectedModules,
+            selectedCourseCountForModule: (module: unknown) => (
+                component.methods.selectedCourseCountForModule.call(state, module)
+            ),
+        }))
+        const limitMessage = computed(() => component.computed.combinationLimitMessage.call({
+            theoreticalCombinationCount: count.value,
+        }))
+        const context = {
+            scheduleCreationMode: 'automatic',
+            selectedModuleCount: 5,
+            selectedModuleKeys: modules.map(module => module.selection_key),
+            selectedCourseKeys: state.selectedCourseKeys,
+            currentStep: 'creation',
+            timetableCalculationStatus: 'idle',
+            timetableCalculationError: '',
+            get combinationLimitMessage() { return limitMessage.value },
+            planningMode: 'without_student',
+            selectedStudentCode: '',
+            workspaceId: WORKSPACE_ID,
+            saveState: vi.fn().mockResolvedValue(undefined),
+            $router: { push: vi.fn().mockResolvedValue(undefined) },
+            calculatePossibleTimetables: vi.fn().mockResolvedValue(undefined),
+        }
+
+        expect(count.value).toBe(100000n)
+        expect(limitMessage.value).toBe('')
+        await component.methods.openTimetableCreationPage.call(context)
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.$router.push).toHaveBeenCalledOnce()
+        expect(context.calculatePossibleTimetables).toHaveBeenCalledOnce()
+
+        state.selectedCourseKeys.push(modules[0].courses[10].key)
+        expect(count.value).toBe(110000n)
+        expect(limitMessage.value).toContain('mehr als 100.000 Kombinationen')
+        await component.methods.openTimetableCreationPage.call(context)
+        await component.methods.calculatePossibleTimetables.call(context)
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.$router.push).toHaveBeenCalledOnce()
+        expect(context.calculatePossibleTimetables).toHaveBeenCalledOnce()
+        expect(context.timetableCalculationStatus).toBe('error')
+        expect(context.timetableCalculationError).toBe(limitMessage.value)
+        expect(state.selectedCourseKeys).toHaveLength(51)
+
+        state.selectedCourseKeys.pop()
+        expect(count.value).toBe(100000n)
+        expect(limitMessage.value).toBe('')
+    })
+
     afterEach(() => {
         vi.unstubAllGlobals()
         document.cookie = 'XSRF-TOKEN=; Max-Age=0; path=/'
@@ -5029,8 +5211,8 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('class="timetable-v3__selected-modules mt-3"')
         expect(source).toContain('v-for="module in selectedModules"')
         expect(source).toContain('Ausgewählte Module')
-        expect(source).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
-        expect(source).toContain('· {{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
+        expect(source).toContain("{{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}")
+        expect(source).toContain('{{ selectedModuleHoursLabel }} Stunden ausgewählt.')
         expect(source).toContain('Keine Module ausgewählt.')
         expect(source).not.toContain('Module suchen')
         expect(source).not.toContain('moduleSearch')
@@ -5072,7 +5254,7 @@ describe('TimetableV3', () => {
         expect(source).toMatch(/:disabled="!manualPendingCourseKeys.length"[\s\S]*?@click="planManualModuleCourses">\s*Verplanen/)
         expect(source).toMatch(/<v-btn v-else[\s\S]*?@click="closeModuleCoursesDialog">\s*Bestätigen/)
         expect(source).toContain('v-if="!moduleCoursesDialogReadOnly"')
-        expect(source).toContain('v-if="!moduleCoursesDialogReadOnly && moduleSelectionLimitMessage"')
+        expect(source).toContain('v-if="!moduleCoursesDialogReadOnly && combinationLimitMessage"')
         expect(source).toContain('{{ selectedCourseCountForModule(module) }}/{{ moduleCourseCount(module) }} Unterrichte')
         expect(source).toContain("Unterrichte für {{ moduleDisplayCode(moduleCourseDialogModule) || 'Modul' }}")
         expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
@@ -5294,7 +5476,7 @@ describe('TimetableV3', () => {
         expect(source).toContain('hasSelectedModulesForGroup(activeModuleSelectionGroup)')
     })
 
-    it('limits module selection to ten modules and thirty hours across individual and bulk actions', async () => {
+    it('allows more than ten modules and thirty hours across individual and bulk actions', async () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
@@ -5322,12 +5504,10 @@ describe('TimetableV3', () => {
 
         await methods.toggleModuleCourse.call(moduleLimitContext, eleventhModule.courses[0])
 
-        expect(moduleLimitContext.selectedModuleKeys).toHaveLength(10)
-        expect(moduleLimitContext.selectedCourseKeys).not.toContain('m11-a')
-        expect(moduleLimitContext.moduleSelectionLimitMessage).toBe(
-            'Es können höchstens 10 Module gleichzeitig ausgewählt werden.',
-        )
-        expect(moduleLimitSaveState).not.toHaveBeenCalled()
+        expect(moduleLimitContext.selectedModuleKeys).toHaveLength(11)
+        expect(moduleLimitContext.selectedCourseKeys).toContain('m11-a')
+        expect(moduleLimitContext.moduleSelectionLimitMessage).toBe('')
+        expect(moduleLimitSaveState).toHaveBeenCalledOnce()
 
         const nineSelectedModules = Array.from({ length: 9 }, (_, index) => moduleWithCourse(index + 1, 3))
         const fourHourModule = moduleWithCourse(20, 4)
@@ -5344,12 +5524,10 @@ describe('TimetableV3', () => {
 
         await methods.toggleModuleCourse.call(hourLimitContext, fourHourModule.courses[0])
 
-        expect(hourLimitContext.selectedModuleKeys).toHaveLength(9)
-        expect(hourLimitContext.selectedCourseKeys).not.toContain('m20-a')
-        expect(hourLimitContext.moduleSelectionLimitMessage).toBe(
-            'Es können höchstens 30 Stunden gleichzeitig ausgewählt werden.',
-        )
-        expect(hourLimitContext.saveState).not.toHaveBeenCalled()
+        expect(hourLimitContext.selectedModuleKeys).toHaveLength(10)
+        expect(hourLimitContext.selectedCourseKeys).toContain('m20-a')
+        expect(hourLimitContext.moduleSelectionLimitMessage).toBe('')
+        expect(hourLimitContext.saveState).toHaveBeenCalledOnce()
 
         const thirtyHourModule = moduleWithCourse(21, 3)
         const boundaryContext = {
@@ -5388,17 +5566,14 @@ describe('TimetableV3', () => {
 
         await methods.selectAllModulesInGroup.call(bulkContext, bulkGroup)
 
-        expect(bulkContext.selectedModuleKeys).toHaveLength(9)
-        expect(bulkContext.selectedCourseKeys).not.toContain('m30-a')
-        expect(bulkContext.moduleSelectionLimitMessage).toBe(
-            'Es können höchstens 10 Module gleichzeitig ausgewählt werden.',
-        )
-        expect(bulkContext.saveState).not.toHaveBeenCalled()
-        expect(source).toContain('Maximal {{ maximumSelectedModules }} Module und')
-        expect(source).toContain('{{ maximumSelectedModuleHours }} Stunden gleichzeitig.')
-        expect(source).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
-        expect(source).toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
-        expect(source.match(/v-if="(?:!moduleCoursesDialogReadOnly && )?moduleSelectionLimitMessage"/g)).toHaveLength(2)
+        expect(bulkContext.selectedModuleKeys).toHaveLength(11)
+        expect(bulkContext.selectedCourseKeys).toContain('m30-a')
+        expect(bulkContext.moduleSelectionLimitMessage).toBe('')
+        expect(bulkContext.saveState).toHaveBeenCalledOnce()
+        expect(source).not.toContain('MAX_SELECTED_MODULES')
+        expect(source).not.toContain('MAX_SELECTED_MODULE_HOURS')
+        expect(source).toContain('Maximal 100.000 Kombinationen pro Berechnung.')
+        expect(source.match(/v-if="(?:!moduleCoursesDialogReadOnly && )?combinationLimitMessage"/g)).toHaveLength(2)
     })
 
     it('removes a selected module from the automatic mode summary', async () => {
@@ -5506,13 +5681,13 @@ describe('TimetableV3', () => {
         expect(context.scheduleCreationMode).toBe('automatic')
     })
 
-    it('constrains an oversized persisted module selection while restoring it', () => {
+    it('restores all selected modules and courses beyond the former module and hour limits', () => {
         const methods = (TimetableV3 as any).methods
-        const modules = Array.from({ length: 11 }, (_, index) => ({
+        const modules = Array.from({ length: 17 }, (_, index) => ({
             selection_key: `current:M${index + 1}`,
             code: `M${index + 1}`,
             hours: 3,
-            courses: [{ key: `m${index + 1}-a` }],
+            courses: [{ key: `m${index + 1}-a` }, { key: `m${index + 1}-b` }],
         }))
         const groups = [{ key: 'current', modules }]
         const context = {
@@ -5522,7 +5697,7 @@ describe('TimetableV3', () => {
                     studentCode: '1001',
                     planningValues: {},
                     selectedKeys: modules.map(module => module.selection_key),
-                    selectedCourseKeys: modules.map(module => module.courses[0].key),
+                    selectedCourseKeys: modules.flatMap(module => module.courses.map(course => course.key)),
                 },
             },
             planningSelectionValues: {},
@@ -5537,11 +5712,17 @@ describe('TimetableV3', () => {
 
         methods.setModuleSelectionGroups.call(context, groups, '1001')
 
-        expect(context.selectedModuleKeys).toEqual(modules.slice(0, 10).map(module => module.selection_key))
-        expect(context.selectedCourseKeys).toEqual(modules.slice(0, 10).map(module => module.courses[0].key))
-        expect(context.moduleSelectionLimitMessage).toBe(
-            'Die gespeicherte Auswahl wurde auf maximal 10 Module und 30 Stunden begrenzt.',
-        )
+        expect(context.selectedModuleKeys).toEqual(modules.map(module => module.selection_key))
+        expect(context.selectedCourseKeys).toEqual(modules.flatMap(module => module.courses.map(course => course.key)))
+        expect(context.moduleSelectionLimitMessage).toBe('')
+        const count = (TimetableV3 as any).computed.theoreticalCombinationCount.call({
+            selectedModules: modules,
+            selectedCourseCountForModule: (module: unknown) => methods.selectedCourseCountForModule.call(context, module),
+        })
+        expect(count).toBe(131072n)
+        expect((TimetableV3 as any).computed.combinationLimitMessage.call({
+            theoreticalCombinationCount: count,
+        })).toContain('mehr als 100.000 Kombinationen')
     })
 
     it('keeps both entry choices editable and offers a persistent V3 restart action', async () => {

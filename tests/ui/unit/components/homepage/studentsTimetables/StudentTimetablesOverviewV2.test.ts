@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import axios from 'axios'
 import { describe, expect, it, vi } from 'vitest'
+import { computed, reactive } from 'vue'
 import HomepageApp from '@/pages/homepage/App.vue'
 import OverviewV2 from '@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue'
 
@@ -14,6 +15,77 @@ const homepageAppPath = resolve(process.cwd(), 'resources/js/pages/homepage/App.
 const homepageStorePath = resolve(process.cwd(), 'resources/js/stores/homepage/HomepageStore.js')
 
 describe('Student timetables overview V2 preparation', () => {
+    it('reactively counts complete grouped selected courses and theoretical combinations', () => {
+        const state = reactive({
+            selectedModules: [
+                { courses: [{ keys: ['a-1', 'a-2'] }, { key: 'a-other' }] },
+                { courses: [{ key: 'b' }] },
+            ],
+            selectedCourseKeys: ['a-1', 'a-2', 'a-other', 'b', 'unselected-module-course'],
+        })
+        const context = {
+            get selectedModules() { return state.selectedModules },
+            selectedCourseCountForModule(module) {
+                return OverviewV2.methods.selectedCourseCountForModule.call(state, module)
+            },
+        }
+        const courseCount = computed(() => OverviewV2.computed.selectedCourseCount.call(context))
+        const combinations = computed(() => OverviewV2.computed.theoreticalCombinationCount.call(context))
+
+        expect(courseCount.value).toBe(3)
+        expect(combinations.value).toBe(2n)
+        state.selectedCourseKeys = ['a-1', 'a-other', 'b']
+        expect(courseCount.value).toBe(2)
+        expect(combinations.value).toBe(1n)
+        state.selectedCourseKeys = ['a-1', 'b']
+        expect(courseCount.value).toBe(1)
+        expect(combinations.value).toBe(0n)
+        state.selectedModules = []
+        expect(courseCount.value).toBe(0)
+        expect(combinations.value).toBe(0n)
+    })
+
+    it('allows more than ten modules and thirty hours while blocking only excessive generation', async () => {
+        const modules = Array.from({ length: 12 }, (_, index) => ({
+            selection_key: `module-${index}`,
+            hours: 4,
+            courses: [{ key: `course-${index}` }],
+        }))
+        const context = {
+            selectedModuleKeys: [],
+            selectedCourseKeys: [],
+            moduleSelectionKeysForGroup: () => modules.map(module => module.selection_key),
+            courseSelectionKeysForGroup: () => modules.flatMap(module => module.courses.map(course => course.key)),
+        }
+        OverviewV2.methods.selectAllModulesInGroup.call(context, { modules })
+        expect(context.selectedModuleKeys).toHaveLength(12)
+        expect(context.selectedCourseKeys).toHaveLength(12)
+        expect(OverviewV2.computed.selectedModuleHours.call({ selectedModules: modules })).toBe(48)
+        expect(OverviewV2.computed.combinationLimitMessage.call({ theoreticalCombinationCount: 100000n })).toBe('')
+        const warning = OverviewV2.computed.combinationLimitMessage.call({ theoreticalCombinationCount: 100001n })
+        expect(warning).toContain('100.000')
+        const blockedContext = {
+            combinationLimitMessage: warning,
+            $router: { push: vi.fn() },
+        }
+        await OverviewV2.methods.openAutomaticTimetableResults.call(blockedContext)
+        await OverviewV2.methods.calculateStudentTimetables.call(blockedContext)
+        expect(blockedContext.$router.push).not.toHaveBeenCalled()
+        expect(readFileSync(overviewV2Path, 'utf8')).toContain(
+            ':disabled="timetableCalculationStatus === \'calculating\' || Boolean(combinationLimitMessage)"',
+        )
+    })
+
+    it('keeps large theoretical student counts exact without enumerating plans', () => {
+        const combinations = OverviewV2.computed.theoreticalCombinationCount.call({
+            selectedModules: Array.from({ length: 20 }, () => ({})),
+            selectedCourseCountForModule: () => 11,
+        })
+        expect(combinations).toBe(11n ** 20n)
+        expect(OverviewV2.computed.theoreticalCombinationCountLabel.call({ theoreticalCombinationCount: combinations }))
+            .toBe(combinations.toLocaleString('de-AT'))
+    })
+
     it('does not show the homepage loading dots over student timetable routes', () => {
         const overlayVisible = HomepageApp.computed.globalLoadingOverlayVisible
 
@@ -1019,9 +1091,11 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('Empfohlen')
         expect(source).toContain('grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);')
         expect(source).toContain('Ausgewählte Module')
-        expect(source).toContain('{{ selectedModuleCount }}/{{ maximumSelectedModules }} Module')
-        expect(source).toContain('{{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.')
-        expect(source).toContain('Maximal {{ maximumSelectedModules }} Module und')
+        expect(source).toContain("{{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}")
+        expect(source).toContain("{{ selectedCourseCount }} {{ selectedCourseCount === 1 ? 'Unterricht' : 'Unterrichte' }}")
+        expect(source).toContain('{{ theoreticalCombinationCountLabel }}')
+        expect(source).toContain('{{ selectedModuleHoursLabel }} Stunden · Maximal 100.000 Kombinationen.')
+        expect(source).not.toContain('maximumSelectedModules')
         expect(source).toContain('Keine Module ausgewählt.')
         const scheduleCreateButton = source.match(
             /<v-btn\s+class="overview-v2-schedule-create-button"[\s\S]*?<\/v-btn>/,

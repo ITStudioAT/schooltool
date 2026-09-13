@@ -15,9 +15,7 @@ use Illuminate\Validation\ValidationException;
 
 class StudentTimetableV3TimetableService
 {
-    private const MAX_MODULES = 10;
-
-    private const MAX_MODULE_HOURS = 30;
+    public const MAX_TIMETABLE_COMBINATIONS = 100000;
 
     private const MAX_MATERIALIZED_TIMETABLES = 2000;
 
@@ -303,6 +301,7 @@ class StudentTimetableV3TimetableService
                 courseGroups: $generationContext['selected_course_groups'],
                 settings: $generationContext['settings'],
                 maximumTimetables: self::MAX_MATERIALIZED_TIMETABLES,
+                maximumCombinations: self::MAX_TIMETABLE_COMBINATIONS,
                 requiredCourseGroupsByModule: $generationContext['required_course_groups_by_module'],
                 includeOneCourseRemovalCountsWhenNoPossible: true,
                 calculateNoSaturdayTimetableCount: false,
@@ -566,10 +565,6 @@ class StudentTimetableV3TimetableService
      */
     private function normalizedModuleInput(array $modules): array
     {
-        if (count($modules) > 100) {
-            $this->invalid('modules', 'Die Modulliste enthält zu viele Werte.');
-        }
-
         $moduleKeys = [];
         $courseKeys = [];
 
@@ -598,7 +593,7 @@ class StudentTimetableV3TimetableService
             ];
         }
 
-        $moduleKeys = $this->inputStringList($moduleKeys, 'modules', self::MAX_MODULES, 255);
+        $moduleKeys = $this->inputStringList($moduleKeys, 'modules', null, 255);
         sort($moduleKeys, SORT_STRING);
 
         if ($moduleKeys === []) {
@@ -658,13 +653,6 @@ class StudentTimetableV3TimetableService
             $this->invalid('modules', 'Für mindestens ein ausgewähltes Modul fehlen gültige Wochenstunden.');
         }
 
-        $selectedHours = collect($selectedModules)
-            ->sum(fn (array $module): float => (float) $module['hours']);
-
-        if ($selectedHours > self::MAX_MODULE_HOURS) {
-            $this->invalid('modules', 'Es können höchstens 30 Stunden gleichzeitig ausgewählt werden.');
-        }
-
         return $selectedModules;
     }
 
@@ -706,11 +694,13 @@ class StudentTimetableV3TimetableService
 
         $resolvedCourseKeys = [];
         $keysByModule = [];
+        $combinationCount = 1;
 
         foreach ($offersByModule as $moduleKey => $offers) {
-            $keysByModule[$moduleKey] = collect($offers)
+            $selectedOffers = collect($offers)
                 ->filter(fn (array $offerKeys): bool => collect($offerKeys)
-                    ->every(fn (string $courseKey): bool => isset($selectedCourseKeySet[$courseKey])))
+                    ->every(fn (string $courseKey): bool => isset($selectedCourseKeySet[$courseKey])));
+            $keysByModule[$moduleKey] = $selectedOffers
                 ->flatten()
                 ->map(fn (mixed $courseKey): string => (string) $courseKey)
                 ->unique()
@@ -722,6 +712,11 @@ class StudentTimetableV3TimetableService
                 $this->invalid('selected_course_keys', 'Bitte wählen Sie für jedes Modul mindestens einen vollständigen Unterricht aus.');
             }
 
+            if ($combinationCount > intdiv(self::MAX_TIMETABLE_COMBINATIONS, $selectedOffers->count())) {
+                $this->invalid('selected_course_keys', 'Diese Auswahl erzeugt mehr als 100.000 theoretische Kombinationen. Bitte die Unterrichtsauswahl einschränken.');
+            }
+
+            $combinationCount *= $selectedOffers->count();
             $resolvedCourseKeys = [...$resolvedCourseKeys, ...$keysByModule[$moduleKey]];
         }
 
@@ -1432,14 +1427,14 @@ class StudentTimetableV3TimetableService
     private function inputStringList(
         mixed $values,
         string $key,
-        int $maximumItems,
+        ?int $maximumItems,
         int $maximumLength,
     ): array {
         if (! is_array($values)) {
             $this->invalid($key, 'Der Wert muss eine Liste sein.');
         }
 
-        if (count($values) > $maximumItems) {
+        if ($maximumItems !== null && count($values) > $maximumItems) {
             $this->invalid($key, 'Die Liste enthält zu viele Werte.');
         }
 

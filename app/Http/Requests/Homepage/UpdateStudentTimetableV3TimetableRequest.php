@@ -26,7 +26,7 @@ class UpdateStudentTimetableV3TimetableRequest extends FormRequest
     {
         return [
             'workspace_id' => ['required', 'uuid'],
-            'modules' => ['required', 'array', 'min:1', 'max:10'],
+            'modules' => ['required', 'array', 'min:1'],
             'modules.*' => ['required', 'string', 'distinct', 'max:255'],
             'selected_course_keys' => ['required', 'array', 'min:1', 'max:500'],
             'selected_course_keys.*' => ['required', 'string', 'distinct', 'max:255'],

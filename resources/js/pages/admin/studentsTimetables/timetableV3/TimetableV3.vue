@@ -757,24 +757,30 @@
                                     Ausgewählte Module
                                 </span>
                                 <span class="timetable-v3__selected-modules-summary">
-                                    {{ selectedModuleCount }}/{{ maximumSelectedModules }} Module
-                                    · {{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.
+                                    {{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
+                                </span>
+                                <span class="timetable-v3__selected-modules-summary">
+                                    · {{ selectedCourseCount }} {{ selectedCourseCount === 1 ? 'Unterricht' : 'Unterrichte' }}
+                                </span>
+                                <span class="timetable-v3__selected-modules-summary">
+                                    · {{ theoreticalCombinationCountLabel }} {{ theoreticalCombinationCountLabel === '1' ? 'Kombination' : 'Kombinationen' }}
                                 </span>
                             </div>
                             <div class="timetable-v3__module-selection-limit-hint">
+                                {{ selectedModuleHoursLabel }} Stunden ausgewählt.
+                            </div>
+                            <div class="timetable-v3__module-selection-limit-hint">
                                 <v-icon icon="mdi-information-outline" size="16" />
-                                Maximal {{ maximumSelectedModules }} Module und
-                                {{ maximumSelectedModuleHours }} Stunden gleichzeitig.
+                                Theoretische Kombinationen: je ein Unterricht pro Modul, vor Zeit- und Konfliktprüfung.
+                                Maximal 100.000 Kombinationen pro Berechnung.
                             </div>
                             <v-alert
-                                v-if="moduleSelectionLimitMessage"
+                                v-if="combinationLimitMessage"
                                 class="timetable-v3__module-selection-limit-alert"
                                 type="warning"
                                 density="compact"
-                                variant="tonal"
-                                closable
-                                @click:close="moduleSelectionLimitMessage = ''">
-                                {{ moduleSelectionLimitMessage }}
+                                variant="tonal">
+                                {{ combinationLimitMessage }}
                             </v-alert>
                             <div v-if="selectedModules.length" class="timetable-v3__selected-modules-list">
                                 <v-chip
@@ -824,7 +830,7 @@
                                     size="large"
                                     type="button"
                                     variant="elevated"
-                                    :disabled="isSavingState"
+                                    :disabled="isSavingState || Boolean(combinationLimitMessage)"
                                     @click.prevent.stop="openTimetableCreationPage">
                                     Stundenplan erstellen
                                 </v-btn>
@@ -1056,9 +1062,21 @@
                                 Ausgewählte Module
                             </span>
                             <span class="timetable-v3__selected-modules-summary">
-                                {{ selectedModuleCount }}/{{ maximumSelectedModules }} Module
-                                · {{ selectedModuleHoursLabel }}/{{ maximumSelectedModuleHours }} Std.
+                                {{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
                             </span>
+                            <span class="timetable-v3__selected-modules-summary">
+                                · {{ selectedCourseCount }} {{ selectedCourseCount === 1 ? 'Unterricht' : 'Unterrichte' }}
+                            </span>
+                            <span class="timetable-v3__selected-modules-summary">
+                                · {{ theoreticalCombinationCountLabel }} {{ theoreticalCombinationCountLabel === '1' ? 'Kombination' : 'Kombinationen' }}
+                            </span>
+                        </div>
+                        <div class="timetable-v3__module-selection-limit-hint">
+                            {{ selectedModuleHoursLabel }} Stunden ausgewählt.
+                        </div>
+                        <div class="timetable-v3__module-selection-limit-hint">
+                            Theoretische Kombinationen: je ein Unterricht pro Modul, vor Zeit- und Konfliktprüfung.
+                            Maximal 100.000 Kombinationen pro Berechnung.
                         </div>
                         <div v-if="selectedModules.length" class="timetable-v3__selected-modules-list">
                             <v-chip
@@ -1934,14 +1952,12 @@
                         </div>
                     </div>
                     <v-alert
-                        v-if="!moduleCoursesDialogReadOnly && moduleSelectionLimitMessage"
+                        v-if="!moduleCoursesDialogReadOnly && combinationLimitMessage"
                         class="mt-3"
                         type="warning"
                         density="compact"
-                        variant="tonal"
-                        closable
-                        @click:close="moduleSelectionLimitMessage = ''">
-                        {{ moduleSelectionLimitMessage }}
+                        variant="tonal">
+                        {{ combinationLimitMessage }}
                     </v-alert>
 
                     <div v-if="moduleCourseDialogCourses.length" class="timetable-v3__module-course-list mt-4">
@@ -2409,8 +2425,7 @@ const DEFAULT_TIMETABLE_FILTERS = Object.freeze({
     free_days: null,
 })
 const MAX_FREE_DAYS = 5
-const MAX_SELECTED_MODULES = 10
-const MAX_SELECTED_MODULE_HOURS = 30
+const MAX_TIMETABLE_COMBINATIONS = 100000n
 const SELECTION_STEP = 'selection'
 const MODULE_SELECTION_STEP = 'modules'
 const TIMETABLE_CREATION_STEP = 'creation'
@@ -3436,38 +3451,11 @@ async function consumeTimetableCalculationStream(response, onProgress) {
     return calculationResult
 }
 
-function moduleSelectionLimitViolation(moduleGroups, selectedModuleKeys) {
-    const modules = selectedModulesForKeys(moduleGroups, selectedModuleKeys)
-
-    if (modules.length > MAX_SELECTED_MODULES) {
-        return `Es können höchstens ${MAX_SELECTED_MODULES} Module gleichzeitig ausgewählt werden.`
-    }
-
-    const totalHours = modules.reduce((hours, module) => hours + moduleHours(module), 0)
-
-    if (totalHours > MAX_SELECTED_MODULE_HOURS) {
-        return `Es können höchstens ${MAX_SELECTED_MODULE_HOURS} Stunden gleichzeitig ausgewählt werden.`
-    }
-
-    return ''
-}
-
 function constrainedModuleSelection(moduleGroups, selectedModuleKeys, selectedCourseKeys) {
     const requestedModuleKeys = new Set(Array.isArray(selectedModuleKeys) ? selectedModuleKeys : [])
     const requestedCourseKeys = new Set(Array.isArray(selectedCourseKeys) ? selectedCourseKeys : [])
-    const selectedModules = []
-    let selectedHours = 0
-
-    uniqueModules(moduleGroups)
+    const selectedModules = uniqueModules(moduleGroups)
         .filter(module => requestedModuleKeys.has(module.selection_key))
-        .forEach((module) => {
-            const nextHours = selectedHours + moduleHours(module)
-
-            if (selectedModules.length >= MAX_SELECTED_MODULES || nextHours > MAX_SELECTED_MODULE_HOURS) return
-
-            selectedModules.push(module)
-            selectedHours = nextHours
-        })
 
     const allowedCourseKeys = new Set(selectedModules
         .flatMap(module => Array.isArray(module?.courses) ? module.courses : [])
@@ -3478,7 +3466,6 @@ function constrainedModuleSelection(moduleGroups, selectedModuleKeys, selectedCo
     return {
         selectedModuleKeys: selectedModules.map(module => module.selection_key),
         selectedCourseKeys: constrainedCourseKeys,
-        wasConstrained: selectedModules.length < requestedModuleKeys.size,
     }
 }
 
@@ -3530,8 +3517,6 @@ export default {
             manualSelectedCourseKeys: [],
             manualPendingCourseKeys: [],
             adoptionRemovedCourseKeys: [],
-            maximumSelectedModules: MAX_SELECTED_MODULES,
-            maximumSelectedModuleHours: MAX_SELECTED_MODULE_HOURS,
             moduleSelectionLimitMessage: '',
             scheduleCreationMode: null,
             timetableAdoptionReturnStep: TIMETABLE_CREATION_STEP,
@@ -3998,6 +3983,24 @@ export default {
         },
         selectedModuleCount() {
             return this.selectedModules.length
+        },
+        selectedCourseCount() {
+            return this.selectedModules.reduce((totalCourses, module) => (
+                totalCourses + this.selectedCourseCountForModule(module)
+            ), 0)
+        },
+        theoreticalCombinationCount() {
+            return this.selectedModules.reduce((totalCombinations, module) => (
+                totalCombinations * BigInt(this.selectedCourseCountForModule(module))
+            ), this.selectedModules.length ? 1n : 0n)
+        },
+        theoreticalCombinationCountLabel() {
+            return this.theoreticalCombinationCount.toLocaleString('de-AT')
+        },
+        combinationLimitMessage() {
+            return this.theoreticalCombinationCount > MAX_TIMETABLE_COMBINATIONS
+                ? 'Die Auswahl ergibt mehr als 100.000 Kombinationen. Bitte wählen Sie weniger Unterrichte oder Module aus, bevor Sie den Stundenplan erstellen.'
+                : ''
         },
         selectedModules() {
             const moduleCodeCollator = new Intl.Collator('de-AT', {
@@ -5585,6 +5588,13 @@ export default {
                 || this.selectedCourseKeys.length === 0
             ) return
 
+            if (this.combinationLimitMessage) {
+                this.timetableCalculationStatus = 'error'
+                this.timetableCalculationError = this.combinationLimitMessage
+
+                return
+            }
+
             const requestId = Number(this.timetableCalculationRequestId || 0) + 1
             this.timetableCalculationRequestId = requestId
             this.timetablePageRequestId = Number(this.timetablePageRequestId || 0) + 1
@@ -5696,6 +5706,7 @@ export default {
                 this.scheduleCreationMode !== AUTOMATIC_TIMETABLE
                 || this.selectedModuleCount === 0
                 || this.isSavingState
+                || this.combinationLimitMessage
             ) return
 
             await this.saveState()
@@ -6344,9 +6355,7 @@ export default {
             )
             this.selectedModuleKeys = constrainedSelection.selectedModuleKeys
             this.selectedCourseKeys = constrainedSelection.selectedCourseKeys
-            this.moduleSelectionLimitMessage = constrainedSelection.wasConstrained
-                ? `Die gespeicherte Auswahl wurde auf maximal ${MAX_SELECTED_MODULES} Module und ${MAX_SELECTED_MODULE_HOURS} Stunden begrenzt.`
-                : ''
+            this.moduleSelectionLimitMessage = ''
             if (!groups.some(group => group.key === this.activeModuleGroupKey)) {
                 this.activeModuleGroupKey = ''
             }
@@ -6772,13 +6781,6 @@ export default {
                 ? [...new Set([...this.selectedModuleKeys, moduleSelectionKey])]
                 : this.selectedModuleKeys.filter(key => key !== moduleSelectionKey)
 
-            const limitViolation = moduleSelectionLimitViolation(this.moduleSelectionGroups, nextSelectedModuleKeys)
-            if (limitViolation) {
-                this.moduleSelectionLimitMessage = limitViolation
-
-                return
-            }
-
             this.selectedCourseKeys = nextSelectedCourseKeys
             this.selectedModuleKeys = nextSelectedModuleKeys
             this.moduleSelectionLimitMessage = ''
@@ -6792,13 +6794,6 @@ export default {
             if (!moduleSelectionKey || !courseKeys.length) return
 
             const nextSelectedModuleKeys = [...new Set([...this.selectedModuleKeys, moduleSelectionKey])]
-            const limitViolation = moduleSelectionLimitViolation(this.moduleSelectionGroups, nextSelectedModuleKeys)
-            if (limitViolation) {
-                this.moduleSelectionLimitMessage = limitViolation
-
-                return
-            }
-
             this.selectedCourseKeys = [...new Set([...this.selectedCourseKeys, ...courseKeys])]
             this.selectedModuleKeys = nextSelectedModuleKeys
             this.moduleSelectionLimitMessage = ''
@@ -6824,13 +6819,6 @@ export default {
             if (!moduleSelectionKeys.length || !courseSelectionKeys.length) return
 
             const nextSelectedModuleKeys = [...new Set([...this.selectedModuleKeys, ...moduleSelectionKeys])]
-            const limitViolation = moduleSelectionLimitViolation(this.moduleSelectionGroups, nextSelectedModuleKeys)
-            if (limitViolation) {
-                this.moduleSelectionLimitMessage = limitViolation
-
-                return
-            }
-
             this.selectedModuleKeys = nextSelectedModuleKeys
             this.selectedCourseKeys = [...new Set([...this.selectedCourseKeys, ...courseSelectionKeys])]
             this.moduleSelectionLimitMessage = ''

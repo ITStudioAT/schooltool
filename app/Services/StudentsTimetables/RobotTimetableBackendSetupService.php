@@ -1307,6 +1307,7 @@ class RobotTimetableBackendSetupService
         bool $includeOneCourseRemovalCountsWhenNoPossible = false,
         bool $calculateNoSaturdayTimetableCount = true,
         ?callable $progressCallback = null,
+        int $maximumCombinations = self::MAX_BACKEND_TIMETABLE_VARIATIONS,
     ): array {
         $this->resetRuntimeCache();
         $settings['require_complete_course_group_options'] = true;
@@ -1331,6 +1332,7 @@ class RobotTimetableBackendSetupService
             requiredCourseGroupsByModule: $requiredCourseGroupsByModule,
             calculateNoSaturdayTimetableCount: $calculateNoSaturdayTimetableCount,
             progressCallback: $progressCallback,
+            maximumCombinations: $maximumCombinations,
         );
         $maximumTimetables = max(1, $maximumTimetables);
         $combinationCount = (int) $base['counts']['timetable_variation_count'];
@@ -1563,6 +1565,7 @@ class RobotTimetableBackendSetupService
         array $requiredCourseGroupsByModule = [],
         bool $calculateNoSaturdayTimetableCount = true,
         ?callable $progressCallback = null,
+        int $maximumCombinations = self::MAX_BACKEND_TIMETABLE_VARIATIONS,
     ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
 
@@ -1576,11 +1579,13 @@ class RobotTimetableBackendSetupService
             );
         }
 
-        if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
+        $maximumCombinations = min(self::MAX_BACKEND_TIMETABLE_VARIATIONS, max(1, $maximumCombinations));
+
+        if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'], $maximumCombinations)) {
             throw ValidationException::withMessages([
                 'selected_course_keys' => sprintf(
                     'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswählen oder die Auswahl einschränken. Maximum: %s Variationen.',
-                    number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
+                    number_format($maximumCombinations, 0, ',', '.'),
                 ),
             ]);
         }
@@ -1842,11 +1847,13 @@ class RobotTimetableBackendSetupService
         $variationCount = 1;
 
         foreach ($courseOptions as $options) {
-            $variationCount *= count($options);
+            $optionCount = count($options);
 
-            if ($variationCount > $maximumTimetables) {
+            if ($optionCount > 0 && $variationCount > intdiv($maximumTimetables, $optionCount)) {
                 return true;
             }
+
+            $variationCount *= $optionCount;
         }
 
         return false;
