@@ -6436,7 +6436,7 @@ it('does not propose choice courses when strict student overview selection is mi
         ->toBe(['D1', 'ETH1']);
 });
 
-it('offers selected arts courses independently from the selected branch', function () {
+it('proposes the selected first arts course within the selected branch', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -6472,11 +6472,12 @@ it('offers selected arts courses independently from the selected branch', functi
         ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&strict_selection=1&selection[semester]=6&selection[branch]=wirtschaftskundlich&selection[artsSubject]=ME')
         ->assertSuccessful();
 
-    expect(collect($response->json('data.additional_courses'))->pluck('code')->all())
-        ->toBe(['ME1']);
+    expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
+        ->toBe(['ME1'])
+        ->and($response->json('data.additional_courses'))->toBe([]);
 });
 
-it('keeps both first arts modules compulsory for compact gym students without saved rules', function () {
+it('uses the same arts progression as mathematics within the selected branch and arts choice', function (StudentTimetableStudyProgram $program, string $branch, string $artsSubject, array $expectedCurrent, array $expectedAdditional, bool $persistRules) {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -6486,15 +6487,17 @@ it('keeps both first arts modules compulsory for compact gym students without sa
     $selection = [
         'religion' => 'ETH',
         'language' => 'L',
-        'branch' => 'gymnasial',
-        'arts_subject' => 'ME',
+        'branch' => $branch,
+        'arts_subject' => $artsSubject,
     ];
+    $compact = $program === StudentTimetableStudyProgram::Kompaktstudium;
+    $semester = $compact ? 4 : 7;
 
     Import116::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'class' => '4Q',
-        'school_level' => '11_2',
+        'class' => $compact ? '4Q' : '7A',
+        'school_level' => $compact ? '11_2' : '12_1',
         'student_code' => 'compact-gym-arts',
         'last_name' => 'Kunst',
         'first_name' => 'Gymnasial',
@@ -6504,20 +6507,29 @@ it('keeps both first arts modules compulsory for compact gym students without sa
     ]);
 
     collect([
-        ['semester' => 4, 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
-        ['semester' => 4, 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
-        ['semester' => 5, 'json_code' => 'BE2', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 2'],
-        ['semester' => 5, 'json_code' => 'ME2', 'json_subject' => 'ME', 'name' => 'Musikerziehung 2'],
+        ['semester' => $semester, 'branch' => 'gymnasial', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+        ['semester' => $semester, 'branch' => 'gymnasial', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => $semester + 1, 'branch' => 'gymnasial', 'json_code' => 'BE2', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 2'],
+        ['semester' => $semester + 1, 'branch' => 'gymnasial', 'json_code' => 'ME2', 'json_subject' => 'ME', 'name' => 'Musikerziehung 2'],
+        ['semester' => $semester, 'branch' => 'wirtschaftskundlich', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+        ['semester' => $semester, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
     ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
-        'branch' => 'gymnasial',
+        'study_program' => $program,
         'hours_per_week' => 1,
         'is_active' => true,
         'sort_order' => $index,
         ...$subjectRow,
     ]));
+
+    if ($persistRules) {
+        app(StudentTimetableSubjectRuleService::class)->ensureDefaultRuleSet(
+            (int) $user->school_id,
+            (int) $schoolyear->id,
+            $program,
+        );
+    }
 
     $response = $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/timetable-v3/student-information?'.http_build_query([
@@ -6529,26 +6541,39 @@ it('keeps both first arts modules compulsory for compact gym students without sa
     $moduleGroups = collect($response->json('data.module_selection_groups'))->keyBy('key');
 
     expect(collect($moduleGroups['current']['modules'])->pluck('code')->all())
-        ->toBe(['BE1', 'ME1'])
+        ->toBe($expectedCurrent)
         ->and(collect($moduleGroups['additional']['modules'])->pluck('code')->all())
-        ->toBe([]);
+        ->toBe($expectedAdditional);
 
     $expectedModulesService = app(StudentTimetableExpectedModulesService::class);
 
     expect(collect($expectedModulesService->forStudent(
         $user,
-        StudentTimetableStudyProgram::Kompaktstudium,
-        4,
+        $program,
+        $semester,
         $selection,
         [],
-    ))->pluck('code')->all())->toBe(['BE1', 'ME1'])
+    ))->pluck('code')->all())->toBe($expectedCurrent)
         ->and(collect($expectedModulesService->additionalForStudent(
             $user,
-            StudentTimetableStudyProgram::Kompaktstudium,
+            $program,
             $selection,
             [],
-        ))->pluck('code')->all())->toBe(['BE1', 'ME1', 'ME2']);
-});
+        ))->pluck('code')->all())->toBe(collect([...$expectedCurrent, ...$expectedAdditional])->sort()->values()->all());
+})->with([
+    'compact' => [StudentTimetableStudyProgram::Kompaktstudium],
+    'normal' => [StudentTimetableStudyProgram::Normalstudium],
+])->with([
+    'gym BE' => ['gymnasial', 'BE', ['BE1', 'ME1'], ['BE2']],
+    'gym ME' => ['gymnasial', 'ME', ['BE1', 'ME1'], ['ME2']],
+    'gym without arts choice' => ['gymnasial', '', ['BE1', 'ME1'], []],
+    'wiku BE' => ['wirtschaftskundlich', 'BE', ['BE1'], []],
+    'wiku ME' => ['wirtschaftskundlich', 'ME', ['ME1'], []],
+    'wiku without arts choice' => ['wirtschaftskundlich', '', [], []],
+])->with([
+    'fallback rules' => [false],
+    'saved rules' => [true],
+]);
 
 it('keeps the stored gym branch when a completed arts module belongs to both compact branches', function () {
     $user = createStudentsTimetablesUserWithLicence();

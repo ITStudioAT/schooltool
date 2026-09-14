@@ -95,3 +95,9 @@ Recognition history batches can contain thousands of rows from upper classes. Ca
 
 ## Accept stable and legacy timetable course keys
 Student overview course keys use the subject plan stable_key as their first segment. Robot setup must build stable keys, while still accepting legacy numeric-ID keys by matching the remaining six structured segments; diagnostics must return the exact requested key.
+
+## Mapped module aliases belong in the internal course index
+Resolve active school/schoolyear subject mappings for numbered TT module codes in the student overview's internal course index, preserving the module suffix (KG1 -> BE1, KG2 -> BE2). Keep shared course-group payloads and keys unchanged for alias-only fixes: V3 generation fingerprints include complete selected course groups, so adding display/alias fields there can invalidate otherwise unchanged saved results.
+
+## Apply the shared numbered progression to arts modules
+BE/ME/MU use the same planned/additional progression as mathematics; do not exclude arts from plannedCoursesForProgression. This permits eligible BE1+BE2 or ME1+ME2 without an earlier completion. Always apply the existing study-program, branch and arts-choice filters first: Gym keeps both first modules and only the chosen second; Wiku keeps only its chosen first module. Preserve the shared completed/negative-result handling.

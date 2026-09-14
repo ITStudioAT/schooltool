@@ -14,3 +14,6 @@ Show the “Gemerkte Einträge” section above the TT entries card even when it
 
 ## TT entries use the personal schoolyear
 The TT entries overview title shows the authenticated user's personal schoolyear. Its subject settings, course groups, school hours, and remembered offers must all be loaded for that same personal schoolyear, even when the school's global active schoolyear differs.
+
+## Use subject-plan labels for TT entry headings
+TT entry group headings use the subject-plan code and subject name, consistently with their child modules (for example BE instead of KG, ME instead of MU, GW instead of GWB). Keep TT mapping keys and offer matching unchanged; imported-only subjects retain their fallback labels.

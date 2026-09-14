@@ -362,7 +362,7 @@ export default {
 
                 const item = coursesByKey.get(key) || {
                     key,
-                    label: this.metaCourseLabel(key),
+                    label: this.metaCourseLabel(key, subject),
                     name: '',
                     rows: [],
                 }
@@ -798,18 +798,20 @@ export default {
                 || subject?.name,
             )
         },
-        metaCourseLabel(key) {
-            return this.courseDisplayLabel(key)
+        metaCourseLabel(key, subject) {
+            return String(subject?.json_subject || '').trim()
+                || this.courseCodeWithoutModule(subject?.json_code)
+                || this.courseDisplayLabel(key)
         },
         metaCourseName(subject, key) {
             const name = String(subject?.name || '').trim()
-            const label = this.metaCourseLabel(key)
+            const label = this.metaCourseLabel(key, subject)
             const canonicalSubjectName = this.canonicalCourseSubjectName(key)
-            if (!name || name === label) {
+            if (!name || name === label || name === String(subject?.json_code || '').trim()) {
                 return canonicalSubjectName || label
             }
 
-            return canonicalSubjectName || name.replace(/\s+\d+$/u, '')
+            return name.replace(/\s+\d+$/u, '')
         },
         ttSubjectForSubject(subject) {
             const subjectAliases = this.subjectJsonAliases(subject)

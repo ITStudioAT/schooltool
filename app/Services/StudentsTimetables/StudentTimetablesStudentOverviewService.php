@@ -9,6 +9,7 @@ use App\Models\SchoolTool;
 use App\Models\StudentTimetablePersonalTimetable;
 use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetablePublishedTimetable;
+use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\SchoolHourService;
@@ -1058,11 +1059,30 @@ class StudentTimetablesStudentOverviewService
             return $this->manualTimetableCourseGroupIndexByContext[$contextKey];
         }
 
+        $subjectMappings = StudentTimetableSubjectMapping::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $this->schoolyearIdForUser($user))
+            ->where('is_active', true)
+            ->orderBy('json_subject')
+            ->orderBy('tt_subject')
+            ->get(['json_subject', 'tt_subject']);
         $courseGroupsByCode = [];
 
         foreach ($this->manualTimetableCourseGroupsForUser($user) as $groupPosition => $courseGroup) {
             foreach ($this->courseGroupCodes($courseGroup) as $courseCode) {
                 $courseGroupsByCode[$courseCode][$groupPosition] = $courseGroup;
+            }
+
+            $moduleParts = $this->courseCodeModuleParts((string) ($courseGroup['module_code'] ?? ''));
+            if ($moduleParts['base'] === '') {
+                continue;
+            }
+
+            $mapping = $subjectMappings->first(fn (StudentTimetableSubjectMapping $mapping): bool => $this->normalizedCourseCode((string) $mapping->tt_subject) === $moduleParts['base']
+                && trim((string) $mapping->json_subject) !== '');
+            if ($mapping !== null) {
+                $mappedCode = $this->normalizedCourseCode((string) $mapping->json_subject).$moduleParts['module'];
+                $courseGroupsByCode[$mappedCode][$groupPosition] = $courseGroup;
             }
         }
 
@@ -2265,7 +2285,6 @@ class StudentTimetablesStudentOverviewService
         $candidates = $subjectCourses
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $missingCourseCodes))
-            ->reject(fn (array $course): bool => $this->isArtsSelectionCourse($course))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course));
         $firstAvailableCourseKeys = $candidates
             ->filter(fn (array $course): bool => $this->courseWithinStudentProgressionWindow(
@@ -2300,16 +2319,6 @@ class StudentTimetablesStudentOverviewService
             ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
             ->values()
             ->all();
-    }
-
-    /**
-     * @param  array<string,mixed>  $course
-     */
-    private function isArtsSelectionCourse(array $course): bool
-    {
-        return collect($this->courseCodeAliases($course))
-            ->map(fn (string $courseCode): string => (string) ($this->courseCodeModuleParts($courseCode)['base'] ?? ''))
-            ->contains(fn (string $base): bool => in_array($base, ['BE', 'ME', 'MU'], true));
     }
 
     /**

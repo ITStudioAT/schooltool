@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.48.3
+
+### SEPP
+
+- Auswahl un Vorziehen von ME/BE abhängig von Zweig und Auswahl gefixt
+
 ## 3.48.2
 
 ### Unterricht

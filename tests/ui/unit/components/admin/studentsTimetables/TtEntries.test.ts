@@ -65,6 +65,45 @@ function buildContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe('TT entries overview', () => {
+    it.each([
+        ['BE', 'KG', 'Bildnerische Erziehung'],
+        ['ME', 'MU', 'Musikerziehung'],
+        ['GW', 'GWB', 'Geographie und Wirtschaftskunde'],
+        ['GS', 'GPB', 'Geschichte und Sozialkunde'],
+        ['S', 'SPA', 'Spanisch'],
+    ])('labels %s groups from the subject plan while finding %s lessons', (subjectCode, timetableCode, name) => {
+        const subjectRows = [1, 1, 2].map((module, index) => ({
+            id: index + 1,
+            json_code: `${subjectCode}${module}`,
+            json_subject: subjectCode,
+            name: `${name} ${module}`,
+            branch: index === 0 ? 'wirtschaftskundlich' : 'gymnasial',
+            is_active: true,
+        }))
+        const context = buildContext({
+            subjectRows,
+            subjectMappings: [{ json_subject: subjectCode, tt_subject: timetableCode, is_active: true }],
+            courseGroups: [{
+                key: 'lesson-1', module_code: `${timetableCode}1`, subject: timetableCode,
+                course: timetableCode, class_name: `${timetableCode}1-7A-TUS`,
+                display_label: `${timetableCode}1-7A-TUS`,
+                weekday: 1, hour: 1, dates: ['2026-09-14'],
+            }],
+        })
+
+        expect(context.metaCourseItems).toHaveLength(1)
+        expect(context.metaCourseItems[0]).toMatchObject({
+            label: subjectCode,
+            name,
+            countLabel: '3 Einträge',
+            rows: subjectRows,
+        })
+        context.selectedSubjectRow = context.metaCourseItems[0].rows[0]
+        expect(context.selectedSubjectOffers).toHaveLength(1)
+        expect(context.selectedSubjectOffer.entries.map((entry: any) => entry.key)).toEqual(['lesson-1'])
+        expect(context.selectedSubjectOfferEntries.map((entry: any) => entry.dateValue)).toEqual(['2026-09-14'])
+    })
+
     it('warns about an outdated remembered offer while preserving its saved dates and activation', async () => {
         const outdatedOffer = {
             key: 'remembered-m6', name: 'M6 - 4R - SCHM', outdated: true,
