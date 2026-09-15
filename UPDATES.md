@@ -1,9 +1,18 @@
 # UPDATES
 
-### 3.48.4 !!!
+## 3.48.4
 
 ### SEPP
+
 - Optionen: Sa-Auswahl bereits vor der TT-Erstellung wählbar
+
+### Unterricht
+
+- Download Materialien gefixet
+
+### Dokumentation
+
+- Changelog: Begrenzung der Einträge pro Seite
 
 ## 3.48.3
 

@@ -32,6 +32,21 @@ afterEach(() => {
 })
 
 describe('release changelog', () => {
+    it.each(['', 'en/'])('publishes ten visible releases with pagination for locale %s', (locale) => {
+        const html = readFileSync(resolve('public/documentation', locale, 'releases/index.html'), 'utf8')
+        const article = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/)?.[0]
+        expect(article).toBeDefined()
+        const page = new DOMParser().parseFromString(article!, 'text/html')
+        const releases = page.querySelectorAll('[data-changelog-release]')
+
+        expect(releases.length).toBeGreaterThan(10)
+        expect(page.querySelectorAll('[data-changelog-release]:not([hidden])')).toHaveLength(10)
+        expect(page.querySelectorAll('nav[aria-label^="Changelog"]')).toHaveLength(2)
+        expect(page.querySelector('a[href*="?page=2"]')).not.toBeNull()
+        expect(page.querySelector('#weitere-informationen')?.closest('[data-changelog-release]')).toBeNull()
+        expect(page.querySelector('#weitere-informationen')).not.toBeNull()
+    })
+
     it.each(['', 'en/'])('publishes the SEPP documentation name and description for locale %s', (locale) => {
         const documentationRoot = resolve('public/documentation')
         const moduleRoot = join(documentationRoot, locale, 'schuelerstundenplaene')
@@ -68,6 +83,19 @@ describe('release changelog', () => {
         expect(first.sidebar).toContain('id: "v3-32-2"')
         expect(prepareReleaseChangelog(updates.replace('repariert', 'verbessert'), first.changelog, first.sidebar, '3.47.1').changelog)
             .toContain('Vorschau für neue Dokumente verbessert.')
+    })
+
+    it('preserves pagination when adding a release or replacing the last release', () => {
+        const paginated = changelog.replace('## 3.47.0', '<PaginatedChangelog>\n\n## 3.47.0')
+            .replace('## Weitere Informationen', '</PaginatedChangelog>\n\n## Weitere Informationen')
+        const first = prepareReleaseChangelog(updates, paginated, sidebar, '3.47.1')
+        const replaced = prepareReleaseChangelog('# UPDATES\n\n## 3.47.0\n\n- Updated oldest release.\n', first.changelog, first.sidebar, '3.47.0')
+
+        expect(replaced.changelog.match(/<PaginatedChangelog>/g)).toHaveLength(1)
+        expect(replaced.changelog.match(/<\/PaginatedChangelog>/g)).toHaveLength(1)
+        expect(replaced.changelog.indexOf('<PaginatedChangelog>')).toBeLessThan(replaced.changelog.indexOf('## 3.47.0'))
+        expect(replaced.changelog.indexOf('</PaginatedChangelog>')).toBeGreaterThan(replaced.changelog.indexOf('## 3.47.1'))
+        expect(replaced.changelog).toContain('## Weitere Informationen')
     })
 
     it.each([

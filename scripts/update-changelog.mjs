@@ -15,7 +15,9 @@ function versionSection(text, version) {
     }
 
     const heading = matches[0]
-    const end = headings[headings.indexOf(heading) + 1]?.index ?? text.length
+    const nextHeading = headings[headings.indexOf(heading) + 1]?.index ?? text.length
+    const paginationEnd = text.indexOf('</PaginatedChangelog>', heading.index)
+    const end = paginationEnd >= 0 ? Math.min(nextHeading, paginationEnd) : nextHeading
 
     return { start: heading.index, end, text: text.slice(heading.index, end).trim() }
 }

@@ -17,6 +17,8 @@ use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CourseController extends Controller
 {
@@ -406,7 +408,7 @@ class CourseController extends Controller
     public function previewAdoptedAttachment(
         TeachingCourseDateMaterialAttachment $attachment,
         ParentStudentAccessService $parentAccess,
-    ) {
+    ): StreamedResponse {
         if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -419,7 +421,7 @@ class CourseController extends Controller
     public function downloadAdoptedAttachment(
         TeachingCourseDateMaterialAttachment $attachment,
         ParentStudentAccessService $parentAccess,
-    ) {
+    ): StreamedResponse {
         if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -458,7 +460,7 @@ class CourseController extends Controller
         }
     }
 
-    private function serveAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment, string $disposition)
+    private function serveAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment, string $disposition): StreamedResponse
     {
         $path = trim((string) $attachment->file_path);
         if ($path === '') {
@@ -489,6 +491,7 @@ class CourseController extends Controller
 
         $headers = [
             'Content-Type' => $mime,
+            'Content-Length' => $disk->size($path),
             'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
@@ -498,7 +501,29 @@ class CourseController extends Controller
             $headers['Content-Security-Policy'] = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'";
         }
 
-        return $disk->response($path, $name, $headers);
+        $stream = $disk->readStream($path);
+        if (! is_resource($stream)) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        return response()->stream(
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            throw new RuntimeException('Die Datei konnte nicht vollständig gelesen werden.');
+                        }
+
+                        echo $chunk;
+                    }
+                } finally {
+                    fclose($stream);
+                }
+            },
+            200,
+            $headers,
+        );
     }
 
     private function isActiveAttachmentContent(string $name, string $mimeType): bool

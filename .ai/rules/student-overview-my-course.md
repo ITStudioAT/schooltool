@@ -13,3 +13,6 @@ Supersedes the earlier future-date exclusion: student course dates show recorded
 
 ## Leave unrecorded student attendance blank
 User preference supersedes previous Nicht erfasst labels: render an attendance badge only for present or absent. Null/missing attendance has no badge, including future lessons. Recorded future attendance remains visible; free/cancelled lessons still omit badges.
+
+## Stream student course attachments without fpassthru
+Cloudways disables fpassthru(), which Storage::response() uses during body transmission. Serve student attachment previews/downloads with readStream(), bounded fread() chunks and finally cleanup, preserving authorization, private headers and active-content sandboxing. Run StudentCourseAttachmentDownloadTest with php -d disable_functions=fpassthru vendor/pestphp/pest/bin/pest --compact tests/Unit/StudentCourseAttachmentDownloadTest.php and assert actual streamed bytes.
