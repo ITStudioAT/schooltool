@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="color-scheme" content="light dark">
+    <title>SchoolTool wird aktualisiert</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f0f2fa; color: #202b4b; font-family: system-ui, sans-serif; }
+        main { width: min(100%, 620px); padding: clamp(28px, 6vw, 56px); background: #fff; border: 1px solid #e0e5f0; border-radius: 24px; box-shadow: 0 24px 80px #202b4b12; }
+        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 48px; font-size: 20px; font-weight: 750; }
+        .mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #202b4b; color: #e0ed9b; font-size: 27px; }
+        .badge { display: inline-flex; align-items: center; gap: 9px; padding: 7px 12px; background: #eff2d9; color: #40500c; border-radius: 30px; font-size: 13px; font-weight: 650; }
+        .dot { width: 8px; height: 8px; background: currentColor; border-radius: 50%; }
+        h1 { margin: 20px 0 16px; font-size: clamp(28px, 5vw, 38px); line-height: 1.15; letter-spacing: -0.035em; }
+        p { color: #52607a; line-height: 1.65; margin: 0 0 16px; }
+        .status { margin-top: 28px; padding-top: 24px; border-top: 1px solid #e0e5f0; font-size: 14px; }
+        button { min-height: 46px; border: 0; border-radius: 10px; padding: 12px 18px; background: #4255d9; color: white; font: inherit; font-weight: 600; cursor: pointer; }
+        button:focus-visible { outline: 3px solid #4255d9; outline-offset: 4px; }
+        button:disabled { opacity: 0.65; cursor: wait; }
+        .footnote { margin-top: 20px; margin-bottom: 0; font-size: 13px; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #151c30; color: #f1f3fa; }
+            main { background: #202b44; border-color: #35415a; }
+            p { color: #c3cce0; }
+            .status { border-color: #35415a; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="brand"><span class="mark" aria-hidden="true">S</span>SchoolTool</div>
+        <div class="badge"><span class="dot" aria-hidden="true"></span>Aktualisierung läuft</div>
+        <h1>Wir aktualisieren SchoolTool.</h1>
+        <p>SchoolTool ist deshalb kurz nicht verfügbar. Bitte versuchen Sie es in wenigen Minuten erneut.</p>
+        <p>Diese Seite prüft automatisch, wann Sie weiterarbeiten können, und öffnet dann wieder Ihre Seite.</p>
+        <p class="status" id="maintenance-status" role="status">Wir prüfen die Verfügbarkeit regelmäßig.</p>
+        <button id="maintenance-retry" type="button">Jetzt prüfen</button>
+        <p class="footnote">Vielen Dank für Ihre Geduld.</p>
+        <noscript><p>Bitte laden Sie die Seite in wenigen Minuten erneut. Für die automatische Prüfung wird JavaScript benötigt.</p></noscript>
+    </main>
+    <script>
+        (() => {
+            const message = document.getElementById('maintenance-status');
+            const retry = document.getElementById('maintenance-retry');
+            let checking = false;
+            let timer;
+
+            async function getJson(url) {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 8000);
+                try {
+                    const response = await fetch(url, {
+                        cache: 'no-store',
+                        credentials: 'same-origin',
+                        headers: { Accept: 'application/json' },
+                        signal: controller.signal,
+                    });
+                    if (!response.ok) {
+                        throw new Error('Unavailable');
+                    }
+                    return await response.json();
+                } finally {
+                    clearTimeout(timeout);
+                }
+            }
+
+            async function checkAvailability() {
+                if (checking) {
+                    return;
+                }
+                checking = true;
+                retry.disabled = true;
+                clearTimeout(timer);
+                try {
+                    const status = await getJson('/deployment-status.php');
+                    if (typeof status.id === 'string' && status.id) {
+                        try {
+                            sessionStorage.setItem('schooltool-deployment-id', status.id);
+                        } catch {
+                            // Recovery also works when browser storage is unavailable.
+                        }
+                    }
+                    if (status.state === 'idle' || status.state === 'completed') {
+                        const health = await getJson('/up');
+                        if (health.status === 'up') {
+                            message.textContent = 'SchoolTool ist wieder verfügbar. Ihre Seite wird geöffnet …';
+                            const destination = window.location.pathname === '/maintenance.html' ? '/' : window.location.href;
+                            window.location.replace(destination);
+                            return;
+                        }
+                    }
+                    message.textContent = status.state === 'failed'
+                        ? 'Die Aktualisierung benötigt noch etwas Zeit. Wir prüfen die Verfügbarkeit weiter.'
+                        : 'Die Aktualisierung läuft noch. Wir prüfen die Verfügbarkeit weiter.';
+                } catch {
+                    message.textContent = 'SchoolTool ist noch nicht erreichbar. Wir versuchen es automatisch erneut.';
+                } finally {
+                    checking = false;
+                    retry.disabled = false;
+                    timer = setTimeout(checkAvailability, 15000);
+                }
+            }
+
+            retry.addEventListener('click', checkAvailability);
+            checkAvailability();
+        })();
+    </script>
+</body>
+</html>

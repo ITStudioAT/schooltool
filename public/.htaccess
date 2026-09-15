@@ -5,6 +5,12 @@
 
     RewriteEngine On
 
+    # Keep deployment notices available even while PHP dependencies are being replaced.
+    ErrorDocument 503 /maintenance.html
+    RewriteCond %{DOCUMENT_ROOT}/../storage/framework/down -f
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ - [R=503,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
@@ -22,4 +28,11 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    <Files "maintenance.html">
+        Header always set Cache-Control "no-store, no-cache, must-revalidate"
+        Header always set Retry-After "15"
+    </Files>
 </IfModule>

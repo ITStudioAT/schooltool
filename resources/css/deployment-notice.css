@@ -1,0 +1,79 @@
+.schooltool-deployment-notice {
+    position: fixed;
+    z-index: 10000;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(760px, calc(100% - 24px));
+    box-sizing: border-box;
+    padding: 16px 52px 16px 20px;
+    border: 1px solid #dca629;
+    border-radius: 12px;
+    background: #fff6da;
+    color: #3a2c0b;
+    box-shadow: 0 6px 24px #0003;
+    font: 15px/1.5 system-ui, sans-serif;
+    overflow-wrap: anywhere;
+}
+
+.schooltool-deployment-notice[data-state='completed'] {
+    border-color: #6b9880;
+    background: #eaf7ee;
+    color: #153a26;
+}
+
+.schooltool-deployment-notice__text strong {
+    display: block;
+    font-size: 16px;
+}
+
+.schooltool-deployment-notice__text p {
+    margin: 4px 0 0;
+}
+
+.schooltool-deployment-notice__dismiss {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: 28px/1 system-ui, sans-serif;
+    cursor: pointer;
+}
+
+.schooltool-deployment-notice__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.schooltool-deployment-notice__actions button,
+.schooltool-deployment-notice__actions a {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 600;
+}
+
+.schooltool-deployment-notice__actions button {
+    border: 1px solid #153a26;
+    background: #153a26;
+    color: #fff;
+    cursor: pointer;
+}
+
+.schooltool-deployment-notice__actions a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.schooltool-deployment-notice :focus-visible {
+    outline: 3px solid #3267c4;
+    outline-offset: 3px;
+}

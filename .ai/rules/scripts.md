@@ -17,3 +17,6 @@ Keep frontend activation and rollback as same-parent atomic directory renames. O
 
 ## Launch Windows command wrappers through cmd
 When proc_open receives array commands on Windows, resolve PATH/PATHEXT wrappers such as composer.bat and npm.cmd and invoke them through the Windows command shell. Optional runtime-version probes must fail silently when a tool is unavailable, while required deployment commands must continue surfacing failures.
+
+## Notify users before deployment and preserve recovery safety
+After lock/queue preflight, announce via scripts/deployment-status.php and wait DEPLOY_NOTICE_SECONDS (default30, range0..300), then render maintenance with no Refresh header. Status lives in storage/framework; public/deployment-status.php must work without Laravel/vendor and expose only state/id. Apache serves public/maintenance.html for dynamic requests while down; its recovery requires both available status and /up JSON status=up. Active SPA notices use explicit reload to retain open input. Complete notices only after artisan up; notice write failure after up must not roll back the frontend. Pre-backend failures clear announcements only after recovery; backend failures stay down. Preserve explicit successful no-op returns in EXIT cleanup.

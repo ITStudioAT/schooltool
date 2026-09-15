@@ -15,6 +15,8 @@ fi
 
 maintenance_mode_enabled=false
 backend_update_started=false
+announcement_active=false
+deployment_notice_seconds="${DEPLOY_NOTICE_SECONDS:-30}"
 maintenance_marker="${project_directory}/storage/framework/cloudways-deploy-maintenance"
 horizon_monitor_restart_timeout="${DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT:-10}"
 horizon_direct_start_timeout="${DEPLOY_HORIZON_DIRECT_START_TIMEOUT:-60}"
@@ -26,6 +28,11 @@ frontend_release_manifest="${project_directory}/deployment/source-manifest.sha25
 frontend_artifact_directory=""
 frontend_backup_directory=""
 
+if [[ ! "$deployment_notice_seconds" =~ ^(0|[1-9][0-9]{0,2})$ ]] || [ "$deployment_notice_seconds" -gt 300 ]; then
+    echo "DEPLOY_NOTICE_SECONDS must be an integer between 0 and 300." >&2
+    exit 1
+fi
+
 if [[ ! "$horizon_monitor_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
     echo "DEPLOY_HORIZON_MONITOR_RESTART_TIMEOUT must be a positive number of seconds." >&2
     exit 1
@@ -35,6 +42,13 @@ if [[ ! "$horizon_direct_start_timeout" =~ ^[1-9][0-9]*$ ]]; then
     echo "DEPLOY_HORIZON_DIRECT_START_TIMEOUT must be a positive number of seconds." >&2
     exit 1
 fi
+
+announce_deployment() {
+    announcement_active=true
+    php scripts/deployment-status.php scheduled
+    echo "Notifying users; maintenance starts in ${deployment_notice_seconds} seconds..."
+    sleep "$deployment_notice_seconds"
+}
 
 prepare_cloudways_pull() {
     if [ -f storage/framework/down ]; then
@@ -54,16 +68,23 @@ prepare_cloudways_pull() {
 
         echo "Cloudways deployment maintenance mode is already active."
     else
+        announce_deployment
         printf 'preparing\n' > "$maintenance_marker"
 
-        if ! php artisan down --render="errors::503" --retry=60 --refresh=15; then
-            rm -f -- "$maintenance_marker"
+        if ! php artisan down --render=maintenance --retry=15; then
+            if [ -f storage/framework/down ]; then
+                maintenance_mode_enabled=true
+                printf 'prepared\n' > "$maintenance_marker"
+            else
+                rm -f -- "$maintenance_marker"
+            fi
 
             return 1
         fi
 
         maintenance_mode_enabled=true
         printf 'prepared\n' > "$maintenance_marker"
+        php scripts/deployment-status.php maintenance
         echo "Cloudways deployment maintenance mode enabled."
     fi
 
@@ -329,7 +350,7 @@ finalize_frontend_artifact() {
 
 rollback_frontend_artifact() {
     if [ -z "$frontend_backup_directory" ] || [ ! -d "$frontend_backup_directory" ]; then
-        return
+        return 0
     fi
 
     echo "Restoring the previous frontend build..." >&2
@@ -341,7 +362,7 @@ rollback_frontend_artifact() {
     if mv "$frontend_backup_directory" public/build; then
         frontend_backup_directory=""
 
-        return
+        return 0
     fi
 
     echo "Could not restore the previous frontend from ${frontend_backup_directory}." >&2
@@ -368,6 +389,7 @@ restore_application() {
 
     if [ "$maintenance_mode_enabled" = true ]; then
         if [ "$backend_update_started" = true ]; then
+            php scripts/deployment-status.php failed || true
             echo "Deployment failed after application changes began." >&2
             echo "The application remains in maintenance mode. Fix the error, rerun composer deploy, then use php artisan up only after success." >&2
         else
@@ -376,8 +398,11 @@ restore_application() {
             if php artisan up; then
                 rm -f -- "$maintenance_marker"
                 maintenance_mode_enabled=false
+                php scripts/deployment-status.php idle || true
             fi
         fi
+    elif [ "$announcement_active" = true ]; then
+        php scripts/deployment-status.php idle || true
     fi
 
     cleanup_frontend_artifact
@@ -467,16 +492,24 @@ fi
 verify_queue_runtime
 
 if [ "$maintenance_mode_enabled" != true ]; then
+    announce_deployment
     printf 'preparing\n' > "$maintenance_marker"
 
-    if ! php artisan down --render="errors::503" --retry=60 --refresh=15; then
-        rm -f -- "$maintenance_marker"
+    if ! php artisan down --render=maintenance --retry=15; then
+        if [ -f storage/framework/down ]; then
+            maintenance_mode_enabled=true
+            printf 'prepared\n' > "$maintenance_marker"
+        else
+            rm -f -- "$maintenance_marker"
+        fi
         exit 1
     fi
 
     maintenance_mode_enabled=true
     printf 'prepared\n' > "$maintenance_marker"
 fi
+
+php scripts/deployment-status.php maintenance
 
 echo "Pruning stale source files preserved by Cloudways Pull..."
 php scripts/source-manifest.php prune-unlisted "$frontend_release_manifest_path"
@@ -502,6 +535,10 @@ ensure_queue_runtime "$previous_horizon_process_ids"
 php artisan up
 maintenance_mode_enabled=false
 backend_update_started=false
+announcement_active=false
+if ! php scripts/deployment-status.php completed; then
+    echo "The application is online, but the deployment completion notice could not be published." >&2
+fi
 rm -f -- "$maintenance_marker"
 finalize_frontend_artifact
 cleanup_frontend_artifact

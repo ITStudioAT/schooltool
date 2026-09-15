@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/../scripts/deployment-status.php';
+
+header('Content-Type: application/json; charset=UTF-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('X-Content-Type-Options: nosniff');
+
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+if (! in_array($method, ['GET', 'HEAD'], true)) {
+    http_response_code(405);
+    header('Allow: GET, HEAD');
+    exit;
+}
+
+if ($method === 'HEAD') {
+    exit;
+}
+
+echo json_encode(\SchoolTool\DeploymentStatus\readStatus(dirname(__DIR__)), JSON_THROW_ON_ERROR);

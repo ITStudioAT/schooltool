@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { startDeploymentNotice } from './helpers/deploymentNotice';
+import '../css/deployment-notice.css';
 window.axios = axios;
 axios.defaults.withCredentials = true;
 axios.defaults.withXSRFToken = true;
@@ -73,3 +75,9 @@ window.axios.interceptors.response.use(
         }
     }
 );
+
+const deploymentNotice = startDeploymentNotice({ axiosClient: window.axios });
+
+if (import.meta.hot) {
+    import.meta.hot.dispose(() => deploymentNotice.stop());
+}

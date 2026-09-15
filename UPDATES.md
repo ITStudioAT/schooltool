@@ -14,6 +14,10 @@
 
 - Changelog: Begrenzung der Einträge pro Seite
 
+### System
+
+- Aktuelles Update: Sichtbar für User
+
 ## 3.48.3
 
 ### SEPP

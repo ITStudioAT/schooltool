@@ -58,6 +58,7 @@ restore_after_pull_failure() {
     if php artisan up; then
         rm -f -- "$maintenance_marker"
         maintenance_prepared=false
+        php scripts/deployment-status.php idle || true
     fi
 }
 

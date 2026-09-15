@@ -104,6 +104,11 @@ if [ "${1:-}" = artisan ] && [ "${2:-}" = up ]; then
     exit 0
 fi
 
+if [ "${1:-}" = scripts/deployment-status.php ] && [ "${2:-}" = idle ]; then
+    touch storage/framework/deployment-announcement-cleared
+    exit 0
+fi
+
 if [ "${1:-}" = -r ]; then
     printf 'Abgeschlossen: fixture (Europe/Vienna)\n'
     exit 0
@@ -485,6 +490,7 @@ it('restores the application when the Cloudways API pull fails before handoff', 
             ->and($process->getErrorOutput())->toContain('restoring the application from maintenance mode')
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-api-checked'))->toBeTrue()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-api-pulled'))->toBeFalse()
+            ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/deployment-announcement-cleared'))->toBeTrue()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/full-deployment-ran'))->toBeFalse()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/down'))->toBeFalse()
             ->and(is_file($directory.DIRECTORY_SEPARATOR.'storage/framework/cloudways-deploy-maintenance'))->toBeFalse();
