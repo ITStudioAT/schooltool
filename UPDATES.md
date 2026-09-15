@@ -1,5 +1,10 @@
 # UPDATES
 
+### 3.48.4 !!!
+
+### SEPP
+- Optionen: Sa-Auswahl bereits vor der TT-Erstellung wählbar
+
 ## 3.48.3
 
 ### SEPP

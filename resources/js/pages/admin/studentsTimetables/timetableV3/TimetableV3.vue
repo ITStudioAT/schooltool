@@ -838,42 +838,79 @@
                         </div>
                     </label>
 
-                    <button
-                        class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--manual"
-                        :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'manual' }"
-                        type="button"
-                        :disabled="isLoadingState || isSavingState || timetablePageLoading"
-                        @click="openManualTimetablePage">
-                        <span class="timetable-v3__schedule-mode-icon">
-                            <v-icon icon="mdi-calendar-edit" size="30" />
-                        </span>
-                        <span class="timetable-v3__schedule-mode-copy">
-                            <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
-                            <span class="timetable-v3__schedule-mode-description">
-                                Sie stellen den Stundenplan selbst zusammen und platzieren die Unterrichte manuell.
+                    <div class="timetable-v3__schedule-mode-secondary-cards">
+                        <button
+                            class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--manual"
+                            :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'manual' }"
+                            type="button"
+                            :disabled="isLoadingState || isSavingState || timetablePageLoading"
+                            @click="openManualTimetablePage">
+                            <span class="timetable-v3__schedule-mode-icon">
+                                <v-icon icon="mdi-calendar-edit" size="30" />
                             </span>
-                        </span>
-                        <span class="timetable-v3__schedule-mode-status">
-                            <v-icon icon="mdi-arrow-right-circle-outline" size="20" />
-                            Manuell öffnen
-                        </span>
+                            <span class="timetable-v3__schedule-mode-copy">
+                                <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                                <span class="timetable-v3__schedule-mode-description">
+                                    Sie stellen den Stundenplan selbst zusammen und platzieren die Unterrichte manuell.
+                                </span>
+                            </span>
+                            <span class="timetable-v3__schedule-mode-status">
+                                <v-icon icon="mdi-arrow-right-circle-outline" size="20" />
+                                Manuell öffnen
+                            </span>
+    
+                            <div
+                                v-if="scheduleCreationMode === 'manual'"
+                                class="
+                                    timetable-v3__selected-modules
+                                    timetable-v3__schedule-mode-selected-modules
+                                    timetable-v3__schedule-mode-available-modules
+                                ">
+                                <div class="timetable-v3__selected-modules-heading">
+                                    <v-icon icon="mdi-book-open-variant" size="18" />
+                                    Verfügbare Module und Unterrichte
+                                </div>
+                                <div class="timetable-v3__selected-modules-empty">
+                                    Alle Module und Unterrichte stehen zur Verfügung.
+                                </div>
+                            </div>
+                        </button>
 
-                        <div
-                            v-if="scheduleCreationMode === 'manual'"
-                            class="
-                                timetable-v3__selected-modules
-                                timetable-v3__schedule-mode-selected-modules
-                                timetable-v3__schedule-mode-available-modules
-                            ">
-                            <div class="timetable-v3__selected-modules-heading">
-                                <v-icon icon="mdi-book-open-variant" size="18" />
-                                Verfügbare Module und Unterrichte
+                        <section
+                            class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--options timetable-v3__creation-summary-card"
+                            aria-labelledby="timetable-v3-module-options-title">
+                            <span class="timetable-v3__schedule-mode-icon">
+                                <v-icon icon="mdi-tune-variant" size="30" />
+                            </span>
+                            <span class="timetable-v3__schedule-mode-copy">
+                                <span id="timetable-v3-module-options-title" class="timetable-v3__schedule-mode-title">Optionen</span>
+                            </span>
+                            <div class="timetable-v3__filter-options">
+                                <div class="timetable-v3__filter-option">
+                                    <span id="timetable-v3-module-saturday-label" class="timetable-v3__filter-option-label">Sa:</span>
+                                    <v-btn-toggle
+                                        :model-value="moduleOptionsIncludeSaturday"
+                                        :disabled="isLoadingState || isSavingState || timetablePageLoading"
+                                        class="timetable-v3__filter-option-toggle"
+                                        color="teal-darken-1"
+                                        density="comfortable"
+                                        divided
+                                        mandatory
+                                        variant="outlined"
+                                        aria-labelledby="timetable-v3-module-saturday-label">
+                                        <v-btn
+                                            :value="true"
+                                            prepend-icon="mdi-calendar-check-outline"
+                                            @click="updateModuleSaturdayOption(true)">Ja</v-btn>
+                                        <v-btn
+                                            :value="false"
+                                            prepend-icon="mdi-calendar-remove-outline"
+                                            @click="updateModuleSaturdayOption(false)">Nein</v-btn>
+                                    </v-btn-toggle>
+                                </div>
                             </div>
-                            <div class="timetable-v3__selected-modules-empty">
-                                Alle Module und Unterrichte stehen zur Verfügung.
-                            </div>
-                        </div>
-                    </button>
+                        </section>
+                    </div>
                 </div>
 
                 <div
@@ -1972,14 +2009,17 @@
                                 'timetable-v3__module-course--planned': moduleCourseAlreadyPlanned(course),
                                 'timetable-v3__module-course--selected': displayedModuleCourseSelected(course),
                             }"
-                            :disabled="moduleCoursesDialogInteractive ? moduleCourseAlreadyPlanned(course) : null"
+                            :disabled="moduleCoursesDialogInteractive
+                                ? moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course)
+                                : null"
                             :role="moduleCoursesDialogInteractive ? 'checkbox' : null"
                             :aria-checked="moduleCoursesDialogInteractive
                                 ? moduleCourseAlreadyPlanned(course) || displayedModuleCourseSelected(course)
                                 : null"
-                            :aria-disabled="moduleCourseAlreadyPlanned(course) ? 'true' : null"
+                            :aria-disabled="moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course) ? 'true' : null"
                             @click="moduleCoursesDialogInteractive
                                 && !moduleCourseAlreadyPlanned(course)
+                                && !moduleCourseSaturdayDisabled(course)
                                 && toggleDisplayedModuleCourse(course)">
                             <span v-if="moduleCoursesDialogInteractive" class="timetable-v3__module-course-check">
                                 <v-icon
@@ -1992,6 +2032,11 @@
                             </span>
                             <span class="timetable-v3__module-course-copy">
                                 <span class="timetable-v3__module-course-title">{{ moduleCourseTitle(course) }}</span>
+                                <span
+                                    v-if="moduleCourseSaturdayDisabled(course)"
+                                    class="timetable-v3__module-course-subtitle timetable-v3__module-course-unavailable">
+                                    Nicht auswählbar: Sa ist auf Nein gesetzt.
+                                </span>
                                 <span
                                     v-if="moduleCourseAlreadyPlanned(course)"
                                     class="timetable-v3__module-course-planned">
@@ -2597,6 +2642,11 @@ function manualTimetableDraftState({
             publishedTimetablePublishedAt: String(publishedTimetable?.published_at || '').trim() || null,
         } : {}),
     }
+}
+
+function courseExcludedBySaturdayOption(course, includeSaturday) {
+    return includeSaturday === false
+        && (course?.timetable_entries || []).some(entry => Number(entry.weekday) === 6)
 }
 
 function normalizedCourseSelectionKeys(course) {
@@ -3519,6 +3569,8 @@ export default {
             adoptionRemovedCourseKeys: [],
             moduleSelectionLimitMessage: '',
             scheduleCreationMode: null,
+            moduleOptionsIncludeSaturday: true,
+            saturdayDeselectedCourseKeys: [],
             timetableAdoptionReturnStep: TIMETABLE_CREATION_STEP,
             timetableFilters: { ...DEFAULT_TIMETABLE_FILTERS },
             timetableCalculationStatus: 'idle',
@@ -6144,6 +6196,8 @@ export default {
             this.mainModuleSelectionGroups = []
             this.manualModuleCatalogView = MANUAL_STUDENT_MODULE_CATALOG
             this.selectedModuleKeys = []
+            this.saturdayDeselectedCourseKeys = []
+            this.moduleOptionsIncludeSaturday = true
             this.selectedCourseKeys = []
             this.manualSelectedCourseKeys = []
             this.manualPendingCourseKeys = []
@@ -6355,6 +6409,15 @@ export default {
             )
             this.selectedModuleKeys = constrainedSelection.selectedModuleKeys
             this.selectedCourseKeys = constrainedSelection.selectedCourseKeys
+            const storedModuleOptions = storedContextCode === selectionContextCode && storedValuesMatch
+                ? storedSelection?.options
+                : null
+            this.moduleOptionsIncludeSaturday = typeof storedModuleOptions?.includeSaturday === 'boolean'
+                ? storedModuleOptions.includeSaturday
+                : true
+            this.saturdayDeselectedCourseKeys = Array.isArray(storedModuleOptions?.saturdayDeselectedCourseKeys)
+                ? storedModuleOptions.saturdayDeselectedCourseKeys.filter(key => validCourseKeys.has(key))
+                : []
             this.moduleSelectionLimitMessage = ''
             if (!groups.some(group => group.key === this.activeModuleGroupKey)) {
                 this.activeModuleGroupKey = ''
@@ -6416,6 +6479,7 @@ export default {
                 .filter((module) => {
                     const moduleSelectionKey = String(module?.selection_key || '').trim()
                     const courseSelectionKeys = (Array.isArray(module?.courses) ? module.courses : [])
+                        .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
                         .flatMap(course => normalizedCourseSelectionKeys(course))
 
                     return moduleSelectionKey && courseSelectionKeys.length
@@ -6428,6 +6492,7 @@ export default {
         courseSelectionKeysForGroup(group) {
             return this.selectableModulesForGroup(group)
                 .flatMap(module => module.courses)
+                .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
                 .flatMap(course => normalizedCourseSelectionKeys(course))
         },
         allModulesSelectedForGroup(group) {
@@ -6756,7 +6821,62 @@ export default {
 
             await this.toggleModuleCourse(course)
         },
+        async updateModuleSaturdayOption(includeSaturday) {
+            if (typeof includeSaturday !== 'boolean') return
+            if (this.isLoadingState || this.isSavingState || this.timetablePageLoading) return
+
+            const optionChanged = this.moduleOptionsIncludeSaturday !== includeSaturday
+            this.moduleOptionsIncludeSaturday = includeSaturday
+
+            const modules = this.moduleSelectionGroups.flatMap(group => group.modules || [])
+            const excludedCourseKeys = new Set(modules
+                .flatMap(module => module.courses || [])
+                .filter(course => (course.timetable_entries || []).some(entry => Number(entry.weekday) === 6))
+                .flatMap(course => normalizedCourseSelectionKeys(course)))
+            const rememberedCourseKeys = new Set(this.saturdayDeselectedCourseKeys)
+            const selectedModuleKeys = new Set(this.selectedModuleKeys)
+            const restorableCourseKeys = modules
+                .flatMap(module => (module.courses || []).filter(course => (
+                    selectedModuleKeys.has(module.selection_key)
+                    || normalizedCourseSelectionKeys(course).every(key => rememberedCourseKeys.has(key))
+                )))
+                .flatMap(course => normalizedCourseSelectionKeys(course))
+                .filter(key => excludedCourseKeys.has(key))
+            const nextSelectedCourseKeys = includeSaturday
+                ? [...new Set([...this.selectedCourseKeys, ...restorableCourseKeys])]
+                : this.selectedCourseKeys.filter(key => !excludedCourseKeys.has(key))
+            this.saturdayDeselectedCourseKeys = includeSaturday
+                ? []
+                : [...new Set([
+                    ...this.saturdayDeselectedCourseKeys,
+                    ...this.selectedCourseKeys.filter(key => excludedCourseKeys.has(key)),
+                ])]
+            if (nextSelectedCourseKeys.length === this.selectedCourseKeys.length) {
+                if (optionChanged) await this.saveState()
+
+                return
+            }
+
+            const remainingCourseKeys = new Set(nextSelectedCourseKeys)
+            const remainingModuleKeys = new Set(modules
+                .filter(module => (module.courses || []).some((course) => {
+                    const keys = normalizedCourseSelectionKeys(course)
+
+                    return keys.length > 0 && keys.every(key => remainingCourseKeys.has(key))
+                }))
+                .map(module => module.selection_key))
+            this.selectedCourseKeys = nextSelectedCourseKeys
+            this.selectedModuleKeys = [...remainingModuleKeys]
+            this.moduleSelectionLimitMessage = ''
+            this.resetTimetableCalculation()
+            await this.saveState()
+        },
+        moduleCourseSaturdayDisabled(course) {
+            return !this.moduleCoursesDialogReadOnly
+                && courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday)
+        },
         async toggleModuleCourse(course) {
+            if (courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday)) return
             if (this.moduleCoursesDialogReadOnly) return
 
             const courseKeys = normalizedCourseSelectionKeys(course)
@@ -6790,7 +6910,9 @@ export default {
             if (this.moduleCoursesDialogReadOnly) return
 
             const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
-            const courseKeys = this.moduleCourseDialogCourses.flatMap(course => normalizedCourseSelectionKeys(course))
+            const courseKeys = this.moduleCourseDialogCourses
+                .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
+                .flatMap(course => normalizedCourseSelectionKeys(course))
             if (!moduleSelectionKey || !courseKeys.length) return
 
             const nextSelectedModuleKeys = [...new Set([...this.selectedModuleKeys, moduleSelectionKey])]
@@ -7075,6 +7197,10 @@ export default {
                     scheduleCreationMode: this.scheduleCreationMode,
                     selectedKeys: this.selectedModuleKeys || [],
                     selectedCourseKeys: this.selectedCourseKeys || [],
+                    options: {
+                        includeSaturday: this.moduleOptionsIncludeSaturday !== false,
+                        saturdayDeselectedCourseKeys: this.saturdayDeselectedCourseKeys || [],
+                    },
                 },
                 creationOptions: {
                     filters: normalizedTimetableFilters(this.timetableFilters),
@@ -7595,6 +7721,13 @@ button.timetable-v3__student-data-field:focus-visible {
     gap: 16px;
     margin-top: 18px;
     transition: grid-template-columns 170ms ease;
+}
+
+.timetable-v3__schedule-mode-secondary-cards {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    min-width: 0;
 }
 
 .timetable-v3__schedule-mode-options--automatic-selected {
@@ -9240,6 +9373,10 @@ button.timetable-v3__student-data-field:focus-visible {
     text-transform: uppercase;
     background: #e2e8f0;
     border-radius: 999px;
+}
+
+.timetable-v3__module-course-subtitle.timetable-v3__module-course-unavailable {
+    color: #b42318;
 }
 
 .timetable-v3__module-course-subtitle {

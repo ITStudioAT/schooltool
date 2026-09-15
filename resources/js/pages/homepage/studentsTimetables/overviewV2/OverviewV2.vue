@@ -360,24 +360,61 @@
                                 </div>
                             </label>
 
-                            <button
-                                class="overview-v2-creation-mode-card overview-v2-creation-mode-card--manual"
-                                type="button"
-                                disabled>
-                                <span class="overview-v2-creation-mode-icon">
-                                    <v-icon icon="mdi-calendar-edit" size="30" />
-                                </span>
-                                <span class="overview-v2-creation-mode-copy">
-                                    <span class="overview-v2-creation-mode-title">Manueller Stundenplan</span>
-                                    <span class="overview-v2-creation-mode-description">
-                                        Du stellst deinen Stundenplan selbst zusammen und platzierst die Unterrichte manuell.
+                            <div class="overview-v2-creation-mode-secondary-cards">
+                                <button
+                                    class="overview-v2-creation-mode-card overview-v2-creation-mode-card--manual"
+                                    type="button"
+                                    disabled>
+                                    <span class="overview-v2-creation-mode-icon">
+                                        <v-icon icon="mdi-calendar-edit" size="30" />
                                     </span>
-                                </span>
-                                <span class="overview-v2-creation-mode-status">
-                                    <v-icon icon="mdi-arrow-right-circle-outline" size="20" />
-                                    Manuell öffnen
-                                </span>
-                            </button>
+                                    <span class="overview-v2-creation-mode-copy">
+                                        <span class="overview-v2-creation-mode-title">Manueller Stundenplan</span>
+                                        <span class="overview-v2-creation-mode-description">
+                                            Du stellst deinen Stundenplan selbst zusammen und platzierst die Unterrichte manuell.
+                                        </span>
+                                    </span>
+                                    <span class="overview-v2-creation-mode-status">
+                                        <v-icon icon="mdi-arrow-right-circle-outline" size="20" />
+                                        Manuell öffnen
+                                    </span>
+                                </button>
+
+                                <section
+                                    class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--options timetable-v3__creation-summary-card"
+                                    aria-labelledby="timetable-v3-student-module-options-title">
+                                    <span class="timetable-v3__schedule-mode-icon">
+                                        <v-icon icon="mdi-tune-variant" size="30" />
+                                    </span>
+                                    <span class="timetable-v3__schedule-mode-copy">
+                                        <span id="timetable-v3-student-module-options-title" class="timetable-v3__schedule-mode-title">Optionen</span>
+                                    </span>
+                                    <div class="timetable-v3__filter-options">
+                                        <div class="timetable-v3__filter-option">
+                                            <span id="timetable-v3-student-module-saturday-label" class="timetable-v3__filter-option-label">Sa:</span>
+                                            <v-btn-toggle
+                                        :model-value="moduleOptionsIncludeSaturday"
+                                        :disabled="timetableCalculationStatus === 'calculating' || timetablePageLoading"
+                                                class="timetable-v3__filter-option-toggle"
+                                                color="teal-darken-1"
+                                                density="comfortable"
+                                                divided
+                                                mandatory
+                                                variant="outlined"
+                                                aria-labelledby="timetable-v3-student-module-saturday-label">
+                                        <v-btn
+                                            :value="true"
+                                            prepend-icon="mdi-calendar-check-outline"
+                                            @click="updateModuleSaturdayOption(true)">Ja</v-btn>
+                                        <v-btn
+                                            :value="false"
+                                            prepend-icon="mdi-calendar-remove-outline"
+                                            @click="updateModuleSaturdayOption(false)">Nein</v-btn>
+                                            </v-btn-toggle>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
                         </div>
 
                         <div
@@ -1505,11 +1542,13 @@
                                 'overview-v2-module-course--planned': moduleCourseAlreadyPlanned(course),
                                 'overview-v2-module-course--selected': displayedModuleCourseSelected(course),
                             }"
-                            :disabled="moduleCourseAlreadyPlanned(course)"
+                            :disabled="moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course)"
                             role="checkbox"
                             :aria-checked="moduleCourseAlreadyPlanned(course) || displayedModuleCourseSelected(course)"
-                            :aria-disabled="moduleCourseAlreadyPlanned(course) ? 'true' : null"
-                            @click="!moduleCourseAlreadyPlanned(course) && toggleDisplayedModuleCourse(course)">
+                            :aria-disabled="moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course) ? 'true' : null"
+                            @click="!moduleCourseAlreadyPlanned(course)
+                                && !moduleCourseSaturdayDisabled(course)
+                                && toggleDisplayedModuleCourse(course)">
                             <span class="overview-v2-module-course-check">
                                 <v-icon
                                     :icon="moduleCourseAlreadyPlanned(course)
@@ -1521,6 +1560,11 @@
                             </span>
                             <span class="overview-v2-module-course-copy">
                                 <span class="overview-v2-module-course-title">{{ moduleCourseTitle(course) }}</span>
+                                <span
+                                    v-if="moduleCourseSaturdayDisabled(course)"
+                                    class="overview-v2-module-course-subtitle overview-v2-module-course-unavailable">
+                                    Nicht auswählbar: Sa ist auf Nein gesetzt.
+                                </span>
                                 <span
                                     v-if="moduleCourseAlreadyPlanned(course)"
                                     class="overview-v2-module-course-planned">
@@ -2107,6 +2151,11 @@ async function consumeTimetableCalculationStream(response, onProgress) {
     }
 
     return calculationResult
+}
+
+function courseExcludedBySaturdayOption(course, includeSaturday) {
+    return includeSaturday === false
+        && (course?.timetable_entries || []).some(entry => Number(entry.weekday) === 6)
 }
 
 function normalizedCourseSelectionKeys(course) {
@@ -2807,6 +2856,7 @@ export default {
             }
 
             await this.studentTimetablesStore.loadOverview()
+            this.restoreAutomaticPlanningDraft()
 
             if (this.isTimetableAdoptionPage && this.savedTimetableAdoptionSource) {
                 const initialized = this.initializeSavedTimetableAdoption(this.savedTimetableAdoptionSource)
@@ -2866,6 +2916,8 @@ export default {
             savedTimetableAdoptionCourseKeys: [],
             savedTimetableAdoptionModuleKeys: [],
             scheduleCreationMode: null,
+            moduleOptionsIncludeSaturday: true,
+            saturdayDeselectedCourseKeys: [],
             selectedCourseKeys: [],
             selectedModuleKeys: [],
             studentInfoDialogOpen: false,
@@ -2897,6 +2949,27 @@ export default {
 
     computed: {
         ...mapWritableState(useStudentTimetablesUserStore, ['user', 'overview']),
+
+        automaticPlanningStorageKey() {
+            if (!this.user?.id || !this.overview?.student?.student_code) return ''
+
+            return `student-timetable-automatic:${this.user.id}:${this.overview.student.student_code}`
+        },
+
+        automaticPlanningCatalogSignature() {
+            return JSON.stringify(this.moduleSelectionGroups)
+        },
+
+        automaticPlanningDraft() {
+            return {
+                catalogSignature: this.automaticPlanningCatalogSignature,
+                scheduleCreationMode: this.scheduleCreationMode,
+                includeSaturday: this.moduleOptionsIncludeSaturday,
+                saturdayDeselectedCourseKeys: this.saturdayDeselectedCourseKeys,
+                selectedModuleKeys: this.selectedModuleKeys,
+                selectedCourseKeys: this.selectedCourseKeys,
+            }
+        },
 
         isTimetableCreationModePage() {
             return this.$route.path === '/students-timetables/create'
@@ -3566,7 +3639,47 @@ export default {
         },
     },
 
+    watch: {
+        automaticPlanningDraft: {
+            deep: true,
+            handler() {
+                if (!this.pageLoading) this.saveAutomaticPlanningDraft()
+            },
+        },
+    },
+
     methods: {
+        saveAutomaticPlanningDraft() {
+            if (!this.automaticPlanningStorageKey) return
+
+            try {
+                window.sessionStorage.setItem(this.automaticPlanningStorageKey, JSON.stringify(this.automaticPlanningDraft))
+            } catch {
+                // Planning remains usable when browser storage is unavailable.
+            }
+        },
+
+        restoreAutomaticPlanningDraft() {
+            if (!this.automaticPlanningStorageKey) return
+
+            try {
+                const draft = JSON.parse(window.sessionStorage.getItem(this.automaticPlanningStorageKey) || 'null')
+
+                if (!draft || draft.catalogSignature !== this.automaticPlanningCatalogSignature) return
+                if (![null, 'automatic'].includes(draft.scheduleCreationMode) || typeof draft.includeSaturday !== 'boolean') return
+                if (![draft.selectedModuleKeys, draft.selectedCourseKeys, draft.saturdayDeselectedCourseKeys]
+                    .every(keys => Array.isArray(keys) && keys.every(key => typeof key === 'string'))) return
+
+                this.scheduleCreationMode = draft.scheduleCreationMode
+                this.moduleOptionsIncludeSaturday = draft.includeSaturday
+                this.selectedModuleKeys = draft.selectedModuleKeys
+                this.selectedCourseKeys = draft.selectedCourseKeys
+                this.saturdayDeselectedCourseKeys = draft.saturdayDeselectedCourseKeys
+            } catch {
+                // Ignore unavailable storage and malformed drafts.
+            }
+        },
+
         closeStudentInfoDialog() {
             this.studentInfoDialogOpen = false
         },
@@ -3706,6 +3819,7 @@ export default {
                 .filter((module) => {
                     const moduleSelectionKey = String(module?.selection_key || '').trim()
                     const courseSelectionKeys = (Array.isArray(module?.courses) ? module.courses : [])
+                        .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
                         .flatMap(course => normalizedCourseSelectionKeys(course))
 
                     return moduleSelectionKey && courseSelectionKeys.length
@@ -3720,6 +3834,7 @@ export default {
         courseSelectionKeysForGroup(group) {
             return this.selectableModulesForGroup(group)
                 .flatMap(module => module.courses)
+                .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
                 .flatMap(course => normalizedCourseSelectionKeys(course))
         },
 
@@ -4211,7 +4326,55 @@ export default {
             }
         },
 
+        updateModuleSaturdayOption(includeSaturday) {
+            if (typeof includeSaturday !== 'boolean') return
+            if (this.timetableCalculationStatus === 'calculating' || this.timetablePageLoading) return
+
+            this.moduleOptionsIncludeSaturday = includeSaturday
+
+            const modules = this.moduleSelectionGroups.flatMap(group => group.modules || [])
+            const excludedCourseKeys = new Set(modules
+                .flatMap(module => module.courses || [])
+                .filter(course => (course.timetable_entries || []).some(entry => Number(entry.weekday) === 6))
+                .flatMap(course => normalizedCourseSelectionKeys(course)))
+            const rememberedCourseKeys = new Set(this.saturdayDeselectedCourseKeys)
+            const selectedModuleKeys = new Set(this.selectedModuleKeys)
+            const restorableCourseKeys = modules
+                .flatMap(module => (module.courses || []).filter(course => (
+                    selectedModuleKeys.has(module.selection_key)
+                    || normalizedCourseSelectionKeys(course).every(key => rememberedCourseKeys.has(key))
+                )))
+                .flatMap(course => normalizedCourseSelectionKeys(course))
+                .filter(key => excludedCourseKeys.has(key))
+            const nextSelectedCourseKeys = includeSaturday
+                ? [...new Set([...this.selectedCourseKeys, ...restorableCourseKeys])]
+                : this.selectedCourseKeys.filter(key => !excludedCourseKeys.has(key))
+            this.saturdayDeselectedCourseKeys = includeSaturday
+                ? []
+                : [...new Set([
+                    ...this.saturdayDeselectedCourseKeys,
+                    ...this.selectedCourseKeys.filter(key => excludedCourseKeys.has(key)),
+                ])]
+            if (nextSelectedCourseKeys.length === this.selectedCourseKeys.length) return
+
+            const remainingCourseKeys = new Set(nextSelectedCourseKeys)
+            const remainingModuleKeys = new Set(modules
+                .filter(module => (module.courses || []).some((course) => {
+                    const keys = normalizedCourseSelectionKeys(course)
+
+                    return keys.length > 0 && keys.every(key => remainingCourseKeys.has(key))
+                }))
+                .map(module => module.selection_key))
+            this.selectedCourseKeys = nextSelectedCourseKeys
+            this.selectedModuleKeys = [...remainingModuleKeys]
+            this.moduleSelectionLimitMessage = ''
+        },
+        moduleCourseSaturdayDisabled(course) {
+            return !this.moduleCoursesDialogManual
+                && courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday)
+        },
         toggleModuleCourse(course) {
+            if (courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday)) return
             const courseKeys = normalizedCourseSelectionKeys(course)
             const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
             if (!courseKeys.length || !moduleSelectionKey) return
@@ -4241,6 +4404,7 @@ export default {
         selectAllModuleCourses() {
             const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
             const courseKeys = this.moduleCourseDialogCourses
+                .filter(course => !courseExcludedBySaturdayOption(course, this.moduleOptionsIncludeSaturday))
                 .flatMap(course => normalizedCourseSelectionKeys(course))
             if (!moduleSelectionKey || !courseKeys.length) return
 
@@ -4459,6 +4623,8 @@ export default {
             this.savedTimetableAdoptionCourseKeys = []
             this.savedTimetableAdoptionModuleKeys = []
             this.selectedCourseKeys = []
+            this.saturdayDeselectedCourseKeys = []
+            this.moduleOptionsIncludeSaturday = true
             this.selectedModuleKeys = []
             this.timetableCalculationCheckedCombinationCount = 0
             this.timetableCalculationCombinationCount = 0
@@ -5073,6 +5239,13 @@ export default {
     gap: 16px;
     margin-top: 24px;
     transition: grid-template-columns 170ms ease;
+}
+
+.overview-v2-creation-mode-secondary-cards {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    min-width: 0;
 }
 
 .overview-v2-creation-mode-options--automatic-selected {
@@ -5830,6 +6003,10 @@ export default {
     text-transform: uppercase;
     background: #e2e8f0;
     border-radius: 999px;
+}
+
+.overview-v2-module-course-subtitle.overview-v2-module-course-unavailable {
+    color: #b42318;
 }
 
 .overview-v2-module-course-subtitle {

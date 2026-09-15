@@ -1288,6 +1288,154 @@ describe('TimetableV3', () => {
         expect(nextStepSource).not.toContain('class="timetable-v3__next-continue-button"')
     })
 
+    it('reapplies Ja after reload without remembered deselections and preserves unrelated modules', async () => {
+        const component = (TimetableV3 as any)
+        const modules = [
+            { selection_key: 'd2', courses: [
+                { key: 'weekday', timetable_entries: [{ weekday: 2 }] },
+                { keys: ['saturday-1', 'saturday-2'], timetable_entries: [{ weekday: 6 }] },
+            ] },
+            { selection_key: 'unselected', courses: [
+                { key: 'unselected-saturday', timetable_entries: [{ weekday: 6 }] },
+            ] },
+        ]
+        const state = {
+            ...component.data(),
+            isLoadingState: false,
+            moduleSelectionGroups: [{ modules }],
+            selectedModuleKeys: ['d2'],
+            selectedCourseKeys: ['weekday'],
+            saveState: vi.fn().mockResolvedValue(undefined),
+            resetTimetableCalculation: vi.fn(),
+        }
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(true)
+        expect(state.saturdayDeselectedCourseKeys).toEqual([])
+        await component.methods.updateModuleSaturdayOption.call(state, true)
+
+        expect(state.selectedCourseKeys).toEqual(['weekday', 'saturday-1', 'saturday-2'])
+        expect(state.selectedModuleKeys).toEqual(['d2'])
+        expect(component.methods.selectedCourseCountForModule.call(state, modules[0])).toBe(2)
+        await component.methods.updateModuleSaturdayOption.call(state, true)
+        expect(state.selectedCourseKeys).toHaveLength(3)
+    })
+
+    it('blocks Saturday courses individually and in bulk until Ja is selected', async () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue', 'utf8')
+        expect(source).toMatch(/v-if="moduleCourseSaturdayDisabled\(course\)"\s+class="[^"]+">\s+Nicht auswählbar: Sa ist auf Nein gesetzt\./)
+        const component = (TimetableV3 as any)
+        const saturday = { keys: ['sat', 'weekday-part'], timetable_entries: [{ weekday: 6 }, { weekday: 2 }] }
+        const weekday = { key: 'weekday', timetable_entries: [{ weekday: 1 }] }
+        const module = { selection_key: 'mixed', courses: [saturday, weekday] }
+        const group = { modules: [module, { selection_key: 'sat-only', courses: [saturday] }] }
+        const context = {
+            ...component.data(),
+            moduleOptionsIncludeSaturday: false,
+            moduleCourseDialogModule: module,
+            moduleCourseDialogCourses: module.courses,
+            saveState: vi.fn().mockResolvedValue(undefined),
+            moduleCourseSelected: () => false,
+        }
+        context.selectableModulesForGroup = group => component.methods.selectableModulesForGroup.call(context, group)
+        context.moduleSelectionKeysForGroup = group => component.methods.moduleSelectionKeysForGroup.call(context, group)
+        context.courseSelectionKeysForGroup = group => component.methods.courseSelectionKeysForGroup.call(context, group)
+
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, saturday)).toBe(true)
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, weekday)).toBe(false)
+        await component.methods.toggleModuleCourse.call(context, saturday)
+        expect(context.selectedCourseKeys).toEqual([])
+
+        await component.methods.selectAllModuleCourses.call(context)
+        expect(context.selectedCourseKeys).toEqual(['weekday'])
+        expect(context.selectedModuleKeys).toEqual(['mixed'])
+        await component.methods.selectAllModulesInGroup.call(context, group)
+        expect(context.selectedCourseKeys).toEqual(['weekday'])
+        expect(context.selectedModuleKeys).toEqual(['mixed'])
+
+        context.moduleOptionsIncludeSaturday = true
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, saturday)).toBe(false)
+        await component.methods.toggleModuleCourse.call(context, saturday)
+        expect(context.selectedCourseKeys).toEqual(['weekday', 'sat', 'weekday-part'])
+    })
+
+    it('deselects Saturday lessons as complete groups and updates combinations', async () => {
+        const component = (TimetableV3 as any)
+        const modules = [
+            { selection_key: 'mixed', courses: [
+                { keys: ['monday', 'saturday'], timetable_entries: [{ weekday: 1 }, { weekday: '6' }] },
+                { key: 'weekday', timetable_entries: [{ weekday: 5 }] },
+            ] },
+            { selection_key: 'saturday-only', courses: [
+                { key: 'only-saturday', timetable_entries: [{ weekday: 6 }] },
+            ] },
+            { selection_key: 'unselected', courses: [{ key: 'unselected-weekday' }] },
+        ]
+        const state = reactive({
+            ...component.data(),
+            isLoadingState: false,
+            moduleSelectionGroups: [{ modules }],
+            selectedModuleKeys: ['mixed', 'saturday-only'],
+            selectedCourseKeys: ['monday', 'saturday', 'weekday', 'only-saturday'],
+        })
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const resetTimetableCalculation = vi.fn()
+        const context = new Proxy(state, {
+            get(target, property) {
+                if (property === 'saveState') return saveState
+                if (property === 'resetTimetableCalculation') return resetTimetableCalculation
+
+                return Reflect.get(target, property)
+            },
+        })
+        const countContext = {
+            get selectedModules() {
+                return modules.filter(module => state.selectedModuleKeys.includes(module.selection_key))
+            },
+            selectedCourseCountForModule(module) {
+                return component.methods.selectedCourseCountForModule.call(state, module)
+            },
+        }
+        const combinations = computed(() => component.computed.theoreticalCombinationCount.call(countContext))
+        const initialFilters = { ...state.timetableFilters }
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue', 'utf8')
+        expect(source).toContain('@click="updateModuleSaturdayOption(true)"')
+        expect(source).toContain('@click="updateModuleSaturdayOption(false)"')
+        expect(combinations.value).toBe(2n)
+
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(false)
+        expect(state.selectedCourseKeys).toEqual(['weekday'])
+        expect(state.selectedModuleKeys).toEqual(['mixed'])
+        expect(combinations.value).toBe(1n)
+        expect(state.timetableFilters).toEqual(initialFilters)
+        expect(saveState).toHaveBeenCalledTimes(1)
+        expect(resetTimetableCalculation).toHaveBeenCalledTimes(1)
+
+        await component.methods.updateModuleSaturdayOption.call(context, true)
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(true)
+        expect(new Set(state.selectedCourseKeys)).toEqual(new Set(['monday', 'saturday', 'weekday', 'only-saturday']))
+        expect(state.selectedModuleKeys).toEqual(['mixed', 'saturday-only'])
+        expect(combinations.value).toBe(2n)
+        expect(saveState).toHaveBeenCalledTimes(2)
+        expect(state.saturdayDeselectedCourseKeys).toEqual([])
+
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.selectedCourseKeys).toEqual(['weekday'])
+        expect(state.selectedModuleKeys).toEqual(['mixed'])
+        expect(saveState).toHaveBeenCalledTimes(3)
+
+        state.selectedCourseKeys = ['only-saturday']
+        state.selectedModuleKeys = ['saturday-only']
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.selectedCourseKeys).toEqual([])
+        expect(state.selectedModuleKeys).toEqual([])
+        expect(combinations.value).toBe(0n)
+    })
+
     it('starts without a timetable mode and only shows modules for automatic creation', () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
@@ -5240,8 +5388,9 @@ describe('TimetableV3', () => {
         expect(source).toContain(':is="moduleCoursesDialogInteractive ? \'button\' : \'article\'"')
         expect(source).toContain(':role="moduleCoursesDialogInteractive ? \'checkbox\' : null"')
         expect(source).toContain("'timetable-v3__module-course--planned': moduleCourseAlreadyPlanned(course)")
-        expect(source).toContain(':disabled="moduleCoursesDialogInteractive ? moduleCourseAlreadyPlanned(course) : null"')
-        expect(source).toContain(':aria-disabled="moduleCourseAlreadyPlanned(course) ? \'true\' : null"')
+        expect(source).toContain(':disabled="moduleCoursesDialogInteractive')
+        expect(source).toContain('? moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course)')
+        expect(source).toContain(':aria-disabled="moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course) ? \'true\' : null"')
         expect(source).toContain('v-if="moduleCoursesDialogInteractive" class="timetable-v3__module-course-check"')
         expect(source).toContain('v-if="moduleCourseAlreadyPlanned(course)"')
         expect(source).toContain('class="timetable-v3__module-course-planned"')
@@ -5631,6 +5780,55 @@ describe('TimetableV3', () => {
         expect(saveState).toHaveBeenCalledOnce()
     })
 
+    it.each([true, false])('restores Sa=%s without selecting or deselecting courses on reload', (includeSaturday) => {
+        const component = (TimetableV3 as any)
+        const context = {
+            ...component.data(),
+            planningSelectionValues: {},
+            storedState: {
+                moduleSelection: {
+                    mode: 'with_student',
+                    studentCode: '1001',
+                    planningValues: {},
+                    selectedKeys: ['d2'],
+                    selectedCourseKeys: ['weekday'],
+                    options: { includeSaturday, saturdayDeselectedCourseKeys: ['saturday'] },
+                },
+            },
+        }
+        component.methods.resetSelectedStudentSelectionDetails.call(context)
+        component.methods.setModuleSelectionGroups.call(context, [{
+            key: 'current',
+            modules: [{
+                selection_key: 'd2',
+                courses: [
+                    { key: 'weekday', timetable_entries: [{ weekday: 2 }] },
+                    { key: 'saturday', timetable_entries: [{ weekday: 6 }] },
+                ],
+            }],
+        }], '1001')
+
+        expect(context.moduleOptionsIncludeSaturday).toBe(includeSaturday)
+        expect(context.saturdayDeselectedCourseKeys).toEqual(['saturday'])
+        expect(context.selectedCourseKeys).toEqual(['weekday'])
+        expect(context.selectedModuleKeys).toEqual(['d2'])
+    })
+
+    it('saves Sa when changing the option does not change course selections', async () => {
+        const component = (TimetableV3 as any)
+        const context = {
+            ...component.data(),
+            isLoadingState: false,
+            saveState: vi.fn().mockResolvedValue(undefined),
+        }
+
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(context.moduleOptionsIncludeSaturday).toBe(false)
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.saveState).toHaveBeenCalledOnce()
+    })
+
     it('restores only persisted course selections from the matching planning context', () => {
         const methods = (TimetableV3 as any).methods
         const groups = [{
@@ -5658,6 +5856,10 @@ describe('TimetableV3', () => {
                     scheduleCreationMode: 'automatic',
                     selectedKeys: ['current:D5'],
                     selectedCourseKeys: ['d5-a-2', 'missing-course'],
+                    options: {
+                        includeSaturday: false,
+                        saturdayDeselectedCourseKeys: ['d5-b', 'missing-course'],
+                    },
                 },
             },
             planningSelectionValues: {
@@ -5679,6 +5881,8 @@ describe('TimetableV3', () => {
         expect(context.selectedCourseKeys).toEqual(['d5-a-1', 'd5-a-2'])
         expect(context.selectedModuleKeys).toEqual(['current:D5'])
         expect(context.scheduleCreationMode).toBe('automatic')
+        expect(context.moduleOptionsIncludeSaturday).toBe(false)
+        expect(context.saturdayDeselectedCourseKeys).toEqual(['d5-b'])
     })
 
     it('restores all selected modules and courses beyond the former module and hour limits', () => {
@@ -5898,6 +6102,8 @@ describe('TimetableV3', () => {
             isSavingState: false,
             stateSaveFailed: false,
             storedState: { retained: true },
+            moduleOptionsIncludeSaturday: false,
+            saturdayDeselectedCourseKeys: ['d5-saturday'],
             workspaceId: WORKSPACE_ID,
             planningMode: 'without_student',
             selectedStudent: null,
@@ -5946,6 +6152,10 @@ describe('TimetableV3', () => {
                     scheduleCreationMode: 'automatic',
                     selectedKeys: ['current:D5'],
                     selectedCourseKeys: ['d5-a'],
+                    options: {
+                        includeSaturday: false,
+                        saturdayDeselectedCourseKeys: ['d5-saturday'],
+                    },
                 },
                 creationOptions: {
                     filters: {

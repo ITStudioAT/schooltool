@@ -15,6 +15,242 @@ const homepageAppPath = resolve(process.cwd(), 'resources/js/pages/homepage/App.
 const homepageStorePath = resolve(process.cwd(), 'resources/js/stores/homepage/HomepageStore.js')
 
 describe('Student timetables overview V2 preparation', () => {
+    it('remembers Nein and exact course selections across reload, then restores Saturday-only modules with Ja', () => {
+        const modules = [
+            { selection_key: 'weekday', courses: [{ key: 'weekday-course', timetable_entries: [{ weekday: 2 }] }] },
+            { selection_key: 'saturday', courses: [{ key: 'saturday-course', timetable_entries: [{ weekday: 6 }] }] },
+        ]
+        function createContext(userId = 1) {
+            const context = {
+                ...OverviewV2.data(),
+                user: { id: userId },
+                overview: { student: { student_code: 'student-1' } },
+                moduleSelectionGroups: [{ modules }],
+            }
+            for (const key of ['automaticPlanningStorageKey', 'automaticPlanningCatalogSignature', 'automaticPlanningDraft']) {
+                Object.defineProperty(context, key, { get: () => OverviewV2.computed[key].call(context) })
+            }
+
+            return context
+        }
+        const initial = createContext()
+        window.sessionStorage.removeItem(initial.automaticPlanningStorageKey)
+        initial.scheduleCreationMode = 'automatic'
+        initial.selectedModuleKeys = ['weekday', 'saturday']
+        initial.selectedCourseKeys = ['weekday-course', 'saturday-course']
+        OverviewV2.methods.updateModuleSaturdayOption.call(initial, false)
+        OverviewV2.methods.saveAutomaticPlanningDraft.call(initial)
+
+        const restored = createContext()
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(restored)
+        expect(restored.scheduleCreationMode).toBe('automatic')
+        expect(restored.moduleOptionsIncludeSaturday).toBe(false)
+        expect(restored.selectedModuleKeys).toEqual(['weekday'])
+        expect(restored.selectedCourseKeys).toEqual(['weekday-course'])
+        expect(restored.saturdayDeselectedCourseKeys).toEqual(['saturday-course'])
+
+        const otherStudent = createContext(2)
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(otherStudent)
+        expect(otherStudent.moduleOptionsIncludeSaturday).toBe(true)
+        expect(otherStudent.selectedCourseKeys).toEqual([])
+        const changedCatalog = createContext()
+        changedCatalog.moduleSelectionGroups = []
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(changedCatalog)
+        expect(changedCatalog.selectedCourseKeys).toEqual([])
+
+        OverviewV2.methods.updateModuleSaturdayOption.call(restored, true)
+        expect(restored.selectedModuleKeys).toEqual(['weekday', 'saturday'])
+        expect(restored.selectedCourseKeys).toEqual(['weekday-course', 'saturday-course'])
+        OverviewV2.methods.saveAutomaticPlanningDraft.call(restored)
+        const restoredJa = createContext()
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(restoredJa)
+        expect(restoredJa.moduleOptionsIncludeSaturday).toBe(true)
+        expect(restoredJa.selectedCourseKeys).toEqual(restored.selectedCourseKeys)
+
+        restored.selectedModuleKeys = []
+        restored.selectedCourseKeys = []
+        OverviewV2.methods.updateModuleSaturdayOption.call(restored, false)
+        OverviewV2.methods.saveAutomaticPlanningDraft.call(restored)
+        const empty = createContext()
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(empty)
+        expect(empty.moduleOptionsIncludeSaturday).toBe(false)
+        expect(empty.selectedCourseKeys).toEqual([])
+
+        OverviewV2.methods.resetStudentTimetablePlanning.call(restored)
+        OverviewV2.methods.saveAutomaticPlanningDraft.call(restored)
+        const restarted = createContext()
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(restarted)
+        expect(restarted.scheduleCreationMode).toBeNull()
+        expect(restarted.moduleOptionsIncludeSaturday).toBe(true)
+        expect(restarted.selectedCourseKeys).toEqual([])
+        expect(restarted.saturdayDeselectedCourseKeys).toEqual([])
+
+        OverviewV2.methods.updateModuleSaturdayOption.call(restarted, false)
+        OverviewV2.methods.saveAutomaticPlanningDraft.call(restarted)
+        const beforeModeChoice = createContext()
+        OverviewV2.methods.restoreAutomaticPlanningDraft.call(beforeModeChoice)
+        expect(beforeModeChoice.scheduleCreationMode).toBeNull()
+        expect(beforeModeChoice.moduleOptionsIncludeSaturday).toBe(false)
+        window.sessionStorage.removeItem(restarted.automaticPlanningStorageKey)
+    })
+
+    it('does not overwrite a draft during initial loading', () => {
+        const context = { pageLoading: true, saveAutomaticPlanningDraft: vi.fn() }
+        OverviewV2.watch.automaticPlanningDraft.handler.call(context)
+        expect(context.saveAutomaticPlanningDraft).not.toHaveBeenCalled()
+        context.pageLoading = false
+        OverviewV2.watch.automaticPlanningDraft.handler.call(context)
+        expect(context.saveAutomaticPlanningDraft).toHaveBeenCalledOnce()
+    })
+
+    it('reapplies Ja after reload without remembered deselections and preserves unrelated modules', async () => {
+        const component = OverviewV2
+        const modules = [
+            { selection_key: 'd2', courses: [
+                { key: 'weekday', timetable_entries: [{ weekday: 2 }] },
+                { keys: ['saturday-1', 'saturday-2'], timetable_entries: [{ weekday: 6 }] },
+            ] },
+            { selection_key: 'unselected', courses: [
+                { key: 'unselected-saturday', timetable_entries: [{ weekday: 6 }] },
+            ] },
+        ]
+        const state = {
+            ...component.data(),
+            isLoadingState: false,
+            moduleSelectionGroups: [{ modules }],
+            selectedModuleKeys: ['d2'],
+            selectedCourseKeys: ['weekday'],
+            saveState: vi.fn().mockResolvedValue(undefined),
+            resetTimetableCalculation: vi.fn(),
+        }
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(true)
+        expect(state.saturdayDeselectedCourseKeys).toEqual([])
+        await component.methods.updateModuleSaturdayOption.call(state, true)
+
+        expect(state.selectedCourseKeys).toEqual(['weekday', 'saturday-1', 'saturday-2'])
+        expect(state.selectedModuleKeys).toEqual(['d2'])
+        expect(component.methods.selectedCourseCountForModule.call(state, modules[0])).toBe(2)
+        await component.methods.updateModuleSaturdayOption.call(state, true)
+        expect(state.selectedCourseKeys).toHaveLength(3)
+    })
+
+    it('blocks Saturday courses individually and in bulk until Ja is selected', async () => {
+        const source = readFileSync(overviewV2Path, 'utf8')
+        expect(source).toMatch(/v-if="moduleCourseSaturdayDisabled\(course\)"\s+class="[^"]+">\s+Nicht auswählbar: Sa ist auf Nein gesetzt\./)
+        const component = OverviewV2
+        const saturday = { keys: ['sat', 'weekday-part'], timetable_entries: [{ weekday: 6 }, { weekday: 2 }] }
+        const weekday = { key: 'weekday', timetable_entries: [{ weekday: 1 }] }
+        const module = { selection_key: 'mixed', courses: [saturday, weekday] }
+        const group = { modules: [module, { selection_key: 'sat-only', courses: [saturday] }] }
+        const context = {
+            ...component.data(),
+            moduleOptionsIncludeSaturday: false,
+            moduleCourseDialogModule: module,
+            moduleCourseDialogCourses: module.courses,
+            saveState: vi.fn().mockResolvedValue(undefined),
+            moduleCourseSelected: () => false,
+        }
+        context.selectableModulesForGroup = group => component.methods.selectableModulesForGroup.call(context, group)
+        context.moduleSelectionKeysForGroup = group => component.methods.moduleSelectionKeysForGroup.call(context, group)
+        context.courseSelectionKeysForGroup = group => component.methods.courseSelectionKeysForGroup.call(context, group)
+
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, saturday)).toBe(true)
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, weekday)).toBe(false)
+        await component.methods.toggleModuleCourse.call(context, saturday)
+        expect(context.selectedCourseKeys).toEqual([])
+
+        await component.methods.selectAllModuleCourses.call(context)
+        expect(context.selectedCourseKeys).toEqual(['weekday'])
+        expect(context.selectedModuleKeys).toEqual(['mixed'])
+        await component.methods.selectAllModulesInGroup.call(context, group)
+        expect(context.selectedCourseKeys).toEqual(['weekday'])
+        expect(context.selectedModuleKeys).toEqual(['mixed'])
+
+        context.moduleOptionsIncludeSaturday = true
+        expect(component.methods.moduleCourseSaturdayDisabled.call(context, saturday)).toBe(false)
+        await component.methods.toggleModuleCourse.call(context, saturday)
+        expect(context.selectedCourseKeys).toEqual(['weekday', 'sat', 'weekday-part'])
+    })
+
+    it('deselects Saturday lessons as complete groups and updates combinations', async () => {
+        const component = OverviewV2
+        const modules = [
+            { selection_key: 'mixed', courses: [
+                { keys: ['monday', 'saturday'], timetable_entries: [{ weekday: 1 }, { weekday: '6' }] },
+                { key: 'weekday', timetable_entries: [{ weekday: 5 }] },
+            ] },
+            { selection_key: 'saturday-only', courses: [
+                { key: 'only-saturday', timetable_entries: [{ weekday: 6 }] },
+            ] },
+            { selection_key: 'unselected', courses: [{ key: 'unselected-weekday' }] },
+        ]
+        const state = reactive({
+            ...component.data(),
+            isLoadingState: false,
+            moduleSelectionGroups: [{ modules }],
+            selectedModuleKeys: ['mixed', 'saturday-only'],
+            selectedCourseKeys: ['monday', 'saturday', 'weekday', 'only-saturday'],
+        })
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const resetTimetableCalculation = vi.fn()
+        const context = new Proxy(state, {
+            get(target, property) {
+                if (property === 'saveState') return saveState
+                if (property === 'resetTimetableCalculation') return resetTimetableCalculation
+
+                return Reflect.get(target, property)
+            },
+        })
+        const countContext = {
+            get selectedModules() {
+                return modules.filter(module => state.selectedModuleKeys.includes(module.selection_key))
+            },
+            selectedCourseCountForModule(module) {
+                return component.methods.selectedCourseCountForModule.call(state, module)
+            },
+        }
+        const combinations = computed(() => component.computed.theoreticalCombinationCount.call(countContext))
+        const initialFilters = { ...state.timetableFilters }
+        const source = readFileSync(overviewV2Path, 'utf8')
+        expect(source).toContain('@click="updateModuleSaturdayOption(true)"')
+        expect(source).toContain('@click="updateModuleSaturdayOption(false)"')
+        expect(combinations.value).toBe(2n)
+
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(false)
+        expect(state.selectedCourseKeys).toEqual(['weekday'])
+        expect(state.selectedModuleKeys).toEqual(['mixed'])
+        expect(combinations.value).toBe(1n)
+        expect(state.timetableFilters).toEqual(initialFilters)
+        expect(saveState).toHaveBeenCalledTimes(0)
+        expect(resetTimetableCalculation).toHaveBeenCalledTimes(0)
+
+        await component.methods.updateModuleSaturdayOption.call(context, true)
+
+        expect(state.moduleOptionsIncludeSaturday).toBe(true)
+        expect(new Set(state.selectedCourseKeys)).toEqual(new Set(['monday', 'saturday', 'weekday', 'only-saturday']))
+        expect(state.selectedModuleKeys).toEqual(['mixed', 'saturday-only'])
+        expect(combinations.value).toBe(2n)
+        expect(saveState).toHaveBeenCalledTimes(0)
+        expect(state.saturdayDeselectedCourseKeys).toEqual([])
+
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.selectedCourseKeys).toEqual(['weekday'])
+        expect(state.selectedModuleKeys).toEqual(['mixed'])
+        expect(saveState).toHaveBeenCalledTimes(0)
+
+        state.selectedCourseKeys = ['only-saturday']
+        state.selectedModuleKeys = ['saturday-only']
+        await component.methods.updateModuleSaturdayOption.call(context, false)
+
+        expect(state.selectedCourseKeys).toEqual([])
+        expect(state.selectedModuleKeys).toEqual([])
+        expect(combinations.value).toBe(0n)
+    })
+
     it('reactively counts complete grouped selected courses and theoretical combinations', () => {
         const state = reactive({
             selectedModules: [
@@ -1115,7 +1351,7 @@ describe('Student timetables overview V2 preparation', () => {
         expect(source).toContain('<v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>')
         expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
         expect(source).toContain("'overview-v2-module-course--planned': moduleCourseAlreadyPlanned(course)")
-        expect(source).toContain(':disabled="moduleCourseAlreadyPlanned(course)"')
+        expect(source).toContain(':disabled="moduleCourseAlreadyPlanned(course) || moduleCourseSaturdayDisabled(course)"')
         expect(source).toContain('class="overview-v2-module-course-planned"')
         expect(source).toContain('Verplant')
         expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
