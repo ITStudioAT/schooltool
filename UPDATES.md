@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.48.5
+
+### System
+
+- Aktuelles Update: Sichtbar für User
+
 ## 3.48.4
 
 ### SEPP
@@ -13,10 +19,6 @@
 ### Dokumentation
 
 - Changelog: Begrenzung der Einträge pro Seite
-
-### System
-
-- Aktuelles Update: Sichtbar für User
 
 ## 3.48.3
 
