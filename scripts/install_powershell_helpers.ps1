@@ -83,6 +83,46 @@ function gitpull {
     Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f `$finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
 }
 
+function Invoke-ProjectGitWorkflow {
+    param([string]`$Command, [string[]]`$CommandArguments)
+    `$repositoryRoot = git rev-parse --show-toplevel 2>`$null
+    if (`$LASTEXITCODE -ne 0 -or -not `$repositoryRoot) {
+        throw 'Run the workflow command inside the schooltool repository.'
+    }
+    `$repositoryRoot = `$repositoryRoot.Trim()
+    `$remoteUrls = @(git -C `$repositoryRoot remote get-url origin 2>`$null)
+    if (`$LASTEXITCODE -ne 0 -or `$remoteUrls.Count -ne 1) {
+        throw 'The workflow requires an origin remote.'
+    }
+    `$pushUrls = @(git -C `$repositoryRoot remote get-url --all --push origin 2>`$null)
+    if (`$LASTEXITCODE -ne 0 -or `$pushUrls.Count -ne 1) {
+        throw 'The workflow requires exactly one origin push URL.'
+    }
+    foreach (`$url in @(`$remoteUrls + `$pushUrls)) {
+        if (`$url.Trim() -notmatch '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)ITStudioAT/schooltool(?:\.git)?/?$') {
+            throw 'The branch workflow only trusts ITStudioAT/schooltool on GitHub.'
+        }
+    }
+    `$workflow = Join-Path `$repositoryRoot 'scripts/git_workflow.ps1'
+    if (-not (Test-Path -LiteralPath `$workflow -PathType Leaf)) {
+        throw 'This branch does not contain the workflow helpers yet. Update main and incorporate it into the feature.'
+    }
+    Push-Location -LiteralPath `$repositoryRoot
+    try {
+        & `$workflow -Command `$Command -CommandArguments `$CommandArguments
+    }
+    finally {
+        Pop-Location
+    }
+}
+function gitstart { Invoke-ProjectGitWorkflow 'gitstart' `$args }
+function gitwork { Invoke-ProjectGitWorkflow 'gitwork' `$args }
+function gitmain { Invoke-ProjectGitWorkflow 'gitmain' `$args }
+function gitsave { Invoke-ProjectGitWorkflow 'gitsave' `$args }
+function gitupdate { Invoke-ProjectGitWorkflow 'gitupdate' `$args }
+function gitrelease { Invoke-ProjectGitWorkflow 'gitrelease' `$args }
+function gitcheck { Invoke-ProjectGitWorkflow 'gitcheck' `$args }
+
 $endMarker
 "@
 
@@ -124,4 +164,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Project-aware Git helpers installed in $profilePath" -ForegroundColor Green
-Write-Host 'Open a new PowerShell terminal before using gitpush.' -ForegroundColor Cyan
+Write-Host 'Open a new PowerShell terminal to use gitpush, gitstart, gitwork, gitmain, gitsave, gitupdate, gitrelease and gitcheck.' -ForegroundColor Cyan

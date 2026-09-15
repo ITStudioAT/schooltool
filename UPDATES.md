@@ -1,5 +1,9 @@
 # UPDATES
 
+## 3.48.6
+
+- SYSTEM: Update- und Versionssystem verbessert
+
 ## 3.48.5
 
 ### System

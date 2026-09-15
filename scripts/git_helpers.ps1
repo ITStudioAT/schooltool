@@ -199,7 +199,7 @@ function gitpull {
     Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f $finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
 }
 
-function gitpush {
+function Invoke-SchooltoolPublish {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -212,18 +212,27 @@ function gitpush {
         [switch]$WaitForCI,
 
         [Parameter(Mandatory = $false)]
-        [switch]$Full
+        [switch]$Full,
+
+        [string]$ExpectedMainCommit
     )
 
     try {
         $branch = git branch --show-current
 
-        if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') {
+        if ($LASTEXITCODE -ne 0 -or (-not $ExpectedMainCommit -and $branch -ne 'main')) {
             throw "gitpush only publishes the main branch. Current branch: $branch"
         }
 
-        Invoke-SchooltoolCommand 'Synchronizing main before the release...' {
-            git pull --rebase --autostash origin main
+        if ($ExpectedMainCommit) {
+            if ($branch -notlike 'codex/release-*' -or -not $Full) {
+                throw 'Feature releases require an isolated release branch and full checks.'
+            }
+        }
+        else {
+            Invoke-SchooltoolCommand 'Synchronizing main before the release...' {
+                git pull --ff-only origin main
+            }
         }
 
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {
@@ -253,7 +262,7 @@ function gitpush {
         $releaseCommit = $null
 
         if (-not $sourceChanges) {
-            if ($localHead -eq $remoteHead) {
+            if ($localHead -eq $remoteHead -and -not $version) {
                 Write-Host 'No source changes to publish.' -ForegroundColor Yellow
                 Write-SchooltoolCompletionTime
                 return
@@ -283,6 +292,13 @@ function gitpush {
             if (-not $releaseCommit) {
                 $sourceCommit = $localHead
                 Write-Host "Completing the unpushed source commit $sourceCommit." -ForegroundColor Cyan
+            }
+        }
+
+        if ($releaseCommit -and $Full) {
+            Invoke-SchooltoolReleaseChecks -Full
+            Invoke-SchooltoolCommand 'Verifying the existing release after full checks...' {
+                php scripts/frontend-release.php verify $parentCommit
             }
         }
 
@@ -352,12 +368,35 @@ function gitpush {
             $releaseCommit = git rev-parse HEAD
         }
 
+        if ($ExpectedMainCommit) {
+            Assert-SchooltoolClean
+            $currentBranch = Invoke-SchooltoolGit branch --show-current
+            if ($currentBranch -ne $branch) {
+                throw 'The active branch changed during release checks. Nothing was pushed.'
+            }
+            Update-SchooltoolRemote
+            $latestMain = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
+            if ($latestMain -ne $ExpectedMainCommit) {
+                throw 'main changed during release checks. Nothing was pushed. Incorporate main and test again.'
+            }
+            Write-Host "Ready to publish $releaseCommit to main." -ForegroundColor Cyan
+            Invoke-SchooltoolGit diff --stat $ExpectedMainCommit $releaseCommit
+            $versionLabel = if ($version) { "v$version" } else { 'without changing the version' }
+            $confirmation = Read-Host "Publish $versionLabel? Type RELEASE to confirm"
+            if ($confirmation -cne 'RELEASE') {
+                throw 'Release cancelled. Nothing was pushed.'
+            }
+        }
+
         $pushArguments = @('--atomic', 'origin', 'HEAD:main')
 
         if ($version) {
             $tag = "v$version"
 
-            $existingTagCommit = git rev-list -n 1 $tag 2>$null
+            $existingTagCommit = $null
+            if (Test-SchooltoolRef "refs/tags/$tag") {
+                $existingTagCommit = Invoke-SchooltoolGit rev-list -n 1 $tag
+            }
 
             if ($existingTagCommit) {
                 if ($existingTagCommit -ne $releaseCommit) {
@@ -389,7 +428,7 @@ function gitpush {
         Write-Host ''
         Write-Host 'READY.' -ForegroundColor Green
         Write-Host 'Windows PCs may pull main and run: composer deploy' -ForegroundColor Green
-        Write-Host 'Cloudways may Pull main and run: composer deploy' -ForegroundColor Green
+        Write-Host 'Cloudways may run: composer pdeploy' -ForegroundColor Green
 
         if (-not $WaitForCI) {
             Write-Host 'GitHub is checking release integrity and dependency security in the background.' -ForegroundColor DarkGray
@@ -400,4 +439,17 @@ function gitpush {
         Write-Host $_.Exception.Message -ForegroundColor Red
         throw
     }
+}
+
+. (Join-Path $PSScriptRoot 'git_branch_helpers.ps1')
+
+function gitpush {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$message,
+        [string]$version,
+        [switch]$WaitForCI,
+        [switch]$Full
+    )
+    Invoke-SchooltoolPublish @PSBoundParameters
 }
