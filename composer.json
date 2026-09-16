@@ -83,6 +83,10 @@
             "Composer\\Config::disableProcessTimeout",
             "bash scripts/pdeploy_cloudways.sh"
         ],
+        "preview:deploy": [
+            "Composer\\Config::disableProcessTimeout",
+            "bash scripts/deploy_preview_cloudways.sh"
+        ],
         "setup:powershell": [
             "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_powershell_helpers.ps1"
         ],

@@ -147,6 +147,10 @@
                         <StorageAudit />
                     </div>
 
+                    <v-col v-else-if="isSuperAdminTab && canAccessSuperAdminSettingsTab && sub_action === 'preview'" cols="12">
+                        <PreviewAccess />
+                    </v-col>
+
                     <div v-else-if="isSuperAdminTab && sub_action === 'roles'" class="settings-roles-wrap">
                         <Roles />
                     </div>
@@ -214,13 +218,14 @@ const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/sett
 const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/ActiveSchool.vue'))
 const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
 const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))
+const PreviewAccess = defineAsyncComponent(() => import('@/pages/admin/settings/components/PreviewAccess.vue'))
 const TutoringSettings = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Settings.vue'))
 const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Subjects.vue'))
 const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Users.vue'))
 const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, PreviewAccess, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -465,6 +470,7 @@ export default {
                 { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
                 { key: 'school_switch', label: 'Schule wechseln', meta: 'Aktive Schule', icon: 'mdi-swap-horizontal' },
                 { key: 'user_impersonation', label: 'Benutzer wechseln', meta: 'Übernahme', icon: 'mdi-account-switch' },
+                { key: 'preview', label: 'Vorschau', meta: 'Zugang verwalten', icon: 'mdi-flask-outline' },
             ]
         },
         visibleLicenceNavigationItems() {
@@ -587,7 +593,7 @@ export default {
                 keys = ['teaching_admin']
                 fallback = 'teaching_admin'
             } else {
-                keys = ['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation']
+                keys = ['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation', 'preview']
                 fallback = 'general'
             }
 

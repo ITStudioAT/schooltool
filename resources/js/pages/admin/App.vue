@@ -20,6 +20,7 @@
             :schoolwide-active-schoolyear="config?.schoolwide_active_schoolyear"
             :selected-schoolyear="config?.selected_schoolyear"
             :can-manage-schoolwide-schoolyear="canManageSchoolwideSchoolyear"
+            :preview="config?.preview"
             :title="config?.selected_school?.long_name || ''" />
 
         <v-main class="bg-background" v-if="config">

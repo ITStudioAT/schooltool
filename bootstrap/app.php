@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\AbaAccess;
 use App\Http\Middleware\ApiAllowed;
+use App\Http\Middleware\FeaturePreviewPerimeter;
+use App\Http\Middleware\RequireFeaturePreviewAccess;
 use App\Http\Middleware\RestrictRestaurantParentSession;
 use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Middleware\ToolLicensed;
@@ -20,6 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
+        $middleware->prepend(FeaturePreviewPerimeter::class);
+        $middleware->appendToGroup('web', RequireFeaturePreviewAccess::class);
+        $middleware->appendToGroup('api', RequireFeaturePreviewAccess::class);
+        $middleware->appendToPriorityList(StartSession::class, RequireFeaturePreviewAccess::class);
         $middleware->appendToGroup('web', RestrictRestaurantParentSession::class);
         $middleware->appendToGroup('api', RestrictRestaurantParentSession::class);
         $middleware->appendToPriorityList(StartSession::class, RestrictRestaurantParentSession::class);

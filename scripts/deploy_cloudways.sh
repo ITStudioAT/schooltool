@@ -4,6 +4,11 @@ set -Eeuo pipefail
 project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
+if [[ "${SCHOOLTOOL_PREVIEW_INSTANCE:-false}" =~ ^(true|1|yes|on)$ ]] || { [ -f .env ] && grep -Eiq "^[[:space:]]*SCHOOLTOOL_PREVIEW_INSTANCE[[:space:]]*=[[:space:]]*['\"]?(true|1|yes|on)['\"]?([[:space:]]*(#.*)?)?$" .env; }; then
+    echo "Production deployment is disabled on the preview instance. Use gitpreview." >&2
+    exit 1
+fi
+
 prepare_only=false
 
 if [ "${1:-}" = "--prepare" ]; then

@@ -3,7 +3,7 @@
         v-if="isVisible"
         flat
         class="admin-app-bar"
-        :height="$vuetify?.display.xs ? 104 : 64"
+        :height="$vuetify?.display.xs ? (hasPreviewLink ? 152 : 104) : 64"
         :color="shellColor"
         :style="shellTextColor ? { color: shellTextColor } : undefined">
         <template #prepend>
@@ -20,6 +20,30 @@
         </template>
         <template #append>
             <div class="admin-app-bar__schoolyears d-flex align-center ga-1 ga-sm-2 pr-2 pr-sm-4">
+                <v-btn
+                    v-if="preview?.is_preview"
+                    :href="preview.live_url"
+                    color="warning"
+                    variant="flat"
+                    prepend-icon="mdi-flask-outline"
+                    size="small"
+                    aria-label="Zur Hauptanwendung"
+                    class="admin-app-bar__preview text-none">
+                    <span>
+                        <span class="d-block font-weight-bold">Vorschau · Live-Daten</span>
+                        <span class="d-block text-caption">Zur Hauptanwendung</span>
+                    </span>
+                </v-btn>
+                <v-btn
+                    v-else-if="preview?.can_access && preview?.url"
+                    :href="preview.url"
+                    color="white"
+                    variant="outlined"
+                    prepend-icon="mdi-flask-outline"
+                    size="small"
+                    class="text-none">
+                    Zur Vorschau
+                </v-btn>
                 <v-btn
                     v-if="schoolwideActiveSchoolyearLabel"
                     :aria-label="`Schulweit aktives Schuljahr ${schoolwideActiveSchoolyearLabel}`"
@@ -180,6 +204,10 @@ export default {
             type: String,
             default: '',
         },
+        preview: {
+            type: Object,
+            default: null,
+        },
     },
 
     emits: ['update:modelValue'],
@@ -195,6 +223,9 @@ export default {
     },
 
     computed: {
+        hasPreviewLink() {
+            return this.preview?.is_preview === true || Boolean(this.preview?.can_access && this.preview?.url)
+        },
         isDrawerOpen: {
             get() {
                 return this.modelValue
@@ -338,6 +369,10 @@ export default {
 .admin-app-bar__logo {
     max-width: 180px;
     object-fit: contain;
+}
+
+.admin-app-bar__preview {
+    min-height: 42px;
 }
 
 .schoolyear-dialog .v-card-title {

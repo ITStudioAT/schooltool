@@ -100,7 +100,7 @@ describe('Admin settings page', () => {
             isAdminTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation', 'preview'])
         expect(items[0]).toMatchObject({
             key: 'general',
             label: 'Grundeinstellungen',
@@ -124,6 +124,46 @@ describe('Admin settings page', () => {
 
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'schools'])
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Alle Lizenzen', 'Lizenzvergaben'])
+    })
+
+    it.each([
+        ['super_admin', true],
+        ['admin', false],
+    ])('restricts the preview settings query to super admins (%s)', async (role, allowed) => {
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [{ path: '/admin/settings', component: Settings }],
+        })
+        await router.push('/admin/settings?tab=super_admin&panel=preview')
+        await router.isReady()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    router,
+                    createTestingPinia({
+                        initialState: {
+                            AdminAdminStore: { config: { is_auth: true, roles: [role] } },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: true,
+                    PreviewAccess: { template: '<div>Preview access management</div>' },
+                    Schoolyears: { template: '<div>Schoolyears management</div>' },
+                },
+            },
+        })
+
+        if (allowed) {
+            await waitFor(() => expect(screen.getByText('Preview access management')).toBeInTheDocument())
+            expect(screen.getByText('Vorschau')).toBeInTheDocument()
+        } else {
+            await waitFor(() => expect(router.currentRoute.value.query.tab).toBe('admin'))
+            expect(screen.queryByText('Preview access management')).not.toBeInTheDocument()
+            expect(screen.queryByText('Vorschau')).not.toBeInTheDocument()
+        }
     })
 
     it('builds the general sub navigation with only module visibility', () => {

@@ -130,6 +130,7 @@ function gitsave { Invoke-ProjectGitWorkflow 'gitsave' `$args }
 function gitupdate { Invoke-ProjectGitWorkflow 'gitupdate' `$args }
 function gitrelease { Invoke-ProjectGitWorkflow 'gitrelease' `$args }
 function gitcheck { Invoke-ProjectGitWorkflow 'gitcheck' `$args }
+function gitpreview { Invoke-ProjectGitWorkflow 'gitpreview' `$args }
 
 $endMarker
 "@

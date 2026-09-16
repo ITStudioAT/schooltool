@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminShellColorPreferenceController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
+use App\Http\Controllers\Admin\FeaturePreviewController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
 use App\Http\Controllers\Admin\ImpersonationController;
@@ -380,6 +381,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
+        Route::get('/admin/feature-preview', [FeaturePreviewController::class, 'index']);
+        Route::put('/admin/feature-preview/settings', [FeaturePreviewController::class, 'updateSettings']);
+        Route::put('/admin/feature-preview/users/{user}', [FeaturePreviewController::class, 'updateUser']);
+
         // navigation, menus
         Route::get('/admin/navigation/profile_menu', [NavigationController::class, 'profileMenu']);
         Route::get('/admin/navigation/user_menu', [NavigationController::class, 'userMenu']);

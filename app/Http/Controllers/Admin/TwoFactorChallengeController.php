@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TwoFactorChallengeRequest;
 use App\Models\User;
 use App\Services\AdminService;
+use App\Services\FeaturePreviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class TwoFactorChallengeController extends Controller
         abort_if(Auth::guard('web')->check(), 409, 'Sie sind bereits angemeldet.');
 
         $user = $this->challengedUser($request);
+        app(FeaturePreviewService::class)->assertCanEnter($user);
         $validated = $request->validated();
         $recoveryCode = $validated['recovery_code'] ?? null;
 

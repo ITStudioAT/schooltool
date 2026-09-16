@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitsave', 'gitupdate', 'gitrelease', 'gitcheck')]
+    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitsave', 'gitupdate', 'gitrelease', 'gitcheck', 'gitpreview')]
     [string]$Command,
 
     [Parameter(ValueFromRemainingArguments = $true)]

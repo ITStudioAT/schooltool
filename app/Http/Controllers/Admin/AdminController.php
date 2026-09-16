@@ -29,6 +29,7 @@ use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
+use App\Services\FeaturePreviewService;
 use App\Services\SchoolService;
 use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
@@ -121,6 +122,7 @@ class AdminController extends Controller
             'payment_active' => config('schooltool.payment_active', false),
             'licence_renewal_days' => (int) config('schooltool.licence_renewal_days', 30),
             'is_auth' => Auth::check(),
+            'preview' => app(FeaturePreviewService::class)->context($user),
             'user' => $user ? new UserWithRoleResource($user) : null,
             'selected_school' => $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
             'selected_schoolyear' => $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,

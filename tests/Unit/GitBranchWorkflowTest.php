@@ -413,3 +413,63 @@ it('dispatches the real workflow entrypoint and rejects releasing main', functio
         ->and($release->getErrorOutput())->toContain('requires a feature branch')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
+
+it('prepares or publishes a preview without modifying main tags or the source feature', function (string $mode): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Preview work\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save preview work"'));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+$env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
+function Read-Host { 'PREVIEW' }
+function Send-SchooltoolPreview { Write-Host 'PREVIEW_UPLOAD_REQUESTED' }
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command."\n"."gitpreview '$mode'");
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
+        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.tar.gz'))->toHaveCount(1);
+
+    $previewRefs = runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/');
+    if ($mode === 'deploy') {
+        expect($previewRefs)->toStartWith('refs/heads/preview/')
+            ->and($result->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED');
+    } else {
+        expect($previewRefs)->toBe('')
+            ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED');
+    }
+})->with(['prepare', 'deploy']);
+
+it('rejects preview with schema changes and preserves its original branch', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    mkdir($this->workflowPc.'/database/migrations', 0777, true);
+    commitBranchWorkflowFile($this->workflowPc, 'database/migrations/new-table.php', '<?php');
+    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'HEAD:feature/new-function');
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitpreview prepare');
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('Preview shares the live schema')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+});
+
+it('stops a preview when full checks fail without uploading or publishing', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks { throw 'PREVIEW_CHECKS_FAILED' }
+function Send-SchooltoolPreview { throw 'UNEXPECTED_UPLOAD' }
+gitpreview prepare
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('PREVIEW_CHECKS_FAILED')
+        ->and($result->getOutput())->not->toContain('UNEXPECTED_UPLOAD')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function');
+});

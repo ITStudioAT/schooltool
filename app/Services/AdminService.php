@@ -124,6 +124,8 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(423, 'Der Token ist ungültig oder abgelaufen.');
         }
@@ -133,8 +135,14 @@ class AdminService
 
     public function checkEmail(array $data): array
     {
+        $preview = app(FeaturePreviewService::class);
+        if ($preview->isPreview()) {
+            abort_unless($preview->enabled(), 503, 'Die Vorschau ist derzeit deaktiviert.');
+        }
+
         $users = User::where('email', $data['email'])
             ->where('is_active', true)
+            ->when($preview->isPreview(), fn ($query) => $query->where('feature_preview_allowed', true)->whereNotNull('confirmed_at'))
             ->whereHas('roles', function ($query) {
                 $query->whereIn('name', self::ADMIN_LOGIN_ROLES);
             })
@@ -236,6 +244,7 @@ class AdminService
     public function passwordUnkownSetPassword(array $data): array
     {
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(401, 'Token falsch oder abgelaufen');
@@ -258,6 +267,8 @@ class AdminService
         $user = User::where('email', $data['email'])
             ->where('school_id', $data['school']['id'])
             ->first();
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if ($user->hasEnabledTwoFactorAuthentication()) {
             $this->startTwoFactorChallenge($user, $this->resolveRemember($data));
@@ -450,6 +461,8 @@ class AdminService
 
     private function validateUserCanLogin($user): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user->confirmed_at) {
             abort(423, 'Benutzer ist noch nicht bestätigt.');
         }

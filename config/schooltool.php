@@ -2,6 +2,12 @@
 
 return [
     'version' => '3.48.7',
+    'preview' => [
+        'instance' => filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN),
+        'url' => env('SCHOOLTOOL_PREVIEW_URL', ''),
+        'live_url' => env('SCHOOLTOOL_PREVIEW_LIVE_URL', ''),
+        'expected_host' => env('SCHOOLTOOL_PREVIEW_EXPECTED_HOST', ''),
+    ],
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),
         'npm' => env('APP_NPM_VERSION'),

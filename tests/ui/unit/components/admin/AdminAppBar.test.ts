@@ -83,6 +83,28 @@ describe('AdminAppBar', () => {
         expect(screen.getByRole('banner')).toHaveAttribute('data-color', '#336699')
     })
 
+    it('only offers the preview link with explicit access', async () => {
+        const { rerender } = renderAppBar({
+            preview: { is_preview: false, can_access: false, url: 'https://preview.example.test/admin' },
+        })
+
+        expect(screen.queryByText('Zur Vorschau')).not.toBeInTheDocument()
+
+        await rerender({ preview: { is_preview: false, can_access: true, url: 'https://preview.example.test/admin' } })
+
+        expect(screen.getByText('Zur Vorschau')).toHaveAttribute('href', 'https://preview.example.test/admin')
+    })
+
+    it('identifies the preview and links directly back to the live application', () => {
+        renderAppBar({
+            preview: { is_preview: true, live_url: 'https://live.example.test/admin' },
+        })
+
+        expect(screen.getByText('Vorschau · Live-Daten')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Zur Hauptanwendung' })).toHaveAttribute('href', 'https://live.example.test/admin')
+        expect(screen.queryByText('Zur Vorschau')).not.toBeInTheDocument()
+    })
+
     it('always shows the schoolwide and personal schoolyears', () => {
         renderAppBar()
 

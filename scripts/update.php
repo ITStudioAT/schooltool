@@ -317,6 +317,11 @@ function updateUsage(): int
 }
 
 $arguments = array_slice($argv, 1);
+if (filter_var(getenv('SCHOOLTOOL_PREVIEW_INSTANCE') ?: false, FILTER_VALIDATE_BOOLEAN)
+    || filter_var(dotEnvValue('SCHOOLTOOL_PREVIEW_INSTANCE') ?: false, FILTER_VALIDATE_BOOLEAN)) {
+    fwrite(STDERR, "Production/local deployment is disabled on the preview instance. Use gitpreview from a development workstation.\n");
+    exit(1);
+}
 $target = requestedUpdateTarget($arguments);
 $prepareOnly = in_array('--prepare', $arguments, true);
 $dryRun = in_array('--dry-run', $arguments, true);

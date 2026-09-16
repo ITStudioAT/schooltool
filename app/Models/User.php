@@ -230,6 +230,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'hopper_account_ids' => 'array',
             'students_timetables_teacher_listed' => 'boolean',
             'use_school_color_for_admin_ui' => 'boolean',
+            'feature_preview_allowed' => 'boolean',
         ];
     }
 
