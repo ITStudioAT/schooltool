@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { transfer as transferStudentEntry } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseStudentEntryController'
+import { transfer as transferBehaviourEntry } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseBehaviourEntryController'
 import {
     index as notificationRecipientsIndex,
     preview as previewNotificationRecipients,
@@ -17,6 +19,26 @@ export const useCourseStudentEntryStore = defineStore('AdminCourseStudentEntrySt
     },
 
     actions: {
+        async transfer(entryId, data, kind = 'assessment') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const route = kind === 'assessment' ? transferStudentEntry : transferBehaviourEntry
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(route.url(entryId), data)
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Übertragen fehlgeschlagen.',
+                    type: 'error',
+                    timeout: 5000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
         async index(courseId, userId) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

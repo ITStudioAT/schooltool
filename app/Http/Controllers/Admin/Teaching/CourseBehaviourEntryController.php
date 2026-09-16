@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\User;
+use App\Services\TeachingCourseEntryTransferService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class CourseBehaviourEntryController extends Controller
@@ -116,6 +120,49 @@ class CourseBehaviourEntryController extends Controller
         $entry = TeachingCourseBehaviourEntry::create($payload);
 
         return response()->json(['data' => $entry], 201);
+    }
+
+    public function transfer(Request $request, TeachingCourseBehaviourEntry $course_behaviour_entry, TeachingCourseEntryTransferService $transferService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $entries = DB::transaction(function () use ($request, $course_behaviour_entry, $transferService, $authUser) {
+            $source = TeachingCourseBehaviourEntry::query()->lockForUpdate()->findOrFail($course_behaviour_entry->id);
+            $course = $source->teachingCourse;
+            abort_unless($course, 403, 'Sie haben keine Berechtigung');
+            $this->authorizeTeachingCourseAccess($course, $authUser);
+            abort_if(blank($source->type), 409, 'Erinnerungen können nicht übertragen werden.');
+
+            $userIds = $transferService->targetUserIds($request, $course, $source->user_id, $source->date);
+            $actor = $this->teachingCourseActor($authUser, $course);
+            $kind = $source->kind ?: 'behaviour';
+            $allowedTypes = collect($kind === 'notification'
+                ? $this->teachingNotificationsForSchoolyear($actor, $course->schoolyear_id)
+                : $this->teachingBehaviourForSchoolyear($actor, $course->schoolyear_id))->pluck('short_name')->filter()->all();
+            $payload = Validator::make([
+                ...$source->only(['type', 'description', 'due_date', 'done_date']),
+                'kind' => $kind,
+            ], [
+                'kind' => ['required', Rule::in(['behaviour', 'notification'])],
+                'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
+                'description' => ['nullable', 'string', 'max:1024'],
+                'due_date' => ['nullable', 'date'],
+                'done_date' => ['nullable', 'date', 'prohibited_if:due_date,null'],
+            ])->validate();
+
+            return collect($userIds)->map(fn (int $userId): TeachingCourseBehaviourEntry => TeachingCourseBehaviourEntry::query()->create([
+                ...$payload,
+                'teaching_course_id' => $course->id,
+                'user_id' => $userId,
+                'date' => $source->date,
+                'remind_student_by_email' => false,
+                'remind_teacher_by_email' => false,
+            ]));
+        });
+
+        return response()->json(['data' => $entries], 201);
     }
 
     public function update(Request $request, TeachingCourseBehaviourEntry $course_behaviour_entry)

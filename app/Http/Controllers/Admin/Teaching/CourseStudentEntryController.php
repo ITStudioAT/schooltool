@@ -8,11 +8,14 @@ use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
+use App\Services\TeachingCourseEntryTransferService;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -118,6 +121,49 @@ class CourseStudentEntryController extends Controller
         $this->attachEffectiveGrade($entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $entry], 201);
+    }
+
+    public function transfer(Request $request, TeachingCourseStudentEntry $course_student_entry, TeachingCourseStudentEntryService $entryService, TeachingCourseEntryTransferService $transferService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $entries = DB::transaction(function () use ($request, $course_student_entry, $entryService, $transferService, $authUser) {
+            $source = TeachingCourseStudentEntry::query()->lockForUpdate()->findOrFail($course_student_entry->id);
+            $course = $source->teachingCourse;
+            abort_unless($course, 403, 'Sie haben keine Berechtigung');
+            $this->authorizeTeachingCourseAccess($course, $authUser);
+            abort_if(($source->source ?? 'manual') !== 'manual', 409, 'Dieser Eintrag wird aus einer Arbeit abgeleitet und kann nicht übertragen werden.');
+
+            $userIds = $transferService->targetUserIds($request, $course, $source->user_id, $source->date);
+            $actor = $this->teachingCourseActor($authUser, $course);
+            $payload = Validator::make($source->only(['type', 'grade', 'description', 'status', 'teaching_course_work_id']), [
+                'type' => ['required', 'string', 'max:255', Rule::in($entryService->allowedTypesForCourse($actor, $course))],
+                'grade' => $entryService->gradeRulesForCourse($actor, $course, $source->type),
+                'description' => ['nullable', 'string', 'max:1024'],
+                'status' => ['nullable', 'array'],
+                'teaching_course_work_id' => ['nullable', 'integer', 'exists:teaching_course_works,id'],
+            ])->validate();
+            $this->validateLinkedWorkMaximumPlus($payload, $course, $actor, $entryService);
+            $defaults = $this->defaultGradesByType($course, $authUser);
+
+            return collect($userIds)->map(function (int $userId) use ($payload, $source, $course, $defaults): TeachingCourseStudentEntry {
+                $entry = TeachingCourseStudentEntry::query()->create([
+                    ...$payload,
+                    'teaching_course_id' => $course->id,
+                    'user_id' => $userId,
+                    'date' => $source->date,
+                    'source' => 'manual',
+                ]);
+                $this->loadPendingNotificationConfirmationState($entry);
+                $this->attachEffectiveGrade($entry, $defaults);
+
+                return $entry;
+            });
+        });
+
+        return response()->json(['data' => $entries], 201);
     }
 
     public function update(Request $request, TeachingCourseStudentEntry $course_student_entry, TeachingCourseStudentEntryService $entryService)

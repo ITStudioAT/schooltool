@@ -604,3 +604,146 @@ describe('store update destroy', function () {
         $this->assertDatabaseMissing('teaching_course_student_entries', ['id' => $entry->id]);
     });
 });
+
+describe('transfer saved entries', function () {
+    beforeEach(function () {
+        $this->target = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id]);
+        foreach ([$this->student, $this->target] as $student) {
+            $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+        }
+        $this->courseDate = $this->course->teachingCourseDates()->create(['date' => '2026-03-03', 'status' => []]);
+        $this->sourceEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA', 'grade' => '2', 'description' => 'Übertragener Eintrag',
+            'date' => '2026-03-03', 'status' => ['reviewed'], 'source' => 'manual',
+        ]);
+        $this->transferUrl = "/api/admin/teaching/course_student_entries/{$this->sourceEntry->id}/transfer";
+        $this->transferPayload = ['course_date_id' => $this->courseDate->id, 'user_ids' => [$this->target->id]];
+    });
+
+    test('creates independent copies and preserves occupied cells and notifications', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $secondTarget = User::factory()->create(['school_id' => $this->school->id]);
+        $this->course->teachingCourseStudents()->create(['user_id' => $secondTarget->id]);
+        $existing = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id, 'user_id' => $this->target->id,
+            'type' => 'MA', 'grade' => '1', 'date' => '2026-03-03',
+        ]);
+        TeachingCourseStudentEntryNotification::factory()->create([
+            'teaching_course_student_entry_id' => $this->sourceEntry->id,
+            'informed_at' => now(), 'confirmed_at' => null,
+        ]);
+        $response = $this->postJson($this->transferUrl, [
+            ...$this->transferPayload, 'user_ids' => [$this->target->id, $secondTarget->id],
+            'grade' => '4', 'description' => 'Client must not replace the saved source',
+        ])->assertCreated()->assertJsonCount(2, 'data');
+        foreach ($response->json('data') as $copy) {
+            expect($copy['id'])->not->toBe($this->sourceEntry->id)
+                ->and($copy['grade'])->toBe('2')
+                ->and($copy['description'])->toBe('Übertragener Eintrag')
+                ->and($copy['status'])->toBe(['reviewed'])
+                ->and($copy['source'])->toBe('manual')
+                ->and($copy['has_pending_notification_confirmation'])->toBeFalse();
+        }
+        $copyId = $response->json('data.0.id');
+        $this->putJson("/api/admin/teaching/course_student_entries/{$copyId}", ['type' => 'MA', 'grade' => '4'])->assertOk();
+        expect($this->sourceEntry->fresh()->grade)->toBe('2')
+            ->and($existing->fresh()->grade)->toBe('1')
+            ->and(TeachingCourseStudentEntry::find($response->json('data.1.id'))->grade)->toBe('2');
+        $this->assertDatabaseCount('teaching_course_student_entries', 4);
+        $this->assertDatabaseCount('teaching_course_student_entry_notifications', 1);
+    });
+
+    test('rejects invalid targets without any partial copy', function (string $case) {
+        $this->actingAs($this->admin, 'sanctum');
+        $invalid = User::factory()->create(['school_id' => $this->school->id]);
+        if (in_array($case, ['canceled', 'deleted', 'other_school'], true)) {
+            $membership = $this->course->teachingCourseStudents()->create(['user_id' => $invalid->id]);
+            if ($case === 'canceled') {
+                $membership->update(['canceled_at' => now()]);
+            }
+            if ($case === 'deleted') {
+                $membership->delete();
+            }
+            if ($case === 'other_school') {
+                $invalid->update(['school_id' => $this->otherSchool->id]);
+            }
+        }
+        $ids = match ($case) {
+            'empty' => [],
+            'duplicate' => [$this->target->id, (string) $this->target->id],
+            'source' => [$this->target->id, $this->student->id],
+            default => [$this->target->id, $invalid->id],
+        };
+        $this->postJson($this->transferUrl, [...$this->transferPayload, 'user_ids' => $ids])->assertUnprocessable();
+        $this->assertDatabaseCount('teaching_course_student_entries', 1);
+    })->with(['outsider', 'canceled', 'deleted', 'other_school', 'empty', 'duplicate', 'source']);
+
+    test('rejects unsuitable dates and unavailable source students', function (string $case) {
+        $this->actingAs($this->admin, 'sanctum');
+        match ($case) {
+            'wrong_date' => $this->courseDate->update(['date' => '2026-03-04']),
+            'other_course' => $this->courseDate->update(['teaching_course_id' => $this->otherCourse->id]),
+            'free' => $this->courseDate->update(['status' => ['free']]),
+            'cancelled_date' => $this->courseDate->update(['status' => ['entfaellt']]),
+            'source_canceled' => $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]),
+            'source_other_school' => $this->student->update(['school_id' => $this->otherSchool->id]),
+        };
+        $this->postJson($this->transferUrl, $this->transferPayload)->assertUnprocessable();
+        $this->assertDatabaseCount('teaching_course_student_entries', 1);
+    })->with(['wrong_date', 'other_course', 'free', 'cancelled_date', 'source_canceled', 'source_other_school']);
+
+    test('enforces authentication and course ownership school and schoolyear', function (string $case) {
+        if ($case !== 'guest') {
+            $this->actingAs($case === 'wrong_teacher' ? $this->teacher : ($case === 'wrong_role' ? $this->regularUser : $this->admin), 'sanctum');
+        }
+        if ($case === 'wrong_school') {
+            $this->course->update(['school_id' => $this->otherSchool->id]);
+        }
+        if ($case === 'wrong_year') {
+            $this->course->update(['schoolyear_id' => $this->otherSchoolyear->id]);
+        }
+        $this->postJson($this->transferUrl, $this->transferPayload)->assertStatus($case === 'guest' ? 401 : 403);
+        $this->assertDatabaseCount('teaching_course_student_entries', 1);
+    })->with(['guest', 'wrong_role', 'wrong_teacher', 'wrong_school', 'wrong_year']);
+
+    test('revalidates source rules and rejects generated entries', function (string $case) {
+        $this->actingAs($this->admin, 'sanctum');
+        if ($case === 'generated') {
+            $this->sourceEntry->update(['source' => 'course_work']);
+        }
+        if ($case === 'invalid_type') {
+            $this->sourceEntry->update(['type' => 'REMOVED']);
+        }
+        if ($case === 'foreign_work') {
+            $work = TeachingCourseWork::query()->create(['teaching_course_id' => $this->otherCourse->id, 'type' => 'MA']);
+            $this->sourceEntry->update(['teaching_course_work_id' => $work->id]);
+        }
+        if (in_array($case, ['invalid_grade', 'maximum_plus'], true)) {
+            $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+            $area = TeachingEntryArea::factory()->create([
+                'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+            ]);
+            TeachingEntryDefinition::factory()->create([
+                'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->admin->id,
+                'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'category' => 'Benotung',
+                'has_properties' => true, 'properties_mode' => 'plus', 'allows_maximum_plus' => true,
+            ]);
+            $this->course->update(['teaching_entry_area_id' => $area->id]);
+            if ($case === 'maximum_plus') {
+                $work = TeachingCourseWork::query()->create(['teaching_course_id' => $this->course->id, 'type' => 'MA', 'maximum_plus' => 1]);
+                $this->sourceEntry->update(['grade' => '++', 'teaching_course_work_id' => $work->id]);
+            }
+        }
+        $this->postJson($this->transferUrl, $this->transferPayload)->assertStatus($case === 'generated' ? 409 : 422);
+        $this->assertDatabaseCount('teaching_course_student_entries', 1);
+    })->with(['generated', 'invalid_type', 'foreign_work', 'invalid_grade', 'maximum_plus']);
+
+    test('uses the course owner definitions when an admin transfers entries', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->update(['user_id' => $this->teacher->id]);
+        $this->sourceEntry->update(['type' => 'TE']);
+        $this->postJson($this->transferUrl, $this->transferPayload)->assertCreated()->assertJsonPath('data.0.type', 'TE');
+    });
+});

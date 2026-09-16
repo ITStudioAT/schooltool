@@ -56,6 +56,29 @@ describe('CourseStudentEntryStore', () => {
         expect(store.courseEntries.map((e: any) => e.id)).toEqual([5, 2])
     })
 
+    it.each(['assessment', 'behaviour', 'notification'])('transfers %s through its generated endpoint without replacing cached entries', async (kind) => {
+        const copies = [{ id: 21, user_id: 12 }]
+        axiosMock.post.mockResolvedValue({ data: { data: copies } })
+        const store = useCourseStudentEntryStore()
+        store.courseEntries = [{ id: 20 }] as never
+        const payload = { course_date_id: 3, user_ids: [12] }
+
+        expect(await store.transfer(20, payload, kind)).toEqual({ data: copies })
+        expect(axiosMock.post).toHaveBeenCalledWith(
+            `/api/admin/teaching/${kind === 'assessment' ? 'course_student_entries' : 'course_behaviour_entries'}/20/transfer`, payload,
+        )
+        expect(store.courseEntries).toEqual([{ id: 20 }])
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('reports transfer failure and restores the loading state', async () => {
+        axiosMock.post.mockRejectedValue({ response: { status: 422, data: { message: 'Ungültige Auswahl' } } })
+        const store = useCourseStudentEntryStore()
+        expect(await store.transfer(20, { course_date_id: 3, user_ids: [12] })).toBe(false)
+        expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({ message: 'Ungültige Auswahl', type: 'error' }))
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
     it('destroy removes entry from both collections', async () => {
         axiosMock.delete.mockResolvedValue({})
 

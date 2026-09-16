@@ -712,8 +712,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'index']);
         Route::post('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'store']);
         Route::patch('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications/{notification}', [CourseStudentEntryNotificationController::class, 'update']);
+        Route::post('/admin/teaching/course_student_entries/{course_student_entry}/transfer', [App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class, 'transfer']);
         Route::apiResource('/admin/teaching/course_student_entries', App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
+        Route::post('/admin/teaching/course_behaviour_entries/{course_behaviour_entry}/transfer', [CourseBehaviourEntryController::class, 'transfer']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::get('/admin/teaching/courses/{course}/students/{courseStudent}/special-information', [CourseStudentSpecialInformationController::class, 'show']);
         Route::put('/admin/teaching/courses/{course}/students/{courseStudent}/special-information', [CourseStudentSpecialInformationController::class, 'update']);

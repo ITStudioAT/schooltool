@@ -556,3 +556,64 @@ describe('store update destroy', function () {
         ])->assertStatus(403);
     });
 });
+
+describe('transfer legacy entries', function () {
+    beforeEach(function () {
+        $this->target = User::factory()->create(['school_id' => $this->school->id]);
+        foreach ([$this->student, $this->target] as $student) {
+            $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+        }
+        $this->courseDate = $this->course->teachingCourseDates()->create(['date' => '2026-03-03', 'status' => []]);
+        $this->sourceEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $this->course->id, 'user_id' => $this->student->id,
+            'kind' => 'behaviour', 'type' => 'BZ', 'description' => 'Gespeicherte Beobachtung',
+            'date' => '2026-03-03', 'due_date' => '2026-03-06', 'done_date' => '2026-03-05',
+            'remind_student_by_email' => true, 'remind_teacher_by_email' => true,
+            'reminder_email_sent_at' => now(), 'student_reminder_email_sent_at' => now(),
+        ]);
+        $this->transferUrl = "/api/admin/teaching/course_behaviour_entries/{$this->sourceEntry->id}/transfer";
+        $this->transferPayload = ['course_date_id' => $this->courseDate->id, 'user_ids' => [$this->target->id]];
+    });
+
+    test('copies saved business fields independently without reminder delivery state', function (string $kind, string $type) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->sourceEntry->update(['kind' => $kind, 'type' => $type]);
+        $response = $this->postJson($this->transferUrl, $this->transferPayload)->assertCreated()
+            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.kind', $kind)
+            ->assertJsonPath('data.0.type', $type)->assertJsonPath('data.0.description', 'Gespeicherte Beobachtung')
+            ->assertJsonPath('data.0.remind_student_by_email', false)->assertJsonPath('data.0.remind_teacher_by_email', false)
+            ->assertJsonPath('data.0.reminder_email_sent_at', null)->assertJsonPath('data.0.student_reminder_email_sent_at', null);
+        $copy = TeachingCourseBehaviourEntry::findOrFail($response->json('data.0.id'));
+        expect($copy->date->toDateString())->toBe('2026-03-03')
+            ->and($copy->due_date->toDateString())->toBe('2026-03-06')
+            ->and($copy->done_date->toDateString())->toBe('2026-03-05');
+        $this->putJson("/api/admin/teaching/course_behaviour_entries/{$copy->id}", [
+            'kind' => $kind, 'type' => $type, 'description' => 'Nur die Kopie geändert',
+        ])->assertOk();
+        expect($this->sourceEntry->fresh()->description)->toBe('Gespeicherte Beobachtung');
+        $this->assertDatabaseCount('teaching_course_behaviour_entries', 2);
+    })->with([['behaviour', 'BZ'], ['notification', 'INF']]);
+
+    test('rejects text reminders and unavailable legacy types', function (string $case) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->sourceEntry->update($case === 'reminder' ? ['kind' => 'notification', 'type' => null] : ['type' => 'REMOVED']);
+        $this->postJson($this->transferUrl, $this->transferPayload)->assertStatus($case === 'reminder' ? 409 : 422);
+        $this->assertDatabaseCount('teaching_course_behaviour_entries', 1);
+    })->with(['reminder', 'removed_type']);
+
+    test('rejects unauthorized users and invalid selections without partial copies', function (string $case) {
+        $this->actingAs($case === 'wrong_teacher' ? $this->teacher : $this->admin, 'sanctum');
+        $payload = $this->transferPayload;
+        if ($case === 'outsider') {
+            $payload['user_ids'][] = $this->regularUser->id;
+        }
+        if ($case === 'canceled') {
+            $this->course->teachingCourseStudents()->where('user_id', $this->target->id)->update(['canceled_at' => now()]);
+        }
+        if ($case === 'wrong_date') {
+            $this->courseDate->update(['date' => '2026-03-04']);
+        }
+        $this->postJson($this->transferUrl, $payload)->assertStatus($case === 'wrong_teacher' ? 403 : 422);
+        $this->assertDatabaseCount('teaching_course_behaviour_entries', 1);
+    })->with(['wrong_teacher', 'outsider', 'canceled', 'wrong_date']);
+});

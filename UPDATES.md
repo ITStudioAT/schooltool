@@ -1,5 +1,9 @@
 # UPDATES
 
+## 3.48.7
+
+- Teaching: Übertragen von Leistungen auf andere Schüler:innen
+
 ## 3.48.6
 
 - SYSTEM: Update- und Versionssystem verbessert

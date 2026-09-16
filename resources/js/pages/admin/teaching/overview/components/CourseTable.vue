@@ -47,6 +47,32 @@
             </v-card-text>
         </v-card>
 
+        <div
+            v-if="entryTransfer"
+            class="course-table-transfer-bar d-flex align-center flex-wrap ga-3 pa-3 mb-3"
+            data-testid="course-table-transfer-bar"
+            role="region"
+            aria-label="Eintrag übertragen">
+            <div class="flex-grow-1">
+                <strong aria-live="polite">{{ entryTransfer.userIds.length }} ausgewählt</strong>
+                <div class="text-body-2">{{ cellEntryTypeLabel(entryTransfer.entry) }} · {{ compactCourseDateTitle(entryTransfer.courseDate) }}</div>
+                <div class="text-caption">Zellen anderer Schüler:innen in diesem Termin auswählen. Erneuter Klick hebt die Auswahl auf.</div>
+                <div v-if="entryTransferError" role="alert" class="text-error">{{ entryTransferError }}</div>
+            </div>
+            <v-btn
+                color="primary"
+                variant="flat"
+                :disabled="!entryTransfer.userIds.length || entryTransferSaving"
+                :loading="entryTransferSaving"
+                data-testid="course-table-transfer-confirm"
+                @click="confirmEntryTransfer">Übertragen</v-btn>
+            <v-btn
+                variant="outlined"
+                :disabled="entryTransferSaving"
+                data-testid="course-table-transfer-cancel"
+                @click="cancelEntryTransfer">Abbrechen</v-btn>
+        </div>
+
         <v-card variant="outlined" class="course-table-card">
             <v-card-text class="pa-0">
                 <div ref="courseTableScroll" class="course-table-scroll">
@@ -442,16 +468,20 @@
                                                 'course-table-entry-cell--interactive': true,
                                                 'course-table-entry-cell--absent': tableView === 'entries' && studentAttendanceState(student, courseDate) === false,
                                                 'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate),
+                                                'course-table-entry-cell--transfer-selected': isEntryTransferCellSelected(student, courseDate),
+                                                'course-table-entry-cell--transfer-unavailable': entryTransfer && !isEntryTransferTarget(student, courseDate),
                                             },
                                             courseDateColumnMarkingClass(courseDate),
                                         ]"
                                         role="button"
                                         tabindex="0"
-                                        :aria-label="tableView === 'attendance' ? attendanceMarkerTitle(student, courseDate) : undefined"
-                                        :aria-disabled="tableView === 'attendance' && isAttendanceCellSaving(student, courseDate)"
+                                        :aria-label="entryTransfer ? `${studentName(student)} - ${compactCourseDateTitle(courseDate)}` : tableView === 'attendance' ? attendanceMarkerTitle(student, courseDate) : undefined"
+                                        :aria-pressed="entryTransfer ? isEntryTransferCellSelected(student, courseDate) : undefined"
+                                        :aria-disabled="entryTransfer ? entryTransferSaving || !isEntryTransferTarget(student, courseDate) : tableView === 'attendance' && isAttendanceCellSaving(student, courseDate)"
                                         @click="activateStudentCell(student, courseDate)"
                                         @keydown.enter.self.prevent="activateStudentCell(student, courseDate)"
                                         @keydown.space.self.prevent="activateStudentCell(student, courseDate)">
+                                        <span v-if="isEntryTransferCellSelected(student, courseDate)" class="course-table-transfer-marker">✓ Ausgewählt</span>
                                         <v-icon
                                             v-if="tableView === 'entries' && studentAttendanceState(student, courseDate) !== null"
                                             class="course-table-entry-cell-attendance-marker"
@@ -1722,6 +1752,16 @@
                                     </v-chip>
                                     <span class="ml-auto" @click.stop @keydown.stop>
                                         <v-btn
+                                            v-if="canTransferCellEntry(entry)"
+                                            color="primary"
+                                            size="small"
+                                            variant="text"
+                                            prepend-icon="mdi-content-copy"
+                                            :disabled="entrySaving || entryDeleting || entryNotificationSending || entryTransferSaving || Boolean(courseWorkEntrySavingUid)"
+                                            :data-testid="`course-table-transfer-entry-${entry.uid}`"
+                                            title="Gespeicherten Eintrag auf weitere Schüler:innen übertragen"
+                                            @click.stop="startEntryTransfer(entry)">Auf weitere übertragen</v-btn>
+                                        <v-btn
                                             :aria-label="canModifyCellEntry(entry) ? 'Eintrag löschen' : 'Eintrag kann hier nicht gelöscht werden'"
                                             color="error"
                                             :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
@@ -2426,6 +2466,10 @@ export default {
             entryFormOpen: false,
             entryDeleting: false,
             entrySaving: false,
+            entryTransfer: null,
+            entryTransferSaving: false,
+            entryTransferError: '',
+            entryTransferDisposed: false,
             entryStore: null,
             entryNotificationConfirmingId: null,
             entryNotificationLoading: false,
@@ -2504,11 +2548,13 @@ export default {
     },
 
     beforeUnmount() {
+        this.entryTransferDisposed = true
         this.closeCurriculumFilePreview()
     },
 
     watch: {
         async view(view) {
+            this.entryTransfer = null
             this.restoreTableView(view)
             if (this.tableView === 'entries') {
                 await this.loadCourseTableData()
@@ -2518,6 +2564,12 @@ export default {
         },
         courseDateScrollSignature() {
             this.scrollToInitialCourseDate()
+        },
+        activeSemester() {
+            this.entryTransfer = null
+        },
+        'selected_course.id'() {
+            this.entryTransfer = null
         },
         selected_course(course) {
             this.closeCurriculumDialog()
@@ -5333,6 +5385,81 @@ export default {
         canModifyCellEntry(entry) {
             return Boolean(entry?.id && entry?.source !== 'course_work')
         },
+        canTransferCellEntry(entry) {
+            return this.canModifyCellEntry(entry)
+                && Boolean(entry.type && this.entryDialog.courseDate?.id)
+                && !this.isFreeCourseDate(this.entryDialog.courseDate)
+        },
+        startEntryTransfer(entry) {
+            if (!this.canTransferCellEntry(entry) || this.entrySaving || this.entryDeleting || this.entryNotificationSending || this.entryTransferSaving || this.courseWorkEntrySavingUid) return
+
+            const courseDate = this.entryDialog.courseDate
+            this.entryTransfer = {
+                courseId: this.selected_course.id,
+                courseDate,
+                entry: { ...entry },
+                userIds: [],
+            }
+            this.entryTransferError = ''
+            this.closeEntryDialog()
+        },
+        isEntryTransferTarget(student, courseDate) {
+            const transfer = this.entryTransfer
+            const userId = this.registeredStudentUserId(student)
+
+            return Boolean(transfer && userId
+                && String(transfer.courseId) === String(this.selected_course?.id)
+                && String(courseDate?.id) === String(transfer.courseDate.id)
+                && String(userId) !== String(transfer.entry.user_id)
+                && !this.isStudentCanceled(student)
+                && !this.isFreeCourseDate(courseDate))
+        },
+        isEntryTransferCellSelected(student, courseDate) {
+            return this.isEntryTransferTarget(student, courseDate)
+                && this.entryTransfer.userIds.includes(String(this.registeredStudentUserId(student)))
+        },
+        toggleEntryTransferTarget(student, courseDate) {
+            if (this.entryTransferSaving || !this.isEntryTransferTarget(student, courseDate)) return
+
+            const userId = String(this.registeredStudentUserId(student))
+            const selected = this.entryTransfer.userIds
+            this.entryTransfer.userIds = selected.includes(userId)
+                ? selected.filter((id) => id !== userId)
+                : [...selected, userId]
+            this.entryTransferError = ''
+        },
+        cancelEntryTransfer() {
+            if (this.entryTransferSaving) return
+
+            this.entryTransfer = null
+            this.entryTransferError = ''
+        },
+        async confirmEntryTransfer() {
+            const transfer = this.entryTransfer
+            if (!transfer?.userIds.length || this.entryTransferSaving) return
+
+            this.entryTransferSaving = true
+            this.entryTransferError = ''
+            try {
+                const response = await this.entryStore.transfer(transfer.entry.id, {
+                    course_date_id: transfer.courseDate.id,
+                    user_ids: [...transfer.userIds],
+                }, transfer.entry.kind)
+                if (this.entryTransferDisposed || String(this.selected_course?.id) !== String(transfer.courseId)) return
+                if (!response) {
+                    if (this.entryTransfer === transfer) {
+                        this.entryTransferError = 'Übertragen fehlgeschlagen. Die Auswahl bleibt erhalten.'
+                    }
+                    return
+                }
+
+                const store = transfer.entry.kind === 'assessment' ? this.entryStore : this.behaviourEntryStore
+                store.courseEntries = [...response.data, ...(store.courseEntries || [])]
+                if (this.entryTransfer === transfer) this.entryTransfer = null
+            } finally {
+                this.entryTransferSaving = false
+            }
+        },
         isCellEntryExpanded(entry) {
             return this.selectedCellEntryUid === entry?.uid
         },
@@ -5576,6 +5703,9 @@ export default {
             return `${this.studentName(student)} - ${this.compactCourseDateTitle(courseDate)}: ${current}. Klicken: ${next}`
         },
         activateStudentCell(student, courseDate) {
+            if (this.entryTransfer) {
+                return this.toggleEntryTransferTarget(student, courseDate)
+            }
             if (this.tableView === 'attendance') {
                 return this.toggleStudentAttendance(student, courseDate)
             }
@@ -6958,6 +7088,32 @@ export default {
 .course-table-entry-cell--selected {
     background: #bfdbfe !important;
     box-shadow: inset 0 0 0 3px #1d4ed8;
+}
+
+.course-table-transfer-bar {
+    background: rgb(var(--v-theme-surface));
+    border: 2px solid rgb(var(--v-theme-primary));
+    border-radius: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+}
+
+.course-table-entry-cell--transfer-selected {
+    background: #dbeafe !important;
+    box-shadow: inset 0 0 0 3px #1d4ed8 !important;
+}
+
+.course-table-transfer-marker {
+    color: #1e3a8a;
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.course-table-entry-cell--transfer-unavailable {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 .course-table-entry-type-rows {
