@@ -1,5 +1,13 @@
-$profilePath = $PROFILE.CurrentUserCurrentHost
-$profileDirectory = Split-Path -Parent $profilePath
+param(
+    [string]$DocumentsDirectory = [Environment]::GetFolderPath('MyDocuments')
+)
+
+$ErrorActionPreference = 'Stop'
+$profilePaths = @(
+    $PROFILE.CurrentUserCurrentHost
+    (Join-Path $DocumentsDirectory 'WindowsPowerShell/Microsoft.PowerShell_profile.ps1')
+    (Join-Path $DocumentsDirectory 'PowerShell/Microsoft.PowerShell_profile.ps1')
+) | Select-Object -Unique
 $legacyStartMarker = '# >>> schooltool managed helpers >>>'
 $legacyEndMarker = '# <<< schooltool managed helpers <<<'
 $startMarker = '# >>> project git dispatcher >>>'
@@ -126,42 +134,46 @@ function gitcheck { Invoke-ProjectGitWorkflow 'gitcheck' `$args }
 $endMarker
 "@
 
-if (-not (Test-Path -LiteralPath $profileDirectory)) {
-    [System.IO.Directory]::CreateDirectory($profileDirectory) | Out-Null
-}
+foreach ($profilePath in $profilePaths) {
+    $profileDirectory = Split-Path -Parent $profilePath
+    if (-not (Test-Path -LiteralPath $profileDirectory)) {
+        [System.IO.Directory]::CreateDirectory($profileDirectory) | Out-Null
+    }
 
-$profileContent = if (Test-Path -LiteralPath $profilePath) {
-    [System.IO.File]::ReadAllText($profilePath)
-}
-else {
-    ''
-}
+    $profileContent = if (Test-Path -LiteralPath $profilePath) {
+        [System.IO.File]::ReadAllText($profilePath)
+    }
+    else {
+        ''
+    }
 
-foreach ($markers in @(
-    @($legacyStartMarker, $legacyEndMarker),
-    @($startMarker, $endMarker)
-)) {
-    $pattern = [regex]::Escape($markers[0]) + '.*?' + [regex]::Escape($markers[1])
-    $profileContent = [regex]::Replace(
-        $profileContent,
-        $pattern,
-        '',
-        [System.Text.RegularExpressions.RegexOptions]::Singleline
-    ).TrimEnd()
-}
+    foreach ($markers in @(
+        @($legacyStartMarker, $legacyEndMarker),
+        @($startMarker, $endMarker)
+    )) {
+        $pattern = [regex]::Escape($markers[0]) + '.*?' + [regex]::Escape($markers[1])
+        $profileContent = [regex]::Replace(
+            $profileContent,
+            $pattern,
+            '',
+            [System.Text.RegularExpressions.RegexOptions]::Singleline
+        ).TrimEnd()
+    }
 
-if ($profileContent) {
-    $profileContent += [Environment]::NewLine + [Environment]::NewLine
-}
+    if ($profileContent) {
+        $profileContent += [Environment]::NewLine + [Environment]::NewLine
+    }
 
-$profileContent += $managedBlock + [Environment]::NewLine
-$windowsPowerShellUtf8 = New-Object System.Text.UTF8Encoding($true)
-[System.IO.File]::WriteAllText($profilePath, $profileContent, $windowsPowerShellUtf8)
+    $profileContent += $managedBlock + [Environment]::NewLine
+    $windowsPowerShellUtf8 = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllText($profilePath, $profileContent, $windowsPowerShellUtf8)
+    Write-Host "Project-aware Git helpers installed in $profilePath" -ForegroundColor Green
+}
 
 git config core.hooksPath .githooks
 if ($LASTEXITCODE -ne 0) {
     throw 'Could not configure the repository hooks path.'
 }
 
-Write-Host "Project-aware Git helpers installed in $profilePath" -ForegroundColor Green
 Write-Host 'Open a new PowerShell terminal to use gitpush, gitstart, gitwork, gitmain, gitsave, gitupdate, gitrelease and gitcheck.' -ForegroundColor Cyan
+Write-Host 'Or reload the profile in your current terminal with: . $PROFILE' -ForegroundColor Cyan

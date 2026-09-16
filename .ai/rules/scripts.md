@@ -3,6 +3,7 @@ paths:
   - 'scripts/*cloudways*.sh'
   - scripts/frontend-release.php
   - 'scripts/git*.ps1'
+  - scripts/install_powershell_helpers.ps1
 ---
 
 # Scripts
@@ -24,3 +25,6 @@ After lock/queue preflight, announce via scripts/deployment-status.php and wait 
 
 ## Keep feature synchronization separate from production releases
 gitsave only pushes feature/*; main remains Cloudways' deployment branch. gitrelease prepares a preserved codex/release-* candidate, requires current origin/main in the saved feature, runs mandatory full checks and asks for RELEASE before an atomic main/tag push. Never rebase or force-push a validated candidate after main advances. Branch switches prepare dependencies/build/cache only: commit-bound deployment artifacts are invalid on unfinished features, and migrations/seeders must not run implicitly; Git does not isolate databases.
+
+## Install Git helpers into both Windows PowerShell and PowerShell 7 profiles
+composer setup:powershell invokes powershell.exe (5.1), even from PowerShell 7. Update both Documents/WindowsPowerShell and Documents/PowerShell console profiles plus the current host profile; preserve unmanaged content and use the redirected Documents folder. Tests must pass a sandbox DocumentsDirectory and mock PROFILE to avoid touching real user profiles. A child installer cannot load functions into the caller: reopen the terminal or dot-source $PROFILE.

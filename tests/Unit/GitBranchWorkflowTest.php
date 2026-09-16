@@ -319,8 +319,12 @@ POWERSHELL);
     runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', 'origin', 'https://github.com/ITStudioAT/schooltool.git');
     $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
 $PROFILE = [pscustomobject]@{ CurrentUserCurrentHost = (Join-Path (Get-Location) '.git/test-profile.ps1') }
-& ./scripts/install_powershell_helpers.ps1
-& ./scripts/install_powershell_helpers.ps1
+$documentsDirectory = Join-Path (Get-Location) '.git/test-documents'
+$coreProfile = Join-Path $documentsDirectory 'PowerShell/Microsoft.PowerShell_profile.ps1'
+[System.IO.Directory]::CreateDirectory((Split-Path -Parent $coreProfile)) | Out-Null
+[System.IO.File]::WriteAllText($coreProfile, "# Preserve existing PowerShell 7 settings`n")
+& ./scripts/install_powershell_helpers.ps1 -DocumentsDirectory $documentsDirectory
+& ./scripts/install_powershell_helpers.ps1 -DocumentsDirectory $documentsDirectory
 $tokens = $null
 $parseErrors = $null
 [System.Management.Automation.Language.Parser]::ParseFile($PROFILE.CurrentUserCurrentHost, [ref]$tokens, [ref]$parseErrors) | Out-Null
@@ -342,6 +346,14 @@ try { gitsave 'Must be blocked'; throw 'UNTRUSTED_DISPATCH_ALLOWED' } catch {
 POWERSHELL);
     assertBranchWorkflowSucceeded($result);
     $profile = file_get_contents($this->workflowPc.'/.git/test-profile.ps1');
+    foreach (['WindowsPowerShell', 'PowerShell'] as $edition) {
+        $editionProfile = file_get_contents($this->workflowPc.'/.git/test-documents/'.$edition.'/Microsoft.PowerShell_profile.ps1');
+        expect(substr_count($editionProfile, '# >>> project git dispatcher >>>'))->toBe(1)
+            ->and($editionProfile)->toContain('function gitcheck {', 'function gitrelease {');
+        if ($edition === 'PowerShell') {
+            expect($editionProfile)->toContain('# Preserve existing PowerShell 7 settings');
+        }
+    }
     $entries = array_map(
         function (string $line): array {
             $entry = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
