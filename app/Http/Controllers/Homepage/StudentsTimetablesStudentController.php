@@ -8,6 +8,7 @@ use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\StudentsTimetablesUserResource;
 use App\Models\SchoolTool;
 use App\Models\User;
+use App\Services\FeaturePreviewService;
 use App\Services\LicenceService;
 use App\Services\SchoolHourService;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
@@ -78,6 +79,8 @@ class StudentsTimetablesStudentController extends Controller
             ? $user
             : $service->createOrUpdateUserFromImport116($import116User);
 
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user->hasRole(StudentsTimetablesStudentService::ROLE_NAME)) {
             $service->assignRole($user);
         }
@@ -91,7 +94,7 @@ class StudentsTimetablesStudentController extends Controller
             return response()->json($data);
         }
 
-        (new UserService)->sendCode($user, 'Ihr Login-Code für SEPP', $email);
+        (new UserService)->sendCode($user, 'Ihr Login-Code für SEPP', $email, 'login');
         $data['status'] = 'code_sent';
 
         return response()->json($data);
@@ -109,6 +112,8 @@ class StudentsTimetablesStudentController extends Controller
 
         $data = $validated;
         $user = $this->validatedLoginUser($service, $validated['email'], (int) $validated['school_id']);
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $user->consumeToken2Fa($validated['login_code'])) {
             $data['status'] = 'code_not_valid';
@@ -137,6 +142,8 @@ class StudentsTimetablesStudentController extends Controller
         unset($data['password']);
 
         $user = $this->validatedLoginUser($service, $validated['email'], (int) $validated['school_id']);
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $service->passwordIsValid($user, $validated['password'])) {
             $data['status'] = 'password_not_valid';

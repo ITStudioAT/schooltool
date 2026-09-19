@@ -24,6 +24,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Jobs/Teaching/Import116Job.php,app/Http/Controllers/Admin/Teaching/FileUploadController.php} | .ai/rules/admin-teaching.md |
 | {app/Jobs/ImportTeachersListJob.php,app/Http/Controllers/Admin/TeachersListController.php,tests/{Unit/ImportTeachersListJobTest.php,Feature/TeachersListControllerTest.php}} | .ai/rules/admin-unit.md |
 | resources/js/pages/admin/App.vue,tests/ui/unit/components/admin/AdminAppStartup.test.ts | .ai/rules/admin.md |
+| {app/Services/FeaturePreviewRuntimeService.php,tests/Feature/FeaturePreviewRuntimeTest.php} | .ai/rules/app-services-feature.md |
 | {app/Services/AdminService.php,app/Http/Controllers/Admin/AdminController.php,resources/js/pages/admin/auth/UnknownPassword.vue} | .ai/rules/auth.md |
 | {app/**/FeaturePreview*,app/Console/Commands/CheckFeaturePreviewCommand.php,config/schooltool.php,routes/console.php,scripts/*preview*,tests/**/*Preview*} | .ai/rules/commands.md |
 | {resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue,tests/ui/unit/components/admin/studentsTimetables/SubjectsOverview.test.ts} | .ai/rules/components-admin-students-timetables.md |
@@ -32,6 +33,8 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/StudentsTimetables/TeacherAccountController.php,resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue,tests/Feature/TeacherAccountRemoveTest.php} | .ai/rules/components-feature.md |
 | resources/js/pages/homepage/studentsTimetables/overviewV2/**,tests/ui/unit/components/homepage/studentsTimetables/StudentTimetablesOverviewV2.test.ts | .ai/rules/components-homepage-students-timetables.md |
 | {app/Http/Controllers/Admin/AdminController.php,resources/js/pages/admin/App.vue,resources/js/pages/admin/components/AdminAppBar.vue} | .ai/rules/components.md |
+| {config/mail.php,app/Services/FeaturePreviewMailService.php,app/Console/Commands/CheckFeaturePreviewCommand.php,tests/**/*Preview*} | .ai/rules/console-commands.md |
+| {app/Services/CloudwaysApiClient.php,app/Console/Commands/CloudwaysPullCommand.php,tests/Feature/Console/CloudwaysPullCommandTest.php,scripts/pdeploy_cloudways.sh} | .ai/rules/console.md |
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/controllers-admin-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Jobs/Teaching/Import116Job.php,app/Models/Import116.php,app/Services/StudentsTimetables/RecognitionImportService.php,app/Services/StudentsTimetables/StudentTimetableStudySelectionRefreshService.php,app/Http/Controllers/Admin/StudentsTimetables/**} | .ai/rules/controllers-admin-students-timetables.md |
 | app/Http/Controllers/Admin/Teaching/FileUploadController.php, app/Http/Controllers/Admin/Teaching/TeachingBackupController.php | .ai/rules/controllers-admin-teaching.md |
@@ -43,7 +46,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/feature-ui-unit-pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/**,app/Services/StudentsTimetables/TimetableImportService.php,resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue,tests/{Feature,Unit,ui}/**} | .ai/rules/feature-unitui.md |
 | {app/Services/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/feature.md |
-| **/*TimetableV3*, vite.config.js | .ai/rules/general.md |
+| **/*TimetableV3*, vite.config.js, {README.md,scripts/deploy_preview_cloudways.sh} | .ai/rules/general.md |
 | {app/Models/User.php,app/Http/Controllers/Admin/AdminShellColorPreferenceController.php,app/Http/Resources/Admin/UserWithRoleResource.php,resources/js/pages/admin/{App.vue,profile/Profile.vue},resources/js/helpers/adminShellTheme.js} | .ai/rules/helpers.md |
 | {app/Http/Requests/Homepage/UpdateStudentTimetableV3StateRequest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/homepage-feature.md |
 | resources/js/pages/homepage/index/Index.vue | .ai/rules/homepage-index.md |
@@ -90,7 +93,9 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
 | {scripts/git_helpers.ps1,scripts/update-changelog.mjs} | .ai/rules/scripts-2.md |
-| scripts/*cloudways*.sh, scripts/frontend-release.php, scripts/git*.ps1, scripts/install_powershell_helpers.ps1 | .ai/rules/scripts.md |
+| {scripts/git_helpers.ps1,scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php} | .ai/rules/scripts-unit-2.md |
+| scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php | .ai/rules/scripts-unit.md |
+| scripts/*cloudways*.sh, scripts/frontend-release.php, scripts/git*.ps1, scripts/install_powershell_helpers.ps1, scripts/*cloudways*.sh, scripts/frontend-release.php, scripts/git*.ps1, scripts/install_powershell_helpers.ps1 | .ai/rules/scripts.md |
 | {app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,app/Services/StudentsTimetablesStudentService.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/services-feature.md |
 | {app/Services/AccessScopeService.php,routes/api.php,resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue,tests/**} | .ai/rules/services-js-pages-admin-students-timetables.md |
 | {app/Services/StudentsTimetables/StudentTimetableOverviewService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**}, {app/Services/StudentsTimetables/StudentTimetableV3TimetableService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**}, {app/Services/StudentsTimetables/StudentTimetableV3TimetableFilterService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**}, {app/Services/StudentsTimetables/StudentTimetableV3StudentInformationService.php,resources/js/pages/admin/studentsTimetables/timetableV3/**}, {app/Services/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/services-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |

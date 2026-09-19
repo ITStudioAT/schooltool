@@ -37,6 +37,7 @@ class StudentService
         $resolvedEmail = $importEmail !== '' ? $importEmail : "import116.{$import116User->id}@schooltool.noemail";
 
         $user = $this->existingUserForImport116($import116User);
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $user) {
             $user = new User;
@@ -98,6 +99,8 @@ class StudentService
 
     public function performLogin($user): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         // Synchronize user data from Import116 before login
         $this->syncUserDataFromImport116($user);
 

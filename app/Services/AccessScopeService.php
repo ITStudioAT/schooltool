@@ -24,6 +24,7 @@ class AccessScopeService
         'materials_access' => ['admin', 'materials_admin', 'materials_moderator'],
         'tutoring_admin_access' => ['admin', 'tutoring_admin'],
         'teaching_access' => ['admin', 'teaching_admin', 'teacher'],
+        'teaching_administration_access' => ['admin', 'super_admin', 'teaching_admin'],
         'schoolyear_access' => ['super_admin', 'admin', 'register_admin', 'teacher', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'],
         'staff_admin_access' => ['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'],
         'tool_web_access' => ['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'teacher', 'lunch_admin'],

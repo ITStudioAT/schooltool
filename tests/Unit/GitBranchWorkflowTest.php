@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 function runBranchWorkflowGit(string $directory, string ...$arguments): string
@@ -11,18 +12,24 @@ function runBranchWorkflowGit(string $directory, string ...$arguments): string
     return trim($process->getOutput());
 }
 
-function runBranchWorkflowCommand(string $directory, string $command): Process
+function runBranchWorkflowCommand(string $directory, string $command, string $powershell = 'powershell'): Process
 {
     $bootstrap = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
 . $env:SCHOOLTOOL_TEST_HELPERS
 function Invoke-SchooltoolLocalPreparation { Write-Output 'Local preparation mocked; database untouched.' }
+function New-SchooltoolCandidateTestDatabase { [pscustomobject]@{ Database = 'pest_test_test_123456789012345678901234'; ReceiptPath = 'schooltool-test-db-mocked.json' } }
+function Remove-SchooltoolCandidateTestDatabase { Write-Host 'MOCK_TEST_DATABASE_REMOVED' }
 try {
 POWERSHELL;
     $process = new Process(
-        ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $bootstrap."\n".$command."\n".'} catch { Write-Output $_.Exception.Message; exit 1 }'],
+        [$powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $bootstrap."\n".$command."\n".'} catch { Write-Output $_.Exception.Message; exit 1 }'],
         $directory,
-        ['SCHOOLTOOL_TEST_HELPERS' => dirname(__DIR__, 2).'/scripts/git_helpers.ps1'],
+        [
+            'SCHOOLTOOL_TEST_HELPERS' => dirname(__DIR__, 2).'/scripts/git_helpers.ps1',
+            'TEMP' => dirname($directory),
+            'TMP' => dirname($directory),
+        ],
         timeout: 60,
     );
     $process->run();
@@ -62,6 +69,7 @@ function php {
     }
     $global:LASTEXITCODE = 0
 }
+
 function node {
     [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'release-notes.txt'), $args[1])
     $global:LASTEXITCODE = 0
@@ -72,6 +80,20 @@ function Invoke-SchooltoolReleaseChecks {
     Write-Host 'FULL_CHECKS_REQUESTED'
 }
 function Read-Host { 'RELEASE' }
+POWERSHELL;
+}
+
+function branchWorkflowBatchEnvironment(): string
+{
+    return <<<'POWERSHELL'
+function New-SchooltoolCandidateTestDatabase {
+    $receipt = Join-Path $env:TEMP 'schooltool-test-db-batches.json'
+    [System.IO.File]::WriteAllText($receipt, '{"format":"schooltool-owned-test-database-v1","host":"127.0.0.1","port":3306,"database":"pest_test_test_123456789012345678901234","state":"created"}')
+    [pscustomobject]@{ Database = 'pest_test_test_123456789012345678901234'; ReceiptPath = $receipt }
+}
+$candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+$state = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+$logPrefix = Join-Path $env:TEMP 'batch-check'
 POWERSHELL;
 }
 
@@ -95,6 +117,7 @@ beforeEach(function (): void {
     mkdir($this->workflowPc.'/scripts');
     copy(dirname(__DIR__, 2).'/scripts/check-encoding.php', $this->workflowPc.'/scripts/check-encoding.php');
     file_put_contents($this->workflowPc.'/shared.txt', "Original\n");
+    file_put_contents($this->workflowPc.'/.gitignore', ".env\n");
     runBranchWorkflowGit($this->workflowPc, 'add', '.');
     runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Create initial application');
     runBranchWorkflowGit($this->workflowPc, 'push', '-u', 'origin', 'main');
@@ -122,11 +145,11 @@ it('shares unfinished development between two devices without changing main', fu
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/pc.txt', "PC work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Add PC work"'));
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork "new-function"'));
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork'));
     expect(file_get_contents($this->workflowLaptop.'/pc.txt'))->toBe("PC work\n");
     file_put_contents($this->workflowLaptop.'/laptop.txt', "Laptop work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitsave "Add laptop work"'));
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork "new-function"'));
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork'));
 
     expect(file_get_contents($this->workflowPc.'/laptop.txt'))->toBe("Laptop work\n")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
@@ -156,7 +179,7 @@ it('refuses branch switches with unsaved work', function (bool $committed): void
 })->with(['uncommitted changes' => false, 'unpushed commit' => true]);
 
 it('rejects feature-only commands on main and unsafe branch names', function (): void {
-    foreach (['gitsave "Accidental publication"', 'gitrelease "Accidental release"', 'gitstart "../main"', 'gitstart "--force"'] as $command) {
+    foreach (['gitrelease "Accidental release"', 'gitstart "../main"', 'gitstart "--force"'] as $command) {
         expect(runBranchWorkflowCommand($this->workflowPc, $command)->isSuccessful())->toBeFalse();
     }
 
@@ -164,18 +187,21 @@ it('rejects feature-only commands on main and unsafe branch names', function ():
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
 });
 
-it('merges independent device changes without rewriting either saved commit', function (): void {
+it('refuses divergent device changes without merging or rewriting either saved commit', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork "new-function"'));
     file_put_contents($this->workflowLaptop.'/laptop.txt', "Laptop work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitsave "Save laptop work"'));
     $laptopCommit = runBranchWorkflowGit($this->workflowLaptop, 'rev-parse', 'HEAD');
     $pcCommit = commitBranchWorkflowFile($this->workflowPc, 'pc.txt', "PC work\n");
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Synchronize both devices"'));
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitsave "Synchronize both devices"');
 
-    expect(runBranchWorkflowGit($this->workflowPc, 'merge-base', '--is-ancestor', $laptopCommit, 'HEAD'))->toBe('')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'merge-base', '--is-ancestor', $pcCommit, 'HEAD'))->toBe('')
-        ->and(file_get_contents($this->workflowPc.'/laptop.txt'))->toBe("Laptop work\n")
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('Nothing was merged or committed')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($pcCommit)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($laptopCommit)
+        ->and(file_exists($this->workflowPc.'/.git/MERGE_HEAD'))->toBeFalse()
+        ->and(file_exists($this->workflowPc.'/laptop.txt'))->toBeFalse()
         ->and(file_get_contents($this->workflowPc.'/pc.txt'))->toBe("PC work\n")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
@@ -192,7 +218,8 @@ it('preserves both devices commits and stops pushing when changes conflict', fun
     expect($result->isSuccessful())->toBeFalse()
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($remoteCommit)
         ->and(runBranchWorkflowGit($this->workflowLaptop, 'rev-parse', 'HEAD'))->toBe($laptopCommit)
-        ->and(runBranchWorkflowGit($this->workflowLaptop, 'status', '--porcelain'))->toContain('UU shared.txt')
+        ->and(runBranchWorkflowGit($this->workflowLaptop, 'status', '--porcelain'))->toBe('')
+        ->and(file_get_contents($this->workflowLaptop.'/shared.txt'))->toBe("Laptop replacement\n")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
 
@@ -210,21 +237,19 @@ it('brings main hotfixes into development without publishing the feature', funct
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix);
 });
 
-it('blocks release until the latest main changes are included', function (): void {
+it('includes the latest main automatically in the isolated release candidate', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/feature.txt', "Unreleased work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
     $hotfix = commitBranchWorkflowFile($this->workflowLaptop, 'hotfix.txt', "Published correction\n");
     runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
-    $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
-function Invoke-SchooltoolPublish { throw 'UNEXPECTED_PUBLISH_CALL' }
-gitrelease 'Release feature'
-POWERSHELL);
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n"."gitrelease 'Release feature'");
+    assertBranchWorkflowSucceeded($result);
 
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->not->toContain('UNEXPECTED_PUBLISH_CALL')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix);
+    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'merge-base', '--is-ancestor', $hotfix, 'main'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:hotfix.txt'))->toBe('Published correction');
 });
 
 it('keeps local and remote main unchanged when release validation fails', function (): void {
@@ -260,8 +285,8 @@ it('publishes a fully checked release with an optional version through the actua
         ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'main'))->toBe($release)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Completed work')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:deployment/source-commit'))->toBe(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main^'))
-        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->toBe($feature)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature);
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/', 'refs/heads/codex/active-feature'))->toBe('');
 
     if ($version !== null) {
         expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'v'.$version.'^{}'))->toBe($release)
@@ -331,13 +356,16 @@ $parseErrors = $null
 if ($parseErrors.Count -ne 0) { throw 'Generated profile does not parse.' }
 . $PROFILE.CurrentUserCurrentHost
 gitstart 'new-function'
-gitwork 'new-function'
+gitwork
 gitmain
 gitsave 'Message with spaces'
+gitsave 'Versioned main' '3.48.0'
 gitupdate
 gitrelease 'Release with spaces'
 gitrelease 'Versioned release' '3.48.0'
 gitcheck
+gitpreview -RefreshData
+gitdeploy
 git remote set-url --push origin https://example.invalid/other.git
 try { gitsave 'Must be blocked'; throw 'UNTRUSTED_DISPATCH_ALLOWED' } catch {
     if ($_.Exception.Message -eq 'UNTRUSTED_DISPATCH_ALLOWED') { throw }
@@ -366,15 +394,661 @@ POWERSHELL);
     expect(substr_count($profile, '# >>> project git dispatcher >>>'))->toBe(1)
         ->and($entries)->toBe([
             ['command' => 'gitstart', 'arguments' => ['new-function']],
-            ['command' => 'gitwork', 'arguments' => ['new-function']],
+            ['command' => 'gitwork', 'arguments' => []],
             ['command' => 'gitmain', 'arguments' => []],
             ['command' => 'gitsave', 'arguments' => ['Message with spaces']],
+            ['command' => 'gitsave', 'arguments' => ['Versioned main', '3.48.0']],
             ['command' => 'gitupdate', 'arguments' => []],
             ['command' => 'gitrelease', 'arguments' => ['Release with spaces']],
             ['command' => 'gitrelease', 'arguments' => ['Versioned release', '3.48.0']],
             ['command' => 'gitcheck', 'arguments' => []],
+            ['command' => 'gitpreview', 'arguments' => ['-RefreshData']],
+            ['command' => 'gitdeploy', 'arguments' => []],
         ])
         ->and($result->getOutput())->toContain('UNTRUSTED_REMOTE_BLOCKED');
+});
+
+it('reserves exactly one active feature and rejects a second name on either device', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "first-feature"'));
+    $reservation = json_decode(runBranchWorkflowGit($this->workflowRemote, 'show', 'codex/active-feature:feature.json'), true, flags: JSON_THROW_ON_ERROR);
+    $parents = explode(' ', runBranchWorkflowGit($this->workflowRemote, 'rev-list', '--parents', '-n', '1', 'codex/active-feature'));
+
+    foreach ([$this->workflowPc, $this->workflowLaptop] as $device) {
+        $result = runBranchWorkflowCommand($device, 'gitstart "second-feature"');
+        expect($result->isSuccessful())->toBeFalse()
+            ->and($result->getOutput())->toContain('already active');
+    }
+
+    expect($reservation['branch'])->toBe('feature/first-feature')
+        ->and($reservation['id'])->toMatch('/^[a-f0-9]{32}$/')
+        ->and($parents)->toHaveCount(1)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/'))->toBe('refs/heads/feature/first-feature');
+});
+
+it('atomically rejects a concurrent feature reservation even from the same main commit', function (string $otherName): void {
+    $laptop = str_replace("'", "''", $this->workflowLaptop);
+    $command = '$raceLaptop = \''.$laptop."'\n".'$otherFeature = \''.$otherName."'\n".<<<'POWERSHELL'
+$nativeGit = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+$script:injected = $false
+function git {
+    if (-not $script:injected -and $args[0] -eq 'push' -and $args -contains '--atomic') {
+        $script:injected = $true
+        Push-Location -LiteralPath $raceLaptop
+        try {
+            $other = New-SchooltoolFeatureReservation "feature/$otherFeature"
+            $main = & $nativeGit rev-parse HEAD
+            & $nativeGit push --atomic '--force-with-lease=refs/heads/codex/active-feature:' origin "$($other.ReservationCommit):refs/heads/codex/active-feature" "${main}:refs/heads/feature/$otherFeature"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not simulate concurrent start.' }
+        }
+        finally { Pop-Location }
+    }
+    & $nativeGit @args
+}
+gitstart 'new-function'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    $metadata = json_decode(runBranchWorkflowGit($this->workflowRemote, 'show', 'codex/active-feature:feature.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
+        ->and($metadata['branch'])->toBe('feature/'.$otherName)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/'))->toBe('refs/heads/feature/'.$otherName)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+})->with(['another name' => 'other-feature', 'same name' => 'new-function']);
+
+it('registers a single legacy feature and refuses ambiguous legacy branches', function (bool $ambiguous): void {
+    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'HEAD:refs/heads/feature/old-feature');
+    if ($ambiguous) {
+        runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'HEAD:refs/heads/feature/another-feature');
+    }
+    $result = runBranchWorkflowCommand($this->workflowLaptop, 'gitwork');
+
+    if ($ambiguous) {
+        expect($result->isSuccessful())->toBeFalse()
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/active-feature'))->toBe('');
+
+        return;
+    }
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('registered for this workflow')
+        ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('feature/old-feature');
+})->with(['one legacy feature' => false, 'ambiguous legacy features' => true]);
+
+it('saves main with full checks and an optional version', function (?string $version): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Main correction\n");
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : ''));
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Main correction')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe($version ? 'v'.$version : '');
+})->with(['without version' => null, 'with version' => '3.48.0']);
+
+it('does not merge remote main into unsaved local changes', function (): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Keep my correction\n");
+    $hotfix = commitBranchWorkflowFile($this->workflowLaptop, 'other.txt', "Other device\n");
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save correction"');
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('Nothing was merged')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix)
+        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe("Keep my correction\n");
+});
+
+it('rejects a version on a feature without committing its changes', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Keep feature work\n");
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitsave "Feature work" "3.48.0"');
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('Versions can only')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toContain('?? feature.txt');
+});
+
+it('never resurrects a feature deleted after saving starts', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Keep committed work\n");
+    $command = <<<'POWERSHELL'
+$nativeGit = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+function git {
+    if ($args[0] -eq 'push' -and $args -contains '--set-upstream') {
+        & $nativeGit push origin ':refs/heads/feature/new-function'
+        if ($LASTEXITCODE -ne 0) { throw 'Could not simulate branch deletion.' }
+    }
+    & $nativeGit @args
+}
+gitsave 'Preserve my work'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('remain committed locally')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'show', 'HEAD:feature.txt'))->toBe('Keep committed work')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/'))->toBe('');
+});
+
+it('checks releases in a separate worktree and preserves new edits in the original checkout', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $pc = str_replace("'", "''", $this->workflowPc);
+    $command = branchWorkflowReleaseMocks()."\n".'$originalCheckout = [System.IO.Path]::GetFullPath(\''.$pc."')\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    if ((Get-Location).Path -eq $originalCheckout) { throw 'Checks used original checkout.' }
+    if ((Invoke-SchooltoolGit -C $originalCheckout branch --show-current) -ne 'feature/new-function') { throw 'Original branch changed during checks.' }
+    [System.IO.File]::WriteAllText((Join-Path $originalCheckout 'new-edit.txt'), 'New unsaved work')
+}
+gitrelease 'Release completed work'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('Release succeeded, but local cleanup stopped')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
+        ->and(file_get_contents($this->workflowPc.'/new-edit.txt'))->toBe('New unsaved work')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Ready work');
+});
+
+it('lets the other device leave a safely merged deleted feature but preserves unpublished work', function (bool $unpublished): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork'));
+    if ($unpublished) {
+        commitBranchWorkflowFile($this->workflowLaptop, 'laptop.txt', "Unpublished laptop work\n");
+    }
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitrelease "Release feature"'));
+    $result = runBranchWorkflowCommand($this->workflowLaptop, 'gitmain');
+
+    if ($unpublished) {
+        expect($result->isSuccessful())->toBeFalse()
+            ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('feature/new-function')
+            ->and(file_get_contents($this->workflowLaptop.'/laptop.txt'))->toBe("Unpublished laptop work\n");
+
+        return;
+    }
+
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
+})->with(['fully merged' => false, 'additional local commits' => true]);
+
+it('atomically preserves newer feature commits and the reservation during release confirmation', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork'));
+    $newHead = commitBranchWorkflowFile($this->workflowLaptop, 'laptop.txt', "Newer feature work\n");
+    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/active-feature');
+    $laptop = str_replace("'", "''", $this->workflowLaptop);
+    $command = branchWorkflowReleaseMocks()."\n".'$raceLaptop = \''.$laptop."'\n".<<<'POWERSHELL'
+function Read-Host {
+    Invoke-SchooltoolGit -C $raceLaptop push origin feature/new-function
+    'RELEASE'
+}
+gitrelease 'Release feature' '3.48.0'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('atomic release push failed')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($newHead)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/active-feature'))->toBe($reservation)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('');
+});
+
+it('does not publish files edited while main release checks are running', function (): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
+    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed during tests')
+}
+gitsave 'Save correction'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('changed during checks')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
+        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe('Changed during tests');
+});
+
+it('runs main full checks in an isolated staged-source worktree and restores the original environment', function (bool $failChecks): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Checked correction\n");
+    $originalEnvironment = "APP_KEY=original-local-key\nDB_URL=mysql://unsafe-local-fixture\n";
+    file_put_contents($this->workflowPc.'/.env', $originalEnvironment);
+    $pc = str_replace("'", "''", $this->workflowPc);
+    $command = '$actualReleaseChecks = (Get-Item Function:Invoke-SchooltoolReleaseChecks).ScriptBlock'."\n".branchWorkflowReleaseMocks()."\n".'$originalCheckout = [System.IO.Path]::GetFullPath(\''.$pc."')\n".'$failChecks = '.($failChecks ? '$true' : '$false')."\n".<<<'POWERSHELL'
+Set-Item Function:Invoke-SchooltoolReleaseChecks $actualReleaseChecks
+$env:DB_URL = 'original-environment-url'
+$env:APP_KEY = 'original-environment-key'
+$env:LOG_CHANNEL = 'slack'
+$env:LOG_SLACK_WEBHOOK_URL = 'original-webhook-fixture'
+function Invoke-SchooltoolReleaseCheckProcesses {
+    param([switch]$Full)
+    if (-not $Full) { throw 'Full checks missing.' }
+    if ((Get-Location).Path -eq $originalCheckout) { throw 'Tests used the original checkout.' }
+    if ($env:DB_DATABASE -ne 'pest_test_test_123456789012345678901234' -or $env:DB_DATABASE_TEST -ne 'pest_test') { throw 'Tests did not use the owned schema.' }
+    if ($env:DB_URL -ne '(null)' -or $env:DB_PASSWORD -ne '(empty)') { throw 'Dotenv fallback was not neutralized.' }
+    if ($env:LOG_CHANNEL -ne 'single' -or $env:LOG_SLACK_WEBHOOK_URL) { throw 'Inherited notification settings remain active.' }
+    if ($env:APP_KEY -notlike 'base64:*' -or -not $env:TEST_TOKEN) { throw 'Fresh test identity is missing.' }
+    if ($env:APP_CONFIG_CACHE -notmatch '^bootstrap/cache/schooltool-test-db-[a-zA-Z0-9-]+\.config\.php$') { throw 'Cache paths must resolve inside the candidate on Windows.' }
+    if (Test-Path -LiteralPath $env:APP_CONFIG_CACHE) { throw 'Tests may reuse cached configuration.' }
+    if ([System.IO.File]::ReadAllText((Join-Path (Get-Location) 'fix.txt')) -ne "Checked correction`n") { throw 'The staged source was not copied.' }
+    if ([System.IO.File]::ReadAllText((Join-Path (Get-Location) '.env')) -match 'original-local-key|unsafe-local-fixture') { throw 'The original environment was copied.' }
+    Write-Host 'ISOLATED_MAIN_CHECKS'
+    if ($failChecks) { throw 'SIMULATED_ISOLATED_FAILURE' }
+}
+function npm {
+    if ((Get-Location).Path -ne $originalCheckout -or $env:APP_KEY -ne 'original-environment-key') { throw 'Publication build did not restore the original checkout environment.' }
+    Write-Host 'ORIGINAL_SOURCE_BUILD'
+    $global:LASTEXITCODE = 0
+}
+try { gitsave 'Publish checked correction' }
+finally {
+    if ($env:DB_URL -ne 'original-environment-url' -or $env:LOG_SLACK_WEBHOOK_URL -ne 'original-webhook-fixture') { throw 'Original environment was not restored.' }
+    Write-Host 'ORIGINAL_ENVIRONMENT_RESTORED'
+}
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->getOutput())->toContain('ISOLATED_MAIN_CHECKS', 'MOCK_TEST_DATABASE_REMOVED', 'ORIGINAL_ENVIRONMENT_RESTORED')
+        ->and(file_get_contents($this->workflowPc.'/.env'))->toBe($originalEnvironment)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+
+    if ($failChecks) {
+        expect($result->isSuccessful())->toBeFalse()
+            ->and($result->getOutput())->toContain('SIMULATED_ISOLATED_FAILURE')
+            ->and($result->getOutput())->not->toContain('ORIGINAL_SOURCE_BUILD')
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+
+        return;
+    }
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('ORIGINAL_SOURCE_BUILD')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Checked correction');
+})->with(['successful checks' => false, 'failed checks' => true]);
+
+it('runs every PHP test file once in sequential fresh batches and stops safely on a failed batch', function (string $mode): void {
+    $expectedFiles = [];
+    foreach (range(1, 23) as $index) {
+        $directory = $index % 2 === 0 ? 'tests/Unit/Nested' : 'tests/Feature';
+        if (! is_dir($this->workflowPc.'/'.$directory)) {
+            mkdir($this->workflowPc.'/'.$directory, 0777, true);
+        }
+        $file = $directory.'/'.sprintf('Batch%02dTest.php', $index);
+        $expectedFiles[] = $file;
+        file_put_contents($this->workflowPc.'/'.$file, '<?php');
+    }
+    file_put_contents($this->workflowPc.'/tests/Unit/NotATest.txt', 'Must not run');
+    runBranchWorkflowGit($this->workflowPc, 'add', '.');
+    runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Add batch test fixture');
+    sort($expectedFiles, SORT_STRING);
+    $command = branchWorkflowBatchEnvironment()."\n".'$mode = \''.$mode."'\n".<<<'POWERSHELL'
+$script:batchCalls = 0
+function Start-SchooltoolPhpTestProcess {
+    param([string[]]$Files, [string]$OutputPath, [string]$ErrorPath, [string]$WorkingDirectory)
+    if ($script:previousProcess -and -not $script:previousProcess.Waited) { throw 'The previous PHP process is still running.' }
+    $script:batchCalls++
+    $entry = @{ files = $Files; database = $env:DB_DATABASE; directory = $WorkingDirectory; output = $OutputPath; error = $ErrorPath } | ConvertTo-Json -Compress
+    [System.IO.File]::AppendAllText((Join-Path $env:TEMP 'batch-calls.jsonl'), $entry + "`n")
+    [System.IO.File]::WriteAllText($OutputPath, "BATCH_OUTPUT_$script:batchCalls")
+    $failed = $mode -eq 'failure' -and $script:batchCalls -eq 2
+    [System.IO.File]::WriteAllText($ErrorPath, $(if ($failed) { 'BATCH_FAILURE_2' } else { '' }))
+    $process = [pscustomobject]@{ HasExited = $true; ExitCode = $(if ($failed) { 7 } else { 0 }); Waited = $false }
+    $process | Add-Member ScriptMethod WaitForExit { $this.Waited = $true }
+    $process | Add-Member ScriptMethod Refresh {
+        if (-not $this.Waited) { throw 'A process result was inspected before exit.' }
+        if ($mode -eq 'environment-changes') { $env:DB_HOST = 'unsafe.example.test' }
+    }
+    $script:previousProcess = $process
+    $process
+}
+Push-Location -LiteralPath $candidate.Path
+try { Invoke-SchooltoolPhpTestBatches -LogPrefix $logPrefix }
+finally { Pop-Location; Restore-SchooltoolCandidateEnvironment $state }
+Write-Host 'ALL_BATCHES_COMPLETED'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    $calls = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), file($this->workflowDirectory.'/batch-calls.jsonl', FILE_IGNORE_NEW_LINES));
+    $expectedBatchCount = match ($mode) {
+        'success' => 3,
+        'failure' => 2,
+        'environment-changes' => 1,
+    };
+
+    expect($calls)->toHaveCount($expectedBatchCount)
+        ->and(array_merge(...array_column($calls, 'files')))->toBe(array_slice($expectedFiles, 0, $expectedBatchCount * 10));
+    foreach ($calls as $index => $call) {
+        expect($call['database'])->toBe('pest_test_test_123456789012345678901234')
+            ->and(count($call['files']))->toBeLessThanOrEqual(10)
+            ->and(is_file($call['output']))->toBeTrue()
+            ->and(is_file($call['error']))->toBeTrue()
+            ->and(file($this->workflowDirectory.'/batch-check-php-'.($index + 1).'.files.txt', FILE_IGNORE_NEW_LINES))->toBe($call['files']);
+    }
+    expect($result->getOutput())->toContain('MOCK_TEST_DATABASE_REMOVED');
+    if ($mode === 'success') {
+        assertBranchWorkflowSucceeded($result);
+        expect($result->getOutput())->toContain('ALL_BATCHES_COMPLETED');
+    } else {
+        expect($result->isSuccessful())->toBeFalse()
+            ->and($result->getOutput())->not->toContain('ALL_BATCHES_COMPLETED');
+        if ($mode === 'failure') {
+            expect($result->getOutput())->toContain('exit code 7', 'BATCH_FAILURE_2', 'Logs retained');
+        } else {
+            expect($result->getOutput())->toContain('self-created local database');
+        }
+    }
+})->with(['success', 'failure', 'environment-changes']);
+
+it('refuses PHP batch execution before any process starts when its owned environment is invalid', function (string $invalid): void {
+    mkdir($this->workflowPc.'/tests/Unit', 0777, true);
+    mkdir($this->workflowPc.'/tests/Feature', 0777, true);
+    file_put_contents($this->workflowPc.'/tests/Unit/GuardTest.php', '<?php');
+    file_put_contents($this->workflowPc.'/tests/Feature/GuardTest.php', '<?php');
+    runBranchWorkflowGit($this->workflowPc, 'add', '.');
+    runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Add test environment guard fixture');
+    $command = branchWorkflowBatchEnvironment()."\n".'$invalid = \''.$invalid."'\n".<<<'POWERSHELL'
+function Start-SchooltoolPhpTestProcess { Write-Host 'UNSAFE_PROCESS_STARTED'; throw 'Process must not start.' }
+Push-Location -LiteralPath $candidate.Path
+try {
+    switch ($invalid) {
+        'database' { $env:DB_DATABASE = 'pest_test' }
+        'host' { $env:DB_HOST = 'live.example.test' }
+        'receipt' { [System.IO.File]::WriteAllText($state.ReceiptPath, '{"state":"pending"}') }
+        'worktree' { $state.CandidatePath = $env:TEMP }
+        'cached-config' {
+            [System.IO.Directory]::CreateDirectory((Join-Path $candidate.Path 'bootstrap/cache')) | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $candidate.Path $env:APP_CONFIG_CACHE), '<?php return [];')
+        }
+    }
+    Invoke-SchooltoolPhpTestBatches -LogPrefix $logPrefix
+} finally { Pop-Location; Restore-SchooltoolCandidateEnvironment $state }
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->not->toContain('UNSAFE_PROCESS_STARTED')
+        ->and($result->getOutput())->toContain('MOCK_TEST_DATABASE_REMOVED');
+})->with(['database', 'host', 'receipt', 'worktree', 'cached-config']);
+
+it('starts PHP test processes natively with literal file arguments and preserves their exit status', function (int $exitCode): void {
+    file_put_contents($this->workflowPc.'/artisan', <<<'PHP'
+<?php
+echo json_encode($argv, JSON_THROW_ON_ERROR);
+fwrite(STDERR, 'Expected native child failure');
+exit((int) getenv('SCHOOLTOOL_NATIVE_FIXTURE_EXIT'));
+PHP);
+    $command = '$env:SCHOOLTOOL_NATIVE_FIXTURE_EXIT = \''.$exitCode."'\n".<<<'POWERSHELL'
+$output = Join-Path $env:TEMP 'native-php.out'
+$errorLog = Join-Path $env:TEMP 'native-php.err'
+$env:SHOULD_STAY_LITERAL = 'DO_NOT_EXPAND'
+$process = Start-SchooltoolPhpTestProcess -Files @('tests/Unit/File With SpacesTest.php', 'tests/Feature/%SHOULD_STAY_LITERAL%Test.php') -OutputPath $output -ErrorPath $errorLog -WorkingDirectory (Get-Location).Path
+Wait-SchooltoolCheckProcess -Name 'Native PHP fixture' -Process $process -OutputPath $output -ErrorPath $errorLog
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    $output = file_get_contents($this->workflowDirectory.'/native-php.out');
+    expect(json_validate($output))->toBeTrue($result->getOutput().$result->getErrorOutput());
+    $arguments = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result->isSuccessful())->toBe($exitCode === 0)
+        ->and(file_get_contents($this->workflowDirectory.'/native-php.err'))->toContain('Expected native child failure')
+        ->and($arguments)->toContain('--stop-on-failure', '--stop-on-error', '--exclude-group=integration', 'tests/Unit/File With SpacesTest.php', 'tests/Feature/%SHOULD_STAY_LITERAL%Test.php')
+        ->and($arguments)->not->toContain('DO_NOT_EXPAND');
+    if ($exitCode !== 0) {
+        expect($result->getOutput())->toContain('exit code 7', 'Expected native child failure');
+    }
+})->with([0, 7]);
+
+it('refuses a temporary candidate directory inside git metadata before creating a branch', function (): void {
+    $command = <<<'POWERSHELL'
+$env:TEMP = Join-Path (Get-Location) '.git'
+$env:TMP = $env:TEMP
+New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('temporary directory is inside .git')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/'))->toBe('');
+});
+
+it('loads candidate setup files through real Vitest without weakening the default git-directory deny rule', function (): void {
+    mkdir($this->workflowPc.'/tests/ui', 0777, true);
+    file_put_contents($this->workflowPc.'/tests/ui/setup.ts', 'globalThis.workflowSetupLoaded = true');
+    file_put_contents($this->workflowPc.'/tests/ui/fixture.test.ts', <<<'JAVASCRIPT'
+it('loads the candidate setup file', () => {
+    expect(globalThis.workflowSetupLoaded).toBe(true)
+})
+JAVASCRIPT);
+    file_put_contents($this->workflowPc.'/vitest.config.mjs', <<<'JAVASCRIPT'
+export default {
+    test: {
+        environment: 'node',
+        globals: true,
+        setupFiles: ['./tests/ui/setup.ts'],
+        include: ['tests/ui/fixture.test.ts'],
+    },
+}
+JAVASCRIPT);
+    runBranchWorkflowGit($this->workflowPc, 'add', '.');
+    runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Add isolated Vitest regression fixture');
+    $vitest = str_replace("'", "''", dirname(__DIR__, 2).'/node_modules/vitest/vitest.mjs');
+    $command = '$vitest = \''.$vitest."'\n".<<<'POWERSHELL'
+$candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+if ($candidate.Path -match '(^|[\\/])\.git([\\/]|$)') { throw 'Candidate source remains hidden inside Git metadata.' }
+Push-Location -LiteralPath $candidate.Path
+try {
+    & node $vitest run --configLoader native --reporter=default
+    if ($LASTEXITCODE -ne 0) { throw 'The isolated Vitest setup could not be loaded.' }
+} finally { Pop-Location }
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('1 passed');
+});
+
+it('resolves every isolated cache through the real Laravel application inside the candidate on Windows', function (): void {
+    $probePath = $this->workflowDirectory.'/cache-path-probe.php';
+    file_put_contents($probePath, <<<'PHP'
+<?php
+require $argv[1];
+$application = new Illuminate\Foundation\Application(getcwd());
+foreach ([
+    'APP_CONFIG_CACHE' => 'getCachedConfigPath',
+    'APP_ROUTES_CACHE' => 'getCachedRoutesPath',
+    'APP_PACKAGES_CACHE' => 'getCachedPackagesPath',
+    'APP_SERVICES_CACHE' => 'getCachedServicesPath',
+    'APP_EVENTS_CACHE' => 'getCachedEventsPath',
+] as $key => $method) {
+    $expected = str_replace('\\', '/', getcwd()).'/bootstrap/cache/'.basename(getenv($key));
+    if (str_replace('\\', '/', $application->{$method}()) !== $expected) {
+        throw new RuntimeException('Laravel resolved a cache outside its isolated cache directory: '.$key);
+    }
+}
+echo "LARAVEL_CACHE_PATHS_VERIFIED\n";
+PHP);
+    $probePath = str_replace("'", "''", $probePath);
+    $autoload = str_replace("'", "''", dirname(__DIR__, 2).'/vendor/autoload.php');
+    $command = '$probePath = \''.$probePath."'\n".'$autoload = \''.$autoload."'\n".<<<'POWERSHELL'
+$candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+$state = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+try {
+    Push-Location -LiteralPath $candidate.Path
+    try {
+        & php $probePath $autoload
+        if ($LASTEXITCODE -ne 0) { throw 'Laravel cache path verification failed.' }
+        foreach ($path in $state.CachePaths) {
+            if (-not [System.IO.Path]::IsPathRooted($path) -or -not $path.StartsWith($candidate.Path + [System.IO.Path]::DirectorySeparatorChar)) {
+                throw 'Cleanup must target the same candidate with absolute paths.'
+            }
+        }
+    } finally { Pop-Location }
+} finally { Restore-SchooltoolCandidateEnvironment $state }
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('LARAVEL_CACHE_PATHS_VERIFIED', 'MOCK_TEST_DATABASE_REMOVED');
+});
+
+it('clears inherited candidate settings and restores missing empty and nonempty environment values', function (string $powershell): void {
+    if ((new ExecutableFinder)->find($powershell) === null) {
+        $this->markTestSkipped($powershell.' is unavailable.');
+    }
+
+    $command = <<<'POWERSHELL'
+$candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+Remove-Item -LiteralPath Env:APP_CONFIG_CACHE -ErrorAction SilentlyContinue
+$env:APP_KEY = 'original-test-key'
+$env:MAIL_TEST_NONEMPTY = 'original-mail-setting'
+[Environment]::SetEnvironmentVariable('APP_URL', '', 'Process')
+$emptyWasPresent = Test-Path -LiteralPath Env:APP_URL
+$state = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+try {
+    if (Test-Path -LiteralPath Env:MAIL_TEST_NONEMPTY) { throw 'Inherited mail setting was not removed.' }
+    if ($env:APP_KEY -eq 'original-test-key' -or $env:APP_URL -ne 'http://localhost') { throw 'Candidate settings were not installed.' }
+    if (-not (Test-Path -LiteralPath Env:APP_CONFIG_CACHE)) { throw 'Candidate cache setting is absent.' }
+} finally { Restore-SchooltoolCandidateEnvironment $state }
+if (Test-Path -LiteralPath Env:APP_CONFIG_CACHE) { throw 'Originally missing setting was not removed.' }
+if ($env:APP_KEY -ne 'original-test-key' -or $env:MAIL_TEST_NONEMPTY -ne 'original-mail-setting') { throw 'Nonempty settings were not restored.' }
+if ((Test-Path -LiteralPath Env:APP_URL) -ne $emptyWasPresent) { throw 'Empty setting presence was not restored.' }
+if ($emptyWasPresent -and [Environment]::GetEnvironmentVariable('APP_URL', 'Process') -cne '') { throw 'Empty setting value was not restored.' }
+if ($script:SchooltoolActiveCandidateEnvironment) { throw 'Candidate environment is still active.' }
+Write-Output "CANDIDATE_ENVIRONMENT_RESTORED:PS$($PSVersionTable.PSVersion):EMPTY_PRESENT=$emptyWasPresent"
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('CANDIDATE_ENVIRONMENT_RESTORED:', 'MOCK_TEST_DATABASE_REMOVED');
+})->with(['powershell', 'pwsh']);
+
+it('reports owned database cleanup failure while still restoring the original environment', function (): void {
+    $command = <<<'POWERSHELL'
+$candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit HEAD
+$env:APP_KEY = 'original-test-key'
+$state = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+function Remove-SchooltoolCandidateTestDatabase { throw 'OWNED_DATABASE_CLEANUP_FAILED' }
+try { Restore-SchooltoolCandidateEnvironment $state }
+finally {
+    if ($env:APP_KEY -ne 'original-test-key' -or $script:SchooltoolActiveCandidateEnvironment) { throw 'Environment was not restored after cleanup failure.' }
+    Write-Host 'CLEANUP_FAILURE_ENVIRONMENT_RESTORED'
+}
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('OWNED_DATABASE_CLEANUP_FAILED', 'CLEANUP_FAILURE_ENVIRONMENT_RESTORED');
+});
+
+it('keeps merge conflicts inside the release worktree', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/shared.txt', "Feature replacement\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $main = commitBranchWorkflowFile($this->workflowLaptop, 'shared.txt', "Main replacement\n");
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitrelease "Release feature"');
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('Candidate retained at')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('')
+        ->and(file_exists($this->workflowPc.'/.git/MERGE_HEAD'))->toBeFalse()
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($main);
+});
+
+it('rejects any changed main or feature reservation at the atomic release boundary', function (string $changedRef): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Completed feature\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $origin = str_replace("'", "''", $this->workflowRemote);
+    $command = branchWorkflowReleaseMocks()."\n".'$raceOrigin = \''.$origin."'\n".'$raceRef = \''.$changedRef."'\n".'$featureHead = \''.$feature."'\n".<<<'POWERSHELL'
+function Read-Host {
+    if ($raceRef -eq 'main') {
+        Invoke-SchooltoolGit -C $raceOrigin update-ref refs/heads/main $featureHead
+    }
+    else {
+        $replacement = New-SchooltoolFeatureReservation 'feature/new-function'
+        $previous = Invoke-SchooltoolGit rev-parse refs/remotes/origin/codex/active-feature
+        Invoke-SchooltoolGit push "--force-with-lease=refs/heads/codex/active-feature:$previous" origin "$($replacement.ReservationCommit):refs/heads/codex/active-feature"
+    }
+    'RELEASE'
+}
+gitrelease 'Release feature' '3.48.0'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('atomic release push failed')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($changedRef === 'main' ? $feature : $this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('');
+})->with(['main moves inside the candidate ancestry' => 'main', 'feature reservation replaced' => 'reservation']);
+
+it('preserves a local feature advanced during cleanup using an expected commit deletion', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/feature.txt', "Completed feature\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+$nativeGit = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+function git {
+    if ($args[0] -eq 'update-ref' -and $args[1] -eq '-d') {
+        $old = & $nativeGit rev-parse refs/heads/feature/new-function
+        $tree = & $nativeGit rev-parse 'feature/new-function^{tree}'
+        $new = & $nativeGit commit-tree $tree -p $old -m 'Concurrent local work'
+        & $nativeGit update-ref refs/heads/feature/new-function $new $old
+    }
+    & $nativeGit @args
+}
+gitrelease 'Release feature'
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('Release succeeded, but local cleanup stopped')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->not->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'log', '-1', '--format=%s', 'feature/new-function'))->toBe('Concurrent local work')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Completed feature');
+});
+
+it('binds refresh and deployment through the real dispatcher without evaluating argument text', function (): void {
+    copy(dirname(__DIR__, 2).'/scripts/git_workflow.ps1', $this->workflowPc.'/scripts/git_workflow.ps1');
+    file_put_contents($this->workflowPc.'/scripts/git_helpers.ps1', <<<'POWERSHELL'
+function gitpreview {
+    param([string]$Mode = 'deploy', [switch]$RefreshData)
+    Write-Output "PREVIEW_MODE=$Mode REFRESH=$RefreshData"
+}
+function gitdeploy { Write-Output 'LIVE_DEPLOY_REQUESTED' }
+POWERSHELL);
+    $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
+& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-RefreshData')
+& ./scripts/git_workflow.ps1 -Command gitdeploy
+try {
+    & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('$(throw "EVALUATED_ARGUMENT")')
+    throw 'UNEXPECTED_ARGUMENT_ACCEPTED'
+}
+catch {
+    if ($_.Exception.Message -match 'EVALUATED_ARGUMENT|UNEXPECTED_ARGUMENT_ACCEPTED') { throw }
+    Write-Output 'INVALID_ARGUMENT_REJECTED'
+}
+POWERSHELL);
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'LIVE_DEPLOY_REQUESTED', 'INVALID_ARGUMENT_REJECTED');
 });
 
 it('atomically rejects publication if main advances after release confirmation begins', function (): void {
@@ -422,6 +1096,8 @@ it('prepares or publishes a preview without modifying main tags or the source fe
     $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
 $env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
 function Read-Host { 'PREVIEW' }
+function Get-SchooltoolPreviewTarget { [pscustomobject]@{ Ssh = 'schooltool-feature@example.test'; Path = '/home/example/applications/preview/public_html' } }
+function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $false } }
 function Send-SchooltoolPreview { Write-Host 'PREVIEW_UPLOAD_REQUESTED' }
 POWERSHELL;
     $result = runBranchWorkflowCommand($this->workflowPc, $command."\n"."gitpreview '$mode'");
@@ -444,15 +1120,15 @@ POWERSHELL;
     }
 })->with(['prepare', 'deploy']);
 
-it('rejects preview with schema changes and preserves its original branch', function (): void {
+it('prepares schema changes for the isolated preview database without modifying the original branch', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     mkdir($this->workflowPc.'/database/migrations', 0777, true);
     commitBranchWorkflowFile($this->workflowPc, 'database/migrations/new-table.php', '<?php');
     runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'HEAD:feature/new-function');
-    $result = runBranchWorkflowCommand($this->workflowPc, 'gitpreview prepare');
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitpreview prepare');
+    assertBranchWorkflowSucceeded($result);
 
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('Preview shares the live schema')
+    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });

@@ -100,7 +100,7 @@ describe('AdminAppBar', () => {
             preview: { is_preview: true, live_url: 'https://live.example.test/admin' },
         })
 
-        expect(screen.getByText('Vorschau · Live-Daten')).toBeInTheDocument()
+        expect(screen.getByText('Vorschau · Testkopie')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Zur Hauptanwendung' })).toHaveAttribute('href', 'https://live.example.test/admin')
         expect(screen.queryByText('Zur Vorschau')).not.toBeInTheDocument()
     })

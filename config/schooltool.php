@@ -7,6 +7,17 @@ return [
         'url' => env('SCHOOLTOOL_PREVIEW_URL', ''),
         'live_url' => env('SCHOOLTOOL_PREVIEW_LIVE_URL', ''),
         'expected_host' => env('SCHOOLTOOL_PREVIEW_EXPECTED_HOST', ''),
+        'snapshot_directory' => env('SCHOOLTOOL_PREVIEW_SNAPSHOT_DIRECTORY', ''),
+        'snapshot_key_path' => env('SCHOOLTOOL_PREVIEW_SNAPSHOT_KEY_PATH', ''),
+        'control_url' => env('SCHOOLTOOL_PREVIEW_CONTROL_URL', ''),
+        'control_key_path' => env('SCHOOLTOOL_PREVIEW_CONTROL_KEY_PATH', ''),
+        'control_rate_limit' => 1200,
+        'legacy_control_credentials_present' => array_filter([
+            env('SCHOOLTOOL_PREVIEW_CONTROL_DB_HOST'),
+            env('SCHOOLTOOL_PREVIEW_CONTROL_DB_DATABASE'),
+            env('SCHOOLTOOL_PREVIEW_CONTROL_DB_USERNAME'),
+            env('SCHOOLTOOL_PREVIEW_CONTROL_DB_PASSWORD'),
+        ], static fn ($value): bool => $value !== null && $value !== '') !== [],
     ],
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),

@@ -142,11 +142,14 @@ class AdminService
 
         $users = User::where('email', $data['email'])
             ->where('is_active', true)
-            ->when($preview->isPreview(), fn ($query) => $query->where('feature_preview_allowed', true)->whereNotNull('confirmed_at'))
             ->whereHas('roles', function ($query) {
                 $query->whereIn('name', self::ADMIN_LOGIN_ROLES);
             })
             ->get();
+
+        if ($preview->isPreview()) {
+            $users = $users->filter(fn (User $user): bool => $preview->allowed($user))->values();
+        }
 
         $data['users_count'] = $users->count();
 
@@ -173,7 +176,7 @@ class AdminService
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
         $this->validateAdminCanLogin($user);
         $data['school'] = $user->selectedSchool;
-        $this->setToken2Fa($user, $data, 'Code für Login');
+        $this->setToken2Fa($user, $data, 'Code für Login', 'login');
 
         return $data;
     }
@@ -238,7 +241,7 @@ class AdminService
             $this->setToken2FaEmail2Fa($user, $data, 'Code zum Neusetzen des Kennwortes');
         }
 
-        return $user->is_2fa;
+        return (bool) $user->is_2fa;
     }
 
     public function passwordUnkownSetPassword(array $data): array
@@ -305,17 +308,17 @@ class AdminService
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user->email_2fa, $data['school']['long_name'], $subject, $token);
+        $this->sendTokenEmail($user, $user->email_2fa, $data['school']['long_name'], $subject, $token, 'login', 'second_factor');
     }
 
-    public function setToken2Fa($user, array $data, string $subject): void
+    public function setToken2Fa($user, array $data, string $subject, ?string $previewPurpose = null): void
     {
         $token = random_int(100000, 999999);
         $user->token_2fa = $token;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user->email, $data['school']['long_name'], $subject, $token);
+        $this->sendTokenEmail($user, $user->email, $data['school']['long_name'], $subject, $token, $previewPurpose);
     }
 
     public function setToken2FaEmail2Fa($user, array $data, string $subject): void
@@ -325,7 +328,7 @@ class AdminService
         $user->token_2fa_2_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user->email_2fa, $data['school']['long_name'], $subject, $token);
+        $this->sendTokenEmail($user, $user->email_2fa, $data['school']['long_name'], $subject, $token, 'login', 'second_factor');
     }
 
     private function findUserByEmailAndSchool(string $email, int $schoolId): User
@@ -346,7 +349,7 @@ class AdminService
         }
     }
 
-    private function sendTokenEmail(string $email, string $fromName, string $subject, int $token): void
+    private function sendTokenEmail(User $user, string $email, string $fromName, string $subject, int $token, ?string $previewPurpose, string $recipientKind = 'account'): void
     {
 
         $mail = [
@@ -359,7 +362,12 @@ class AdminService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
+        $notification = new StandardEmail($mail);
+        if ($previewPurpose !== null) {
+            $notification->forPreviewAuthentication($user, $email, $previewPurpose, $recipientKind);
+        }
+
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
     }
 
     public function checkLogin(array $data): array

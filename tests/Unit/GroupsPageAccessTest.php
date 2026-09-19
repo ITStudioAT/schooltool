@@ -18,7 +18,7 @@ it('guards the direct groups page with the current super admin role even during 
     $route = Route::getRoutes()->match($request);
 
     expect($route->getName())->toBe('admin.groups')
-        ->and($route->gatherMiddleware())->toContain('auth:sanctum', 'web-allowed:super_admin');
+        ->and($route->gatherMiddleware())->toContain('auth:sanctum', 'web-allowed:scope:super_admin_access');
 
     $user = new User;
     $user->setRelation('roles', new Collection([
@@ -38,7 +38,7 @@ it('guards the direct groups page with the current super admin role even during 
 
     if (! $allowed && $impersonating) {
         try {
-            (new WebAllowed)->handle($request, $next, 'super_admin');
+            (new WebAllowed)->handle($request, $next, 'scope:super_admin_access');
             $this->fail('The groups page must reject an impersonated non-super-admin.');
         } catch (HttpException $exception) {
             expect($exception->getStatusCode())->toBe(403);
@@ -47,7 +47,7 @@ it('guards the direct groups page with the current super admin role even during 
         return;
     }
 
-    $response = (new WebAllowed)->handle($request, $next, 'super_admin');
+    $response = (new WebAllowed)->handle($request, $next, 'scope:super_admin_access');
 
     if ($allowed) {
         expect($response->getStatusCode())->toBe(200)

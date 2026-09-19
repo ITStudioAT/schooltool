@@ -253,6 +253,8 @@ class UserHopperService
             abort(404, 'Das Hopper-Konto wurde nicht gefunden.');
         }
 
+        app(FeaturePreviewService::class)->assertCanEnter($targetUser);
+
         if (! $this->canUseAsHopperTarget($targetUser)) {
             abort(403, 'Dieses Hopper-Konto ist nicht mehr verfügbar.');
         }

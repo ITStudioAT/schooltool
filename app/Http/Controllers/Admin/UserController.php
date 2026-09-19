@@ -392,7 +392,7 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $data['school'] = $user->selectedSchool;
-        $adminService->setToken2Fa($user, $data, 'Code für Kennwort-Änderung');
+        $adminService->setToken2Fa($user, $data, 'Code für Kennwort-Änderung', 'password_reset');
 
         $data = ['step' => 'PASSWORD_ENTER_TOKEN'];
 
@@ -654,16 +654,6 @@ class UserController extends Controller
         }
 
         return $user->hasAdminShellAccess() ? $user : false;
-    }
-
-    private function canAccessOwnAdminProfile(User $user): bool
-    {
-        $authUser = $this->authorizedProfileUser();
-        if (! $authUser) {
-            return false;
-        }
-
-        return (int) $authUser->id === (int) $user->id;
     }
 
     private function ensureUserBelongsToSchool(User $authUser, User $user): void

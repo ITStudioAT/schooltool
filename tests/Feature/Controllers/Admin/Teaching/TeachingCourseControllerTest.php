@@ -2049,7 +2049,12 @@ describe('store', function () {
         };
 
         if ($candidateType === 'inactive teacher') {
-            $candidate->update(['is_active' => false]);
+            $candidate->forceFill(['is_active' => false])->save();
+
+            $this->assertDatabaseHas('users', [
+                'id' => $candidate->id,
+                'is_active' => false,
+            ]);
         }
 
         $url = '/api/admin/teaching/courses';

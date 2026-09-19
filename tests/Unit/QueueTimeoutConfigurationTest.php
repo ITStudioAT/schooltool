@@ -239,8 +239,12 @@ it('validates the locally published frontend release in parallel CI', function (
         ->toContain('php scripts/frontend-release.php verify $sourceCommit')
         ->toContain('deployment/frontend-build.sha256')
         ->toContain('git push @pushArguments')
-        ->toContain("'--atomic', 'origin', 'HEAD:main'")
-        ->toContain('Cloudways may Pull main and run: composer deploy');
+        ->toContain('Test-SchooltoolAncestor $mainBeforeChecks $releaseCommit')
+        ->toContain('$pushArguments = @(\'--atomic\', "--force-with-lease=refs/heads/main:$mainBeforeChecks")')
+        ->toContain('--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit')
+        ->toContain('--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)')
+        ->toContain('$pushArguments += @(\'origin\', "${releaseCommit}:refs/heads/main")')
+        ->toContain('Cloudways may run: composer pdeploy');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {

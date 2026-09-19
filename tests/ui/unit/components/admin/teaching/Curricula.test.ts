@@ -218,7 +218,7 @@ describe('Teaching curricula route sync', () => {
         expect(source).toContain('components: { FilePond }')
         expect(source).toContain('<file-pond')
         expect(source).toContain(':instant-upload="true"')
-        expect(source).toContain(':accepted-file-types="[\'application/json\', \'text/json\', \'.json\']"')
+        expect(source).toContain(':accepted-file-types="[\'application/json\', \'text/json\', \'.json\', \'application/zip\', \'application/x-zip-compressed\', \'.zip\']"')
         expect(source).toContain(':server="{ process: importPondProcess }"')
         expect(source).toContain('loadImportedCurricula()')
         expect(source).toContain('importPondProcess(fieldName, file, metadata, load, error, progress, abort)')

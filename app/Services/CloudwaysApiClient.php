@@ -39,6 +39,8 @@ class CloudwaysApiClient
 
     public function startGitPull(): void
     {
+        $this->assertMainBranch();
+
         $serverId = $this->configuredId('server_id');
         $appId = $this->configuredId('app_id');
         $branch = $this->configuredString('branch');
@@ -71,6 +73,8 @@ class CloudwaysApiClient
     /** @return array<int, array<string, mixed>> */
     public function gitDeploymentHistory(): array
     {
+        $this->assertMainBranch();
+
         $serverId = $this->configuredId('server_id');
         $appId = $this->configuredId('app_id');
 
@@ -82,7 +86,7 @@ class CloudwaysApiClient
             $response = $this->request()
                 ->retry(
                     [250, 750],
-                    fn (Throwable $exception): bool => $exception instanceof ConnectionException
+                    when: fn (Throwable $exception): bool => $exception instanceof ConnectionException
                         || ($exception instanceof RequestException && $exception->response->serverError()),
                 )
                 ->get('/git/history', [
@@ -109,6 +113,13 @@ class CloudwaysApiClient
         }
 
         return array_values($deployments);
+    }
+
+    private function assertMainBranch(): void
+    {
+        if (config('services.cloudways.deployment.branch') !== 'main') {
+            throw new RuntimeException('Cloudways deployment requires the configured main branch. Check CLOUDWAYS_DEPLOY_BRANCH and cached configuration before retrying.');
+        }
     }
 
     private function request(): PendingRequest

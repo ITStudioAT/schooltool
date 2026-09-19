@@ -49,16 +49,24 @@ it('guards preview identity and runs only the isolated deployment commands', fun
     if ($scenario === 'public storage exposed') {
         mkdir($target.'/public/storage', 0777, true);
     }
+    if ($scenario === 'runtime path is file') {
+        file_put_contents($target.'/storage', 'do not overwrite');
+    }
     mkdir($directory.'/bin');
     copy(dirname(__DIR__, 2).'/scripts/deploy_preview_cloudways.sh', $candidate.'/scripts/deploy_preview_cloudways.sh');
     file_put_contents($candidate.'/deployment/source-commit', str_repeat('a', 40));
     file_put_contents($target.'/.env', 'SCHOOLTOOL_PREVIEW_INSTANCE='.($scenario === 'wrong instance' ? 'false' : 'true')."\n");
     $executables = [
         'id' => "#!/bin/bash\nprintf '%s\\n' \"\$PREVIEW_TEST_ACCOUNT\"\n",
+        'stat' => "#!/bin/bash\nprintf '%s\\n' \"\$PREVIEW_TEST_OWNER\"\n",
         'php' => <<<'BASH'
 #!/bin/bash
 printf 'php %s\n' "$*" >> "$PREVIEW_TEST_LOG"
 if [ "$PREVIEW_TEST_FAILURE" = check ] && [ "${2:-}" = preview:check ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = activate ] && [ "${3:-}" = activate ]; then exit 1; fi
+if [ "${2:-}" = preview:snapshot ] && [ "${3:-}" = receive ]; then printf '/private/incoming.stpreview\n'; fi
 BASH,
         'composer' => "#!/bin/bash\nprintf 'composer %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
         'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
@@ -72,32 +80,61 @@ BASH,
         'PATH' => previewBashPath($directory.'/bin').':/usr/bin:/bin',
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
         'PREVIEW_TEST_ACCOUNT' => $scenario === 'wrong account' ? 'sftp_schooltool_at' : 'schooltool-feature',
-        'PREVIEW_TEST_FAILURE' => $scenario === 'runtime check failure' ? 'check' : '',
+        'PREVIEW_TEST_OWNER' => $scenario === 'wrong owner' ? 'another-app' : 'schooltool-feature',
+        'PREVIEW_TEST_FAILURE' => match ($scenario) {
+            'runtime check failure' => 'check',
+            'snapshot failure' => 'import',
+            'migration failure' => 'migrate',
+            'activation failure' => 'activate',
+            default => '',
+        },
     ];
 
     try {
-        $process = new Process([previewBashExecutable(), '-c', 'export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64)], $directory, $environment);
+        $snapshot = in_array($scenario, ['snapshot success', 'snapshot failure'], true);
+        $process = new Process([previewBashExecutable(), '-c', 'export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-'], $directory, $environment);
         $process->run();
         $commands = is_file($directory.'/commands.log') ? file_get_contents($directory.'/commands.log') : '';
-        expect($commands)->not->toContain('app:update', 'migrate', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
+        expect($commands)->not->toContain('app:update', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
 
-        if ($scenario === 'success') {
+        if (in_array($scenario, ['success', 'snapshot success'], true)) {
             expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
                 ->and($commands)->toContain('preview:check', '--no-scripts', 'config:cache', 'view:cache', 'artisan up')
-                ->and($commands)->toContain('--exclude=/.env', '--exclude=/storage');
+                ->and($commands)->toContain('--exclude=/.env', '--exclude=/storage', 'artisan migrate --force --no-interaction', 'preview:snapshot activate');
+            if ($snapshot) {
+                expect($commands)->toContain('preview:snapshot receive', 'preview:snapshot import', '--replace')
+                    ->and(strpos($commands, 'preview:snapshot import'))->toBeLessThan(strpos($commands, 'artisan migrate'))
+                    ->and(strpos($commands, 'artisan migrate'))->toBeLessThan(strpos($commands, 'preview:snapshot activate'))
+                    ->and(strpos($commands, 'preview:snapshot activate'))->toBeLessThan(strpos($commands, 'artisan up'));
+            } else {
+                expect($commands)->toContain('preview:snapshot assert-current', 'preview:snapshot checkpoint')->not->toContain('preview:snapshot import')
+                    ->and(strpos($commands, 'preview:snapshot checkpoint'))->toBeLessThan(strpos($commands, 'artisan migrate'));
+            }
         } else {
             expect($process->isSuccessful())->toBeFalse()
-                ->and($commands)->not->toContain('rsync ', 'artisan up');
+                ->and($commands)->not->toContain('artisan up');
+            if (in_array($scenario, ['snapshot failure', 'migration failure', 'activation failure'], true)) {
+                expect($commands)->toContain('rsync ')->and($process->getErrorOutput())->toContain('remains in maintenance');
+            } else {
+                expect($commands)->not->toContain('rsync ', 'artisan migrate');
+            }
+            if ($scenario === 'runtime path is file') {
+                expect($commands)->toBe('')->and(file_get_contents($target.'/storage'))->toBe('do not overwrite');
+            }
         }
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['success', 'wrong account', 'wrong instance', 'runtime check failure', 'public storage exposed']);
+})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'snapshot failure', 'migration failure', 'activation failure']);
 
-it('uses interactive SSH without storing credentials and validates the preview destination', function (): void {
+it('transfers a preview with strict key authentication and private snapshot permissions', function (bool $snapshot): void {
     if (PHP_OS_FAMILY !== 'Windows') {
         $this->markTestSkipped('Windows PowerShell preview transport verification.');
     }
+    $directory = sys_get_temp_dir().'/schooltool-preview-transport-'.bin2hex(random_bytes(8));
+    mkdir($directory);
+    file_put_contents($directory.'/key', 'FAKE KEY');
+    file_put_contents($directory.'/hosts', 'FAKE HOST');
     $command = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
 . $env:PREVIEW_TEST_HELPERS
@@ -106,17 +143,42 @@ function scp { Write-Output ('SCP ' + ($args -join '|')); $global:LASTEXITCODE =
 function Get-SchooltoolPreviewExecutable { param([string]$Name) $Name }
 $env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
 $env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-feature@165.227.156.99'
-Send-SchooltoolPreview -Archive 'C:/preview.tar.gz' -Checksum ('b' * 64) -Id ('a' * 32) -SourceBranch 'feature/new-function'
+$env:SCHOOLTOOL_MAIN_PATH = '/home/example/applications/main/public_html'
+$env:SCHOOLTOOL_MAIN_SSH = 'sftp_schooltool_at@165.227.156.99'
+$env:SCHOOLTOOL_MAIN_KEY = Join-Path $env:PREVIEW_TEST_DIRECTORY 'key'
+$env:SCHOOLTOOL_PREVIEW_KEY = $env:SCHOOLTOOL_MAIN_KEY
+$env:SCHOOLTOOL_MAIN_KNOWN_HOSTS = Join-Path $env:PREVIEW_TEST_DIRECTORY 'hosts'
+$env:SCHOOLTOOL_PREVIEW_KNOWN_HOSTS = $env:SCHOOLTOOL_MAIN_KNOWN_HOSTS
+function Invoke-SchooltoolRemoteJson {
+    param($Target, $Command)
+    if ($Command -notmatch "--artifact='([a-f0-9]{32})'") { throw 'Invalid export command.' }
+    [pscustomobject]@{ artifact=$Matches[1]; path="/home/main/snapshots/$($Matches[1]).stpreview"; sha256=('b' * 64) }
+}
+function Get-SchooltoolFileChecksum { 'b' * 64 }
+$target = Get-SchooltoolPreviewTarget
+$status = [pscustomobject]@{ needs_snapshot=($env:PREVIEW_TEST_SNAPSHOT -eq '1'); public_key=('c' * 64) }
+Send-SchooltoolPreview -Archive (Join-Path $env:PREVIEW_TEST_DIRECTORY 'preview.tar.gz') -Checksum ('b' * 64) -Id ('a' * 32) -SourceBranch 'feature/new-function' -FeatureId ('d' * 32) -Target $target -SnapshotStatus $status
 $env:SCHOOLTOOL_PREVIEW_SSH = 'sftp_schooltool_at@165.227.156.99'
 try { Get-SchooltoolPreviewTarget; exit 2 } catch { Write-Output 'PRODUCTION_ACCOUNT_REJECTED' }
 POWERSHELL;
-    $process = new Process(['powershell', '-NoProfile', '-NonInteractive', '-Command', $command], dirname(__DIR__, 2), ['PREVIEW_TEST_HELPERS' => dirname(__DIR__, 2).'/scripts/git_helpers.ps1']);
-    $process->run();
+    try {
+        $process = new Process(['powershell', '-NoProfile', '-NonInteractive', '-Command', $command], dirname(__DIR__, 2), [
+            'PREVIEW_TEST_HELPERS' => dirname(__DIR__, 2).'/scripts/git_helpers.ps1',
+            'PREVIEW_TEST_DIRECTORY' => $directory,
+            'PREVIEW_TEST_SNAPSHOT' => $snapshot ? '1' : '0',
+        ]);
+        $process->run();
 
-    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
-        ->and($process->getOutput())->toContain('SSH -t', 'SCP ', '$(id -un)', 'sha256sum -c', 'PRODUCTION_ACCOUNT_REJECTED')
-        ->and($process->getOutput())->not->toContain('BatchMode=yes', 'StrictHostKeyChecking=no', 'sshpass');
-});
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and($process->getOutput())->toContain('SSH -F|none', '-T|schooltool-feature@', 'BatchMode=yes', 'StrictHostKeyChecking=yes', 'SCP ', '$(id -un)', 'sha256sum -c', 'PRODUCTION_ACCOUNT_REJECTED')
+            ->and($process->getOutput())->not->toContain('StrictHostKeyChecking=no', 'sshpass');
+        if ($snapshot) {
+            expect($process->getOutput())->toContain('chmod 600', 'preview:snapshot delete');
+        }
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with([false, true]);
 
 it('resolves the bundled Windows SSH tools before uploading anything', function (): void {
     if (PHP_OS_FAMILY !== 'Windows') {

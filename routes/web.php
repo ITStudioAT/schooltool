@@ -54,8 +54,8 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->middleware([
         'auth:sanctum',
-        'web-allowed:admin,super_admin,teaching_admin',
-        'tool-licensed:Lehrertool,auth,scope:tool_web_access',
+        'web-allowed:scope:teaching_administration_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_administration_access',
     ])->name('admin.teaching.administration');
 
     Route::get('/admin/teaching/{any?}', function () {
@@ -106,7 +106,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         abort_unless(auth()->user()?->hasRole('super_admin'), 403);
 
         return view('spa::admin');
-    })->middleware(['auth:sanctum', 'web-allowed:super_admin'])->name('admin.groups');
+    })->middleware(['auth:sanctum', 'web-allowed:scope:super_admin_access'])->name('admin.groups');
 
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');

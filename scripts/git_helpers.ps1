@@ -38,23 +38,51 @@ function Start-SchooltoolCheckProcess {
     $redirectedCommand = '(' + $Command + ') 1>"' + $OutputPath + '" 2>"' + $ErrorPath + '"'
     $commandArguments = '/d /s /c "' + $redirectedCommand + '"'
 
-    Start-Process `
+    $process = Start-Process `
         -FilePath $commandShell `
         -ArgumentList $commandArguments `
         -WorkingDirectory $WorkingDirectory `
         -WindowStyle Hidden `
         -PassThru
+    $null = $process.Handle
+    $process
 }
 
 function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    if (-not $Full -or $script:SchooltoolActiveCandidateEnvironment) {
+        Invoke-SchooltoolReleaseCheckProcesses -Full:$Full
+        return
+    }
+
+    $sourceTree = Invoke-SchooltoolGit write-tree
+    $sourceParent = Invoke-SchooltoolGit rev-parse HEAD
+    $snapshotCommit = Invoke-SchooltoolGit commit-tree $sourceTree -p $sourceParent -m ('Check main source snapshot ' + [guid]::NewGuid().ToString('N'))
+    $candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit $snapshotCommit
+    $candidateEnvironment = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+    try {
+        Push-Location -LiteralPath $candidate.Path
+        try {
+            Invoke-SchooltoolCommand 'Preparing isolated main test dependencies...' { php scripts/update.php --target=local --prepare }
+            Invoke-SchooltoolReleaseCheckProcesses -Full
+            Assert-SchooltoolClean
+        }
+        finally { Pop-Location }
+    }
+    finally {
+        Restore-SchooltoolCandidateEnvironment $candidateEnvironment
+        Write-Host "Main test candidate retained at $($candidate.Path)." -ForegroundColor DarkGray
+    }
+    Invoke-SchooltoolCommand 'Building the checked main source for publication...' { npm run build }
+}
+
+function Invoke-SchooltoolReleaseCheckProcesses {
     param(
         [Parameter(Mandatory = $false)]
         [switch]$Full
     )
 
     $temporaryPrefix = Join-Path ([System.IO.Path]::GetTempPath()) ("schooltool-release-" + [guid]::NewGuid().ToString('N'))
-    $phpOutput = "$temporaryPrefix-php.out"
-    $phpError = "$temporaryPrefix-php.err"
     $frontendOutput = "$temporaryPrefix-frontend.out"
     $frontendError = "$temporaryPrefix-frontend.err"
     $analysisOutput = "$temporaryPrefix-analysis.out"
@@ -65,79 +93,101 @@ function Invoke-SchooltoolReleaseChecks {
     Write-Host "Running $scope..." -ForegroundColor Cyan
 
     $workingDirectory = (Get-Location).Path
-    $frontendProcess = Start-SchooltoolCheckProcess `
-        -Command $frontendCommand `
-        -OutputPath $frontendOutput `
-        -ErrorPath $frontendError `
-        -WorkingDirectory $workingDirectory
-
-    $processes = @($frontendProcess)
-    $checks = @(
-        @{ Name = 'Frontend release build'; Process = $frontendProcess; Output = $frontendOutput; Error = $frontendError }
-    )
-
     if ($Full) {
-        $php = (Get-Command php -ErrorAction Stop).Source
-        $phpCommand = '"' + $php + '" artisan test --compact --exclude-group=integration'
-        $phpProcess = Start-SchooltoolCheckProcess `
-            -Command $phpCommand `
-            -OutputPath $phpOutput `
-            -ErrorPath $phpError `
-            -WorkingDirectory $workingDirectory
+        Invoke-SchooltoolPhpTestBatches -LogPrefix $temporaryPrefix
         $analysisProcess = Start-SchooltoolCheckProcess `
             -Command 'composer analyse' `
             -OutputPath $analysisOutput `
             -ErrorPath $analysisError `
             -WorkingDirectory $workingDirectory
-
-        $processes += @($phpProcess, $analysisProcess)
-        $checks += @(
-            @{ Name = 'PHP tests'; Process = $phpProcess; Output = $phpOutput; Error = $phpError },
-            @{ Name = 'Static analysis'; Process = $analysisProcess; Output = $analysisOutput; Error = $analysisError }
-        )
+        Wait-SchooltoolCheckProcess -Name 'Static analysis' -Process $analysisProcess -OutputPath $analysisOutput -ErrorPath $analysisError
     }
+    $frontendProcess = Start-SchooltoolCheckProcess `
+        -Command $frontendCommand `
+        -OutputPath $frontendOutput `
+        -ErrorPath $frontendError `
+        -WorkingDirectory $workingDirectory
+    Wait-SchooltoolCheckProcess -Name 'Frontend tests and release build' -Process $frontendProcess -OutputPath $frontendOutput -ErrorPath $frontendError
+    Write-Host "Check logs retained at $temporaryPrefix-*" -ForegroundColor DarkGray
+}
 
+function Wait-SchooltoolCheckProcess {
+    param([string]$Name, $Process, [string]$OutputPath, [string]$ErrorPath)
     $startedAt = Get-Date
-
-    while ($processes | Where-Object { -not $_.HasExited }) {
+    while (-not $Process.HasExited) {
         $elapsed = [math]::Floor(((Get-Date) - $startedAt).TotalSeconds)
-        Write-Host "  Local release checks are running ($elapsed seconds)..." -ForegroundColor DarkGray
+        Write-Host "  $Name is running ($elapsed seconds)..." -ForegroundColor DarkGray
         Start-Sleep -Seconds 10
     }
-
-    foreach ($process in $processes) {
-        $process.WaitForExit()
-        $process.Refresh()
+    $Process.WaitForExit()
+    $Process.Refresh()
+    if ($Process.ExitCode -ne 0) {
+        foreach ($path in @($OutputPath, $ErrorPath)) {
+            if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path -Encoding UTF8 | Out-Host }
+        }
+        throw "$Name failed with exit code $($Process.ExitCode). Nothing was pushed. Logs retained at $OutputPath and $ErrorPath."
     }
+    Write-Host "  OK: $Name" -ForegroundColor Green
+}
 
-    $failed = $false
-
-    foreach ($check in $checks) {
-        if ($check.Process.ExitCode -eq 0) {
-            Write-Host ("  OK: " + $check.Name) -ForegroundColor Green
-            continue
-        }
-
-        $failed = $true
-        Write-Host ("  FAILED: " + $check.Name) -ForegroundColor Red
-
-        if (Test-Path -LiteralPath $check.Output) {
-            Get-Content -LiteralPath $check.Output -Encoding UTF8
-        }
-
-        if (Test-Path -LiteralPath $check.Error) {
-            Get-Content -LiteralPath $check.Error -Encoding UTF8
-        }
+function Assert-SchooltoolOwnedTestEnvironment {
+    $snapshot = $script:SchooltoolActiveCandidateEnvironment
+    $directory = [System.IO.Path]::GetFullPath((Get-Location).Path)
+    if (-not $snapshot -or $snapshot.CandidatePath -ne $directory -or -not (Test-Path -LiteralPath (Join-Path $directory '.git') -PathType Leaf)) {
+        throw 'PHP release tests require the active isolated candidate worktree.'
     }
-
-    foreach ($path in @($phpOutput, $phpError, $frontendOutput, $frontendError, $analysisOutput, $analysisError)) {
-        if (Test-Path -LiteralPath $path) {
-            [System.IO.File]::Delete($path)
-        }
+    if ($snapshot.CreatedDatabase -cnotmatch '^pest_test_test_[0-9]{24}$' -or $env:DB_DATABASE -cne $snapshot.CreatedDatabase -or
+        $env:APP_ENV -cne 'testing' -or $env:DB_CONNECTION -cne 'mysql' -or $env:DB_HOST -cne '127.0.0.1' -or $env:DB_PORT -cne '3306' -or
+        $env:DB_USERNAME -cne 'root' -or $env:DB_PASSWORD -cne '(empty)' -or $env:DB_URL -cne '(null)' -or $env:DB_DATABASE_TEST -cne 'pest_test') {
+        throw 'PHP release tests require the self-created local database and isolated testing configuration.'
     }
+    $expectedCache = 'bootstrap/cache/' + [System.IO.Path]::GetFileNameWithoutExtension($snapshot.ReceiptPath) + '.config.php'
+    if ($env:APP_CONFIG_CACHE -cne $expectedCache -or (Test-Path -LiteralPath (Join-Path $directory $expectedCache))) {
+        throw 'PHP release tests cannot reuse cached application configuration.'
+    }
+    $receipt = Get-Content -LiteralPath $snapshot.ReceiptPath -Encoding UTF8 -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if ($receipt.format -cne 'schooltool-owned-test-database-v1' -or $receipt.state -cne 'created' -or
+        $receipt.database -cne $snapshot.CreatedDatabase -or $receipt.host -cne '127.0.0.1' -or $receipt.port -ne 3306) {
+        throw 'PHP release tests require a matching successful local database ownership receipt.'
+    }
+}
 
-    if ($failed) {
-        throw 'Local release checks failed. Nothing was pushed.'
+function Start-SchooltoolPhpTestProcess {
+    param([string[]]$Files, [string]$OutputPath, [string]$ErrorPath, [string]$WorkingDirectory)
+    $php = (Get-Command php -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $arguments = @('artisan', 'test', '--compact', '--exclude-group=integration', '--stop-on-failure', '--stop-on-error') + $Files
+    $quotedArguments = @($arguments | ForEach-Object {
+        if ($_ -match '["\r\n]') { throw 'Unsupported character in a PHP test path.' }
+        '"' + $_ + '"'
+    })
+    $process = Start-Process -FilePath $php -ArgumentList $quotedArguments -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $OutputPath -RedirectStandardError $ErrorPath
+    $null = $process.Handle
+    $process
+}
+
+function Invoke-SchooltoolPhpTestBatches {
+    param([Parameter(Mandatory = $true)][string]$LogPrefix)
+    Assert-SchooltoolOwnedTestEnvironment
+    $directory = (Get-Location).Path
+    $files = @(Get-ChildItem -LiteralPath (Join-Path $directory 'tests/Unit'), (Join-Path $directory 'tests/Feature') -Recurse -File -Filter '*Test.php' -ErrorAction Stop | ForEach-Object {
+        $_.FullName.Substring($directory.Length + 1).Replace('\', '/')
+    })
+    if ($files.Count -eq 0) { throw 'No Unit or Feature test files were found. The release cannot be checked.' }
+    [Array]::Sort($files, [StringComparer]::Ordinal)
+    $batchSize = 10
+    $batchCount = [int][math]::Ceiling($files.Count / $batchSize)
+    Write-Host "Checking all $($files.Count) PHP test files in $batchCount sequential fresh processes..." -ForegroundColor Cyan
+    for ($offset = 0; $offset -lt $files.Count; $offset += $batchSize) {
+        Assert-SchooltoolOwnedTestEnvironment
+        $batchNumber = [int]($offset / $batchSize) + 1
+        $last = [math]::Min($offset + $batchSize - 1, $files.Count - 1)
+        $batchFiles = @($files[$offset..$last])
+        $outputPath = "$LogPrefix-php-$batchNumber.out"
+        $errorPath = "$LogPrefix-php-$batchNumber.err"
+        [System.IO.File]::WriteAllLines("$LogPrefix-php-$batchNumber.files.txt", $batchFiles, (New-Object System.Text.UTF8Encoding($false)))
+        $process = Start-SchooltoolPhpTestProcess -Files $batchFiles -OutputPath $outputPath -ErrorPath $errorPath -WorkingDirectory $directory
+        Wait-SchooltoolCheckProcess -Name "PHP test batch $batchNumber/$batchCount" -Process $process -OutputPath $outputPath -ErrorPath $errorPath
     }
 }
 
@@ -214,26 +264,35 @@ function Invoke-SchooltoolPublish {
         [Parameter(Mandatory = $false)]
         [switch]$Full,
 
-        [string]$ExpectedMainCommit
+        [string]$ExpectedMainCommit,
+        $Feature,
+        [string]$ExpectedFeatureCommit
     )
 
     try {
-        $branch = git branch --show-current
+        Assert-SchooltoolRepository
+        $branch = Invoke-SchooltoolGit branch --show-current
 
         if ($LASTEXITCODE -ne 0 -or (-not $ExpectedMainCommit -and $branch -ne 'main')) {
-            throw "gitpush only publishes the main branch. Current branch: $branch"
+            throw "Saving a release requires main. Current branch: $branch"
         }
 
         if ($ExpectedMainCommit) {
-            if ($branch -notlike 'codex/release-*' -or -not $Full) {
+            if ($branch -notlike 'codex/release-*' -or -not $Full -or -not $Feature -or -not $ExpectedFeatureCommit) {
                 throw 'Feature releases require an isolated release branch and full checks.'
             }
+            Assert-SchooltoolClean
+            Assert-SchooltoolFeatureSnapshot -Feature $Feature -FeatureCommit $ExpectedFeatureCommit -MainCommit $ExpectedMainCommit
         }
         else {
-            Invoke-SchooltoolCommand 'Synchronizing main before the release...' {
-                git pull --ff-only origin main
-            }
+            Update-SchooltoolRemote
         }
+        $mainBeforeChecks = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
+        if (-not (Test-SchooltoolAncestor $mainBeforeChecks HEAD)) {
+            throw 'main contains remote changes missing locally. Use gitmain before editing, or resolve divergent commits explicitly. Nothing was merged.'
+        }
+        if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
+        $Full = $true
 
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {
             php scripts/update.php --target=local --prepare
@@ -252,6 +311,8 @@ function Invoke-SchooltoolPublish {
         Invoke-SchooltoolCommand 'Checking UTF-8 source files...' {
             php scripts/check-encoding.php
         }
+        $checkedHead = Invoke-SchooltoolGit rev-parse HEAD
+        $checkedTree = Get-SchooltoolSourceTree
 
         $sourceChanges = git status --porcelain --untracked-files=all | Where-Object {
             $_ -notmatch '^.. deployment/(frontend-build\.sha256|frontend-build\.tar\.gz|source-commit|source-manifest\.sha256)$'
@@ -297,6 +358,7 @@ function Invoke-SchooltoolPublish {
 
         if ($releaseCommit -and $Full) {
             Invoke-SchooltoolReleaseChecks -Full
+            Assert-SchooltoolCheckedSource -Branch $branch -Head $checkedHead -Tree $checkedTree
             Invoke-SchooltoolCommand 'Verifying the existing release after full checks...' {
                 php scripts/frontend-release.php verify $parentCommit
             }
@@ -304,6 +366,7 @@ function Invoke-SchooltoolPublish {
 
         if (-not $releaseCommit) {
             Invoke-SchooltoolReleaseChecks -Full:$Full
+            Assert-SchooltoolCheckedSource -Branch $branch -Head $checkedHead -Tree $checkedTree
 
             $sourceChanges = git status --porcelain --untracked-files=all | Where-Object {
                 $_ -notmatch '^.. deployment/(frontend-build\.sha256|frontend-build\.tar\.gz|source-commit|source-manifest\.sha256)$'
@@ -374,11 +437,7 @@ function Invoke-SchooltoolPublish {
             if ($currentBranch -ne $branch) {
                 throw 'The active branch changed during release checks. Nothing was pushed.'
             }
-            Update-SchooltoolRemote
-            $latestMain = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
-            if ($latestMain -ne $ExpectedMainCommit) {
-                throw 'main changed during release checks. Nothing was pushed. Incorporate main and test again.'
-            }
+            Assert-SchooltoolFeatureSnapshot -Feature $Feature -FeatureCommit $ExpectedFeatureCommit -MainCommit $ExpectedMainCommit
             Write-Host "Ready to publish $releaseCommit to main." -ForegroundColor Cyan
             Invoke-SchooltoolGit diff --stat $ExpectedMainCommit $releaseCommit
             $versionLabel = if ($version) { "v$version" } else { 'without changing the version' }
@@ -388,7 +447,26 @@ function Invoke-SchooltoolPublish {
             }
         }
 
-        $pushArguments = @('--atomic', 'origin', 'HEAD:main')
+        Assert-SchooltoolClean
+        if ((Invoke-SchooltoolGit branch --show-current) -cne $branch -or (Invoke-SchooltoolGit rev-parse HEAD) -ne $releaseCommit) {
+            throw 'The checked release changed before publication. Nothing was pushed.'
+        }
+        if (-not (Test-SchooltoolAncestor $mainBeforeChecks $releaseCommit)) {
+            throw 'Release publication can never rewrite main history.'
+        }
+        $pushArguments = @('--atomic', "--force-with-lease=refs/heads/main:$mainBeforeChecks")
+        if ($Feature) {
+            if (-not (Test-SchooltoolAncestor $ExpectedFeatureCommit $releaseCommit)) { throw 'The feature is not fully included in the release.' }
+            $pushArguments += @(
+                "--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit",
+                "--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)"
+            )
+        }
+        $pushArguments += @('origin', "${releaseCommit}:refs/heads/main")
+        if ($Feature) {
+            $pushArguments += @(':refs/heads/' + $Feature.Branch)
+            $pushArguments += ':refs/heads/codex/active-feature'
+        }
 
         if ($version) {
             $tag = "v$version"
@@ -418,7 +496,7 @@ function Invoke-SchooltoolPublish {
         Write-Host 'Pushing the complete release to main...' -ForegroundColor Cyan
         git push @pushArguments
         if ($LASTEXITCODE -ne 0) {
-            throw 'The atomic release push failed. Nothing changed on GitHub.'
+            throw 'The atomic release push failed. Your local commits and candidate are preserved. Check GitHub before retrying if the connection was interrupted.'
         }
 
         if ($WaitForCI) {
@@ -452,5 +530,6 @@ function gitpush {
         [switch]$WaitForCI,
         [switch]$Full
     )
+    $PSBoundParameters['Full'] = $true
     Invoke-SchooltoolPublish @PSBoundParameters
 }

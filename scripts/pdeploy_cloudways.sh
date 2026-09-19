@@ -4,6 +4,65 @@ set -Eeuo pipefail
 project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
+expected_main="${SCHOOLTOOL_EXPECTED_MAIN_COMMIT:-}"
+expected_source="${SCHOOLTOOL_EXPECTED_SOURCE_COMMIT:-}"
+expected_frontend="${SCHOOLTOOL_EXPECTED_FRONTEND_SHA256:-}"
+expected_manifest="${SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB:-}"
+if [ -n "$expected_main$expected_source$expected_frontend$expected_manifest" ]; then
+    if [[ ! "$expected_main" =~ ^[a-f0-9]{40,64}$ ]] || [[ ! "$expected_source" =~ ^[a-f0-9]{40,64}$ ]] || [[ ! "$expected_frontend" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$expected_manifest" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]]; then
+        echo "A pinned deployment requires valid main, source, frontend and source manifest identities." >&2
+        exit 1
+    fi
+fi
+
+verify_confirmed_release() {
+    if [ -z "$expected_main" ]; then return; fi
+    if [ ! -f deployment/source-commit ] || [ "$(tr -d '\r\n' < deployment/source-commit)" != "$expected_source" ]; then
+        echo "The pulled source differs from the confirmed release. The application remains in maintenance mode." >&2
+        exit 1
+    fi
+    actual_frontend="$(php -r 'echo is_file("deployment/frontend-build.tar.gz") ? hash_file("sha256", "deployment/frontend-build.tar.gz") : "missing";')"
+    if [ "$actual_frontend" != "$expected_frontend" ]; then
+        echo "The pulled frontend differs from the confirmed release. The application remains in maintenance mode." >&2
+        exit 1
+    fi
+    actual_manifest="$(php -r '$contents = @file_get_contents("deployment/source-manifest.sha256"); if ($contents === false) { exit(1); } echo hash(strlen($argv[1]) === 40 ? "sha1" : "sha256", "blob ".strlen($contents)."\0".$contents);' "$expected_manifest")"
+    if [ "$actual_manifest" != "$expected_manifest" ]; then
+        echo "The pulled backend manifest differs from the confirmed release. The application remains in maintenance mode." >&2
+        exit 1
+    fi
+    # Do not execute a pulled verifier until its complete source matches the pinned manifest.
+    php -r '
+        $manifest = file_get_contents("deployment/source-manifest.sha256");
+        $root = str_replace("\\", "/", (string) realpath("."))."/";
+        $verified = [];
+        foreach (preg_split("/\R/", trim($manifest)) ?: [] as $line) {
+            if (! preg_match("/^([0-9a-f]{64})  (.+)$/", $line, $entry)) {
+                fwrite(STDERR, "Invalid pinned source manifest.\n"); exit(1);
+            }
+            $path = $entry[2];
+            $resolved = realpath($path);
+            if (str_starts_with($path, "/") || str_contains($path, "\\")
+                || preg_match("#(^|/)\.\.?(/|$)#", $path) || isset($verified[$path])
+                || ! is_file($path) || is_link($path) || $resolved === false
+                || ! str_starts_with(str_replace("\\", "/", $resolved), $root)) {
+                fwrite(STDERR, "Unsafe or missing pinned source file.\n"); exit(1);
+            }
+            $contents = file_get_contents($path);
+            if ($contents === false) { fwrite(STDERR, "Cannot read pinned source file.\n"); exit(1); }
+            if (! str_contains($contents, "\0")) { $contents = str_replace(["\r\n", "\r"], "\n", $contents); }
+            if (! hash_equals($entry[1], hash("sha256", $contents))) {
+                fwrite(STDERR, "The pulled source differs from the confirmed manifest: ".$path."\n"); exit(1);
+            }
+            $verified[$path] = true;
+        }
+        foreach (["artisan", "composer.json", "composer.lock", "scripts/frontend-release.php", "scripts/source-manifest.php", "scripts/deploy_cloudways.sh", "scripts/pdeploy_cloudways.sh"] as $required) {
+            if (! isset($verified[$required])) { fwrite(STDERR, "Pinned source manifest omits a required deployment file.\n"); exit(1); }
+        }
+    '
+    php scripts/frontend-release.php verify "$expected_source"
+}
+
 if [[ "${SCHOOLTOOL_PREVIEW_INSTANCE:-false}" =~ ^(true|1|yes|on)$ ]] || { [ -f .env ] && grep -Eiq "^[[:space:]]*SCHOOLTOOL_PREVIEW_INSTANCE[[:space:]]*=[[:space:]]*['\"]?(true|1|yes|on)['\"]?([[:space:]]*(#.*)?)?$" .env; }; then
     echo "Production deployment is disabled on the preview instance. Use gitpreview." >&2
     exit 1
@@ -84,6 +143,7 @@ pull_with_cloudways_api() {
     fi
 
     deployment_handed_off=true
+    verify_confirmed_release
     bash scripts/deploy_cloudways.sh
 
     maintenance_prepared=false
@@ -121,6 +181,11 @@ fi
 echo "Fetching origin/main before maintenance mode..."
 git fetch origin main
 
+if [ -n "$expected_main" ] && [ "$(git rev-parse FETCH_HEAD)" != "$expected_main" ]; then
+    echo "GitHub main changed after confirmation; no maintenance or database update was started." >&2
+    exit 1
+fi
+
 if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
     echo "Production main has diverged from origin/main; refusing to merge or overwrite files." >&2
     exit 1
@@ -133,6 +198,7 @@ echo "Fast-forwarding production to origin/main..."
 git merge --ff-only FETCH_HEAD
 
 deployment_handed_off=true
+verify_confirmed_release
 bash scripts/deploy_cloudways.sh
 
 maintenance_prepared=false

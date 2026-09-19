@@ -30,7 +30,7 @@
                     aria-label="Zur Hauptanwendung"
                     class="admin-app-bar__preview text-none">
                     <span>
-                        <span class="d-block font-weight-bold">Vorschau · Live-Daten</span>
+                        <span class="d-block font-weight-bold">Vorschau · Testkopie</span>
                         <span class="d-block text-caption">Zur Hauptanwendung</span>
                     </span>
                 </v-btn>

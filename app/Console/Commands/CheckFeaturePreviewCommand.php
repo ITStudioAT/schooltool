@@ -2,16 +2,23 @@
 
 namespace App\Console\Commands;
 
+use App\Services\FeaturePreviewControlSignature;
+use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\FeaturePreviewMailService;
+use App\Services\FeaturePreviewRuntimeService;
 use App\Services\FeaturePreviewService;
+use App\Services\FeaturePreviewSnapshotFiles;
+use App\Services\FeaturePreviewSnapshotIdentityStore;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Throwable;
 
-#[Signature('preview:check')]
+#[Signature('preview:check {--configuration-only : Check isolation before importing an initial snapshot}')]
 #[Description('Read-only verification of the preview instance and its isolated runtime configuration')]
 class CheckFeaturePreviewCommand extends Command
 {
-    public function handle(FeaturePreviewService $preview): int
+    public function handle(FeaturePreviewService $preview, FeaturePreviewDatabaseGuard $databases, FeaturePreviewSnapshotFiles $files, FeaturePreviewSnapshotIdentityStore $identity, FeaturePreviewMailService $mail): int
     {
         if (! $preview->isPreview()) {
             $this->error('SCHOOLTOOL_PREVIEW_INSTANCE must be true. No changes were made.');
@@ -37,6 +44,7 @@ class CheckFeaturePreviewCommand extends Command
             'SCHOOLTOOL_PREVIEW_EXPECTED_HOST must match the preview URL.' => $expectedHost !== '' && $expectedHost === strtolower((string) $previewHost),
             'APP_URL must match the preview origin.' => $previewUrl !== null && "{$appUrl}/admin" === $previewUrl,
             'APP_DEBUG must be false.' => ! config('app.debug'),
+            'Preview must not retain previous application encryption keys.' => config('app.previous_keys', []) === [],
             'Use file sessions within this application storage directory.' => config('session.driver') === 'file' && $this->ownedStoragePath(config('session.files')),
             'SESSION_COOKIE must have a dedicated preview name.' => preg_match('/^[A-Za-z0-9_-]*preview[A-Za-z0-9_-]*$/i', $cookie) === 1,
             'Session cookies must be host-only, secure and HTTP-only.' => ! config('session.domain') && config('session.secure') === true && config('session.http_only') === true,
@@ -47,7 +55,10 @@ class CheckFeaturePreviewCommand extends Command
             'Broadcasting must be disabled or local logging only.' => in_array(config('broadcasting.default'), [null, 'null', 'log'], true),
             'Maintenance mode must use local files.' => config('app.maintenance.driver') === 'file',
             'Pulse, Telescope and Nightwatch must be disabled in preview.' => ! config('pulse.enabled') && ! config('telescope.enabled') && ! config('nightwatch.enabled'),
+            'Remove additional Cloudways, legacy remote database and AWS credentials from preview configuration.' => app(FeaturePreviewRuntimeService::class)->integrationCredentialsAreAbsent(),
+            'Configure the authenticated HTTPS main control bridge and its private dedicated key.' => app(FeaturePreviewControlSignature::class)->configurationIsSafe(),
             'Remove public/storage from the preview web root; Laravel cannot protect static files.' => ! file_exists(public_path('storage')) && ! is_link(public_path('storage')),
+            'Authentication emails require safe preview URLs and a dedicated SMTP mailer with mandatory TLS and certificate verification.' => $mail->configurationIsSafe(),
         ];
 
         $failed = false;
@@ -62,8 +73,18 @@ class CheckFeaturePreviewCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $preview->schemaReady()) {
-            $this->error('Preview settings and user grants are missing or unavailable. Apply the approved main-application migration first.');
+        try {
+            $databases->target();
+            $files->assertConfigurationSafe();
+            $identity->directory();
+        } catch (Throwable) {
+            $this->error('Preview database and private file isolation failed. Configure a separate target database, the authenticated main control bridge and private snapshot storage.');
+
+            return self::FAILURE;
+        }
+
+        if (! $this->option('configuration-only') && ! $preview->schemaReady()) {
+            $this->error('Central preview settings and user grants are missing or unavailable. Apply the approved main-application migration first.');
 
             return self::FAILURE;
         }

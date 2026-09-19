@@ -20,6 +20,8 @@ class TutoringService
             ->where('email', $data['email'])
             ->first();
 
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user) {
             $data['status'] = 'NEW_USER';
         } else {
@@ -58,8 +60,10 @@ class TutoringService
         return $user;
     }
 
-    public function sendCodeToUser($user): void
+    public function sendCodeToUser($user, ?string $previewPurpose = null): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         $token2fa = random_int(100000, 999999);
         $user->token_2fa = $token2fa;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
@@ -77,12 +81,19 @@ class TutoringService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
+        $notification = new StandardEmail($mail);
+        if ($previewPurpose !== null) {
+            $notification->forPreviewAuthentication($user, $user->email, $previewPurpose);
+        }
+
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify($notification);
     }
 
     public function confirmEmail(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         $tokenValid = $user->consumeToken2Fa($data['token_2fa']);
 
@@ -92,7 +103,7 @@ class TutoringService
             $data['status'] = 'EMAIL_VERIFIED';
             $data = $this->checkUserConfirmation($data);
         } else {
-            $this->sendCodeToUser($user);
+            $this->sendCodeToUser($user, 'login');
             $data['status'] = 'CONFIRM_EMAIL_AGAIN';
         }
 
@@ -204,6 +215,8 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
 
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user->is_active) {
             $data['status'] = 'USER_INACTIVE';
 
@@ -211,7 +224,7 @@ class TutoringService
         }
 
         if (! $user->email_verified_at) {
-            $this->sendCodeToUser($user);
+            $this->sendCodeToUser($user, 'login');
             $data['status'] = 'CONFIRM_EMAIL';
 
             return $data;
@@ -223,6 +236,8 @@ class TutoringService
     public function unknownPassword(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         $school = School::findOrFail($user->school_id);
 
         $token2fa = random_int(100000, 999999);
@@ -240,7 +255,9 @@ class TutoringService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(
+            (new StandardEmail($mail))->forPreviewAuthentication($user, $user->email),
+        );
 
         $data['status'] = 'LOGIN_WITH_TOKEN';
 
@@ -250,6 +267,8 @@ class TutoringService
     public function loginWithToken(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         $tokenValid = $user->consumeToken2Fa($data['token_2fa']);
 
@@ -267,6 +286,8 @@ class TutoringService
     public function loginWithPassword(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if ((isset($data['school_id']) && (int) $data['school_id'] !== (int) $user->school_id)
             || (isset($data['email']) && strcasecmp(trim($data['email']), trim($user->email)) !== 0)) {
@@ -293,6 +314,8 @@ class TutoringService
 
     private function performLogin($user): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         $user->login_at = now();
         $user->login_ip = request()->ip();
         $user->save();

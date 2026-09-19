@@ -1,9 +1,13 @@
 <?php
 
 use App\Models\FeaturePreviewSetting;
+use App\Services\FeaturePreviewControlClient;
+use App\Services\FeaturePreviewControlSignature;
+use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\FeaturePreviewSnapshotFiles;
+use App\Services\FeaturePreviewSnapshotIdentityStore;
 use Illuminate\Console\Scheduling\Schedule as ScheduleManager;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Env;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +22,8 @@ beforeEach(function (): void {
         'schooltool.preview.expected_host' => 'preview.example.test',
         'app.url' => 'https://preview.example.test',
         'app.debug' => false,
+        'app.previous_keys' => [],
+        'schooltool.preview.legacy_control_credentials_present' => false,
         'app.maintenance.driver' => 'file',
         'session.driver' => 'file',
         'session.files' => storage_path('framework/sessions'),
@@ -36,6 +42,17 @@ beforeEach(function (): void {
         'pulse.enabled' => false,
         'telescope.enabled' => false,
         'nightwatch.enabled' => false,
+        'database.connections.cloudways' => [],
+        'schooltool.legacy_restaurant_remote' => [],
+        'services.cloudways.deployment.access_token' => null,
+        'filesystems.disks.s3.key' => null,
+        'filesystems.disks.s3.secret' => null,
+        'services.ses.key' => null,
+        'services.ses.secret' => null,
+        'queue.connections.sqs.key' => null,
+        'queue.connections.sqs.secret' => null,
+        'cache.stores.dynamodb.key' => null,
+        'cache.stores.dynamodb.secret' => null,
     ]);
     DB::purge('preview_configuration_test');
     expect(DB::connection()->getDatabaseName())->toBe(':memory:');
@@ -44,6 +61,24 @@ beforeEach(function (): void {
         $table->boolean('feature_preview_allowed')->default(false);
     });
     (require database_path('migrations/2026_09_16_105645_create_feature_preview_settings_table.php'))->up();
+    $client = Mockery::mock(FeaturePreviewControlClient::class);
+    $client->shouldReceive('request')->with('status')->andReturnUsing(fn (): array => [
+        'schema_ready' => Schema::hasTable('feature_preview_settings'), 'enabled' => false,
+        'source' => ['database' => 'live_fixture', 'server_fingerprint' => str_repeat('a', 64), 'app_key_fingerprint' => str_repeat('b', 64)],
+    ]);
+    app()->instance(FeaturePreviewControlClient::class, $client);
+    $signature = Mockery::mock(FeaturePreviewControlSignature::class);
+    $signature->shouldReceive('configurationIsSafe')->andReturn(true);
+    app()->instance(FeaturePreviewControlSignature::class, $signature);
+    $guard = Mockery::mock(FeaturePreviewDatabaseGuard::class);
+    $guard->shouldReceive('target')->andReturnUsing(fn () => DB::connection());
+    app()->instance(FeaturePreviewDatabaseGuard::class, $guard);
+    $files = Mockery::mock(FeaturePreviewSnapshotFiles::class);
+    $files->shouldReceive('assertConfigurationSafe');
+    app()->instance(FeaturePreviewSnapshotFiles::class, $files);
+    $identity = Mockery::mock(FeaturePreviewSnapshotIdentityStore::class);
+    $identity->shouldReceive('directory')->andReturn(sys_get_temp_dir());
+    app()->instance(FeaturePreviewSnapshotIdentityStore::class, $identity);
     app()->usePublicPath(storage_path('framework/preview-public'));
 });
 
@@ -67,6 +102,7 @@ test('preview check rejects unsafe runtime configuration', function (string $key
 })->with([
     'main instance' => ['schooltool.preview.instance', false, 'SCHOOLTOOL_PREVIEW_INSTANCE'],
     'debug output' => ['app.debug', true, 'APP_DEBUG'],
+    'retained application key' => ['app.previous_keys', ['shared-live-key'], 'previous application'],
     'missing preview URL' => ['schooltool.preview.url', '', 'valid HTTPS'],
     'insecure preview URL' => ['schooltool.preview.url', 'http://preview.example.test', 'valid HTTPS'],
     'embedded credentials' => ['schooltool.preview.url', 'https://secret@preview.example.test', 'valid HTTPS'],
@@ -89,7 +125,39 @@ test('preview check rejects unsafe runtime configuration', function (string $key
     'live broadcasting' => ['broadcasting.default', 'reverb', 'Broadcasting'],
     'shared maintenance' => ['app.maintenance.driver', 'cache', 'Maintenance'],
     'shared telemetry' => ['pulse.enabled', true, 'Pulse'],
+    'additional Cloudways database' => ['database.connections.cloudways.password', 'prohibited-test-value', 'Remove additional Cloudways'],
+    'legacy remote database' => ['schooltool.legacy_restaurant_remote.host', 'database.example.test', 'Remove additional Cloudways'],
+    'legacy live control credentials' => ['schooltool.preview.legacy_control_credentials_present', true, 'Remove additional Cloudways'],
+    'Cloudways deployment token' => ['services.cloudways.deployment.access_token', 'prohibited-test-value', 'Remove additional Cloudways'],
+    'AWS filesystem key' => ['filesystems.disks.s3.key', 'prohibited-test-value', 'Remove additional Cloudways'],
+    'AWS queue secret' => ['queue.connections.sqs.secret', 'prohibited-test-value', 'Remove additional Cloudways'],
 ]);
+
+test('preview check requires a safely configured authenticated main control bridge', function (): void {
+    $signature = Mockery::mock(FeaturePreviewControlSignature::class);
+    $signature->shouldReceive('configurationIsSafe')->andReturn(false);
+    app()->instance(FeaturePreviewControlSignature::class, $signature);
+    $this->artisan('preview:check')->expectsOutputToContain('authenticated HTTPS main control bridge')->assertFailed();
+});
+
+test('preview check rejects SMTP URL overrides that disable transport security', function (string $option): void {
+    config([
+        'mail.default' => 'preview_check_smtp',
+        'mail.mailers.preview_check_smtp' => [
+            'transport' => 'smtp',
+            'scheme' => 'smtp',
+            'url' => 'smtp://smtp.example.test:587?'.$option,
+            'host' => 'smtp.example.test',
+            'port' => 587,
+            'username' => 'synthetic-preview-user',
+            'password' => 'synthetic-preview-password',
+            'require_tls' => true,
+            'timeout' => 10,
+        ],
+    ]);
+
+    $this->artisan('preview:check')->expectsOutputToContain('mandatory TLS and certificate verification')->assertFailed();
+})->with(['require_tls=false', 'verify_peer=false']);
 
 test('preview check rejects missing shared database migration without running it', function (): void {
     Schema::drop('feature_preview_settings');
@@ -111,19 +179,33 @@ test('preview has no application schedules while main retains them', function (b
 })->with([true, false]);
 
 test('preview instance flag is read safely from environment configuration', function (?string $flag, bool $expected): void {
-    $environment = Env::getRepository();
-    $previousValue = $environment->get('SCHOOLTOOL_PREVIEW_INSTANCE');
-    $flag === null
-        ? $environment->clear('SCHOOLTOOL_PREVIEW_INSTANCE')
-        : $environment->set('SCHOOLTOOL_PREVIEW_INSTANCE', $flag);
+    $name = 'SCHOOLTOOL_PREVIEW_INSTANCE';
+    $previousEnv = $_ENV[$name] ?? null;
+    $previousServer = $_SERVER[$name] ?? null;
+    $previousProcess = getenv($name);
+    if ($flag === null) {
+        unset($_ENV[$name], $_SERVER[$name]);
+        putenv($name);
+    } else {
+        $_ENV[$name] = $_SERVER[$name] = $flag;
+        putenv("{$name}={$flag}");
+    }
 
     try {
         $configuration = require config_path('schooltool.php');
         expect($configuration['preview']['instance'])->toBe($expected);
     } finally {
-        $previousValue === null
-            ? $environment->clear('SCHOOLTOOL_PREVIEW_INSTANCE')
-            : $environment->set('SCHOOLTOOL_PREVIEW_INSTANCE', $previousValue);
+        if ($previousEnv === null) {
+            unset($_ENV[$name]);
+        } else {
+            $_ENV[$name] = $previousEnv;
+        }
+        if ($previousServer === null) {
+            unset($_SERVER[$name]);
+        } else {
+            $_SERVER[$name] = $previousServer;
+        }
+        putenv($previousProcess === false ? $name : "{$name}={$previousProcess}");
     }
 })->with([
     'absent preserves main' => [null, false],

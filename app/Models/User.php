@@ -56,7 +56,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $token_2fa_2_expires_at
  * @property string|null $email_2fa
  * @property string|null $email_2fa_verified_at
- * @property int|null $is_active
+ * @property bool|int|null $is_active
  * @property string|null $register_started_at
  * @property string|null $register_as
  * @property string|null $confirmed_at

@@ -36,6 +36,7 @@ class StudentsTimetablesStudentService
         $resolvedEmail = $importEmail !== '' ? $importEmail : "import116.{$import116User->id}@schooltool.noemail";
 
         $user = $this->resolveExistingImportUser($import116User);
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $user) {
             $user = new User;
@@ -73,6 +74,8 @@ class StudentsTimetablesStudentService
 
     public function assignRole(User $user): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         Role::firstOrCreate([
             'name' => self::ROLE_NAME,
             'guard_name' => 'web',
@@ -111,6 +114,8 @@ class StudentsTimetablesStudentService
 
     public function performLogin(User $user): void
     {
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         $this->syncUserDataFromImport116($user);
 
         $schoolTool = SchoolTool::query()

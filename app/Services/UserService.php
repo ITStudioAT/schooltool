@@ -351,19 +351,19 @@ class UserService
                 session()->regenerate();
                 $data['status'] = 'OK';
             } else {
-                $this->sendCode($user, 'Code für neues Kennwort', $user->email);
+                $this->sendCode($user, 'Code für neues Kennwort', $user->email, 'password_reset');
                 unset($data['token_2fa']);
                 $data['status'] = 'RE_CONFIRM_PASSWORD';
             }
         } else {
-            $this->sendCode($user, 'Code für neues Kennwort', $user->email);
+            $this->sendCode($user, 'Code für neues Kennwort', $user->email, 'password_reset');
             $data['status'] = 'CONFIRM_PASSWORD';
         }
 
         return $data;
     }
 
-    public function sendCode($user, string $subject, string $email): void
+    public function sendCode($user, string $subject, string $email, ?string $previewPurpose = null): void
     {
         $token2fa = random_int(100000, 999999);
         $user->token_2fa = $token2fa;
@@ -382,7 +382,12 @@ class UserService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
+        $notification = new StandardEmail($mail);
+        if ($previewPurpose !== null) {
+            $notification->forPreviewAuthentication($user, $email, $previewPurpose);
+        }
+
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
     }
 
     public function deleteTutoringUsers(array $data, int $schoolId): void

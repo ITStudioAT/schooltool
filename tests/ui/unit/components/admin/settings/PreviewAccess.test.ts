@@ -32,11 +32,11 @@ const stubs = {
     },
 }
 
-function renderPreview(roles = ['super_admin'], { enabled = false, loadSucceeded = true } = {}) {
+function renderPreview(roles = ['super_admin'], { enabled = false, loadSucceeded = true, isPreview = false } = {}) {
     const pinia = createTestingPinia({
         createSpy: vi.fn,
         initialState: {
-            AdminAdminStore: { config: { is_auth: true, roles } },
+            AdminAdminStore: { config: { is_auth: true, roles, preview: { is_preview: isPreview, live_url: 'https://live.example.test/admin' } } },
             AdminPreviewAccessStore: { data: { enabled, users } },
         },
     })
@@ -106,5 +106,18 @@ describe('Preview access settings', () => {
 
         expect(screen.queryByText('Schooltool Vorschau')).not.toBeInTheDocument()
         expect(store.load).not.toHaveBeenCalled()
+    })
+
+    it('directs preview administrators to the main application without fetching or exposing management controls', () => {
+        const store = renderPreview(['super_admin'], { isPreview: true })
+
+        expect(screen.getByText(/Die Vorschau arbeitet mit einer getrennten Testkopie/)).toHaveTextContent('Änderungen gelten nur für die Vorschau')
+        expect(screen.getByText(/Freigaben und der zentrale Schalter/)).toHaveTextContent('ausschließlich in der Hauptanwendung verwaltet')
+        expect(screen.getByRole('link', { name: 'Zur Hauptanwendung' })).toHaveAttribute('href', 'https://live.example.test/admin')
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button')).not.toBeInTheDocument()
+        expect(store.load).not.toHaveBeenCalled()
+        expect(store.saveEnabled).not.toHaveBeenCalled()
+        expect(store.saveUser).not.toHaveBeenCalled()
     })
 })

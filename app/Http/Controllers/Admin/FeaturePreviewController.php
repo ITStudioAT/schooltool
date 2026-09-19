@@ -25,6 +25,7 @@ class FeaturePreviewController extends Controller
 
     public function updateSettings(UpdateFeaturePreviewSettingsRequest $request, FeaturePreviewService $preview): JsonResponse
     {
+        abort_if($preview->isPreview(), 403, 'Die Vorschau wird ausschließlich in der Hauptanwendung verwaltet.');
         abort_unless($preview->schemaReady(), 503, 'Die Vorschauverwaltung ist noch nicht eingerichtet.');
         $enabled = (bool) $request->validated('enabled');
         $settings = FeaturePreviewSetting::query()->find(1) ?? new FeaturePreviewSetting;
@@ -38,12 +39,13 @@ class FeaturePreviewController extends Controller
 
     public function updateUser(UpdateFeaturePreviewUserRequest $request, User $user, FeaturePreviewService $preview): JsonResponse
     {
+        abort_if($preview->isPreview(), 403, 'Die Vorschau wird ausschließlich in der Hauptanwendung verwaltet.');
         abort_unless((int) $user->school_id === (int) $request->user()->school_id, 404);
         abort_unless($preview->schemaReady(), 503, 'Die Vorschauverwaltung ist noch nicht eingerichtet.');
         $allowed = (bool) $request->validated('allowed');
 
         if ($allowed && ! $preview->eligible($user)) {
-            throw ValidationException::withMessages(['allowed' => ['Nur aktive, bestätigte Konten mit bestehendem Admin-Zugang können freigegeben werden.']]);
+            throw ValidationException::withMessages(['allowed' => ['Nur aktive, bestätigte Konten können freigegeben werden. Bei Benutzerkonten ohne Admin-Zugang genügt eine verifizierte E-Mail-Adresse.']]);
         }
 
         $user->feature_preview_allowed = $allowed;

@@ -167,7 +167,9 @@ function git {
     switch ($args[0]) {
         'branch' { 'main' }
         'status' { if (-not $script:committed) { ' M public/documentation/releases/index.html' } }
-        'rev-parse' { 'fixture-head' }
+        'rev-parse' { if ($args[1] -eq '--show-toplevel') { (Get-Location).Path } else { 'fixture-head' } }
+        'show-ref' { $global:LASTEXITCODE = 1 }
+        'ls-files' { '100644 source-hash 0 fixture-source' }
         'rev-list' { }
         'commit' { $script:calls.Add('commit'); $script:committed = $true }
         'push' { $script:calls.Add('push') }

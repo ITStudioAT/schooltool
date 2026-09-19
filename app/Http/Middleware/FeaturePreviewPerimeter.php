@@ -27,11 +27,12 @@ class FeaturePreviewPerimeter
 
         abort_unless($preview->enabled(), 503, 'Die Vorschau ist derzeit deaktiviert.');
 
-        if ($request->is('/')) {
-            return redirect('/admin/login');
-        }
-
-        abort_unless($request->is('admin', 'admin/*', 'api/admin/*', 'sanctum/csrf-cookie', 'broadcasting/auth'), 404);
+        abort_unless($request->is(
+            '/', 'admin', 'admin/*', 'api/admin/*',
+            'homepage', 'homepage/*', 'api/homepage/*',
+            'student', 'student/*', 'students-timetables', 'students-timetables/*',
+            'sanctum/csrf-cookie', 'broadcasting/auth',
+        ), 404);
 
         abort_if($request->is(
             'admin/register',
@@ -42,6 +43,18 @@ class FeaturePreviewPerimeter
             'api/admin/students-timetables/robot/students/impersonate',
             'api/admin/restart_queues',
             'api/admin/health/test-queue*',
+            'homepage/register',
+            'homepage/register2',
+            'api/homepage/register/*',
+            'api/homepage/restaurant/register',
+            'api/homepage/restaurant/confirm_email',
+            'homepage/restaurant/confirm-user',
+            'homepage/restaurant/reject-user',
+            'api/homepage/tutoring/create_user',
+            'homepage/tutoring/confirm-user',
+            'homepage/tutoring/refuse-user',
+            'homepage/tutoring/offer',
+            'homepage/tutoring/offer_request',
         ), 403, 'Diese Aktion steht nur in der Hauptanwendung zur Verfügung.');
 
         return $next($request);

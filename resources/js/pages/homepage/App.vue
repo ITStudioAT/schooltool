@@ -2,6 +2,10 @@
     <v-app>
         <v-layout>
             <v-main>
+                <v-alert v-if="isFeaturePreview" type="warning" variant="tonal" class="ma-2" role="status">
+                    <strong>Schooltool Vorschau</strong> – diese Anwendung arbeitet mit einer getrennten Testkopie. Gespeicherte Änderungen gelten nur für die Vorschau.
+                    <a v-if="previewLiveUrl" :href="previewLiveUrl" class="d-block mt-1">Zur Hauptanwendung</a>
+                </v-alert>
                 <v-alert type="warning" variant="tonal" class="ma-2" v-if="isImpersonating">
                     <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
                         <div>
@@ -49,12 +53,14 @@ export default {
     components: {},
     async beforeMount() {
         this.homepageStore = useHomepageStore()
-        await this.homepageStore.loadImpersonationStatus()
+        if (!this.isFeaturePreview) await this.homepageStore.loadImpersonationStatus()
     },
     unmounted() {},
     data() {
         return {
             homepageStore: null,
+            isFeaturePreview: document.getElementById('app')?.dataset.featurePreview === 'true',
+            previewLiveUrl: document.getElementById('app')?.dataset.previewLiveUrl || null,
         }
     },
     computed: {

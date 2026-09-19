@@ -107,6 +107,7 @@ use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
+use App\Http\Controllers\FeaturePreviewControlController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
@@ -121,10 +122,17 @@ use App\Http\Controllers\Tutoring\OfferController;
 use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Http\Controllers\Tutoring\SubjectController;
 use App\Http\Controllers\Tutoring\TutoringController;
+use App\Http\Middleware\AuthenticateFeaturePreviewControl;
 use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
+
+Route::post('/feature-preview/control', FeaturePreviewControlController::class)
+    ->withoutMiddleware(EnsureFrontendRequestsAreStateful::class)
+    ->middleware(AuthenticateFeaturePreviewControl::class)
+    ->name('featurePreview.control');
 
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {

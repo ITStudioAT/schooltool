@@ -43,9 +43,6 @@ use Illuminate\Support\Carbon;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLongName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereShortName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereUpdatedAt($value)
- *
- * @mixin IdeHelperSchool
- * @mixin \Eloquent
  */
 class School extends Model
 {
@@ -75,6 +72,7 @@ class School extends Model
         return $this->hasMany(Register::class);
     }
 
+    /** @return HasOne<SchoolTool, $this> */
     public function schoolTool(): HasOne
     {
         return $this->hasOne(SchoolTool::class, 'school_id');

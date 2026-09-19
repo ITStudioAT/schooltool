@@ -338,7 +338,7 @@ class SchoolService
                 $schoolLicenceId = (string) ($row['school_licence_id'] ?? '');
                 $schoolLicence = $schoolLicencesById->get($schoolLicenceId);
                 $row['licence_model'] = $this->mergeDashboardLicenceModel(
-                    $schoolLicence?->licence_model ?? ($row['licence_model'] ?? null),
+                    $schoolLicence->licence_model ?? ($row['licence_model'] ?? null),
                     $licence->licence_model ?? null,
                     $licenceService
                 );
@@ -412,7 +412,7 @@ class SchoolService
 
         $statusesByUser = $storedAssignments
             ->filter(fn (SchoolUserLicence $a) => $a->assignment_type === $type)
-            ->filter(fn (SchoolUserLicence $a) => is_numeric($a->user_id) && (int) $a->user_id > 0)
+            ->filter(fn (SchoolUserLicence $a) => (int) $a->user_id > 0)
             ->groupBy(fn (SchoolUserLicence $a) => (int) $a->user_id)
             ->map(function (Collection $assignments) use ($schoolLicence, $schoolLicenceRequired, $today): string {
                 foreach ($assignments as $assignment) {
@@ -575,7 +575,7 @@ class SchoolService
         LicenceService $licenceService
     ): array {
         $baseConfiguration = $licenceService->editableLicenceConfiguration($licence);
-        $schoolSourceModel = $this->parseLicenceModelArray($schoolLicence?->licence_model ?? null);
+        $schoolSourceModel = $this->parseLicenceModelArray($schoolLicence->licence_model ?? null);
 
         if (! $this->isStructuredLicenceConfiguration($schoolSourceModel)) {
             return $baseConfiguration;
@@ -628,9 +628,9 @@ class SchoolService
 
         $roleSummaries = collect($matchedRoles)
             ->map(function (string $roleName) use ($plansByRole, $userAssignments, $schoolLicenceRequired, $schoolLicenceValidUntil) {
-                $assigned = is_array($userAssignments) && array_key_exists($roleName, $userAssignments);
+                $assigned = array_key_exists($roleName, $userAssignments);
                 $assignmentEntry = $assigned
-                    ? $this->normalizeUserLicenceAssignmentEntryForSchoolInfo($userAssignments[$roleName] ?? null)
+                    ? $this->normalizeUserLicenceAssignmentEntryForSchoolInfo($userAssignments[$roleName])
                     : ['valid_until' => null, 'is_activated' => false, 'plan_id' => null];
                 $validUntil = $assignmentEntry['valid_until'];
                 $isActivated = $assignmentEntry['is_activated'];
@@ -673,9 +673,9 @@ class SchoolService
             ->values()
             ->all();
 
-        $hasUserLicence = collect($roleSummaries)->contains(fn (array $entry) => (bool) ($entry['is_active'] ?? false));
-        $selectedRoleSummary = collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['is_active'] ?? false))
-            ?? collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['assigned'] ?? false))
+        $hasUserLicence = collect($roleSummaries)->contains(fn (array $entry) => $entry['is_active']);
+        $selectedRoleSummary = collect($roleSummaries)->first(fn (array $entry) => $entry['is_active'])
+            ?? collect($roleSummaries)->first(fn (array $entry) => $entry['assigned'])
             ?? collect($roleSummaries)->first();
 
         $toolHasUserLicence = count($requiredRoles) > 0;
@@ -687,7 +687,7 @@ class SchoolService
             'is_relevant_for_user' => count($matchedRoles) > 0,
             'has_licence' => $hasUserLicence,
             'is_activated' => is_array($selectedRoleSummary) ? (bool) ($selectedRoleSummary['is_activated'] ?? false) : false,
-            'role_name' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['role_name'] ?? null) : null,
+            'role_name' => is_array($selectedRoleSummary) ? $selectedRoleSummary['role_name'] : null,
             'plan_id' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['plan_id'] ?? null) : null,
             'valid_until' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['valid_until'] ?? null) : null,
             'plan' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['plan'] ?? null) : null,
@@ -773,6 +773,8 @@ class SchoolService
         if (! $targetUser) {
             abort(403, 'Wechsel zu der Schule nicht möglich.');
         }
+
+        app(FeaturePreviewService::class)->assertCanEnter($targetUser);
 
         if ($targetUser->hasEnabledTwoFactorAuthentication()) {
             abort(423, 'Dieses Konto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte melden Sie sich direkt bei der Zielschule an.');

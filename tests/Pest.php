@@ -3,6 +3,14 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
+use App\Services\FeaturePreviewControlClient;
+use App\Services\FeaturePreviewControlDecision;
+use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\FeaturePreviewService;
+use App\Services\FeaturePreviewSnapshotIdentityStore;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /*
@@ -50,6 +58,58 @@ function grantSchoolToolLicenceForTests(School $school, string $licenceName): vo
     $school->licences()->syncWithoutDetaching([
         $licence->id => ['valid_until' => now()->addYear()->toDateString()],
     ]);
+}
+
+/** Create an independent live-control fixture from an explicitly isolated SQLite snapshot. */
+function snapshotFeaturePreviewControlForTests(): void
+{
+    $snapshot = DB::connection();
+    if ($snapshot->getDriverName() !== 'sqlite' || $snapshot->getDatabaseName() !== ':memory:') {
+        throw new RuntimeException('Preview control fixtures require an isolated SQLite memory database.');
+    }
+
+    foreach (['import116_id', 'is_2fa', 'email_2fa', 'email_2fa_verified_at', 'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at'] as $column) {
+        if (! Schema::hasColumn('users', $column)) {
+            Schema::table('users', fn (Blueprint $table) => $table->text($column)->nullable());
+        }
+    }
+
+    config(['database.connections.preview_control' => [
+        'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => false,
+    ]]);
+    DB::purge('preview_control');
+    $control = DB::connection('preview_control');
+    foreach ($snapshot->select("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $table) {
+        $control->statement($table->sql);
+        $rows = $snapshot->table($table->name)->get()->map(fn ($row): array => (array) $row)->all();
+        if ($rows !== []) {
+            $control->table($table->name)->insert($rows);
+        }
+    }
+
+    $baselines = $control->table('users')->get()->mapWithKeys(fn ($row): array => [
+        $row->id => FeaturePreviewService::authenticationFingerprintFromAttributes((array) $row),
+    ])->all();
+    $identityStore = Mockery::mock(FeaturePreviewSnapshotIdentityStore::class);
+    $source = ['database' => 'live_fixture', 'server_fingerprint' => str_repeat('a', 64), 'app_key_fingerprint' => str_repeat('b', 64)];
+    $identityStore->shouldReceive('read')->andReturn(['users' => $baselines, 'source_identity' => $source]);
+    app()->instance(FeaturePreviewSnapshotIdentityStore::class, $identityStore);
+
+    $guard = Mockery::mock(FeaturePreviewDatabaseGuard::class);
+    $guard->shouldReceive('withMainReadOnlyConnection')->andReturnUsing(fn (callable $callback): mixed => $callback($control));
+    $guard->shouldReceive('connectionIdentity')->andReturn($source);
+    $decision = new FeaturePreviewControlDecision($guard);
+    $client = Mockery::mock(FeaturePreviewControlClient::class);
+    $client->shouldReceive('request')->andReturnUsing(function (string $operation, array $payload = []) use ($decision): array {
+        $preview = config('schooltool.preview.instance');
+        config(['schooltool.preview.instance' => false]);
+        try {
+            return $decision->decide($operation, $payload);
+        } finally {
+            config(['schooltool.preview.instance' => $preview]);
+        }
+    });
+    app()->instance(FeaturePreviewControlClient::class, $client);
 }
 
 /*

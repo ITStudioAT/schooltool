@@ -34,7 +34,7 @@ class ParentStudentAccessService
                 });
         };
 
-        return Import116::query()
+        $students = Import116::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->whereNotNull('exists_date')
@@ -52,10 +52,26 @@ class ParentStudentAccessService
             ->orderBy('first_name')
             ->orderBy('id')
             ->get();
+
+        $preview = app(FeaturePreviewService::class);
+
+        if (! $preview->isPreview()) {
+            return $students;
+        }
+
+        $studentService = app(StudentService::class);
+
+        return $students->filter(function (Import116 $student) use ($studentService, $preview, $email, $schoolyearId): bool {
+            $user = $studentService->existingUserForImport116($student);
+
+            return $user !== null && $preview->authenticationRecipientAllowed($user, $email, 'teaching_parent', $schoolyearId);
+        })->values();
     }
 
     public function startChallenge(string $email, int $schoolId, int $schoolyearId): void
     {
+        $previewStudent = $this->assertPreviewAccess($email, $schoolId, $schoolyearId);
+
         $token = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $expiresAt = now()->addMinutes((int) config('schooltool.token_expire_time'));
         $school = School::query()->findOrFail($schoolId);
@@ -82,7 +98,12 @@ class ParentStudentAccessService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
+        $notification = new StandardEmail($mail);
+        if ($previewStudent) {
+            $notification->forPreviewAuthentication($previewStudent, $email, 'login', 'teaching_parent', $schoolyearId);
+        }
+
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
     }
 
     public function verifyChallenge(
@@ -98,6 +119,8 @@ class ParentStudentAccessService
 
             return false;
         }
+
+        $this->assertPreviewAccess($email, $schoolId, $schoolyearId);
 
         $attemptsRemaining = (int) ($challenge['attempts_remaining'] ?? 0);
         $tokenHash = (string) ($challenge['token_hash'] ?? '');
@@ -149,6 +172,8 @@ class ParentStudentAccessService
         }
 
         $existingUser = $studentService->existingUserForImport116($importStudent);
+        app(FeaturePreviewService::class)->assertCanEnter($existingUser);
+
         if ($existingUser && ! $this->isActiveStudentUser($existingUser, false)) {
             return null;
         }
@@ -324,5 +349,21 @@ class ParentStudentAccessService
     private function normalizeEmail(string $email): string
     {
         return mb_strtolower(trim($email));
+    }
+
+    private function assertPreviewAccess(string $email, int $schoolId, int $schoolyearId): ?User
+    {
+        $preview = app(FeaturePreviewService::class);
+
+        if (! $preview->isPreview()) {
+            return null;
+        }
+
+        $student = $this->eligibleStudents($email, $schoolId, $schoolyearId)->first();
+        $user = $student ? app(StudentService::class)->existingUserForImport116($student) : null;
+
+        $preview->assertCanEnter($user);
+
+        return $user;
     }
 }

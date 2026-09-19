@@ -114,6 +114,7 @@ describe('store', function () {
             ->and($user->school_id)->toBe($this->school->id)
             ->and($user->email_verified_at)->not->toBeNull()
             ->and($user->is_active)->toBeTrue()
+            ->and((bool) $user->fresh()->is_active)->toBeTrue()
             ->and($user->confirmed_at)->not->toBeNull()
             ->and($user->password)->not->toBeNull();
     });

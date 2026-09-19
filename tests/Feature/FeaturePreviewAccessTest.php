@@ -3,7 +3,11 @@
 use App\Models\FeaturePreviewSetting;
 use App\Models\School;
 use App\Models\User;
+use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewService;
+use App\Services\FeaturePreviewSnapshotIdentityStore;
+use App\Services\SchoolService;
+use App\Services\UserHopperService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Database\Schema\Blueprint;
@@ -14,8 +18,10 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 beforeEach(function (): void {
     config([
@@ -72,15 +78,18 @@ beforeEach(function (): void {
     (require database_path('migrations/2026_09_16_105646_add_feature_preview_allowed_to_users_table.php'))->up();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
     $this->school = School::factory()->create();
-    foreach (['super_admin', 'admin', 'teacher', 'student'] as $role) {
+    foreach (['super_admin', 'admin', 'teacher', 'student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user'] as $role) {
         Role::create(['name' => $role, 'guard_name' => 'web']);
     }
     FeaturePreviewSetting::factory()->create(['enabled' => true]);
+    snapshotFeaturePreviewControlForTests();
     Route::middleware(['api', 'auth:sanctum'])->get('/api/admin/preview-access-probe', fn () => response()->json(['ok' => true]));
+    Route::middleware(['api', 'auth:sanctum'])->get('/api/homepage/preview-access-probe', fn () => response()->json(['ok' => true]));
     Route::middleware(['api', 'auth:sanctum', 'api-allowed:super_admin'])->get('/api/admin/preview-superadmin-probe', fn () => response()->json(['ok' => true]));
 });
 
 afterEach(function (): void {
+    DB::purge('preview_control');
     DB::purge('feature_preview_test');
 });
 
@@ -92,6 +101,7 @@ function previewTestUser(string $role = 'admin', bool $allowed = false, array $a
         'feature_preview_allowed' => $allowed,
     ], $attributes));
     $user->assignRole($role);
+    snapshotFeaturePreviewControlForTests();
 
     return $user;
 }
@@ -99,7 +109,7 @@ function previewTestUser(string $role = 'admin', bool $allowed = false, array $a
 test('preview requires individual permission even for super admins', function (string $role): void {
     $user = previewTestUser($role);
     $this->actingAs($user)->getJson('/api/admin/preview-access-probe')->assertForbidden();
-})->with(['admin', 'super_admin']);
+})->with(['admin', 'super_admin', 'student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user']);
 
 test('preview admits an explicitly granted admin and retains route permissions', function (): void {
     $this->actingAs(previewTestUser('admin', true))
@@ -111,7 +121,8 @@ test('preview rejects ineligible accounts despite their stored grant', function 
     $this->actingAs(previewTestUser($role, true, $attributes))
         ->getJson('/api/admin/preview-access-probe')->assertForbidden();
 })->with([
-    'student' => ['student', []],
+    'unverified student' => ['student', ['confirmed_at' => null, 'email_verified_at' => null]],
+    'inactive student' => ['student', ['is_active' => false]],
     'inactive admin' => ['admin', ['is_active' => false]],
     'unconfirmed admin' => ['admin', ['confirmed_at' => null]],
 ]);
@@ -129,20 +140,119 @@ test('preview management explains the specific account eligibility reason', func
 })->with([
     'inactive account' => ['teacher', ['is_active' => false], 'Benutzerkonto ist deaktiviert.'],
     'unconfirmed account' => ['teacher', ['confirmed_at' => null], 'Benutzerkonto noch nicht bestätigt.'],
-    'missing admin access' => ['student', [], 'Keine Berechtigung für den Admin-Bereich.'],
+    'unverified student' => ['student', ['confirmed_at' => null, 'email_verified_at' => null], 'Benutzerkonto noch nicht bestätigt.'],
+    'verified imported student' => ['student', ['confirmed_at' => null], null],
     'eligible account' => ['teacher', [], null],
 ]);
 
 test('preview checks revocation on the next request with an existing session', function (): void {
     $user = previewTestUser('admin', true);
     $this->actingAs($user)->getJson('/api/admin/preview-access-probe')->assertOk();
-    User::query()->whereKey($user->id)->update(['feature_preview_allowed' => false]);
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
     $this->getJson('/api/admin/preview-access-probe')->assertForbidden();
+});
+
+test('live grants and switch take effect independently of the local snapshot', function (): void {
+    $user = previewTestUser('student', false);
+    FeaturePreviewSetting::query()->whereKey(1)->update(['enabled' => false]);
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => true]);
+
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertOk();
+    expect($user->fresh()->feature_preview_allowed)->toBeFalse()
+        ->and(FeaturePreviewSetting::query()->findOrFail(1)->enabled)->toBeFalse();
+
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
+    $user->forceFill(['feature_preview_allowed' => true])->save();
+    $this->getJson('/api/homepage/preview-access-probe')->assertForbidden();
+});
+
+test('preview binds live admission to the snapshotted identity and active account', function (array $changes): void {
+    $user = previewTestUser('student', true);
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertOk();
+    User::on('preview_control')->whereKey($user->id)->update($changes);
+
+    $this->getJson('/api/homepage/preview-access-probe')->assertForbidden();
+})->with([
+    'different email' => [['email' => 'replacement@example.test']],
+    'different school' => [['school_id' => 999]],
+    'recreated identity' => [['created_at' => '2000-01-01 00:00:00']],
+    'disabled account' => [['is_active' => false]],
+    'verification withdrawn' => [['confirmed_at' => null, 'email_verified_at' => null]],
+]);
+
+test('preview fails closed without its live account or snapshot identity baseline', function (string $missing): void {
+    $user = previewTestUser('student', true);
+    if ($missing === 'live account') {
+        User::on('preview_control')->whereKey($user->id)->delete();
+    } else {
+        $store = Mockery::mock(FeaturePreviewSnapshotIdentityStore::class);
+        $store->shouldReceive('read')->andReturn([]);
+        app()->instance(FeaturePreviewSnapshotIdentityStore::class, $store);
+    }
+
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertForbidden();
+})->with(['live account', 'identity baseline']);
+
+test('preview does not fall back to snapshot grants when the control bridge fails', function (string $failure): void {
+    $user = previewTestUser('student', true);
+    $client = Mockery::mock(FeaturePreviewControlClient::class);
+    $client->shouldReceive('request')->andThrow(new RuntimeException($failure));
+    app()->instance(FeaturePreviewControlClient::class, $client);
+
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertServiceUnavailable();
+})->with(['missing bridge credentials', 'timeout', 'invalid signature', 'invalid response']);
+
+test('preview blocks revoked live roles and permissions retained in the snapshot', function (string $revocation): void {
+    $user = previewTestUser('teacher', true);
+    $permission = Permission::create(['name' => 'preview.test.permission', 'guard_name' => 'web']);
+    $role = $user->roles()->firstOrFail();
+    if ($revocation === 'direct permission') {
+        $user->givePermissionTo($permission);
+    } else {
+        $role->givePermissionTo($permission);
+    }
+    snapshotFeaturePreviewControlForTests();
+    $this->actingAs($user)->getJson('/api/admin/preview-access-probe')->assertOk();
+
+    $table = match ($revocation) {
+        'role' => 'model_has_roles',
+        'direct permission' => 'model_has_permissions',
+        default => 'role_has_permissions',
+    };
+    DB::connection('preview_control')->table($table)->delete();
+
+    $this->getJson('/api/admin/preview-access-probe')->assertForbidden();
+    expect($user->fresh()->hasRole('teacher'))->toBeTrue()
+        ->and($user->fresh()->hasPermissionTo('preview.test.permission'))->toBeTrue();
+})->with(['role', 'direct permission', 'role permission']);
+
+test('local preview credential changes are isolated while live credential changes require refresh', function (string $attribute): void {
+    $user = previewTestUser('student', true);
+    User::query()->whereKey($user->id)->update([$attribute => 'preview-only-value']);
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertOk();
+
+    User::on('preview_control')->whereKey($user->id)->update([$attribute => 'changed-live-value']);
+    $this->getJson('/api/homepage/preview-access-probe')->assertForbidden();
+})->with(['password', 'two_factor_secret', 'two_factor_recovery_codes']);
+
+test('preview admission uses read-only queries against live control', function (): void {
+    $user = previewTestUser('student', true);
+    $control = DB::connection('preview_control');
+    $control->enableQueryLog();
+    $control->flushQueryLog();
+
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertOk();
+
+    $queries = collect($control->getQueryLog())->pluck('query');
+    expect($queries)->not->toBeEmpty();
+    foreach ($queries as $query) {
+        expect(strtolower(ltrim($query)))->toStartWith('select');
+    }
 });
 
 test('central off blocks existing preview sessions while main stays available', function (): void {
     $this->actingAs(previewTestUser('admin', true))->getJson('/api/admin/preview-access-probe')->assertOk();
-    FeaturePreviewSetting::query()->whereKey(1)->update(['enabled' => false]);
+    FeaturePreviewSetting::on('preview_control')->whereKey(1)->update(['enabled' => false]);
     $this->getJson('/api/admin/preview-access-probe')->assertServiceUnavailable();
     config(['schooltool.preview.instance' => false]);
     $this->getJson('/api/admin/preview-access-probe')->assertOk();
@@ -150,7 +260,7 @@ test('central off blocks existing preview sessions while main stays available', 
 
 test('preview fails closed when schema is missing but main admission does not depend on it', function (): void {
     $user = previewTestUser();
-    Schema::drop('feature_preview_settings');
+    Schema::connection('preview_control')->drop('feature_preview_settings');
     $this->actingAs($user)->getJson('/api/admin/preview-access-probe')->assertServiceUnavailable();
     config(['schooltool.preview.instance' => false]);
     $this->getJson('/api/admin/preview-access-probe')->assertOk();
@@ -161,10 +271,7 @@ test('preview blocks public areas provider routes and operational actions', func
     $this->actingAs(previewTestUser('super_admin', true));
     $this->json($method, $path)->assertStatus($status);
 })->with([
-    ['/', 'POST', 302],
-    ['/homepage/restaurant', 'GET', 404],
-    ['/api/homepage/config', 'GET', 404],
-    ['/student/test', 'GET', 404],
+    ['/', 'POST', 405],
     ['/storage/private.pdf', 'GET', 404],
     ['/storage/private.pdf', 'PUT', 404],
     ['/horizon', 'GET', 404],
@@ -174,6 +281,13 @@ test('preview blocks public areas provider routes and operational actions', func
     ['/api/admin/impersonation/start', 'POST', 403],
     ['/api/admin/students-timetables/robot/students/impersonate', 'POST', 403],
     ['/api/admin/restart_queues', 'POST', 403],
+    ['/homepage/register', 'GET', 403],
+    ['/api/homepage/register/check_email', 'POST', 403],
+    ['/api/homepage/restaurant/register', 'POST', 403],
+    ['/api/homepage/restaurant/confirm_email', 'POST', 403],
+    ['/homepage/restaurant/confirm-user', 'GET', 403],
+    ['/api/homepage/tutoring/create_user', 'POST', 403],
+    ['/homepage/tutoring/confirm-user', 'GET', 403],
 ]);
 
 test('preview rejects bearer tokens even alongside an admitted browser session', function (): void {
@@ -206,9 +320,9 @@ test('only superadmin can manage explicit preview grants', function (): void {
     $this->putJson('/api/admin/feature-preview/settings', ['enabled' => false])->assertOk()->assertJsonPath('data.enabled', false);
 });
 
-test('superadmin cannot grant student access and can revoke an ineligible existing grant', function (): void {
+test('superadmin cannot grant unverified accounts access and can revoke an ineligible existing grant', function (): void {
     config(['schooltool.preview.instance' => false]);
-    $target = previewTestUser('student', true);
+    $target = previewTestUser('student', true, ['confirmed_at' => null, 'email_verified_at' => null]);
     $this->actingAs(previewTestUser('super_admin'));
     $this->putJson("/api/admin/feature-preview/users/{$target->id}", ['allowed' => true])->assertUnprocessable();
     $this->putJson("/api/admin/feature-preview/users/{$target->id}", ['allowed' => false])->assertOk();
@@ -304,11 +418,12 @@ test('preview login lists only specifically admitted accounts for the supplied e
     ]])->assertOk()->assertJsonPath('users_count', 1)->assertJsonPath('school_id', $allowed->school_id);
 });
 
-test('an admitted superadmin can disable preview and recover through main', function (): void {
+test('preview administration is rejected in preview and remains available on main', function (): void {
     $this->actingAs(previewTestUser('super_admin', true));
     $this->putJson('/api/admin/feature-preview/settings', ['enabled' => false])
-        ->assertOk()->assertJsonPath('data.enabled', false);
-    $this->getJson('/api/admin/feature-preview')->assertServiceUnavailable();
+        ->assertForbidden();
+    $this->getJson('/api/admin/feature-preview')->assertForbidden();
+    expect(FeaturePreviewSetting::on('preview_control')->findOrFail(1)->enabled)->toBeTrue();
     config(['schooltool.preview.instance' => false]);
     $this->putJson('/api/admin/feature-preview/settings', ['enabled' => true])
         ->assertOk()->assertJsonPath('data.enabled', true);
@@ -324,7 +439,7 @@ test('preview retains authenticator challenge and rechecks admission before reco
         'step' => 'LOGIN_ENTER_PASSWORD', 'email' => $user->email, 'password' => 'password', 'school' => ['id' => $user->school_id],
     ]])->assertOk()->assertJsonPath('step', 'LOGIN_ENTER_TWO_FACTOR');
     $this->assertGuest();
-    User::query()->whereKey($user->id)->update(['feature_preview_allowed' => false]);
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
     $this->postJson('/api/admin/two-factor-challenge', ['recovery_code' => 'one-recovery-code'])->assertForbidden();
     expect($user->fresh()->recoveryCodes())->toBe(['one-recovery-code']);
 });
@@ -352,3 +467,109 @@ test('preview URL is hidden without admission and does not accept unsafe configu
     config(['schooltool.preview.url' => 'https://username@preview.example.test']);
     expect($preview->context($allowed)['url'])->toBeNull();
 });
+
+test('preview grants ordinary users access without granting the admin area', function (string $role): void {
+    $user = previewTestUser($role, true, ['confirmed_at' => null]);
+
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+    $this->get('/admin')->assertForbidden();
+    $this->getJson('/api/admin/preview-access-probe')->assertForbidden();
+    $this->getJson('/api/admin/feature-preview')->assertForbidden();
+    $this->putJson("/api/admin/feature-preview/users/{$user->id}", ['allowed' => true])->assertForbidden();
+
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
+    $this->getJson('/api/homepage/preview-access-probe')->assertForbidden();
+})->with(['student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user']);
+
+test('superadmin can discover and grant ordinary accounts in the selected school', function (): void {
+    config(['schooltool.preview.instance' => false]);
+    $student = previewTestUser('student', false, ['confirmed_at' => null]);
+    $this->actingAs(previewTestUser('super_admin'));
+
+    $response = $this->getJson('/api/admin/feature-preview')->assertOk();
+    expect(collect($response->json('data.users'))->firstWhere('id', $student->id))
+        ->toMatchArray(['eligible' => true, 'allowed' => false]);
+    $this->putJson("/api/admin/feature-preview/users/{$student->id}", ['allowed' => true])->assertOk();
+    expect($student->fresh()->feature_preview_allowed)->toBeTrue();
+});
+
+test('preview ordinary user links lead to the homepage and main remains unchanged', function (): void {
+    $user = previewTestUser('student', true);
+    $preview = app(FeaturePreviewService::class);
+
+    expect($preview->context($user))->toMatchArray([
+        'url' => 'https://preview.example.test/',
+        'live_url' => 'https://live.example.test/',
+    ]);
+    config(['schooltool.preview.instance' => false]);
+    $user->forceFill(['feature_preview_allowed' => false])->save();
+    $this->actingAs($user)->getJson('/api/homepage/preview-access-probe')->assertOk();
+});
+
+test('preview serves the homepage login shells without exposing protected data', function (string $path): void {
+    $this->get($path)->assertOk()->assertSee('data-feature-preview="true"', false)
+        ->assertSee('data-preview-live-url="https://live.example.test/"', false)
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    $this->getJson('/api/homepage/preview-access-probe')->assertUnauthorized();
+})->with(['/', '/homepage/student', '/student/overview', '/students-timetables/overview', '/homepage/restaurant']);
+
+test('homepage password login admits granted ordinary users', function (): void {
+    $user = previewTestUser('student', true);
+    $this->postJson('/api/homepage/login_step_password', [
+        'email' => $user->email, 'school_id' => $user->school_id, 'password' => 'password',
+    ])->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS');
+    $this->assertAuthenticatedAs($user);
+    $this->getJson('/api/homepage/preview-access-probe')->assertOk();
+});
+
+test('homepage preview rejects ungranted login steps before account or code changes', function (string $step): void {
+    $user = previewTestUser('student', false, ['token_2fa' => '123456', 'token_2fa_expires_at' => now()->addMinutes(5)]);
+    $this->postJson("/api/homepage/login_step_{$step}", [
+        'email' => $user->email, 'school_id' => $user->school_id,
+        'password' => 'password', 'token_2fa' => '123456',
+    ])->assertForbidden();
+
+    $this->assertGuest();
+    expect($user->fresh()->token_2fa)->toBe('123456')
+        ->and($user->fresh()->login_at)->toBeNull();
+    Notification::assertNothingSent();
+})->with(['email', 'password', '2fa']);
+
+test('homepage preview rechecks admission before consuming second factor codes', function (): void {
+    $user = previewTestUser('student', true, ['is_2fa' => true, 'email_2fa' => 'factor@example.test']);
+    $this->postJson('/api/homepage/login_step_password', [
+        'email' => $user->email, 'school_id' => $user->school_id, 'password' => 'password',
+    ])->assertOk()->assertJsonPath('step', 'LOGIN_ENTER_TOKEN');
+    $code = $user->fresh()->token_2fa;
+    User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
+
+    $this->postJson('/api/homepage/login_step_2fa', [
+        'email' => $user->email, 'school_id' => $user->school_id, 'token_2fa' => $code,
+    ])->assertForbidden();
+    expect($user->fresh()->token_2fa)->toBe($code);
+    $this->assertGuest();
+});
+
+test('preview rejects account switches before changing the session or roles', function (string $method): void {
+    $actor = previewTestUser('super_admin', true);
+    $target = previewTestUser('teacher', false, ['email' => $actor->email, 'school_id' => 999]);
+    $actor->hopper_account_ids = [$target->id];
+    $this->actingAs($actor)->withSession(['auth.password_confirmed_at' => 123]);
+
+    try {
+        if ($method === 'school') {
+            app(SchoolService::class)->switchSchool($actor, $target->school_id);
+        } else {
+            app(UserHopperService::class)->switchToHopperAccount($actor, $target->id);
+        }
+
+        $this->fail('An ungranted target must not become the current account.');
+    } catch (HttpException $exception) {
+        expect($exception->getStatusCode())->toBe(403);
+    }
+
+    $this->assertAuthenticatedAs($actor);
+    expect(session('auth.password_confirmed_at'))->toBe(123)
+        ->and($target->fresh()->hasRole('super_admin'))->toBeFalse();
+})->with(['school', 'hopper']);

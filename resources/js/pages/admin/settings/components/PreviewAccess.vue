@@ -2,15 +2,21 @@
     <v-card v-if="isSuperAdmin" rounded="xl" class="pa-4 pa-md-6">
         <h2 class="text-h6 mb-2">Schooltool Vorschau</h2>
         <p class="text-body-2 text-medium-emphasis mb-4">
-            Nur ausdrücklich freigegebene Konten dürfen die zweite Anwendung öffnen. Die bisherigen Berechtigungen bleiben bestehen.
+            Admins, Lehrkräfte, Schüler und Studierende können einzeln freigegeben werden. Eltern erhalten Zugang über ein freigegebenes Kinderkonto. Die bisherigen Berechtigungen bleiben bestehen.
         </p>
 
-        <v-alert v-if="store.error" type="error" variant="tonal" class="mb-4" role="alert">
+        <v-alert type="info" variant="tonal" density="compact" class="mb-5">
+            Die Vorschau arbeitet mit einer getrennten Testkopie. Änderungen gelten nur für die Vorschau.
+            Freigaben und der zentrale Schalter werden ausschließlich in der Hauptanwendung verwaltet.
+            <a v-if="isFeaturePreview && previewLiveUrl" :href="previewLiveUrl" class="d-block mt-1">Zur Hauptanwendung</a>
+        </v-alert>
+
+        <v-alert v-if="!isFeaturePreview && store.error" type="error" variant="tonal" class="mb-4" role="alert">
             {{ store.error }}
         </v-alert>
-        <v-progress-linear v-if="store.is_loading" indeterminate aria-label="Vorschau-Einstellungen werden geladen" />
+        <v-progress-linear v-if="!isFeaturePreview && store.is_loading" indeterminate aria-label="Vorschau-Einstellungen werden geladen" />
 
-        <template v-if="store.data">
+        <template v-if="!isFeaturePreview && store.data">
             <div class="d-flex flex-wrap align-center ga-3 mb-4">
                 <v-switch
                     v-model="enabledDraft"
@@ -31,10 +37,6 @@
                 </v-chip>
             </div>
 
-            <v-alert type="info" variant="tonal" density="compact" class="mb-5">
-                Die Vorschau arbeitet mit Live-Daten. Abschalten macht gespeicherte Änderungen nicht rückgängig.
-            </v-alert>
-
             <v-text-field
                 v-model="search"
                 label="Konten der aktuellen Schule suchen"
@@ -50,7 +52,7 @@
                     <div class="text-body-2">{{ user.email }}</div>
                     <div v-if="user.school_name" class="text-caption text-medium-emphasis">{{ user.school_name }}</div>
                     <div v-if="!user.eligible" class="text-caption text-warning">
-                        {{ user.ineligible_reason || 'Dieses Konto kann sich derzeit nicht im Admin-Bereich anmelden.' }}
+                        {{ user.ineligible_reason || 'Dieses Konto kann derzeit nicht für die Vorschau freigegeben werden.' }}
                     </div>
                 </div>
                 <v-chip :color="user.allowed ? 'success' : 'secondary'" size="small" variant="tonal">
@@ -68,7 +70,7 @@
             <p v-if="filteredUsers.length === 0" class="text-body-2 py-4">Keine passenden Konten gefunden.</p>
         </template>
 
-        <v-btn v-if="!store.data && !store.is_loading" variant="tonal" @click="load">
+        <v-btn v-if="!isFeaturePreview && !store.data && !store.is_loading" variant="tonal" @click="load">
             Erneut laden
         </v-btn>
     </v-card>
@@ -91,6 +93,12 @@ export default {
         isSuperAdmin() {
             return useAdminStore().config?.roles?.includes('super_admin') === true
         },
+        isFeaturePreview() {
+            return useAdminStore().config?.preview?.is_preview === true
+        },
+        previewLiveUrl() {
+            return useAdminStore().config?.preview?.live_url || ''
+        },
         isBusy() {
             return this.store.is_loading || this.store.is_saving
         },
@@ -106,7 +114,7 @@ export default {
     },
 
     async mounted() {
-        if (this.isSuperAdmin) await this.load()
+        if (this.isSuperAdmin && !this.isFeaturePreview) await this.load()
     },
 
     watch: {

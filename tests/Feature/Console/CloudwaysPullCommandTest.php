@@ -1,8 +1,11 @@
 <?php
 
+use App\Services\CloudwaysApiClient;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     config([
@@ -68,6 +71,67 @@ it('verifies Git history access without starting a pull', function (): void {
         && $request->hasHeader('Authorization', 'Bearer test-access-token')
         && $request['server_id'] === 123
         && $request['app_id'] === 456);
+});
+
+it('rejects every non-main effective branch before preflight or pull requests', function (string $branch, bool $check): void {
+    config(['services.cloudways.deployment.branch' => $branch]);
+    Http::fake();
+
+    $this->artisan('cloudways:pull', ['--check' => $check])
+        ->expectsOutputToContain('Cloudways deployment requires the configured main branch. Check CLOUDWAYS_DEPLOY_BRANCH and cached configuration before retrying.')
+        ->assertFailed();
+
+    Http::assertNothingSent();
+})->with(['feature/unreleased', 'refs/heads/main', 'Main', ' main '])->with([true, false]);
+
+it('also rejects a non-main branch when the Cloudways client is called directly', function (string $method): void {
+    config(['services.cloudways.deployment.branch' => 'feature/unreleased']);
+    Http::fake();
+
+    expect(fn () => app(CloudwaysApiClient::class)->{$method}())
+        ->toThrow(RuntimeException::class, 'Cloudways deployment requires the configured main branch.');
+
+    Http::assertNothingSent();
+})->with(['gitDeploymentHistory', 'startGitPull']);
+
+it('rejects a cached feature branch even when the process environment names main', function (): void {
+    $directory = sys_get_temp_dir().'/schooltool-cloudways-config-'.bin2hex(random_bytes(8));
+    mkdir($directory.'/bootstrap/cache', 0700, true);
+    file_put_contents($directory.'/bootstrap/cache/config.php', '<?php return '.var_export([
+        'app' => ['env' => 'testing'],
+        'services' => ['cloudways' => ['deployment' => ['branch' => 'feature/unreleased']]],
+    ], true).';');
+    $code = <<<'PHP'
+require $argv[1];
+$app = new Illuminate\Foundation\Application($argv[2]);
+(new Illuminate\Foundation\Bootstrap\LoadConfiguration)->bootstrap($app);
+if (! $app->make('config_loaded_from_cache') || getenv('CLOUDWAYS_DEPLOY_BRANCH') !== 'main') {
+    throw new RuntimeException('The isolated cached configuration fixture did not load.');
+}
+try {
+    (new App\Services\CloudwaysApiClient)->startGitPull();
+} catch (RuntimeException $exception) {
+    if (str_starts_with($exception->getMessage(), 'Cloudways deployment requires the configured main branch.')) {
+        echo 'CACHED_FEATURE_REJECTED';
+        exit(0);
+    }
+    throw $exception;
+}
+throw new RuntimeException('The cached feature branch was accepted.');
+PHP;
+
+    try {
+        $process = new Process([PHP_BINARY, '-r', $code, base_path('vendor/autoload.php'), $directory], $directory, [
+            'APP_CONFIG_CACHE' => 'bootstrap/cache/config.php',
+            'CLOUDWAYS_DEPLOY_BRANCH' => 'main',
+        ]);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and($process->getOutput())->toBe('CACHED_FEATURE_REJECTED');
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
 });
 
 it('requests and waits for a new Cloudways pull', function (): void {
@@ -186,3 +250,31 @@ it('sanitizes upstream API errors', function (): void {
         ->doesntExpectOutputToContain('test-access-token')
         ->assertFailed();
 });
+
+it('retries transient Cloudways history failures with the configured backoff', function (bool $connectionFailure): void {
+    Sleep::fake();
+    $responses = Http::sequence();
+    if ($connectionFailure) {
+        $responses->pushFailedConnection();
+    } else {
+        $responses->pushStatus(503);
+    }
+    $responses->pushStatus(502)->push(['logs' => []]);
+    Http::fake(['api.cloudways.test/api/v2/git/history*' => $responses]);
+
+    expect(app(CloudwaysApiClient::class)->gitDeploymentHistory())->toBe([])
+        ->and($responses->isEmpty())->toBeTrue();
+
+    Sleep::assertSequence([Sleep::for(250)->milliseconds(), Sleep::for(750)->milliseconds()]);
+})->with([true, false]);
+
+it('does not retry Cloudways history client errors', function (int $status): void {
+    Sleep::fake();
+    Http::fake(['api.cloudways.test/api/v2/git/history*' => Http::response([], $status)]);
+
+    expect(fn () => app(CloudwaysApiClient::class)->gitDeploymentHistory())
+        ->toThrow(RuntimeException::class, "Cloudways API request failed with HTTP status {$status}.");
+
+    Http::assertSentCount(1);
+    Sleep::assertNeverSlept();
+})->with([401, 403, 422, 429]);

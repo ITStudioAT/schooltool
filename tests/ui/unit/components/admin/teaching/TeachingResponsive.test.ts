@@ -13,6 +13,7 @@ describe('Teaching handset responsiveness', () => {
         const context = {
             main_action: 'overview',
             normalizedSection: (Teaching as any).methods.normalizedSection,
+            syncSection: (Teaching as any).methods.syncSection,
         }
 
         watcher.call(context, 'curricula')

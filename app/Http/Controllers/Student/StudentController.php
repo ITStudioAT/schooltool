@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Teaching\UserResource;
 use App\Models\SchoolTool;
+use App\Services\FeaturePreviewService;
 use App\Services\LicenceService;
 use App\Services\ParentStudentAccessService;
 use App\Services\StudentService;
@@ -70,12 +71,13 @@ class StudentController extends Controller
         }
 
         if ($user && $parentAccess->isActiveStudentUser($user)) {
+            app(FeaturePreviewService::class)->assertCanEnter($user);
             $parentAccess->clear();
 
             if ($type === 'login_with_password') {
                 $data['status'] = 'enter_password';
             } elseif ($type === 'login_without_password') {
-                $userService->sendCode($user, 'Ihr Login-Code für das Unterrichtstool', $email);
+                $userService->sendCode($user, 'Ihr Login-Code für das Unterrichtstool', $email, 'login');
                 $data['status'] = 'code_sent';
             }
 
@@ -87,7 +89,7 @@ class StudentController extends Controller
 
         if ($user && $import_user && $parentAccess->isActiveStudentUser($user, false)) {
             $user = $service->createUserFromImport116($import_user);
-            $userService->sendCode($user, 'Ihr Login-Code für das Unterrichtstool', $email);
+            $userService->sendCode($user, 'Ihr Login-Code für das Unterrichtstool', $email, 'login');
 
             $data['status'] = 'code_sent';
             $data['login_context'] = 'student';
@@ -153,6 +155,8 @@ class StudentController extends Controller
             abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
         }
 
+        app(FeaturePreviewService::class)->assertCanEnter($user);
+
         if (! $user->consumeToken2Fa($validated['login_code'])) {
             // Code ist ungültig
             $data['status'] = 'code_not_valid';
@@ -190,6 +194,8 @@ class StudentController extends Controller
         if (! $user || ! $parentAccess->isActiveStudentUser($user)) {
             abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
         }
+
+        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (! $service->isPasswordValid($user, $validated['password'])) {
             // Code ist ungültig

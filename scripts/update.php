@@ -273,9 +273,90 @@ function installFrontendDependencies(): int
     return 0;
 }
 
+/** @param array<int, string> $arguments */
+function localUpdateGitOutput(array $arguments): string
+{
+    $errors = tmpfile();
+    if ($errors === false) {
+        throw new RuntimeException('Could not initialize the local deployment Git check.');
+    }
+
+    $process = proc_open(
+        ['git', ...$arguments],
+        [['pipe', 'r'], ['pipe', 'w'], $errors],
+        $pipes,
+        updateProjectPath(),
+        array_merge(getenv(), ['GIT_TERMINAL_PROMPT' => '0', 'GCM_INTERACTIVE' => 'Never']),
+    );
+    if (! is_resource($process)) {
+        fclose($errors);
+        throw new RuntimeException('Git is required for a full local deployment.');
+    }
+
+    fclose($pipes[0]);
+    $output = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    $exitCode = proc_close($process);
+    fclose($errors);
+
+    if ($exitCode !== 0 || $output === false) {
+        throw new RuntimeException('The local deployment Git check failed. Verify Git and access to origin; no application update was started.');
+    }
+
+    return trim($output);
+}
+
+function assertLocalUpdateUsesPublishedMain(): void
+{
+    $root = realpath(localUpdateGitOutput(['rev-parse', '--show-toplevel']));
+    $project = realpath(updateProjectPath());
+    if ($root === false || $project === false
+        || (PHP_OS_FAMILY === 'Windows' ? strcasecmp($root, $project) !== 0 : $root !== $project)) {
+        throw new RuntimeException('A full local deployment must run inside its own Git checkout.');
+    }
+
+    $branch = localUpdateGitOutput(['symbolic-ref', '--quiet', '--short', 'HEAD']);
+    if ($branch !== 'main') {
+        throw new RuntimeException('A full local deployment requires main. Run gitmain first.');
+    }
+
+    foreach (['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'BISECT_LOG'] as $operation) {
+        $path = localUpdateGitOutput(['rev-parse', '--path-format=absolute', '--git-path', $operation]);
+        if (file_exists($path)) {
+            throw new RuntimeException('Finish the current Git operation before a full local deployment.');
+        }
+    }
+
+    if (localUpdateGitOutput(['status', '--porcelain=v1', '--untracked-files=all']) !== '') {
+        throw new RuntimeException('A full local deployment requires a clean main, including untracked files. Save your changes first.');
+    }
+
+    localUpdateGitOutput(['fetch', '--no-tags', '--no-recurse-submodules', 'origin', 'refs/heads/main:refs/remotes/origin/main']);
+    $local = localUpdateGitOutput(['rev-parse', '--verify', 'HEAD']);
+    $published = localUpdateGitOutput(['rev-parse', '--verify', 'refs/remotes/origin/main']);
+    if ($local !== $published) {
+        throw new RuntimeException('A full local deployment requires the current published origin/main. Run gitmain successfully first.');
+    }
+
+    if (localUpdateGitOutput(['symbolic-ref', '--quiet', '--short', 'HEAD']) !== 'main'
+        || localUpdateGitOutput(['status', '--porcelain=v1', '--untracked-files=all']) !== '') {
+        throw new RuntimeException('The checkout changed during the local deployment check. Start again from clean main.');
+    }
+}
+
 function runLocalUpdate(bool $prepareOnly): int
 {
     fwrite(STDOUT, "Update target: Windows development workstation.\n");
+
+    if (! $prepareOnly) {
+        try {
+            assertLocalUpdateUsesPublishedMain();
+        } catch (RuntimeException $exception) {
+            fwrite(STDERR, $exception->getMessage()."\n");
+
+            return 1;
+        }
+    }
 
     $composerExitCode = installComposerDependencies();
 

@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 class SchoolUserLicenceAssignmentService
 {
     /**
-     * @return array<string, array<string, array<string, mixed>>>
+     * @return array<int|string, mixed> Unchanged legacy JSON entries plus normalized role assignments.
      */
     public function assignmentsForSchoolLicence(
         SchoolLicence $schoolLicence,
@@ -30,13 +30,9 @@ class SchoolUserLicenceAssignmentService
         $rows = $this->roleAssignmentRows($schoolLicence, $roleNames, $userIds, $preloadedRows);
 
         foreach ($rows as $row) {
-            if (! $row instanceof SchoolUserLicence) {
-                continue;
-            }
-
             $userId = (string) $row->user_id;
             $roleName = trim((string) $row->role_name);
-            if ($userId === '' || $roleName === '') {
+            if ($roleName === '') {
                 continue;
             }
 
@@ -48,7 +44,7 @@ class SchoolUserLicenceAssignmentService
     }
 
     /**
-     * @param  array<string, mixed>  $userAssignments
+     * @param  array<int|string, mixed>  $userAssignments
      * @param  array<string, mixed>  $licenceModel
      * @return array{created:int, updated:int, deleted:int}
      */
@@ -137,8 +133,8 @@ class SchoolUserLicenceAssignmentService
         $roleNames = collect(array_merge(
             is_array($licenceModel['affected_roles'] ?? null) ? $licenceModel['affected_roles'] : [],
             array_keys(is_array($licenceModel['user_licence_required_by_role'] ?? null) ? $licenceModel['user_licence_required_by_role'] : []),
-            is_array($licence?->admin_role_names ?? null) ? $licence->admin_role_names : [],
-            is_array($licence?->user_role_names ?? null) ? $licence->user_role_names : []
+            is_array($licence->admin_role_names ?? null) ? $licence->admin_role_names : [],
+            is_array($licence->user_role_names ?? null) ? $licence->user_role_names : []
         ));
 
         return $roleNames
@@ -152,8 +148,8 @@ class SchoolUserLicenceAssignmentService
     public function assignmentTypeForRole(string $roleName, array $licenceModel, ?Licence $licence = null): string
     {
         $normalizedRoleName = trim($roleName);
-        $adminRoleNames = $this->normalizeRoleNames($licence?->admin_role_names ?? []);
-        $userRoleNames = $this->normalizeRoleNames($licence?->user_role_names ?? []);
+        $adminRoleNames = $this->normalizeRoleNames($licence->admin_role_names ?? []);
+        $userRoleNames = $this->normalizeRoleNames($licence->user_role_names ?? []);
 
         if (in_array('*', $adminRoleNames, true) || in_array($normalizedRoleName, $adminRoleNames, true)) {
             return 'admin';
@@ -255,8 +251,8 @@ class SchoolUserLicenceAssignmentService
     private function basePriceForType(string $assignmentType, ?Licence $licence): ?float
     {
         $value = $assignmentType === 'admin'
-            ? ($licence?->admin_price_per_year ?? null)
-            : ($licence?->user_price_per_year ?? null);
+            ? ($licence->admin_price_per_year ?? null)
+            : ($licence->user_price_per_year ?? null);
 
         return is_numeric($value) ? round((float) $value, 2) : null;
     }

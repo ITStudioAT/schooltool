@@ -167,6 +167,60 @@ it('requires explicit candidate roles on routes that combine role and licence mi
     });
 });
 
+it('requires the administration role licence when a teacher also has teaching administration access', function (string $licensedRole, bool $allowed) {
+    $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_admin' => true,
+    ]);
+    $user = User::factory()->create(['school_id' => $school->id]);
+    foreach (['teacher', 'teaching_admin'] as $role) {
+        Role::findOrCreate($role, 'web');
+    }
+    $user->assignRole('teacher', 'teaching_admin');
+    $licence = Licence::create([
+        'name' => 'Lehrertool',
+        'long_name' => 'Lehrertool',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher', 'teaching_admin'],
+            'user_licence_required_by_role' => ['teacher' => true, 'teaching_admin' => true],
+        ],
+    ]);
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+        'user_licence_assignments' => [
+            (string) $user->id => [
+                $licensedRole => ['valid_until' => now()->addMonth()->toDateString()],
+            ],
+        ],
+    ]);
+    $this->actingAs($user);
+    $request = Request::create('/admin/teaching/administration');
+    $route = app('router')->getRoutes()->match($request);
+    $request->setRouteResolver(fn () => $route);
+    $middleware = collect($route->gatherMiddleware())
+        ->first(fn (string $middleware): bool => str_starts_with($middleware, 'tool-licensed:'));
+    $arguments = explode(',', substr($middleware, strlen('tool-licensed:')));
+
+    $response = app(ToolLicensed::class)->handle($request, fn () => response('allowed'), ...$arguments);
+
+    if ($allowed) {
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getContent())->toBe('allowed');
+
+        return;
+    }
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(url('/admin'));
+})->with([
+    'only teacher licence' => ['teacher', false],
+    'teaching administration licence' => ['teaching_admin', true],
+]);
+
 it('uses scope references on route middleware instead of raw role lists', function () {
     collect(app('router')->getRoutes())->each(function ($route) {
         collect($route->gatherMiddleware())

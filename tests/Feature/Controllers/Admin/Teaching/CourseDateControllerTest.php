@@ -418,37 +418,56 @@ it('sets curriculum file visibility idempotently and copies source bytes private
     Storage::disk('local')->assertExists($attachment->file_path);
 });
 
-it('reports only copied curriculum attachment visibility in timetable summaries', function () {
+it('reports unadopted curriculum files as private and tracks copied visibility in timetable summaries', function () {
     [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
     $this->actingAs($this->admin);
 
     $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.id', $date->id)
         ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', true)
         ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
-        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.private_curriculum_attachments_count', 1)
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 1);
+
+    expect($material->attachments()->count())->toBe(0)
+        ->and(Storage::disk('local')->allFiles('teaching/course_date_materials'))->toBeEmpty();
 
     $this->putJson($url, ['student_visible' => true])->assertOk();
     $this->getJson('/api/admin/teaching/courses')->assertOk()
         ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', true)
-        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 1)
+        ->assertJsonPath('data.0.course_dates.0.private_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 0);
 
     $this->putJson($url, ['student_visible' => false])->assertOk();
     $this->getJson('/api/admin/teaching/courses')->assertOk()
         ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
-        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', true);
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', true)
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.private_curriculum_attachments_count', 1)
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 0);
 
     $attachment = $material->attachments()->sole();
     $this->postJson("/api/admin/teaching/course_date_materials/attachments/{$attachment->id}/toggle-visibility")
         ->assertOk()->assertJsonPath('student_visible', true);
     $this->getJson('/api/admin/teaching/courses')->assertOk()
         ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', true)
-        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 1)
+        ->assertJsonPath('data.0.course_dates.0.private_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 0);
 
     $this->deleteJson("/api/admin/teaching/course_date_materials/{$material->id}")->assertNoContent();
     $this->getJson('/api/admin/teaching/courses')->assertOk()
         ->assertJsonPath('data.0.course_dates.0.has_curriculum_assignment', false)
         ->assertJsonPath('data.0.course_dates.0.has_shared_curriculum_attachments', false)
-        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false);
+        ->assertJsonPath('data.0.course_dates.0.has_private_curriculum_attachments', false)
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.private_curriculum_attachments_count', 0)
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 0);
 });
 
 it('keeps curriculum attachment visibility separate for each date', function () {

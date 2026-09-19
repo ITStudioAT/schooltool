@@ -189,7 +189,8 @@ describe('createRegisterUser', function () {
 
         $user = $this->service->createRegisterUser($data);
 
-        expect($user->is_active)->toBeFalse();
+        expect($user->is_active)->toBeFalse()
+            ->and((bool) $user->fresh()->is_active)->toBeFalse();
     });
 });
 

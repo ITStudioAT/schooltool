@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\WebAllowed;
 use App\Models\User;
+use App\Services\AccessScopeService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,9 +20,11 @@ it('enforces administration roles on the direct teaching page route', function (
     expect($route->getName())->toBe('admin.teaching.administration')
         ->and($route->gatherMiddleware())->toContain(
             'auth:sanctum',
-            'web-allowed:admin,super_admin,teaching_admin',
-            'tool-licensed:Lehrertool,auth,scope:tool_web_access',
-        );
+            'web-allowed:scope:teaching_administration_access',
+            'tool-licensed:Lehrertool,auth,scope:teaching_administration_access',
+        )
+        ->and(app(AccessScopeService::class)->roleNamesForScope('teaching_administration_access'))
+        ->toBe(['admin', 'super_admin', 'teaching_admin']);
 
     $user = new User;
     $user->setRelation('roles', new Collection([
@@ -50,4 +53,6 @@ it('enforces administration roles on the direct teaching page route', function (
     ['teaching_admin', true],
     ['teacher', false],
     ['register_admin', false],
+    ['tutoring_admin', false],
+    ['lunch_admin', false],
 ]);
