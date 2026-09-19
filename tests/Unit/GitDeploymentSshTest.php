@@ -3,7 +3,7 @@
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-function deploymentSshProcess(string $code): Process
+function deploymentSshProcess(string $code, string $shell = 'powershell'): Process
 {
     $setup = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
@@ -27,9 +27,9 @@ POWERSHELL;
 
     try {
         $process = new Process(
-            ['powershell', '-NoProfile', '-NonInteractive', '-Command', $setup."\n".$code],
+            [$shell, '-NoProfile', '-NonInteractive', '-Command', $setup."\n".$code],
             dirname(__DIR__, 2),
-            ['SCHOOLTOOL_SSH_TEST_HELPER' => dirname(__DIR__, 2).'/scripts/git_ssh_helpers.ps1', 'SCHOOLTOOL_SSH_TEST_DIRECTORY' => $directory],
+            ['SCHOOLTOOL_SSH_TEST_HELPER' => dirname(__DIR__, 2).'/scripts/git_ssh_helpers.ps1', 'SCHOOLTOOL_SSH_TEST_DIRECTORY' => $directory, 'SCHOOLTOOL_SSH_TEST_PHP' => PHP_BINARY],
             timeout: 30,
         );
         $process->run();
@@ -127,7 +127,7 @@ POWERSHELL);
         ->and($process->getOutput())->toContain('failed (exit 23)', 'no rollback is assumed');
 });
 
-it('forbids remote path injection before invoking scp', function (): void {
+it('forbids remote path injection before invoking a transfer process', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
 function Get-SchooltoolPreviewExecutable { throw 'SCP_MUST_NOT_RUN' }
 try { Copy-SchooltoolRemoteFile (Get-SchooltoolDeploymentTarget 'PREVIEW') 'local' '/tmp/file;whoami'; throw 'UNSAFE_PATH_ACCEPTED' }
@@ -136,6 +136,88 @@ POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('TRANSFER_REJECTED');
 });
+
+function deploymentBinaryTransferFixture(): string
+{
+    return <<<'POWERSHELL'
+$mock = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'fake ssh.php'
+$child = @'
+<?php
+file_put_contents(getenv('SCHOOLTOOL_SSH_TEST_DIRECTORY').'/arguments.json', json_encode($argv));
+$source = getenv('SCHOOLTOOL_SSH_TEST_DIRECTORY').'/bytes.bin';
+$mode = getenv('SCHOOLTOOL_TRANSFER_TEST_MODE');
+fwrite(STDERR, str_repeat('PRIVATE_DIAGNOSTIC', 16384));
+if (in_array($mode, ['upload', 'failure-upload'], true)) {
+    $output = fopen(getenv('SCHOOLTOOL_SSH_TEST_DIRECTORY').'/uploaded.bin', 'wb');
+    stream_copy_to_stream(STDIN, $output);
+    fclose($output);
+} else {
+    $input = fopen($source, 'rb');
+    stream_copy_to_stream($input, STDOUT);
+    fclose($input);
+}
+exit(in_array($mode, ['failure', 'failure-upload'], true) ? 23 : 0);
+'@
+[System.IO.File]::WriteAllText($mock, $child, (New-Object System.Text.UTF8Encoding($false)))
+function Get-SchooltoolPreviewExecutable { param($Name); if ($Name -ne 'ssh') { throw 'SFTP_MUST_NOT_RUN' }; $env:SCHOOLTOOL_SSH_TEST_PHP }
+$target = Get-SchooltoolDeploymentTarget 'PREVIEW'
+$target.Options = @($mock) + @($target.Options)
+$bytes = New-Object byte[] (2 * 1024 * 1024 + 31)
+for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = $i % 256 }
+$source = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'bytes.bin'
+[System.IO.File]::WriteAllBytes($source, $bytes)
+$expected = Get-SchooltoolFileChecksum $source
+POWERSHELL;
+}
+
+it('streams binary uploads and downloads through native SSH without text conversion or diagnostic leakage', function (string $shell): void {
+    $process = deploymentSshProcess(deploymentBinaryTransferFixture()."\n".<<<'POWERSHELL'
+$env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'upload'
+if (@(Copy-SchooltoolRemoteFile $target $source '/tmp/private-transfer/release.tar.gz').Count -ne 0) { throw 'UPLOAD_POLLUTED_PIPELINE' }
+if ((Get-SchooltoolFileChecksum (Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'uploaded.bin')) -ne $expected) { throw 'UPLOAD_BYTES_CHANGED' }
+$arguments = Get-Content -LiteralPath (Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'arguments.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+foreach ($required in @('BatchMode=yes', 'StrictHostKeyChecking=yes', 'ForwardAgent=no', '-T', '--', 'schooltool-feature@example.test')) {
+    if ($arguments -notcontains $required) { throw "Missing transfer option $required" }
+}
+$command = $arguments[-1]
+if (-not $command.Contains((Get-SchooltoolRemoteGuard $target)) -or -not $command.Contains("'$expected'")) { throw 'TRANSFER_GUARD_MISSING' }
+if ($command -notmatch 'base64_decode\("([A-Za-z0-9+/=]+)"\)') { throw 'REMOTE_PROGRAM_QUOTING_CHANGED' }
+$remoteProgram = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches[1]))
+foreach ($required in @("'x+b'", 'realpath($parent)', 'posix_geteuid()', 'hash_equals', 'stream_copy_to_stream')) {
+    if (-not $remoteProgram.Contains($required)) { throw "Remote safeguard missing: $required" }
+}
+$env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'download'
+$destination = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'download with spaces.bin'
+if (@(Copy-SchooltoolRemoteFile $target $destination '/private/archive.stpreview' -Download).Count -ne 0) { throw 'DOWNLOAD_POLLUTED_PIPELINE' }
+if ((Get-SchooltoolFileChecksum $destination) -ne $expected) { throw 'DOWNLOAD_BYTES_CHANGED' }
+if (@(Get-ChildItem -LiteralPath $env:SCHOOLTOOL_SSH_TEST_DIRECTORY -Filter '*.partial').Count -ne 0) { throw 'TEMPORARY_FILE_RETAINED' }
+Write-Output 'BINARY_TRANSFER_VERIFIED'
+POWERSHELL, $shell);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('BINARY_TRANSFER_VERIFIED')->not->toContain('PRIVATE_DIAGNOSTIC')
+        ->and($process->getErrorOutput())->not->toContain('PRIVATE_DIAGNOSTIC');
+})->with(['powershell', 'pwsh']);
+
+it('rejects failed binary transfers and preserves existing local files', function (string $shell): void {
+    $process = deploymentSshProcess(deploymentBinaryTransferFixture()."\n".<<<'POWERSHELL'
+$env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'failure'
+$destination = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'failed-download.bin'
+try { Copy-SchooltoolRemoteFile $target $destination '/private/archive.stpreview' -Download; throw 'FAILED_TRANSFER_ACCEPTED' }
+catch { if ($_.Exception.Message -notmatch 'exit 23') { throw } }
+if (Test-Path -LiteralPath $destination) { throw 'FAILED_DOWNLOAD_PUBLISHED' }
+if (@(Get-ChildItem -LiteralPath $env:SCHOOLTOOL_SSH_TEST_DIRECTORY -Filter '*.partial').Count -ne 0) { throw 'FAILED_DOWNLOAD_RETAINED' }
+$env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'failure-upload'
+try { Copy-SchooltoolRemoteFile $target $source '/private/archive.stpreview'; throw 'FAILED_UPLOAD_ACCEPTED' }
+catch { if ($_.Exception.Message -notmatch 'exit 23') { throw } }
+$env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'download'
+try { Copy-SchooltoolRemoteFile $target $source '/private/archive.stpreview' -Download; throw 'EXISTING_FILE_OVERWRITTEN' }
+catch { if ($_.Exception.Message -notmatch 'already exists') { throw } }
+if ((Get-SchooltoolFileChecksum $source) -ne $expected) { throw 'EXISTING_FILE_CHANGED' }
+Write-Output 'TRANSFER_FAILURE_HANDLED'
+POWERSHELL, $shell);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('TRANSFER_FAILURE_HANDLED')->not->toContain('PRIVATE_DIAGNOSTIC');
+})->with(['powershell', 'pwsh']);
 
 it('refuses malformed remote JSON instead of assuming a snapshot is ready', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'

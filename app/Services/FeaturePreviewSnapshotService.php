@@ -90,12 +90,12 @@ class FeaturePreviewSnapshotService
         if (config('schooltool.preview.instance')) {
             throw new RuntimeException('Live snapshots may only be exported by the main application.');
         }
-        $this->files->assertConfigurationSafe();
+        $this->files->assertSourceConfigurationSafe();
         $locks = $this->liveLocks();
         $path = $this->identity->path($artifact.'.stpreview');
         $written = false;
         try {
-            $fileFingerprint = $this->files->fingerprint();
+            $fileFingerprint = $this->files->fingerprint(true);
             $this->database->withMainReadOnlyConnection(function (Connection $source) use ($path, $recipient, $feature, $fileFingerprint, &$written): void {
                 $this->archive->write($path, $recipient, $this->records($source, $feature, true, $recipient, $fileFingerprint));
                 $written = true;
@@ -342,7 +342,7 @@ class FeaturePreviewSnapshotService
     /** @return Generator<int, array<string, mixed>> */
     private function records(Connection $connection, string $feature, bool $live, ?string $recipient = null, ?string $fileFingerprint = null): Generator
     {
-        $fileFingerprint ??= $this->files->fingerprint();
+        $fileFingerprint ??= $this->files->fingerprint($live);
         $recipient ??= FeaturePreviewSnapshotArchive::publicKey($this->keyPair());
         $pdo = $connection->getPdo();
         if (! $live) {
@@ -418,8 +418,8 @@ class FeaturePreviewSnapshotService
                 $pdo->rollBack();
             }
         }
-        yield from $this->files->records();
-        if (! hash_equals($fileFingerprint, $this->files->fingerprint())) {
+        yield from $this->files->records($live);
+        if (! hash_equals($fileFingerprint, $this->files->fingerprint($live))) {
             throw new RuntimeException('Live files changed during the snapshot. Retry after the file changes have finished.');
         }
         yield ['kind' => 'complete'];

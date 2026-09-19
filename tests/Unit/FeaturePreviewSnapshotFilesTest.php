@@ -1,6 +1,12 @@
 <?php
 
+use App\Services\FeaturePreviewSnapshotArchive;
 use App\Services\FeaturePreviewSnapshotFiles;
+use Aws\CommandInterface;
+use Aws\Result;
+use Aws\S3\S3Client;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Filesystem\Filesystem;
 
 beforeEach(function (): void {
@@ -287,3 +293,182 @@ test('linked storage roots and staging ancestors are refused', function (): void
         unlink($alias);
     }
 });
+
+/** @param array<string, mixed> $configuration */
+function previewS3FileFixture(string $source, array $configuration, Closure $handler): FeaturePreviewSnapshotFiles
+{
+    $configuration['default'] = 's3';
+    $configuration['disks']['s3'] ??= ['driver' => 's3', 'bucket' => 'schooltool-fixture'];
+    $client = new S3Client([
+        'version' => 'latest', 'region' => 'eu-central-1',
+        'credentials' => ['key' => 'fixture-access', 'secret' => 'fixture-secret'],
+        'handler' => static fn (CommandInterface $command) => Create::promiseFor(new Result($handler($command))),
+    ]);
+
+    return new FeaturePreviewSnapshotFiles($source, $configuration, $client);
+}
+
+test('S3 source streams paginated scoped objects into isolated private copies without remote writes', function (): void {
+    $binary = str_repeat("\x00\xff\x80", 800000);
+    $objects = ['application/tenant/Schüler/file.bin' => $binary, 'application/tenant/empty' => ''];
+    $commands = [];
+    $configuration = $this->config;
+    $configuration['disks']['s3'] = ['driver' => 's3', 'bucket' => 'schooltool-fixture', 'root' => 'application', 'prefix' => 'tenant'];
+    file_put_contents($this->source.'/private/local.txt', 'local private');
+    file_put_contents($this->source.'/public/image.txt', 'local public');
+    $files = previewS3FileFixture($this->source, $configuration, function (CommandInterface $command) use ($objects, &$commands): array {
+        $commands[] = $command->getName();
+        expect($command['Bucket'])->toBe('schooltool-fixture');
+        if ($command->getName() === 'ListObjectsV2') {
+            expect($command['Prefix'])->toBe('application/tenant/');
+            $second = isset($command['ContinuationToken']);
+            if ($second) {
+                expect($command['ContinuationToken'])->toBe('next-page');
+            }
+            $key = $second ? 'application/tenant/empty' : 'application/tenant/Schüler/file.bin';
+
+            return ['Contents' => [
+                ['Key' => $key, 'Size' => strlen($objects[$key]), 'ETag' => '"'.md5($objects[$key]).'"'],
+                ...($second ? [['Key' => 'application/tenant/markers/', 'Size' => 0, 'ETag' => '"marker"']] : []),
+            ], 'IsTruncated' => ! $second, ...($second ? [] : ['NextContinuationToken' => 'next-page'])];
+        }
+        expect($command->getName())->toBe('GetObject')
+            ->and($command['@http']['stream'])->toBeTrue()
+            ->and($command['IfMatch'])->toBe('"'.md5($objects[$command['Key']]).'"');
+
+        return ['Body' => Utils::streamFor($objects[$command['Key']]), 'ContentLength' => strlen($objects[$command['Key']]), 'ETag' => $command['IfMatch']];
+    });
+    $files->assertSourceConfigurationSafe();
+    expect(fn () => $files->assertConfigurationSafe())->toThrow(RuntimeException::class)
+        ->and(fn () => iterator_to_array($files->records()))->toThrow(RuntimeException::class);
+    $fingerprint = $files->fingerprint(true);
+    $archive = new FeaturePreviewSnapshotArchive;
+    $key = FeaturePreviewSnapshotArchive::generateKeyPair();
+    $archivePath = $this->directory.'/snapshot.stpreview';
+    $archive->write($archivePath, FeaturePreviewSnapshotArchive::publicKey($key), $files->records(true));
+    $this->files->restore($archive->read($archivePath, $key), $this->staging);
+
+    expect($files->fingerprint(true))->toBe($fingerprint)
+        ->and(file_get_contents($this->staging.'/private/Schüler/file.bin'))->toBe($binary)
+        ->and(file_get_contents($this->staging.'/private/local.txt'))->toBe('local private')
+        ->and(file_get_contents($this->staging.'/public/image.txt'))->toBe('local public')
+        ->and(filesize($this->staging.'/private/empty'))->toBe(0)
+        ->and(file_get_contents($archivePath))->not->toContain('local private', 'local public')
+        ->and(array_values(array_unique($commands)))->toBe(['ListObjectsV2', 'GetObject']);
+});
+
+test('S3 source configuration cannot relax local target roots or transport safety', function (string $scenario): void {
+    $configuration = $this->config;
+    $configuration['disks']['s3'] = ['driver' => 's3', 'bucket' => 'schooltool-fixture'];
+    match ($scenario) {
+        'external local' => $configuration['disks']['local']['driver'] = 's3',
+        'external public' => $configuration['disks']['public']['driver'] = 's3',
+        'displaced local' => $configuration['disks']['local']['root'] = $this->directory,
+        'insecure endpoint' => $configuration['disks']['s3']['endpoint'] = 'http://storage.example.test',
+        'insecure scheme' => $configuration['disks']['s3']['scheme'] = 'http',
+        'endpoint credentials' => $configuration['disks']['s3']['endpoint'] = 'https://user:secret@storage.example.test',
+        'unverified TLS' => $configuration['disks']['s3']['http'] = ['verify' => false],
+        'unsafe options' => $configuration['disks']['s3']['options'] = ['Bucket' => 'other'],
+        'missing bucket' => $configuration['disks']['s3']['bucket'] = '',
+        'unsafe root' => $configuration['disks']['s3']['root'] = '../other',
+        'unsafe prefix' => $configuration['disks']['s3']['prefix'] = '/other',
+    };
+    $calls = 0;
+    $files = previewS3FileFixture($this->source, $configuration, function () use (&$calls): array {
+        $calls++;
+
+        return [];
+    });
+    expect(fn () => $files->assertSourceConfigurationSafe())->toThrow(RuntimeException::class)
+        ->and(fn () => iterator_to_array($files->records(true)))->toThrow(RuntimeException::class)
+        ->and($calls)->toBe(0);
+})->with(['external local', 'external public', 'displaced local', 'insecure endpoint', 'insecure scheme', 'endpoint credentials', 'unverified TLS', 'unsafe options', 'missing bucket', 'unsafe root', 'unsafe prefix']);
+
+test('S3 source validates the complete destination inventory before reading object bodies', function (string $scenario): void {
+    $keys = match ($scenario) {
+        'same local path' => ['local.txt'],
+        'local case collision' => ['LOCAL.txt'],
+        'local directory collision' => ['folder'],
+        'local file parent' => ['local.txt/child'],
+        'object case collision' => ['one/File', 'one/file'],
+        'object parent collision' => ['one', 'one/file'],
+        'directory case collision' => ['Folder/object'],
+    };
+    file_put_contents($this->source.'/private/local.txt', 'keep');
+    mkdir($this->source.'/private/folder');
+    $reads = 0;
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command) use ($keys, &$reads): array {
+        if ($command->getName() !== 'ListObjectsV2') {
+            $reads++;
+        }
+
+        return ['IsTruncated' => false, 'Contents' => array_map(fn (string $key): array => ['Key' => $key, 'Size' => 1, 'ETag' => '"etag"'], $keys)];
+    });
+    expect(fn () => iterator_to_array($files->records(true)))->toThrow(RuntimeException::class)
+        ->and($reads)->toBe(0)
+        ->and(file_get_contents($this->source.'/private/local.txt'))->toBe('keep');
+})->with(['same local path', 'local case collision', 'local directory collision', 'local file parent', 'object case collision', 'object parent collision', 'directory case collision']);
+
+test('S3 source rejects unsafe keys and objects outside its configured prefix', function (string $key): void {
+    $configuration = $this->config;
+    $configuration['disks']['s3'] = ['driver' => 's3', 'bucket' => 'schooltool-fixture', 'root' => 'app'];
+    $files = previewS3FileFixture($this->source, $configuration, function (CommandInterface $command) use ($key): array {
+        expect($command->getName())->toBe('ListObjectsV2');
+
+        return ['IsTruncated' => false, 'Contents' => [['Key' => $key, 'Size' => 1, 'ETag' => '"etag"']]];
+    });
+    expect(fn () => iterator_to_array($files->records(true)))->toThrow(RuntimeException::class);
+})->with(['other/file', 'application/file', 'app/../secret', 'app//absolute', 'app/dir\\file', 'app/CON.txt', 'app/file:', "app/invalid\xff", 'app/nonempty-marker/', 'app/']);
+
+test('S3 export fails closed on incomplete pagination and changed or truncated objects', function (string $scenario): void {
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command) use ($scenario): array {
+        if ($command->getName() === 'ListObjectsV2') {
+            return ['Contents' => [['Key' => 'file', 'Size' => 3, 'ETag' => '"initial"']],
+                'IsTruncated' => in_array($scenario, ['missing continuation', 'repeated continuation'], true),
+                ...($scenario === 'repeated continuation' ? ['NextContinuationToken' => 'same'] : [])];
+        }
+        if ($scenario === 'conditional failure') {
+            throw new RuntimeException('AccessKey=fixture-secret sensitive upstream URL');
+        }
+
+        return [
+            'Body' => Utils::streamFor(match ($scenario) {
+                'short body' => 'ab', 'long body' => 'abcd', default => 'abc'
+            }),
+            'ContentLength' => $scenario === 'wrong content length' ? 4 : 3,
+            'ETag' => $scenario === 'changed etag' ? '"changed"' : '"initial"',
+        ];
+    });
+    try {
+        iterator_to_array($files->records(true));
+        $this->fail('Invalid S3 source was accepted.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toBe('The preview file snapshot could not be processed safely.')
+            ->and($exception->getPrevious())->toBeNull();
+    }
+})->with(['missing continuation', 'repeated continuation', 'conditional failure', 'short body', 'long body', 'wrong content length', 'changed etag']);
+
+test('S3 fingerprints detect inventory and same size content changes independently of enumeration order', function (string $change): void {
+    $objects = ['z' => 'abc', 'a' => 'def'];
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command) use (&$objects): array {
+        if ($command->getName() === 'ListObjectsV2') {
+            $contents = [];
+            foreach ($objects as $key => $bytes) {
+                $contents[] = ['Key' => $key, 'Size' => strlen($bytes), 'ETag' => '"'.md5($bytes).'"'];
+            }
+
+            return ['IsTruncated' => false, 'Contents' => $contents];
+        }
+
+        return ['Body' => Utils::streamFor($objects[$command['Key']]), 'ContentLength' => strlen($objects[$command['Key']]), 'ETag' => $command['IfMatch']];
+    });
+    $before = $files->fingerprint(true);
+    $objects = array_reverse($objects, true);
+    expect($files->fingerprint(true))->toBe($before);
+    match ($change) {
+        'add' => $objects['new'] = 'new',
+        'remove' => $objects = ['a' => 'def'],
+        'same size' => $objects['z'] = 'xyz',
+    };
+    expect($files->fingerprint(true))->not->toBe($before);
+})->with(['add', 'remove', 'same size']);

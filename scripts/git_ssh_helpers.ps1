@@ -102,12 +102,116 @@ function Copy-SchooltoolRemoteFile {
     if ($RemotePath -cnotmatch '^/(?:[a-zA-Z0-9_-][a-zA-Z0-9_.-]*/)*[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$') {
         throw 'The remote transfer path is invalid.'
     }
-    $executable = Get-SchooltoolPreviewExecutable 'scp'
-    $options = @($Target.Options)
-    $remote = "$($Target.Ssh):$RemotePath"
-    if ($Download) { & $executable @options -- $remote $LocalPath }
-    else { & $executable @options -- $LocalPath $remote }
-    if ($LASTEXITCODE -ne 0) { throw "Encrypted file transfer for $($Target.Site) failed. Deployment was not completed." }
+    # SSH and SFTP can see different roots on Cloudways. Keep canonical SSH paths and byte streams.
+    $remoteProgram = @'
+$path = $argv[1];
+$upload = $argv[2] === 'upload';
+$parent = dirname($path);
+if (realpath($parent) !== $parent || ! is_dir($parent) || is_link($path)
+    || fileowner($parent) !== posix_geteuid() || (fileperms($parent) & 0022) !== 0) { exit(21); }
+$handle = null;
+$created = false;
+$complete = false;
+try {
+    if ($upload) {
+        umask(0077);
+        $handle = fopen($path, 'x+b');
+        if ($handle === false) { exit(22); }
+        $created = true;
+        if (! chmod($path, 0600)) { throw new RuntimeException(); }
+        $bytes = stream_copy_to_stream(STDIN, $handle);
+        if ($bytes === false || ! fflush($handle) || $bytes !== (int) $argv[3]
+            || ! hash_equals($argv[4], hash_file('sha256', $path))) { throw new RuntimeException(); }
+    } else {
+        $info = lstat($path);
+        if ($info === false || ($info['mode'] & 0170000) !== 0100000
+            || $info['uid'] !== posix_geteuid() || $info['nlink'] !== 1) { exit(23); }
+        $handle = fopen($path, 'rb');
+        if ($handle === false) { exit(24); }
+        $opened = fstat($handle);
+        if ($opened['ino'] !== $info['ino'] || $opened['dev'] !== $info['dev']) { throw new RuntimeException(); }
+        $bytes = stream_copy_to_stream($handle, STDOUT);
+        if ($bytes === false || $bytes !== $opened['size']) { throw new RuntimeException(); }
+    }
+    $complete = true;
+} catch (Throwable $exception) {
+    // Do not emit remote paths, credentials or file bytes as diagnostics.
+} finally {
+    if (is_resource($handle)) { fclose($handle); }
+    if ($created && ! $complete) { unlink($path); }
+}
+exit($complete ? 0 : 25);
+'@
+    $encodedProgram = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteProgram))
+    $process = New-Object System.Diagnostics.Process
+    $localStream = $null
+    $temporary = $null
+    $started = $false
+    try {
+        $localFile = [System.IO.Path]::GetFullPath($LocalPath)
+        if ($Download) {
+            if (Test-Path -LiteralPath $localFile) { throw 'The local download destination already exists.' }
+            $temporary = "$localFile.$([guid]::NewGuid().ToString('N')).partial"
+            $localStream = [System.IO.File]::Open($temporary, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $mode = 'download'
+            $length = '0'
+            $checksum = '-'
+        }
+        else {
+            $localStream = [System.IO.File]::Open($localFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            $hasher = [System.Security.Cryptography.SHA256]::Create()
+            try { $checksum = [BitConverter]::ToString($hasher.ComputeHash($localStream)).Replace('-', '').ToLowerInvariant() }
+            finally { $hasher.Dispose() }
+            $localStream.Position = 0
+            $length = $localStream.Length.ToString([Globalization.CultureInfo]::InvariantCulture)
+            $mode = 'upload'
+        }
+        $command = (Get-SchooltoolRemoteGuard $Target) + "php -d display_errors=0 -d log_errors=0 -r 'eval(base64_decode(`"$encodedProgram`"));' -- '$RemotePath' '$mode' '$length' '$checksum'"
+        $arguments = @($Target.Options) + @('-T', '--', $Target.Ssh, $command)
+        $process.StartInfo.FileName = Get-SchooltoolPreviewExecutable 'ssh'
+        # ProcessStartInfo.ArgumentList is unavailable in Windows PowerShell 5.1.
+        $process.StartInfo.Arguments = ($arguments | ForEach-Object {
+            '"' + [regex]::Replace([regex]::Replace([string]$_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
+        }) -join ' '
+        $process.StartInfo.UseShellExecute = $false
+        $process.StartInfo.CreateNoWindow = $true
+        $process.StartInfo.RedirectStandardInput = $true
+        $process.StartInfo.RedirectStandardOutput = $true
+        $process.StartInfo.RedirectStandardError = $true
+        # .NET Framework derives its input writer from Console.InputEncoding and emits its BOM at Start.
+        $inputEncoding = [Console]::InputEncoding
+        try {
+            [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
+            $started = $process.Start()
+        }
+        finally { [Console]::InputEncoding = $inputEncoding }
+        if (-not $started) { throw 'Cannot start the SSH transfer.' }
+        $errors = $process.StandardError.BaseStream.CopyToAsync([System.IO.Stream]::Null)
+        $destination = if ($Download) { $localStream } else { [System.IO.Stream]::Null }
+        $output = $process.StandardOutput.BaseStream.CopyToAsync($destination)
+        if (-not $Download) { $null = $localStream.CopyToAsync($process.StandardInput.BaseStream).GetAwaiter().GetResult() }
+        # Close the raw pipe: StreamWriter.Close can append a UTF-8 BOM in PowerShell 5.1.
+        $process.StandardInput.BaseStream.Close()
+        $null = $output.GetAwaiter().GetResult()
+        $null = $errors.GetAwaiter().GetResult()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "SSH transfer failed (exit $($process.ExitCode))." }
+        $localStream.Dispose()
+        $localStream = $null
+        if ($Download) {
+            [System.IO.File]::Move($temporary, $localFile)
+            $temporary = $null
+        }
+    }
+    catch {
+        throw "Encrypted file transfer for $($Target.Site) failed. Deployment was not completed. $($_.Exception.Message)"
+    }
+    finally {
+        if ($started -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+        $process.Dispose()
+        if ($localStream) { $localStream.Dispose() }
+        if ($temporary -and [System.IO.File]::Exists($temporary)) { [System.IO.File]::Delete($temporary) }
+    }
 }
 
 function Get-SchooltoolFileChecksum {

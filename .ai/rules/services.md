@@ -5,6 +5,7 @@ paths:
   - 'app/Services/TeachingBackupArchive*.php'
   - 'app/Services/TeachingBackup*.php'
   - app/Services/TeachingCourseService.php
+  - 'app/Services/FeaturePreviewSnapshot*.php'
 ---
 
 # Services
@@ -23,3 +24,6 @@ School archive v3 includes teaching_entry_areas, teaching_entry_grading_parts an
 
 ## Synchronize course student rows once across identity aliases
 A TeachingCourseStudent may have user, Import116 and linked-import-user identity keys. Process each stored row once, match all aliases before choosing active/deleted/omitted state, give active selection priority and consume all matched aliases. Looping mutations over the alias map can immediately soft-delete a row just updated or restored. Preserve removal protection across every alias.
+
+## Keep S3 snapshot support exclusive to main exports
+Main exports may read configured S3 objects into private snapshot records using conditional streamed reads and complete collision-checked inventory. Retain strict local-only validation for preview import, restore and activation; never enable preview access to live S3 credentials. Abort export on changed fingerprints or failed conditional reads. S3 copying is checked for concurrent changes, not an atomic S3 transaction.
