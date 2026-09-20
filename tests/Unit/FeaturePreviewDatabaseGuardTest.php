@@ -41,7 +41,35 @@ it('rejects unsafe table definitions before any import', function (string $defin
     'mysql execution comment' => 'CREATE TABLE `users` (`id` bigint) ENGINE=InnoDB /*! something */',
     'outside file' => "CREATE TABLE `users` (`id` bigint) ENGINE=InnoDB DATA DIRECTORY='/outside'",
     'foreign schema' => 'CREATE TABLE `users` (`id` bigint, FOREIGN KEY (`id`) REFERENCES `live`.`schools` (`id`)) ENGINE=InnoDB',
+    'connection option' => "CREATE TABLE `users` (`id` bigint) ENGINE=InnoDB CONNECTION='mysql://outside/database/table'",
+    'connection option without equals' => "CREATE TABLE `users` (`connection` text) ENGINE=InnoDB CONNECTION 'mysql://outside/database/table'",
+    'mixed case connection option' => "CREATE TABLE `users` (`connection` text) ENGINE=InnoDB CoNnEcTiOn = 'mysql://outside/database/table'",
+    'connection option on following line' => "CREATE TABLE `users` (`connection` text) ENGINE=InnoDB\nCONNECTION\n'mysql://outside/database/table'",
+    'connection with only leading backtick' => "CREATE TABLE `users` (`id` bigint) ENGINE=InnoDB `CONNECTION='mysql://outside/database/table'",
+    'connection with only trailing backtick' => "CREATE TABLE `users` (`id` bigint) ENGINE=InnoDB CONNECTION`='mysql://outside/database/table'",
+    'connection option after backtick literal' => "CREATE TABLE `users` (`note` text DEFAULT '`') ENGINE=InnoDB CONNECTION='mysql://outside/database/table`'",
+    'quoted connection with outside directory' => "CREATE TABLE `users` (`connection` text) ENGINE=InnoDB DATA DIRECTORY='/outside'",
+    'quoted connection with tablespace' => 'CREATE TABLE `users` (`connection` text) ENGINE=InnoDB TABLESPACE external_space',
 ]);
+
+it('accepts the standard failed jobs schema with a quoted connection column', function (): void {
+    $definition = <<<'SQL'
+CREATE TABLE `failed_jobs` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(255) NOT NULL,
+  `connection` text NOT NULL,
+  `queue` text NOT NULL,
+  `payload` longtext NOT NULL,
+  `exception` longtext NOT NULL,
+  `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL;
+
+    (new FeaturePreviewDatabaseGuard)->assertCreateStatement('failed_jobs', $definition);
+    expect(true)->toBeTrue();
+});
 
 it('accepts a regular transactional table definition', function (): void {
     (new FeaturePreviewDatabaseGuard)->assertCreateStatement('users', 'CREATE TABLE `users` (`id` bigint NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');

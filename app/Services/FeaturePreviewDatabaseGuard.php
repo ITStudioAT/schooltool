@@ -233,9 +233,10 @@ class FeaturePreviewDatabaseGuard
     public function assertCreateStatement(string $table, string $statement): void
     {
         $identifier = preg_quote($this->identifier($table), '/');
+        // The standard failed_jobs `connection` column is not a CONNECTION table option.
         if (preg_match('/\ACREATE TABLE '.$identifier.' \(/', $statement) !== 1
             || preg_match('/\bENGINE=InnoDB\b/i', $statement) !== 1
-            || preg_match('/;|\/\*|\b(?:DATA DIRECTORY|INDEX DIRECTORY|TABLESPACE|CONNECTION)\b|REFERENCES\s+`[^`]+`\s*\./i', $statement) === 1) {
+            || preg_match('/;|\/\*|\b(?:DATA DIRECTORY|INDEX DIRECTORY|TABLESPACE|(?:(?<!`)CONNECTION|CONNECTION(?!`)))\b|REFERENCES\s+`[^`]+`\s*\./i', $statement) === 1) {
             throw new RuntimeException('The snapshot contains an unsupported table definition.');
         }
     }
