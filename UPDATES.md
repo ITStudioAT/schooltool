@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.49.0
+
+### SYSTEM
+
+- Feature-Branch-Verwaltung mit Test-Branch feature/matura
+
 ## 3.48.7
 
 - Teaching: Übertragen von Leistungen auf andere Schüler:innen

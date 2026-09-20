@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.48.7',
+    'version' => '3.49.0',
     'preview' => [
         'instance' => filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN),
         'url' => env('SCHOOLTOOL_PREVIEW_URL', ''),
@@ -17,7 +17,7 @@ return [
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_DATABASE'),
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_USERNAME'),
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_PASSWORD'),
-        ], static fn ($value): bool => $value !== null && $value !== '') !== [],
+        ], static fn($value): bool => $value !== null && $value !== '') !== [],
     ],
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),
