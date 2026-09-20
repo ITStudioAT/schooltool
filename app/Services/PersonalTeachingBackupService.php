@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\PersonalTeachingBackup;
+use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
 use App\Services\Materials\MaterialService;
+use App\Services\Teaching\CurriculumUnitFileService;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -407,6 +409,9 @@ class PersonalTeachingBackupService
                     continue;
                 }
                 if ($table === 'teaching_curriculum_documents') {
+                    if ($row['source_type'] === 'unit_file' && $disk === 's3') {
+                        $disk = app(CurriculumUnitFileService::class)->diskName(new TeachingCurriculumDocument(['storage_disk' => $disk]));
+                    }
                     $row['school_id'] = collect($tables['teaching_curricula'])->firstWhere('id', $row['teaching_curriculum_id'])['school_id'];
                 }
                 $this->assertSafeFilePath($table, $row, $path, $disk);

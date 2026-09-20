@@ -296,6 +296,51 @@ it('publishes a fully checked release with an optional version through the actua
     }
 })->with(['without version increase' => null, 'with version increase' => '3.48.0']);
 
+it('prepares local main after publication and reports preparation failures without undoing the release', function (bool $failPreparation, string $powershell): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"', $powershell));
+    file_put_contents($this->workflowPc.'/feature.txt', "Completed work\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Finish feature"', $powershell));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation {
+    if ((Invoke-SchooltoolGit branch --show-current) -ne 'main') { throw 'Preparation ran on the wrong branch.' }
+    if ($script:SchooltoolActiveCandidateEnvironment) { throw 'Candidate environment was not restored.' }
+    if ((Invoke-SchooltoolGit rev-parse HEAD) -ne (Invoke-SchooltoolGit ls-remote origin refs/heads/main).Split("`t")[0]) {
+        throw 'Preparation ran before publication completed.'
+    }
+    Write-Host 'LOCAL_PUBLISHED_MAIN_PREPARATION'
+    if (FAIL_PREPARATION) { throw 'LOCAL_DEPENDENCY_FAILURE' }
+}
+gitrelease 'Release feature'
+POWERSHELL;
+    $command = str_replace('FAIL_PREPARATION', $failPreparation ? '$true' : '$false', $command);
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
+    assertBranchWorkflowSucceeded($result);
+
+    expect($result->getOutput())->toContain('LOCAL_PUBLISHED_MAIN_PREPARATION')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Completed work')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/', 'refs/heads/codex/active-feature'))->toBe('');
+
+    if ($failPreparation) {
+        expect($result->getOutput())->toContain('Release is already published. Local main preparation failed: LOCAL_DEPENDENCY_FAILURE')
+            ->toContain('run gitmain to retry. Do not publish the release again.')
+            ->toContain('After gitmain succeeds, remove the integrated local branch if still present: git branch -d feature/new-function')
+            ->not->toContain('Release stopped.');
+        expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->toBe($feature);
+        $published = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main');
+        $retry = runBranchWorkflowCommand($this->workflowPc, 'gitmain', $powershell);
+        assertBranchWorkflowSucceeded($retry);
+        expect($retry->getOutput())->toContain('Local preparation mocked; database untouched.')
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($published)
+            ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->toBe($feature);
+    } else {
+        expect($result->getOutput())->not->toContain('Local main preparation failed:');
+        expect(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/'))->toBe('');
+    }
+})->with(['preparation succeeds' => false, 'preparation fails after publication' => true])
+    ->with(['Windows PowerShell' => 'powershell', 'PowerShell 7' => 'pwsh']);
+
 it('stops the actual release pipeline when checks fail or publication is cancelled', function (string $failure): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/feature.txt', "Completed work\n");

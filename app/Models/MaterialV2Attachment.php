@@ -68,6 +68,18 @@ class MaterialV2Attachment extends Model
         ];
     }
 
+    public function storageDiskName(): string
+    {
+        $disk = trim((string) $this->disk);
+
+        // Snapshot exports copy S3 objects into the preview's private local storage.
+        if (config('schooltool.preview.instance', false) && $disk === 's3') {
+            return 'local';
+        }
+
+        return $disk;
+    }
+
     public function item(): BelongsTo
     {
         return $this->belongsTo(MaterialV2Item::class, 'material_v2_item_id');

@@ -135,30 +135,51 @@ it('transfers a preview with strict key authentication and private snapshot perm
     mkdir($directory);
     file_put_contents($directory.'/key', 'FAKE KEY');
     file_put_contents($directory.'/hosts', 'FAKE HOST');
+    file_put_contents($directory.'/preview.tar.gz', gzencode('Preview bundle fixture'));
+    file_put_contents($directory.'/snapshot-source.bin', "\x00\xFF\x80Encrypted snapshot fixture\r\n");
     $command = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
 . $env:PREVIEW_TEST_HELPERS
-function ssh { Write-Output ('SSH ' + ($args -join '|')); $global:LASTEXITCODE = 0 }
-function scp { Write-Output ('SCP ' + ($args -join '|')); $global:LASTEXITCODE = 0 }
-function Get-SchooltoolPreviewExecutable { param([string]$Name) $Name }
+function Invoke-PreviewTestSsh { Write-Output ('SSH ' + ($args -join '|')); $global:LASTEXITCODE = 0 }
+function Get-SchooltoolPreviewExecutable { param([string]$Name); if ($Name -ne 'ssh') { throw 'UNEXPECTED_TRANSPORT' }; 'Invoke-PreviewTestSsh' }
 $env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
-$env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-feature@165.227.156.99'
+$env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-feature@example.test'
+$env:SCHOOLTOOL_PREVIEW_UNIX_USER = 'schooltool-feature'
 $env:SCHOOLTOOL_MAIN_PATH = '/home/example/applications/main/public_html'
-$env:SCHOOLTOOL_MAIN_SSH = 'sftp_schooltool_at@165.227.156.99'
+$env:SCHOOLTOOL_MAIN_SSH = 'schooltool-main@example.test'
+$env:SCHOOLTOOL_MAIN_UNIX_USER = 'schooltool-main'
 $env:SCHOOLTOOL_MAIN_KEY = Join-Path $env:PREVIEW_TEST_DIRECTORY 'key'
 $env:SCHOOLTOOL_PREVIEW_KEY = $env:SCHOOLTOOL_MAIN_KEY
 $env:SCHOOLTOOL_MAIN_KNOWN_HOSTS = Join-Path $env:PREVIEW_TEST_DIRECTORY 'hosts'
 $env:SCHOOLTOOL_PREVIEW_KNOWN_HOSTS = $env:SCHOOLTOOL_MAIN_KNOWN_HOSTS
 function Invoke-SchooltoolRemoteJson {
     param($Target, $Command)
+    if ($Target.Site -ne 'MAIN') { throw 'Snapshot export must use main.' }
     if ($Command -notmatch "--artifact='([a-f0-9]{32})'") { throw 'Invalid export command.' }
-    [pscustomobject]@{ artifact=$Matches[1]; path="/home/main/snapshots/$($Matches[1]).stpreview"; sha256=('b' * 64) }
+    [pscustomobject]@{ artifact=$Matches[1]; path="/home/main/snapshots/$($Matches[1]).stpreview"; sha256=(Get-SchooltoolFileChecksum (Join-Path $env:PREVIEW_TEST_DIRECTORY 'snapshot-source.bin')) }
 }
-function Get-SchooltoolFileChecksum { 'b' * 64 }
+function Copy-SchooltoolRemoteFile {
+    param($Target, [string]$LocalPath, [string]$RemotePath, [switch]$Download)
+    foreach ($required in @('BatchMode=yes', 'StrictHostKeyChecking=yes', 'PasswordAuthentication=no', 'IdentitiesOnly=yes', 'ForwardAgent=no')) {
+        if ($Target.Options -notcontains $required) { throw "Missing transfer option $required" }
+    }
+    $snapshotFixture = Join-Path $env:PREVIEW_TEST_DIRECTORY 'snapshot-source.bin'
+    if ($Download) {
+        if ($Target.Site -ne 'MAIN' -or $RemotePath -notmatch '^/home/main/snapshots/[a-f0-9]{32}\.stpreview$' -or (Test-Path -LiteralPath $LocalPath)) { throw 'Invalid private snapshot download.' }
+        [IO.File]::WriteAllBytes($LocalPath, [IO.File]::ReadAllBytes($snapshotFixture))
+        Write-Output "TRANSFER DOWNLOAD|MAIN|$RemotePath"
+    } else {
+        if ($Target.Site -ne 'PREVIEW' -or $RemotePath -notmatch '^/tmp/schooltool-preview-[a-f0-9]{32}/(?:release\.tar\.gz|[a-f0-9]{32}\.stpreview)$') { throw 'Invalid preview upload.' }
+        $expected = if ($RemotePath.EndsWith('/release.tar.gz')) { Join-Path $env:PREVIEW_TEST_DIRECTORY 'preview.tar.gz' } else { $snapshotFixture }
+        if (-not (Test-Path -LiteralPath $LocalPath -PathType Leaf) -or (Get-SchooltoolFileChecksum $LocalPath) -ne (Get-SchooltoolFileChecksum $expected)) { throw 'Upload fixture bytes changed or missing.' }
+        Write-Output "TRANSFER UPLOAD|PREVIEW|$RemotePath"
+    }
+}
 $target = Get-SchooltoolPreviewTarget
 $status = [pscustomobject]@{ needs_snapshot=($env:PREVIEW_TEST_SNAPSHOT -eq '1'); public_key=('c' * 64) }
-Send-SchooltoolPreview -Archive (Join-Path $env:PREVIEW_TEST_DIRECTORY 'preview.tar.gz') -Checksum ('b' * 64) -Id ('a' * 32) -SourceBranch 'feature/new-function' -FeatureId ('d' * 32) -Target $target -SnapshotStatus $status
-$env:SCHOOLTOOL_PREVIEW_SSH = 'sftp_schooltool_at@165.227.156.99'
+$archive = Join-Path $env:PREVIEW_TEST_DIRECTORY 'preview.tar.gz'
+Send-SchooltoolPreview -Archive $archive -Checksum (Get-SchooltoolFileChecksum $archive) -Id ('a' * 32) -SourceBranch 'feature/new-function' -FeatureId ('d' * 32) -Target $target -SnapshotStatus $status
+$env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-main@example.test'
 try { Get-SchooltoolPreviewTarget; exit 2 } catch { Write-Output 'PRODUCTION_ACCOUNT_REJECTED' }
 POWERSHELL;
     try {
@@ -170,7 +191,10 @@ POWERSHELL;
         $process->run();
 
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
-            ->and($process->getOutput())->toContain('SSH -F|none', '-T|schooltool-feature@', 'BatchMode=yes', 'StrictHostKeyChecking=yes', 'SCP ', '$(id -un)', 'sha256sum -c', 'PRODUCTION_ACCOUNT_REJECTED')
+            ->and($process->getOutput())->toContain('SSH -F|none', '-T|schooltool-feature@example.test', 'BatchMode=yes', 'StrictHostKeyChecking=yes', 'TRANSFER UPLOAD|PREVIEW|', '$(id -un)', 'sha256sum -c', 'PRODUCTION_ACCOUNT_REJECTED')
+            ->and(substr_count($process->getOutput(), 'TRANSFER UPLOAD|PREVIEW|'))->toBe($snapshot ? 2 : 1)
+            ->and(substr_count($process->getOutput(), 'TRANSFER DOWNLOAD|MAIN|'))->toBe($snapshot ? 1 : 0)
+            ->and(glob($directory.'/*.stpreview'))->toBe([])
             ->and($process->getOutput())->not->toContain('StrictHostKeyChecking=no', 'sshpass');
         if ($snapshot) {
             expect($process->getOutput())->toContain('chmod 600', 'preview:snapshot delete');

@@ -1686,9 +1686,9 @@ class MaterialService
 
     public function readEditableTextAttachmentContent(MaterialCardAttachment $attachment): string
     {
-        $this->assertEditableTextAttachment($attachment);
+        $disk = $this->assertEditableTextAttachment($attachment);
 
-        return (string) Storage::disk('local')->get($attachment->file_path);
+        return (string) $disk->get($attachment->file_path);
     }
 
     public function updateEditableTextAttachmentContent(
@@ -3952,7 +3952,7 @@ class MaterialService
         return $text === '' ? null : $text;
     }
 
-    private function assertEditableTextAttachment(MaterialCardAttachment $attachment): void
+    private function assertEditableTextAttachment(MaterialCardAttachment $attachment): Filesystem
     {
         if ($attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE) {
             throw ValidationException::withMessages([
@@ -3978,6 +3978,8 @@ class MaterialService
                 'data.content_html' => 'Dieser Anhangstyp kann nicht als Text bearbeitet werden.',
             ]);
         }
+
+        return $disk;
     }
 
     private function ensureHtmlAttachmentNameExtension(?string $name): string
@@ -6251,6 +6253,10 @@ class MaterialService
      */
     private function attachmentStorageDiskCandidates(bool $allowSharedDiskFallback = false): array
     {
+        if (config('schooltool.preview.instance', false)) {
+            return ['local', 'public'];
+        }
+
         $candidates = [
             (string) config('filesystems.default'),
             's3',

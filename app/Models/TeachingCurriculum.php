@@ -73,6 +73,7 @@ class TeachingCurriculum extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** @return HasMany<TeachingCurriculumDocument, $this> */
     public function documents(): HasMany
     {
         return $this->hasMany(TeachingCurriculumDocument::class);

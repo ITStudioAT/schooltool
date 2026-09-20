@@ -953,6 +953,10 @@ class MaterialController extends Controller
      */
     private function attachmentStorageDiskCandidates(bool $allowSharedDiskFallback = false): array
     {
+        if (config('schooltool.preview.instance', false)) {
+            return ['local', 'public'];
+        }
+
         $candidates = [
             (string) config('filesystems.default'),
             'local',

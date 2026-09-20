@@ -105,6 +105,10 @@ class StudentsTimetablesStudentService
             return true;
         }
 
+        if (app(FeaturePreviewService::class)->isPreview()) {
+            return false;
+        }
+
         return User::query()
             ->bySchoolAndRole($user->school_id, 'super_admin')
             ->where('is_active', true)

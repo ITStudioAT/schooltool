@@ -542,6 +542,13 @@ function gitrelease {
         } else {
             Invoke-SchooltoolGit switch --track -c main refs/remotes/origin/main
         }
+        try { Invoke-SchooltoolLocalPreparation }
+        catch {
+            Write-Host "Release is already published. Local main preparation failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host 'The integrated local feature branch is preserved. Fix the local preparation problem, then run gitmain to retry. Do not publish the release again.' -ForegroundColor Yellow
+            Write-Host "After gitmain succeeds, remove the integrated local branch if still present: git branch -d $feature" -ForegroundColor Yellow
+            return
+        }
         $worktrees = @(Invoke-SchooltoolGit worktree list --porcelain)
         if ($worktrees -ccontains "branch refs/heads/$feature") { throw 'The feature is used by another worktree and will be preserved locally.' }
         if (-not (Test-SchooltoolAncestor $featureHead HEAD)) { throw 'The feature is not fully included in local main.' }

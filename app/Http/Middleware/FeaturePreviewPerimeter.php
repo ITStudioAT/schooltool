@@ -43,6 +43,8 @@ class FeaturePreviewPerimeter
             'api/admin/students-timetables/robot/students/impersonate',
             'api/admin/restart_queues',
             'api/admin/health/test-queue*',
+            'api/admin/materials/storage-audit',
+            'api/admin/materials/storage-audit/*',
             'homepage/register',
             'homepage/register2',
             'api/homepage/register/*',

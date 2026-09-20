@@ -9,6 +9,7 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
+use App\Services\FeaturePreviewRuntimeService;
 use App\Services\PersonalTeachingBackupService;
 use App\Services\TeachingBackupArchiveReader;
 use App\Services\TeachingBackupService;
@@ -178,3 +179,141 @@ test('personal backup rejects missing source curriculum documents before changin
     expect(fn () => $service->restore($this->teacher, $backup))->toThrow(ValidationException::class)
         ->and((int) $this->attachment->fresh()->source_teaching_curriculum_document_id)->toBe($this->document->id);
 });
+
+test('preview teaching backups round trip copied s3 unit files with remote storage blocked', function (string $kind) {
+    $local = Storage::disk('local');
+    config([
+        'schooltool.preview.instance' => true,
+        'filesystems.default' => 'local',
+        'filesystems.disks.local' => ['driver' => 'local', 'root' => $local->path(''), 'throw' => true],
+        'filesystems.disks.public' => ['driver' => 'local', 'root' => storage_path('app/public'), 'throw' => true],
+        'filesystems.disks.s3' => ['driver' => 's3', 'bucket' => 'unreachable-test-bucket'],
+    ]);
+    $this->document->update(['source_type' => 'unit_file', 'storage_disk' => 's3']);
+    $path = $this->document->file_path;
+    $contents = str_repeat('Private snapshot unit bytes. ', 600);
+    Storage::disk('local')->put($path, $contents);
+    app(FeaturePreviewRuntimeService::class)->install();
+
+    expect(fn () => Storage::disk('s3'))->toThrow(RuntimeException::class, 'Remote filesystems are disabled');
+
+    if ($kind === 'personal') {
+        $service = app(PersonalTeachingBackupService::class);
+        $backup = $service->create($this->teacher);
+        $payload = $backup->payload;
+        $file = collect($payload['files'])->firstWhere('table', 'teaching_curriculum_documents');
+        expect(base64_decode($file['content'], true))->toBe($contents);
+    } else {
+        $service = $this->service;
+        $backup = $service->createForUser($this->teacher);
+        $reader = app(TeachingBackupArchiveReader::class);
+        $payload = $reader->readStorage($backup->disk, $backup->path);
+        $file = collect($payload['files'])->firstWhere('path', $path);
+        $reader->copyFileToStorage($file, 'local', 'verified-preview-unit.txt');
+        expect(Storage::disk('local')->get('verified-preview-unit.txt'))->toBe($contents);
+    }
+
+    expect($payload['tables']['teaching_curriculum_documents'][0]['storage_disk'])->toBe('s3')
+        ->and($this->document->fresh()->storage_disk)->toBe('s3');
+    Storage::disk('local')->put($path, 'Changed after backup');
+    if ($kind === 'personal') {
+        $service->restore($this->teacher, $backup);
+    } else {
+        $service->restoreFull($backup, $this->teacher);
+    }
+
+    $restored = TeachingCurriculumDocument::query()->sole();
+    expect($restored->storage_disk)->toBe('local')
+        ->and(Storage::disk('local')->get($restored->file_path))->toBe($contents)
+        ->and(fn () => Storage::disk('s3'))->toThrow(RuntimeException::class, 'Remote filesystems are disabled');
+})->with(['personal', 'school']);
+
+test('teaching backup disk resolution preserves main legacy unknown and upload sources', function (string $kind, bool $preview, string $sourceType, ?string $storedDisk, string $sourceDisk) {
+    config([
+        'schooltool.preview.instance' => $preview,
+        'filesystems.default' => $sourceDisk,
+        'filesystems.disks.'.$sourceDisk => ['driver' => 'local', 'root' => storage_path('app/disk-fixture')],
+    ]);
+    Storage::fake($sourceDisk);
+    $path = $this->document->file_path;
+    $this->document->update(['source_type' => $sourceType, 'storage_disk' => $storedDisk]);
+    Storage::disk('local')->put($path, 'LOCAL_MUST_NOT_REPLACE_THE_ORIGINAL_SOURCE');
+    Storage::disk($sourceDisk)->put($path, 'Original source bytes');
+
+    if ($kind === 'personal') {
+        $backup = app(PersonalTeachingBackupService::class)->create($this->teacher);
+        $payload = $backup->payload;
+        $file = collect($payload['files'])->firstWhere('table', 'teaching_curriculum_documents');
+        expect(base64_decode($file['content'], true))->toBe('Original source bytes');
+    } else {
+        $backup = $this->service->createForUser($this->teacher);
+        $reader = app(TeachingBackupArchiveReader::class);
+        $payload = $reader->readStorage($backup->disk, $backup->path);
+        $file = collect($payload['files'])->firstWhere('path', $path);
+        $reader->copyFileToStorage($file, 'local', 'verified-original-unit.txt');
+        expect(Storage::disk('local')->get('verified-original-unit.txt'))->toBe('Original source bytes');
+    }
+
+    expect($payload['tables']['teaching_curriculum_documents'][0]['storage_disk'])->toBe($storedDisk)
+        ->and($this->document->fresh()->storage_disk)->toBe($storedDisk);
+})->with(['personal', 'school'])->with([
+    'main s3' => [false, 'unit_file', 's3', 's3'],
+    'main missing disk default' => [false, 'unit_file', null, 'legacy-default'],
+    'main empty disk default' => [false, 'unit_file', '', 'legacy-default'],
+    'preview custom disk' => [true, 'unit_file', 'custom-disk', 'custom-disk'],
+    'preview whitespace disk' => [true, 'unit_file', ' s3 ', ' s3 '],
+    'preview upload disk' => [true, 'upload', 's3', 's3'],
+]);
+
+test('preview teaching backups do not replace missing local unit copies with s3 bytes', function (string $kind) {
+    config(['schooltool.preview.instance' => true, 'filesystems.default' => 'local']);
+    Storage::fake('s3');
+    Storage::fake('public');
+    $this->document->update(['source_type' => 'unit_file', 'storage_disk' => 's3']);
+    $path = $this->document->file_path;
+    Storage::disk('local')->delete($path);
+    Storage::disk('s3')->put($path, 'LIVE_FILE_MUST_NOT_BE_READ');
+    Storage::disk('public')->put($path, 'PUBLIC_FILE_MUST_NOT_REPLACE_THE_PRIVATE_SNAPSHOT');
+
+    if ($kind === 'personal') {
+        expect(fn () => app(PersonalTeachingBackupService::class)->create($this->teacher))
+            ->toThrow(ValidationException::class, 'Eine Unterrichtsdatei fehlt');
+        $this->assertDatabaseCount('personal_teaching_backups', 0);
+    } else {
+        $backup = $this->service->createForUser($this->teacher);
+        $payload = app(TeachingBackupArchiveReader::class)->readStorage($backup->disk, $backup->path);
+        $file = collect($payload['files'])->firstWhere('path', $path);
+        expect($file['exists'])->toBeFalse()
+            ->and($backup->summary['missing_file_count'])->toBe(1);
+    }
+
+    expect(Storage::disk('s3')->get($path))->toBe('LIVE_FILE_MUST_NOT_BE_READ')
+        ->and(Storage::disk('public')->get($path))->toBe('PUBLIC_FILE_MUST_NOT_REPLACE_THE_PRIVATE_SNAPSHOT')
+        ->and($this->document->fresh()->storage_disk)->toBe('s3');
+})->with(['personal', 'school']);
+
+test('preview teaching backups abort when their local unit copy cannot be read', function (string $kind) {
+    config(['schooltool.preview.instance' => true, 'filesystems.default' => 'local']);
+    Storage::fake('s3');
+    $this->document->update(['source_type' => 'unit_file', 'storage_disk' => 's3']);
+    $path = $this->document->file_path;
+    Storage::disk('s3')->put($path, 'LIVE_FILE_MUST_NOT_BE_READ');
+    $local = Mockery::mock(Storage::disk('local'));
+    $local->shouldReceive($kind === 'personal' ? 'get' : 'readStream')->once()->with($path)
+        ->andThrow(new RuntimeException('Unreadable preview snapshot'));
+    Storage::set('local', $local);
+
+    if ($kind === 'personal') {
+        expect(fn () => app(PersonalTeachingBackupService::class)->create($this->teacher))
+            ->toThrow(ValidationException::class, 'Eine Unterrichtsdatei fehlt');
+        $this->assertDatabaseCount('personal_teaching_backups', 0);
+    } else {
+        expect(fn () => $this->service->createForUser($this->teacher))
+            ->toThrow(RuntimeException::class, 'Unreadable preview snapshot');
+        $this->assertDatabaseCount('teaching_backups', 0);
+        expect(Storage::disk('local')->allFiles('teaching-backups'))->toBe([]);
+    }
+
+    expect(Storage::disk('s3')->get($path))->toBe('LIVE_FILE_MUST_NOT_BE_READ')
+        ->and($this->document->fresh()->storage_disk)->toBe('s3');
+})->with(['personal', 'school']);

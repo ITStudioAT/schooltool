@@ -1,19 +1,26 @@
 <?php
 
+use App\Http\Middleware\FeaturePreviewPerimeter;
 use App\Models\FeaturePreviewSetting;
 use App\Models\School;
 use App\Models\User;
+use App\Services\AdminService;
 use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewService;
 use App\Services\FeaturePreviewSnapshotIdentityStore;
 use App\Services\SchoolService;
+use App\Services\StudentService;
+use App\Services\StudentsTimetablesStudentService;
 use App\Services\UserHopperService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
@@ -295,6 +302,41 @@ test('preview rejects bearer tokens even alongside an admitted browser session',
         ->getJson('/api/admin/preview-access-probe')->assertForbidden();
 });
 
+test('preview blocks cloud storage audit actions before starting operational jobs', function (string $path, string $method): void {
+    Queue::fake();
+    $this->actingAs(previewTestUser('super_admin', true));
+
+    $this->json($method, '/api/admin/materials/storage-audit'.$path)
+        ->assertForbidden()
+        ->assertJsonPath('message', 'Diese Aktion steht nur in der Hauptanwendung zur Verfügung.');
+
+    Queue::assertNothingPushed();
+})->with([
+    ['', 'GET'],
+    ['/start', 'POST'],
+    ['/operations/probe', 'GET'],
+    ['/purge', 'POST'],
+    ['/sync-local', 'POST'],
+    ['/sync-operations/probe', 'GET'],
+    ['/database-only-materials', 'DELETE'],
+    ['/database-only-attachments/1', 'DELETE'],
+]);
+
+test('storage audit perimeter restriction preserves normal materials and main requests', function (bool $preview, string $path): void {
+    previewTestUser('super_admin', true);
+    config(['schooltool.preview.instance' => $preview]);
+    $request = Request::create('https://preview.example.test'.$path);
+
+    $response = app(FeaturePreviewPerimeter::class)->handle($request, fn () => response('next middleware'));
+
+    expect($response->getContent())->toBe('next middleware');
+})->with([
+    [true, '/api/admin/materials/attachments/1/download'],
+    [true, '/api/admin/materials-v2/attachments/1/preview'],
+    [false, '/api/admin/materials/storage-audit'],
+    [false, '/api/admin/materials/storage-audit/start'],
+]);
+
 test('preview guest bootstrap stays available and private APIs stay protected', function (): void {
     $this->getJson('/api/admin/config')->assertOk()->assertJsonPath('user', null)->assertJsonPath('preview.can_access', false);
     $this->getJson('/api/admin/preview-access-probe')->assertUnauthorized();
@@ -383,6 +425,59 @@ test('preview password login succeeds only for admitted accounts', function (): 
         'step' => 'LOGIN_ENTER_PASSWORD', 'email' => $user->email, 'password' => 'password', 'school' => ['id' => $user->school_id],
     ]])->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS');
     $this->assertAuthenticatedAs($user);
+});
+
+test('preview rejects superadmin password overrides while preserving target account passwords', function (string $liveChange): void {
+    $target = previewTestUser('admin', true, ['password' => Hash::make('target-password')]);
+    $superadmin = previewTestUser('super_admin', true, ['password' => Hash::make('override-password')]);
+    $changes = match ($liveChange) {
+        'revoked' => ['feature_preview_allowed' => false],
+        'deactivated' => ['is_active' => false],
+        'password changed' => ['password' => Hash::make('new-live-password')],
+        default => [],
+    };
+    if ($changes !== []) {
+        User::on('preview_control')->whereKey($superadmin->id)->update($changes);
+    }
+
+    expect(app(AdminService::class)->activeSuperAdminPasswordIsValid($target->school_id, 'override-password'))->toBeFalse()
+        ->and(app(StudentService::class)->isPasswordValid($target, 'override-password'))->toBeFalse()
+        ->and(app(StudentsTimetablesStudentService::class)->passwordIsValid($target, 'override-password'))->toBeFalse()
+        ->and(app(StudentService::class)->isPasswordValid($target, 'target-password'))->toBeTrue()
+        ->and(app(StudentsTimetablesStudentService::class)->passwordIsValid($target, 'target-password'))->toBeTrue();
+    expect(fn () => app(AdminService::class)->checkLogin([
+        'email' => $target->email, 'school' => ['id' => $target->school_id], 'password' => 'override-password',
+    ]))->toThrow(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
+
+    $this->postJson('/api/admin/login_step_2', ['data' => [
+        'step' => 'LOGIN_ENTER_PASSWORD', 'email' => $target->email, 'password' => 'override-password', 'school' => ['id' => $target->school_id],
+    ]])->assertUnauthorized();
+    $this->assertGuest();
+    $this->postJson('/api/homepage/login_step_password', [
+        'email' => $target->email, 'school_id' => $target->school_id, 'password' => 'override-password',
+    ])->assertUnauthorized();
+    $this->assertGuest();
+    $this->postJson('/api/homepage/login_step_password', [
+        'email' => $target->email, 'school_id' => $target->school_id, 'password' => 'target-password',
+    ])->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS');
+    $this->assertAuthenticatedAs($target);
+})->with(['unchanged', 'revoked', 'deactivated', 'password changed']);
+
+test('main retains active school superadmin password overrides without preview grants', function (): void {
+    config(['schooltool.preview.instance' => false]);
+    $target = previewTestUser('admin', false, ['password' => Hash::make('target-password')]);
+    previewTestUser('super_admin', false, ['password' => Hash::make('override-password')]);
+
+    expect(app(AdminService::class)->activeSuperAdminPasswordIsValid($target->school_id, 'override-password'))->toBeTrue()
+        ->and(app(StudentService::class)->isPasswordValid($target, 'override-password'))->toBeTrue()
+        ->and(app(StudentsTimetablesStudentService::class)->passwordIsValid($target, 'override-password'))->toBeTrue()
+        ->and(app(AdminService::class)->checkLogin([
+            'email' => $target->email, 'school' => ['id' => $target->school_id], 'password' => 'override-password',
+        ])['step'])->toBe('LOGIN_SUCCESS');
+    $this->postJson('/api/admin/login_step_2', ['data' => [
+        'step' => 'LOGIN_ENTER_PASSWORD', 'email' => $target->email, 'password' => 'override-password', 'school' => ['id' => $target->school_id],
+    ]])->assertOk()->assertJsonPath('step', 'LOGIN_SUCCESS');
+    $this->assertAuthenticatedAs($target);
 });
 
 test('preview email code login preserves single use codes for admitted accounts', function (): void {

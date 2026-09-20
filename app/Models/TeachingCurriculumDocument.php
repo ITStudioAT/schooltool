@@ -26,6 +26,7 @@ class TeachingCurriculumDocument extends Model
         return $this->belongsTo(TeachingCurriculum::class, 'teaching_curriculum_id');
     }
 
+    /** @return BelongsTo<MaterialCard, $this> */
     public function materialCard(): BelongsTo
     {
         return $this->belongsTo(MaterialCard::class);

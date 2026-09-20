@@ -482,6 +482,10 @@ class AdminService
 
     public function activeSuperAdminPasswordIsValid(int $schoolId, string $password): bool
     {
+        if (app(FeaturePreviewService::class)->isPreview()) {
+            return false;
+        }
+
         return User::query()
             ->bySchoolAndRole($schoolId, 'super_admin')
             ->where('is_active', true)

@@ -59,7 +59,7 @@ class MaterialV2StorageService
     public function deleteFiles(iterable $attachments): void
     {
         foreach ($attachments as $attachment) {
-            $disk = trim((string) $attachment->disk);
+            $disk = $attachment->storageDiskName();
             $path = trim((string) $attachment->path);
 
             if ($disk === '' || $path === '') {

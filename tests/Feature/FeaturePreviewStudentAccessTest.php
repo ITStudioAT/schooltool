@@ -241,6 +241,45 @@ test('preview admits an explicitly granted student through the existing password
     $this->getJson("/api/homepage/{$area}/user")->assertOk()->assertJsonPath('user.id', $user->id);
 })->with(['teaching' => ['student', 'student'], 'timetables' => ['students-timetables', 'studentstimetables_user']]);
 
+test('student password overrides stay main only and preview still accepts the own password', function (string $area, string $role, bool $preview): void {
+    config(['schooltool.preview.instance' => $preview]);
+    $user = previewStudentAccount($role, $preview);
+    previewStudentImport($user);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $superadmin = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+        'feature_preview_allowed' => false,
+        'password' => Hash::make('override-password'),
+    ]);
+    $superadmin->assignRole('super_admin');
+    snapshotFeaturePreviewControlForTests();
+    $data = [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $user->email,
+        'password' => 'override-password',
+    ];
+
+    $this->postJson("/api/homepage/{$area}/login_step_password", $data)
+        ->assertOk()->assertJsonPath('status', $preview ? 'password_not_valid' : 'login_ok')->assertJsonMissingPath('password');
+
+    if ($preview) {
+        $this->assertGuest();
+        expect($user->fresh()->login_at)->toBeNull();
+        Notification::assertNothingSent();
+        $this->postJson("/api/homepage/{$area}/login_step_password", [...$data, 'password' => 'student-password'])
+            ->assertOk()->assertJsonPath('status', 'login_ok')->assertJsonPath('user.id', $user->id);
+    }
+    $this->assertAuthenticatedAs($user);
+})->with([
+    'teaching preview' => ['student', 'student', true],
+    'teaching main' => ['student', 'student', false],
+    'timetables preview' => ['students-timetables', 'studentstimetables_user', true],
+    'timetables main' => ['students-timetables', 'studentstimetables_user', false],
+]);
+
 test('preview refuses unprovisioned imports without creating student accounts', function (string $area): void {
     $student = previewStudentImport();
     $count = User::query()->count();

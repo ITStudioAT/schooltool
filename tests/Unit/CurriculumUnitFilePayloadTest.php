@@ -5,6 +5,7 @@ use App\Models\TeachingCurriculum;
 use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
 use App\Services\Teaching\CurriculumUnitFileService;
+use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Database\ConnectionResolver;
@@ -18,6 +19,7 @@ beforeEach(function () {
     $this->previousConnectionResolver = Model::getConnectionResolver();
     $this->previousContainer = Container::getInstance();
     Container::setInstance(new Application);
+    Container::getInstance()->instance('config', new Repository);
     $this->connection = new SQLiteConnection(new PDO('sqlite::memory:'), ':memory:');
     $resolver = new ConnectionResolver(['curriculum_unit' => $this->connection]);
     $resolver->setDefaultConnection('curriculum_unit');
@@ -52,6 +54,23 @@ afterEach(function () {
     Container::setInstance($this->previousContainer);
     Mockery::close();
 });
+
+test('curriculum file disk mapping only redirects saved s3 in preview', function (bool $preview, ?string $storedDisk, string $expectedDisk): void {
+    config(['schooltool.preview.instance' => $preview]);
+    $document = (new TeachingCurriculumDocument)->forceFill(['storage_disk' => $storedDisk]);
+
+    expect($this->service->diskName($document))->toBe($expectedDisk)
+        ->and($document->storage_disk)->toBe($storedDisk);
+})->with([
+    'preview s3 copy' => [true, 's3', 'local'],
+    'preview trimmed s3' => [true, ' s3 ', 'local'],
+    'main s3' => [false, 's3', 's3'],
+    'preview local' => [true, 'local', 'local'],
+    'preview public' => [true, 'public', 'public'],
+    'preview unknown' => [true, 'unknown-disk', 'unknown-disk'],
+    'main unknown' => [false, 'unknown-disk', 'unknown-disk'],
+    'preview default' => [true, null, 'local'],
+]);
 
 test('curriculum detail groups multiple unit files with protected urls in one query', function () {
     foreach ([

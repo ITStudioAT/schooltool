@@ -218,7 +218,9 @@ class CurriculumUnitFileService
 
     public function diskName(TeachingCurriculumDocument $document): string
     {
-        return trim((string) $document->storage_disk) ?: 'local';
+        $diskName = trim((string) $document->storage_disk) ?: 'local';
+
+        return $diskName === 's3' && config('schooltool.preview.instance', false) ? 'local' : $diskName;
     }
 
     /**

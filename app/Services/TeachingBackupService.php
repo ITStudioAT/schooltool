@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\TeachingBackup;
 use App\Models\TeachingBackupRestoreRun;
+use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
+use App\Services\Teaching\CurriculumUnitFileService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -2570,10 +2572,16 @@ class TeachingBackupService
             ->concat(collect($tables['teaching_curriculum_documents'] ?? [])
                 ->filter(fn (array $row): bool => ($row['source_type'] ?? null) === 'unit_file'))
             ->filter(fn (array $row): bool => is_string($row['file_path'] ?? null) && trim($row['file_path']) !== '')
-            ->map(fn (array $row): array => $this->filePayload(
-                (string) $row['file_path'],
-                is_string($row['storage_disk'] ?? null) ? $row['storage_disk'] : null
-            ));
+            ->map(function (array $row): array {
+                $disk = is_string($row['storage_disk'] ?? null) ? $row['storage_disk'] : null;
+                $strictDisk = false;
+                if ($row['source_type'] === 'unit_file' && $disk === 's3') {
+                    $disk = app(CurriculumUnitFileService::class)->diskName(new TeachingCurriculumDocument(['storage_disk' => $disk]));
+                    $strictDisk = $disk === 'local';
+                }
+
+                return $this->filePayload((string) $row['file_path'], $disk, $strictDisk);
+            });
 
         return $curriculumFiles
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
@@ -2588,11 +2596,11 @@ class TeachingBackupService
     /**
      * @return array<string, mixed>
      */
-    private function filePayload(string $path, ?string $preferredDisk = null): array
+    private function filePayload(string $path, ?string $preferredDisk = null, bool $strictDisk = false): array
     {
         $path = trim($path);
 
-        if (str_starts_with($path, 'app/')) {
+        if (! $strictDisk && str_starts_with($path, 'app/')) {
             $absolutePath = storage_path($path);
 
             if (is_file($absolutePath)) {
@@ -2607,7 +2615,7 @@ class TeachingBackupService
             }
         }
 
-        foreach ($this->fileDiskCandidates($preferredDisk) as $diskName) {
+        foreach ($strictDisk ? [$preferredDisk] : $this->fileDiskCandidates($preferredDisk) as $diskName) {
             $disk = Storage::disk($diskName);
 
             if (! $disk->exists($path)) {

@@ -86,7 +86,7 @@ class CurriculumArchiveService
                 } elseif (in_array($document->source_type, ['upload', 'unit_file'], true)) {
                     $stream = $document->source_type === 'upload' && ! $document->storage_disk
                         ? $this->uploadedStream((string) $document->file_path)
-                        : Storage::disk(trim((string) $document->storage_disk) ?: 'local')->readStream((string) $document->file_path);
+                        : Storage::disk(app(CurriculumUnitFileService::class)->diskName($document))->readStream((string) $document->file_path);
                     $entry['file'] = [
                         'name' => $document->name,
                         'mime_type' => $document->mime_type,

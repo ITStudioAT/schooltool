@@ -13,6 +13,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
@@ -307,6 +308,40 @@ test('tutoring preview refuses unknown accounts before provisioning', function (
     expect(User::query()->count())->toBe($count);
     Notification::assertNothingSent();
 })->with(['checkEmail', 'createUser']);
+
+test('module password overrides stay main only and preview still accepts the own password', function (string $serviceClass, string $role, bool $preview): void {
+    config(['schooltool.preview.instance' => $preview]);
+    $user = homepageModulePreviewUser($role, $preview);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $superadmin = User::factory()->create([
+        'school_id' => $user->school_id,
+        'is_active' => true,
+        'feature_preview_allowed' => false,
+        'password' => Hash::make('override-password'),
+    ]);
+    $superadmin->assignRole('super_admin');
+    snapshotFeaturePreviewControlForTests();
+    $service = app($serviceClass);
+    $data = homepageModulePreviewLoginData($user);
+
+    $result = $service->loginWithPassword([...$data, 'password' => 'override-password']);
+
+    expect($result['status'])->toBe($preview ? 'RETRY_PASSWORD' : 'LOGGED_IN')
+        ->and($result)->not->toHaveKey('password');
+    if ($preview) {
+        $this->assertGuest();
+        expect($user->fresh()->login_at)->toBeNull()
+            ->and($user->fresh()->token_2fa)->toBe('123456');
+        Notification::assertNothingSent();
+        expect($service->loginWithPassword($data)['status'])->toBe('LOGGED_IN');
+    }
+    $this->assertAuthenticatedAs($user);
+})->with([
+    'restaurant preview' => [RestaurantHomepageAuthService::class, 'lunch_user', true],
+    'restaurant main' => [RestaurantHomepageAuthService::class, 'lunch_user', false],
+    'tutoring preview' => [TutoringService::class, 'tutoring_user', true],
+    'tutoring main' => [TutoringService::class, 'tutoring_user', false],
+]);
 
 test('ordinary module login on main does not require preview grants', function (string $serviceClass, string $role): void {
     config(['schooltool.preview.instance' => false]);

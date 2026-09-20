@@ -79,7 +79,7 @@ class MaterialV2DocumentTextExtractor
      */
     private function prepareLocalFile(MaterialV2Attachment $attachment): array
     {
-        $diskName = trim((string) $attachment->disk);
+        $diskName = $attachment->storageDiskName();
         $path = trim((string) $attachment->path);
 
         if ($diskName === '' || $path === '') {

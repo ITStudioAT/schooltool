@@ -431,7 +431,7 @@ class MaterialV2ItemController extends Controller
         return $previewService->preview(
             $materialV2Attachment,
             "/api/admin/materials-v2/attachments/{$materialV2Attachment->id}/download",
-            [$materialV2Attachment->disk],
+            [$materialV2Attachment->storageDiskName()],
         );
     }
 
@@ -444,7 +444,7 @@ class MaterialV2ItemController extends Controller
 
     private function attachmentResponse(MaterialV2Attachment $attachment, string $disposition): StreamedResponse
     {
-        $disk = Storage::disk($attachment->disk);
+        $disk = Storage::disk($attachment->storageDiskName());
         if (! $disk->exists($attachment->path)) {
             abort(404, 'Die Datei wurde nicht gefunden.');
         }

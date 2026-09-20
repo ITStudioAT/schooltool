@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\FeaturePreviewPerimeter;
+use App\Http\Middleware\RequireFeaturePreviewAccess;
 use App\Http\Requests\Admin\Teaching\StoreCurriculumUnitFilesRequest;
 use App\Models\Licence;
 use App\Models\School;
@@ -139,6 +141,40 @@ test('unit file preview and download stream from the recorded disk with private 
             ->and($response->headers->get('x-content-type-options'))->toBe('nosniff')
             ->and($response->headers->get('content-type'))->toContain('application/pdf');
     }
+});
+
+test('preview downloads previews and deletes saved s3 unit files only from the local snapshot', function (): void {
+    Storage::fake('local');
+    Storage::fake('s3');
+    Config::set('schooltool.preview.instance', true);
+    $this->withoutMiddleware([FeaturePreviewPerimeter::class, RequireFeaturePreviewAccess::class]);
+
+    $path = "teaching/curriculum_unit_files/{$this->curriculum->id}/snapshot.txt";
+    $contents = str_repeat('Lokale Vorschau-Datei. ', 600);
+    Storage::disk('local')->put($path, $contents);
+    Storage::disk('s3')->put($path, 'REMOTE_OBJECT_MUST_REMAIN_UNCHANGED');
+    $document = $this->curriculum->documents()->create([
+        'topic_id' => 'topic-1',
+        'unit_id' => 'unit-1',
+        'source_type' => 'unit_file',
+        'name' => 'snapshot.txt',
+        'file_path' => $path,
+        'storage_disk' => 's3',
+        'mime_type' => 'text/plain',
+        'size_bytes' => strlen($contents),
+    ]);
+    $endpoint = "/api/admin/teaching/curricula/{$this->curriculum->id}/topics/topic-1/units/unit-1/files/{$document->id}";
+
+    $this->actingAs($this->teacher, 'sanctum')->get($endpoint.'/download')
+        ->assertOk()->assertStreamedContent($contents);
+    $this->get($endpoint.'/preview')->assertOk()
+        ->assertSeeText('Lokale Vorschau-Datei.')->assertDontSeeText('REMOTE_OBJECT_MUST_REMAIN_UNCHANGED');
+    expect($document->fresh()->storage_disk)->toBe('s3');
+
+    $this->deleteJson($endpoint)->assertNoContent();
+    $this->assertModelMissing($document);
+    Storage::disk('local')->assertMissing($path);
+    expect(Storage::disk('s3')->get($path))->toBe('REMOTE_OBJECT_MUST_REMAIN_UNCHANGED');
 });
 
 test('word unit files render as a protected html browser preview', function () {

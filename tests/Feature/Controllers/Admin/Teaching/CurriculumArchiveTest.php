@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\FeaturePreviewPerimeter;
+use App\Http\Middleware\RequireFeaturePreviewAccess;
 use App\Models\MaterialCard;
 use App\Models\School;
 use App\Models\Schoolyear;
@@ -179,6 +181,33 @@ test('curriculum archive preserves material links selected attachments and unit 
     $download = $this->get("/api/admin/teaching/curricula/{$copy->id}/documents/{$upload->id}/download")
         ->assertOk()->assertDownload('Plan.txt');
     expect(file_get_contents($download->baseResponse->getFile()->getPathname()))->toBe('Curriculum document bytes');
+});
+
+test('preview curriculum archives read saved s3 unit files from the local snapshot', function () {
+    config(['schooltool.preview.instance' => true]);
+    $this->withoutMiddleware([FeaturePreviewPerimeter::class, RequireFeaturePreviewAccess::class]);
+
+    $path = 'curricula/preview-unit.txt';
+    Storage::disk('local')->put($path, 'Local snapshot unit bytes');
+    Storage::disk('s3')->put($path, 'REMOTE_OBJECT_MUST_REMAIN_UNCHANGED');
+    $document = $this->curriculum->documents()->create([
+        'source_type' => 'unit_file', 'name' => 'Notizen.txt',
+        'topic_id' => 'topic-1', 'unit_id' => 'unit-1', 'storage_disk' => 's3',
+        'file_path' => $path, 'mime_type' => 'text/plain', 'size_bytes' => 25,
+    ]);
+
+    $archive = ($this->exportArchive)();
+    $zip = new ZipArchive;
+    expect($zip->open($archive->getPathname()))->toBeTrue();
+    try {
+        $manifest = json_decode($zip->getFromName('curriculum.json'), true, 512, JSON_THROW_ON_ERROR);
+        expect($manifest['materials'])->toHaveCount(1)
+            ->and($zip->getFromName($manifest['materials'][0]['file']['path']))->toBe('Local snapshot unit bytes')
+            ->and($document->fresh()->storage_disk)->toBe('s3')
+            ->and(Storage::disk('s3')->get($path))->toBe('REMOTE_OBJECT_MUST_REMAIN_UNCHANGED');
+    } finally {
+        $zip->close();
+    }
 });
 
 test('curriculum archive requires authenticated curriculum ownership', function () {

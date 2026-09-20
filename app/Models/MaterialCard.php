@@ -89,6 +89,7 @@ class MaterialCard extends Model
         return $this->belongsTo(MaterialWorkspace::class, 'workspace_id');
     }
 
+    /** @return HasMany<MaterialCardAttachment, $this> */
     public function attachments(): HasMany
     {
         return $this->hasMany(MaterialCardAttachment::class)->orderByDesc('created_at');
