@@ -386,9 +386,9 @@ class FeaturePreviewSnapshotFiles
             }
             foreach ($contents as $object) {
                 $key = $object['Key'] ?? null;
-                $size = $object['Size'] ?? null;
+                $size = $this->sourceFileSize($object['Size'] ?? null);
                 $etag = $object['ETag'] ?? null;
-                if (! is_string($key) || ! str_starts_with($key, $prefix) || ! is_int($size) || $size < 0
+                if (! is_string($key) || ! str_starts_with($key, $prefix)
                     || ! is_string($etag) || preg_match('/\A"[^"\x00-\x20\x7f]+"\z/', $etag) !== 1) {
                     throw new RuntimeException(self::FAILURE);
                 }
@@ -464,7 +464,7 @@ class FeaturePreviewSnapshotFiles
             throw new RuntimeException(self::FAILURE);
         }
         try {
-            if (($result['ContentLength'] ?? null) !== $entry['size'] || ($result['ETag'] ?? null) !== $entry['etag']) {
+            if ($this->sourceFileSize($result['ContentLength'] ?? null) !== $entry['size'] || ($result['ETag'] ?? null) !== $entry['etag']) {
                 throw new RuntimeException(self::FAILURE);
             }
             yield ['kind' => 'file_start', 'path' => $relative, 'size' => $entry['size']];
@@ -492,6 +492,20 @@ class FeaturePreviewSnapshotFiles
         } finally {
             $stream->close();
         }
+    }
+
+    private function sourceFileSize(mixed $size): int
+    {
+        if (is_int($size) && $size >= 0) {
+            return $size;
+        }
+
+        if (is_string($size) && preg_match('/\A(?:0|[1-9][0-9]*)\z/', $size) === 1
+            && (string) (int) $size === $size) {
+            return (int) $size;
+        }
+
+        throw new RuntimeException(self::FAILURE);
     }
 
     /** @return Generator<int, array<string, mixed>, mixed, void> */

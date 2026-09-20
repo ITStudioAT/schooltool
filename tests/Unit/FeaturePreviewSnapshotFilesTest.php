@@ -6,8 +6,10 @@ use Aws\CommandInterface;
 use Aws\Result;
 use Aws\S3\S3Client;
 use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
 use Illuminate\Filesystem\Filesystem;
+use Psr\Http\Message\RequestInterface;
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/schooltool-file-snapshot-'.bin2hex(random_bytes(8));
@@ -356,6 +358,91 @@ test('S3 source streams paginated scoped objects into isolated private copies wi
         ->and(file_get_contents($archivePath))->not->toContain('local private', 'local public')
         ->and(array_values(array_unique($commands)))->toBe(['ListObjectsV2', 'GetObject']);
 });
+
+test('S3 source accepts canonical decimal sizes and writes integer archive lengths', function (bool $stringLength): void {
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command) use ($stringLength): array {
+        if ($command->getName() === 'ListObjectsV2') {
+            return ['IsTruncated' => false, 'Contents' => [
+                ['Key' => 'file', 'Size' => '3', 'ETag' => '"file"'],
+                ['Key' => 'empty', 'Size' => '0', 'ETag' => '"empty"'],
+                ['Key' => 'folder/', 'Size' => '0', 'ETag' => '"folder"'],
+            ]];
+        }
+        $body = $command['Key'] === 'file' ? 'abc' : '';
+
+        return ['Body' => Utils::streamFor($body), 'ContentLength' => $stringLength ? (string) strlen($body) : strlen($body), 'ETag' => $command['IfMatch']];
+    });
+    $records = iterator_to_array($files->records(true), false);
+    $starts = array_values(array_filter($records, fn (array $record): bool => $record['kind'] === 'file_start'));
+
+    expect(array_column($starts, 'size'))->toBe([0, 3]);
+    $this->files->restore($records, $this->staging);
+    expect(file_get_contents($this->staging.'/private/file'))->toBe('abc')
+        ->and(filesize($this->staging.'/private/empty'))->toBe(0);
+})->with([false, true]);
+
+test('S3 source handles file sizes returned by the real SDK XML parser', function (): void {
+    $configuration = $this->config;
+    $configuration['default'] = 's3';
+    $configuration['disks']['s3'] = ['driver' => 's3', 'bucket' => 'schooltool-fixture'];
+    $requests = [];
+    $client = new S3Client([
+        'version' => 'latest', 'region' => 'eu-central-1',
+        'credentials' => ['key' => 'fixture-access', 'secret' => 'fixture-secret'],
+        'http_handler' => static function (RequestInterface $request) use (&$requests) {
+            $requests[] = $request->getMethod();
+            if (str_contains($request->getUri()->getQuery(), 'list-type=2')) {
+                return Create::promiseFor(new Response(200, ['Content-Type' => 'application/xml'],
+                    '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated><Contents><Key>file</Key><Size>3</Size><ETag>&quot;fixture&quot;</ETag></Contents></ListBucketResult>'));
+            }
+            expect($request->getHeaderLine('If-Match'))->toBe('"fixture"');
+
+            return Create::promiseFor(new Response(200, ['Content-Length' => '3', 'ETag' => '"fixture"'], 'abc'));
+        },
+    ]);
+    $files = new FeaturePreviewSnapshotFiles($this->source, $configuration, $client);
+    $this->files->restore($files->records(true), $this->staging);
+
+    expect(file_get_contents($this->staging.'/private/file'))->toBe('abc')
+        ->and($requests)->toBe(['GET', 'GET']);
+});
+
+test('S3 inventory preserves the largest supported integer size without truncation', function (): void {
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command): array {
+        expect($command->getName())->toBe('ListObjectsV2');
+
+        return ['IsTruncated' => false, 'Contents' => [
+            ['Key' => 'large', 'Size' => (string) PHP_INT_MAX, 'ETag' => '"large"'],
+        ]];
+    });
+    $inventory = (new ReflectionMethod($files, 'sourceInventory'))->invoke($files);
+
+    expect($inventory['private/large']['size'])->toBe(PHP_INT_MAX);
+});
+
+test('S3 source rejects ambiguous negative and overflowing sizes', function (mixed $size, string $field): void {
+    $reads = 0;
+    $files = previewS3FileFixture($this->source, $this->config, function (CommandInterface $command) use ($size, $field, &$reads): array {
+        if ($command->getName() === 'ListObjectsV2') {
+            return ['IsTruncated' => false, 'Contents' => [
+                ['Key' => 'file', 'Size' => $field === 'Size' ? $size : 3, 'ETag' => '"file"'],
+            ]];
+        }
+        $reads++;
+
+        return ['Body' => Utils::streamFor('abc'), 'ContentLength' => $size, 'ETag' => '"file"'];
+    });
+
+    expect(fn () => iterator_to_array($files->records(true), false))->toThrow(RuntimeException::class);
+    if ($field === 'Size') {
+        expect($reads)->toBe(0);
+    }
+})->with([
+    'negative integer' => [-1], 'float' => [3.0], 'boolean' => [true], 'null' => [null],
+    'empty' => [''], 'signed' => ['+3'], 'negative string' => ['-1'], 'leading zero' => ['03'],
+    'whitespace' => [' 3'], 'trailing whitespace' => ["3\n"], 'fraction' => ['3.0'],
+    'exponent' => ['3e0'], 'overflow' => [(string) PHP_INT_MAX.'0'], 'array' => [[]],
+])->with(['Size', 'ContentLength']);
 
 test('S3 source configuration cannot relax local target roots or transport safety', function (string $scenario): void {
     $configuration = $this->config;
