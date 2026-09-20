@@ -65,7 +65,27 @@ class FeaturePreviewDatabaseGuard
         if (! config('schooltool.preview.instance')) {
             throw new RuntimeException('Snapshot target operations require the preview instance.');
         }
-        $connection = $this->snapshotConnection('preview_snapshot_target');
+        $name = (string) config('database.default');
+        $configuration = config('database.connections.'.$name);
+        if (! is_array($configuration)) {
+            throw new RuntimeException('The snapshot database configuration is unavailable.');
+        }
+        $this->assertConfiguration($configuration);
+        $options = $configuration['options'] ?? [];
+        if (! is_array($options) || ! empty($options[PDO::ATTR_PERSISTENT])
+            || array_key_exists(PDO::MYSQL_ATTR_INIT_COMMAND, $options)
+            || ! empty($options[PDO::MYSQL_ATTR_LOCAL_INFILE])
+            || ! empty($options[PDO::MYSQL_ATTR_MULTI_STATEMENTS])
+            || (isset($options[PDO::ATTR_ERRMODE]) && $options[PDO::ATTR_ERRMODE] !== PDO::ERRMODE_EXCEPTION)) {
+            throw new RuntimeException('The snapshot target requires safe nonpersistent PDO options without initialization commands.');
+        }
+        // The runtime perimeter permits only its captured default name and exact configuration.
+        $connection = app('db.factory')->make($configuration, $name);
+        $connection->unsetEventDispatcher();
+        $connection->disableQueryLog();
+        $connection->setReconnector(static function (): never {
+            throw new RuntimeException('A snapshot connection may never reconnect. Restart the complete snapshot operation.');
+        });
         try {
             $pdo = $connection->getPdo();
             $this->extendSnapshotIdleTimeout($pdo);

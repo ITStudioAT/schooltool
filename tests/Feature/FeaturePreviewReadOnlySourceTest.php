@@ -2,6 +2,7 @@
 
 use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\FeaturePreviewRuntimeService;
 use Illuminate\Database\Connection;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\DB;
@@ -138,7 +139,7 @@ describe('real MySQL main snapshot connection', function (): void {
             ->and((int) $default->query('SELECT @@GLOBAL.wait_timeout')->fetchColumn())->toBe($globalTimeout);
     })->with(['short server timeout' => 1, 'existing longer timeout' => 7200]);
 
-    test('keeps a validated isolated preview target alive and never reconnects it', function (): void {
+    test('keeps a runtime approved isolated preview target alive and never reconnects it', function (): void {
         config(['schooltool.preview.instance' => true]);
         $client = Mockery::mock(FeaturePreviewControlClient::class);
         $client->shouldReceive('request')->with('status')->andReturn(['source' => [
@@ -149,6 +150,7 @@ describe('real MySQL main snapshot connection', function (): void {
         app()->instance(FeaturePreviewControlClient::class, $client);
         $default = DB::connection()->getPdo();
         $defaultTimeout = (int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn();
+        app(FeaturePreviewRuntimeService::class)->install();
         $factory = app('db.factory');
         $testFactory = Mockery::mock($factory);
         $testFactory->shouldReceive('make')->once()->andReturnUsing(function (array $configuration, string $name) use ($factory): Connection {
@@ -172,6 +174,27 @@ describe('real MySQL main snapshot connection', function (): void {
             ->and((int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe($defaultTimeout)
             ->and(DB::connection()->table('records')->value('content'))->toBe('preview only');
     });
+
+    test('rejects unsafe target PDO options before opening a connection', function (array $options): void {
+        config([
+            'schooltool.preview.instance' => true,
+            'database.connections.snapshot_readonly_main.options' => $options,
+        ]);
+        $factory = Mockery::mock(app('db.factory'));
+        $factory->shouldNotReceive('make');
+        app()->instance('db.factory', $factory);
+        $called = false;
+        expect(fn () => app(FeaturePreviewDatabaseGuard::class)->withSnapshotTargetConnection(function () use (&$called): void {
+            $called = true;
+        }))->toThrow(RuntimeException::class, 'safe nonpersistent PDO options')
+            ->and($called)->toBeFalse();
+    })->with([
+        'persistent' => [[PDO::ATTR_PERSISTENT => true]],
+        'initialization command' => [[PDO::MYSQL_ATTR_INIT_COMMAND => 'SET @unexpected = 1']],
+        'local infile' => [[PDO::MYSQL_ATTR_LOCAL_INFILE => true]],
+        'multiple statements' => [[PDO::MYSQL_ATTR_MULTI_STATEMENTS => true]],
+        'silent errors' => [[PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT]],
+    ]);
 
     test('MySQL itself rejects mutations even when bypassing the query builder', function (string $statement): void {
         app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($statement): void {
