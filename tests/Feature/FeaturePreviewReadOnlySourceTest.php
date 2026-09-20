@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewDatabaseGuard;
 use Illuminate\Database\Connection;
 use Illuminate\Encryption\Encrypter;
@@ -104,6 +105,72 @@ describe('real MySQL main snapshot connection', function (): void {
             ->and($default->getPdo())->toBe($defaultPdo)
             ->and($default->table('records')->where('id', 1)->value('content'))->toBe('concurrent second change');
         expect($default->table('records')->where('id', 1)->update(['content' => 'ordinary main write']))->toBe(1);
+    });
+
+    test('keeps the dedicated snapshot alive during file streaming without changing other sessions', function (int $initialTimeout): void {
+        $default = DB::connection()->getPdo();
+        $defaultTimeout = (int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn();
+        $globalTimeout = (int) $default->query('SELECT @@GLOBAL.wait_timeout')->fetchColumn();
+        $factory = app('db.factory');
+        $testFactory = Mockery::mock($factory);
+        $testFactory->shouldReceive('make')->once()->andReturnUsing(function (array $configuration, string $name) use ($factory, $initialTimeout): Connection {
+            $connection = $factory->make($configuration, $name);
+            $connection->getPdo()->exec('SET SESSION wait_timeout = '.$initialTimeout);
+
+            return $connection;
+        });
+        app()->instance('db.factory', $testFactory);
+
+        $result = app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($initialTimeout): string {
+            $pdo = $connection->getPdo();
+            expect((int) $pdo->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe(max(3600, $initialTimeout));
+            if ($initialTimeout === 1) {
+                sleep(2);
+            }
+            expect($pdo->inTransaction())->toBeTrue()
+                ->and($connection->table('records')->value('content'))->toBe('original');
+
+            return 'stream completed';
+        });
+
+        expect($result)->toBe('stream completed')
+            ->and((int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe($defaultTimeout)
+            ->and((int) $default->query('SELECT @@GLOBAL.wait_timeout')->fetchColumn())->toBe($globalTimeout);
+    })->with(['short server timeout' => 1, 'existing longer timeout' => 7200]);
+
+    test('keeps a validated isolated preview target alive and never reconnects it', function (): void {
+        config(['schooltool.preview.instance' => true]);
+        $client = Mockery::mock(FeaturePreviewControlClient::class);
+        $client->shouldReceive('request')->with('status')->andReturn(['source' => [
+            'database' => 'separate_live_schema',
+            'server_fingerprint' => str_repeat('a', 64),
+            'app_key_fingerprint' => str_repeat('b', 64),
+        ]]);
+        app()->instance(FeaturePreviewControlClient::class, $client);
+        $default = DB::connection()->getPdo();
+        $defaultTimeout = (int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn();
+        $factory = app('db.factory');
+        $testFactory = Mockery::mock($factory);
+        $testFactory->shouldReceive('make')->once()->andReturnUsing(function (array $configuration, string $name) use ($factory): Connection {
+            $connection = $factory->make($configuration, $name);
+            $connection->getPdo()->exec('SET SESSION wait_timeout = 1');
+
+            return $connection;
+        });
+        app()->instance('db.factory', $testFactory);
+        $captured = null;
+        app(FeaturePreviewDatabaseGuard::class)->withSnapshotTargetConnection(function (Connection $connection) use ($default, &$captured): void {
+            $captured = $connection;
+            expect($connection->getPdo())->not->toBe($default);
+            sleep(2);
+            expect($connection->table('records')->where('id', 1)->update(['content' => 'preview only']))->toBe(1);
+            $connection->disconnect();
+            expect(fn () => $connection->reconnect())->toThrow(RuntimeException::class)
+                ->and(fn () => $connection->select('SELECT 1'))->toThrow(RuntimeException::class);
+        });
+        expect($captured->getRawPdo())->toBeNull()
+            ->and((int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe($defaultTimeout)
+            ->and(DB::connection()->table('records')->value('content'))->toBe('preview only');
     });
 
     test('MySQL itself rejects mutations even when bypassing the query builder', function (string $statement): void {

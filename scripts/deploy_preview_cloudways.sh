@@ -64,7 +64,7 @@ assert_owned_target_path() {
 for relative_path in public public/.well-known storage storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache; do
     assert_owned_target_path "$relative_path" directory
 done
-for relative_path in .env storage/framework/down storage/framework/preview-deploy.lock storage/framework/preview-release.json; do
+for relative_path in .env bootstrap/cache/config.php storage/framework/down storage/framework/preview-deploy.lock storage/framework/preview-release.json; do
     assert_owned_target_path "$relative_path" file
 done
 
@@ -136,7 +136,12 @@ fi
 # Only the independently verified preview connection is allowed to run these migrations.
 php artisan migrate --force --no-interaction
 php artisan preview:check --no-interaction
-php artisan config:cache --no-interaction
+(umask 077; php artisan config:cache --no-interaction)
+assert_owned_target_path bootstrap/cache/config.php file
+if [ ! -f bootstrap/cache/config.php ] || [ "$(stat -c %U -- bootstrap/cache/config.php)" != "$expected_owner" ] || [ "$(stat -c %a -- bootstrap/cache/config.php)" != 600 ]; then
+    echo "The preview configuration cache must be a private regular file owned by the verified application account with mode 600." >&2
+    exit 1
+fi
 php artisan view:cache --no-interaction
 php -r 'if (file_put_contents("storage/framework/preview-release.json", json_encode(["branch" => $argv[1], "source" => $argv[2], "bundle_sha256" => $argv[3], "feature_id" => $argv[4], "deployed_at" => gmdate(DATE_ATOM)], JSON_PRETTY_PRINT)) === false) { fwrite(STDERR, "Cannot record preview identity.\n"); exit(1); }' "$source_branch" "$source_commit" "$bundle_checksum" "$feature_id"
 php artisan preview:snapshot activate --feature="$feature_id" --source="$source_commit" --no-interaction

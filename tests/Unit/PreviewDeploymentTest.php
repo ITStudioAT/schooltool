@@ -52,13 +52,27 @@ it('guards preview identity and runs only the isolated deployment commands', fun
     if ($scenario === 'runtime path is file') {
         file_put_contents($target.'/storage', 'do not overwrite');
     }
+    if ($scenario === 'config cache is directory') {
+        mkdir($target.'/bootstrap/cache/config.php', 0777, true);
+    }
     mkdir($directory.'/bin');
     copy(dirname(__DIR__, 2).'/scripts/deploy_preview_cloudways.sh', $candidate.'/scripts/deploy_preview_cloudways.sh');
     file_put_contents($candidate.'/deployment/source-commit', str_repeat('a', 40));
     file_put_contents($target.'/.env', 'SCHOOLTOOL_PREVIEW_INSTANCE='.($scenario === 'wrong instance' ? 'false' : 'true')."\n");
     $executables = [
         'id' => "#!/bin/bash\nprintf '%s\\n' \"\$PREVIEW_TEST_ACCOUNT\"\n",
-        'stat' => "#!/bin/bash\nprintf '%s\\n' \"\$PREVIEW_TEST_OWNER\"\n",
+        'stat' => <<<'BASH'
+#!/bin/bash
+if [ "$2" = %a ]; then
+    if [ "$PREVIEW_TEST_FAILURE" = cache-mode ]; then printf '644\n';
+    elif [ "$PREVIEW_TEST_WINDOWS" = 1 ]; then cat "$PREVIEW_TEST_CACHE_MODE";
+    else /usr/bin/stat "$@"; fi
+elif [ "$PREVIEW_TEST_FAILURE" = cache-owner ] && [ "${@: -1}" = bootstrap/cache/config.php ]; then
+    printf 'another-app\n'
+else
+    printf '%s\n' "$PREVIEW_TEST_OWNER"
+fi
+BASH,
         'php' => <<<'BASH'
 #!/bin/bash
 printf 'php %s\n' "$*" >> "$PREVIEW_TEST_LOG"
@@ -67,6 +81,17 @@ if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; f
 if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = activate ] && [ "${3:-}" = activate ]; then exit 1; fi
 if [ "${2:-}" = preview:snapshot ] && [ "${3:-}" = receive ]; then printf '/private/incoming.stpreview\n'; fi
+if [ "${2:-}" = config:cache ]; then
+    printf 'config cache umask %s\n' "$(umask)" >> "$PREVIEW_TEST_LOG"
+    if [ "$PREVIEW_TEST_FAILURE" != cache-missing ]; then
+        printf 'private configuration fixture\n' > bootstrap/cache/config.php
+        # NTFS does not enforce POSIX modes; retain the actual creation mask for the Windows stat fixture.
+        printf '%o\n' "$((0666 & ~$(umask)))" > "$PREVIEW_TEST_CACHE_MODE"
+    fi
+fi
+if [ "${2:-}" = view:cache ] || [ "${2:-}" = install ]; then
+    printf 'public assets umask %s\n' "$(umask)" >> "$PREVIEW_TEST_LOG"
+fi
 BASH,
         'composer' => "#!/bin/bash\nprintf 'composer %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
         'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
@@ -79,6 +104,8 @@ BASH,
     $environment = [
         'PATH' => previewBashPath($directory.'/bin').':/usr/bin:/bin',
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
+        'PREVIEW_TEST_CACHE_MODE' => previewBashPath($directory.'/cache-mode'),
+        'PREVIEW_TEST_WINDOWS' => PHP_OS_FAMILY === 'Windows' ? '1' : '0',
         'PREVIEW_TEST_ACCOUNT' => $scenario === 'wrong account' ? 'sftp_schooltool_at' : 'schooltool-feature',
         'PREVIEW_TEST_OWNER' => $scenario === 'wrong owner' ? 'another-app' : 'schooltool-feature',
         'PREVIEW_TEST_FAILURE' => match ($scenario) {
@@ -86,13 +113,16 @@ BASH,
             'snapshot failure' => 'import',
             'migration failure' => 'migrate',
             'activation failure' => 'activate',
+            'config cache missing' => 'cache-missing',
+            'config cache unsafe mode' => 'cache-mode',
+            'config cache wrong owner' => 'cache-owner',
             default => '',
         },
     ];
 
     try {
         $snapshot = in_array($scenario, ['snapshot success', 'snapshot failure'], true);
-        $process = new Process([previewBashExecutable(), '-c', 'export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-'], $directory, $environment);
+        $process = new Process([previewBashExecutable(), '-c', 'umask 022; export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-'], $directory, $environment);
         $process->run();
         $commands = is_file($directory.'/commands.log') ? file_get_contents($directory.'/commands.log') : '';
         expect($commands)->not->toContain('app:update', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
@@ -101,6 +131,9 @@ BASH,
             expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
                 ->and($commands)->toContain('preview:check', '--no-scripts', 'config:cache', 'view:cache', 'artisan up')
                 ->and($commands)->toContain('--exclude=/.env', '--exclude=/storage', 'artisan migrate --force --no-interaction', 'preview:snapshot activate');
+            expect(file_get_contents($target.'/bootstrap/cache/config.php'))->toBe("private configuration fixture\n")
+                ->and($commands)->toContain('config cache umask 0077')
+                ->and(substr_count($commands, 'public assets umask 0022'))->toBe(2);
             if ($snapshot) {
                 expect($commands)->toContain('preview:snapshot receive', 'preview:snapshot import', '--replace')
                     ->and(strpos($commands, 'preview:snapshot import'))->toBeLessThan(strpos($commands, 'artisan migrate'))
@@ -113,7 +146,7 @@ BASH,
         } else {
             expect($process->isSuccessful())->toBeFalse()
                 ->and($commands)->not->toContain('artisan up');
-            if (in_array($scenario, ['snapshot failure', 'migration failure', 'activation failure'], true)) {
+            if (in_array($scenario, ['snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner'], true)) {
                 expect($commands)->toContain('rsync ')->and($process->getErrorOutput())->toContain('remains in maintenance');
             } else {
                 expect($commands)->not->toContain('rsync ', 'artisan migrate');
@@ -121,11 +154,15 @@ BASH,
             if ($scenario === 'runtime path is file') {
                 expect($commands)->toBe('')->and(file_get_contents($target.'/storage'))->toBe('do not overwrite');
             }
+            if (in_array($scenario, ['config cache missing', 'config cache unsafe mode', 'config cache wrong owner'], true)) {
+                expect($commands)->not->toContain('preview:snapshot activate', 'artisan view:cache')
+                    ->and($process->getErrorOutput())->toContain('configuration cache must be a private regular file');
+            }
         }
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'snapshot failure', 'migration failure', 'activation failure']);
+})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner']);
 
 it('transfers a preview with strict key authentication and private snapshot permissions', function (bool $snapshot): void {
     if (PHP_OS_FAMILY !== 'Windows') {

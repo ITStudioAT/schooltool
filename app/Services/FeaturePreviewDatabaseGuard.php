@@ -31,12 +31,19 @@ class FeaturePreviewDatabaseGuard
 
     public function target(): Connection
     {
+        $target = DB::connection();
+        $this->assertTargetConnection($target);
+
+        return $target;
+    }
+
+    private function assertTargetConnection(Connection $target): void
+    {
         if (! config('schooltool.preview.instance')) {
             throw new RuntimeException('Snapshot target operations require the preview instance.');
         }
 
         $source = $this->sourceIdentity();
-        $target = DB::connection();
         $this->assertConnection($target, false);
         if (strcasecmp($source['database'], $target->getDatabaseName()) === 0) {
             throw new RuntimeException('Preview and live database names must be different, including when their hosts differ.');
@@ -45,8 +52,34 @@ class FeaturePreviewDatabaseGuard
             || config('app.previous_keys', []) !== []) {
             throw new RuntimeException('Preview requires a separate application encryption key without previous live keys.');
         }
+    }
 
-        return $target;
+    /**
+     * @template T
+     *
+     * @param  callable(Connection): T  $callback
+     * @return T
+     */
+    public function withSnapshotTargetConnection(callable $callback): mixed
+    {
+        if (! config('schooltool.preview.instance')) {
+            throw new RuntimeException('Snapshot target operations require the preview instance.');
+        }
+        $connection = $this->snapshotConnection('preview_snapshot_target');
+        try {
+            $pdo = $connection->getPdo();
+            $this->extendSnapshotIdleTimeout($pdo);
+            $this->assertTargetConnection($connection);
+            $connectionId = (string) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
+            $result = $callback($connection);
+            if ((string) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn() !== $connectionId) {
+                throw new RuntimeException('The preview snapshot target connection changed during the operation.');
+            }
+
+            return $result;
+        } finally {
+            $connection->disconnect();
+        }
     }
 
     /** @return array{database: string, server_fingerprint: string, app_key_fingerprint: string} */
@@ -76,24 +109,10 @@ class FeaturePreviewDatabaseGuard
         if (config('schooltool.preview.instance')) {
             throw new RuntimeException('The main read-only connection is unavailable in preview.');
         }
-        $configuration = config('database.connections.'.config('database.default'));
-        if (! is_array($configuration)) {
-            throw new RuntimeException('The main database configuration is unavailable.');
-        }
-        $this->assertConfiguration($configuration);
-        $configuration['options'][PDO::ATTR_PERSISTENT] = false;
-        $configuration['options'][PDO::ATTR_ERRMODE] = PDO::ERRMODE_EXCEPTION;
-        $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
-        $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = false;
-        unset($configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND]);
-        $connection = app('db.factory')->make($configuration, 'preview_snapshot_source');
-        $connection->unsetEventDispatcher();
-        $connection->disableQueryLog();
-        $connection->setReconnector(static function (): never {
-            throw new RuntimeException('A main snapshot connection may never reconnect. Restart the complete export.');
-        });
+        $connection = $this->snapshotConnection('preview_snapshot_source');
         $pdo = $connection->getPdo();
         try {
+            $this->extendSnapshotIdleTimeout($pdo);
             $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             $pdo->exec('SET SESSION TRANSACTION READ ONLY');
             $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
@@ -130,6 +149,38 @@ class FeaturePreviewDatabaseGuard
             } finally {
                 $connection->disconnect();
             }
+        }
+    }
+
+    private function snapshotConnection(string $name): Connection
+    {
+        $configuration = config('database.connections.'.config('database.default'));
+        if (! is_array($configuration)) {
+            throw new RuntimeException('The snapshot database configuration is unavailable.');
+        }
+        $this->assertConfiguration($configuration);
+        $configuration['options'][PDO::ATTR_PERSISTENT] = false;
+        $configuration['options'][PDO::ATTR_ERRMODE] = PDO::ERRMODE_EXCEPTION;
+        $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+        $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = false;
+        unset($configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND]);
+        $connection = app('db.factory')->make($configuration, $name);
+        $connection->unsetEventDispatcher();
+        $connection->disableQueryLog();
+        $connection->setReconnector(static function (): never {
+            throw new RuntimeException('A snapshot connection may never reconnect. Restart the complete snapshot operation.');
+        });
+
+        return $connection;
+    }
+
+    private function extendSnapshotIdleTimeout(PDO $pdo): void
+    {
+        // File streaming keeps the snapshot transaction open without issuing SQL.
+        $timeout = max(3600, (int) $pdo->query('SELECT @@SESSION.wait_timeout')->fetchColumn());
+        $pdo->exec('SET SESSION wait_timeout = '.$timeout);
+        if ((int) $pdo->query('SELECT @@SESSION.wait_timeout')->fetchColumn() !== $timeout) {
+            throw new RuntimeException('The snapshot connection idle timeout could not be configured.');
         }
     }
 

@@ -190,7 +190,7 @@ class FeaturePreviewSnapshotService
         if (! $replace) {
             throw new RuntimeException('Replacing preview data requires explicit snapshot confirmation.');
         }
-        $target = $this->database->target();
+        $this->database->target();
         $this->files->assertConfigurationSafe();
         $this->requireMaintenance();
         $this->identity->assertPrivateFile($path);
@@ -210,27 +210,31 @@ class FeaturePreviewSnapshotService
             $this->files->restore($this->validatedRecords($path, $feature, $metadata, $tables, $users), $staging);
             $this->assertChecksum($path, $checksum);
 
-            $backup = $this->identity->path('backup-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(8)).'.stpreview');
-            $this->archive->write($backup, FeaturePreviewSnapshotArchive::publicKey($this->keyPair()), $this->records($target, $feature, false));
-            $pending = [
-                'feature_id' => $feature,
-                'users' => $users,
-                'snapshot_at' => $metadata['exported_at'],
-                'snapshot_source' => $metadata['source_commit'],
-                'source_identity' => $metadata['source'],
-                'backup' => $backup,
-                'backup_sha256' => hash_file('sha256', $backup),
-                'phase' => 'importing',
-                'staging' => $staging,
-            ];
-            $this->identity->write($pending, 'snapshot-pending.json');
-            $this->replaceTables($target, $path, $tables);
+            $pending = $this->database->withSnapshotTargetConnection(function (Connection $target) use ($feature, $metadata, $users, $path, $tables, $staging): array {
+                $backup = $this->identity->path('backup-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(8)).'.stpreview');
+                $this->archive->write($backup, FeaturePreviewSnapshotArchive::publicKey($this->keyPair()), $this->records($target, $feature, false));
+                $pending = [
+                    'feature_id' => $feature,
+                    'users' => $users,
+                    'snapshot_at' => $metadata['exported_at'],
+                    'snapshot_source' => $metadata['source_commit'],
+                    'source_identity' => $metadata['source'],
+                    'backup' => $backup,
+                    'backup_sha256' => hash_file('sha256', $backup),
+                    'phase' => 'importing',
+                    'staging' => $staging,
+                ];
+                $this->identity->write($pending, 'snapshot-pending.json');
+                $this->replaceTables($target, $path, $tables);
+
+                return $pending;
+            });
             $this->activateFiles($staging, $pending);
             $this->clearLocalSessions();
             $pending['phase'] = 'imported';
             $this->identity->write($pending, 'snapshot-pending.json');
 
-            return ['backup' => $backup, 'imported' => true];
+            return ['backup' => $pending['backup'], 'imported' => true];
         } catch (Throwable $exception) {
             // Preserve encrypted backups, staged files and the recovery marker; never reopen a partly updated preview.
             throw new RuntimeException('Preview snapshot import failed. The preview must remain closed; inspect its private recovery files.', previous: $exception);
@@ -260,7 +264,7 @@ class FeaturePreviewSnapshotService
         if (! $confirmed) {
             throw new RuntimeException('Restoring the private preview backup requires explicit --replace confirmation.');
         }
-        $target = $this->database->target();
+        $this->database->target();
         $this->requireMaintenance();
         $this->files->assertConfigurationSafe();
         $pending = $this->identity->read('snapshot-pending.json');
@@ -285,7 +289,7 @@ class FeaturePreviewSnapshotService
         $this->files->restore($this->validatedRecords($path, $feature, $metadata, $tables, $users, true), $staging);
         $pending['phase'] = 'restoring';
         $this->identity->write($pending, 'snapshot-pending.json');
-        $this->replaceTables($target, $path, $tables);
+        $this->database->withSnapshotTargetConnection(fn (Connection $target) => $this->replaceTables($target, $path, $tables));
         $this->activateFiles($staging, $pending);
         $this->clearLocalSessions();
         $this->identity->write($metadata['previous_state']);
@@ -301,9 +305,10 @@ class FeaturePreviewSnapshotService
         $this->assertCurrent($feature);
         $this->requireMaintenance();
         $this->files->assertConfigurationSafe();
-        $target = $this->database->target();
         $backup = $this->identity->path('backup-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(8)).'.stpreview');
-        $this->archive->write($backup, FeaturePreviewSnapshotArchive::publicKey($this->keyPair()), $this->records($target, $feature, false));
+        $this->database->withSnapshotTargetConnection(function (Connection $target) use ($backup, $feature): void {
+            $this->archive->write($backup, FeaturePreviewSnapshotArchive::publicKey($this->keyPair()), $this->records($target, $feature, false));
+        });
         $state = $this->identity->read();
         $state['backup'] = $backup;
         $state['backup_sha256'] = hash_file('sha256', $backup);
