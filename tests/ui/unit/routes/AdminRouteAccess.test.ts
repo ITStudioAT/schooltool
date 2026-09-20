@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { resolveAdminRouteAccess } from '../../../../resources/routes/admin.js'
 
 describe('admin route access metadata', () => {
+    it('protects Matura with its own administrator capability', () => {
+        expect(resolveAdminRouteAccess('/admin/matura')).toEqual({
+            public: false,
+            capability: 'matura',
+        })
+    })
+
     it('marks public auth routes as public', () => {
         expect(resolveAdminRouteAccess('/admin/login')).toEqual({
             public: true,

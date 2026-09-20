@@ -62,6 +62,10 @@ class AdminNavigationService
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
 
+        if ($user->hasAnyRole(['admin', 'super_admin'])) {
+            $menu[] = ['title' => 'Matura', 'icon' => 'mdi-school-outline', 'to' => '/admin/matura', 'active_paths' => ['/admin/matura'], 'is_active' => true];
+        }
+
         $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
         $tutoringLicenceStatus = $licenceStatuses['Nachhilfetool'] ?? 'missing';
         $teachingLicenceStatus = $licenceStatuses['Lehrertool'] ?? 'missing';
@@ -212,6 +216,7 @@ class AdminNavigationService
     {
         $capabilities = [
             'home' => false,
+            'matura' => false,
             'settings' => false,
             'profile' => false,
             'users' => false,
@@ -235,6 +240,7 @@ class AdminNavigationService
         $menuByPath = $this->dashboardMenuByPath($menu);
 
         $capabilities['home'] = $user->hasAdminShellAccess();
+        $capabilities['matura'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['settings'] = $user->hasAnyRole(self::SETTINGS_ROLES);
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);

@@ -292,12 +292,12 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(6)
+            ->toHaveCount(7)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
+            ->toBe(['Home', 'Matura', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
             ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA');
 
-        expect($result[2])->toMatchArray([
+        expect(collect($result)->firstWhere('to', '/admin/profile'))->toMatchArray([
             'to' => '/admin/profile',
             'active_paths' => ['/admin/profile'],
             'is_active' => true,
@@ -344,6 +344,45 @@ describe('dashboardMenu', function () {
             ->not->toBeNull()
             ->and($item['is_active'])->toBeTrue();
     });
+
+    it('shows Matura only for administrators and super administrators', function (?string $roleName, bool $allowed) {
+        $user = User::factory()->create();
+        if ($roleName !== null) {
+            $user->assignRole(Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
+        }
+        $this->actingAs($user);
+
+        $menu = $this->service->dashboardMenu();
+        $maturaItem = collect($menu)->firstWhere('to', '/admin/matura');
+        $capabilities = $this->service->routeCapabilities($user, $menu);
+
+        expect($capabilities['matura'])->toBe($allowed);
+
+        if (! $allowed) {
+            expect($maturaItem)->toBeNull();
+
+            return;
+        }
+
+        expect($maturaItem)->toMatchArray([
+            'title' => 'Matura',
+            'to' => '/admin/matura',
+            'active_paths' => ['/admin/matura'],
+            'is_active' => true,
+        ]);
+    })->with([
+        ['super_admin', true],
+        ['admin', true],
+        ['teacher', false],
+        ['teaching_admin', false],
+        ['materials_admin', false],
+        ['studentstimetables_admin', false],
+        ['register_admin', false],
+        ['user', false],
+        ['student', false],
+        ['studentstimetables_user', false],
+        [null, false],
+    ]);
 
     it('shows the groups entry and capability only for the actual super_admin role', function (string $roleName, bool $allowed) {
         $user = User::factory()->create();
@@ -393,7 +432,7 @@ describe('dashboardMenu', function () {
         $menu = $this->service->dashboardMenu();
         $titles = array_column($menu, 'title');
 
-        expect($titles)->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
+        expect($titles)->toBe(['Home', 'Matura', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
             ->and(collect($menu)->last()['divider_before'])->toBeTrue();
     });
 
@@ -1211,6 +1250,7 @@ describe('routeCapabilities', function () {
 
         expect($result)->toBe([
             'home' => false,
+            'matura' => false,
             'settings' => false,
             'profile' => false,
             'users' => false,

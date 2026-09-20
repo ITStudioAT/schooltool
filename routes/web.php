@@ -108,6 +108,12 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->middleware(['auth:sanctum', 'web-allowed:scope:super_admin_access'])->name('admin.groups');
 
+    Route::get('/admin/matura', function (): View {
+        abort_unless(auth()->user()?->hasAnyRole(['admin', 'super_admin']), 403);
+
+        return view('spa::admin');
+    })->middleware(['auth:sanctum', 'web-allowed:scope:admin_or_super_admin_access'])->name('admin.matura');
+
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([

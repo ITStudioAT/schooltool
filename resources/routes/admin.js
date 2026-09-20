@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const Index = () => import('@/pages/admin/index/Index.vue')
+const Matura = () => import('@/pages/admin/matura/Matura.vue')
 const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
 const Auth_UnknownPassword = () => import('@/pages/admin/auth/UnknownPassword.vue')
 const Auth_Register = () => import('@/pages/admin/auth/Register.vue')
@@ -31,6 +32,7 @@ const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
 
 export const routes = [
     { path: '/admin', component: Index, meta: { capability: 'home' } },
+    { path: '/admin/matura', component: Matura, meta: { capability: 'matura' } },
     { path: '/admin/settings', component: Settings, meta: { capability: 'settings' } },
     { path: '/admin/groups', component: GroupAdministration, meta: { capability: 'groups' } },
     { path: '/admin/login', component: Auth_Login, meta: { public: true } },
