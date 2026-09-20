@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewDatabaseGuard;
 use App\Services\FeaturePreviewSnapshotArchive;
+use App\Services\FeaturePreviewSnapshotFiles;
 use App\Services\FeaturePreviewSnapshotIdentityStore;
 use App\Services\FeaturePreviewSnapshotService;
 use Illuminate\Database\Connection;
@@ -43,6 +44,34 @@ test('snapshot command does not expose database errors or secrets', function ():
         ->doesntExpectOutputToContain('very-secret')->doesntExpectOutputToContain('personal_data')->assertFailed();
 });
 
+test('export removes completed ciphertext if the final source connection check fails', function (): void {
+    $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-snapshot-final-check-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    config(['schooltool.preview.instance' => false, 'schooltool.preview.snapshot_directory' => $directory]);
+    $guard = Mockery::mock(FeaturePreviewDatabaseGuard::class);
+    $failure = new PDOException('lost source connection');
+    $guard->shouldReceive('withMainReadOnlyConnection')->once()->andReturnUsing(function (callable $callback) use ($failure): never {
+        $callback(Mockery::mock(Connection::class));
+        throw $failure;
+    });
+    $files = Mockery::mock(FeaturePreviewSnapshotFiles::class);
+    $files->shouldReceive('assertSourceConfigurationSafe')->once();
+    $files->shouldReceive('fingerprint')->with(true)->once()->andReturn(str_repeat('a', 64));
+    $archive = Mockery::mock(FeaturePreviewSnapshotArchive::class);
+    $archive->shouldReceive('write')->once()->andReturnUsing(function (string $path): void {
+        file_put_contents($path, 'completed ciphertext fixture');
+        chmod($path, 0600);
+    });
+    $service = new FeaturePreviewSnapshotService($guard, $archive, app(FeaturePreviewSnapshotIdentityStore::class), $files);
+    try {
+        expect(fn () => $service->export(str_repeat('a', 32), str_repeat('b', 64), str_repeat('c', 32)))
+            ->toThrow(PDOException::class, 'lost source connection');
+        expect(glob($directory.DIRECTORY_SEPARATOR.'*'))->toBe([]);
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+});
+
 test('snapshot transport is received only from a private verified temporary directory', function (): void {
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-preview-'.bin2hex(random_bytes(16));
     $private = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-snapshot-receive-'.bin2hex(random_bytes(8));
@@ -69,7 +98,7 @@ test('snapshot transport is received only from a private verified temporary dire
     }
 });
 
-test('real MySQL snapshot copies data and private files while preserving live and reencrypting secrets', function (): void {
+test('real MySQL snapshot copies data and private files while preserving live and reencrypting secrets', function (bool $emptySlowTarget): void {
     if (getenv('SCHOOLTOOL_SNAPSHOT_MYSQL_TEST') !== '1') {
         $this->markTestSkipped('Explicit opt-in for disposable local MySQL schemas and users.');
     }
@@ -114,8 +143,37 @@ test('real MySQL snapshot copies data and private files while preserving live an
         $source->statement('CREATE TABLE personal_access_tokens (id BIGINT PRIMARY KEY, token VARCHAR(255)) ENGINE=InnoDB');
         $source->statement('CREATE TABLE teaching_course_students (id BIGINT PRIMARY KEY, special_information TEXT NULL) ENGINE=InnoDB');
         $source->statement('CREATE TABLE teachers (id BIGINT PRIMARY KEY, token VARCHAR(255) NULL, token_expires_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB');
-        $target->statement('CREATE TABLE old_only (id BIGINT PRIMARY KEY) ENGINE=InnoDB');
-        $target->insert('INSERT INTO old_only VALUES (99)');
+        if (! $emptySlowTarget) {
+            $target->statement('CREATE TABLE old_only (id BIGINT PRIMARY KEY) ENGINE=InnoDB');
+            $target->insert('INSERT INTO old_only VALUES (99)');
+        }
+        $originalTargetValue = fn (): mixed => $emptySlowTarget ? $target->select('SHOW TABLES') : $target->table('old_only')->value('id');
+        $expectedOriginalTarget = $emptySlowTarget ? [] : 99;
+        if ($emptySlowTarget) {
+            $factory = app('db.factory');
+            $testFactory = Mockery::mock($factory);
+            $testFactory->shouldReceive('make')->andReturnUsing(function (array $configuration, string $name) use ($factory): Connection {
+                $connection = $factory->make($configuration, $name);
+                $connection->getPdo()->exec('SET SESSION wait_timeout = 1');
+
+                return $connection;
+            });
+            app()->instance('db.factory', $testFactory);
+            app()->bind(FeaturePreviewSnapshotFiles::class, fn () => new class extends FeaturePreviewSnapshotFiles
+            {
+                public function records(bool $source = false): Generator
+                {
+                    yield from parent::records($source);
+                    sleep(2);
+                }
+
+                public function restore(#[SensitiveParameter] iterable $records, string $stagingDir): void
+                {
+                    parent::restore($records, $stagingDir);
+                    sleep(2);
+                }
+            });
+        }
 
         $mainKey = 'base64:'.base64_encode(random_bytes(32));
         $previewKey = 'base64:'.base64_encode(random_bytes(32));
@@ -183,11 +241,11 @@ test('real MySQL snapshot copies data and private files while preserving live an
         $service = app(FeaturePreviewSnapshotService::class);
         $bridgeSource['database'] = $targetName;
         expect(fn () => $service->import($feature, $importPath, $export['sha256'], true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99);
+        expect($originalTargetValue())->toBe($expectedOriginalTarget);
         $bridgeSource = $sourceIdentity;
         $bridgeSource['server_fingerprint'] = str_repeat('1', 64);
         expect(fn () => $service->import($feature, $importPath, $export['sha256'], true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99);
+        expect($originalTargetValue())->toBe($expectedOriginalTarget);
         $bridgeSource = $sourceIdentity;
         $forged = (function () use ($importPath): Generator {
             $key = file_get_contents(config('schooltool.preview.snapshot_key_path'));
@@ -201,23 +259,23 @@ test('real MySQL snapshot copies data and private files while preserving live an
         $forgedPath = config('schooltool.preview.snapshot_directory').DIRECTORY_SEPARATOR.'forged.stpreview';
         app(FeaturePreviewSnapshotArchive::class)->write($forgedPath, $publicKey, $forged);
         expect(fn () => $service->import($feature, $forgedPath, hash_file('sha256', $forgedPath), true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99)
+        expect($originalTargetValue())->toBe($expectedOriginalTarget)
             ->and(glob(config('schooltool.preview.snapshot_directory').DIRECTORY_SEPARATOR.'backup-*.stpreview'))->toBe([]);
         $newerPath = config('schooltool.preview.snapshot_directory').DIRECTORY_SEPARATOR.'newer.stpreview';
         copy($newerExport['path'], $newerPath);
         chmod($newerPath, 0600);
         expect(fn () => $service->import($feature, $newerPath, $newerExport['sha256'], true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99)
+        expect($originalTargetValue())->toBe($expectedOriginalTarget)
             ->and(file_get_contents(storage_path('app/private/old.txt')))->toBe('old preview file')
             ->and(app(FeaturePreviewSnapshotIdentityStore::class)->read('snapshot-pending.json'))->toBe([])
             ->and(glob(config('schooltool.preview.snapshot_directory').DIRECTORY_SEPARATOR.'backup-*.stpreview'))->toBe([]);
         expect(fn () => $service->import($feature, $importPath, str_repeat('0', 64), true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99);
+        expect($originalTargetValue())->toBe($expectedOriginalTarget);
         app()->instance('encrypter', new Encrypter(base64_decode(substr($mainKey, 7)), 'AES-256-CBC'));
         Crypt::clearResolvedInstance('encrypter');
         config(['app.key' => base64_decode(substr($mainKey, 7))]);
         expect(fn () => $service->import($feature, $importPath, $export['sha256'], true))->toThrow(RuntimeException::class);
-        expect($target->table('old_only')->value('id'))->toBe(99);
+        expect($originalTargetValue())->toBe($expectedOriginalTarget);
         app()->instance('encrypter', new Encrypter(base64_decode(substr($previewKey, 7)), 'AES-256-CBC'));
         Crypt::clearResolvedInstance('encrypter');
         config(['app.key' => $previewKey]);
@@ -250,7 +308,7 @@ test('real MySQL snapshot copies data and private files while preserving live an
         expect($identity->read())->toBe([])->and($identity->read('snapshot-pending.json')['phase'])->toBe('imported');
         expect(fn () => $service->status($feature))->toThrow(RuntimeException::class);
         $service->restore(true);
-        expect($target->table('old_only')->value('id'))->toBe(99)
+        expect($originalTargetValue())->toBe($expectedOriginalTarget)
             ->and(file_get_contents(storage_path('app/private/old.txt')))->toBe('old preview file')
             ->and($identity->read())->toBe([])
             ->and($identity->read('snapshot-pending.json'))->toBe([])
@@ -293,4 +351,4 @@ test('real MySQL snapshot copies data and private files while preserving live an
         }
         (new Filesystem)->deleteDirectory($directory);
     }
-});
+})->with(['existing preview data' => false, 'empty preview and slow file streaming' => true]);
