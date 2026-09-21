@@ -22,6 +22,7 @@ describe('real MySQL main snapshot connection', function (): void {
     beforeEach(function (): void {
         $this->snapshotCreatedDatabase = null;
         $this->snapshotCreatedUser = null;
+        $this->snapshotAccountHost = null;
         $this->snapshotAdmin = null;
 
         if (getenv('SCHOOLTOOL_SNAPSHOT_MYSQL_TEST') !== '1') {
@@ -32,15 +33,18 @@ describe('real MySQL main snapshot connection', function (): void {
         expect($base['host'])->toBeIn(['127.0.0.1', 'localhost']);
         $this->snapshotAdmin = new PDO('mysql:host=127.0.0.1;port='.(int) $base['port'].';charset=utf8mb4', $base['username'], $base['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $admin = $this->snapshotAdmin;
+        $this->snapshotAccountHost = (string) $admin->query("SELECT SUBSTRING_INDEX(USER(), '@', -1)")->fetchColumn();
+        expect($this->snapshotAccountHost)->toMatch('/\A[a-zA-Z0-9.:-]+\z/');
         $database = 'streadonly'.bin2hex(random_bytes(8));
         $username = 'streader'.bin2hex(random_bytes(8));
         $password = bin2hex(random_bytes(24));
 
         $admin->exec('CREATE DATABASE `'.$database.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
         $this->snapshotCreatedDatabase = $database;
-        $admin->exec('CREATE USER '.$admin->quote($username)."@'127.0.0.1' IDENTIFIED BY ".$admin->quote($password));
+        $account = $admin->quote($username).'@'.$admin->quote($this->snapshotAccountHost);
+        $admin->exec('CREATE USER '.$account.' IDENTIFIED BY '.$admin->quote($password));
         $this->snapshotCreatedUser = $username;
-        $admin->exec('GRANT ALL PRIVILEGES ON `'.$database.'`.* TO '.$admin->quote($username)."@'127.0.0.1'");
+        $admin->exec('GRANT ALL PRIVILEGES ON `'.$database.'`.* TO '.$account);
 
         $configuration = array_replace($base, [
             'host' => '127.0.0.1', 'database' => $database, 'username' => $username,
@@ -56,6 +60,7 @@ describe('real MySQL main snapshot connection', function (): void {
         DB::purge('snapshot_readonly_main');
         DB::purge('snapshot_readonly_writer');
         $source = DB::connection();
+        expect($source->getPdo()->query('SELECT CURRENT_USER()')->fetchColumn())->toBe($username.'@'.$this->snapshotAccountHost);
         $source->statement('CREATE TABLE records (id BIGINT PRIMARY KEY, content VARCHAR(255)) ENGINE=InnoDB');
         $source->table('records')->insert(['id' => 1, 'content' => 'original']);
     });
@@ -70,7 +75,7 @@ describe('real MySQL main snapshot connection', function (): void {
             }
         } finally {
             if ($this->snapshotCreatedUser !== null) {
-                $this->snapshotAdmin->exec('DROP USER '.$this->snapshotAdmin->quote($this->snapshotCreatedUser)."@'127.0.0.1'");
+                $this->snapshotAdmin->exec('DROP USER '.$this->snapshotAdmin->quote($this->snapshotCreatedUser).'@'.$this->snapshotAdmin->quote($this->snapshotAccountHost));
             }
         }
     });
@@ -287,7 +292,7 @@ describe('real MySQL main snapshot connection', function (): void {
 
     test('refuses a source account that cannot inspect every schema object', function (): void {
         $admin = $this->snapshotAdmin;
-        $account = $admin->quote($this->snapshotCreatedUser)."@'127.0.0.1'";
+        $account = $admin->quote($this->snapshotCreatedUser).'@'.$admin->quote($this->snapshotAccountHost);
         $schema = '`'.$this->snapshotCreatedDatabase.'`.*';
         $admin->exec('REVOKE ALL PRIVILEGES ON '.$schema.' FROM '.$account);
         $admin->exec('GRANT SELECT ON '.$schema.' TO '.$account);
