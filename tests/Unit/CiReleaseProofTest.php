@@ -76,6 +76,62 @@ it('accepts only the exact successful full policy run and attempt', function () 
     ]);
 });
 
+it('reports exact run progress without granting release approval', function (string $status, ?string $conclusion) {
+    $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($status, $conclusion): array {
+        if (isset($response['workflow_runs'])) {
+            $response['workflow_runs'][0]['status'] = $status;
+            $response['workflow_runs'][0]['conclusion'] = $conclusion;
+        }
+        if (isset($response['jobs'])) {
+            $response['jobs'][0]['status'] = 'in_progress';
+            $response['jobs'][0]['conclusion'] = null;
+        }
+
+        return $response;
+    });
+    $progress = $proof->status(str_repeat('a', 40));
+    expect($progress)->toMatchArray([
+        'commit' => str_repeat('a', 40), 'run_id' => 100, 'run_attempt' => 1,
+        'status' => $status, 'conclusion' => $conclusion,
+        'url' => 'https://github.com/ITStudioAT/schooltool/actions/runs/100',
+    ])->not->toHaveKey('lane')
+        ->and($progress['jobs'][0])->toMatchArray(['name' => 'Validate source and dependencies', 'status' => 'in_progress'])
+        ->and(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+})->with([
+    ['queued', null], ['in_progress', null], ['waiting', null],
+    ['completed', 'failure'], ['completed', 'cancelled'], ['completed', 'success'],
+]);
+
+it('reports a briefly missing run and unstarted jobs without accepting missing proof', function () {
+    $proof = releaseProofFixture(static function (string $endpoint, array $response): array {
+        return isset($response['workflow_runs']) ? ['total_count' => 0, 'workflow_runs' => []] : $response;
+    });
+    expect($proof->status(str_repeat('a', 40)))->toMatchArray(['status' => 'missing', 'jobs' => []])
+        ->and(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+
+    $proof = releaseProofFixture(static function (string $endpoint, array $response): array {
+        return isset($response['jobs']) ? ['total_count' => 0, 'jobs' => []] : $response;
+    });
+    expect($proof->status(str_repeat('a', 40))['jobs'][0])->toBe([
+        'name' => 'Validate source and dependencies', 'status' => 'pending', 'conclusion' => null,
+    ]);
+});
+
+it('rejects untrusted progress metadata before waiting', function (string $field, mixed $value) {
+    $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($field, $value): array {
+        if (isset($response['workflow_runs'])) {
+            $response['workflow_runs'][0][$field] = $value;
+        }
+
+        return $response;
+    });
+    expect(fn () => $proof->status(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+})->with([
+    ['head_sha', str_repeat('f', 40)], ['head_branch', 'feature/example'],
+    ['event', 'workflow_dispatch'], ['workflow_id', 26], ['path', '.github/workflows/other.yml'],
+    ['run_attempt', 0], ['repository', ['id' => 6, 'full_name' => 'other/repository']],
+]);
+
 it('rejects untrusted or unsuccessful workflow runs', function (string $field, mixed $value) {
     $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($field, $value): array {
         if (isset($response['workflow_runs'])) {

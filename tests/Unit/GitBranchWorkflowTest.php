@@ -552,7 +552,7 @@ it('saves main for background CI with an optional version or explicit local full
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : '').($full ? ' -Full' : ''));
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain($full ? 'FULL_CHECKS_REQUESTED' : 'BACKGROUND_CI_REQUIRED', 'SAVED ON GITHUB.', 'gitdeploy stops')
+    expect($result->getOutput())->toContain($full ? 'FULL_CHECKS_REQUESTED' : 'BACKGROUND_CI_REQUIRED', 'SAVED ON GITHUB.', 'gitdeploy waits for running checks')
         ->and($result->getOutput())->not->toContain($full ? 'BACKGROUND_CI_REQUIRED' : 'FULL_CHECKS_REQUESTED', 'READY.', 'Cloudways may run: composer pdeploy')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Main correction')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe($version ? 'v'.$version : '');
