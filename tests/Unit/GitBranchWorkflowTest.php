@@ -76,8 +76,8 @@ function node {
 }
 function Invoke-SchooltoolReleaseChecks {
     param([switch]$Full)
-    if (-not $Full) { throw 'Full checks were not requested.' }
-    Write-Host 'FULL_CHECKS_REQUESTED'
+    if ($Full) { Write-Host 'FULL_CHECKS_REQUESTED' }
+    else { Write-Host 'BACKGROUND_CI_REQUIRED' }
 }
 function Read-Host { 'RELEASE' }
 POWERSHELL;
@@ -547,15 +547,21 @@ it('registers a single legacy feature and refuses ambiguous legacy branches', fu
         ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('feature/old-feature');
 })->with(['one legacy feature' => false, 'ambiguous legacy features' => true]);
 
-it('saves main with full checks and an optional version', function (?string $version): void {
+it('saves main for background CI with an optional version or explicit local full checks', function (?string $version, bool $full): void {
     file_put_contents($this->workflowPc.'/fix.txt', "Main correction\n");
-    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : ''));
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : '').($full ? ' -Full' : ''));
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+    expect($result->getOutput())->toContain($full ? 'FULL_CHECKS_REQUESTED' : 'BACKGROUND_CI_REQUIRED', 'SAVED ON GITHUB.', 'gitdeploy stops')
+        ->and($result->getOutput())->not->toContain($full ? 'BACKGROUND_CI_REQUIRED' : 'FULL_CHECKS_REQUESTED', 'READY.', 'Cloudways may run: composer pdeploy')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Main correction')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe($version ? 'v'.$version : '');
-})->with(['without version' => null, 'with version' => '3.48.0']);
+})->with([
+    'background without version' => [null, false],
+    'background with version' => ['3.48.0', false],
+    'explicit full without version' => [null, true],
+    'explicit full with version' => ['3.48.0', true],
+]);
 
 it('does not merge remote main into unsaved local changes', function (): void {
     file_put_contents($this->workflowPc.'/fix.txt', "Keep my correction\n");
@@ -721,7 +727,7 @@ function npm {
     Write-Host 'ORIGINAL_SOURCE_BUILD'
     $global:LASTEXITCODE = 0
 }
-try { gitsave 'Publish checked correction' }
+try { gitsave 'Publish checked correction' -Full }
 finally {
     if ($env:DB_URL -ne 'original-environment-url' -or $env:LOG_SLACK_WEBHOOK_URL -ne 'original-webhook-fixture') { throw 'Original environment was not restored.' }
     Write-Host 'ORIGINAL_ENVIRONMENT_RESTORED'

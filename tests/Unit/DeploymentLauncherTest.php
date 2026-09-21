@@ -77,6 +77,7 @@ if [ "${1:-}" != --exclusive ] \
     exit 1
 fi
 
+touch storage/framework/terminal-lock-attempted
 exec "${@:7}"
 BASH);
     }
@@ -84,6 +85,9 @@ BASH);
     writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'php', <<<'BASH'
 #!/usr/bin/bash
 set -e
+
+if [ "${1:-}" = -r ]; then exec "$SCHOOLTOOL_TEST_PHP_BINARY" "$@"; fi
+if [ "${1:-}" = scripts/frontend-release.php ]; then touch storage/framework/artifact-verified; exit 0; fi
 
 if [ "${1:-}" = artisan ] && [ "${2:-}" = cloudways:pull ] && [ "${3:-}" = --check ]; then
     if [ -f storage/framework/fail-cloudways-preflight ]; then
@@ -113,11 +117,6 @@ if [ "${1:-}" = scripts/deployment-status.php ] && [ "${2:-}" = idle ]; then
     exit 0
 fi
 
-if [ "${1:-}" = -r ]; then
-    printf 'Abgeschlossen: fixture (Europe/Vienna)\n'
-    exit 0
-fi
-
 exit 1
 BASH);
     writeDeploymentExecutable($directory.DIRECTORY_SEPARATOR.'bin'.DIRECTORY_SEPARATOR.'bash', <<<'BASH'
@@ -143,11 +142,45 @@ touch storage/framework/full-deployment-ran
 rm -f storage/framework/down storage/framework/cloudways-deploy-maintenance
 BASH);
 
+    $filesystem->ensureDirectoryExists($directory.'/deployment');
+    $sourceFiles = ['artisan', 'composer.json', 'composer.lock', 'scripts/frontend-release.php', 'scripts/source-manifest.php', 'scripts/deploy_cloudways.sh'];
+    foreach ($sourceFiles as $file) {
+        file_put_contents($directory.'/'.$file, "verified source bytes\r\n");
+    }
+    $sourceFiles[] = 'scripts/pdeploy_cloudways.sh';
+    $manifest = implode("\n", array_map(
+        fn (string $file): string => hash('sha256', str_replace(["\r\n", "\r"], "\n", file_get_contents($directory.'/'.$file))).'  '.$file,
+        $sourceFiles,
+    ))."\n";
+    file_put_contents($directory.'/deployment/source-commit', str_repeat('a', 40)."\n");
+    file_put_contents($directory.'/deployment/frontend-build.tar.gz', 'verified frontend bytes');
+    file_put_contents($directory.'/deployment/source-manifest.sha256', $manifest);
+
     return $directory;
 }
 
-function runTerminalPullFixture(string $directory, array $environment = []): Process
+function terminalPullFixtureHandoff(string $directory): array
 {
+    $manifest = file_get_contents($directory.'/deployment/source-manifest.sha256');
+
+    return [
+        'SCHOOLTOOL_EXPECTED_MAIN_COMMIT' => str_repeat('b', 40),
+        'SCHOOLTOOL_EXPECTED_SOURCE_COMMIT' => trim(file_get_contents($directory.'/deployment/source-commit')),
+        'SCHOOLTOOL_EXPECTED_FRONTEND_SHA256' => hash_file('sha256', $directory.'/deployment/frontend-build.tar.gz'),
+        'SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB' => sha1('blob '.strlen($manifest)."\0".$manifest),
+        'SCHOOLTOOL_CI_RUN_ID' => '123456789',
+        'SCHOOLTOOL_CI_RUN_ATTEMPT' => '2',
+    ];
+}
+
+function runTerminalPullFixture(string $directory, array $environment = [], bool $withHandoff = true): Process
+{
+    $handoff = terminalPullFixtureHandoff($directory);
+    $environment = array_replace(
+        $withHandoff ? $handoff : array_fill_keys(array_keys($handoff), false),
+        ['SCHOOLTOOL_TEST_PHP_BINARY' => deploymentBashPath(PHP_BINARY)],
+        $environment,
+    );
     $process = new Process([
         deploymentBashExecutable(),
         '-lc',
@@ -159,6 +192,64 @@ function runTerminalPullFixture(string $directory, array $environment = []): Pro
 
     return $process;
 }
+
+it('rejects a bare manual pull before locks preflight maintenance or deployment', function (): void {
+    $directory = createTerminalPullFixture();
+
+    try {
+        $process = runTerminalPullFixture($directory, withHandoff: false);
+
+        expect($process->isSuccessful())->toBeFalse()
+            ->and($process->getErrorOutput())->toContain('Use gitdeploy after its GitHub checks succeed.')
+            ->and(glob($directory.'/storage/framework/*'))->toBe([]);
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+});
+
+it('rejects missing or malformed CI handoff metadata before any deployment effect', function (string $field, string|false $value): void {
+    $directory = createTerminalPullFixture();
+
+    try {
+        $process = runTerminalPullFixture($directory, [$field => $value]);
+
+        expect($process->isSuccessful())->toBeFalse()
+            ->and($process->getErrorOutput())->toContain('requires the checked GitHub run ID and attempt')
+            ->and(glob($directory.'/storage/framework/*'))->toBe([]);
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with(['SCHOOLTOOL_CI_RUN_ID', 'SCHOOLTOOL_CI_RUN_ATTEMPT'])->with([
+    'missing' => false,
+    'empty' => '',
+    'zero' => '0',
+    'negative' => '-1',
+    'leading zero' => '01',
+    'decimal' => '1.0',
+    'signed' => '+1',
+    'whitespace' => ' 1',
+    'newline' => "1\n",
+    'shell text' => '1; touch storage/framework/unexpected',
+]);
+
+it('requires each release pin even when CI handoff metadata is present', function (string $field): void {
+    $directory = createTerminalPullFixture();
+
+    try {
+        $process = runTerminalPullFixture($directory, [$field => false]);
+
+        expect($process->isSuccessful())->toBeFalse()
+            ->and($process->getErrorOutput())->toContain('requires pinned main, source, frontend and source manifest identities')
+            ->and(glob($directory.'/storage/framework/*'))->toBe([]);
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with([
+    'SCHOOLTOOL_EXPECTED_MAIN_COMMIT',
+    'SCHOOLTOOL_EXPECTED_SOURCE_COMMIT',
+    'SCHOOLTOOL_EXPECTED_FRONTEND_SHA256',
+    'SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB',
+]);
 
 it('stops a rejected Cloudways branch preflight before maintenance or any pull', function (): void {
     $directory = createTerminalPullFixture();
@@ -181,31 +272,7 @@ it('stops a rejected Cloudways branch preflight before maintenance or any pull',
 it('pins the complete backend manifest before a platform API deployment', function (string $changedArtifact, bool $success): void {
     $directory = createTerminalPullFixture();
     $filesystem = new Filesystem;
-    $filesystem->ensureDirectoryExists($directory.'/deployment');
-    $source = str_repeat('a', 40);
-    $frontend = 'verified frontend bytes';
-    foreach (['artisan', 'composer.json', 'composer.lock', 'scripts/frontend-release.php', 'scripts/source-manifest.php', 'scripts/deploy_cloudways.sh'] as $file) {
-        file_put_contents($directory.'/'.$file, "verified source bytes\r\n");
-    }
-    $sourceFiles = ['artisan', 'composer.json', 'composer.lock', 'scripts/frontend-release.php', 'scripts/source-manifest.php', 'scripts/deploy_cloudways.sh', 'scripts/pdeploy_cloudways.sh'];
-    $manifest = implode("\n", array_map(
-        fn (string $file): string => hash('sha256', str_replace(["\r\n", "\r"], "\n", file_get_contents($directory.'/'.$file))).'  '.$file,
-        $sourceFiles,
-    ))."\n";
-    file_put_contents($directory.'/deployment/source-commit', $source."\n");
-    file_put_contents($directory.'/deployment/frontend-build.tar.gz', $frontend);
-    file_put_contents($directory.'/deployment/source-manifest.sha256', $manifest);
-    $phpWrapper = file_get_contents($directory.'/bin/php');
-    $phpWrapper = str_replace(
-        'set -e',
-        <<<'BASH'
-set -e
-if [ "${1:-}" = -r ]; then exec "$SCHOOLTOOL_TEST_PHP_BINARY" "$@"; fi
-if [ "${1:-}" = scripts/frontend-release.php ]; then touch storage/framework/artifact-verified; exit 0; fi
-BASH,
-        $phpWrapper,
-    );
-    writeDeploymentExecutable($directory.'/bin/php', $phpWrapper);
+    $handoff = terminalPullFixtureHandoff($directory);
     if (str_starts_with($changedArtifact, 'scripts/')) {
         file_put_contents($directory.'/'.$changedArtifact, '<?php exit(0); // changed verifier must never be executed');
     } elseif ($changedArtifact !== '') {
@@ -213,13 +280,7 @@ BASH,
     }
 
     try {
-        $process = runTerminalPullFixture($directory, [
-            'SCHOOLTOOL_TEST_PHP_BINARY' => deploymentBashPath(PHP_BINARY),
-            'SCHOOLTOOL_EXPECTED_MAIN_COMMIT' => str_repeat('b', 40),
-            'SCHOOLTOOL_EXPECTED_SOURCE_COMMIT' => $source,
-            'SCHOOLTOOL_EXPECTED_FRONTEND_SHA256' => hash('sha256', $frontend),
-            'SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB' => sha1('blob '.strlen($manifest)."\0".$manifest),
-        ]);
+        $process = runTerminalPullFixture($directory, $handoff);
         expect($process->isSuccessful())->toBe($success, $process->getErrorOutput())
             ->and(is_file($directory.'/storage/framework/full-deployment-ran'))->toBe($success)
             ->and(is_file($directory.'/storage/framework/artifact-verified'))->toBe($success)

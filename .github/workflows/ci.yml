@@ -15,8 +15,66 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  classify:
+    name: Classify release changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      lane: ${{ steps.policy.outputs.lane }}
+      base: ${{ steps.policy.outputs.base }}
+      base-proven: ${{ steps.policy.outputs.base-proven }}
+    steps:
+      - name: Check out the exact source and its history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, intl, zip
+          coverage: none
+      - name: Classify against a fully verified policy v2 baseline
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          lane=full
+          base=''
+          proven=false
+
+          if [[ "$RELEASE_EVENT" == push && "$RELEASE_REF" == refs/heads/main ]]; then
+            php scripts/ci-release-proof.php baseline --head "$RELEASE_HEAD" > "$RUNNER_TEMP/release-baseline.json"
+            base="$(jq -r '.base // empty' "$RUNNER_TEMP/release-baseline.json")"
+
+            if [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+              php scripts/release-policy.php classify --base "$base" --head "$RELEASE_HEAD" > "$RUNNER_TEMP/release-policy.json"
+              proposed="$(jq -r '.lane' "$RUNNER_TEMP/release-policy.json")"
+              if [[ "$proposed" == documentation ]]; then
+                if php scripts/release-policy.php assets --base "$base" --head "$RELEASE_HEAD" > "$RUNNER_TEMP/release-assets.json"; then
+                  jq -e --arg base "$base" --arg head "$RELEASE_HEAD" '.equivalent == true and .base == $base and .head == $head' "$RUNNER_TEMP/release-assets.json" > /dev/null
+                  lane=documentation
+                  proven=true
+                fi
+              elif [[ "$proposed" != full ]]; then
+                exit 1
+              fi
+            elif [[ -n "$base" ]]; then
+              exit 1
+            fi
+          fi
+
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "base-proven=$proven" >> "$GITHUB_OUTPUT"
+
   validate:
     name: Validate source and dependencies
     runs-on: ubuntu-latest
@@ -52,7 +110,7 @@ jobs:
         run: |
           base_sha="$SECRET_SCAN_BASE_SHA"
 
-          if [[ "$base_sha" =~ ^0+$ ]]; then
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
             base_sha="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
           fi
 
@@ -65,15 +123,52 @@ jobs:
         run: composer audit --locked
 
       - name: Audit production frontend dependencies
-        if: github.event_name != 'push'
         run: npm audit --omit=dev --audit-level=high
 
       - name: Audit all frontend dependencies for critical vulnerabilities
         run: npm audit --audit-level=critical
 
+  documentation:
+    name: 'Documentation checks (policy v2; base=${{ needs.classify.outputs.base }})'
+    needs: classify
+    if: needs.classify.outputs.lane == 'documentation' && needs.classify.outputs.base-proven == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: testing
+      TEST_TOKEN: ci-documentation
+    steps:
+      - name: Check out the exact release
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, intl, zip
+          coverage: none
+      - name: Install locked verification dependencies without application scripts
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+      - name: Recheck unchanged frontend assets against the proven baseline
+        env:
+          RELEASE_BASE: ${{ needs.classify.outputs.base }}
+          RELEASE_HEAD: ${{ github.sha }}
+        run: |
+          php scripts/release-policy.php assets --base "$RELEASE_BASE" --head "$RELEASE_HEAD" > "$RUNNER_TEMP/documentation-assets.json"
+          jq -e --arg base "$RELEASE_BASE" --arg head "$RELEASE_HEAD" '.equivalent == true and .base == $base and .head == $head' "$RUNNER_TEMP/documentation-assets.json" > /dev/null
+      - name: Verify version syntax and formatting
+        run: |
+          php -l config/schooltool.php
+          vendor/bin/pint config/schooltool.php --format agent
+          git diff --exit-code
+      - name: Exercise release-policy safety checks
+        run: php vendor/bin/pest --compact tests/Unit/ReleasePolicyTest.php tests/Unit/CiReleaseProofTest.php tests/Unit/CiReleaseWorkflowTest.php tests/Unit/ChangedCodeCoverageGateTest.php
+
   php-quality:
     name: PHP formatting and static analysis
-    if: github.event_name != 'push'
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -87,6 +182,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          extensions: gd, intl, zip
           coverage: none
 
       - name: Install PHP dependencies
@@ -102,7 +198,8 @@ jobs:
 
   frontend:
     name: Frontend tests and release build
-    if: github.event_name != 'push'
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -151,10 +248,11 @@ jobs:
         run: npm run build
 
   php-tests:
-    name: PHP parallel coverage
-    if: github.event_name != 'push'
+    name: PHP sequential coverage
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
 
     services:
       mysql:
@@ -206,7 +304,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: gd, intl, pcntl, pdo_mysql, posix, zip
+          extensions: gd, intl, pcntl, pdo_mysql, pdo_sqlite, posix, sodium, zip
           coverage: pcov
 
       - name: Install PHP dependencies
@@ -215,8 +313,8 @@ jobs:
       - name: Generate ephemeral application key
         run: echo "APP_KEY=$(php artisan key:generate --show --no-ansi --no-interaction)" >> "$GITHUB_ENV"
 
-      - name: Run PHP tests with parallel coverage
-        run: php artisan test --compact --exclude-group=integration --parallel --processes=2 --recreate-databases --coverage-clover=storage/logs/clover.xml
+      - name: Run every PHP test in bounded sequential batches with coverage
+        run: php scripts/ci-php-tests.php coverage
 
       - name: Enforce changed-code coverage
         if: github.event_name == 'pull_request'
@@ -232,9 +330,21 @@ jobs:
 
           php scripts/check-changed-code-coverage.php --base="$base_sha" --coverage=storage/logs/clover.xml --min=80
 
+      - name: Preserve PHP test manifests, logs, and complete coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            storage/logs/clover.xml
+            storage/logs/ci-php-*/batch-*.json
+            storage/logs/ci-php-*/batch-*.log
+          retention-days: 14
+
   infrastructure:
     name: MySQL, Redis, and Horizon integration
-    if: github.event_name != 'push'
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -351,33 +461,116 @@ jobs:
           php-version: '8.4'
           coverage: none
 
-      - name: Verify source, archive, and release parent
-        run: php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"
+      - name: Verify safe archive structure, source, and release parent
+        run: |
+          release_sha="$(git rev-parse HEAD)"
+          php scripts/release-policy.php assets --base "$release_sha" --head "$release_sha"
+          php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"
 
-  ready:
-    name: READY — CI verified Cloudways release
+  windows-workflow:
+    name: Windows PowerShell workflow tests
+    needs: classify
+    if: needs.classify.outputs.lane == 'full'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, intl, zip
+          coverage: none
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Require both native PowerShell runtimes and Git
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git --version
+          if ($LASTEXITCODE -ne 0) { throw 'Git is unavailable.' }
+          powershell -NoProfile -NonInteractive -Command 'if ($PSVersionTable.PSVersion.Major -ne 5) { exit 1 }'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 is unavailable.' }
+          if ($PSVersionTable.PSVersion.Major -ne 7) { throw 'PowerShell 7 is unavailable.' }
+          if (-not (Test-Path -LiteralPath 'C:/Program Files/Git/bin/bash.exe')) { throw 'Git Bash is unavailable.' }
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Install locked frontend tools required by native workflow fixtures
+        run: npm ci
+      - name: Run Windows workflow tests without connecting to a database or server
+        run: php scripts/ci-php-tests.php windows
+      - name: Preserve Windows workflow test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-workflow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: storage/logs/ci-php-*
+          retention-days: 14
+
+  release-approval:
+    name: Release approval (policy v2)
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - validate
+      - classify
+      - documentation
       - php-quality
       - frontend
       - php-tests
       - infrastructure
+      - windows-workflow
       - release-integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Require every release gate
         env:
           VALIDATE_RESULT: ${{ needs.validate.result }}
           RELEASE_INTEGRITY_RESULT: ${{ needs.release-integrity.result }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          RELEASE_LANE: ${{ needs.classify.outputs.lane }}
+          BASE_PROVEN: ${{ needs.classify.outputs.base-proven }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          PHP_QUALITY_RESULT: ${{ needs.php-quality.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          PHP_TESTS_RESULT: ${{ needs.php-tests.result }}
+          INFRASTRUCTURE_RESULT: ${{ needs.infrastructure.result }}
+          WINDOWS_WORKFLOW_RESULT: ${{ needs.windows-workflow.result }}
         run: |
           set -euo pipefail
 
           for result in \
             "$VALIDATE_RESULT" \
+            "$CLASSIFY_RESULT" \
             "$RELEASE_INTEGRITY_RESULT"; do
             test "$result" = "success"
           done
 
-          echo "Cloudways release verified."
+          case "$RELEASE_LANE" in
+            full)
+              test "$DOCUMENTATION_RESULT" = "skipped"
+              for result in "$PHP_QUALITY_RESULT" "$FRONTEND_RESULT" "$PHP_TESTS_RESULT" "$INFRASTRUCTURE_RESULT" "$WINDOWS_WORKFLOW_RESULT"; do
+                test "$result" = "success"
+              done
+              ;;
+            documentation)
+              test "$BASE_PROVEN" = "true"
+              test "$DOCUMENTATION_RESULT" = "success"
+              for result in "$PHP_QUALITY_RESULT" "$FRONTEND_RESULT" "$PHP_TESTS_RESULT" "$INFRASTRUCTURE_RESULT" "$WINDOWS_WORKFLOW_RESULT"; do
+                test "$result" = "skipped"
+              done
+              ;;
+            *) exit 1 ;;
+          esac
+
+          echo "Exact release passed policy v2 ($RELEASE_LANE)."

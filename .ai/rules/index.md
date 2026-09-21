@@ -150,3 +150,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/AdminController.php,app/Services/AdminService.php,tests/Feature/AdminControllerTest.php,tests/Unit/AdminServiceTest.php} | .ai/rules/unit.md |
 | {app/Jobs/ImportTeachersListJob.php,config/schooltool.php,resources/js/pages/admin/superAdmin/components/TeachersList.vue,tests/{Unit,ui}/**/*TeachersList*} | .ai/rules/unitui.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/views-pdfs-feature.md |
+| {.github/workflows/ci.yml,scripts/git*.ps1,scripts/ci-*.php,scripts/release-policy.php,scripts/pdeploy_cloudways.sh,tests/Unit/*Release*Test.php} | .ai/rules/workflows-unit.md |

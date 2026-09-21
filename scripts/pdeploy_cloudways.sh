@@ -8,15 +8,19 @@ expected_main="${SCHOOLTOOL_EXPECTED_MAIN_COMMIT:-}"
 expected_source="${SCHOOLTOOL_EXPECTED_SOURCE_COMMIT:-}"
 expected_frontend="${SCHOOLTOOL_EXPECTED_FRONTEND_SHA256:-}"
 expected_manifest="${SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB:-}"
-if [ -n "$expected_main$expected_source$expected_frontend$expected_manifest" ]; then
-    if [[ ! "$expected_main" =~ ^[a-f0-9]{40,64}$ ]] || [[ ! "$expected_source" =~ ^[a-f0-9]{40,64}$ ]] || [[ ! "$expected_frontend" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$expected_manifest" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]]; then
-        echo "A pinned deployment requires valid main, source, frontend and source manifest identities." >&2
-        exit 1
-    fi
+if [[ ! "$expected_main" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_source" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_frontend" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$expected_manifest" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]]; then
+    echo "Deployment requires pinned main, source, frontend and source manifest identities. Use gitdeploy after its GitHub checks succeed." >&2
+    exit 1
+fi
+
+# gitdeploy validates the exact GitHub proof. These IDs identify its handoff;
+# they are not a server-verifiable attestation against an SSH operator.
+if [[ ! "${SCHOOLTOOL_CI_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || [[ ! "${SCHOOLTOOL_CI_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Deployment requires the checked GitHub run ID and attempt. Use gitdeploy after its GitHub checks succeed." >&2
+    exit 1
 fi
 
 verify_confirmed_release() {
-    if [ -z "$expected_main" ]; then return; fi
     if [ ! -f deployment/source-commit ] || [ "$(tr -d '\r\n' < deployment/source-commit)" != "$expected_source" ]; then
         echo "The pulled source differs from the confirmed release. The application remains in maintenance mode." >&2
         exit 1
@@ -130,7 +134,7 @@ pull_with_cloudways_api() {
     echo "No Git working tree found; using the Cloudways platform Pull API."
 
     if ! php artisan cloudways:pull --check --no-interaction; then
-        echo "Configure the Cloudways deployment API values, clear cached configuration, and run composer pdeploy again." >&2
+        echo "Configure the Cloudways deployment API values, clear cached configuration, and run gitdeploy again." >&2
         exit 1
     fi
 
@@ -181,7 +185,7 @@ fi
 echo "Fetching origin/main before maintenance mode..."
 git fetch origin main
 
-if [ -n "$expected_main" ] && [ "$(git rev-parse FETCH_HEAD)" != "$expected_main" ]; then
+if [ "$(git rev-parse FETCH_HEAD)" != "$expected_main" ]; then
     echo "GitHub main changed after confirmation; no maintenance or database update was started." >&2
     exit 1
 fi

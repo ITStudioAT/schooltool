@@ -228,3 +228,93 @@ POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('did not return valid deployment metadata');
 });
+
+it('rejects invalid release proof responses without treating saved releases as approved', function (string $mutation): void {
+    $command = <<<'POWERSHELL'
+$script:proofResponse = @{commit=('a'*40);run_id=123;run_attempt=1;lane='full';url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+$script:proofExit = 0
+$script:malformed = $false
+function php {
+    $global:LASTEXITCODE = $script:proofExit
+    if ($script:malformed) { 'not-json' } else { $script:proofResponse | ConvertTo-Json -Compress }
+}
+POWERSHELL;
+    $command .= "\n".$mutation."\n".<<<'POWERSHELL'
+try { Assert-SchooltoolCiRelease -Commit ('a'*40); throw 'INVALID_PROOF_ACCEPTED' }
+catch { if ($_.Exception.Message -ceq 'INVALID_PROOF_ACCEPTED') { throw }; Write-Output 'INVALID_PROOF_BLOCKED' }
+POWERSHELL;
+    $process = deploymentSshProcess($command);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toContain('INVALID_PROOF_BLOCKED');
+})->with([
+    'failed proof command' => '$script:proofExit = 1',
+    'invalid JSON' => '$script:malformed = $true',
+    'stale commit' => '$script:proofResponse.commit = ("b"*40)',
+    'missing run' => '$script:proofResponse.Remove("run_id")',
+    'missing attempt' => '$script:proofResponse.Remove("run_attempt")',
+    'unknown lane' => '$script:proofResponse.lane = "skipped"',
+    'foreign repository URL' => '$script:proofResponse.url = "https://github.com/other/repository/actions/runs/123"',
+    'shell syntax in run ID' => '$script:proofResponse.run_id = "123;echo"',
+]);
+
+it('deploys only an unchanged release with the same successful CI attempt after confirmation', function (string $scenario, bool $allowed): void {
+    $command = '$script:scenario = '.var_export($scenario, true)."\n".<<<'POWERSHELL'
+$script:confirmation = $false
+$script:proofCalls = 0
+function Assert-SchooltoolRepository {}
+function Assert-SchooltoolClean {}
+function Update-SchooltoolRemote {}
+function Invoke-SchooltoolGit {
+    $arguments = $args -join ' '
+    if ($arguments -like '*:deployment/*') {
+        if ($args[0] -cne '--no-replace-objects') { throw 'Release metadata may be substituted through Git replace refs.' }
+        $arguments = $args[1..($args.Count-1)] -join ' '
+    }
+    switch ($arguments) {
+        'branch --show-current' { 'main'; return }
+        'rev-parse HEAD' { if ($script:confirmation -and $script:scenario -eq 'checkout changed') { 'e'*40 } else { 'a'*40 }; return }
+        'rev-parse refs/remotes/origin/main' { if ($script:confirmation -and $script:scenario -eq 'main changed') { 'f'*40 } else { 'a'*40 }; return }
+    }
+    if ($arguments -like 'show *:deployment/source-commit') { 'b'*40; return }
+    if ($arguments -like 'show *:deployment/frontend-build.sha256') { 'c'*64; return }
+    if ($arguments -like 'rev-parse *:deployment/source-manifest.sha256') { 'd'*40; return }
+    throw "Unexpected Git fixture: $arguments"
+}
+function Assert-SchooltoolCiRelease {
+    param([string]$Commit)
+    if ($Commit -cne ('a'*40)) { throw 'Unpinned proof request.' }
+    $script:proofCalls++
+    if ($script:scenario -eq 'not approved' -or ($script:proofCalls -eq 2 -and $script:scenario -eq 'approval revoked')) { throw 'GitHub checks not successful.' }
+    $attempt = if ($script:proofCalls -eq 2 -and $script:scenario -eq 'attempt changed') { 2 } else { 1 }
+    [pscustomobject]@{commit=$Commit;run_id=123;run_attempt=$attempt;lane='full';url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+}
+function Read-Host { $script:confirmation=$true; if ($script:scenario -eq 'cancelled') { '' } else { 'LIVE' } }
+function Invoke-SchooltoolRemote {
+    param($Target,[string]$Command)
+    if ($Command -like '*composer pdeploy') {
+        if ($script:proofCalls -ne 2 -or $Command -notlike "*SCHOOLTOOL_CI_RUN_ID='123' SCHOOLTOOL_CI_RUN_ATTEMPT='1' composer pdeploy") { throw 'Deployment lost its checked proof.' }
+        Write-Output 'PINNED_LIVE_DEPLOYMENT'
+    } else { Write-Output 'READ_ONLY_PREFLIGHT' }
+}
+try { gitdeploy }
+catch { Write-Output ('DEPLOYMENT_BLOCKED: ' + $_.Exception.Message) }
+POWERSHELL;
+    $process = deploymentSshProcess($command);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
+    if ($allowed) {
+        expect($process->getOutput())->toContain('PINNED_LIVE_DEPLOYMENT')->not->toContain('DEPLOYMENT_BLOCKED');
+    } else {
+        expect($process->getOutput())->toContain('DEPLOYMENT_BLOCKED')->not->toContain('PINNED_LIVE_DEPLOYMENT');
+    }
+    if ($scenario === 'not approved') {
+        expect($process->getOutput())->not->toContain('READ_ONLY_PREFLIGHT');
+    }
+})->with([
+    'same approved attempt' => ['approved', true],
+    'pending or failed first proof' => ['not approved', false],
+    'approval revoked during confirmation' => ['approval revoked', false],
+    'rerun started during confirmation' => ['attempt changed', false],
+    'remote main advanced' => ['main changed', false],
+    'local checkout changed' => ['checkout changed', false],
+    'operator cancelled' => ['cancelled', false],
+]);

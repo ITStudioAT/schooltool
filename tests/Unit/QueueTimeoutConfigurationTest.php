@@ -195,7 +195,7 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->toBeLessThan((int) $directStartTimeoutMatches[1]);
 });
 
-it('validates the locally published frontend release in parallel CI', function (): void {
+it('validates the published frontend release with the complete background CI policy', function (): void {
     $deploymentScript = file_get_contents(base_path('scripts/deploy_cloudways.sh'));
     $workflow = file_get_contents(base_path('.github/workflows/ci.yml'));
     $gitHelpers = file_get_contents(base_path('scripts/git_helpers.ps1'));
@@ -206,14 +206,14 @@ it('validates the locally published frontend release in parallel CI', function (
         ->toContain('php-tests:')
         ->toContain('infrastructure:')
         ->toContain('release-integrity:')
-        ->toContain('READY — CI verified Cloudways release')
-        ->toContain('--parallel --processes=2 --recreate-databases --coverage-clover=storage/logs/clover.xml')
+        ->toContain('Release approval (policy v2)')
+        ->toContain('php scripts/ci-php-tests.php coverage')
         ->toContain('php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"')
         ->toContain('if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'')
-        ->toMatch('/php-quality:.*?if: github\.event_name != \'push\'/s')
-        ->toMatch('/frontend:.*?if: github\.event_name != \'push\'/s')
-        ->toMatch('/php-tests:.*?if: github\.event_name != \'push\'/s')
-        ->toMatch('/infrastructure:.*?if: github\.event_name != \'push\'/s')
+        ->toMatch('/php-quality:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
+        ->toMatch('/frontend:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
+        ->toMatch('/php-tests:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
+        ->toMatch('/infrastructure:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
         ->not->toContain('composer test:php:smoke')
         ->not->toContain('npm run test:ui:smoke')
         ->not->toContain('contents: write')
@@ -244,7 +244,7 @@ it('validates the locally published frontend release in parallel CI', function (
         ->toContain('--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit')
         ->toContain('--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)')
         ->toContain('$pushArguments += @(\'origin\', "${releaseCommit}:refs/heads/main")')
-        ->toContain('Cloudways may run: composer pdeploy');
+        ->toContain('Use gitdeploy for live publication; it requires successful CI for this exact release.');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {

@@ -90,7 +90,7 @@ function Invoke-SchooltoolReleaseCheckProcesses {
     $analysisError = "$temporaryPrefix-analysis.err"
 
     $frontendCommand = if ($Full) { 'npm run test:ui && npm run build' } else { 'npm run build' }
-    $scope = if ($Full) { 'full tests and release build' } else { 'release build (tests already completed during development)' }
+    $scope = if ($Full) { 'full local tests and release build' } else { 'release build; GitHub checks are required before live deployment' }
     Write-Host "Running $scope..." -ForegroundColor Cyan
 
     $workingDirectory = (Get-Location).Path
@@ -207,7 +207,7 @@ function Wait-SchooltoolCi {
     $run = $null
 
     for ($attempt = 1; $attempt -le 30; $attempt++) {
-        $json = gh run list --workflow CI --branch main --commit $Commit --event push --limit 1 --json databaseId,url,status,conclusion
+        $json = gh run list --repo ITStudioAT/schooltool --workflow ci.yml --branch main --commit $Commit --event push --limit 1 --json databaseId,url,status,conclusion
 
         if ($LASTEXITCODE -eq 0 -and $json) {
             $run = $json | ConvertFrom-Json | Select-Object -First 1
@@ -225,13 +225,14 @@ function Wait-SchooltoolCi {
         return
     }
 
-    gh run watch $run.databaseId --exit-status --interval 10
+    gh run watch $run.databaseId --repo ITStudioAT/schooltool --exit-status --interval 10
 
     if ($LASTEXITCODE -ne 0) {
         throw "GitHub CI failed: $($run.url)"
     }
 
-    Write-Host "GitHub CI verified the release: $($run.url)" -ForegroundColor Green
+    $proof = Assert-SchooltoolCiRelease -Commit $Commit
+    Write-Host "GitHub CI verified the exact release: $($proof.url)" -ForegroundColor Green
 }
 
 function Write-SchooltoolCompletionTime {
@@ -294,8 +295,6 @@ function Invoke-SchooltoolPublish {
             throw 'main contains remote changes missing locally. Use gitmain before editing, or resolve divergent commits explicitly. Nothing was merged.'
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
-        $Full = $true
-
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {
             php scripts/update.php --target=local --prepare
         }
@@ -508,12 +507,13 @@ function Invoke-SchooltoolPublish {
         }
 
         Write-Host ''
-        Write-Host 'READY.' -ForegroundColor Green
+        Write-Host 'SAVED ON GITHUB.' -ForegroundColor Green
         Write-Host 'Windows PCs may pull main and run: composer deploy' -ForegroundColor Green
-        Write-Host 'Cloudways may run: composer pdeploy' -ForegroundColor Green
+        Write-Host 'Use gitdeploy for live publication; it requires successful CI for this exact release.' -ForegroundColor Cyan
 
         if (-not $WaitForCI) {
-            Write-Host 'GitHub is checking release integrity and dependency security in the background.' -ForegroundColor DarkGray
+            Write-Host 'GitHub selects the required checks automatically. Application changes require the full background checks; only verified documentation/version changes use the fast checks.' -ForegroundColor DarkGray
+            Write-Host 'CI pending is not live-ready. gitdeploy stops while checks are missing, running or unsuccessful.' -ForegroundColor Yellow
         }
         Write-SchooltoolCompletionTime
     }
@@ -534,6 +534,5 @@ function gitpush {
         [switch]$WaitForCI,
         [switch]$Full
     )
-    $PSBoundParameters['Full'] = $true
     Invoke-SchooltoolPublish @PSBoundParameters
 }
