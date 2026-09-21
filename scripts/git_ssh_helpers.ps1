@@ -223,25 +223,49 @@ function Get-SchooltoolFileChecksum {
     finally { $stream.Dispose(); $hasher.Dispose() }
 }
 
+function Assert-SchooltoolCiRelease {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+    if ($Commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid release commit for GitHub verification.' }
+    $json = & php (Join-Path $PSScriptRoot 'ci-release-proof.php') verify --commit $Commit
+    if ($LASTEXITCODE -ne 0) { throw 'This exact release has no successful required GitHub checks. Live deployment is blocked.' }
+    try { $proof = $json | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'GitHub returned no valid release proof. Live deployment is blocked.' }
+    if ($proof.commit -cne $Commit -or [string]$proof.run_id -cnotmatch '^[1-9][0-9]*$' -or
+        [string]$proof.run_attempt -cnotmatch '^[1-9][0-9]*$' -or $proof.lane -cnotin @('full', 'documentation') -or
+        $proof.url -cne "https://github.com/ITStudioAT/schooltool/actions/runs/$($proof.run_id)") {
+        throw 'GitHub returned an inconsistent release proof. Live deployment is blocked.'
+    }
+    $proof
+}
+
 function gitdeploy {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
+    $originalBranch = Invoke-SchooltoolGit branch --show-current
+    $originalHead = Invoke-SchooltoolGit rev-parse HEAD
     $target = Get-SchooltoolDeploymentTarget 'MAIN'
     Update-SchooltoolRemote
     $mainCommit = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
     if ($mainCommit -cnotmatch '^[a-f0-9]{40,64}$') { throw 'No verified main commit is available.' }
-    $sourceCommit = (Invoke-SchooltoolGit show "${mainCommit}:deployment/source-commit").Trim()
-    $archiveHash = ((Invoke-SchooltoolGit show "${mainCommit}:deployment/frontend-build.sha256") -split '\s+')[0]
-    $manifestBlob = Invoke-SchooltoolGit rev-parse "${mainCommit}:deployment/source-manifest.sha256"
+    $sourceCommit = (Invoke-SchooltoolGit --no-replace-objects show "${mainCommit}:deployment/source-commit").Trim()
+    $archiveHash = ((Invoke-SchooltoolGit --no-replace-objects show "${mainCommit}:deployment/frontend-build.sha256") -split '\s+')[0]
+    $manifestBlob = Invoke-SchooltoolGit --no-replace-objects rev-parse "${mainCommit}:deployment/source-manifest.sha256"
     if ($sourceCommit -cnotmatch '^[a-f0-9]{40,64}$' -or $archiveHash -cnotmatch '^[a-f0-9]{64}$' -or $manifestBlob -cnotmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$') {
         throw 'main does not contain a valid release artifact. Publish it with gitsave or gitrelease first.'
     }
+    $proof = Assert-SchooltoolCiRelease -Commit $mainCommit
     Invoke-SchooltoolRemote -Target $target -Command 'test -f scripts/pdeploy_cloudways.sh; grep -q SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB scripts/pdeploy_cloudways.sh; command -v composer >/dev/null'
     Write-Host "Live target: $($target.Ssh) $($target.Path)" -ForegroundColor Yellow
     Write-Host "GitHub main: $mainCommit. The application update includes its planned live database migrations." -ForegroundColor Yellow
+    Write-Host "Verified GitHub checks: $($proof.url), attempt $($proof.run_attempt)." -ForegroundColor Cyan
     if ((Read-Host 'Deploy main to the live application? Type LIVE') -cne 'LIVE') { throw 'Live deployment cancelled.' }
     Update-SchooltoolRemote
     if ((Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -ne $mainCommit) { throw 'main changed during confirmation. Review the new version and rerun gitdeploy.' }
-    Invoke-SchooltoolRemote -Target $target -Command "SCHOOLTOOL_EXPECTED_MAIN_COMMIT='$mainCommit' SCHOOLTOOL_EXPECTED_SOURCE_COMMIT='$sourceCommit' SCHOOLTOOL_EXPECTED_FRONTEND_SHA256='$archiveHash' SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB='$manifestBlob' composer pdeploy"
+    $confirmedProof = Assert-SchooltoolCiRelease -Commit $mainCommit
+    if ($confirmedProof.run_id -ne $proof.run_id -or $confirmedProof.run_attempt -ne $proof.run_attempt) { throw 'The GitHub check attempt changed during confirmation. Review the new checks and rerun gitdeploy.' }
+    Assert-SchooltoolRepository
+    Assert-SchooltoolClean
+    if ((Invoke-SchooltoolGit branch --show-current) -cne $originalBranch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $originalHead) { throw 'The local checkout changed during confirmation. Rerun gitdeploy.' }
+    Invoke-SchooltoolRemote -Target $target -Command "SCHOOLTOOL_EXPECTED_MAIN_COMMIT='$mainCommit' SCHOOLTOOL_EXPECTED_SOURCE_COMMIT='$sourceCommit' SCHOOLTOOL_EXPECTED_FRONTEND_SHA256='$archiveHash' SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB='$manifestBlob' SCHOOLTOOL_CI_RUN_ID='$($proof.run_id)' SCHOOLTOOL_CI_RUN_ATTEMPT='$($proof.run_attempt)' composer pdeploy"
     Write-Host "Live deployment completed for the confirmed main $mainCommit." -ForegroundColor Green
 }

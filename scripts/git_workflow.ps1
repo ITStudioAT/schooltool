@@ -22,9 +22,13 @@ switch ($Command) {
         if ($arguments.Count -eq 1) { $parameters.Name = $arguments[0] }
     }
     { $_ -in @('gitsave', 'gitrelease') } {
-        if ($arguments.Count -lt 1 -or $arguments.Count -gt 2) { throw "Usage: $Command DESCRIPTION [VERSION]" }
-        $parameters.Message = $arguments[0]
-        if ($arguments.Count -eq 2) { $parameters.Version = $arguments[1] }
+        $fullArguments = @($arguments | Where-Object { $_ -ceq '-Full' })
+        if ($fullArguments.Count -gt 1 -or ($fullArguments.Count -gt 0 -and $Command -cne 'gitsave')) { throw "Usage: $Command DESCRIPTION [VERSION]" }
+        if ($fullArguments.Count -eq 1) { $parameters.Full = $true }
+        $positionals = @($arguments | Where-Object { $_ -cne '-Full' })
+        if ($positionals.Count -lt 1 -or $positionals.Count -gt 2) { throw "Usage: $Command DESCRIPTION [VERSION]" }
+        $parameters.Message = $positionals[0]
+        if ($positionals.Count -eq 2) { $parameters.Version = $positionals[1] }
     }
     'gitpreview' {
         foreach ($argument in $arguments) {

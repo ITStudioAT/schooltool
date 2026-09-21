@@ -120,7 +120,8 @@ it('cancels superseded CI workflows per event and branch revision with bounded j
         ->toContain('cancel-in-progress: true')
         ->toContain('timeout-minutes: 10')
         ->toContain('timeout-minutes: 15')
-        ->toContain('timeout-minutes: 20');
+        ->toContain('timeout-minutes: 90')
+        ->toContain('timeout-minutes: 45');
 });
 
 it('detects a Laravel application key that was removed in a later commit', function () {

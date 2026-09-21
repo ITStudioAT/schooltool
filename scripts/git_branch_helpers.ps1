@@ -422,14 +422,15 @@ function gitmain {
 }
 
 function gitsave {
-    param([Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Message, [string]$Version)
+    param([Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Message, [string]$Version, [switch]$Full)
     Assert-SchooltoolRepository
     $currentBranch = Invoke-SchooltoolGit branch --show-current
     if ($currentBranch -eq 'main') {
-        Invoke-SchooltoolPublish -message $Message -version $Version -Full
+        Invoke-SchooltoolPublish -message $Message -version $Version -Full:$Full
         return
     }
     $branch = Assert-SchooltoolFeature
+    if ($Full) { throw 'Full local release checks are available on main; use gitpreview or gitrelease to check a feature.' }
     if ($Version) { throw 'Versions can only be published on main or with gitrelease.' }
     Update-SchooltoolRemote
     $active = Get-SchooltoolActiveFeature
