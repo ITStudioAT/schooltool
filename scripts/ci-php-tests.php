@@ -102,6 +102,12 @@ class CiPhpTests
         return $coverage;
     }
 
+    /** @return list<string> */
+    public static function testCommand(): array
+    {
+        return [PHP_BINARY, 'vendor/bin/pest', '--compact', '--display-warnings', '--exclude-group=integration'];
+    }
+
     /** @param list<string> $arguments */
     public static function main(array $arguments): int
     {
@@ -125,7 +131,7 @@ class CiPhpTests
             self::executeBatches($batches, function (array $files, int $number) use ($root, $directory, $mode, &$coverage): int {
                 $prefix = $directory.'/batch-'.$number;
                 file_put_contents($prefix.'.json', json_encode($files, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
-                $command = [PHP_BINARY, 'vendor/bin/pest', '--compact', '--exclude-group=integration'];
+                $command = self::testCommand();
                 $environment = ['TEST_TOKEN' => 'ci-batch-'.$number];
 
                 if ($mode === 'coverage') {

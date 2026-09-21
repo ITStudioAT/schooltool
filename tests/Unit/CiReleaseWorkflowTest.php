@@ -60,8 +60,37 @@ it('provides the locked Windows dependency extensions without bypassing platform
     }
 
     expect($requirements)->toHaveKeys(['ext-fileinfo', 'ext-sockets'])
-        ->and($extensions)->toContain('fileinfo', 'sockets')
+        ->and($extensions)->toContain('fileinfo', 'sockets', 'pdo_sqlite')
         ->and($install['run'])->not->toContain('--ignore-platform-req');
+});
+
+it('boots the Windows dependency setup with an isolated database accepted by the unchanged safety provider', function (): void {
+    $environment = releaseCiWorkflow()['jobs']['windows-workflow']['env'];
+
+    expect($environment['APP_ENV'])->toBe('testing')
+        ->and($environment['DB_CONNECTION'])->toBe('sqlite')
+        ->and($environment['DB_DATABASE'])->toBe(':memory:')
+        ->and($environment['DB_DATABASE_TEST'])->toBe(':memory:')
+        ->and($environment['PULSE_ENABLED'])->toBeFalse();
+
+    $environment = array_map(fn (mixed $value): string => is_bool($value) ? ($value ? 'true' : 'false') : (string) $value, $environment);
+    $environment['APP_BASE_PATH'] = dirname(__DIR__, 2);
+    $environment['APP_CONFIG_CACHE'] = sys_get_temp_dir().'/schooltool-ci-config-'.bin2hex(random_bytes(8)).'.php';
+    $code = <<<'PHP'
+require 'vendor/autoload.php';
+$app = require 'bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+echo json_encode($app->make('database.safety'), JSON_THROW_ON_ERROR);
+PHP;
+    $process = new Process([PHP_BINARY, '-r', $code], dirname(__DIR__, 2), $environment);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
+    $safety = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    expect($safety['is_testing_environment'])->toBeTrue()
+        ->and($safety['current_connection'])->toBe('sqlite')
+        ->and($safety['current_database'])->toBe(':memory:')
+        ->and($safety['expected_testing_database'])->toBe(':memory:');
 });
 
 function runReleaseApproval(array $overrides, string $lane): Process
@@ -173,6 +202,36 @@ it('assigns the real MySQL snapshot and SQLite-only backup tests to dedicated co
 it('rejects oversized and empty PHP test batches', function (array $batch): void {
     expect(fn () => CiPhpTests::executeBatches([$batch], fn (): int => 0))->toThrow(RuntimeException::class);
 })->with([fn () => [], fn () => array_fill(0, 11, 'test.php')]);
+
+it('displays warning details without changing the CI warning failure policy', function (): void {
+    $command = CiPhpTests::testCommand();
+
+    expect($command)->toContain('--display-warnings', '--exclude-group=integration')
+        ->not->toContain('--fail-on-warnings', '--no-logging');
+});
+
+it('creates only an empty disposable CI environment and refuses an existing file', function (string $job): void {
+    $steps = releaseCiWorkflow()['jobs'][$job]['steps'];
+    $name = 'Create an empty CI environment file without credentials';
+    $index = array_search($name, array_column($steps, 'name'), true);
+    $composerIndex = array_search('Install PHP dependencies', array_column($steps, 'name'), true);
+    expect($index)->toBeInt()->toBeLessThan($composerIndex);
+    expect(preg_match('/^php -r "(.+)"$/', $steps[$index]['run'], $matches))->toBe(1);
+    $directory = sys_get_temp_dir().'/schooltool-ci-dotenv-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+
+    try {
+        $process = new Process([PHP_BINARY, '-r', $matches[1]], $directory);
+        $process->mustRun();
+        expect(file_get_contents($directory.'/.env'))->toBe('');
+        file_put_contents($directory.'/.env', 'existing fixture must be preserved');
+        $process->run();
+        expect($process->isSuccessful())->toBeFalse()
+            ->and(file_get_contents($directory.'/.env'))->toBe('existing fixture must be preserved');
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with(['php-tests', 'windows-workflow']);
 
 it('merges coverage from every batch and rejects missing or invalid reports', function (): void {
     $directory = sys_get_temp_dir().'/schooltool-ci-coverage-'.bin2hex(random_bytes(8));
