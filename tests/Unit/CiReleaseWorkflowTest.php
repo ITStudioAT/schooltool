@@ -47,6 +47,23 @@ it('requires exact baseline proof before selecting the documentation lane', func
         ->toBe("needs.classify.outputs.lane == 'documentation' && needs.classify.outputs.base-proven == 'true'");
 });
 
+it('provides the locked Windows dependency extensions without bypassing platform checks', function (): void {
+    $steps = releaseCiWorkflow()['jobs']['windows-workflow']['steps'];
+    $setup = array_values(array_filter($steps, fn (array $step): bool => ($step['uses'] ?? '') === 'shivammathur/setup-php@v2'))[0];
+    $extensions = array_map('trim', explode(',', $setup['with']['extensions']));
+    $install = array_values(array_filter($steps, fn (array $step): bool => ($step['name'] ?? '') === 'Install PHP dependencies'))[0];
+    $lock = json_decode(file_get_contents(dirname(__DIR__, 2).'/composer.lock'), true, flags: JSON_THROW_ON_ERROR);
+    $requirements = [];
+
+    foreach ([...$lock['packages'], ...$lock['packages-dev']] as $package) {
+        $requirements += $package['require'] ?? [];
+    }
+
+    expect($requirements)->toHaveKeys(['ext-fileinfo', 'ext-sockets'])
+        ->and($extensions)->toContain('fileinfo', 'sockets')
+        ->and($install['run'])->not->toContain('--ignore-platform-req');
+});
+
 function runReleaseApproval(array $overrides, string $lane): Process
 {
     $bash = PHP_OS_FAMILY === 'Windows' ? 'C:/Program Files/Git/bin/bash.exe' : (new ExecutableFinder)->find('bash');
