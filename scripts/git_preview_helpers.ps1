@@ -1,4 +1,5 @@
 . (Join-Path $PSScriptRoot 'git_ssh_helpers.ps1')
+. (Join-Path $PSScriptRoot 'git_preview_receipt.ps1')
 
 function Get-SchooltoolPreviewTarget {
     Get-SchooltoolDeploymentTarget 'PREVIEW'
@@ -49,12 +50,15 @@ function Send-SchooltoolPreview {
 }
 
 function gitpreview {
-    param([ValidateSet('deploy', 'prepare')][string]$Mode = 'deploy', [switch]$RefreshData)
+    param([ValidateSet('deploy', 'prepare', 'resume')][string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData)
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     $root = (Get-Location).Path
     $originalBranch = Assert-SchooltoolFeature
     $prepareOnly = $Mode -eq 'prepare'
+    if (($Mode -eq 'resume') -ne (-not [string]::IsNullOrEmpty($BundleId))) { throw 'Usage: gitpreview [deploy|prepare] or gitpreview resume BUNDLE_ID [-RefreshData]' }
+    $receipt = if ($Mode -eq 'resume') { Read-SchooltoolPreviewReceipt $BundleId } else { $null }
+    if ($receipt) { Assert-SchooltoolPreviewReceipt -Receipt $receipt -Root $root }
     if ($prepareOnly -and $RefreshData) { throw 'RefreshData requires an online preview deployment.' }
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
@@ -75,40 +79,59 @@ function gitpreview {
         }
         if ($RefreshData -or $snapshotStatus.needs_snapshot) { Get-SchooltoolDeploymentTarget 'MAIN' | Out-Null }
     }
-    $id = [guid]::NewGuid().ToString('N')
-    $bundleDirectory = [System.IO.Path]::GetFullPath((Join-Path (Invoke-SchooltoolGit rev-parse --git-common-dir) 'schooltool-preview'))
+    $id = if ($receipt) { $receipt.Id } else { [guid]::NewGuid().ToString('N') }
+    $bundleDirectory = Get-SchooltoolPreviewDirectory
     [System.IO.Directory]::CreateDirectory($bundleDirectory) | Out-Null
-    $candidate = New-SchooltoolCandidateWorktree -Kind 'preview' -SourceCommit $featureCommit
+    $candidate = if ($receipt) { $receipt.Candidate } else { New-SchooltoolCandidateWorktree -Kind 'preview' -SourceCommit $featureCommit }
+    $newCandidate = -not $receipt
     $published = $false
     $candidateEnvironment = $null
     Push-Location -LiteralPath $candidate.Path
     try {
-        Invoke-SchooltoolGit merge --no-edit $mainCommit | Out-Host
-        $sourceCommit = Invoke-SchooltoolGit rev-parse HEAD
-        $candidateEnvironment = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
-        Invoke-SchooltoolCommand 'Preparing preview dependencies...' { php scripts/update.php --target=local --prepare }
-        Invoke-SchooltoolCommand 'Formatting preview PHP files...' { php vendor/bin/pint --dirty --format agent }
-        Invoke-SchooltoolCommand 'Checking preview source encoding...' { php scripts/check-encoding.php }
-        Assert-SchooltoolClean
-        $checkedTree = Get-SchooltoolSourceTree
-        Invoke-SchooltoolReleaseChecks -Full
-        Assert-SchooltoolClean
-        Assert-SchooltoolCheckedSource $checkedTree
-        Invoke-SchooltoolCommand 'Creating the preview artifact...' { php scripts/frontend-release.php create $sourceCommit }
-        Invoke-SchooltoolCommand 'Verifying the preview artifact...' { php scripts/frontend-release.php verify $sourceCommit }
-        Invoke-SchooltoolGit add -f deployment/frontend-build.sha256 deployment/frontend-build.tar.gz deployment/source-commit deployment/source-manifest.sha256
-        Invoke-SchooltoolGit commit --allow-empty -m "Build preview for $sourceCommit" | Out-Host
-        Assert-SchooltoolClean
-        Assert-SchooltoolCheckedSource $checkedTree
-        Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $featureCommit -MainCommit $mainCommit
-        $archive = Join-Path $bundleDirectory "$id.tar.gz"
-        Invoke-SchooltoolGit archive --format=tar.gz "--output=$archive" HEAD
-        $checksum = Get-SchooltoolFileChecksum $archive
-        $completedEnvironment = $candidateEnvironment
-        $candidateEnvironment = $null
-        Restore-SchooltoolCandidateEnvironment $completedEnvironment
+        if (-not $receipt) {
+            Invoke-SchooltoolGit merge --no-edit $mainCommit | Out-Host
+            Save-SchooltoolCandidate $candidate
+            $sourceCommit = Invoke-SchooltoolGit rev-parse HEAD
+            $candidateEnvironment = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
+            Invoke-SchooltoolCommand 'Preparing preview dependencies...' { php scripts/update.php --target=local --prepare }
+            Invoke-SchooltoolCommand 'Formatting preview PHP files...' { php vendor/bin/pint --dirty --format agent }
+            Invoke-SchooltoolCommand 'Checking preview source encoding...' { php scripts/check-encoding.php }
+            Assert-SchooltoolClean
+            $checkedTree = Get-SchooltoolSourceTree
+            Invoke-SchooltoolReleaseChecks -Full
+            Assert-SchooltoolClean
+            Assert-SchooltoolCheckedSource $checkedTree
+            Invoke-SchooltoolCommand 'Creating the preview artifact...' { php scripts/frontend-release.php create $sourceCommit }
+            Invoke-SchooltoolCommand 'Verifying the preview artifact...' { php scripts/frontend-release.php verify $sourceCommit }
+            Invoke-SchooltoolGit add -f deployment/frontend-build.sha256 deployment/frontend-build.tar.gz deployment/source-commit deployment/source-manifest.sha256
+            Invoke-SchooltoolGit commit --allow-empty -m "Build preview for $sourceCommit" | Out-Host
+            Save-SchooltoolCandidate $candidate
+            Assert-SchooltoolClean
+            Assert-SchooltoolCheckedSource $checkedTree
+            Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $featureCommit -MainCommit $mainCommit
+            $archive = Join-Path $bundleDirectory "$id.tar.gz"
+            Invoke-SchooltoolGit archive --format=tar.gz "--output=$archive" HEAD
+            $checksum = Get-SchooltoolFileChecksum $archive
+            $completedEnvironment = $candidateEnvironment
+            $candidateEnvironment = $null
+            Restore-SchooltoolCandidateEnvironment $completedEnvironment
+            $receipt = [pscustomobject]@{
+                Format = 'schooltool-preview-v2'; Id = $id; Checks = 'full-success'; EvidenceKind = 'inline-full-checks'; CheckedAt = [DateTime]::UtcNow.ToString('o')
+                Root = $root; Directory = $bundleDirectory; Origin = (Get-SchooltoolPreviewOrigin); PushOrigin = (Get-SchooltoolPreviewOrigin -Push)
+                Feature = $feature; FeatureCommit = $featureCommit; MainCommit = $mainCommit; Candidate = $candidate
+                SourceCommit = $sourceCommit; ArtifactCommit = (Invoke-SchooltoolGit rev-parse HEAD); SourceTree = $checkedTree; Checksum = $checksum
+            }
+            Write-SchooltoolPreviewReceipt $receipt
+        }
+        else {
+            $sourceCommit = $receipt.SourceCommit
+            $archive = Join-Path $bundleDirectory "$id.tar.gz"
+            $checksum = $receipt.Checksum
+        }
+        $resumeCommand = "gitpreview resume $id" + $(if ($RefreshData) { ' -RefreshData' } else { '' })
         Write-Host "Preview source: $originalBranch ($sourceCommit)" -ForegroundColor Cyan
         Write-Host "Prepared bundle: $archive" -ForegroundColor Cyan
+        Write-Host "Continue this checked candidate: $resumeCommand" -ForegroundColor Cyan
         if ($prepareOnly) {
             Write-Host 'Candidate prepared and checked. Feature, main and servers are unchanged.' -ForegroundColor Green
             return
@@ -118,8 +141,15 @@ function gitpreview {
             Write-Host 'Preview data will be backed up and replaced with a new isolated live snapshot. Current preview test entries will be removed from the active preview.' -ForegroundColor Yellow
         }
         else { Write-Host 'Existing preview test data will be retained; pending feature migrations will run only on its isolated database.' -ForegroundColor Cyan }
-        if ($RefreshData -and (Read-Host 'Replace the current preview test data? Type REFRESH') -cne 'REFRESH') { throw 'Data refresh cancelled.' }
-        if ((Read-Host 'Publish and deploy this verified preview? Type PREVIEW') -cne 'PREVIEW') { throw 'Preview cancelled. The prepared candidate is retained.' }
+        if ($RefreshData -and (Read-Host 'Replace the current preview test data? Type REFRESH') -cne 'REFRESH') {
+            Write-Host "Data refresh cancelled. Nothing published. Continue with: $resumeCommand" -ForegroundColor Yellow
+            return
+        }
+        if ((Read-Host 'Publish and deploy this verified preview? Type PREVIEW') -cne 'PREVIEW') {
+            Write-Host "Preview cancelled. Nothing published. Continue with: $resumeCommand" -ForegroundColor Yellow
+            return
+        }
+        Assert-SchooltoolPreviewReceipt -Receipt (Read-SchooltoolPreviewReceipt $id) -Root $root
         Push-Location -LiteralPath $root
         try {
             Assert-SchooltoolRepository
@@ -131,7 +161,8 @@ function gitpreview {
         finally { Pop-Location }
         Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $featureCommit -MainCommit $mainCommit
         Invoke-SchooltoolGit merge-base --is-ancestor $featureCommit $sourceCommit | Out-Null
-        Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${originalBranch}:$featureCommit" origin "${sourceCommit}:refs/heads/$originalBranch" "HEAD:refs/heads/preview/$id" | Out-Host
+        Start-SchooltoolPreviewPublication $id
+        Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${originalBranch}:$featureCommit" "--force-with-lease=refs/heads/preview/${id}:" origin "${sourceCommit}:refs/heads/$originalBranch" "$($receipt.ArtifactCommit):refs/heads/preview/$id" | Out-Host
         $published = $true
         Push-Location -LiteralPath $root
         try { Invoke-SchooltoolGit merge --ff-only $sourceCommit | Out-Host }
@@ -146,11 +177,12 @@ function gitpreview {
     }
     finally {
         try {
-            if ($candidateEnvironment) { Restore-SchooltoolCandidateEnvironment $candidateEnvironment }
+            try { if ($newCandidate) { Save-SchooltoolCandidate $candidate } }
+            finally { if ($candidateEnvironment) { Restore-SchooltoolCandidateEnvironment $candidateEnvironment } }
         }
         finally {
             Pop-Location
-            Write-Host "Candidate retained: $($candidate.Branch) at $($candidate.Path)" -ForegroundColor DarkGray
+            Write-Host "Candidate retained at $($candidate.Path)." -ForegroundColor DarkGray
         }
     }
 }

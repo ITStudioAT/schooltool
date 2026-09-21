@@ -43,9 +43,37 @@ it('guards preview identity and runs only the isolated deployment commands', fun
     $directory = sys_get_temp_dir().'/schooltool-preview-deploy-'.bin2hex(random_bytes(8));
     $candidate = $directory.'/candidate';
     $target = $directory.'/application/public_html';
+    $privateDirectory = $directory.'/application/private_html/schooltool-preview';
+    $composerCache = $privateDirectory.'/composer-cache';
+    if ((str_contains($scenario, 'symlink') || $scenario === 'composer cache child unsafe mode') && PHP_OS_FAMILY === 'Windows') {
+        $this->markTestSkipped('Real POSIX symlink and writable-mode rejection runs on Linux.');
+    }
     mkdir($candidate.'/scripts', 0777, true);
     mkdir($candidate.'/deployment');
     mkdir($target, 0777, true);
+    mkdir($privateDirectory, 0700, true);
+    chmod($privateDirectory, 0700);
+    if ($scenario === 'composer cache is file') {
+        file_put_contents($composerCache, 'preserve');
+    } elseif ($scenario === 'composer cache symlink') {
+        symlink($directory, $composerCache);
+    } elseif ($scenario === 'composer parent symlink') {
+        rmdir($privateDirectory);
+        symlink($directory, $privateDirectory);
+    } elseif (in_array($scenario, ['composer cache reused', 'composer cache wrong owner', 'composer cache unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink'], true)) {
+        mkdir($composerCache, 0700);
+        chmod($composerCache, 0700);
+        file_put_contents($composerCache.'/existing-package.zip', 'cached package fixture');
+        if ($scenario === 'composer cache child symlink') {
+            symlink($directory, $composerCache.'/escape');
+        }
+        if ($scenario === 'composer cache child unsafe mode') {
+            chmod($composerCache.'/existing-package.zip', 0666);
+        }
+        if ($scenario === 'composer cache child hardlink') {
+            link($composerCache.'/existing-package.zip', $composerCache.'/linked-package.zip');
+        }
+    }
     if ($scenario === 'public storage exposed') {
         mkdir($target.'/public/storage', 0777, true);
     }
@@ -60,10 +88,21 @@ it('guards preview identity and runs only the isolated deployment commands', fun
     file_put_contents($candidate.'/deployment/source-commit', str_repeat('a', 40));
     file_put_contents($target.'/.env', 'SCHOOLTOOL_PREVIEW_INSTANCE='.($scenario === 'wrong instance' ? 'false' : 'true')."\n");
     $executables = [
-        'id' => "#!/bin/bash\nprintf '%s\\n' \"\$PREVIEW_TEST_ACCOUNT\"\n",
+        'id' => "#!/bin/bash\nif [ \"\$1\" = -u ]; then exec /usr/bin/id -u; fi\nprintf '%s\\n' \"\$PREVIEW_TEST_ACCOUNT\"\n",
         'stat' => <<<'BASH'
 #!/bin/bash
-if [ "$2" = %a ]; then
+path="${@: -1}"
+if [[ "$path" == */private_html* ]] || [[ "$path" == */application ]]; then
+    if [ "$2" = %U ]; then
+        if { [ "$PREVIEW_TEST_FAILURE" = composer-owner ] && [[ "$path" == */composer-cache ]]; } || { [ "$PREVIEW_TEST_FAILURE" = composer-parent-owner ] && [[ "$path" == */private_html ]]; }; then
+            printf 'another-app\n'
+        elif [[ "$path" == */application ]]; then printf 'root\n';
+        else printf '%s\n' "$PREVIEW_TEST_OWNER"; fi
+    elif { [ "$PREVIEW_TEST_FAILURE" = composer-mode ] && [[ "$path" == */composer-cache ]]; } || { [ "$PREVIEW_TEST_FAILURE" = composer-parent-mode ] && [[ "$path" == */schooltool-preview ]]; }; then
+        printf '755\n'
+    elif [ "$PREVIEW_TEST_WINDOWS" = 1 ]; then printf '700\n';
+    else /usr/bin/stat "$@"; fi
+elif [ "$2" = %a ]; then
     if [ "$PREVIEW_TEST_FAILURE" = cache-mode ]; then printf '644\n';
     elif [ "$PREVIEW_TEST_WINDOWS" = 1 ]; then cat "$PREVIEW_TEST_CACHE_MODE";
     else /usr/bin/stat "$@"; fi
@@ -76,6 +115,7 @@ BASH,
         'php' => <<<'BASH'
 #!/bin/bash
 printf 'php %s\n' "$*" >> "$PREVIEW_TEST_LOG"
+if [ "$COMPOSER_CACHE_DIR" != "$PREVIEW_TEST_EXTERNAL_CACHE" ]; then exit 41; fi
 if [ "$PREVIEW_TEST_FAILURE" = check ] && [ "${2:-}" = preview:check ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
@@ -93,7 +133,19 @@ if [ "${2:-}" = view:cache ] || [ "${2:-}" = install ]; then
     printf 'public assets umask %s\n' "$(umask)" >> "$PREVIEW_TEST_LOG"
 fi
 BASH,
-        'composer' => "#!/bin/bash\nprintf 'composer %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
+        'composer' => <<<'BASH'
+#!/bin/bash
+printf 'composer %s\n' "$*" >> "$PREVIEW_TEST_LOG"
+printf 'composer cache %s\n' "$COMPOSER_CACHE_DIR" >> "$PREVIEW_TEST_LOG"
+printf 'package cache fixture\n' > "$COMPOSER_CACHE_DIR/download.zip"
+BASH,
+        'mkdir' => <<<'BASH'
+#!/bin/bash
+if [[ "${@: -1}" == */composer-cache ]]; then
+    printf 'composer cache creation umask %s\n' "$(umask)" > "$PREVIEW_TEST_CACHE_CREATION"
+fi
+exec /usr/bin/mkdir "$@"
+BASH,
         'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
         'flock' => "#!/bin/bash\nshift 4\nexec \"\$@\"\n",
     ];
@@ -105,6 +157,9 @@ BASH,
         'PATH' => previewBashPath($directory.'/bin').':/usr/bin:/bin',
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
         'PREVIEW_TEST_CACHE_MODE' => previewBashPath($directory.'/cache-mode'),
+        'PREVIEW_TEST_CACHE_CREATION' => previewBashPath($directory.'/cache-creation'),
+        'COMPOSER_CACHE_DIR' => previewBashPath($directory.'/external-cache-must-not-be-used'),
+        'PREVIEW_TEST_EXTERNAL_CACHE' => previewBashPath($directory.'/external-cache-must-not-be-used'),
         'PREVIEW_TEST_WINDOWS' => PHP_OS_FAMILY === 'Windows' ? '1' : '0',
         'PREVIEW_TEST_ACCOUNT' => $scenario === 'wrong account' ? 'sftp_schooltool_at' : 'schooltool-feature',
         'PREVIEW_TEST_OWNER' => $scenario === 'wrong owner' ? 'another-app' : 'schooltool-feature',
@@ -116,6 +171,10 @@ BASH,
             'config cache missing' => 'cache-missing',
             'config cache unsafe mode' => 'cache-mode',
             'config cache wrong owner' => 'cache-owner',
+            'composer cache wrong owner' => 'composer-owner',
+            'composer parent wrong owner' => 'composer-parent-owner',
+            'composer cache unsafe mode' => 'composer-mode',
+            'composer parent unsafe mode' => 'composer-parent-mode',
             default => '',
         },
     ];
@@ -127,13 +186,22 @@ BASH,
         $commands = is_file($directory.'/commands.log') ? file_get_contents($directory.'/commands.log') : '';
         expect($commands)->not->toContain('app:update', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
 
-        if (in_array($scenario, ['success', 'snapshot success'], true)) {
+        if (in_array($scenario, ['success', 'snapshot success', 'composer cache reused'], true)) {
             expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
                 ->and($commands)->toContain('preview:check', '--no-scripts', 'config:cache', 'view:cache', 'artisan up')
                 ->and($commands)->toContain('--exclude=/.env', '--exclude=/storage', 'artisan migrate --force --no-interaction', 'preview:snapshot activate');
             expect(file_get_contents($target.'/bootstrap/cache/config.php'))->toBe("private configuration fixture\n")
                 ->and($commands)->toContain('config cache umask 0077')
                 ->and(substr_count($commands, 'public assets umask 0022'))->toBe(2);
+            expect($commands)->toContain('composer cache '.previewBashPath($composerCache))
+                ->and(file_get_contents($composerCache.'/download.zip'))->toBe("package cache fixture\n")
+                ->and(is_dir($directory.'/external-cache-must-not-be-used'))->toBeFalse();
+            if ($scenario === 'composer cache reused') {
+                expect(file_get_contents($composerCache.'/existing-package.zip'))->toBe('cached package fixture')
+                    ->and(file_exists($directory.'/cache-creation'))->toBeFalse();
+            } else {
+                expect(file_get_contents($directory.'/cache-creation'))->toBe("composer cache creation umask 0077\n");
+            }
             if ($snapshot) {
                 expect($commands)->toContain('preview:snapshot receive', 'preview:snapshot import', '--replace')
                     ->and(strpos($commands, 'preview:snapshot import'))->toBeLessThan(strpos($commands, 'artisan migrate'))
@@ -158,11 +226,15 @@ BASH,
                 expect($commands)->not->toContain('preview:snapshot activate', 'artisan view:cache')
                     ->and($process->getErrorOutput())->toContain('configuration cache must be a private regular file');
             }
+            if (str_starts_with($scenario, 'composer ')) {
+                expect($commands)->toBe('')
+                    ->and($process->getErrorOutput())->toContain('Preview Composer cache');
+            }
         }
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner']);
+})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner', 'composer cache reused', 'composer cache is file', 'composer cache symlink', 'composer parent symlink', 'composer cache wrong owner', 'composer parent wrong owner', 'composer cache unsafe mode', 'composer parent unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink']);
 
 it('transfers a preview with strict key authentication and private snapshot permissions', function (bool $snapshot): void {
     if (PHP_OS_FAMILY !== 'Windows') {
