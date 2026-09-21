@@ -4,6 +4,11 @@ set -Eeuo pipefail
 project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
+if [[ "${SCHOOLTOOL_PREVIEW_INSTANCE:-false}" =~ ^(true|1|yes|on)$ ]] || { [ -f .env ] && grep -Eiq "^[[:space:]]*SCHOOLTOOL_PREVIEW_INSTANCE[[:space:]]*=[[:space:]]*['\"]?(true|1|yes|on)['\"]?([[:space:]]*(#.*)?)?$" .env; }; then
+    echo "Production deployment is disabled on the preview instance. Use gitpreview." >&2
+    exit 1
+fi
+
 expected_main="${SCHOOLTOOL_EXPECTED_MAIN_COMMIT:-}"
 expected_source="${SCHOOLTOOL_EXPECTED_SOURCE_COMMIT:-}"
 expected_frontend="${SCHOOLTOOL_EXPECTED_FRONTEND_SHA256:-}"
@@ -66,11 +71,6 @@ verify_confirmed_release() {
     '
     php scripts/frontend-release.php verify "$expected_source"
 }
-
-if [[ "${SCHOOLTOOL_PREVIEW_INSTANCE:-false}" =~ ^(true|1|yes|on)$ ]] || { [ -f .env ] && grep -Eiq "^[[:space:]]*SCHOOLTOOL_PREVIEW_INSTANCE[[:space:]]*=[[:space:]]*['\"]?(true|1|yes|on)['\"]?([[:space:]]*(#.*)?)?$" .env; }; then
-    echo "Production deployment is disabled on the preview instance. Use gitpreview." >&2
-    exit 1
-fi
 
 for command_name in bash php flock; do
     if ! command -v "$command_name" >/dev/null 2>&1; then

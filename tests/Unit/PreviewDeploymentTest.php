@@ -15,6 +15,15 @@ function previewBashPath(string $path): string
     return preg_replace_callback('/^([A-Za-z]):\//', fn (array $match): string => '/'.strtolower($match[1]).'/', $path);
 }
 
+it('normalizes native fixture paths on both local and hosted Windows drives', function (string $path, string $expected): void {
+    expect(previewBashPath($path))->toBe($expected);
+})->with([
+    ['C:/Users/runneradmin/AppData/Local/Temp/application/public_html', '/c/Users/runneradmin/AppData/Local/Temp/application/public_html'],
+    ['C:\\Users\\runneradmin\\AppData\\Local\\Temp\\application\\public_html', '/c/Users/runneradmin/AppData/Local/Temp/application/public_html'],
+    ['D:/a/_temp/application/public_html', '/d/a/_temp/application/public_html'],
+    ['D:\\a\\_temp\\application\\public_html', '/d/a/_temp/application/public_html'],
+]);
+
 it('keeps preview and production shell deployment entrypoints syntactically valid', function (string $script): void {
     $process = new Process([previewBashExecutable(), '-n', 'scripts/'.$script], dirname(__DIR__, 2));
     $process->run();
@@ -40,7 +49,12 @@ it('refuses every normal deployment launcher on a configured preview instance', 
 })->with(['update.php', 'deploy_cloudways.sh', 'pdeploy_cloudways.sh']);
 
 it('guards preview identity and runs only the isolated deployment commands', function (string $scenario): void {
-    $directory = sys_get_temp_dir().'/schooltool-preview-deploy-'.bin2hex(random_bytes(8));
+    $temporaryRoot = realpath(sys_get_temp_dir());
+    if ($temporaryRoot === false) {
+        throw new RuntimeException('The preview fixture requires an existing temporary directory.');
+    }
+    // Hosted Windows may return an 8.3 alias containing ~, which is not a valid server path.
+    $directory = $temporaryRoot.'/schooltool-preview-deploy-'.bin2hex(random_bytes(8));
     $candidate = $directory.'/candidate';
     $target = $directory.'/application/public_html';
     $privateDirectory = $directory.'/application/private_html/schooltool-preview';
