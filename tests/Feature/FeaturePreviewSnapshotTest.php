@@ -106,6 +106,8 @@ test('real MySQL snapshot copies data and private files while preserving live an
     $base = config('database.connections.mysql');
     expect($base['host'])->toBeIn(['127.0.0.1', 'localhost']);
     $admin = new PDO('mysql:host=127.0.0.1;port='.(int) $base['port'].';charset=utf8mb4', $base['username'], $base['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $accountHost = (string) $admin->query("SELECT SUBSTRING_INDEX(USER(), '@', -1)")->fetchColumn();
+    expect($accountHost)->toMatch('/\A[a-zA-Z0-9.:-]+\z/');
     $prefix = 'stps'.bin2hex(random_bytes(7));
     $sourceName = $prefix.'source';
     $targetName = $prefix.'target';
@@ -122,11 +124,11 @@ test('real MySQL snapshot copies data and private files while preserving live an
             $createdDatabases[] = $name;
         }
         foreach ([$mainUser, $writer] as $user) {
-            $admin->exec('CREATE USER '.$admin->quote($user).'@\'127.0.0.1\' IDENTIFIED BY '.$admin->quote($password));
+            $admin->exec('CREATE USER '.$admin->quote($user).'@'.$admin->quote($accountHost).' IDENTIFIED BY '.$admin->quote($password));
             $createdUsers[] = $user;
         }
-        $admin->exec('GRANT ALL PRIVILEGES ON `'.$sourceName.'`.* TO '.$admin->quote($mainUser)."@'127.0.0.1'");
-        $admin->exec('GRANT ALL PRIVILEGES ON `'.$targetName.'`.* TO '.$admin->quote($writer)."@'127.0.0.1'");
+        $admin->exec('GRANT ALL PRIVILEGES ON `'.$sourceName.'`.* TO '.$admin->quote($mainUser).'@'.$admin->quote($accountHost));
+        $admin->exec('GRANT ALL PRIVILEGES ON `'.$targetName.'`.* TO '.$admin->quote($writer).'@'.$admin->quote($accountHost));
         $base = array_replace($base, ['host' => '127.0.0.1', 'database' => $sourceName, 'url' => null, 'unix_socket' => '']);
         config([
             'database.connections.snapshot_main' => array_replace($base, ['username' => $mainUser, 'password' => $password]),
@@ -138,6 +140,8 @@ test('real MySQL snapshot copies data and private files while preserving live an
         }
         $source = DB::connection('snapshot_main');
         $target = DB::connection('snapshot_target');
+        expect($source->getPdo()->query('SELECT CURRENT_USER()')->fetchColumn())->toBe($mainUser.'@'.$accountHost)
+            ->and($target->getPdo()->query('SELECT CURRENT_USER()')->fetchColumn())->toBe($writer.'@'.$accountHost);
         $source->statement('CREATE TABLE users (id BIGINT PRIMARY KEY, school_id BIGINT, email VARCHAR(255), password VARCHAR(255), created_at TIMESTAMP NULL, confirmed_at TIMESTAMP NULL, email_verified_at TIMESTAMP NULL, is_2fa TINYINT, email_2fa VARCHAR(255) NULL, email_2fa_verified_at TIMESTAMP NULL, two_factor_secret TEXT NULL, two_factor_recovery_codes TEXT NULL, two_factor_confirmed_at TIMESTAMP NULL, remember_token VARCHAR(100) NULL, uuid VARCHAR(255) NULL, uuid_at TIMESTAMP NULL, token_2fa VARCHAR(100) NULL, token_2fa_expires_at TIMESTAMP NULL, feature_preview_allowed TINYINT) ENGINE=InnoDB');
         $source->statement('CREATE TABLE migrations (id BIGINT PRIMARY KEY, migration VARCHAR(255), batch INT) ENGINE=InnoDB');
         $source->statement('CREATE TABLE personal_access_tokens (id BIGINT PRIMARY KEY, token VARCHAR(255)) ENGINE=InnoDB');
@@ -347,7 +351,7 @@ test('real MySQL snapshot copies data and private files while preserving live an
             $admin->exec('DROP DATABASE `'.$name.'`');
         }
         foreach ($createdUsers as $user) {
-            $admin->exec('DROP USER '.$admin->quote($user)."@'127.0.0.1'");
+            $admin->exec('DROP USER '.$admin->quote($user).'@'.$admin->quote($accountHost));
         }
         (new Filesystem)->deleteDirectory($directory);
     }
