@@ -70,7 +70,8 @@ function Invoke-SchooltoolReleaseChecks {
         finally { Pop-Location }
     }
     finally {
-        Restore-SchooltoolCandidateEnvironment $candidateEnvironment
+        try { Save-SchooltoolCandidate $candidate }
+        finally { Restore-SchooltoolCandidateEnvironment $candidateEnvironment }
         Write-Host "Main test candidate retained at $($candidate.Path)." -ForegroundColor DarkGray
     }
     Invoke-SchooltoolCommand 'Building the checked main source for publication...' { npm run build }
@@ -117,7 +118,7 @@ function Wait-SchooltoolCheckProcess {
     while (-not $Process.HasExited) {
         $elapsed = [math]::Floor(((Get-Date) - $startedAt).TotalSeconds)
         Write-Host "  $Name is running ($elapsed seconds)..." -ForegroundColor DarkGray
-        Start-Sleep -Seconds 10
+        $null = $Process.WaitForExit(10000)
     }
     $Process.WaitForExit()
     $Process.Refresh()
@@ -266,11 +267,12 @@ function Invoke-SchooltoolPublish {
 
         [string]$ExpectedMainCommit,
         $Feature,
-        [string]$ExpectedFeatureCommit
+        [string]$ExpectedFeatureCommit,
+        [object]$Candidate
     )
 
     try {
-        Assert-SchooltoolRepository
+        Assert-SchooltoolRepository -Candidate $Candidate
         $branch = Invoke-SchooltoolGit branch --show-current
 
         if ($LASTEXITCODE -ne 0 -or (-not $ExpectedMainCommit -and $branch -ne 'main')) {
@@ -278,8 +280,8 @@ function Invoke-SchooltoolPublish {
         }
 
         if ($ExpectedMainCommit) {
-            if ($branch -notlike 'codex/release-*' -or -not $Full -or -not $Feature -or -not $ExpectedFeatureCommit) {
-                throw 'Feature releases require an isolated release branch and full checks.'
+            if (-not $Candidate -or $Candidate.Kind -cne 'release' -or -not $Full -or -not $Feature -or -not $ExpectedFeatureCommit) {
+                throw 'Feature releases require an isolated detached release candidate and full checks.'
             }
             Assert-SchooltoolClean
             Assert-SchooltoolFeatureSnapshot -Feature $Feature -FeatureCommit $ExpectedFeatureCommit -MainCommit $ExpectedMainCommit
@@ -432,6 +434,7 @@ function Invoke-SchooltoolPublish {
         }
 
         if ($ExpectedMainCommit) {
+            Save-SchooltoolCandidate $Candidate
             Assert-SchooltoolClean
             $currentBranch = Invoke-SchooltoolGit branch --show-current
             if ($currentBranch -ne $branch) {
@@ -451,6 +454,7 @@ function Invoke-SchooltoolPublish {
         if ((Invoke-SchooltoolGit branch --show-current) -cne $branch -or (Invoke-SchooltoolGit rev-parse HEAD) -ne $releaseCommit) {
             throw 'The checked release changed before publication. Nothing was pushed.'
         }
+        if ($Candidate) { Assert-SchooltoolCandidate $Candidate }
         if (-not (Test-SchooltoolAncestor $mainBeforeChecks $releaseCommit)) {
             throw 'Release publication can never rewrite main history.'
         }

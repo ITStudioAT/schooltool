@@ -7,6 +7,7 @@ function Invoke-SchooltoolGit {
 }
 
 function Assert-SchooltoolRepository {
+    param([object]$Candidate)
     $root = Invoke-SchooltoolGit rev-parse --show-toplevel
     if ((Get-Location).Path.TrimEnd('\', '/') -ne $root.TrimEnd('\', '/').Replace('/', '\')) {
         throw 'Run this command from the project root.'
@@ -18,7 +19,8 @@ function Assert-SchooltoolRepository {
         }
     }
     $branch = Invoke-SchooltoolGit branch --show-current
-    if (-not $branch) {
+    if ($Candidate) { Assert-SchooltoolCandidate $Candidate }
+    if (-not $branch -and -not $Candidate) {
         throw 'Detached HEAD: switch to a named branch first.'
     }
 }
@@ -137,15 +139,53 @@ function Assert-SchooltoolFeatureSnapshot {
 function New-SchooltoolCandidateWorktree {
     param([ValidateSet('preview', 'release')][string]$Kind, [string]$SourceCommit)
     $id = [guid]::NewGuid().ToString('N')
-    $branch = "codex/$Kind-$id"
+    $recoveryRef = "refs/schooltool/candidates/$Kind/$id"
+    $commit = Invoke-SchooltoolGit rev-parse "$SourceCommit^{commit}"
+    $repository = [System.IO.Path]::GetFullPath((Invoke-SchooltoolGit rev-parse --git-common-dir))
     $temporaryDirectory = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
     $candidatePath = Join-Path $temporaryDirectory "schooltool-worktrees/$id"
     if ($candidatePath -match '(^|[\\/])\.git([\\/]|$)') {
         throw 'The temporary directory is inside .git. Configure a normal user temporary directory before preparing a candidate.'
     }
     if (Test-Path -LiteralPath $candidatePath) { throw 'The candidate directory already exists. Nothing was replaced.' }
-    Invoke-SchooltoolGit worktree add --no-track -b $branch $candidatePath $SourceCommit | Out-Host
-    [pscustomobject]@{ Branch = $branch; Path = $candidatePath }
+    Invoke-SchooltoolGit update-ref --no-deref $recoveryRef $commit ('0' * 40)
+    Invoke-SchooltoolGit worktree add --detach $candidatePath $commit | Out-Host
+    [pscustomobject]@{ Id = $id; Kind = $Kind; Path = $candidatePath; Repository = $repository; RecoveryRef = $recoveryRef; Commit = $commit }
+}
+
+function Assert-SchooltoolCandidate {
+    param([object]$Candidate, [switch]$AllowAdvancedHead)
+    if ($Candidate.Id -cnotmatch '^[a-f0-9]{32}$' -or $Candidate.Kind -cnotin @('preview', 'release') -or
+        $Candidate.Commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid detached candidate identity.' }
+    $expectedRef = "refs/schooltool/candidates/$($Candidate.Kind)/$($Candidate.Id)"
+    $archivedRef = '^refs/schooltool/archived-heads/[0-9]{8}-[a-f0-9]{32}/codex/preview-' + $Candidate.Id + '$'
+    if ($Candidate.RecoveryRef -cne $expectedRef -and -not ($Candidate.Kind -ceq 'preview' -and $Candidate.RecoveryRef -cmatch $archivedRef)) {
+        throw 'Invalid candidate recovery reference.'
+    }
+    if ([System.IO.Path]::GetFullPath($Candidate.Path) -cne (Get-Location).Path -or
+        -not (Test-Path -LiteralPath (Join-Path $Candidate.Path '.git') -PathType Leaf) -or
+        [System.IO.Path]::GetFullPath((Invoke-SchooltoolGit rev-parse --git-common-dir)) -cne $Candidate.Repository -or
+        (Invoke-SchooltoolGit branch --show-current)) { throw 'The detached candidate checkout changed or belongs to another repository.' }
+    & git symbolic-ref --quiet $Candidate.RecoveryRef | Out-Null
+    if ($LASTEXITCODE -ne 1) { throw 'The candidate recovery reference must be a direct ref.' }
+    if ((Invoke-SchooltoolGit rev-parse --verify $Candidate.RecoveryRef) -cne $Candidate.Commit) { throw 'The candidate recovery reference changed.' }
+    $head = Invoke-SchooltoolGit rev-parse HEAD
+    if ($AllowAdvancedHead) {
+        if (-not (Test-SchooltoolAncestor $Candidate.Commit $head)) { throw 'The candidate history changed unexpectedly.' }
+    }
+    elseif ($head -cne $Candidate.Commit) { throw 'The detached candidate commit changed.' }
+}
+
+function Save-SchooltoolCandidate {
+    param([object]$Candidate)
+    Push-Location -LiteralPath $Candidate.Path
+    try {
+        Assert-SchooltoolCandidate -Candidate $Candidate -AllowAdvancedHead
+        $head = Invoke-SchooltoolGit rev-parse HEAD
+        Invoke-SchooltoolGit update-ref --no-deref $Candidate.RecoveryRef $head $Candidate.Commit
+        $Candidate.Commit = $head
+    }
+    finally { Pop-Location }
 }
 
 function New-SchooltoolCandidateTestDatabase {
@@ -516,16 +556,20 @@ function gitrelease {
         Push-Location -LiteralPath $candidate.Path
         try {
             Invoke-SchooltoolGit merge --no-ff --no-edit -m $Message $featureHead
-            Invoke-SchooltoolPublish -message $Message -version $Version -Full -ExpectedMainCommit $mainHead -Feature $active -ExpectedFeatureCommit $featureHead
+            Save-SchooltoolCandidate $candidate
+            Invoke-SchooltoolPublish -message $Message -version $Version -Full -ExpectedMainCommit $mainHead -Feature $active -ExpectedFeatureCommit $featureHead -Candidate $candidate
             $releaseHead = Invoke-SchooltoolGit rev-parse HEAD
         }
         finally { Pop-Location }
     }
     catch {
-        Write-Host "Release stopped. Your working branch is unchanged. Candidate retained at $($candidate.Path) ($($candidate.Branch))." -ForegroundColor Yellow
+        Write-Host "Release stopped. Your working branch is unchanged. Candidate retained at $($candidate.Path) ($($candidate.RecoveryRef))." -ForegroundColor Yellow
         throw
     }
-    finally { Restore-SchooltoolCandidateEnvironment $candidateEnvironment }
+    finally {
+        try { Save-SchooltoolCandidate $candidate }
+        finally { Restore-SchooltoolCandidateEnvironment $candidateEnvironment }
+    }
     Write-Host "Release published to main. Candidate retained at $($candidate.Path)." -ForegroundColor Green
     try {
         Update-SchooltoolRemote

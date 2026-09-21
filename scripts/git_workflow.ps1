@@ -31,11 +31,15 @@ switch ($Command) {
             if ($argument -eq '-RefreshData' -and -not $parameters.ContainsKey('RefreshData')) {
                 $parameters.RefreshData = $true
             }
-            elseif ($argument -in @('deploy', 'prepare') -and -not $parameters.ContainsKey('Mode')) {
+            elseif ($argument -in @('deploy', 'prepare', 'resume') -and -not $parameters.ContainsKey('Mode')) {
                 $parameters.Mode = $argument
             }
-            else { throw 'Usage: gitpreview [-RefreshData]' }
+            elseif ($parameters.Mode -eq 'resume' -and $argument -cmatch '^[a-f0-9]{32}$' -and -not $parameters.ContainsKey('BundleId')) {
+                $parameters.BundleId = $argument
+            }
+            else { throw 'Usage: gitpreview [deploy|prepare] or gitpreview resume BUNDLE_ID [-RefreshData]' }
         }
+        if ($parameters.Mode -eq 'resume' -and -not $parameters.ContainsKey('BundleId')) { throw 'Usage: gitpreview resume BUNDLE_ID [-RefreshData]' }
     }
     default {
         if ($arguments.Count -gt 0) { throw "Usage: $Command" }

@@ -85,6 +85,36 @@ if [ "${SCHOOLTOOL_PREVIEW_DEPLOY_LOCKED:-false}" != true ]; then
 fi
 unset SCHOOLTOOL_PREVIEW_DEPLOY_LOCKED
 
+application_directory="${target_directory%/public_html}"
+preview_private_directory="$application_directory/private_html/schooltool-preview"
+composer_cache_directory="$preview_private_directory/composer-cache"
+for private_path in "$application_directory" "$application_directory/private_html" "$preview_private_directory"; do
+    if [ -L "$private_path" ] || [ ! -d "$private_path" ] || [ "$(cd -- "$private_path" && pwd -P)" != "$private_path" ]; then
+        echo "Preview Composer cache parents must be canonical directories owned by the verified application account." >&2
+        exit 1
+    fi
+    private_path_owner="$(stat -c %U -- "$private_path")"
+    if [ "$private_path_owner" != "$expected_owner" ] && { [ "$private_path" != "$application_directory" ] || [ "$private_path_owner" != root ]; }; then
+        echo "Preview Composer cache parents must belong to the application account; only the application container may belong to root." >&2
+        exit 1
+    fi
+done
+if [ "$(stat -c %a -- "$preview_private_directory")" != 700 ]; then
+    echo "Preview Composer cache requires its existing private parent directory with mode 700." >&2
+    exit 1
+fi
+if [ ! -e "$composer_cache_directory" ] && [ ! -L "$composer_cache_directory" ]; then
+    (umask 077; mkdir -- "$composer_cache_directory")
+fi
+if [ -L "$composer_cache_directory" ] || [ ! -d "$composer_cache_directory" ] || [ ! -w "$composer_cache_directory" ] || [ "$(stat -c %U -- "$composer_cache_directory")" != "$expected_owner" ] || [ "$(stat -c %a -- "$composer_cache_directory")" != 700 ]; then
+    echo "Preview Composer cache must be a writable private directory owned by the verified application account with mode 700." >&2
+    exit 1
+fi
+if ! unsafe_cache_entry="$(find "$composer_cache_directory" -xdev \( -type l -o ! -uid "$(id -u)" -o \( ! -type d -a ! -type f \) -o -perm /022 -o \( -type f -a -links +1 \) \) -print -quit)" || [ -n "$unsafe_cache_entry" ]; then
+    echo "Preview Composer cache contents must be application-owned regular files or directories without symlinks, hard links or shared write permissions." >&2
+    exit 1
+fi
+
 cd "$candidate_directory"
 php scripts/frontend-release.php verify
 source_commit="$(tr -d '\r\n' < deployment/source-commit)"
@@ -96,7 +126,7 @@ fi
 # Validate the candidate with the target's private configuration before replacing the running app.
 ln -s "$target_directory/.env" .env
 mkdir -p storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
-composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
+COMPOSER_CACHE_DIR="$composer_cache_directory" composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
 php artisan package:discover --no-interaction
 php artisan preview:check --configuration-only --no-interaction
 if [ "$snapshot_path" = - ]; then

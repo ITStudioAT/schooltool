@@ -2,6 +2,7 @@
 paths:
   - 'scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php'
   - 'scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php'
+  - 'scripts/git*preview*.ps1,tests/Unit/GitBranchWorkflowTest.php'
 ---
 
 # Scripts Unit
@@ -14,3 +15,9 @@ Create preserved release/preview/test worktrees under the user's dedicated tempo
 
 ## Transfer preview archives through native SSH binary streams
 Cloudways SFTP can use a different path namespace from SSH, so transfer canonical SSH paths through redirected native SSH byte streams with the existing strict host/account guards. Create uploads exclusively with private permissions and length/SHA checks; publish downloads only after SSH success, then require the caller's expected snapshot hash. PowerShell 5.1 stdin encoding must be BOM-free before Process.Start and raw stdin must close without StreamWriter BOM emission. Do not return VoidTaskResult objects into the PowerShell pipeline.
+
+## Resume only source-bound previews before publication
+New preview receipts use v2 and certify only successful inline full checks; bind original checkout/origin, reservation, main/feature commits, detached candidate/recovery ref, exact source/artifact and bundle. Revalidate before and after confirmation; .started blocks replay after any publication attempt. V1 receipts remain immutable and may use the exact original branch or exact refs/schooltool/archived-heads/<archive>/<original-branch> at ArtifactCommit; retain bounded legacy evidence rules, never infer certification from loose logs or add a skip flag.
+
+## Keep checked candidates detached and recoverable
+Create candidate worktrees detached, with Id/Kind/Path/common-repository/Commit bound to refs/schooltool/candidates/<kind>/<id>. Keep user commands detached-forbidden. Internal releases require the verified candidate plus full checks and unchanged ancestry/CAS guards. Retain completed commits at checkpoints and on failure using direct refs and compare-and-swap update-ref --no-deref; refuse symbolic, moved, unrelated or foreign-repository refs. Do not change the remote active-feature reservation or preview artifact refs to simplify the local branch list.
