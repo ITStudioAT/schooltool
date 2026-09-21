@@ -15,6 +15,144 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
+describe('MyTimetable automatic week selection', () => {
+    function prepareTimetable(now: string) {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(now))
+        useAdminStore().config = { user: { id: 7 }, selected_schoolyear: { id: 4 } } as any
+        useSchoolHourStore().school_hours = [
+            { hour: 5, from: '11:30:00', until: '12:20:00' },
+            { hour: 6, from: '12:25:00', until: '13:15:00' },
+        ] as any
+        const courseStore = useCourseStore()
+        courseStore.courses = [{
+            id: 18, user_id: 7, title: 'Mathematik', classes: ['2C'],
+            course_dates: [
+                { id: 1, date: '2026-03-06', hours: [5, 6] },
+                { id: 2, date: '2026-03-13', hours: [5, 6], status: ['entfaellt'] },
+                { id: 3, date: '2026-03-20', hours: [5, 6], status: ['free'] },
+                { id: 4, date: '2026-04-10', hours: [5, 6] },
+            ],
+        }] as any
+        const route = { path: '/admin/teaching', query: {} }
+        const mountTimetable = () => mount(MyTimetable, {
+            global: {
+                mocks: { $route: route },
+                stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true },
+            },
+        })
+        return { courseStore, route, mountTimetable }
+    }
+
+    it.each([
+        { now: '2026-03-04T12:00:00Z', range: 'week', date: '2026-03-06' },
+        { now: '2026-03-06T16:00:00Z', range: 'week', date: '2026-03-06' },
+        { now: '2026-03-06T22:59:59Z', range: 'week', date: '2026-03-06' },
+        { now: '2026-03-06T23:00:00Z', range: 'next_week', date: '2026-04-10' },
+        { now: '2026-03-08T23:00:00Z', range: 'next_week', date: '2026-04-10' },
+        { now: '2026-04-10T21:59:59Z', range: 'week', date: '2026-04-10' },
+        { now: '2026-04-10T22:00:00Z', range: 'next_week', date: null },
+    ])('selects $range at $now in Vienna calendar time', async ({ now, range, date }) => {
+        const { mountTimetable } = prepareTimetable(now)
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect((wrapper.vm as any).range).toBe(range)
+            expect((wrapper.vm as any).filteredItems.map((item: any) => item.date)).toEqual(date ? [date] : [])
+            if (range === 'week' && !now.startsWith('2026-03-04')) {
+                expect(wrapper.find('.day-today').exists()).toBe(true)
+                expect(wrapper.find('.timetable-item--today').exists()).toBe(true)
+            }
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it.each(['frei', 'free', 'entfaellt', 'entfällt', 'entfallen'])('skips %s dates as selection targets while preserving their display', async (status) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-06T16:00:00Z')
+        ;(courseStore.courses[0] as any).course_dates[0].status = [status]
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect((wrapper.vm as any).range).toBe('next_week')
+            expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-04-10')
+            await wrapper.setData({ range: 'week' })
+            expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-03-06')
+            expect(wrapper.find('.timetable-item--free').exists()).toBe(true)
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it.each([false, true])('selects after course loading and respects manual selection: %s', async (manualSelection) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-06T16:00:00Z')
+        const courses = courseStore.courses
+        courseStore.courses = []
+        let resolveCourses: (value: boolean) => void
+        courseStore.courses_request_promise = new Promise((resolve) => { resolveCourses = resolve })
+        const wrapper = mountTimetable()
+        try {
+            if (manualSelection) await wrapper.setData({ range: 'month' })
+            courseStore.courses = courses
+            resolveCourses!(true)
+            await flushPromises()
+            expect((wrapper.vm as any).range).toBe(manualSelection ? 'month' : 'week')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it('expires both saved views and course return state at Vienna midnight', async () => {
+        const { courseStore, route, mountTimetable } = prepareTimetable('2026-03-06T22:59:59Z')
+        courseStore.rememberTimetableReturn({
+            path: route.path, query: route.query, range: 'week', offset: 0,
+            viewMode: 'table', left: 0, top: 0, tableLeft: 0, tableTop: 0,
+        })
+        expect(courseStore.getTimetableReturn(route.path)).not.toBeNull()
+        expect(courseStore.getTimetableView(route.path, route.query)).not.toBeNull()
+        vi.setSystemTime(new Date('2026-03-06T23:00:00Z'))
+        expect(courseStore.getTimetableReturn(route.path)).toBeNull()
+        expect(courseStore.getTimetableView(route.path, route.query)).toBeNull()
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect((wrapper.vm as any).range).toBe('next_week')
+            expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-04-10')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it('rechecks saved view validity when course loading crosses Vienna midnight', async () => {
+        const { courseStore, route, mountTimetable } = prepareTimetable('2026-03-06T22:59:59Z')
+        courseStore.rememberTimetableView({
+            path: route.path, query: route.query, range: 'week', offset: -1,
+            viewMode: 'table', left: 0, top: 0, tableLeft: 0, tableTop: 0,
+        })
+        let resolveCourses: (value: boolean) => void
+        courseStore.courses_request_promise = new Promise((resolve) => { resolveCourses = resolve })
+        const wrapper = mountTimetable()
+        try {
+            expect((wrapper.vm as any).offset).toBe(-1)
+            vi.setSystemTime(new Date('2026-03-06T23:00:00Z'))
+            resolveCourses!(true)
+            await flushPromises()
+            expect((wrapper.vm as any).range).toBe('next_week')
+            expect((wrapper.vm as any).offset).toBe(0)
+            expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-04-10')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+})
+
 describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', (viewMode) => {
     it('counts published and hidden attachments and reacts to toggles and refreshed dates', async () => {
         setActivePinia(createPinia())
@@ -321,6 +459,7 @@ describe('MyTimetable time range labels', () => {
             startOfWeek: methods.startOfWeek,
             endOfWeek: methods.endOfWeek,
             nextCourseWeekStart: methods.nextCourseWeekStart,
+            hasFreeStatus: methods.hasFreeStatus,
         }
 
         const [from, until] = methods.currentRangeBounds.call(ctx)

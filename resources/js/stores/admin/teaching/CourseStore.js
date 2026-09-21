@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { applicationDate } from '@/helpers/date'
 import {
     destroy as destroyCourse,
     index as coursesIndex,
@@ -63,14 +64,14 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 userId: config?.user?.id,
                 schoolId: config?.school?.id,
                 schoolyearId: config?.selected_schoolyear?.id,
-                savedDate: new Date().toDateString(),
+                savedDate: applicationDate(),
             }
             this.rememberTimetableView(state)
         },
         isTimetableStateCurrent(state, path) {
             const config = useAdminStore().config
             return state?.path === path
-                && state?.savedDate === new Date().toDateString()
+                && state?.savedDate === applicationDate()
                 && state?.userId === config?.user?.id
                 && state?.schoolId === config?.school?.id
                 && state?.schoolyearId === config?.selected_schoolyear?.id
@@ -91,7 +92,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                     userId: config?.user?.id,
                     schoolId: config?.school?.id,
                     schoolyearId: config?.selected_schoolyear?.id,
-                    savedDate: new Date().toDateString(),
+                    savedDate: applicationDate(),
                 }))
             } catch {
                 // The in-memory course return remains available if tab storage is disabled.
