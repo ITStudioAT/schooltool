@@ -135,7 +135,7 @@ mkdir -p storage/app/private storage/app/public storage/framework/cache/data sto
 COMPOSER_CACHE_DIR="$composer_cache_directory" composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
 php artisan package:discover --no-interaction
 php artisan preview:check --configuration-only --no-interaction
-LARAVEL_STORAGE_PATH="$target_directory/storage" php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction
+(cd "$target_directory" && php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction)
 if [ "$snapshot_path" = - ]; then
     php artisan preview:snapshot assert-current --feature="$feature_id" --no-interaction
 else
