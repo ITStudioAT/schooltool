@@ -196,6 +196,25 @@ test('real MySQL snapshot copies data and private files while preserving live an
         $source->statement('CREATE TABLE personal_access_tokens (id BIGINT PRIMARY KEY, token VARCHAR(255)) ENGINE=InnoDB');
         $source->statement('CREATE TABLE teaching_course_students (id BIGINT PRIMARY KEY, special_information TEXT NULL) ENGINE=InnoDB');
         $source->statement('CREATE TABLE teachers (id BIGINT PRIMARY KEY, token VARCHAR(255) NULL, token_expires_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB');
+        foreach (['tutoring_offers', 'tutoring_offer_requests'] as $legacyTable) {
+            $source->statement('CREATE TABLE '.$legacyTable.' (id BIGINT PRIMARY KEY, token VARCHAR(255) NULL, token_expires_at TIMESTAMP NULL) ENGINE=InnoDB');
+            $source->table($legacyTable)->insert(['id' => 1, 'token' => 'legacy-private-token', 'token_expires_at' => '2026-01-01 00:00:00']);
+        }
+        $source->table('migrations')->insert([
+            ['id' => 100, 'migration' => '2025_11_25_163630_create_tutoring_subjects_table', 'batch' => 1],
+            ['id' => 101, 'migration' => '2025_11_30_101107_create_tutoring_offers_table', 'batch' => 1],
+            ['id' => 102, 'migration' => '2025_12_24_110112_update_tutoring_offers', 'batch' => 1],
+            ['id' => 103, 'migration' => '2025_12_24_111600_update_users', 'batch' => 1],
+            ['id' => 104, 'migration' => '2025_12_27_182739_update_tutoring_offers', 'batch' => 1],
+            ['id' => 105, 'migration' => '2025_12_29_113636_update_tutoring_offers', 'batch' => 1],
+            ['id' => 106, 'migration' => '2025_12_29_113809_update_tutoring_offers', 'batch' => 1],
+            ['id' => 107, 'migration' => '2026_01_02_171225_create_tutoring_offer_requests_table', 'batch' => 1],
+            ['id' => 108, 'migration' => '2026_01_02_222403_update_tutoring_offer_requests', 'batch' => 1],
+            ['id' => 109, 'migration' => '2026_01_04_225534_update_tutoring_offer_requests', 'batch' => 1],
+            ['id' => 110, 'migration' => '2026_01_16_165437_update_school_tools', 'batch' => 1],
+            ['id' => 111, 'migration' => '2026_02_17_010000_repair_school_tools_columns', 'batch' => 1],
+            ['id' => 112, 'migration' => '2026_02_26_120000_change_tutoring_offers_accepted_at_to_datetime', 'batch' => 1],
+        ]);
         if (! $emptySlowTarget) {
             $target->statement('CREATE TABLE old_only (id BIGINT PRIMARY KEY) ENGINE=InnoDB');
             $target->insert('INSERT INTO old_only VALUES (99)');
@@ -345,6 +364,11 @@ test('real MySQL snapshot copies data and private files while preserving live an
             ->and($copied->uuid_at)->toBeNull()
             ->and($target->table('teachers')->value('token'))->toBeNull()
             ->and($target->table('teachers')->value('token_expires_at'))->toBeNull()
+            ->and($target->table('tutoring_offers')->value('token'))->toBeNull()
+            ->and($target->table('tutoring_offers')->value('token_expires_at'))->toBeNull()
+            ->and($target->table('tutoring_offer_requests')->value('token'))->toBeNull()
+            ->and($target->table('tutoring_offer_requests')->value('token_expires_at'))->toBeNull()
+            ->and($target->table('migrations')->count())->toBe(13)
             ->and($target->table('teachers')->value('created_at'))->toBe('2020-01-02 03:04:05')
             ->and($target->table('personal_access_tokens')->count())->toBe(0)
             ->and(Crypt::decryptString($target->table('teaching_course_students')->value('special_information')))->toBe('private pupil details')
@@ -356,6 +380,8 @@ test('real MySQL snapshot copies data and private files while preserving live an
             ->and($source->table('users')->value('two_factor_secret'))->toBe($sourceSecret)
             ->and($source->table('users')->value('uuid'))->toBe('live-email-verification')
             ->and($source->table('teachers')->value('token'))->toBe('live-teacher-invitation')
+            ->and($source->table('tutoring_offers')->value('token'))->toBe('legacy-private-token')
+            ->and($source->table('tutoring_offer_requests')->value('token'))->toBe('legacy-private-token')
             ->and($source->table('personal_access_tokens')->count())->toBe(1);
         $identity = app(FeaturePreviewSnapshotIdentityStore::class);
         expect($identity->read())->toBe([])->and($identity->read('snapshot-pending.json')['phase'])->toBe('imported');

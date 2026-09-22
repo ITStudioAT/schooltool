@@ -17,6 +17,23 @@ class FeaturePreviewSnapshotService
 {
     private const array EMPTY_TABLES = ['sessions', 'password_reset_tokens', 'personal_access_tokens', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks'];
 
+    /** Historical ledger entries remain valid after the module's schema is retired. */
+    private const array RETIRED_TUTORING_MIGRATIONS = [
+        '2025_11_25_163630_create_tutoring_subjects_table',
+        '2025_11_30_101107_create_tutoring_offers_table',
+        '2025_12_24_110112_update_tutoring_offers',
+        '2025_12_24_111600_update_users',
+        '2025_12_27_182739_update_tutoring_offers',
+        '2025_12_29_113636_update_tutoring_offers',
+        '2025_12_29_113809_update_tutoring_offers',
+        '2026_01_02_171225_create_tutoring_offer_requests_table',
+        '2026_01_02_222403_update_tutoring_offer_requests',
+        '2026_01_04_225534_update_tutoring_offer_requests',
+        '2026_01_16_165437_update_school_tools',
+        '2026_02_17_010000_repair_school_tools_columns',
+        '2026_02_26_120000_change_tutoring_offers_accepted_at_to_datetime',
+    ];
+
     public function __construct(
         private FeaturePreviewDatabaseGuard $database,
         private FeaturePreviewSnapshotArchive $archive,
@@ -424,6 +441,7 @@ class FeaturePreviewSnapshotService
                                 }
                             }
                         }
+                        // Legacy snapshots may precede the tutoring cleanup migrations; keep their tokens redacted.
                         if ($live && in_array($table, ['teachers', 'tutoring_offers', 'tutoring_offer_requests'], true)) {
                             foreach (['token', 'token_expires_at'] as $column) {
                                 if (array_key_exists($column, $row)) {
@@ -748,6 +766,9 @@ class FeaturePreviewSnapshotService
     /** @return list<string> */
     private function availableMigrations(): array
     {
-        return array_map(static fn (string $path): string => basename($path, '.php'), glob(database_path('migrations/*.php')) ?: []);
+        return [
+            ...array_map(static fn (string $path): string => basename($path, '.php'), glob(database_path('migrations/*.php')) ?: []),
+            ...self::RETIRED_TUTORING_MIGRATIONS,
+        ];
     }
 }

@@ -23,25 +23,6 @@
                         </v-card-actions>
                     </v-card>
 
-                    <!-- NACHHILFETOOL -->
-                    <v-card color="secondary" width="300" height="170" class="d-flex flex-column">
-                        <v-card-title class="text-h5">Schüler helfen Schülern</v-card-title>
-
-                        <v-card-subtitle style="white-space: normal">Das Nachhilfetool für Schüler:innen. Anbieten und Anfordern von Nachhilfe.</v-card-subtitle>
-
-                        <v-card-actions class="mt-auto">
-                            <div>befindet sich derzeit in Entwicklung</div>
-
-                            <v-btn
-                                class="ms-2"
-                                size="small"
-                                text="LOS"
-                                variant="outlined"
-                                @click="loadSchoolsForTool('Nachhilfetool')"
-                                :disabled="!config?.tutoring_active"></v-btn>
-                        </v-card-actions>
-                    </v-card>
-
                     <!-- MITTAGESSEN -->
                     <v-card color="third" width="300" height="170" class="d-flex flex-column">
                         <v-card-title class="text-h5">Mittagsmenüs</v-card-title>
@@ -162,9 +143,6 @@ export default {
             switch (licence.name) {
                 case 'Anmeldetool':
                     path += 'register'
-                    break
-                case 'Nachhilfetool':
-                    path += 'tutoring_overview/'
                     break
             }
             path += '?school=' + school.short_name

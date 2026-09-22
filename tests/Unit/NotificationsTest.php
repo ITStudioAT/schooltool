@@ -6,7 +6,11 @@ use App\Notifications\StandardEmailWithAttachment;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Markdown;
+use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Notifications\ChannelManager;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\SendQueuedNotifications;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
@@ -37,6 +41,64 @@ afterEach(function () {
 });
 
 describe('StandardEmail Notification', function () {
+    it('skips serialized retired module mail jobs before rendering missing templates or models', function (string $template) {
+        config(['mail.default' => 'array', 'schooltool.preview.instance' => false]);
+        Mail::purge('array');
+        $retiredModels = [];
+
+        foreach (['App\\Models\\TutoringOffer', 'App\\Models\\TutoringOfferRequest', 'App\\Models\\TutoringSubject'] as $class) {
+            expect(class_exists($class))->toBeFalse();
+            $retiredModels[] = unserialize(sprintf('O:%d:"%s":0:{}', strlen($class), $class), ['allowed_classes' => false]);
+        }
+
+        $notification = new StandardEmail([
+            'from_address' => 'sender@example.test',
+            'from_name' => 'School',
+            'subject' => 'Retired module message',
+            'markdown' => $template,
+            'data' => ['models' => $retiredModels],
+        ]);
+        $recipient = (new AnonymousNotifiable)->route('mail', 'recipient@example.test');
+        $job = unserialize(serialize(new SendQueuedNotifications($recipient, $notification, ['mail'])));
+
+        expect($job->notification->data['data']['models'][0])->toBeInstanceOf(__PHP_Incomplete_Class::class);
+
+        $job->handle(app(ChannelManager::class));
+
+        expect(Mail::mailer('array')->getSymfonyTransport()->messages())->toHaveCount(0);
+    })->with([
+        'mails.admin.confirmTutoringUser',
+        'mails.admin.informTutoringUserIsConfirmed',
+        'mails.homepage.offerCreatedOrUpdated',
+        'mails.tutoring.offerRequest',
+        'mails.tutoring.offerRequestStorno',
+        'mails.tutoring.offerDeleted',
+        'mails.tutoring.offerConfirmedOrRefused',
+    ]);
+
+    it('still delivers serialized shared login code mail jobs', function () {
+        config(['mail.default' => 'array', 'schooltool.preview.instance' => false]);
+        Mail::purge('array');
+
+        $notification = new StandardEmail([
+            'from_address' => 'sender@example.test',
+            'from_name' => 'School',
+            'subject' => 'Login code',
+            'markdown' => 'mails.homepage.sendCode',
+            'token_2fa' => '123456',
+            'token-expire-time' => 15,
+        ]);
+        $recipient = (new AnonymousNotifiable)->route('mail', 'recipient@example.test');
+        $job = unserialize(serialize(new SendQueuedNotifications($recipient, $notification, ['mail'])));
+
+        $job->handle(app(ChannelManager::class));
+
+        $messages = Mail::mailer('array')->getSymfonyTransport()->messages();
+        expect($messages)->toHaveCount(1)
+            ->and($messages->first()->getOriginalMessage()->getSubject())->toBe('Login code')
+            ->and($messages->first()->getOriginalMessage()->getHtmlBody())->toContain('123456');
+    });
+
     it('can be instantiated with required data', function () {
         $data = [
             'from_address' => 'test@example.com',

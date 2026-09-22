@@ -301,7 +301,7 @@ class SchoolController extends Controller
     public function loadSchoolInfos(SchoolLoadSchoolLicencesRequest $request, SchoolService $service)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'studentstimetables_admin', 'studentstimetables_moderator'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'studentstimetables_admin', 'studentstimetables_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -805,7 +805,7 @@ class SchoolController extends Controller
 
     public function activateCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -901,7 +901,7 @@ class SchoolController extends Controller
 
     public function renewCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -1013,7 +1013,7 @@ class SchoolController extends Controller
 
     public function deactivateCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

@@ -590,8 +590,7 @@ describe('checkOrCreateSchoolTool', function () {
         expect(SchoolTool::count())->toBe($initialCount + 1)
             ->and($schoolTool)->toBeInstanceOf(SchoolTool::class)
             ->and($schoolTool->school_id)->toBe($school->id)
-            ->and($schoolTool->tutoring_student_must_be_confirmed)->toBeFalse()
-            ->and($schoolTool->tutoring_confirmer_email)->toBe('');
+            ->and($schoolTool->getAttributes())->not->toHaveKey('tutoring_confirmer_email');
     });
 
     it('returns existing SchoolTool when one already exists', function () {
@@ -599,15 +598,15 @@ describe('checkOrCreateSchoolTool', function () {
 
         $existingSchoolTool = SchoolTool::create([
             'school_id' => $school->id,
-            'tutoring_student_must_be_confirmed' => true,
-            'tutoring_confirmer_email' => 'admin@test.com',
+            'register_visible_admin' => true,
+            'register_visible_user' => false,
         ]);
 
         $schoolTool = $this->service->checkOrCreateSchoolTool($school);
 
         expect($schoolTool->id)->toBe($existingSchoolTool->id)
-            ->and((bool) $schoolTool->tutoring_student_must_be_confirmed)->toBeTrue()
-            ->and($schoolTool->tutoring_confirmer_email)->toBe('admin@test.com');
+            ->and((bool) $schoolTool->register_visible_admin)->toBeTrue()
+            ->and((bool) $schoolTool->register_visible_user)->toBeFalse();
     });
 
     it('does not create duplicate SchoolTools for same school', function () {

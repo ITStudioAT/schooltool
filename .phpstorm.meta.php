@@ -2811,8 +2811,8 @@ namespace PHPSTORM_META {
 'roles.update','roles.destroy','users_with_roles.index','users_with_roles.store','users_with_roles.show','users_with_roles.update',
 'users_with_roles.destroy','sanctum.csrf-cookie','storage.local',);
         registerArgumentsSet('views', 
-'admin','application','homepage','mails.admin.bookRegisterDateBooking','mails.admin.confirmTutoringUser',
-'mails.admin.deleteRegisterDateBooking','mails.admin.informTutoringUserIsConfirmed','mails.admin.sendCode','mails.admin.sendEmailVerification','mails.admin.sendPrint',
+'admin','application','homepage','mails.admin.bookRegisterDateBooking',
+'mails.admin.deleteRegisterDateBooking','mails.admin.sendCode','mails.admin.sendEmailVerification','mails.admin.sendPrint',
 'mails.homepage.sendCode','pdfs.registerDate','pdfs.registerDate_footer','pdfs.registerDate_header','pdfs.registerSupervisor',
 'pdfs.registerSupervisor_footer','pdfs.registerSupervisor_header','spa::admin','spa::application','spa::homepage',
 'spa::mails.admin.sendCode','spa::mails.admin.sendEmailVerification','vendor.mail.html.button','vendor.mail.html.footer','vendor.mail.html.header',

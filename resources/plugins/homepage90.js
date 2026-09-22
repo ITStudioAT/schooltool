@@ -24,12 +24,9 @@ const lightTheme = {
         error: '#E53935', // red.darken1
         button_primary: '#5c6c62', // indigo.darken1
         button_primary_selected: '#37474F', // indigo.darken1
-        // Tutoring
-        tutoring_background: '#5c6c62',
-        tutoring_text: '#fbf0d4',
-        tutoring_card: '#ECEFF1',
-        tutoring_card_title: '#263238',
-        tutoring_secondary: '#dc8210',
+        // Cashier
+        cashier_background: '#5c6c62',
+        cashier_text: '#fbf0d4',
     },
 }
 
@@ -64,7 +61,7 @@ export default createVuetify({
     theme: {
         defaultTheme: 'light',
         variations: {
-            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error', 'tutoring_background', 'tutoring_secondary'],
+            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error', 'cashier_background'],
             lighten: 4,
             darken: 4,
         },

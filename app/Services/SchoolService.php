@@ -56,8 +56,6 @@ class SchoolService
             // SchoolTool - Record erzeugen
             $schoolTool = SchoolTool::create([
                 'school_id' => $school->id,
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => '',
             ]);
 
             // Folder für Logo etc anlegen (immer lokal, da Teaching-Uploads direkt auf lokales Dateisystem schreiben)
@@ -378,7 +376,7 @@ class SchoolService
             'licences' => $licenceRows,
         ];
 
-        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
+        $roles = ['admin', 'register_admin', 'super_admin', 'teaching_admin', 'materials_admin'];
         $users = User::where('school_id', $schoolId)
             ->whereHas('roles', fn ($query) => $query
                 ->whereIn('name', $roles)

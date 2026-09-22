@@ -26,9 +26,6 @@ class RequireFeaturePreviewAccess
         'api/homepage/student/user',
         'api/homepage/students-timetables/config',
         'api/homepage/students-timetables/user',
-        'api/homepage/tutoring/config',
-        'api/homepage/tutoring/load_offer_config',
-        'api/homepage/tutoring/load_offers',
         'api/homepage/restaurant/menu-plans',
     ];
 
@@ -58,11 +55,6 @@ class RequireFeaturePreviewAccess
         'api/homepage/restaurant/send_login_code',
         'api/homepage/restaurant/login_with_code',
         'api/homepage/restaurant/login_with_password',
-        'api/homepage/tutoring/check_email',
-        'api/homepage/tutoring/confirm_email',
-        'api/homepage/tutoring/unknown_password',
-        'api/homepage/tutoring/login_with_token',
-        'api/homepage/tutoring/login_with_password',
     ];
 
     /**

@@ -2,9 +2,6 @@
 
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
-use App\Http\Controllers\Tutoring\OfferController;
-use App\Http\Controllers\Tutoring\OfferRequestController;
-use App\Http\Controllers\Tutoring\TutoringController;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 
@@ -40,14 +37,6 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'auth:sanctum',
         'web-allowed:scope:tool_web_access',
         'tool-licensed:Anmeldetool,auth,scope:tool_web_access',
-    ]);
-
-    Route::get('/admin/tutoring/{any?}', function () {
-        return view('spa::admin');
-    })->where('any', '.*')->middleware([
-        'auth:sanctum',
-        'web-allowed:scope:tool_web_access',
-        'tool-licensed:Nachhilfetool,auth,scope:tool_web_access',
     ]);
 
     Route::get('/admin/teaching/administration', function () {
@@ -127,39 +116,6 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     Route::get('/homepage/register2/', function () {
         return view('homepage');
     })->middleware('tool-licensed:Anmeldetool');
-
-    Route::prefix('homepage')->group(function () {
-        Route::get('tutoring_response', fn () => view('homepage'));
-        Route::get('tutoring_overview', fn () => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
-        Route::get('tutoring', fn () => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
-    });
-
-    Route::prefix('homepage/tutoring')->group(function () {
-        Route::get('confirm-user', [TutoringController::class, 'confirmUserPrompt'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.confirm-user');
-        Route::post('confirm-user', [TutoringController::class, 'confirmUser'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.confirm-user.store');
-        Route::get('refuse-user', [TutoringController::class, 'refuseUserPrompt'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.refuse-user');
-        Route::post('refuse-user', [TutoringController::class, 'refuseUser'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.refuse-user.store');
-        Route::get('offer', [OfferController::class, 'offerConfirmRefusePrompt'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.offer');
-        Route::post('offer', [OfferController::class, 'offerConfirmRefuse'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.offer.store');
-        Route::get('offer_request', [OfferRequestController::class, 'offerRequestPrompt'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.offer-request');
-        Route::post('offer_request', [OfferRequestController::class, 'offerRequest'])
-            ->middleware('signed')
-            ->name('homepage.tutoring.offer-request.store');
-    });
 
     Route::get('teaching/entry-notifications/{notification}/confirm', [TeachingCourseStudentEntryNotificationConfirmationController::class, 'show'])
         ->middleware('signed')

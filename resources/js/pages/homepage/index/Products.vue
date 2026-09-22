@@ -180,23 +180,6 @@ export default {
                     tags: ['Unterricht', 'Aufgaben', 'Termine', 'Kurse'],
                 },
                 {
-                    key: 'tutoring',
-                    name: 'Schüler helfen Schülern',
-                    symbol: '🤝',
-                    title: 'Nachhilfe transparent organisiert',
-                    text: 'Nachhilfe-Angebote übersichtlich verwaltet. Zuständigkeiten und Status bleiben jederzeit sichtbar. Schüler:innen unterstützen sich gegenseitig — koordiniert und nachvollziehbar.',
-                    accent: '#f0873a',
-                    accentSoft: 'rgba(240, 135, 58, 0.12)',
-                    accentGlow: 'rgba(240, 135, 58, 0.25)',
-                    image: '/images/illustrations/notebook-animated.svg',
-                    features: [
-                        { symbol: '🤝', label: 'Matching-System' },
-                        { symbol: '📈', label: 'Status-Tracking' },
-                        { symbol: '🔔', label: 'Benachrichtigungen' },
-                    ],
-                    tags: ['Nachhilfe', 'Anfragen', 'Status', 'Peer-Learning'],
-                },
-                {
                     key: 'materials',
                     name: 'Materialien',
                     symbol: '📁',

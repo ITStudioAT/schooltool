@@ -300,9 +300,6 @@ namespace App\Models{
 /**
  * @property int $id
  * @property int $school_id
- * @property int $tutoring_student_must_be_confirmed
- * @property string|null $tutoring_confirmer_email
- * @property int $tutoring_max_offers_per_student
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool newModelQuery()
@@ -311,9 +308,6 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereCreatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereSchoolId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringConfirmerEmail($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringMaxOffersPerStudent($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringStudentMustBeConfirmed($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereUpdatedAt($value)
  */
 	class SchoolTool extends \Eloquent {}
@@ -348,81 +342,7 @@ namespace App\Models{
 	class Schoolyear extends \Eloquent {}
 }
 
-namespace App\Models{
-/**
- * @property int $id
- * @property int $school_id
- * @property int $user_id
- * @property int $subject_id
- * @property string $title
- * @property string|null $description
- * @property \Illuminate\Database\Eloquent\Casts\ArrayObject<array-key, mixed> $classes
- * @property array<array-key, mixed>|null $time_table
- * @property string|null $active_until
- * @property bool $is_active
- * @property numeric $price_per_hour
- * @property int $is_group
- * @property int|null $max_group_members
- * @property bool $must_be_accepted
- * @property string|null $email_mentor
- * @property string|null $accepted_at
- * @property int|null $click_count
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\TutoringSubject|null $subject
- * @property-read \App\Models\User|null $user
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer newModelQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer newQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer query()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereAcceptedAt($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereActiveUntil($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereClasses($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereClickCount($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereCreatedAt($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereDescription($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereEmailMentor($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereIsActive($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereIsGroup($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereMaxGroupMembers($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereMustBeAccepted($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer wherePricePerHour($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereSchoolId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereSubjectId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTimeTable($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTitle($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUpdatedAt($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUserId($value)
- */
-	class TutoringOffer extends \Eloquent {}
-}
 
-namespace App\Models{
-/**
- * @property int $id
- * @property int $school_id
- * @property string|null $short_name
- * @property string|null $long_name
- * @property bool $must_be_accepted
- * @property array<array-key, mixed>|null $email_mentors
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\TutoringOffer> $offers
- * @property-read int|null $offers_count
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject newModelQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject newQuery()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject query()
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereCreatedAt($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereEmailMentors($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereLongName($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereMustBeAccepted($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereSchoolId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereShortName($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereUpdatedAt($value)
- */
-	class TutoringSubject extends \Eloquent {}
-}
 
 namespace App\Models{
 /**
@@ -513,4 +433,3 @@ namespace App\Models{
  */
 	class User extends \Eloquent {}
 }
-

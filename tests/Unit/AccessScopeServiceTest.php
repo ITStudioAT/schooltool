@@ -27,7 +27,7 @@ it('resolves tool web access to all module dashboard roles', function () {
     $service = app(AccessScopeService::class);
 
     expect($service->resolveRoleNames(['scope:tool_web_access']))
-        ->toBe(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'teacher', 'lunch_admin']);
+        ->toBe(['admin', 'register_admin', 'teaching_admin', 'teacher', 'lunch_admin']);
 });
 
 it('deduplicates role names when scopes and explicit roles overlap', function () {

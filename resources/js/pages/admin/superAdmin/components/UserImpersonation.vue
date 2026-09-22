@@ -212,7 +212,7 @@ export default {
             await this.adminStore.loadImpersonatableUsers(this.impersonation_user_search_string || '', this.selected_impersonation_school_id, Math.max(1, lastPage))
         },
         adminAccessRoles() {
-            return ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher']
+            return ['super_admin', 'admin', 'register_admin', 'teaching_admin', 'materials_admin', 'teacher']
         },
         targetCanAccessAdmin(user) {
             const userRoles = Array.isArray(user?.roles) ? user.roles : []

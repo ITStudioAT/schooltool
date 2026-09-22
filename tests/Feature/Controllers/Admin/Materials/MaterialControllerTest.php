@@ -1797,8 +1797,6 @@ test('chunk upload respects school max upload size from settings', function () {
     SchoolTool::query()->updateOrCreate(
         ['school_id' => $this->school->id],
         [
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => '',
             'material_max_file_upload_size' => 1, // 1 KB
         ]
     );

@@ -71,7 +71,7 @@ beforeEach(function (): void {
         foreach (['email_verified_at', 'confirmed_at', 'login_at', 'token_2fa_expires_at', 'token_2fa_2_expires_at', 'two_factor_confirmed_at'] as $column) {
             $table->timestamp($column)->nullable();
         }
-        foreach (['two_factor_secret', 'two_factor_recovery_codes', 'tutoring_filter'] as $column) {
+        foreach (['two_factor_secret', 'two_factor_recovery_codes'] as $column) {
             $table->text($column)->nullable();
         }
         $table->boolean('is_active')->default(true);
@@ -85,7 +85,7 @@ beforeEach(function (): void {
     (require database_path('migrations/2026_09_16_105646_add_feature_preview_allowed_to_users_table.php'))->up();
     app(PermissionRegistrar::class)->forgetCachedPermissions();
     $this->school = School::factory()->create();
-    foreach (['super_admin', 'admin', 'teacher', 'student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user'] as $role) {
+    foreach (['super_admin', 'admin', 'teacher', 'student', 'studentstimetables_user', 'restaurant_user'] as $role) {
         Role::create(['name' => $role, 'guard_name' => 'web']);
     }
     FeaturePreviewSetting::factory()->create(['enabled' => true]);
@@ -116,7 +116,7 @@ function previewTestUser(string $role = 'admin', bool $allowed = false, array $a
 test('preview requires individual permission even for super admins', function (string $role): void {
     $user = previewTestUser($role);
     $this->actingAs($user)->getJson('/api/admin/preview-access-probe')->assertForbidden();
-})->with(['admin', 'super_admin', 'student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user']);
+})->with(['admin', 'super_admin', 'student', 'studentstimetables_user', 'restaurant_user']);
 
 test('preview admits an explicitly granted admin and retains route permissions', function (): void {
     $this->actingAs(previewTestUser('admin', true))
@@ -293,8 +293,6 @@ test('preview blocks public areas provider routes and operational actions', func
     ['/api/homepage/restaurant/register', 'POST', 403],
     ['/api/homepage/restaurant/confirm_email', 'POST', 403],
     ['/homepage/restaurant/confirm-user', 'GET', 403],
-    ['/api/homepage/tutoring/create_user', 'POST', 403],
-    ['/homepage/tutoring/confirm-user', 'GET', 403],
 ]);
 
 test('preview rejects bearer tokens even alongside an admitted browser session', function (): void {
@@ -575,7 +573,7 @@ test('preview grants ordinary users access without granting the admin area', fun
 
     User::on('preview_control')->whereKey($user->id)->update(['feature_preview_allowed' => false]);
     $this->getJson('/api/homepage/preview-access-probe')->assertForbidden();
-})->with(['student', 'studentstimetables_user', 'tutoring_user', 'restaurant_user']);
+})->with(['student', 'studentstimetables_user', 'restaurant_user']);
 
 test('superadmin can discover and grant ordinary accounts in the selected school', function (): void {
     config(['schooltool.preview.instance' => false]);

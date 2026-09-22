@@ -502,7 +502,7 @@ export default {
             this.redirectAfterImpersonation(redirectTarget)
         },
         adminAccessRoles() {
-            return ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher']
+            return ['super_admin', 'admin', 'register_admin', 'teaching_admin', 'materials_admin', 'teacher']
         },
         targetCanAccessAdmin(user) {
             const userRoles = Array.isArray(user?.roles) ? user.roles : []

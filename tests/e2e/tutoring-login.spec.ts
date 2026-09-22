@@ -1,43 +1,22 @@
-import { expect, Page, test } from '@playwright/test'
-import { hideObstructiveUi } from './helpers/ui'
+import { expect, test } from '@playwright/test'
 
-async function openTutoringLogin(page: Page): Promise<void> {
-    await page.goto('/homepage/tutoring_overview?school=E2E')
-    await hideObstructiveUi(page)
+test('removed tutoring entry pages behave like other unknown homepage routes', async ({ page }) => {
+    const unknownResponse = await page.goto('/homepage/removed-module')
+    await page.waitForLoadState('networkidle')
+    const unknownPage = await page.locator('body').innerText()
 
-    await expect(page.getByTestId('tutoring-overview-start-login')).toBeVisible()
-    await page.getByTestId('tutoring-overview-start-login').click()
-    await expect(page.getByTestId('tutoring-login-step-email')).toBeVisible()
-}
+    for (const path of ['/homepage/tutoring_overview', '/homepage/tutoring', '/homepage/tutoring_response']) {
+        const response = await page.goto(path)
+        await page.waitForLoadState('networkidle')
 
-test('tutoring user can log in with password and open personal area', async ({ page }) => {
-    await openTutoringLogin(page)
-
-    await page.locator('[data-testid="tutoring-login-email"] input').fill('e2e.tutoring@example.test')
-    await page.getByTestId('tutoring-login-continue-password').click()
-
-    await expect(page.getByTestId('tutoring-login-step-password')).toBeVisible()
-    await page.locator('[data-testid="tutoring-login-password"] input').fill('password123')
-    await page.getByTestId('tutoring-login-submit-password').click()
-
-    await expect(page.getByTestId('tutoring-login-step-success')).toBeVisible()
-    await page.getByTestId('tutoring-login-continue-after-success').click()
-
-    await expect(page.getByTestId('tutoring-overview-go-personal-area')).toBeVisible()
-    await page.getByTestId('tutoring-overview-go-personal-area').click()
-    await expect(page).toHaveURL(/\/homepage\/tutoring$/)
+        expect(response?.status()).toBe(unknownResponse?.status())
+        await expect(page.locator('[data-testid^="tutoring-"]')).toHaveCount(0)
+        expect(await page.locator('body').innerText()).toBe(unknownPage)
+    }
 })
 
-test('tutoring login with wrong password shows retry state', async ({ page }) => {
-    await openTutoringLogin(page)
+test('general admin login remains available', async ({ page }) => {
+    await page.goto('/admin/login')
 
-    await page.locator('[data-testid="tutoring-login-email"] input').fill('e2e.tutoring@example.test')
-    await page.getByTestId('tutoring-login-continue-password').click()
-
-    await expect(page.getByTestId('tutoring-login-step-password')).toBeVisible()
-    await page.locator('[data-testid="tutoring-login-password"] input').fill('wrong-password')
-    await page.getByTestId('tutoring-login-submit-password').click()
-
-    await expect(page.getByTestId('tutoring-login-password-retry-alert')).toBeVisible()
-    await expect(page.getByText('Das Kennwort war falsch.')).toBeVisible()
+    await expect(page.getByTestId('admin-login-email')).toBeVisible()
 })

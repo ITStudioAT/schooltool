@@ -128,19 +128,19 @@ describe('Admin settings page', () => {
 
     it('redirects a legacy register link when settings are already mounted', async () => {
         const replace = vi.fn()
-        const route = reactive({ fullPath: '/admin/settings?tab=tutoring', query: { tab: 'tutoring' } })
+        const route = reactive({ fullPath: '/admin/settings?tab=admin', query: { tab: 'admin' } })
 
         render(Settings, {
             global: {
                 plugins: [createTestingPinia({
                     initialState: {
                         AdminAdminStore: {
-                            config: { is_auth: true, roles: ['register_admin', 'tutoring_admin'] },
+                            config: { is_auth: true, roles: ['admin', 'register_admin'] },
                         },
                     },
                 })],
                 mocks: { $route: route, $router: { replace } },
-                stubs: { ...vuetifyStubs, AdminSectionHero: true, TutoringSettings: true },
+                stubs: { ...vuetifyStubs, AdminSectionHero: true, Schoolyears: true },
             },
         })
 

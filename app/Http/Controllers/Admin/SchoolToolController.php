@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\SchoolToolSaveModuleStatusesRequest;
-use App\Http\Requests\Admin\SchoolToolSaveTutoringSettingsRequest;
 use App\Http\Resources\Admin\SchoolToolResource;
 use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
@@ -15,15 +14,12 @@ class SchoolToolController extends Controller
 {
     public function loadConfig(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin', 'register_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
-        $defaults = $moduleStatusService->existingSchoolToolAttributes(array_merge($moduleStatusService->defaultAttributes(), [
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => '',
-        ]));
+        $defaults = $moduleStatusService->existingSchoolToolAttributes($moduleStatusService->defaultAttributes());
 
         $schoolTool = SchoolTool::firstOrCreate(
             ['school_id' => $auth_user->school_id],
@@ -60,30 +56,6 @@ class SchoolToolController extends Controller
         }
 
         if ($updatable !== []) {
-            $schoolTool->update($updatable);
-            $schoolTool->refresh();
-        }
-
-        return response()->json(new SchoolToolResource($schoolTool), 200);
-    }
-
-    public function saveTutoringSettings(SchoolToolSaveTutoringSettingsRequest $request)
-    {
-        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        $validated = $request->validated()['data'];
-        $schoolTool = SchoolTool::query()
-            ->where('school_id', $auth_user->school_id)
-            ->whereKey($validated['id'])
-            ->firstOrFail();
-
-        // Legacy-safe: ignore fields that are missing in older DB schemas.
-        $moduleStatusService = app(SchoolToolModuleStatusService::class);
-        $updatable = $moduleStatusService->existingSchoolToolAttributes(collect($validated)->except(['id'])->all());
-
-        if (! empty($updatable)) {
             $schoolTool->update($updatable);
             $schoolTool->refresh();
         }
@@ -163,7 +135,7 @@ class SchoolToolController extends Controller
      */
     private function normalizeModuleVisibilityFlags(array $values): array
     {
-        foreach (['register', 'tutoring', 'teaching', 'materials', 'restaurant', 'aba', 'students_timetables'] as $moduleKey) {
+        foreach (['register', 'teaching', 'materials', 'restaurant', 'aba', 'students_timetables'] as $moduleKey) {
             $adminVisibleField = sprintf('%s_visible_admin', $moduleKey);
             $userVisibleField = sprintf('%s_visible_user', $moduleKey);
 

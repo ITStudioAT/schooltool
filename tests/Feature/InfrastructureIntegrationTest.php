@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(DatabaseTruncation::class);
@@ -29,22 +30,6 @@ it('uses MySQL and executes the Materials V2 full-text Scout index', function ()
             'teachers_email_index',
             'teachers_school_sort_index',
         ],
-        'tutoring_subjects' => [
-            'tutoring_subjects_school_short_index',
-        ],
-        'tutoring_offers' => [
-            'tutoring_offers_public_index',
-            'tutoring_offers_cross_school_index',
-            'tutoring_offers_user_created_index',
-            'tutoring_offers_subject_index',
-            'tutoring_offers_school_mentor_active_index',
-        ],
-        'tutoring_offer_requests' => [
-            'tutoring_requests_school_created_index',
-            'tutoring_requests_offer_sender_index',
-            'tutoring_requests_sender_inbox_index',
-            'tutoring_requests_recipient_inbox_index',
-        ],
     ];
 
     foreach ($expectedIndexes as $table => $indexNames) {
@@ -53,6 +38,10 @@ it('uses MySQL and executes the Materials V2 full-text Scout index', function ()
             ->unique();
 
         expect($actualIndexNames)->toContain(...$indexNames);
+    }
+
+    foreach (['tutoring_subjects', 'tutoring_offers', 'tutoring_offer_requests'] as $table) {
+        expect(Schema::hasTable($table))->toBeFalse();
     }
 
     $school = School::factory()->create();

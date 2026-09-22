@@ -30,7 +30,6 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin']);
     Role::firstOrCreate(['name' => 'admin']);
     Role::firstOrCreate(['name' => 'register_admin']);
-    Role::firstOrCreate(['name' => 'tutoring_admin']);
     Role::firstOrCreate(['name' => 'teaching_admin']);
     Role::firstOrCreate(['name' => 'materials_admin']);
     Role::firstOrCreate(['name' => 'teacher']);

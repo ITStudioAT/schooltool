@@ -155,30 +155,6 @@
                             </div>
                         </div>
 
-                        <!-- Nachhilfetool Card -->
-                        <div
-                            class="tool-card card-tutoring"
-                            :class="{ 'card-disabled': isTutoringDisabled }"
-                            @click="openToolForSchool('Nachhilfetool')"
-                            v-if="canShowTutoring">
-                            <div class="card-glow"></div>
-                            <div class="card-content">
-                                <div class="card-icon">
-                                    <v-icon size="40">mdi-account-group</v-icon>
-                                </div>
-                                <h3 class="card-title">{{ tutoringDisplayName }}</h3>
-                                <p class="card-description">Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.</p>
-                                <div class="card-action">
-                                    <span class="action-text">Starten</span>
-                                    <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-if="tutoringBadge">
-                                    <v-icon size="16">{{ tutoringBadge.icon }}</v-icon>
-                                    <span>{{ tutoringBadge.label }}</span>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Unterricht Card -->
                         <div class="tool-card card-lernportal" :class="{ 'card-disabled': isTeachingDisabled }" @click="openToolForSchool('Lehrertool')" v-if="canShowTeaching">
                             <div class="card-glow"></div>
@@ -432,15 +408,6 @@ export default {
         registerStatus() {
             return this.toolStatuses['Anmeldetool'] || 'missing'
         },
-        tutoringModuleStatus() {
-            return this.moduleStatuses.tutoring || 'inactive'
-        },
-        tutoringStatus() {
-            return this.toolStatuses['Nachhilfetool'] || 'missing'
-        },
-        tutoringDisplayName() {
-            return 'Schüler helfen Schülern'
-        },
         teachingModuleStatus() {
             return this.moduleStatuses.teaching || 'inactive'
         },
@@ -465,7 +432,6 @@ export default {
         loginToolLabel() {
             const labels = {
                 Anmeldetool: 'Anmeldetool',
-                Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
                 StudentsTimetables: 'SEPP',
                 Restaurant: 'Restaurant',
@@ -475,7 +441,6 @@ export default {
         loginToolIcon() {
             const icons = {
                 Anmeldetool: 'mdi-calendar-check',
-                Nachhilfetool: 'mdi-account-group',
                 Lehrertool: 'mdi-rocket-launch-outline',
                 StudentsTimetables: 'mdi-calendar-clock-outline',
                 Restaurant: 'mdi-food',
@@ -484,9 +449,6 @@ export default {
         },
         canShowRegister() {
             return this.isModuleVisible(this.registerModuleStatus) && this.schoolLicenceNames.includes('Anmeldetool')
-        },
-        canShowTutoring() {
-            return this.isModuleVisible(this.tutoringModuleStatus) && this.schoolLicenceNames.includes('Nachhilfetool')
         },
         canShowTeaching() {
             return this.isModuleVisible(this.teachingModuleStatus) && this.schoolLicenceNames.includes('Lehrertool')
@@ -500,9 +462,6 @@ export default {
         isRegisterDisabled() {
             return this.registerStatus !== 'active' || !this.moduleAllowsAccess(this.registerModuleStatus)
         },
-        isTutoringDisabled() {
-            return this.tutoringStatus !== 'active' || !this.moduleAllowsAccess(this.tutoringModuleStatus)
-        },
         isTeachingDisabled() {
             return this.teachingStatus !== 'active' || !this.moduleAllowsAccess(this.teachingModuleStatus)
         },
@@ -514,9 +473,6 @@ export default {
         },
         registerBadge() {
             return this.buildBadge(this.registerStatus, this.registerModuleStatus)
-        },
-        tutoringBadge() {
-            return this.buildBadge(this.tutoringStatus, this.tutoringModuleStatus)
         },
         teachingBadge() {
             return this.buildBadge(this.teachingStatus, this.teachingModuleStatus)
@@ -580,7 +536,6 @@ export default {
             const status = this.toolStatuses?.[tool] || 'missing'
             const moduleStatus = {
                 Anmeldetool: this.registerModuleStatus,
-                Nachhilfetool: this.tutoringModuleStatus,
                 Lehrertool: this.teachingModuleStatus,
                 StudentsTimetables: this.studentsTimetablesModuleStatus,
                 Restaurant: this.restaurantModuleStatus,
@@ -608,7 +563,6 @@ export default {
             const school = this.selected_login_school
             const toolRoutes = {
                 Anmeldetool: '/homepage/register',
-                Nachhilfetool: '/homepage/tutoring_overview/',
                 Lehrertool: '/homepage/student',
                 StudentsTimetables: '/homepage/students-timetables',
                 Restaurant: '/homepage/restaurant',
@@ -622,7 +576,6 @@ export default {
         publicToolRoute(tool, school) {
             const toolRoutes = {
                 Anmeldetool: '/homepage/register',
-                Nachhilfetool: '/homepage/tutoring_overview',
                 Lehrertool: '/homepage/student',
                 StudentsTimetables: '/homepage/students-timetables',
                 Restaurant: '/homepage/restaurant',
@@ -746,7 +699,6 @@ export default {
             const notification = useNotificationStore()
             const toolLabel = {
                 Anmeldetool: 'Anmeldetool',
-                Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
                 StudentsTimetables: 'SEPP',
                 Restaurant: 'Restaurant',
@@ -770,7 +722,6 @@ export default {
             const status = this.toolStatuses?.[tool] || 'missing'
             const moduleStatus = {
                 Anmeldetool: this.registerModuleStatus,
-                Nachhilfetool: this.tutoringModuleStatus,
                 Lehrertool: this.teachingModuleStatus,
                 StudentsTimetables: this.studentsTimetablesModuleStatus,
             }[tool] || 'inactive'
@@ -790,9 +741,6 @@ export default {
             switch (licence.name) {
                 case 'Anmeldetool':
                     path += 'register'
-                    break
-                case 'Nachhilfetool':
-                    path += 'tutoring_overview/'
                     break
             }
             path += '?school=' + school.short_name
@@ -1429,10 +1377,6 @@ export default {
     color: #3aaa35;
 }
 
-.card-tutoring .card-icon {
-    background: linear-gradient(135deg, rgba(243, 146, 0, 0.15), rgba(243, 146, 0, 0.05));
-    color: #f39200;
-}
 
 .card-lernportal .card-icon {
     background: linear-gradient(135deg, rgba(253, 128, 46, 0.2), rgba(35, 61, 76, 0.14));
@@ -1613,9 +1557,6 @@ export default {
     background: linear-gradient(140deg, rgba(248, 252, 255, 0.92), rgba(230, 241, 250, 0.82));
 }
 
-.product-section--tutoring {
-    background: linear-gradient(140deg, rgba(255, 248, 236, 0.92), rgba(255, 234, 210, 0.8));
-}
 
 .product-section--materials {
     background: linear-gradient(140deg, rgba(242, 251, 247, 0.94), rgba(227, 245, 236, 0.82));
@@ -1717,11 +1658,6 @@ export default {
     filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
 }
 
-.product-illustration-tutoring {
-    max-width: 420px;
-    max-height: 240px;
-    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
-}
 
 .product-illustration-materials {
     max-width: 430px;
@@ -1852,9 +1788,6 @@ export default {
     color: #a95414;
 }
 
-.visual-tutoring {
-    background: radial-gradient(180px 100px at 80% 18%, rgba(245, 129, 32, 0.16), transparent 70%), rgba(255, 255, 255, 0.54);
-}
 
 .match-network {
     position: relative;

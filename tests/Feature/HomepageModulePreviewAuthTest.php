@@ -7,7 +7,6 @@ use App\Models\School;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Services\RestaurantHomepageAuthService;
-use App\Services\TutoringService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
@@ -56,7 +55,6 @@ beforeEach(function (): void {
             $table->timestamp($column)->nullable();
         }
         $table->text('two_factor_secret')->nullable();
-        $table->text('tutoring_filter')->nullable();
         $table->boolean('is_active')->default(true);
         $table->boolean('use_school_color_for_admin_ui')->default(true);
         $table->timestamps();
@@ -72,8 +70,6 @@ beforeEach(function (): void {
     Schema::create('school_tools', function (Blueprint $table): void {
         $table->id();
         $table->unsignedBigInteger('school_id');
-        $table->boolean('tutoring_student_must_be_confirmed')->default(false);
-        $table->string('tutoring_confirmer_email')->nullable();
     });
     (require database_path('migrations/2025_10_16_163810_create_permission_tables.php'))->up();
     Schema::table('roles', fn (Blueprint $table) => $table->boolean('is_admin')->default(false));
@@ -83,7 +79,7 @@ beforeEach(function (): void {
 
     $this->school = School::factory()->create();
     DB::table('school_tools')->insert(['school_id' => $this->school->id]);
-    foreach (['lunch_user', 'lunch_candidate', 'tutoring_user'] as $role) {
+    foreach (['lunch_user', 'lunch_candidate'] as $role) {
         Role::create(['name' => $role, 'guard_name' => 'web']);
     }
     FeaturePreviewSetting::factory()->create(['enabled' => true]);
@@ -269,45 +265,41 @@ test('restaurant preview refuses registration lookup for unknown and pending acc
     Notification::assertNothingSent();
 })->with([false, true]);
 
-test('tutoring preview checks account grants before authentication side effects', function (string $method): void {
-    $user = homepageModulePreviewUser('tutoring_user', false);
-    $service = app(TutoringService::class);
+test('removed tutoring preview endpoints have no authentication side effects for ungranted accounts', function (string $endpoint): void {
+    $user = homepageModulePreviewUser('lunch_user', false);
 
-    expect(fn () => $method === 'sendCodeToUser'
-        ? $service->{$method}($user)
-        : $service->{$method}(homepageModulePreviewLoginData($user)))
-        ->toThrow(HttpException::class, 'Für dieses Konto ist die Vorschau nicht freigegeben.');
+    $this->postJson('/api/homepage/tutoring/'.$endpoint, ['data' => homepageModulePreviewLoginData($user)])
+        ->assertNotFound();
 
     expect($user->fresh()->token_2fa)->toBe('123456')
         ->and($user->fresh()->login_at)->toBeNull()
         ->and($user->fresh()->confirmed_at)->toBeNull();
     Notification::assertNothingSent();
     $this->assertGuest();
-})->with(['checkEmail', 'checkLoginRequirement', 'sendCodeToUser', 'unknownPassword', 'confirmEmail', 'loginWithToken', 'loginWithPassword']);
+})->with(['check_email', 'unknown_password', 'confirm_email', 'login_with_token', 'login_with_password']);
 
-test('tutoring preview admits granted ordinary accounts with verified email', function (string $method): void {
-    $user = homepageModulePreviewUser('tutoring_user');
-    $service = app(TutoringService::class);
-    $data = homepageModulePreviewLoginData($user);
+test('preview grants cannot restore removed tutoring login endpoints', function (string $endpoint): void {
+    $user = homepageModulePreviewUser('lunch_user');
 
-    expect($service->checkEmail($data)['status'])->toBe('USER_FOUND');
-    $result = $service->{$method}($data);
+    $this->postJson('/api/homepage/tutoring/'.$endpoint, ['data' => homepageModulePreviewLoginData($user)])
+        ->assertNotFound();
 
-    expect($result['status'])->toBe('LOGGED_IN');
-    $this->assertAuthenticatedAs($user);
-})->with(['loginWithToken', 'loginWithPassword']);
+    expect($user->fresh()->login_at)->toBeNull();
+    Notification::assertNothingSent();
+    $this->assertGuest();
+})->with(['login_with_token', 'login_with_password']);
 
-test('tutoring preview refuses unknown accounts before provisioning', function (string $method): void {
+test('removed tutoring preview endpoints cannot provision unknown accounts', function (string $endpoint): void {
     $count = User::query()->count();
 
-    expect(fn () => app(TutoringService::class)->{$method}([
+    $this->postJson('/api/homepage/tutoring/'.$endpoint, ['data' => [
         'school_id' => $this->school->id,
         'email' => 'unknown@example.test',
-    ]))->toThrow(HttpException::class, 'Für dieses Konto ist die Vorschau nicht freigegeben.');
+    ]])->assertNotFound();
 
     expect(User::query()->count())->toBe($count);
     Notification::assertNothingSent();
-})->with(['checkEmail', 'createUser']);
+})->with(['check_email', 'create_user']);
 
 test('module password overrides stay main only and preview still accepts the own password', function (string $serviceClass, string $role, bool $preview): void {
     config(['schooltool.preview.instance' => $preview]);
@@ -339,8 +331,6 @@ test('module password overrides stay main only and preview still accepts the own
 })->with([
     'restaurant preview' => [RestaurantHomepageAuthService::class, 'lunch_user', true],
     'restaurant main' => [RestaurantHomepageAuthService::class, 'lunch_user', false],
-    'tutoring preview' => [TutoringService::class, 'tutoring_user', true],
-    'tutoring main' => [TutoringService::class, 'tutoring_user', false],
 ]);
 
 test('ordinary module login on main does not require preview grants', function (string $serviceClass, string $role): void {
@@ -353,5 +343,4 @@ test('ordinary module login on main does not require preview grants', function (
     $this->assertAuthenticatedAs($user);
 })->with([
     'restaurant' => [RestaurantHomepageAuthService::class, 'lunch_user'],
-    'tutoring' => [TutoringService::class, 'tutoring_user'],
 ]);

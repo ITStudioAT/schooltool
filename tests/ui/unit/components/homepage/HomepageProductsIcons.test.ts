@@ -20,7 +20,6 @@ describe('homepage products icons', () => {
 
         expect(source).toContain("symbol: '📅'")
         expect(source).toContain("symbol: '🚀'")
-        expect(source).toContain("symbol: '🤝'")
         expect(source).toContain("symbol: '📁'")
         expect(source).toContain("symbol: '🍽'")
         expect(source).toContain("{ symbol: '⏱', label: 'Zeitslot-Verwaltung' }")

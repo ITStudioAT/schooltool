@@ -118,10 +118,6 @@ use App\Http\Controllers\Homepage\StudentTimetableV3TimetableController as Homep
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
-use App\Http\Controllers\Tutoring\OfferController;
-use App\Http\Controllers\Tutoring\OfferRequestController;
-use App\Http\Controllers\Tutoring\SubjectController;
-use App\Http\Controllers\Tutoring\TutoringController;
 use App\Http\Middleware\AuthenticateFeaturePreviewControl;
 use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
@@ -371,18 +367,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/register/book', [RegisterController::class, 'book'])->middleware(['auth:sanctum', 'tool-licensed:Anmeldetool']);
     Route::post('/homepage/register/delete_booking', [RegisterController::class, 'deleteBooking'])->middleware(['auth:sanctum', 'tool-licensed:Anmeldetool']);
 
-    /* homepage/tutoring */
-    Route::get('/homepage/tutoring/config', [TutoringController::class, 'config']);
-    Route::post('/homepage/tutoring/check_email', [TutoringController::class, 'checkEMail'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::post('/homepage/tutoring/confirm_email', [TutoringController::class, 'confirmEMail'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::post('/homepage/tutoring/create_user', [TutoringController::class, 'createUser'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::post('/homepage/tutoring/unknown_password', [TutoringController::class, 'unknownPassword'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::post('/homepage/tutoring/login_with_token', [TutoringController::class, 'loginWithToken'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::post('/homepage/tutoring/login_with_password', [TutoringController::class, 'loginWithPassword'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
-    Route::get('/homepage/tutoring/load_offer_config', [OfferController::class, 'loadOfferConfig']);
-    Route::get('/homepage/tutoring/load_offers', [OfferController::class, 'loadOffers']);
-    Route::post('/homepage/tutoring/click_count', [OfferController::class, 'clickCount']);
-
     // Public: returns a guest-safe "not impersonating" response when unauthenticated.
     Route::get('/admin/impersonation/status', [ImpersonationController::class, 'status'])
         ->middleware(StartSession::class);
@@ -553,30 +537,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });
 
-    /* SANCTUM - tutoring_user */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:tutoring_user_access', 'tool-licensed:Nachhilfetool,auto,scope:tutoring_user_access'])->group(function () {
-        Route::apiResource('/homepage/tutoring/users', App\Http\Controllers\Tutoring\UserController::class)->names('tutoring.users');
-        Route::post('/homepage/tutoring/update_password', [App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
-        Route::post('/homepage/tutoring/logout', [App\Http\Controllers\Tutoring\UserController::class, 'logout']);
-        Route::get('/homepage/tutoring/load_auth', [TutoringController::class, 'loadAuth']);
-        Route::get('/homepage/tutoring/load_my_offers', [OfferController::class, 'loadMyOffers']);
-        Route::post('/homepage/tutoring/set_user_search_criteria', [OfferController::class, 'setUserSearchCriteria']);
-        Route::apiResource('/homepage/tutoring/subjects', SubjectController::class)->names('tutoring.subjects');
-        Route::apiResource('/homepage/tutoring/offers', OfferController::class)->names('tutoring.offers');
-        Route::post('/homepage/tutoring/toggle_offer', [OfferController::class, 'toggleOffer']);
-        Route::post('/homepage/tutoring/send_request', [OfferController::class, 'sendRequest']);
-        Route::apiResource('/homepage/tutoring/offer_requests', OfferRequestController::class)->names('tutoring.offer_requests');
-        Route::get('/homepage/tutoring/received_offer_requests', [OfferRequestController::class, 'receivedRequests']);
-        Route::post('/homepage/tutoring/request_mail_clicked', [OfferRequestController::class, 'requestMailClicked']);
-        Route::post('/homepage/tutoring/to_archive', [OfferRequestController::class, 'toArchive']);
-        Route::post('/homepage/tutoring/to_active', [OfferRequestController::class, 'toActive']);
-        Route::post('/homepage/tutoring/to_user_archive', [OfferRequestController::class, 'toUserArchive']);
-        Route::post('/homepage/tutoring/to_user_active', [OfferRequestController::class, 'toUserActive']);
-
-        // api/homepage/tutoring/offer_requests
-    });
-
-    /* SANCTUM - admin, tutoring_admin, register_admin */
+    /* SANCTUM - admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:school_tool_access'])->group(function () {
         Route::get('/admin/school_tools/load_config', [SchoolToolController::class, 'loadConfig']);
         Route::post('/admin/users20/toggle_is_active', [UserController::class, 'toggleIsActive']);
@@ -598,20 +559,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/groups/{group}/assignable-groups', [GroupController::class, 'assignableGroups']);
         Route::post('/admin/groups/{group}/assign-from-group', [GroupController::class, 'assignFromGroup']);
         Route::get('/admin/groups/{group}/my-teaching-courses', [GroupController::class, 'myTeachingCourses']);
-    });
-
-    /* SANCTUM - admin, tutoring_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:tutoring_admin_access'])->group(function () {});
-
-    /* SANCTUM - admin, tutoring_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:tutoring_admin_access', 'tool-licensed:Nachhilfetool,auto,scope:tutoring_admin_access'])->group(function () {
-        Route::post('/admin/school_tools/save_tutoring_settings', [SchoolToolController::class, 'saveTutoringSettings']);
-        Route::apiResource('/admin/tutoring/subjects', App\Http\Controllers\Admin\Tutoring\SubjectController::class)->names('admin.tutoring.subjects');
-        Route::apiResource('/admin/tutoring/users', App\Http\Controllers\Admin\Tutoring\UserController::class)->names('admin.tutoring.users');
-        Route::post('/admin/tutoring/create_subjects', [App\Http\Controllers\Admin\Tutoring\SubjectController::class, 'createSubjects']);
-        Route::post('/admin/tutoring/delete_users', [App\Http\Controllers\Admin\Tutoring\UserController::class, 'deleteUsers']);
-        Route::post('/admin/tutoring/clean_users', [App\Http\Controllers\Admin\Tutoring\UserController::class, 'cleanUsers']);
-        Route::post('/admin/tutoring/confirm_users', [App\Http\Controllers\Admin\Tutoring\UserController::class, 'confirmUsers']);
     });
 
     /* SANCTUM - admin, teaching_admin, teacher */
@@ -905,16 +852,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schoolyears/set_active', [SchoolyearController::class, 'setActiveSchoolyear']);
     });
 
-    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher */
+    /* SANCTUM - admin, register_admin, teaching_admin, materials_admin, materials_moderator, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:staff_admin_access'])->group(function () {
-
-        // Tutoring, Offers
-        Route::apiResource('/admin/tutoring/offers', App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers')->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        Route::post('/admin/tutoring/delete_offers', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'deleteOffers'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        Route::post('/admin/tutoring/toggle_active_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        Route::post('/admin/tutoring/toggle_accepted_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        Route::get('/admin/tutoring/get_stats', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        Route::get('/admin/tutoring/requests', [App\Http\Controllers\Admin\Tutoring\OfferRequestController::class, 'index'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
 
         // Roles
         Route::get('/admin/roles/load_roles', [RoleController::class, 'loadRoles']);
@@ -978,7 +917,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/register_date_bookings/delete_bookings', [RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool,auto,scope:staff_admin_access');
     });
 
-    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
+    /* SANCTUM - admin, register_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_shell_access'])->group(function () {
         Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
     });

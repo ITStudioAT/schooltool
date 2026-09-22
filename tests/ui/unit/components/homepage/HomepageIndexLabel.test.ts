@@ -3,14 +3,12 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('homepage product labels', () => {
-    it('uses the configured Schüler helfen Schülern product label consistently', () => {
-        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Index.vue')
-        const source = readFileSync(componentPath, 'utf8')
+    it('does not advertise the removed tutoring product', () => {
+        for (const page of ['Index.vue', 'Index90.vue', 'Products.vue']) {
+            const source = readFileSync(resolve(process.cwd(), 'resources/js/pages/homepage/index', page), 'utf8')
 
-        expect(source).toContain("return 'Schüler helfen Schülern'")
-        expect(source).not.toContain('Schüler helfen Schülern (Testversion)')
-        expect(source).toContain('<h3 class="card-title">{{ tutoringDisplayName }}</h3>')
-        expect(source).toContain("Nachhilfetool: this.tutoringDisplayName")
+            expect(source).not.toMatch(/Nachhilfe|Schüler helfen Schülern|tutoring/iu)
+        }
     })
 
     it('uses SEPP throughout the timetable app and explains the name at entry points', () => {

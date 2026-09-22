@@ -199,17 +199,6 @@ return [
             'user_role_names' => null,
         ],
         [
-            'name' => 'Nachhilfetool',
-            'long_name' => 'Tool zum Verwalten von Nachhilfe',
-            'price_per_year' => 200,
-            'start_day_month' => '01.08.',
-            'school_licence_enabled' => true,
-            'admin_licence_enabled' => false,
-            'admin_role_names' => null,
-            'user_licence_enabled' => false,
-            'user_role_names' => null,
-        ],
-        [
             'name' => 'Lehrertool',
             'long_name' => 'Tool zum Verwalten von Unterricht',
             'price_per_year' => 200,

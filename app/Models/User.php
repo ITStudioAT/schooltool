@@ -131,13 +131,11 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSex($value)
  *
  * @property string|null $short
- * @property array<array-key, mixed>|null $tutoring_filter
  * @property array<array-key, mixed>|null $restaurant_booking_defaults
  * @property array<array-key, int>|null $hopper_account_ids
  *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User teachers($school_id = null)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereShort($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereTutoringFilter($value)
  *
  * @mixin \Eloquent
  */
@@ -218,7 +216,6 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'restaurant_confirmed_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'sepa_at' => 'datetime',
-            'tutoring_filter' => 'array',
             'teaching_behaviour' => 'array',
             'teaching_behaviour_by_schoolyear' => 'array',
             'teaching_notifications' => 'array',
@@ -233,10 +230,6 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'feature_preview_allowed' => 'boolean',
         ];
     }
-
-    protected $attributes = [
-        'tutoring_filter' => '{"only_boys":false,"only_girls":false,"only_in_my_school":true,"schools":[]}',
-    ];
 
     public function scopeTeachers($query, $school_id = null)
     {
@@ -325,11 +318,6 @@ class User extends Authenticatable implements MustVerifyEmailContract
         return $this->hasMany(MaterialWorkspace::class);
     }
 
-    public function tutoringOffers(): HasMany
-    {
-        return $this->hasMany(TutoringOffer::class, 'user_id');
-    }
-
     public function shouldDelete(): bool
     {
 
@@ -410,9 +398,6 @@ class User extends Authenticatable implements MustVerifyEmailContract
     public function hasDependencies(): bool
     {
         if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) {
-            return true;
-        }
-        if (TutoringOffer::where('user_id', $this->id)->count() > 0) {
             return true;
         }
 

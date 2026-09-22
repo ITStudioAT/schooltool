@@ -100,7 +100,7 @@ return new class extends Migration
      */
     private function modules(): array
     {
-        return ['register', 'tutoring', 'teaching', 'materials', 'restaurant'];
+        return ['register', 'teaching', 'materials', 'restaurant'];
     }
 
     private function defaultIsActive(string $moduleKey): bool

@@ -5,7 +5,6 @@ import RegisterPage from '@/pages/homepage/register/Register.vue'
 import StudentPage from '@/pages/homepage/student/Student.vue'
 import ParentAccessPanel from '@/pages/homepage/student/components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '@/pages/homepage/student/components/StudentNavigationDrawer.vue'
-import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 
 describe('code login availability guards', () => {
     it('register page marks code login unavailable when queue is down', () => {
@@ -179,40 +178,12 @@ describe('code login availability guards', () => {
         expect(context.selected_parent_student_id).toBe(77)
     })
 
-    it('tutoring page blocks unknown password flow when queue is down', async () => {
-        const unknownPassword = vi.fn()
-        const context: Record<string, any> = {
-            isCodeLoginAvailable: false,
-            tutoringStore: {
-                unknownPassword,
-            },
-        }
+    it('does not register a tutoring login alongside the remaining public logins', () => {
+        const source = readFileSync(resolve(process.cwd(), 'resources/routes/homepage.js'), 'utf8')
 
-        await (SchoolAndUser as any).methods.unknownPassword.call(context, {})
-
-        expect(unknownPassword).not.toHaveBeenCalled()
-    })
-
-    it('tutoring page blocks token login when queue is down', async () => {
-        const loginWithToken = vi.fn()
-        const context: Record<string, any> = {
-            isCodeLoginAvailable: false,
-            tutoringStore: {
-                loginWithToken,
-            },
-        }
-
-        await (SchoolAndUser as any).methods.loginWithToken.call(context, {})
-
-        expect(loginWithToken).not.toHaveBeenCalled()
-    })
-
-    it('tutoring page marks code login unavailable from queue_working prop even without store config', () => {
-        const isCodeLoginAvailable = (SchoolAndUser as any).computed.isCodeLoginAvailable.call({
-            queue_working: false,
-            config: null,
-        })
-
-        expect(isCodeLoginAvailable).toBe(false)
+        expect(source).not.toContain('/homepage/tutoring')
+        expect(source).toContain("path: '/homepage/register'")
+        expect(source).toContain("path: '/student'")
+        expect(source).toContain("path: '/students-timetables'")
     })
 })

@@ -240,7 +240,6 @@ describe('config', function () {
                 'auth_user',
                 'tool_module_statuses' => [
                     'register',
-                    'tutoring',
                     'teaching',
                     'materials',
                     'restaurant',
@@ -248,13 +247,11 @@ describe('config', function () {
                 ],
                 'tool_module_visibility' => [
                     'register',
-                    'tutoring',
                     'teaching',
                     'materials',
                     'restaurant',
                     'students_timetables',
                 ],
-                'tutoring_active',
                 'teaching_active',
                 'students_timetables_active',
                 'restaurant' => [
@@ -343,9 +340,6 @@ describe('config', function () {
         SchoolTool::factory()->create([
             'school_id' => $this->school->id,
             'register_visible_user' => true,
-            'tutoring_visible_user' => false,
-            'tutoring_user_test_mode' => false,
-            'tutoring_user_comming_soon' => true,
             'teaching_visible_user' => false,
             'teaching_user_test_mode' => true,
             'teaching_user_comming_soon' => false,
@@ -366,17 +360,17 @@ describe('config', function () {
         $response->assertStatus(200)
             ->assertJson([
                 'register_active' => true,
-                'tutoring_active' => false,
                 'teaching_active' => true,
                 'restaurant_active' => true,
                 'students_timetables_active' => true,
             ])
-            ->assertJsonPath('tool_module_statuses.tutoring', 'comming_soon')
+            ->assertJsonMissingPath('tool_module_statuses.tutoring')
+            ->assertJsonMissingPath('tutoring_active')
             ->assertJsonPath('tool_module_statuses.teaching', 'test_modus')
             ->assertJsonPath('tool_module_statuses.materials', 'inactive')
             ->assertJsonPath('tool_module_statuses.students_timetables', 'active')
             ->assertJsonPath('tool_module_visibility.register', true)
-            ->assertJsonPath('tool_module_visibility.tutoring', false)
+            ->assertJsonMissingPath('tool_module_visibility.tutoring')
             ->assertJsonPath('tool_module_visibility.teaching', false)
             ->assertJsonPath('tool_module_visibility.materials', false)
             ->assertJsonPath('tool_module_visibility.restaurant', true)
@@ -393,7 +387,6 @@ describe('config', function () {
         SchoolTool::factory()->create([
             'school_id' => $otherSchool->id,
             'register_visible_user' => false,
-            'tutoring_visible_user' => false,
             'teaching_visible_user' => false,
             'materials_visible_user' => false,
             'restaurant_visible_user' => false,

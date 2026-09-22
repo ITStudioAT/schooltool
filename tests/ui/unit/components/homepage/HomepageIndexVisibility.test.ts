@@ -8,11 +8,10 @@ describe('homepage index visibility', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain("return this.isModuleVisible(this.registerModuleStatus)")
-        expect(source).toContain("return this.isModuleVisible(this.tutoringModuleStatus)")
         expect(source).toContain("return this.isModuleVisible(this.teachingModuleStatus)")
         expect(source).toContain("return this.isModuleVisible(this.restaurantModuleStatus)")
         expect(source).toContain('v-if="canShowRegister"')
-        expect(source).toContain('v-if="canShowTutoring"')
+        expect(source).not.toContain('v-if="canShowTutoring"')
         expect(source).toContain('v-if="canShowTeaching"')
         expect(source).toContain('v-if="canShowRestaurant"')
         expect(source).toContain("label: 'Demnächst verfügbar'")
@@ -52,7 +51,7 @@ describe('homepage index visibility', () => {
 
         expect(source).toContain('const publicToolRoute = this.publicToolRoute(tool, school)')
         expect(source).toContain("Anmeldetool: '/homepage/register'")
-        expect(source).toContain("Nachhilfetool: '/homepage/tutoring_overview'")
+        expect(source).not.toContain("Nachhilfetool: '/homepage/tutoring_overview'")
         expect(source).toContain("Lehrertool: '/homepage/student'")
         expect(source).toContain("Restaurant: '/homepage/restaurant'")
         expect(source).toContain('school: school.short_name')

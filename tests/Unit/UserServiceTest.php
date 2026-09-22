@@ -6,8 +6,6 @@ use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
-use App\Models\TutoringOffer;
-use App\Models\TutoringSubject;
 use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,8 +28,6 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
@@ -327,41 +323,19 @@ describe('update', function () {
         expect($updated->hasRole('register_user'))->toBeTrue();
     });
 
-    it('does not remove tutoring_user role when user has tutoring offers', function () {
+    it('updates a shared user without querying retired tutoring tables', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
-        $user->assignRole('tutoring_user');
+        $user->assignRole('register_user');
 
-        // Create tutoring subject first
-        $subject = TutoringSubject::create([
-            'school_id' => $this->school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-            'must_be_accepted' => false,
-        ]);
-
-        // Create tutoring offer for user without factory
-        TutoringOffer::create([
-            'user_id' => $user->id,
-            'school_id' => $this->school->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'is_group' => 0,
-            'must_be_accepted' => false,
-            'price_per_hour' => 10.00,
-        ]);
-
-        $data = [
+        $updated = $this->service->update([
             'id' => $user->id,
             'email' => $user->email,
-            'roles' => [
-                ['name' => 'tutoring_user', 'checked' => false],
-            ],
-        ];
+            'first_name' => 'Updated',
+            'roles' => [['name' => 'register_user', 'checked' => true]],
+        ]);
 
-        $updated = $this->service->update($data);
-
-        expect($updated->hasRole('tutoring_user'))->toBeTrue();
+        expect($updated->first_name)->toBe('Updated')
+            ->and($updated->hasRole('register_user'))->toBeTrue();
     });
 });
 
@@ -665,92 +639,12 @@ describe('checkEmailVerification', function () {
     });
 });
 
-describe('deleteTutoringUsers', function () {
-    it('deletes tutoring users without dependencies', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-        $user->assignRole('tutoring_user');
-
-        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
-
-        expect(User::find($user->id))->toBeNull();
-    });
-
-    it('does not delete user with multiple roles', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-        $user->assignRole(['tutoring_user', 'admin']);
-
-        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
-
-        expect(User::find($user->id))->not->toBeNull();
-    });
-
-    it('does not delete user with dependencies', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-        $user->assignRole('tutoring_user');
-
-        $register = Register::factory()->create(['school_id' => $this->school->id]);
-        $registerDate = RegisterDate::factory()->create(['register_id' => $register->id]);
-        RegisterDateBooking::factory()->create([
-            'register_date_id' => $registerDate->id,
-            'user_id' => $user->id,
-        ]);
-
-        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
-
-        expect(User::find($user->id))->not->toBeNull();
-    });
+test('shared user service no longer exposes deleteTutoringUsers', function () {
+    expect(method_exists($this->service, 'deleteTutoringUsers'))->toBeFalse();
 });
 
-describe('confirmTutoringUsers', function () {
-    it('confirms tutoring users with verified email', function () {
-        $user = User::factory()->create([
-            'school_id' => $this->school->id,
-            'email_verified_at' => now(),
-            'confirmed_at' => null,
-        ]);
-        $user->assignRole('tutoring_user');
-
-        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
-
-        $user->refresh();
-
-        expect($user->confirmed_at)->not->toBeNull();
-    });
-
-    it('does not confirm user without verified email', function () {
-        $user = User::factory()->create([
-            'school_id' => $this->school->id,
-            'email_verified_at' => null,
-            'confirmed_at' => null,
-        ]);
-        $user->assignRole('tutoring_user');
-
-        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
-
-        $user->refresh();
-
-        expect($user->confirmed_at)->toBeNull();
-    });
-
-    it('does not confirm already confirmed user', function () {
-        $originalTime = now()->subDays(5)->format('Y-m-d H:i:s');
-
-        $user = User::factory()->create([
-            'school_id' => $this->school->id,
-            'email_verified_at' => now(),
-            'confirmed_at' => $originalTime,
-        ]);
-        $user->assignRole('tutoring_user');
-
-        $originalConfirmedAt = $user->confirmed_at;
-
-        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
-
-        $user->refresh();
-
-        // Confirmed_at should remain unchanged
-        expect($user->confirmed_at)->toBe($originalConfirmedAt);
-    });
+test('shared user service no longer exposes confirmTutoringUsers', function () {
+    expect(method_exists($this->service, 'confirmTutoringUsers'))->toBeFalse();
 });
 
 describe('logout', function () {

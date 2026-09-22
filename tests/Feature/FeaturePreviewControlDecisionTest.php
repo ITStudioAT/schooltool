@@ -37,7 +37,6 @@ beforeEach(function (): void {
         }
         $table->boolean('is_active')->default(true);
         $table->boolean('is_2fa')->default(false);
-        $table->text('tutoring_filter')->nullable();
         $table->boolean('use_school_color_for_admin_ui')->default(true);
         $table->timestamps();
     });

@@ -5,10 +5,9 @@
  *
  * Tests the SchoolTool management controller including:
  * - loadConfig (load school tool configuration)
- * - saveTutoringSettings (save tutoring-specific settings)
  * - saveModuleStatuses (save school module visibility states)
  *
- * Endpoints require admin, tutoring_admin, or register_admin roles
+ * Endpoints require admin, teacher, or register_admin roles
  */
 
 use App\Models\Licence;
@@ -29,10 +28,6 @@ function moduleVisibilityKeys(): array
         'register_visible_user',
         'register_user_test_mode',
         'register_user_comming_soon',
-        'tutoring_visible_admin',
-        'tutoring_visible_user',
-        'tutoring_user_test_mode',
-        'tutoring_user_comming_soon',
         'teaching_visible_admin',
         'teaching_visible_user',
         'teaching_user_test_mode',
@@ -59,7 +54,6 @@ beforeEach(function () {
     foreach ([
         ['name' => 'ABA', 'long_name' => 'ABA'],
         ['name' => 'Anmeldetool', 'long_name' => 'Anmeldetool'],
-        ['name' => 'Nachhilfetool', 'long_name' => 'Nachhilfetool'],
         ['name' => 'Lehrertool', 'long_name' => 'Lehrertool'],
         ['name' => 'Materialientool', 'long_name' => 'Materialientool'],
         ['name' => 'Restaurant', 'long_name' => 'Restaurant'],
@@ -70,18 +64,18 @@ beforeEach(function () {
         );
     }
 
-    $this->tutoringLicence = Licence::firstOrCreate(
-        ['name' => 'Nachhilfetool'],
-        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    $this->teachingLicence = Licence::firstOrCreate(
+        ['name' => 'Lehrertool'],
+        ['long_name' => 'Lehrertool', 'is_selectable' => true]
     );
-    $this->school->licences()->attach($this->tutoringLicence->id, [
+    $this->school->licences()->attach($this->teachingLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     // Create roles
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
@@ -93,10 +87,6 @@ beforeEach(function () {
         'register_visible_user' => true,
         'register_user_test_mode' => false,
         'register_user_comming_soon' => false,
-        'tutoring_visible_admin' => true,
-        'tutoring_visible_user' => true,
-        'tutoring_user_test_mode' => false,
-        'tutoring_user_comming_soon' => false,
         'teaching_visible_admin' => false,
         'teaching_visible_user' => false,
         'teaching_user_test_mode' => false,
@@ -113,10 +103,6 @@ beforeEach(function () {
         'aba_visible_user' => true,
         'aba_user_test_mode' => false,
         'aba_user_comming_soon' => false,
-        'tutoring_student_must_be_confirmed' => 0,
-        'tutoring_confirmer_email' => 'admin@test.com',
-        'tutoring_max_offers_per_student' => 0,
-        'may_visible_for_other_schools' => 0,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -129,11 +115,11 @@ beforeEach(function () {
     ]);
     $this->admin->assignRole('admin');
 
-    $this->tutoringAdmin = User::factory()->create([
+    $this->teacherUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    $this->tutoringAdmin->assignRole('tutoring_admin');
+    $this->teacherUser->assignRole('teacher');
 
     $this->registerAdmin = User::factory()->create([
         'school_id' => $this->school->id,
@@ -158,30 +144,21 @@ describe('loadConfig', function () {
             ->assertJsonStructure(array_merge([
                 'id',
                 'module_rows',
-                'tutoring_student_must_be_confirmed',
-                'tutoring_confirmer_email',
-                'may_visible_for_other_schools',
             ], moduleVisibilityKeys()))
             ->assertJson([
                 'id' => 1,
             ]);
 
         expect(collect($response->json('module_rows'))->pluck('key')->all())
-            ->toBe(['aba', 'register', 'teaching', 'materials', 'tutoring', 'restaurant']);
+            ->toBe(['aba', 'register', 'teaching', 'materials', 'restaurant']);
     });
 
-    test('tutoring admin can load school tool config', function () {
-        $this->actingAs($this->tutoringAdmin);
+    test('teacher cannot load global school tool config', function () {
+        $this->actingAs($this->teacherUser);
 
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
-        $response->assertStatus(200)
-            ->assertJsonStructure(array_merge([
-                'id',
-                'tutoring_student_must_be_confirmed',
-                'tutoring_confirmer_email',
-                'may_visible_for_other_schools',
-            ], moduleVisibilityKeys()));
+        $response->assertForbidden();
     });
 
     test('register admin can load school tool config', function () {
@@ -192,24 +169,18 @@ describe('loadConfig', function () {
         $response->assertStatus(200)
             ->assertJsonStructure(array_merge([
                 'id',
-                'tutoring_student_must_be_confirmed',
-                'tutoring_confirmer_email',
-                'may_visible_for_other_schools',
             ], moduleVisibilityKeys()));
     });
 
     test('load config returns school tool of authenticated users school', function () {
         $otherSchool = School::factory()->create();
-        $otherSchool->licences()->attach($this->tutoringLicence->id, [
+        $otherSchool->licences()->attach($this->teachingLicence->id, [
             'valid_until' => now()->addYear()->toDateString(),
         ]);
         $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
         $otherSchoolTool = SchoolTool::create([
             'school_id' => $otherSchool->id,
-            'tutoring_student_must_be_confirmed' => true,
-            'tutoring_confirmer_email' => 'other@test.com',
-            'tutoring_max_offers_per_student' => 3,
-            'may_visible_for_other_schools' => true,
+            'register_visible_user' => false,
         ]);
 
         $otherAdmin = User::factory()->create([
@@ -225,7 +196,7 @@ describe('loadConfig', function () {
         $response->assertStatus(200)
             ->assertJson([
                 'id' => $otherSchoolTool->id,
-                'tutoring_confirmer_email' => 'other@test.com',
+                'register_visible_user' => false,
             ]);
     });
 
@@ -240,11 +211,8 @@ describe('loadConfig', function () {
 
         expect($data)->toHaveKeys([
             'id',
-            'tutoring_student_must_be_confirmed',
-            'tutoring_confirmer_email',
-            'may_visible_for_other_schools',
             ...moduleVisibilityKeys(),
-        ]);
+        ])->not->toHaveKey('may_visible_for_other_schools');
     });
 
     test('load config denies access for regular user', function () {
@@ -271,17 +239,12 @@ describe('loadConfig', function () {
         $response->assertStatus(200)
             ->assertJsonStructure(array_merge([
                 'id',
-                'tutoring_student_must_be_confirmed',
-                'tutoring_confirmer_email',
-                'may_visible_for_other_schools',
             ], moduleVisibilityKeys()))
             ->assertJson([
                 'aba_visible_admin' => true,
                 'aba_visible_user' => true,
                 'register_visible_admin' => true,
                 'register_visible_user' => true,
-                'tutoring_visible_admin' => false,
-                'tutoring_visible_user' => false,
                 'teaching_visible_admin' => false,
                 'teaching_visible_user' => false,
             ]);
@@ -293,8 +256,6 @@ describe('loadConfig', function () {
             'aba_visible_user' => true,
             'register_visible_admin' => true,
             'register_visible_user' => true,
-            'tutoring_visible_admin' => false,
-            'tutoring_visible_user' => false,
         ]);
     });
 });
@@ -310,10 +271,6 @@ describe('saveModuleStatuses', function () {
                 'register_visible_user' => false,
                 'register_user_test_mode' => false,
                 'register_user_comming_soon' => true,
-                'tutoring_visible_admin' => true,
-                'tutoring_visible_user' => false,
-                'tutoring_user_test_mode' => true,
-                'tutoring_user_comming_soon' => false,
                 'teaching_visible_admin' => true,
                 'teaching_visible_user' => true,
                 'teaching_user_test_mode' => false,
@@ -339,7 +296,7 @@ describe('saveModuleStatuses', function () {
         $response->assertOk()
             ->assertJsonPath('register_visible_user', false)
             ->assertJsonPath('register_user_comming_soon', true)
-            ->assertJsonPath('tutoring_user_test_mode', true)
+            ->assertJsonMissingPath('tutoring_user_test_mode')
             ->assertJsonPath('restaurant_visible_admin', true)
             ->assertJsonPath('restaurant_visible_user', true)
             ->assertJsonPath('students_timetables_admin_version', 'v3');
@@ -350,10 +307,6 @@ describe('saveModuleStatuses', function () {
             'register_visible_user' => false,
             'register_user_test_mode' => false,
             'register_user_comming_soon' => true,
-            'tutoring_visible_admin' => true,
-            'tutoring_visible_user' => false,
-            'tutoring_user_test_mode' => true,
-            'tutoring_user_comming_soon' => false,
             'teaching_visible_admin' => true,
             'teaching_visible_user' => true,
             'materials_visible_admin' => false,
@@ -386,10 +339,6 @@ describe('saveModuleStatuses', function () {
                 'register_visible_user' => true,
                 'register_user_test_mode' => false,
                 'register_user_comming_soon' => false,
-                'tutoring_visible_admin' => false,
-                'tutoring_visible_user' => false,
-                'tutoring_user_test_mode' => false,
-                'tutoring_user_comming_soon' => false,
                 'teaching_visible_admin' => false,
                 'teaching_visible_user' => false,
                 'teaching_user_test_mode' => false,
@@ -416,8 +365,8 @@ describe('saveModuleStatuses', function () {
         ]);
     });
 
-    test('save module statuses denies tutoring admin', function () {
-        $this->actingAs($this->tutoringAdmin);
+    test('save module statuses denies teacher', function () {
+        $this->actingAs($this->teacherUser);
 
         $response = $this->postJson('/api/admin/school_tools/save_module_statuses', [
             'data' => [
@@ -426,10 +375,6 @@ describe('saveModuleStatuses', function () {
                 'register_visible_user' => true,
                 'register_user_test_mode' => false,
                 'register_user_comming_soon' => false,
-                'tutoring_visible_admin' => true,
-                'tutoring_visible_user' => true,
-                'tutoring_user_test_mode' => false,
-                'tutoring_user_comming_soon' => false,
                 'teaching_visible_admin' => true,
                 'teaching_visible_user' => true,
                 'teaching_user_test_mode' => false,
@@ -462,10 +407,6 @@ describe('saveModuleStatuses', function () {
                 'register_visible_user' => true,
                 'register_user_test_mode' => false,
                 'register_user_comming_soon' => false,
-                'tutoring_visible_admin' => true,
-                'tutoring_visible_user' => true,
-                'tutoring_user_test_mode' => false,
-                'tutoring_user_comming_soon' => false,
                 'teaching_visible_admin' => true,
                 'teaching_visible_user' => true,
                 'teaching_user_test_mode' => false,
@@ -499,10 +440,6 @@ describe('saveModuleStatuses', function () {
                 'register_visible_user' => true,
                 'register_user_test_mode' => false,
                 'register_user_comming_soon' => false,
-                'tutoring_visible_admin' => true,
-                'tutoring_visible_user' => true,
-                'tutoring_user_test_mode' => false,
-                'tutoring_user_comming_soon' => false,
                 'teaching_visible_admin' => true,
                 'teaching_visible_user' => true,
                 'teaching_user_test_mode' => false,
@@ -538,250 +475,53 @@ describe('saveModuleStatuses', function () {
     });
 });
 
-describe('saveTutoringSettings', function () {
-    test('admin can save tutoring settings', function () {
-        $this->actingAs($this->admin);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'newemail@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'newemail@test.com',
-                'may_visible_for_other_schools' => true,
-            ]);
-
-        $this->assertDatabaseHas('school_tools', [
-            'id' => 1,
-            'tutoring_student_must_be_confirmed' => true,
-            'tutoring_confirmer_email' => 'newemail@test.com',
-            'may_visible_for_other_schools' => true,
-        ]);
-    });
-
-    test('tutoring admin can save tutoring settings', function () {
-        $this->actingAs($this->tutoringAdmin);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'tutoring@test.com',
-                'may_visible_for_other_schools' => false,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('school_tools', [
-            'id' => 1,
-            'tutoring_confirmer_email' => 'tutoring@test.com',
-            'may_visible_for_other_schools' => false,
-        ]);
-    });
-
-    test('save tutoring settings updates existing record', function () {
-        $this->actingAs($this->admin);
-
-        $originalValue = $this->schoolTool->tutoring_student_must_be_confirmed;
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => ! $originalValue,
-                'tutoring_confirmer_email' => 'updated@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(200);
-
-        $this->schoolTool->refresh();
-
-        expect((bool) $this->schoolTool->tutoring_student_must_be_confirmed)->toBe(! $originalValue);
-    });
-
-    test('save tutoring settings denies access for register admin', function () {
-        $this->actingAs($this->registerAdmin);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'test@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(403);
-    });
-
-    test('save tutoring settings denies access for regular user', function () {
-        $this->actingAs($this->regularUser);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'test@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(403);
-    });
-
-    test('save tutoring settings requires authentication', function () {
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'test@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(401);
-    });
-
-    test('save tutoring settings validates required data field', function () {
-        $this->actingAs($this->admin);
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', []);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors([
-                'data.id',
-                'data.tutoring_student_must_be_confirmed',
-                'data.may_visible_for_other_schools',
-            ]);
-    });
-
-    test('save tutoring settings validates required id in data', function () {
-        $this->actingAs($this->admin);
-
-        $updateData = [
-            'data' => [
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'test@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.id']);
-    });
-
-    test('save tutoring settings returns 422 for non existent school tool', function () {
-        $this->actingAs($this->admin);
-
-        $updateData = [
-            'data' => [
-                'id' => 99999,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'test@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        // Validation fails before findOrFail is called
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.id']);
-    });
-
-    test('save tutoring settings validates email format', function () {
-        $this->actingAs($this->admin);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'invalid-email',
-                'may_visible_for_other_schools' => true,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.tutoring_confirmer_email']);
-    });
-
-    test('save tutoring settings allows nullable email', function () {
-        $this->actingAs($this->admin);
-
-        $updateData = [
-            'data' => [
-                'id' => 1,
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => null,
-                'may_visible_for_other_schools' => false,
-            ],
-        ];
-
-        $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', $updateData);
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('school_tools', [
-            'id' => 1,
-            'tutoring_confirmer_email' => null,
-            'may_visible_for_other_schools' => false,
-        ]);
-    });
-
-    test('save tutoring settings rejects a school tool from another school', function () {
-        $otherSchool = School::factory()->create();
+describe('removed tutoring settings', function () {
+    test('removed settings endpoint cannot mutate either school', function (?string $actor): void {
         $otherSchoolTool = SchoolTool::factory()->create([
-            'school_id' => $otherSchool->id,
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => 'other@test.com',
-            'may_visible_for_other_schools' => false,
+            'school_id' => School::factory()->create()->id,
         ]);
+        $before = SchoolTool::query()->orderBy('id')->get()->toArray();
 
-        $this->actingAs($this->tutoringAdmin);
+        if ($actor !== null) {
+            $this->actingAs($this->{$actor});
+        }
 
-        $this->postJson('/api/admin/school_tools/save_tutoring_settings', [
-            'data' => [
-                'id' => $otherSchoolTool->id,
-                'tutoring_student_must_be_confirmed' => true,
-                'tutoring_confirmer_email' => 'attacker@test.com',
-                'may_visible_for_other_schools' => true,
-            ],
-        ])->assertUnprocessable()
-            ->assertJsonValidationErrors(['data.id']);
+        foreach ([$this->schoolTool->id, $otherSchoolTool->id] as $id) {
+            $this->postJson('/api/admin/school_tools/save_tutoring_settings', [
+                'data' => [
+                    'id' => $id,
+                    'tutoring_student_must_be_confirmed' => true,
+                    'tutoring_confirmer_email' => 'obsolete@example.test',
+                    'may_visible_for_other_schools' => true,
+                    'register_visible_admin' => false,
+                ],
+            ])->assertNotFound();
+        }
 
-        $this->assertDatabaseHas('school_tools', [
-            'id' => $otherSchoolTool->id,
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => 'other@test.com',
-            'may_visible_for_other_schools' => false,
-        ]);
-    });
+        expect(SchoolTool::query()->orderBy('id')->get()->toArray())->toBe($before);
+    })->with([
+        'admin' => ['admin'],
+        'teacher' => ['teacherUser'],
+        'register admin' => ['registerAdmin'],
+        'regular user' => ['regularUser'],
+        'guest' => [null],
+    ]);
+
+    test('removed settings endpoint rejects obsolete malformed payloads without changes', function (array $data): void {
+        $before = $this->schoolTool->fresh()->toArray();
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/admin/school_tools/save_tutoring_settings', $data)
+            ->assertNotFound();
+
+        expect($this->schoolTool->fresh()->toArray())->toBe($before);
+    })->with([
+        'missing data' => [[]],
+        'missing id' => [['data' => ['tutoring_student_must_be_confirmed' => true]]],
+        'unknown id' => [['data' => ['id' => 99999]]],
+        'invalid email' => [['data' => ['id' => 1, 'tutoring_confirmer_email' => 'invalid-email']]],
+        'nullable email' => [['data' => ['id' => 1, 'tutoring_confirmer_email' => null]]],
+    ]);
 });
 
 test('set active schoolyear rejects a schoolyear from another school', function () {

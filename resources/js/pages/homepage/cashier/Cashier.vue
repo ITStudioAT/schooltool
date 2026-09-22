@@ -1,5 +1,5 @@
 <template>
-    <v-container fluid class="ma-0 w-100 h-100 pa-2 d-flex align-center justify-center bg-tutoring_background text-tutoring_text">
+    <v-container fluid class="ma-0 w-100 h-100 pa-2 d-flex align-center justify-center bg-cashier_background text-cashier_text">
         <div class="d-flex flex-column align-center justify-center">
             <!-- PRICE DISPLAY -->
             <div class="text-h1" :class="priceClass">

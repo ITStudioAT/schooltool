@@ -348,10 +348,7 @@ class RecordsCreateService
     {
         return SchoolTool::firstOrCreate(
             ['school_id' => $school->id],
-            [
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => '',
-            ]
+            []
         );
     }
 }

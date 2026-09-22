@@ -24,9 +24,6 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\TeachingCourse;
-use App\Models\TutoringOffer;
-use App\Models\TutoringOfferRequest;
-use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -34,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -47,8 +45,6 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
 });
 
 describe('User Model', function () {
@@ -512,7 +508,8 @@ describe('SchoolTool Model', function () {
     it('has correct fillable attributes', function () {
         $fillable = (new SchoolTool)->getFillable();
 
-        expect($fillable)->toContain('school_id', 'tutoring_max_offers_per_student', 'tutoring_confirmer_email');
+        expect($fillable)->toContain('school_id', 'register_visible_admin')
+            ->and($fillable)->not->toContain('tutoring_max_offers_per_student', 'tutoring_confirmer_email');
     });
 
     it('casts health_at to datetime', function () {
@@ -522,283 +519,16 @@ describe('SchoolTool Model', function () {
     });
 });
 
-describe('TutoringOffer Model', function () {
-    it('can be created', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.50,
-        ]);
-
-        expect($offer)->toBeInstanceOf(TutoringOffer::class)
-            ->and($offer->id)->toBeGreaterThan(0);
-    });
-
-    it('has correct fillable attributes', function () {
-        $fillable = (new TutoringOffer)->getFillable();
-
-        expect($fillable)->toContain('school_id', 'user_id', 'subject_id', 'title', 'is_active');
-    });
-
-    it('casts price_per_hour to decimal', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.50,
-        ]);
-
-        expect($offer->price_per_hour)->toBeString()
-            ->and($offer->price_per_hour)->toBe('15.50');
-    });
-
-    it('casts is_active to boolean', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => 1,
-            'price_per_hour' => 15.00,
-        ]);
-
-        expect($offer->is_active)->toBeBool();
-    });
-
-    it('belongs to user', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        expect($offer->user())->toBeInstanceOf(BelongsTo::class)
-            ->and($offer->user->id)->toBe($user->id);
-    });
-
-    it('belongs to subject', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        expect($offer->subject())->toBeInstanceOf(BelongsTo::class)
-            ->and($offer->subject->id)->toBe($subject->id);
-    });
+test('retired TutoringOffer model is not available', function () {
+    expect(class_exists('App\\Models\\TutoringOffer'))->toBeFalse();
 });
 
-describe('TutoringOfferRequest Model', function () {
-    it('only allows known attributes to be mass assigned', function () {
-        $model = new TutoringOfferRequest;
-
-        expect($model->getGuarded())->not->toBe([])
-            ->and($model->getFillable())->toContain(
-                'school_id',
-                'offer_id',
-                'from_user_id',
-                'to_user_id',
-                'message',
-                'is_serious',
-                'token',
-                'token_expires_at',
-                'sent_count',
-            )
-            ->not->toContain('id', 'created_at', 'updated_at');
-    });
-
-    it('can be created', function () {
-        $school = School::factory()->create();
-        $fromUser = User::factory()->create(['school_id' => $school->id]);
-        $toUser = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $toUser->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        $request = TutoringOfferRequest::create([
-            'school_id' => $school->id,
-            'offer_id' => $offer->id,
-            'from_user_id' => $fromUser->id,
-            'to_user_id' => $toUser->id,
-            'message' => 'I need help with math',
-        ]);
-
-        expect($request)->toBeInstanceOf(TutoringOfferRequest::class)
-            ->and($request->id)->toBeGreaterThan(0);
-    });
-
-    it('belongs to tutoring offer via offer relationship', function () {
-        $school = School::factory()->create();
-        $fromUser = User::factory()->create(['school_id' => $school->id]);
-        $toUser = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $toUser->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        $request = TutoringOfferRequest::create([
-            'school_id' => $school->id,
-            'offer_id' => $offer->id,
-            'from_user_id' => $fromUser->id,
-            'to_user_id' => $toUser->id,
-            'message' => 'I need help with math',
-        ]);
-
-        expect($request->offer())->toBeInstanceOf(BelongsTo::class)
-            ->and($request->offer->id)->toBe($offer->id);
-    });
-
-    it('belongs to from_user', function () {
-        $school = School::factory()->create();
-        $fromUser = User::factory()->create(['school_id' => $school->id]);
-        $toUser = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $toUser->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        $request = TutoringOfferRequest::create([
-            'school_id' => $school->id,
-            'offer_id' => $offer->id,
-            'from_user_id' => $fromUser->id,
-            'to_user_id' => $toUser->id,
-            'message' => 'I need help with math',
-        ]);
-
-        expect($request->from_user())->toBeInstanceOf(BelongsTo::class)
-            ->and($request->from_user->id)->toBe($fromUser->id);
-    });
-
-    it('belongs to to_user', function () {
-        $school = School::factory()->create();
-        $fromUser = User::factory()->create(['school_id' => $school->id]);
-        $toUser = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-        $offer = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $toUser->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        $request = TutoringOfferRequest::create([
-            'school_id' => $school->id,
-            'offer_id' => $offer->id,
-            'from_user_id' => $fromUser->id,
-            'to_user_id' => $toUser->id,
-            'message' => 'I need help with math',
-        ]);
-
-        expect($request->to_user())->toBeInstanceOf(BelongsTo::class)
-            ->and($request->to_user->id)->toBe($toUser->id);
-    });
+test('retired TutoringOfferRequest model is not available', function () {
+    expect(class_exists('App\\Models\\TutoringOfferRequest'))->toBeFalse();
 });
 
-describe('TutoringSubject Model', function () {
-    it('can be created', function () {
-        $school = School::factory()->create();
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-
-        expect($subject)->toBeInstanceOf(TutoringSubject::class)
-            ->and($subject->id)->toBeGreaterThan(0);
-    });
-
-    it('has correct fillable attributes', function () {
-        $fillable = (new TutoringSubject)->getFillable();
-
-        expect($fillable)->toContain('school_id', 'short_name', 'long_name');
-    });
-
-    it('has many tutoring offers via offers relationship', function () {
-        $school = School::factory()->create();
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-
-        expect($subject->offers())->toBeInstanceOf(HasMany::class);
-    });
-
-    it('can check for dependencies', function () {
-        $school = School::factory()->create();
-        $subject = TutoringSubject::create([
-            'school_id' => $school->id,
-            'short_name' => 'Math',
-            'long_name' => 'Mathematics',
-        ]);
-
-        expect($subject->hasDependencies())->toBeFalse();
-    });
+test('retired TutoringSubject model is not available', function () {
+    expect(class_exists('App\\Models\\TutoringSubject'))->toBeFalse();
 });
 
 describe('QueueTest Model', function () {
@@ -906,33 +636,12 @@ describe('Model Relationships Integration', function () {
             ->and($dates->pluck('id')->toArray())->toContain($date1->id, $date2->id);
     });
 
-    it('maintains proper tutoring offer to subject relationship', function () {
+    it('keeps shared school and user relations without retired tutoring relations', function () {
         $school = School::factory()->create();
         $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
 
-        $offer1 = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring 1',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        $offer2 = TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring 2',
-            'is_active' => true,
-            'price_per_hour' => 20.00,
-        ]);
-
-        $offers = $subject->offers;
-
-        expect($offers)->toHaveCount(2)
-            ->and($offers->pluck('id')->toArray())->toContain($offer1->id, $offer2->id);
+        expect($user->selectedSchool->is($school))->toBeTrue()
+            ->and(method_exists($user, 'tutoringOffers'))->toBeFalse();
     });
 
     it('maintains school to licence many-to-many relationship', function () {
@@ -1079,21 +788,11 @@ describe('Model Cascading and Dependencies', function () {
         expect($user->hasDependencies())->toBeTrue();
     });
 
-    it('user can check for tutoring offer dependencies', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create(['school_id' => $school->id]);
-        $subject = TutoringSubject::create(['school_id' => $school->id, 'name' => 'Math']);
+    it('checks shared user dependencies after tutoring tables have been removed', function () {
+        $user = User::factory()->create();
 
-        TutoringOffer::create([
-            'school_id' => $school->id,
-            'user_id' => $user->id,
-            'subject_id' => $subject->id,
-            'title' => 'Math Tutoring',
-            'is_active' => true,
-            'price_per_hour' => 15.00,
-        ]);
-
-        expect($user->hasDependencies())->toBeTrue();
+        expect($user->hasDependencies())->toBeFalse()
+            ->and(Schema::hasTable('tutoring_offers'))->toBeFalse();
     });
 
     it('user without dependencies returns false', function () {

@@ -69,7 +69,6 @@ beforeEach(function (): void {
         $table->boolean('is_active')->default(true);
         $table->boolean('feature_preview_allowed')->default(false);
         $table->boolean('use_school_color_for_admin_ui')->default(true);
-        $table->text('tutoring_filter')->nullable();
         $table->timestamps();
     });
     (require database_path('migrations/2025_10_16_163810_create_permission_tables.php'))->up();

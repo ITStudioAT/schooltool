@@ -24,10 +24,6 @@ class SchoolToolFactory extends Factory
             'register_visible_user' => true,
             'register_user_test_mode' => false,
             'register_user_comming_soon' => false,
-            'tutoring_visible_admin' => false,
-            'tutoring_visible_user' => false,
-            'tutoring_user_test_mode' => false,
-            'tutoring_user_comming_soon' => false,
             'teaching_visible_admin' => false,
             'teaching_visible_user' => false,
             'teaching_user_test_mode' => false,
@@ -49,31 +45,7 @@ class SchoolToolFactory extends Factory
             'students_timetables_user_test_mode' => false,
             'students_timetables_user_comming_soon' => false,
             'students_timetables_admin_version' => SchoolTool::STUDENTS_TIMETABLES_ADMIN_VERSION_V3,
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => null,
-            'tutoring_max_offers_per_student' => 0,
             'material_max_file_upload_size' => 20480,
         ];
-    }
-
-    /**
-     * Indicate that tutoring students must be confirmed.
-     */
-    public function requiresConfirmation(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'tutoring_student_must_be_confirmed' => true,
-            'tutoring_confirmer_email' => $this->faker->safeEmail(),
-        ]);
-    }
-
-    /**
-     * Set a maximum number of offers per student.
-     */
-    public function withMaxOffers(int $max): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'tutoring_max_offers_per_student' => $max,
-        ]);
     }
 }

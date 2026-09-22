@@ -13,8 +13,6 @@ class AdminNavigationService
 
     private const REGISTER_DASHBOARD_ROLES = ['register_admin'];
 
-    private const TUTORING_DASHBOARD_ROLES = ['tutoring_admin', 'teacher'];
-
     private const TEACHING_DASHBOARD_ROLES = ['admin', 'teaching_admin', 'teacher'];
 
     private const MATERIALS_DASHBOARD_ROLES = ['materials_admin', 'materials_moderator'];
@@ -29,7 +27,6 @@ class AdminNavigationService
         'super_admin',
         'admin',
         'register_admin',
-        'tutoring_admin',
         'teaching_admin',
         'materials_admin',
         'materials_moderator',
@@ -52,7 +49,6 @@ class AdminNavigationService
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
         $licenceStatuses = app(LicenceService::class)->toolAccessStatusesForUser($user, $user->selectedSchool, [
             'Anmeldetool' => self::REGISTER_DASHBOARD_ROLES,
-            'Nachhilfetool' => self::TUTORING_DASHBOARD_ROLES,
             'Lehrertool' => self::TEACHING_DASHBOARD_ROLES,
             'Materialientool' => self::MATERIALS_DASHBOARD_ROLES,
             'Restaurant' => self::RESTAURANT_DASHBOARD_ROLES,
@@ -63,14 +59,12 @@ class AdminNavigationService
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
 
         $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
-        $tutoringLicenceStatus = $licenceStatuses['Nachhilfetool'] ?? 'missing';
         $teachingLicenceStatus = $licenceStatuses['Lehrertool'] ?? 'missing';
         $materialsLicenceStatus = $licenceStatuses['Materialientool'] ?? 'missing';
         $restaurantLicenceStatus = $licenceStatuses['Restaurant'] ?? 'missing';
         $studentsTimetablesLicenceStatus = $licenceStatuses['StudentsTimetables'] ?? 'missing';
         $abaLicenceStatus = $licenceStatuses['ABA'] ?? 'missing';
         $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $user->selectedSchool);
-        $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $user->selectedSchool);
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $user->selectedSchool);
         $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $user->selectedSchool);
         $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $user->selectedSchool);
@@ -86,19 +80,6 @@ class AdminNavigationService
                     'active_paths' => ['/admin/register_system'],
                     'is_active' => ($registerLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($registerLicenceStatus, $registerModuleStatus, 'Anmeldetool');
-            }
-        }
-
-        // TUTORING
-        if ($user->hasAnyRole(self::TUTORING_DASHBOARD_ROLES)) {
-            if ($tutoringLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('tutoring', $user->selectedSchool)) {
-                $menu[] = [
-                    'title' => 'Nachhilfe',
-                    'icon' => 'mdi-cast-education',
-                    'to' => '/admin/tutoring',
-                    'active_paths' => ['/admin/tutoring'],
-                    'is_active' => ($tutoringLicenceStatus === 'active'),
-                ] + $this->dashboardStatusMeta($tutoringLicenceStatus, $tutoringModuleStatus, 'Nachhilfe');
             }
         }
 
@@ -218,7 +199,6 @@ class AdminNavigationService
             'user_roles' => false,
             'super_admin' => false,
             'register_system' => false,
-            'tutoring' => false,
             'teaching' => false,
             'materials' => false,
             'materials_v2' => false,
@@ -241,7 +221,6 @@ class AdminNavigationService
         $capabilities['user_roles'] = $user->hasRole('super_admin');
         $capabilities['super_admin'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['register_system'] = $this->menuRouteCapability($user, $menuByPath, '/admin/register_system', self::REGISTER_DASHBOARD_ROLES);
-        $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', self::TUTORING_DASHBOARD_ROLES);
         $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', self::TEACHING_DASHBOARD_ROLES);
         $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', self::MATERIALS_DASHBOARD_ROLES);
         $capabilities['materials_v2'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials-v2', self::MATERIALS_DASHBOARD_ROLES);

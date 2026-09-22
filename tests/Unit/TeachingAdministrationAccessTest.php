@@ -53,6 +53,6 @@ it('enforces administration roles on the direct teaching page route', function (
     ['teaching_admin', true],
     ['teacher', false],
     ['register_admin', false],
-    ['tutoring_admin', false],
+    ['materials_admin', false],
     ['lunch_admin', false],
 ]);

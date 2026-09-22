@@ -52,11 +52,6 @@ class FeaturePreviewPerimeter
             'api/homepage/restaurant/confirm_email',
             'homepage/restaurant/confirm-user',
             'homepage/restaurant/reject-user',
-            'api/homepage/tutoring/create_user',
-            'homepage/tutoring/confirm-user',
-            'homepage/tutoring/refuse-user',
-            'homepage/tutoring/offer',
-            'homepage/tutoring/offer_request',
         ), 403, 'Diese Aktion steht nur in der Hauptanwendung zur Verfügung.');
 
         return $next($request);

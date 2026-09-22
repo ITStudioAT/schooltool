@@ -68,8 +68,8 @@ describe('AdminSectionHero', () => {
     it('hides the user chip when disabled', () => {
         render(AdminSectionHero, {
             props: {
-                eyebrow: 'Nachhilfe',
-                title: 'Nachhilfe-Verwaltung',
+                eyebrow: 'Verwaltung',
+                title: 'Benutzerverwaltung',
                 activeSection: {
                     icon: 'mdi-home',
                     label: 'Uebersicht',

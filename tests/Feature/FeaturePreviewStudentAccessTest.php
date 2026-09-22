@@ -78,7 +78,7 @@ beforeEach(function (): void {
         foreach (['email_verified_at', 'confirmed_at', 'login_at', 'token_2fa_expires_at', 'token_2fa_2_expires_at', 'two_factor_confirmed_at'] as $column) {
             $table->timestamp($column)->nullable();
         }
-        foreach (['two_factor_secret', 'two_factor_recovery_codes', 'tutoring_filter'] as $column) {
+        foreach (['two_factor_secret', 'two_factor_recovery_codes'] as $column) {
             $table->text($column)->nullable();
         }
         $table->boolean('is_active')->default(true);

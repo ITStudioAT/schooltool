@@ -348,7 +348,6 @@ class AdminController extends Controller
             'super_admin',
             'admin',
             'register_admin',
-            'tutoring_admin',
             'teaching_admin',
             'materials_admin',
             'materials_moderator',

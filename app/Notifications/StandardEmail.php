@@ -58,6 +58,20 @@ class StandardEmail extends Notification implements ShouldBeEncrypted, ShouldQue
         return ['mail'];
     }
 
+    /** Skip messages queued before the tutoring module was retired. */
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        return ! in_array($this->data['markdown'] ?? null, [
+            'mails.admin.confirmTutoringUser',
+            'mails.admin.informTutoringUserIsConfirmed',
+            'mails.homepage.offerCreatedOrUpdated',
+            'mails.tutoring.offerRequest',
+            'mails.tutoring.offerRequestStorno',
+            'mails.tutoring.offerDeleted',
+            'mails.tutoring.offerConfirmedOrRefused',
+        ], true);
+    }
+
     /**
      * @return array<string, string>
      */

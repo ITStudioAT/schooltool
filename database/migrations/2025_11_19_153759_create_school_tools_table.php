@@ -15,9 +15,6 @@ return new class extends Migration
             Schema::create('school_tools', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('school_id');
-                $table->boolean('tutoring_student_must_be_confirmed')->default(false);
-                $table->string('tutoring_confirmer_email')->nullable();
-                $table->unsignedInteger('tutoring_max_offers_per_student')->default(0);
                 $table->timestamps();
             });
         }

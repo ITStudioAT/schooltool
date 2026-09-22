@@ -46,7 +46,6 @@ beforeEach(function () {
         'admin',
         'super_admin',
         'register_admin',
-        'tutoring_admin',
         'teaching_admin',
         'materials_admin',
         'materials_moderator',
@@ -351,7 +350,6 @@ test('authenticated config resolves dashboard licences with a bulk query', funct
     SchoolTool::factory()->create([
         'school_id' => $this->school->id,
         'register_visible_admin' => true,
-        'tutoring_visible_admin' => true,
         'teaching_visible_admin' => true,
         'materials_visible_admin' => true,
         'restaurant_visible_admin' => true,
@@ -361,7 +359,6 @@ test('authenticated config resolves dashboard licences with a bulk query', funct
 
     collect([
         'Anmeldetool',
-        'Nachhilfetool',
         'Lehrertool',
         'Materialientool',
         'Restaurant',
@@ -380,7 +377,6 @@ test('authenticated config resolves dashboard licences with a bulk query', funct
 
     $this->user->assignRole([
         Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']),
-        Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']),
         Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']),
         Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
         Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']),
@@ -441,7 +437,6 @@ test('config returns empty menu for unauthenticated user', function () {
                 'user_roles' => false,
                 'super_admin' => false,
                 'register_system' => false,
-                'tutoring' => false,
                 'teaching' => false,
                 'materials' => false,
                 'groups' => false,
@@ -1153,7 +1148,7 @@ test('authenticated admin config includes backend route capabilities', function 
         ->assertJsonPath('capabilities.users', true)
         ->assertJsonPath('capabilities.super_admin', true)
         ->assertJsonPath('capabilities.register_system', false)
-        ->assertJsonPath('capabilities.tutoring', false)
+        ->assertJsonMissingPath('capabilities.tutoring')
         ->assertJsonPath('capabilities.teaching', false)
         ->assertJsonPath('capabilities.materials', false)
         ->assertJsonPath('capabilities.groups', false)

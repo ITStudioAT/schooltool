@@ -14,8 +14,6 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingHoliday;
 use App\Models\TeachingSchema;
-use App\Models\TutoringOffer;
-use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -55,19 +53,10 @@ class E2eSeeder extends Seeder
                 'is_selectable' => true,
             ],
         );
-        $tutoringLicence = Licence::query()->firstOrCreate(
-            ['name' => 'Nachhilfetool'],
-            [
-                'long_name' => 'Nachhilfetool',
-                'price_per_year' => 0,
-                'is_selectable' => true,
-            ],
-        );
 
         $school->licences()->syncWithoutDetaching([
             $licence->id => ['valid_until' => now()->addYear()->toDateString()],
             $registerLicence->id => ['valid_until' => now()->addYear()->toDateString()],
-            $tutoringLicence->id => ['valid_until' => now()->addYear()->toDateString()],
         ]);
 
         SchoolTool::query()->updateOrCreate(
@@ -76,13 +65,8 @@ class E2eSeeder extends Seeder
                 'active_schoolyear_id' => $schoolyear->id,
                 'register_visible_admin' => true,
                 'register_visible_user' => true,
-                'tutoring_visible_admin' => true,
-                'tutoring_visible_user' => true,
                 'teaching_visible_admin' => true,
                 'teaching_visible_user' => true,
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => null,
-                'tutoring_max_offers_per_student' => 0,
             ],
         );
 
@@ -100,10 +84,6 @@ class E2eSeeder extends Seeder
         ]);
         $registerUserRole = Role::query()->firstOrCreate([
             'name' => 'register_user',
-            'guard_name' => 'web',
-        ]);
-        $tutoringUserRole = Role::query()->firstOrCreate([
-            'name' => 'tutoring_user',
             'guard_name' => 'web',
         ]);
 
@@ -263,77 +243,20 @@ class E2eSeeder extends Seeder
         $registerUser->register_id = $register->id;
         $registerUser->save();
 
-        $tutoringUser = User::query()->create([
+        $homepageUser = User::query()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
-            'email' => 'e2e.tutoring@example.test',
+            'email' => 'e2e.user@example.test',
             'password' => Hash::make('password123'),
             'first_name' => 'E2E',
-            'last_name' => 'Tutoring',
+            'last_name' => 'User',
             'schoolclass' => '2A',
             'sex' => 'm',
-            'tutoring_filter' => [
-                'schools' => [],
-                'only_boys' => false,
-                'only_girls' => false,
-                'only_in_my_school' => true,
-            ],
         ]);
-        $tutoringUser->email_verified_at = now();
-        $tutoringUser->confirmed_at = now();
-        $tutoringUser->is_active = true;
-        $tutoringUser->save();
-        $tutoringUser->assignRole($tutoringUserRole);
-
-        $tutoringPeerUser = User::query()->create([
-            'school_id' => $school->id,
-            'schoolyear_id' => $schoolyear->id,
-            'email' => 'e2e.tutoring.peer@example.test',
-            'password' => Hash::make('password123'),
-            'first_name' => 'E2E',
-            'last_name' => 'TutoringPeer',
-            'schoolclass' => '3A',
-            'sex' => 'w',
-            'tutoring_filter' => [
-                'schools' => [],
-                'only_boys' => false,
-                'only_girls' => false,
-                'only_in_my_school' => true,
-            ],
-        ]);
-        $tutoringPeerUser->email_verified_at = now();
-        $tutoringPeerUser->confirmed_at = now();
-        $tutoringPeerUser->is_active = true;
-        $tutoringPeerUser->save();
-        $tutoringPeerUser->assignRole($tutoringUserRole);
-
-        $subject = TutoringSubject::query()->create([
-            'school_id' => $school->id,
-            'short_name' => 'M',
-            'long_name' => 'Mathematik',
-            'must_be_accepted' => false,
-            'email_mentors' => ['mentor@example.test'],
-        ]);
-
-        TutoringOffer::query()->create([
-            'school_id' => $school->id,
-            'user_id' => $tutoringUser->id,
-            'subject_id' => $subject->id,
-            'title' => 'E2E Mathe Nachhilfe',
-            'description' => 'E2E Angebot für Browser-Tests',
-            'classes' => [2, 3],
-            'time_table' => ['mo_15'],
-            'active_until' => now()->addMonths(2)->toDateString(),
-            'is_active' => true,
-            'price_per_hour' => 15,
-            'is_group' => false,
-            'max_group_members' => 2,
-            'must_be_accepted' => false,
-            'email_mentor' => null,
-            'accepted_at' => now(),
-            'click_count' => 0,
-            'visible_for_other_schools' => false,
-        ]);
+        $homepageUser->email_verified_at = now();
+        $homepageUser->confirmed_at = now();
+        $homepageUser->is_active = true;
+        $homepageUser->save();
 
         $course = TeachingCourse::query()->create([
             'school_id' => $school->id,

@@ -7,12 +7,9 @@ use App\Models\RegisterDateBooking;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Schoolyear;
-use App\Models\TutoringOffer;
 use App\Models\User;
 use App\Notifications\StandardEmail;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 
@@ -118,9 +115,6 @@ class UserService
                     continue;
                 }
                 if ($role['name'] === 'register_user' && RegisterDateBooking::where('user_id', $user->id)->exists()) {
-                    continue;
-                }
-                if ($role['name'] === 'tutoring_user' && TutoringOffer::where('user_id', $user->id)->exists()) {
                     continue;
                 }
                 $user->removeRole($role['name']);
@@ -388,78 +382,6 @@ class UserService
         }
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
-    }
-
-    public function deleteTutoringUsers(array $data, int $schoolId): void
-    {
-        $users = $this->tutoringUsersForSchool($data, $schoolId);
-
-        foreach ($users as $user) {
-            $canDelete = ! $user->hasDependencies()
-                && $user->roles->count() === 1
-                && $user->hasRole('tutoring_user');
-
-            if ($canDelete) {
-                $user->syncRoles([]);
-                $user->delete();
-            }
-        }
-    }
-
-    public function confirmTutoringUsers(array $data, int $schoolId): void
-    {
-        $tutoringService = new TutoringService;
-        $users = $this->tutoringUsersForSchool($data, $schoolId);
-
-        foreach ($users as $user) {
-            $canConfirm = $user->hasRole('tutoring_user')
-                && $user->email_verified_at
-                && ! $user->confirmed_at;
-
-            if ($canConfirm) {
-                $user->confirmed_at = now();
-                $user->save();
-                $tutoringService->sendConfirmationEmail($user);
-            }
-        }
-    }
-
-    public function cleanTutoringUsers(int $schoolId): void
-    {
-        User::bySchoolAndRole($schoolId, 'tutoring_user')
-            ->whereNull('email_verified_at')
-            ->whereHas('roles', function ($query) {
-                $query->havingRaw('COUNT(*) = 1');
-            }, '=', 1)
-            ->get()
-            ->each(function ($user) {
-                DB::table('queue_tests')->where('user_id', $user->id)->delete();
-                $user->removeRole('tutoring_user');
-                $user->delete();
-            });
-    }
-
-    /**
-     * @param  array<int, int|string>  $userIds
-     * @return Collection<int, User>
-     */
-    private function tutoringUsersForSchool(array $userIds, int $schoolId): Collection
-    {
-        $uniqueUserIds = collect($userIds)
-            ->map(fn ($userId): int => (int) $userId)
-            ->unique()
-            ->values();
-
-        $users = User::bySchoolAndRole($schoolId, 'tutoring_user')
-            ->whereKey($uniqueUserIds)
-            ->with('roles')
-            ->get();
-
-        if ($users->count() !== $uniqueUserIds->count()) {
-            abort(404);
-        }
-
-        return $users;
     }
 
     public static function logout(): void

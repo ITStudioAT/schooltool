@@ -1137,7 +1137,7 @@ class RestaurantHomepageAuthService
     private function userCanSkipRestaurantConfirmation(User $user): bool
     {
         return $user->hasAdminShellAccess()
-            || $user->hasAnyRole(['student', 'tutoring_user']);
+            || $user->hasRole('student');
     }
 
     /**

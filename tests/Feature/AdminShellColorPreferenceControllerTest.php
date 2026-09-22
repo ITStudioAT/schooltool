@@ -43,7 +43,6 @@ test('every admin shell role can update its own color preference', function (str
     'super admin' => 'super_admin',
     'admin' => 'admin',
     'register admin' => 'register_admin',
-    'tutoring admin' => 'tutoring_admin',
     'teaching admin' => 'teaching_admin',
     'materials admin' => 'materials_admin',
     'materials moderator' => 'materials_moderator',

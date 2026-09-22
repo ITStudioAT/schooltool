@@ -185,8 +185,6 @@ it('runs the full update workflow end to end', function (): void {
         'admin',
         'register_admin',
         'register_user',
-        'tutoring_user',
-        'tutoring_admin',
         'teacher',
         'lunch_admin',
         'lunch_candidate',

@@ -29,7 +29,6 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
@@ -138,8 +137,7 @@ describe('create', function () {
         $schoolTool = SchoolTool::where('school_id', $school->id)->first();
 
         expect($schoolTool)->not->toBeNull()
-            ->and((bool) $schoolTool->tutoring_student_must_be_confirmed)->toBeFalse()
-            ->and($schoolTool->tutoring_confirmer_email)->toBe('');
+            ->and($schoolTool->getAttributes())->not->toHaveKey('tutoring_confirmer_email');
     });
 
     it('creates required storage directories', function () {
@@ -464,8 +462,8 @@ describe('schoolInfos', function () {
         $registerAdmin = User::factory()->create(['school_id' => $school->id]);
         $registerAdmin->assignRole('register_admin');
 
-        $tutoringAdmin = User::factory()->create(['school_id' => $school->id]);
-        $tutoringAdmin->assignRole('tutoring_admin');
+        $materialsAdmin = User::factory()->create(['school_id' => $school->id]);
+        $materialsAdmin->assignRole('materials_admin');
 
         $teachingAdmin = User::factory()->create(['school_id' => $school->id]);
         $teachingAdmin->assignRole('teaching_admin');

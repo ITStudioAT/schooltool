@@ -17,7 +17,7 @@ class UserPolicy
             return true;
         }
 
-        return $user->hasAnyRole(['admin', 'register_admin', 'tutoring_admin', 'teacher'])
+        return $user->hasAnyRole(['admin', 'register_admin', 'teacher'])
             && (int) $user->school_id === (int) $targetUser->school_id;
     }
 
@@ -29,13 +29,6 @@ class UserPolicy
     public function update(User $user, User $targetUser): bool
     {
         return $this->canManage($user, $targetUser);
-    }
-
-    public function updateTutoringProfile(User $user, User $targetUser): bool
-    {
-        return $user->hasRole('tutoring_user')
-            && (int) $user->id === (int) $targetUser->id
-            && (int) $user->school_id === (int) $targetUser->school_id;
     }
 
     public function delete(User $user, User $targetUser): bool

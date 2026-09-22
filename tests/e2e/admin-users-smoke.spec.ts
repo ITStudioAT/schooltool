@@ -3,6 +3,7 @@ import { hideObstructiveUi } from './helpers/ui'
 
 async function loginAsAdmin(page: Page): Promise<void> {
     await page.goto('/admin/login')
+    await page.locator('.cookie-consent-root .cookie-consent-reject').click()
     await hideObstructiveUi(page)
 
     await expect(page.getByTestId('admin-login-email')).toBeVisible()
@@ -24,5 +25,5 @@ test('admin users screen loads and lists seeded users', async ({ page }) => {
 
     await expect(page.getByText('e2e.student@example.test')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('e2e.admin@example.test')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText('e2e.tutoring@example.test')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('e2e.user@example.test')).toBeVisible({ timeout: 15000 })
 })

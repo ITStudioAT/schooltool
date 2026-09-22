@@ -19,12 +19,8 @@ return new class extends Migration
                 $table->string('register_status')->default(SchoolToolModuleStatusService::ACTIVE)->after('active_schoolyear_id');
             }
 
-            if (! Schema::hasColumn('school_tools', 'tutoring_status')) {
-                $table->string('tutoring_status')->default(SchoolToolModuleStatusService::INACTIVE)->after('register_status');
-            }
-
             if (! Schema::hasColumn('school_tools', 'teaching_status')) {
-                $table->string('teaching_status')->default(SchoolToolModuleStatusService::INACTIVE)->after('tutoring_status');
+                $table->string('teaching_status')->default(SchoolToolModuleStatusService::INACTIVE)->after('register_status');
             }
 
             if (! Schema::hasColumn('school_tools', 'materials_status')) {
@@ -48,7 +44,6 @@ return new class extends Migration
                     ->where('id', $row->id)
                     ->update([
                         'register_status' => $defaults['register_status'],
-                        'tutoring_status' => $defaults['tutoring_status'],
                         'teaching_status' => $defaults['teaching_status'],
                         'materials_status' => $defaults['materials_status'],
                         'restaurant_status' => $defaults['restaurant_status'],
@@ -65,7 +60,6 @@ return new class extends Migration
         Schema::table('school_tools', function (Blueprint $table) {
             $columns = collect([
                 'register_status',
-                'tutoring_status',
                 'teaching_status',
                 'materials_status',
                 'restaurant_status',

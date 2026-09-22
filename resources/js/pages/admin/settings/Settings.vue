@@ -155,18 +155,6 @@
                         <Roles />
                     </div>
 
-                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_settings'" class="settings-tutoring-wrap">
-                        <TutoringSettings />
-                    </div>
-
-                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_subjects'" class="settings-tutoring-wrap">
-                        <TutoringSubjects />
-                    </div>
-
-                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_users'" class="settings-tutoring-wrap">
-                        <TutoringUsers />
-                    </div>
-
                     <div v-else-if="isSuperAdminTab && sub_action === 'school_switch'" class="settings-school-switch-wrap">
                         <ActiveSchool :hide-details="true" />
                     </div>
@@ -214,13 +202,10 @@ const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin
 const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
 const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))
 const PreviewAccess = defineAsyncComponent(() => import('@/pages/admin/settings/components/PreviewAccess.vue'))
-const TutoringSettings = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Settings.vue'))
-const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Subjects.vue'))
-const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Users.vue'))
 const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, PreviewAccess, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, PreviewAccess, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -331,7 +316,6 @@ export default {
                 super_admin: ['super_admin'],
                 admin: ['super_admin', 'admin'],
                 teaching: ['super_admin', 'admin', 'teaching_admin'],
-                tutoring: ['super_admin', 'admin', 'tutoring_admin'],
             }
         },
         activeRoles() {
@@ -366,13 +350,6 @@ export default {
         canAccessRestaurantSettingsTab() {
             return this.canAccessRestaurantSettings(this.configuredRoleNames, this.configuredCapabilities)
         },
-        canAccessTutoringSettingsTab() {
-            if (typeof this.configuredCapabilities.tutoring === 'boolean') {
-                return this.configuredCapabilities.tutoring
-            }
-
-            return ['super_admin', 'admin', 'tutoring_admin'].some((role) => this.configuredRoleNames.includes(role))
-        },
         canAccessTeachingSettingsTab() {
             if (typeof this.configuredCapabilities.teaching === 'boolean') {
                 return this.configuredCapabilities.teaching
@@ -381,12 +358,11 @@ export default {
             return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'tutoring'].includes(this.main_action)
+            return ['super_admin', 'admin'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'teaching') return 'teaching_admin'
-            if (this.main_action === 'tutoring') return 'tutoring_settings'
             return 'general'
         },
         isSuperAdminTab() {
@@ -394,9 +370,6 @@ export default {
         },
         isAdminTab() {
             return this.main_action === 'admin'
-        },
-        isTutoringTab() {
-            return this.main_action === 'tutoring'
         },
         isTeachingTab() {
             return this.main_action === 'teaching'
@@ -424,14 +397,6 @@ export default {
             return item ? item.label : ''
         },
         subNavigationItems() {
-            if (this.isTutoringTab) {
-                return [
-                    { key: 'tutoring_settings', label: 'Einstellungen', meta: 'Nachhilfe', icon: 'mdi-cog-outline' },
-                    { key: 'tutoring_subjects', label: 'Fächer', meta: 'Fächer verwalten', icon: 'mdi-television-shimmer' },
-                    { key: 'tutoring_users', label: 'Benutzer', meta: 'Nachhilfe', icon: 'mdi-account-multiple-outline' },
-                ]
-            }
-
             if (this.isTeachingTab) {
                 return []
             }
@@ -477,7 +442,6 @@ export default {
             return [
                 { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
                 { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
-                { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group', visible: this.canAccessTutoringSettingsTab },
             ].filter((item) => item.visible !== false)
         },
     },
@@ -486,13 +450,11 @@ export default {
         availableTabKeys(
             canAccessSuperAdminTab,
             canAccessAdminTab,
-            canAccessTutoringTab,
             canAccessTeachingTab,
         ) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
                 canAccessAdminTab ? 'admin' : null,
-                canAccessTutoringTab ? 'tutoring' : null,
                 canAccessTeachingTab ? 'teaching' : null,
             ].filter(Boolean)
         },
@@ -514,16 +476,12 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
-                ? configuredCapabilities.tutoring
-                : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
             const keys = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
-                canAccessTutoringTab,
                 canAccessTeachingTab,
             )
 
@@ -537,16 +495,12 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
-                ? configuredCapabilities.tutoring
-                : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
             const availableTabs = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
-                canAccessTutoringTab,
                 canAccessTeachingTab,
             )
             const resolvedTab = availableTabs.includes(tab)
@@ -556,9 +510,6 @@ export default {
             if (resolvedTab === 'admin') {
                 keys = ['schoolyears', 'schools', 'users', 'school_groups', 'log']
                 fallback = 'schoolyears'
-            } else if (resolvedTab === 'tutoring') {
-                keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
-                fallback = 'tutoring_settings'
             } else if (resolvedTab === 'teaching') {
                 keys = ['teaching_admin']
                 fallback = 'teaching_admin'
@@ -862,10 +813,6 @@ export default {
     max-width: 100%;
 }
 
-.settings-tutoring-wrap {
-    width: 1000px;
-    max-width: 100%;
-}
 
 .settings-licence-subnav {
     background: rgba(255, 255, 255, 0.06) !important;

@@ -1,32 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
+import { resolveAdminRouteAccess, routes } from '../../../../../../resources/routes/admin.js'
+import Settings from '@/pages/admin/settings/Settings.vue'
 
-describe('Tutoring page', () => {
-    it('builds hero chips from selected school context', () => {
-        const ctx = {
-            selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',
-            selectedSchoolyearLabel: '2025/26',
-            selectedRoleLabel: 'tutoring_admin / admin',
-        }
-
-        const chips = (Tutoring as any).computed.headerChips.call(ctx)
-
-        expect(chips).toEqual([
-            { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
-            { key: 'schoolyear', text: '2025/26', icon: 'mdi-calendar-month-outline' },
-        ])
+describe('removed tutoring administration', () => {
+    it('does not resolve the removed admin route while preserving registration administration', () => {
+        expect(resolveAdminRouteAccess('/admin/tutoring')).toBeNull()
+        expect(routes.some((route) => route.meta?.capability === 'tutoring')).toBe(false)
+        expect(resolveAdminRouteAccess('/admin/register_system')).toEqual({
+            public: false,
+            capability: 'register_system',
+        })
     })
 
-    it('shows admin navigation items for tutoring admins', () => {
-        const ctx = {
-            config: {
-                roles: ['tutoring_admin'],
-            },
-            admins: ['super_admin', 'admin', 'tutoring_admin'],
-        }
+    it('keeps general settings without a tutoring tab even for stale capabilities', () => {
+        const navigationItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: true,
+            canAccessAdminSettingsTab: true,
+            canAccessTutoringSettingsTab: true,
+        })
 
-        const items = (Tutoring as any).computed.visibleNavigationItems.call(ctx)
-
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'requests'])
+        expect(navigationItems.map((item: { key: string }) => item.key)).toEqual(['super_admin', 'admin'])
+        expect((Settings as any).methods.availableTabKeys(true, true, true)).toEqual([
+            'super_admin',
+            'admin',
+            'teaching',
+        ])
     })
 })

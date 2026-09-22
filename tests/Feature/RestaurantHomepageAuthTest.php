@@ -716,7 +716,7 @@ it('allows existing users with pending lunch role and direct access roles to reg
     assertRestaurantConfirmationMailSent("{$roleName}-candidate@test.local");
 })->with([
     'student' => 'student',
-    'tutoring user' => 'tutoring_user',
+    'teacher' => 'teacher',
 ]);
 
 it('creates a lunch user from the teacher list when registration is confirmed immediately', function () {

@@ -951,9 +951,6 @@ class RestaurantService
         return SchoolTool::query()->firstOrCreate(
             ['school_id' => $user->school_id],
             [
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => null,
-                'tutoring_max_offers_per_student' => 0,
                 'restaurant_menu_visibility_start_mode' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode'],
                 'restaurant_menu_visibility_start_week_offset' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset'],
                 'restaurant_menu_visibility_start_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week'],

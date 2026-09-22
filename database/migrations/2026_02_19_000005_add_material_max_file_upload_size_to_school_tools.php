@@ -16,7 +16,7 @@ return new class extends Migration
             Schema::table('school_tools', function (Blueprint $table) {
                 $table->unsignedInteger('material_max_file_upload_size')
                     ->default(20480)
-                    ->after('tutoring_max_offers_per_student');
+                    ->after('school_id');
             });
         }
     }

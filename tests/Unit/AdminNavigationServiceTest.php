@@ -144,7 +144,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -172,7 +172,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -256,7 +256,7 @@ describe('dashboardMenu', function () {
             ->and($capabilities['settings'])->toBeTrue()
             ->and($capabilities['profile'])->toBeTrue()
             ->and(array_search('Einstellungen', $titles, true))->toBe(array_search('Profil', $titles, true) + 1);
-    })->with(['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'lunch_admin']);
+    })->with(['super_admin', 'admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'lunch_admin']);
 
     it('does not add a profile menu item for users without admin shell access', function () {
         $user = User::factory()->create([
@@ -266,7 +266,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -286,7 +286,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool', 'Materialientool', 'Restaurant']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool', 'Materialientool', 'Restaurant']);
 
         $result = $this->service->dashboardMenu();
 
@@ -604,7 +604,6 @@ describe('dashboardMenu', function () {
         SchoolTool::factory()->create([
             'school_id' => $school->id,
             'register_visible_admin' => true,
-            'tutoring_visible_admin' => true,
             'materials_visible_admin' => true,
             'students_timetables_visible_admin' => true,
             'aba_visible_admin' => true,
@@ -613,7 +612,6 @@ describe('dashboardMenu', function () {
         $user = User::factory()->create(['school_id' => $school->id]);
         $user->assignRole([
             Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']),
-            Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']),
             Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
             Role::firstOrCreate(['name' => 'studentstimetables_admin', 'guard_name' => 'web']),
             Role::firstOrCreate(['name' => 'aba_teacher', 'guard_name' => 'web']),
@@ -621,12 +619,12 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Materialientool', 'StudentsTimetables', 'ABA']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Materialientool', 'StudentsTimetables', 'ABA']);
 
         $menuByTitle = collect($this->service->dashboardMenu())->keyBy('title');
 
         expect($menuByTitle->get('Anmeldetool')['active_paths'])->toBe(['/admin/register_system'])
-            ->and($menuByTitle->get('Nachhilfe')['active_paths'])->toBe(['/admin/tutoring'])
+            ->and($menuByTitle->has('Nachhilfe'))->toBeFalse()
             ->and($menuByTitle->get('Materialien')['active_paths'])->toBe(['/admin/materials'])
             ->and($menuByTitle->get('SEPP')['active_paths'])->toBe(['/admin/students-timetables'])
             ->and($menuByTitle->get('ABA')['active_paths'])->toBe(['/admin/aba']);
@@ -1217,7 +1215,6 @@ describe('routeCapabilities', function () {
             'user_roles' => false,
             'super_admin' => false,
             'register_system' => false,
-            'tutoring' => false,
             'teaching' => false,
             'materials' => false,
             'materials_v2' => false,
@@ -1262,7 +1259,7 @@ describe('routeCapabilities', function () {
             ->and($capabilities['super_admin'])->toBeTrue()
             ->and($capabilities['register_system'])->toBeTrue()
             ->and($capabilities['teaching'])->toBeTrue()
-            ->and($capabilities['tutoring'])->toBeFalse()
+            ->and($capabilities)->not->toHaveKey('tutoring')
             ->and($capabilities['materials'])->toBeFalse()
             ->and($capabilities['groups'])->toBeFalse()
             ->and($capabilities['restaurant'])->toBeTrue()

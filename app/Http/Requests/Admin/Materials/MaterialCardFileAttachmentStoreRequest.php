@@ -35,8 +35,6 @@ class MaterialCardFileAttachmentStoreRequest extends FormRequest
         $schoolTool = SchoolTool::query()->firstOrCreate(
             ['school_id' => $schoolId],
             [
-                'tutoring_student_must_be_confirmed' => false,
-                'tutoring_confirmer_email' => '',
                 'material_max_file_upload_size' => $default,
             ]
         );

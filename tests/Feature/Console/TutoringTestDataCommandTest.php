@@ -1,19 +1,9 @@
 <?php
 
-namespace Tests\Feature\Console;
+use Illuminate\Support\Facades\Artisan;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+test('removed tutoring test data commands cannot seed user accounts', function (): void {
+    $commands = array_keys(Artisan::all());
 
-uses(RefreshDatabase::class);
-
-it('fails for invalid tutoring test-data action', function () {
-    $this->artisan('tutoring:test-data invalid-action')
-        ->expectsOutputToContain('Verwendung:')
-        ->assertExitCode(1);
-});
-
-it('reports missing schools when creating test user without seed data', function () {
-    $this->artisan('tutoring:test-data create-test-user')
-        ->expectsOutputToContain('ABG-SB')
-        ->assertExitCode(0);
+    expect(array_values(array_filter($commands, fn (string $command): bool => str_contains(strtolower($command), 'tutoring'))))->toBeEmpty();
 });

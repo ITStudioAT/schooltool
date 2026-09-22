@@ -12,9 +12,6 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $school_id
- * @property int $tutoring_student_must_be_confirmed
- * @property string|null $tutoring_confirmer_email
- * @property int $tutoring_max_offers_per_student
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  *
@@ -24,9 +21,6 @@ use Illuminate\Support\Carbon;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereCreatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereSchoolId($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringConfirmerEmail($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringMaxOffersPerStudent($value)
- * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringStudentMustBeConfirmed($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereUpdatedAt($value)
  * @method static \Database\Factories\SchoolToolFactory factory($count = null, $state = [])
  *
@@ -56,10 +50,6 @@ class SchoolTool extends Model
         'register_visible_user',
         'register_user_test_mode',
         'register_user_comming_soon',
-        'tutoring_visible_admin',
-        'tutoring_visible_user',
-        'tutoring_user_test_mode',
-        'tutoring_user_comming_soon',
         'teaching_visible_admin',
         'teaching_visible_user',
         'teaching_user_test_mode',
@@ -82,14 +72,9 @@ class SchoolTool extends Model
         'students_timetables_user_comming_soon',
         'students_timetables_admin_version',
         'register_status',
-        'tutoring_status',
         'teaching_status',
         'materials_status',
         'restaurant_status',
-        'tutoring_student_must_be_confirmed',
-        'tutoring_confirmer_email',
-        'tutoring_max_offers_per_student',
-        'may_visible_for_other_schools',
         'material_max_file_upload_size',
         'health_at',
         'import_166_at',
@@ -121,10 +106,6 @@ class SchoolTool extends Model
         'register_visible_user' => 'boolean',
         'register_user_test_mode' => 'boolean',
         'register_user_comming_soon' => 'boolean',
-        'tutoring_visible_admin' => 'boolean',
-        'tutoring_visible_user' => 'boolean',
-        'tutoring_user_test_mode' => 'boolean',
-        'tutoring_user_comming_soon' => 'boolean',
         'teaching_visible_admin' => 'boolean',
         'teaching_visible_user' => 'boolean',
         'teaching_user_test_mode' => 'boolean',
@@ -145,8 +126,6 @@ class SchoolTool extends Model
         'students_timetables_visible_user' => 'boolean',
         'students_timetables_user_test_mode' => 'boolean',
         'students_timetables_user_comming_soon' => 'boolean',
-        'tutoring_student_must_be_confirmed' => 'boolean',
-        'may_visible_for_other_schools' => 'boolean',
         'material_max_file_upload_size' => 'integer',
         'restaurant_menu_visibility_start_week_offset' => 'integer',
         'restaurant_menu_visibility_start_day_of_week' => 'integer',

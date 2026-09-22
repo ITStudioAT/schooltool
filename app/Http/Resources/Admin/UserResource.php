@@ -60,31 +60,6 @@ class UserResource extends JsonResource
             'login_at' => $this->login_at ? Carbon::parse($this->login_at)->format('d.m.Y  H:i') : null,
             'login_ip' => $this->login_ip,
             'roles' => $this->roles->sortBy('name')->pluck('name')->values(),
-            'tutoring_offers_count' => $this->when(isset($this->tutoring_offers_count), (int) $this->tutoring_offers_count),
-            'tutoring_offers' => $this->whenLoaded('tutoringOffers', function () {
-                return $this->tutoringOffers
-                    ->map(function ($offer) {
-                        return [
-                            'id' => $offer->id,
-                            'title' => $offer->title,
-                            'description' => $offer->description,
-                            'subject_short_name' => $offer->subject?->short_name,
-                            'subject_long_name' => $offer->subject?->long_name,
-                            'classes' => (array) ($offer->classes ?? []),
-                            'price_per_hour' => $offer->price_per_hour,
-                            'is_group' => (bool) $offer->is_group,
-                            'max_group_members' => $offer->max_group_members,
-                            'must_be_accepted' => (bool) $offer->must_be_accepted,
-                            'email_mentor' => $offer->email_mentor,
-                            'is_active' => (bool) $offer->is_active,
-                            'active_until' => $offer->active_until,
-                            'is_accepted' => (bool) $offer->accepted_at,
-                            'accepted_at' => $offer->accepted_at,
-                            'click_count' => (int) ($offer->click_count ?? 0),
-                        ];
-                    })
-                    ->values();
-            }),
         ];
     }
 }

@@ -73,8 +73,6 @@ class HomepageController extends Controller
         switch ($licence) {
             case 'Anmeldetool':
                 return redirect('/homepage/register?school='.$school);
-            case 'Nachhilfetool':
-                return redirect('/homepage/tutoring_overview?school='.$school);
             case 'Lehrertool':
                 return redirect('/homepage/student?school='.$school);
             case 'StudentsTimetables':
@@ -301,7 +299,6 @@ class HomepageController extends Controller
         }
 
         $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $school);
-        $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $school);
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $school);
         $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $school);
         $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $school);
@@ -321,14 +318,12 @@ class HomepageController extends Controller
             'selectableSchools' => SchoolResource::collection($schools),
             'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
             'register_active' => $moduleStatusService->allowsUserAccess($registerModuleStatus),
-            'tutoring_active' => $moduleStatusService->allowsUserAccess($tutoringModuleStatus),
             'teaching_active' => $moduleStatusService->allowsUserAccess($teachingModuleStatus),
             'materials_active' => $moduleStatusService->allowsUserAccess($materialsModuleStatus),
             'restaurant_active' => $moduleStatusService->allowsUserAccess($restaurantModuleStatus),
             'students_timetables_active' => $moduleStatusService->allowsUserAccess($studentsTimetablesModuleStatus),
             'tool_module_visibility' => [
                 'register' => $moduleStatusService->userVisibleForModule('register', $school),
-                'tutoring' => $moduleStatusService->userVisibleForModule('tutoring', $school),
                 'teaching' => $moduleStatusService->userVisibleForModule('teaching', $school),
                 'materials' => $moduleStatusService->userVisibleForModule('materials', $school),
                 'restaurant' => $moduleStatusService->userVisibleForModule('restaurant', $school),
@@ -336,7 +331,6 @@ class HomepageController extends Controller
             ],
             'tool_module_statuses' => [
                 'register' => $registerModuleStatus,
-                'tutoring' => $tutoringModuleStatus,
                 'teaching' => $teachingModuleStatus,
                 'materials' => $materialsModuleStatus,
                 'restaurant' => $restaurantModuleStatus,
@@ -344,7 +338,6 @@ class HomepageController extends Controller
             ],
             'tool_licence_statuses' => [
                 'Anmeldetool' => $this->toolLicenceStatus('Anmeldetool', $licenceService),
-                'Nachhilfetool' => $this->toolLicenceStatus('Nachhilfetool', $licenceService),
                 'Lehrertool' => $this->toolLicenceStatus('Lehrertool', $licenceService),
                 'StudentsTimetables' => $this->toolLicenceStatus('StudentsTimetables', $licenceService),
             ],

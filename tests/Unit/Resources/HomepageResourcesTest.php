@@ -108,8 +108,8 @@ test('homepage school with licence resource includes licence data', function () 
         'email' => 'school@example.test',
     ]);
     $licence = Licence::create([
-        'name' => 'Tutoring',
-        'long_name' => 'Tutoring Long',
+        'name' => 'Register',
+        'long_name' => 'Register Long',
         'price_per_year' => 200,
         'is_selectable' => 1,
     ]);
@@ -119,6 +119,6 @@ test('homepage school with licence resource includes licence data', function () 
 
     $data = (new SchoolWithLicenceRecource($school))->toArray(request());
 
-    expect($data['licence'])->toBe('Tutoring')
+    expect($data['licence'])->toBe('Register')
         ->and($data['licence_valid_until'])->toBe('2031-12-31');
 });

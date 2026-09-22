@@ -70,42 +70,22 @@ describe('getAuth', function () {
             ->and($userData['schoolclass'])->toBe('10A');
     });
 
-    it('returns user with default tutoring_filter when not set', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'tutoring_filter' => null,
-        ]);
-
+    it('returns shared user data without retired tutoring preferences', function () {
+        $user = User::factory()->create(['email' => 'test@example.com']);
         Auth::login($user);
 
-        $result = $this->service->getAuth();
-        $userData = $result['user']->resolve();
+        $userData = $this->service->getAuth()['user']->resolve();
 
-        expect($userData['tutoring_filter'])->toBeArray()
-            ->and($userData['tutoring_filter']['only_boys'])->toBeFalse()
-            ->and($userData['tutoring_filter']['only_girls'])->toBeFalse()
-            ->and($userData['tutoring_filter']['only_in_my_school'])->toBeTrue();
+        expect($userData['email'])->toBe($user->email)
+            ->and($userData)->not->toHaveKey('tutoring_filter');
     });
 
-    it('returns user with custom tutoring_filter when set', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'tutoring_filter' => [
-                'only_boys' => true,
-                'only_girls' => false,
-                'only_in_my_school' => false,
-            ],
-        ]);
-
+    it('does not expose stale tutoring preferences from a loaded legacy user', function () {
+        $user = User::factory()->create();
+        $user->setAttribute('tutoring_filter', ['only_boys' => true]);
         Auth::login($user);
 
-        $result = $this->service->getAuth();
-        $userData = $result['user']->resolve();
-
-        expect($userData['tutoring_filter'])->toBeArray()
-            ->and($userData['tutoring_filter']['only_boys'])->toBeTrue()
-            ->and($userData['tutoring_filter']['only_girls'])->toBeFalse()
-            ->and($userData['tutoring_filter']['only_in_my_school'])->toBeFalse();
+        expect($this->service->getAuth()['user']->resolve())->not->toHaveKey('tutoring_filter');
     });
 
     it('returns empty roles collection when user has no roles', function () {
@@ -326,7 +306,7 @@ describe('getAuth', function () {
             ->and($result['is_auth'])->toBeTrue();
 
         $userData = $result['user']->resolve();
-        expect($userData)->toHaveKeys(['id', 'email', 'last_name', 'first_name', 'sex', 'phone', 'schoolclass', 'tutoring_filter']);
+        expect($userData)->toHaveKeys(['id', 'email', 'last_name', 'first_name', 'sex', 'phone', 'schoolclass']);
 
         $rolesData = $result['roles']->resolve();
         expect($rolesData)->toBeArray()

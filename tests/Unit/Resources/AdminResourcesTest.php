@@ -13,7 +13,6 @@ use App\Http\Resources\Admin\SchoolyearResource as AdminSchoolyearResource;
 use App\Http\Resources\Admin\TeacherResource;
 use App\Http\Resources\Admin\TeachersListResource;
 use App\Http\Resources\Admin\Teaching\Import116Resource;
-use App\Http\Resources\Admin\Tutoring\OfferResource as AdminTutoringOfferResource;
 use App\Http\Resources\Admin\UserResource as AdminUserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\Import116;
@@ -26,8 +25,6 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
-use App\Models\TutoringOffer;
-use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -350,7 +347,7 @@ test('admin school resource performs no database queries while serializing loade
     expect($queries)->toBeEmpty();
 });
 
-test('school tool resource maps tutoring settings', function () {
+test('school tool resource maps remaining modules and omits tutoring settings', function () {
     Licence::query()->create([
         'name' => 'ABA',
         'long_name' => 'ABA',
@@ -361,11 +358,6 @@ test('school tool resource maps tutoring settings', function () {
         'long_name' => 'Anmeldetool',
         'is_selectable' => true,
     ]);
-    Licence::query()->create([
-        'name' => 'Nachhilfetool',
-        'long_name' => 'Nachhilfetool',
-        'is_selectable' => true,
-    ]);
 
     $schoolTool = SchoolTool::create([
         'school_id' => School::factory()->create()->id,
@@ -373,10 +365,6 @@ test('school tool resource maps tutoring settings', function () {
         'register_visible_user' => false,
         'register_user_test_mode' => false,
         'register_user_comming_soon' => true,
-        'tutoring_visible_admin' => true,
-        'tutoring_visible_user' => false,
-        'tutoring_user_test_mode' => true,
-        'tutoring_user_comming_soon' => false,
         'teaching_visible_admin' => true,
         'teaching_visible_user' => true,
         'teaching_user_test_mode' => false,
@@ -393,29 +381,23 @@ test('school tool resource maps tutoring settings', function () {
         'aba_visible_user' => true,
         'aba_user_test_mode' => false,
         'aba_user_comming_soon' => false,
-        'tutoring_student_must_be_confirmed' => 1,
-        'tutoring_confirmer_email' => 'mentor@example.test',
-        'tutoring_max_offers_per_student' => 3,
-        'may_visible_for_other_schools' => 1,
     ]);
 
     $data = (new SchoolToolResource($schoolTool))->toArray(request());
 
-    expect($data['tutoring_student_must_be_confirmed'])->toBeTrue()
+    expect($data)->not->toHaveKey('tutoring_student_must_be_confirmed')
         ->and($data['module_rows'])->toBeArray()
-        ->and(collect($data['module_rows'])->pluck('key')->all())->toBe(['aba', 'register', 'tutoring'])
+        ->and(collect($data['module_rows'])->pluck('key')->all())->toBe(['aba', 'register'])
         ->and($data['register_visible_admin'])->toBeTrue()
         ->and($data['register_visible_user'])->toBeFalse()
         ->and($data['register_user_comming_soon'])->toBeTrue()
-        ->and($data['tutoring_user_test_mode'])->toBeTrue()
         ->and($data['teaching_visible_user'])->toBeTrue()
         ->and($data['materials_visible_admin'])->toBeFalse()
         ->and($data['restaurant_visible_user'])->toBeTrue()
         ->and($data['aba_visible_admin'])->toBeTrue()
         ->and(collect($data['module_rows'])->firstWhere('key', 'register')['label'] ?? null)->toBe('Anmeldetool')
         ->and(collect($data['module_rows'])->firstWhere('key', 'aba')['label'] ?? null)->toBe('ABA')
-        ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test')
-        ->and($data['may_visible_for_other_schools'])->toBeTrue();
+        ->and($data)->not->toHaveKey('may_visible_for_other_schools');
 });
 
 test('schoolyear resource returns date fields', function () {
@@ -467,44 +449,8 @@ test('teachers list resource returns teacher fields', function () {
         ->and($data['email'])->toBe('tom@example.test');
 });
 
-test('admin tutoring offer resource includes loaded subject and user', function () {
-    $school = School::factory()->create();
-    $subject = TutoringSubject::create([
-        'school_id' => $school->id,
-        'short_name' => 'MAT',
-        'long_name' => 'Mathematics',
-    ]);
-    $user = User::factory()->create([
-        'school_id' => $school->id,
-        'schoolclass' => '2A',
-    ]);
-    $offer = TutoringOffer::create([
-        'school_id' => $school->id,
-        'user_id' => $user->id,
-        'subject_id' => $subject->id,
-        'title' => 'Help',
-        'description' => 'Desc',
-        'classes' => ['5' => true],
-        'active_until' => '2025-01-01',
-        'is_active' => true,
-        'price_per_hour' => 10,
-        'is_group' => 0,
-        'max_group_members' => 2,
-        'must_be_accepted' => 0,
-        'click_count' => 1,
-    ]);
-
-    $offer->load(['subject', 'user']);
-
-    $data = (new AdminTutoringOfferResource($offer))->toArray(request());
-
-    expect($data['subject'])->toMatchArray([
-        'short_name' => 'MAT',
-        'long_name' => 'Mathematics',
-    ])->and($data['user'])->toMatchArray([
-        'email' => $user->email,
-        'schoolclass' => '2A',
-    ]);
+test('retired admin tutoring offer resource is not loadable', function () {
+    expect(class_exists('App\\Http\\Resources\\Admin\\Tutoring\\OfferResource'))->toBeFalse();
 });
 
 test('user with role resource formats date flags and role list', function () {

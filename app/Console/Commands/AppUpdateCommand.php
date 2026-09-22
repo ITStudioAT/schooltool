@@ -108,8 +108,6 @@ class AppUpdateCommand extends Command
             'admin',
             'register_admin',
             'register_user',
-            'tutoring_user',
-            'tutoring_admin',
             'teacher',
             'lunch_admin',
             'lunch_candidate',

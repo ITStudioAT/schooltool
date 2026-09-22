@@ -84,7 +84,7 @@ export default {
             adminStore: null,
             schoolStore: null,
             routeNavigation: null,
-            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'],
+            admins: ['super_admin', 'admin', 'register_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'],
         }
     },
 

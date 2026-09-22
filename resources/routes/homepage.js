@@ -5,9 +5,6 @@ const Impressum = () => import('@/pages/homepage/index/Impressum.vue')
 const Register = () => import('@/pages/homepage/register/Register.vue')
 const Register_Part2 = () => import('@/pages/homepage/register/RegisterPart2.vue')
 const Application_Error = () => import('@/pages/homepage/error/Error.vue')
-const TutoringOverview = () => import('@/pages/homepage/tutoring/TutoringOverview.vue')
-const Tutoring = () => import('@/pages/homepage/tutoring/Tutoring.vue')
-const TutoringResponse = () => import('@/pages/homepage/tutoring/responses/TutoringResponse.vue')
 const Student = () => import('@/pages/homepage/student/Student.vue')
 const StudentOverview = () => import('@/pages/homepage/student/overview/Overview.vue')
 const StudentPassword = () => import('@/pages/homepage/student/password/Password.vue')
@@ -30,9 +27,6 @@ const routes = [
     { path: '/homepage/register', component: Register },
     { path: '/homepage/register2', component: Register_Part2 },
     { path: '/homepage/error', component: Application_Error },
-    { path: '/homepage/tutoring_overview', component: TutoringOverview },
-    { path: '/homepage/tutoring', component: Tutoring },
-    { path: '/homepage/tutoring_response', component: TutoringResponse },
     { path: '/homepage/student', component: Student },
     { path: '/student', component: Student },
     { path: '/student/overview', component: StudentOverview },

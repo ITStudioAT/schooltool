@@ -21,7 +21,6 @@ class SchoolToolModuleStatusService
      */
     private const MODULE_KEYS = [
         'register',
-        'tutoring',
         'teaching',
         'materials',
         'restaurant',
@@ -34,7 +33,6 @@ class SchoolToolModuleStatusService
      */
     private const MODULE_DEFAULT_VISIBILITY = [
         'register' => true,
-        'tutoring' => false,
         'teaching' => false,
         'materials' => false,
         'restaurant' => false,
@@ -47,7 +45,6 @@ class SchoolToolModuleStatusService
      */
     private const MODULE_FALLBACK_META = [
         'register' => 'Lizenz aus Tabelle',
-        'tutoring' => 'Lizenz aus Tabelle',
         'teaching' => 'Lizenz aus Tabelle',
         'materials' => 'Lizenz aus Tabelle',
         'restaurant' => 'Lizenz aus Tabelle',
@@ -217,7 +214,6 @@ class SchoolToolModuleStatusService
     {
         return match ($licenceName) {
             'Anmeldetool' => 'register',
-            'Nachhilfetool' => 'tutoring',
             'Lehrertool' => 'teaching',
             'Materialientool' => 'materials',
             'Restaurant' => 'restaurant',

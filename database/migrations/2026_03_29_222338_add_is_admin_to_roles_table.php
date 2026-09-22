@@ -25,7 +25,6 @@ return new class extends Migration
                 ->whereIn('name', [
                     'admin',
                     'register_admin',
-                    'tutoring_admin',
                     'teaching_admin',
                     'materials_admin',
                     'materials_moderator',

@@ -25,7 +25,7 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'studentstimetables_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
@@ -154,19 +154,19 @@ test('profile menu returns menu for register admin', function () {
         ->and(count($menu))->toBeGreaterThan(0);
 });
 
-test('profile menu returns menu for tutoring admin', function () {
-    $tutoringAdmin = User::factory()->create([
-        'first_name' => 'Tutoring',
+test('profile menu returns menu for student timetable admin', function () {
+    $timetableAdmin = User::factory()->create([
+        'first_name' => 'Timetable',
         'last_name' => 'Admin',
-        'email' => 'tutoringadmin@example.com',
+        'email' => 'timetableadmin@example.com',
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'confirmed_at' => now(),
         'is_active' => true,
     ]);
-    $tutoringAdmin->assignRole('tutoring_admin');
+    $timetableAdmin->assignRole('studentstimetables_admin');
 
-    $this->actingAs($tutoringAdmin);
+    $this->actingAs($timetableAdmin);
 
     $response = $this->getJson('/api/admin/navigation/profile_menu');
 

@@ -173,13 +173,9 @@
             "@php artisan config:clear --ansi",
             "@php artisan test --compact tests/Feature/Console/MakeRegisterTestRecordsCommandTest.php"
         ],
-        "test:php:tutoring-admin": [
+        "test:php:module-removal": [
             "@php artisan config:clear --ansi",
-            "@php artisan test --compact tests/Unit/SubjectServiceTest.php tests/Unit/TutoringOfferServiceTest.php tests/Unit/TutoringServiceTest.php tests/Unit/TutoringTestDataSmallSeederTest.php tests/Feature/Controllers/Admin/Tutoring/OfferControllerTest.php tests/Feature/Controllers/Admin/Tutoring/SubjectControllerTest.php tests/Feature/Controllers/Admin/Tutoring/UserControllerTest.php"
-        ],
-        "test:php:tutoring-public": [
-            "@php artisan config:clear --ansi",
-            "@php artisan test --compact tests/Feature/TutoringControllerTest.php tests/Feature/TutoringSubjectControllerTest.php tests/Feature/TutoringUserControllerTest.php tests/Feature/Controllers/Tutoring/OfferControllerTest.php tests/Feature/Controllers/Tutoring/OfferRequestControllerTest.php tests/Feature/Controllers/Tutoring/SubjectControllerTest.php tests/Feature/Controllers/Tutoring/UserControllerTest.php"
+            "@php artisan test --compact tests/Feature/TutoringRemovalMigrationTest.php tests/Feature/TutoringControllerTest.php tests/Feature/TutoringOwnershipAuthorizationTest.php"
         ],
         "test:php:resources": [
             "@php artisan config:clear --ansi",
