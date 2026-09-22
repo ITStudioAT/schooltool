@@ -5,7 +5,7 @@ $script:SchooltoolPreviewDeploymentChecksum = $null
 $previewDeploymentScript = Join-Path $PSScriptRoot 'deploy_preview_cloudways.sh'
 if (Test-Path -LiteralPath $previewDeploymentScript -PathType Leaf) {
     $previewDeploymentContents = Get-Content -LiteralPath $previewDeploymentScript -Raw -Encoding UTF8
-    $planGuard = 'LARAVEL_STORAGE_PATH="$target_directory/storage" php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction'
+    $planGuard = '(cd "$target_directory" && php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction)'
     if ($previewDeploymentContents.Contains($planGuard) -and $previewDeploymentContents.Contains('if [[ ! "$expected_state_token" =~ ^[a-f0-9]{64}$ ]]; then')) {
         $script:SchooltoolPreviewDeploymentChecksum = Get-SchooltoolFileChecksum $previewDeploymentScript
     }

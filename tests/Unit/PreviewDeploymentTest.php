@@ -132,7 +132,13 @@ printf 'php %s\n' "$*" >> "$PREVIEW_TEST_LOG"
 if [ "$COMPOSER_CACHE_DIR" != "$PREVIEW_TEST_EXTERNAL_CACHE" ]; then exit 41; fi
 if [ "$PREVIEW_TEST_FAILURE" = check ] && [ "${2:-}" = preview:check ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = stale-plan ] && [ "${3:-}" = assert-plan ]; then exit 1; fi
-if [ "${3:-}" = assert-plan ] && [ "$LARAVEL_STORAGE_PATH" != "$PREVIEW_TEST_TARGET_STORAGE" ]; then exit 42; fi
+if [ "${3:-}" = assert-plan ]; then
+    if [ "$PWD" != "$PREVIEW_TEST_TARGET" ] || [ -n "${LARAVEL_STORAGE_PATH:-}" ]; then exit 42; fi
+    printf 'preview plan uses target runtime\n' >> "$PREVIEW_TEST_LOG"
+fi
+if [ "${3:-}" = assert-current ] || [ "${3:-}" = receive ] || [ "${2:-}" = install ]; then
+    if [ "$PWD" != "$PREVIEW_TEST_CANDIDATE" ]; then exit 43; fi
+fi
 if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = activate ] && [ "${3:-}" = activate ]; then exit 1; fi
@@ -172,7 +178,9 @@ BASH,
     $environment = [
         'PATH' => previewBashPath($directory.'/bin').':/usr/bin:/bin',
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
-        'PREVIEW_TEST_TARGET_STORAGE' => previewBashPath($target.'/storage'),
+        'PREVIEW_TEST_TARGET' => previewBashPath($target),
+        'PREVIEW_TEST_CANDIDATE' => previewBashPath($candidate),
+        'LARAVEL_STORAGE_PATH' => false,
         'PREVIEW_TEST_CACHE_MODE' => previewBashPath($directory.'/cache-mode'),
         'PREVIEW_TEST_CACHE_CREATION' => previewBashPath($directory.'/cache-creation'),
         'COMPOSER_CACHE_DIR' => previewBashPath($directory.'/external-cache-must-not-be-used'),
@@ -214,7 +222,7 @@ BASH,
             expect($commands)->toContain('composer cache '.previewBashPath($composerCache))
                 ->and(file_get_contents($composerCache.'/download.zip'))->toBe("package cache fixture\n")
                 ->and(is_dir($directory.'/external-cache-must-not-be-used'))->toBeFalse();
-            expect($commands)->toContain('preview:snapshot assert-plan', '--state-token='.str_repeat('a', 64))
+            expect($commands)->toContain('preview:snapshot assert-plan', 'preview plan uses target runtime', '--state-token='.str_repeat('a', 64))
                 ->and(strpos($commands, 'preview lock acquired'))->toBeLessThan(strpos($commands, 'preview:snapshot assert-plan'))
                 ->and(strpos($commands, 'preview:snapshot assert-plan'))->toBeLessThan(strpos($commands, 'rsync '));
             if ($scenario === 'composer cache reused') {
