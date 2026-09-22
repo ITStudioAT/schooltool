@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use RuntimeException;
 use Throwable;
 
-#[Signature('preview:snapshot {action : status, key:generate, export, delete, receive, import, restore, checkpoint, assert-current or activate} {--feature=} {--recipient=} {--artifact=} {--sha256=} {--source=} {--path-only : Print only the verified received path} {--replace : Explicitly confirmed replacement of preview data}')]
+#[Signature('preview:snapshot {action : status, key:generate, export, delete, receive, import, restore, checkpoint, assert-current, assert-plan or activate} {--feature=} {--recipient=} {--artifact=} {--sha256=} {--source=} {--state-token=} {--path-only : Print only the verified received path} {--replace : Explicitly confirmed replacement of preview data}')]
 #[Description('Prepare encrypted live-data snapshots and safely install them in the isolated preview')]
 class FeaturePreviewSnapshotCommand extends Command
 {
@@ -25,6 +25,7 @@ class FeaturePreviewSnapshotCommand extends Command
                 'import' => $snapshots->import($feature, (string) $this->option('artifact'), (string) $this->option('sha256'), (bool) $this->option('replace')),
                 'delete' => $this->completeOperation(fn () => $snapshots->deleteExport((string) $this->option('artifact'))),
                 'assert-current' => $this->completeOperation(fn () => $snapshots->assertCurrent($feature)),
+                'assert-plan' => $this->completeOperation(fn () => $snapshots->assertPlan($feature, (string) $this->option('state-token'))),
                 'activate' => $this->completeOperation(fn () => $snapshots->activate($feature, (string) $this->option('source'))),
                 'restore' => $this->completeOperation(fn () => $snapshots->restore((bool) $this->option('replace'))),
                 'checkpoint' => $this->completeOperation(fn () => $snapshots->checkpoint($feature)),

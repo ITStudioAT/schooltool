@@ -274,6 +274,7 @@ function Invoke-SchooltoolGit {
         'branch --show-current' { 'main'; return }
         'rev-parse HEAD' { if ($script:confirmation -and $script:scenario -eq 'checkout changed') { 'e'*40 } else { 'a'*40 }; return }
         'rev-parse refs/remotes/origin/main' { if ($script:confirmation -and $script:scenario -eq 'main changed') { 'f'*40 } else { 'a'*40 }; return }
+        'ls-remote --refs origin refs/heads/main' { ('a'*40) + "`trefs/heads/main"; return }
     }
     if ($arguments -like 'show *:deployment/source-commit') { 'b'*40; return }
     if ($arguments -like 'show *:deployment/frontend-build.sha256') { 'c'*64; return }
@@ -287,6 +288,9 @@ function Assert-SchooltoolCiRelease {
     if ($script:scenario -eq 'not approved' -or ($script:proofCalls -eq 2 -and $script:scenario -eq 'approval revoked')) { throw 'GitHub checks not successful.' }
     $attempt = if ($script:proofCalls -eq 2 -and $script:scenario -eq 'attempt changed') { 2 } else { 1 }
     [pscustomobject]@{commit=$Commit;run_id=123;run_attempt=$attempt;lane='full';url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+}
+function Get-SchooltoolCiStatus {
+    [pscustomobject]@{status='completed';conclusion='success';run_id=123;run_attempt=1;jobs=@();url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
 }
 function Read-Host { $script:confirmation=$true; if ($script:scenario -eq 'cancelled') { '' } else { 'LIVE' } }
 function Invoke-SchooltoolRemote {
@@ -318,3 +322,92 @@ POWERSHELL;
     'local checkout changed' => ['checkout changed', false],
     'operator cancelled' => ['cancelled', false],
 ]);
+
+it('waits for CI safely with progress in native PowerShell', function (string $scenario, string $expected, string $shell): void {
+    $command = '$script:scenario = '.var_export($scenario, true)."\n".<<<'POWERSHELL'
+$script:polls = 0
+$script:sleeps = 0
+$script:proofCalls = 0
+function Invoke-SchooltoolGit {
+    if (($args -join ' ') -cne 'ls-remote --refs origin refs/heads/main') { throw 'Unexpected Git request.' }
+    $changed = ($script:scenario -eq 'main changed' -and $script:polls -gt 0) -or
+        ($script:scenario -eq 'main changed after proof' -and $script:proofCalls -gt 0)
+    if ($changed) { ('b'*40) + "`trefs/heads/main" } else { ('a'*40) + "`trefs/heads/main" }
+}
+function Get-SchooltoolCiStatus {
+    param([string]$Commit)
+    if ($Commit -cne ('a'*40)) { throw 'Unpinned status request.' }
+    $script:polls++
+    if ($script:scenario -eq 'untrusted') { throw 'Untrusted workflow identity.' }
+    $states = @('missing', 'queued', 'in_progress', 'completed')
+    $state = $states[[Math]::Min($script:polls - 1, 3)]
+    $conclusion = if ($state -eq 'completed') { 'success' } else { $null }
+    if ($script:scenario -eq 'missing') { $state = 'missing' }
+    if ($script:scenario -in @('timeout', 'cancel')) { $state = 'in_progress' }
+    if ($script:scenario -in @('failure', 'cancelled', 'action_required')) { $state = 'completed'; $conclusion = $script:scenario }
+    if ($script:scenario -in @('main changed after proof', 'invalid proof')) { $state = 'completed'; $conclusion = 'success' }
+    $jobState = if ($state -eq 'completed') { 'completed' } else { 'in_progress' }
+    $jobConclusion = $conclusion
+    if ($script:scenario -eq 'failed job') { $state = 'in_progress'; $jobState = 'completed'; $jobConclusion = 'failure' }
+    [pscustomobject]@{commit=$Commit;status=$state;conclusion=$conclusion;run_id=123;run_attempt=1;
+        jobs=@([pscustomobject]@{name='PHP sequential coverage';status=$jobState;conclusion=$jobConclusion});
+        url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+}
+function Assert-SchooltoolCiRelease {
+    param([string]$Commit)
+    if ($Commit -cne ('a'*40)) { throw 'Unpinned proof request.' }
+    $script:proofCalls++
+    if ($script:scenario -eq 'invalid proof') { throw 'Required release job is not valid.' }
+    [pscustomobject]@{commit=$Commit;run_id=123;run_attempt=1;lane='full';url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+}
+function Start-Sleep {
+    param([int]$Seconds)
+    $script:sleeps++
+    if ($script:scenario -eq 'cancel') { throw [System.OperationCanceledException]::new('Operator cancelled wait.') }
+    if ($script:scenario -in @('timeout', 'missing')) { Microsoft.PowerShell.Utility\Start-Sleep -Seconds $Seconds }
+    if ($script:sleeps -gt 4) { throw 'Unbounded polling.' }
+}
+try {
+    $timeout = if ($script:scenario -eq 'timeout') { 1 } else { 10 }
+    $proof = Wait-SchooltoolCiRelease -Commit ('a'*40) -TimeoutSeconds $timeout -DiscoverySeconds 1 -PollSeconds 1
+    if ($script:scenario -cne 'success' -or $proof.lane -cne 'full' -or $script:proofCalls -ne 1 -or $script:polls -ne 4) { throw 'Unsafe approval.' }
+    Write-Output 'CI_READY'
+}
+catch {
+    if ($_.Exception.Message -ceq 'Unsafe approval.') { throw }
+    Write-Output "CI_STOPPED: $($_.Exception.Message)"
+}
+if ($script:scenario -in @('failure', 'cancelled', 'action_required', 'failed job', 'untrusted') -and $script:sleeps -ne 0) { throw 'Waited on terminal failure.' }
+if ($script:scenario -notin @('success', 'invalid proof', 'main changed after proof') -and $script:proofCalls -ne 0) { throw 'Tried to approve incomplete checks.' }
+POWERSHELL;
+    $process = deploymentSshProcess($command, $shell);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toContain($expected, 'Ctrl+C');
+    if ($scenario === 'success') {
+        expect($process->getOutput())->toContain('queued', 'in_progress', 'PHP sequential coverage', 'https://github.com/ITStudioAT/schooltool/actions/runs/123');
+    } else {
+        expect($process->getOutput())->toContain('CI_STOPPED')->not->toContain('CI_READY');
+    }
+})->with([
+    ['success', 'CI_READY'], ['failure', 'GitHub checks failed'], ['cancelled', 'GitHub checks failed'],
+    ['action_required', 'GitHub checks failed'], ['failed job', 'PHP sequential coverage: failure'],
+    ['untrusted', 'Untrusted workflow identity'], ['missing', 'No exact release check'],
+    ['timeout', 'Stopped waiting after'], ['cancel', 'Operator cancelled wait'],
+    ['main changed', 'main changed while waiting'], ['main changed after proof', 'main changed while waiting'],
+    ['invalid proof', 'required trusted release proof is invalid'],
+])->with(['powershell', 'pwsh']);
+
+it('does not continue to confirmation after a PowerShell pipeline stop', function (string $shell): void {
+    $process = deploymentSshProcess(<<<'POWERSHELL'
+function Invoke-SchooltoolGit { ('a'*40) + "`trefs/heads/main" }
+function Get-SchooltoolCiStatus {
+    [pscustomobject]@{status='in_progress';run_id=123;run_attempt=1;jobs=@();url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+}
+function Assert-SchooltoolCiRelease { Write-Host 'UNSAFE_PROOF'; throw 'Unexpected proof call.' }
+function Start-Sleep { throw [System.Management.Automation.PipelineStoppedException]::new() }
+Wait-SchooltoolCiRelease -Commit ('a'*40)
+Write-Host 'UNSAFE_CONFIRMATION'
+POWERSHELL, $shell);
+    expect($process->getOutput())->toContain('Ctrl+C', 'in_progress')
+        ->not->toContain('UNSAFE_PROOF', 'UNSAFE_CONFIRMATION');
+})->with(['powershell', 'pwsh']);

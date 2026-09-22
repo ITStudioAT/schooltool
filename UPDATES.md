@@ -1,5 +1,14 @@
 # UPDATES
 
+## 3.49.1
+
+### Teaching
+
+- Unterricht springt in der Übersicht auf die richtige Woche
+
+### Restaurant
+
+- Drucken des Menüplans
 ## 3.49.0
 
 ### SYSTEM

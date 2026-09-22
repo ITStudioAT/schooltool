@@ -1,8 +1,27 @@
 . (Join-Path $PSScriptRoot 'git_ssh_helpers.ps1')
 . (Join-Path $PSScriptRoot 'git_preview_receipt.ps1')
 
+$script:SchooltoolPreviewDeploymentChecksum = $null
+$previewDeploymentScript = Join-Path $PSScriptRoot 'deploy_preview_cloudways.sh'
+if (Test-Path -LiteralPath $previewDeploymentScript -PathType Leaf) {
+    $previewDeploymentContents = Get-Content -LiteralPath $previewDeploymentScript -Raw -Encoding UTF8
+    $planGuard = 'LARAVEL_STORAGE_PATH="$target_directory/storage" php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction'
+    if ($previewDeploymentContents.Contains($planGuard) -and $previewDeploymentContents.Contains('if [[ ! "$expected_state_token" =~ ^[a-f0-9]{64}$ ]]; then')) {
+        $script:SchooltoolPreviewDeploymentChecksum = Get-SchooltoolFileChecksum $previewDeploymentScript
+    }
+}
+
 function Get-SchooltoolPreviewTarget {
     Get-SchooltoolDeploymentTarget 'PREVIEW'
+}
+
+function Assert-SchooltoolPreviewDeploymentProtocol {
+    param([object]$Candidate)
+    $candidateScript = Join-Path $Candidate.Path 'scripts/deploy_preview_cloudways.sh'
+    if (-not $script:SchooltoolPreviewDeploymentChecksum -or -not (Test-Path -LiteralPath $candidateScript -PathType Leaf) -or
+        (Get-SchooltoolFileChecksum $candidateScript) -cne $script:SchooltoolPreviewDeploymentChecksum) {
+        throw 'The checked candidate uses an older or different preview deployment protocol. Its receipt is preserved. Incorporate the current workflow and prepare a new fully checked candidate before deployment.'
+    }
 }
 
 function Send-SchooltoolPreview {
@@ -10,7 +29,8 @@ function Send-SchooltoolPreview {
         [string]$Archive, [string]$Checksum, [string]$Id, [string]$SourceBranch,
         [string]$FeatureId, [object]$Target, [object]$SnapshotStatus, [switch]$RefreshData
     )
-    if ($Id -cnotmatch '^[a-f0-9]{32}$' -or $FeatureId -cnotmatch '^[a-f0-9]{32}$' -or $Checksum -cnotmatch '^[a-f0-9]{64}$' -or $SourceBranch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$') {
+    if ($Id -cnotmatch '^[a-f0-9]{32}$' -or $FeatureId -cnotmatch '^[a-f0-9]{32}$' -or $Checksum -cnotmatch '^[a-f0-9]{64}$' -or $SourceBranch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$' -or
+        $SnapshotStatus.state_token -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Invalid preview bundle identity.'
     }
     $needsSnapshot = $RefreshData -or $SnapshotStatus.needs_snapshot
@@ -42,7 +62,7 @@ function Send-SchooltoolPreview {
         }
         catch { Write-Warning 'The encrypted source snapshot was retained in its private directory; review snapshot cleanup after deployment.' }
     }
-    $bootstrap = "cd '$incoming'; echo '$Checksum  release.tar.gz' | sha256sum -c -; mkdir candidate; tar -xzf release.tar.gz -C candidate; bash candidate/scripts/deploy_preview_cloudways.sh '$($Target.Path)' '$SourceBranch' '$Checksum' '$FeatureId' '$snapshotPath' '$snapshotHash' '$($Target.User)'"
+    $bootstrap = "cd '$incoming'; echo '$Checksum  release.tar.gz' | sha256sum -c -; mkdir candidate; tar -xzf release.tar.gz -C candidate; bash candidate/scripts/deploy_preview_cloudways.sh '$($Target.Path)' '$SourceBranch' '$Checksum' '$FeatureId' '$snapshotPath' '$snapshotHash' '$($Target.User)' '$($SnapshotStatus.state_token)'"
     Write-Host 'Deploying the verified candidate into the isolated preview application...' -ForegroundColor Cyan
     Invoke-SchooltoolRemote -Target $Target -Command $bootstrap
     try { Invoke-SchooltoolRemote -Target $Target -Command "test -d '$incoming'; test ! -L '$incoming'; rm -rf -- '$incoming'" }
@@ -50,7 +70,7 @@ function Send-SchooltoolPreview {
 }
 
 function gitpreview {
-    param([ValidateSet('deploy', 'prepare', 'resume')][string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData)
+    param([ValidateSet('deploy', 'prepare', 'resume')][string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData, [Alias('Feature')][string]$FeatureName)
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     $root = (Get-Location).Path
@@ -61,6 +81,11 @@ function gitpreview {
     if ($receipt) { Assert-SchooltoolPreviewReceipt -Receipt $receipt -Root $root }
     if ($prepareOnly -and $RefreshData) { throw 'RefreshData requires an online preview deployment.' }
     Update-SchooltoolRemote
+    $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
+    if ($FeatureName -and (Get-SchooltoolFeatureBranch $FeatureName) -cne $originalBranch) {
+        throw 'The selected preview feature differs from the checkout. Use gitwork NAME first, then gitpreview -Feature NAME.'
+    }
+    if (-not $FeatureName -and $features.Count -gt 1) { throw 'Choose the shared preview explicitly: gitpreview -Feature NAME (after gitwork NAME).' }
     Assert-SchooltoolSaved
     $feature = Get-SchooltoolActiveFeature
     if ($feature.Branch -ne $originalBranch) { throw 'The current branch is not the registered active feature.' }
@@ -74,7 +99,9 @@ function gitpreview {
     if (-not $prepareOnly) {
         $target = Get-SchooltoolPreviewTarget
         $snapshotStatus = Invoke-SchooltoolRemoteJson -Target $target -Command "php artisan preview:snapshot status --feature='$($feature.Id)' --no-interaction"
-        if ($snapshotStatus.public_key -cnotmatch '^[a-f0-9]{64}$' -or $snapshotStatus.needs_snapshot -isnot [bool]) {
+        if ($snapshotStatus.public_key -cnotmatch '^[a-f0-9]{64}$' -or $snapshotStatus.state_token -cnotmatch '^[a-f0-9]{64}$' -or $snapshotStatus.needs_snapshot -isnot [bool] -or
+            'feature_id' -cnotin @($snapshotStatus.PSObject.Properties.Name) -or
+            ($null -ne $snapshotStatus.feature_id -and $snapshotStatus.feature_id -cnotmatch '^[a-f0-9]{32}$')) {
             throw 'The preview did not return a safe snapshot plan.'
         }
         if ($RefreshData -or $snapshotStatus.needs_snapshot) { Get-SchooltoolDeploymentTarget 'MAIN' | Out-Null }
@@ -128,7 +155,7 @@ function gitpreview {
             $archive = Join-Path $bundleDirectory "$id.tar.gz"
             $checksum = $receipt.Checksum
         }
-        $resumeCommand = "gitpreview resume $id" + $(if ($RefreshData) { ' -RefreshData' } else { '' })
+        $resumeCommand = "gitpreview resume $id -Feature $originalBranch" + $(if ($RefreshData) { ' -RefreshData' } else { '' })
         Write-Host "Preview source: $originalBranch ($sourceCommit)" -ForegroundColor Cyan
         Write-Host "Prepared bundle: $archive" -ForegroundColor Cyan
         Write-Host "Continue this checked candidate: $resumeCommand" -ForegroundColor Cyan
@@ -136,12 +163,17 @@ function gitpreview {
             Write-Host 'Candidate prepared and checked. Feature, main and servers are unchanged.' -ForegroundColor Green
             return
         }
+        Assert-SchooltoolPreviewDeploymentProtocol $candidate
         Write-Host "Preview target: $($target.Ssh) $($target.Path)" -ForegroundColor Cyan
         if ($RefreshData -or $snapshotStatus.needs_snapshot) {
             Write-Host 'Preview data will be backed up and replaced with a new isolated live snapshot. Current preview test entries will be removed from the active preview.' -ForegroundColor Yellow
         }
         else { Write-Host 'Existing preview test data will be retained; pending feature migrations will run only on its isolated database.' -ForegroundColor Cyan }
-        if ($RefreshData -and (Read-Host 'Replace the current preview test data? Type REFRESH') -cne 'REFRESH') {
+        $replacesExistingData = $snapshotStatus.needs_snapshot -and $null -ne $snapshotStatus.feature_id
+        if ($replacesExistingData) {
+            Write-Host "The shared preview currently holds lifecycle $($snapshotStatus.feature_id). Its test data will be replaced; returning to this feature later also starts with fresh live data." -ForegroundColor Yellow
+        }
+        if (($RefreshData -or $replacesExistingData) -and (Read-Host 'Replace the current preview test data? Type REFRESH') -cne 'REFRESH') {
             Write-Host "Data refresh cancelled. Nothing published. Continue with: $resumeCommand" -ForegroundColor Yellow
             return
         }
@@ -150,6 +182,7 @@ function gitpreview {
             return
         }
         Assert-SchooltoolPreviewReceipt -Receipt (Read-SchooltoolPreviewReceipt $id) -Root $root
+        Assert-SchooltoolPreviewDeploymentProtocol $candidate
         Push-Location -LiteralPath $root
         try {
             Assert-SchooltoolRepository
@@ -160,6 +193,8 @@ function gitpreview {
         }
         finally { Pop-Location }
         Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $featureCommit -MainCommit $mainCommit
+        $currentStatus = Invoke-SchooltoolRemoteJson -Target $target -Command "php artisan preview:snapshot status --feature='$($feature.Id)' --no-interaction"
+        if ($currentStatus.state_token -cne $snapshotStatus.state_token) { throw 'The shared preview changed during preparation. Nothing was published. Review the new data plan before retrying.' }
         Invoke-SchooltoolGit merge-base --is-ancestor $featureCommit $sourceCommit | Out-Null
         Start-SchooltoolPreviewPublication $id
         Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${originalBranch}:$featureCommit" "--force-with-lease=refs/heads/preview/${id}:" origin "${sourceCommit}:refs/heads/$originalBranch" "$($receipt.ArtifactCommit):refs/heads/preview/$id" | Out-Host

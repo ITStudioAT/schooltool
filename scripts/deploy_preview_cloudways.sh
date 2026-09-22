@@ -9,6 +9,12 @@ feature_id="${4:-}"
 snapshot_path="${5:--}"
 snapshot_checksum="${6:--}"
 expected_owner="${7:-schooltool-feature}"
+expected_state_token="${8:-}"
+
+if [[ ! "$expected_state_token" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "A verified preview state token is required. Deploy through gitpreview." >&2
+    exit 1
+fi
 
 if [[ ! "$expected_owner" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || [ "$(id -un)" != "$expected_owner" ]; then
     echo "Preview deployment requires its explicitly verified application Unix account." >&2
@@ -129,6 +135,7 @@ mkdir -p storage/app/private storage/app/public storage/framework/cache/data sto
 COMPOSER_CACHE_DIR="$composer_cache_directory" composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
 php artisan package:discover --no-interaction
 php artisan preview:check --configuration-only --no-interaction
+LARAVEL_STORAGE_PATH="$target_directory/storage" php artisan preview:snapshot assert-plan --feature="$feature_id" --state-token="$expected_state_token" --no-interaction
 if [ "$snapshot_path" = - ]; then
     php artisan preview:snapshot assert-current --feature="$feature_id" --no-interaction
 else

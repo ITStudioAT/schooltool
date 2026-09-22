@@ -18,7 +18,7 @@ switch ($Command) {
         $parameters.Name = $arguments[0]
     }
     'gitwork' {
-        if ($arguments.Count -gt 1) { throw 'Usage: gitwork' }
+        if ($arguments.Count -gt 1) { throw 'Usage: gitwork [NAME]' }
         if ($arguments.Count -eq 1) { $parameters.Name = $arguments[0] }
     }
     { $_ -in @('gitsave', 'gitrelease') } {
@@ -31,8 +31,16 @@ switch ($Command) {
         if ($positionals.Count -eq 2) { $parameters.Version = $positionals[1] }
     }
     'gitpreview' {
+        $expectFeature = $false
         foreach ($argument in $arguments) {
-            if ($argument -eq '-RefreshData' -and -not $parameters.ContainsKey('RefreshData')) {
+            if ($expectFeature) {
+                $parameters.FeatureName = Get-SchooltoolFeatureBranch $argument
+                $expectFeature = $false
+            }
+            elseif ($argument -ceq '-Feature' -and -not $parameters.ContainsKey('FeatureName')) {
+                $expectFeature = $true
+            }
+            elseif ($argument -eq '-RefreshData' -and -not $parameters.ContainsKey('RefreshData')) {
                 $parameters.RefreshData = $true
             }
             elseif ($argument -in @('deploy', 'prepare', 'resume') -and -not $parameters.ContainsKey('Mode')) {
@@ -43,6 +51,7 @@ switch ($Command) {
             }
             else { throw 'Usage: gitpreview [deploy|prepare] or gitpreview resume BUNDLE_ID [-RefreshData]' }
         }
+        if ($expectFeature) { throw 'Usage: gitpreview [deploy|prepare|resume BUNDLE_ID] [-Feature NAME] [-RefreshData]' }
         if ($parameters.Mode -eq 'resume' -and -not $parameters.ContainsKey('BundleId')) { throw 'Usage: gitpreview resume BUNDLE_ID [-RefreshData]' }
     }
     default {

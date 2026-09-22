@@ -14,3 +14,7 @@ export function parseLocalDate(date) {
     }
     return new Date(date)
 }
+
+export function applicationDate(date = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna' }).format(date)
+}

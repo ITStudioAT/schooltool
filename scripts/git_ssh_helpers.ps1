@@ -238,6 +238,90 @@ function Assert-SchooltoolCiRelease {
     $proof
 }
 
+function Get-SchooltoolCiStatus {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+    if ($Commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid release commit for GitHub verification.' }
+    $json = & php (Join-Path $PSScriptRoot 'ci-release-proof.php') status --commit $Commit
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read trusted GitHub check status. Check GitHub access and the diagnostic above. https://github.com/ITStudioAT/schooltool/actions/workflows/ci.yml' }
+    try { $status = $json | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'GitHub returned invalid check status. Live deployment is blocked.' }
+    if ($status.commit -cne $Commit -or $status.status -cnotin @('missing', 'queued', 'requested', 'waiting', 'pending', 'in_progress', 'completed')) {
+        throw 'GitHub returned inconsistent check status. Live deployment is blocked.'
+    }
+    if ($status.status -cne 'missing' -and ([string]$status.run_id -cnotmatch '^[1-9][0-9]*$' -or
+        [string]$status.run_attempt -cnotmatch '^[1-9][0-9]*$' -or
+        $status.url -cne "https://github.com/ITStudioAT/schooltool/actions/runs/$($status.run_id)")) {
+        throw 'GitHub returned an inconsistent check identity. Live deployment is blocked.'
+    }
+    $status
+}
+
+function Assert-SchooltoolCiMain {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+    $remoteMain = @(Invoke-SchooltoolGit ls-remote --refs origin refs/heads/main)
+    if ($remoteMain.Count -ne 1 -or ($remoteMain[0] -split '\s+')[0] -cne $Commit) {
+        throw 'GitHub main changed while waiting for checks. No deployment started. Review the new release with gitcheck, then rerun gitdeploy.'
+    }
+}
+
+function Wait-SchooltoolCiRelease {
+    param(
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [ValidateRange(1, 7200)][int]$TimeoutSeconds = 7200,
+        [ValidateRange(1, 120)][int]$DiscoverySeconds = 120,
+        [ValidateRange(1, 60)][int]$PollSeconds = 15
+    )
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $previousProgress = ''
+    $seenRun = $false
+    $url = 'https://github.com/ITStudioAT/schooltool/actions/workflows/ci.yml?query=branch%3Amain'
+    Write-Host "Checking GitHub CI for release $Commit. Waiting up to $([int]($TimeoutSeconds / 60)) minutes; Ctrl+C cancels without deploying." -ForegroundColor Cyan
+    try {
+        while ($true) {
+            Assert-SchooltoolCiMain -Commit $Commit
+            try { $status = Get-SchooltoolCiStatus -Commit $Commit }
+            catch { throw "Cannot continue waiting for trusted checks. $($_.Exception.Message) Review GitHub access and the run before retrying. $url" }
+            $url = $status.url
+            if ($status.status -eq 'missing') {
+                Write-Host "CI run not visible yet; waiting for GitHub. $url" -ForegroundColor Yellow
+                if ($seenRun -or $clock.Elapsed.TotalSeconds -ge $DiscoverySeconds) {
+                    throw "No exact release check is available. Check Actions/push permissions for $Commit before rerunning gitdeploy. $url"
+                }
+            }
+            else {
+                $seenRun = $true
+                Write-Host ("CI {0}, attempt {1}, elapsed {2:hh\:mm\:ss}. {3}" -f $status.status, $status.run_attempt, $clock.Elapsed, $url) -ForegroundColor Cyan
+                $progress = $status.jobs | ConvertTo-Json -Depth 5 -Compress
+                if ($progress -cne $previousProgress) {
+                    foreach ($job in $status.jobs) {
+                        $label = if ($job.status -eq 'completed') { $job.conclusion } else { $job.status }
+                        Write-Host "  [$label] $($job.name)"
+                    }
+                    $previousProgress = $progress
+                }
+                $failedJobs = @($status.jobs | Where-Object {
+                    $_.status -eq 'completed' -and $_.conclusion -notin @('success', 'skipped')
+                })
+                if ($failedJobs.Count -gt 0 -or ($status.status -eq 'completed' -and $status.conclusion -ne 'success')) {
+                    $details = ($failedJobs | ForEach-Object { "$($_.name): $($_.conclusion)" }) -join '; '
+                    throw "GitHub checks failed or were cancelled ($($status.conclusion)). $details Open the run, resolve the failed jobs or cancellation, then rerun gitdeploy after successful checks. $url"
+                }
+                if ($status.status -eq 'completed') {
+                    try { $proof = Assert-SchooltoolCiRelease -Commit $Commit }
+                    catch { throw "GitHub finished but the required trusted release proof is invalid. $($_.Exception.Message) Review the required jobs before rerunning gitdeploy. $url" }
+                    Assert-SchooltoolCiMain -Commit $Commit
+                    Write-Host "Required GitHub checks verified. $($proof.url)" -ForegroundColor Green
+                    return $proof
+                }
+            }
+            if ($clock.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                throw "Stopped waiting after $TimeoutSeconds seconds; no deployment started. Checks continue on GitHub. Review the run, then rerun gitdeploy to resume waiting. $url"
+            }
+            Start-Sleep -Seconds $PollSeconds
+        }
+    }
+    finally { $clock.Stop() }
+}
 function gitdeploy {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
@@ -253,11 +337,12 @@ function gitdeploy {
     if ($sourceCommit -cnotmatch '^[a-f0-9]{40,64}$' -or $archiveHash -cnotmatch '^[a-f0-9]{64}$' -or $manifestBlob -cnotmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$') {
         throw 'main does not contain a valid release artifact. Publish it with gitsave or gitrelease first.'
     }
-    $proof = Assert-SchooltoolCiRelease -Commit $mainCommit
+    $proof = Wait-SchooltoolCiRelease -Commit $mainCommit
     Invoke-SchooltoolRemote -Target $target -Command 'test -f scripts/pdeploy_cloudways.sh; grep -q SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB scripts/pdeploy_cloudways.sh; command -v composer >/dev/null'
     Write-Host "Live target: $($target.Ssh) $($target.Path)" -ForegroundColor Yellow
     Write-Host "GitHub main: $mainCommit. The application update includes its planned live database migrations." -ForegroundColor Yellow
     Write-Host "Verified GitHub checks: $($proof.url), attempt $($proof.run_attempt)." -ForegroundColor Cyan
+    Assert-SchooltoolCiMain -Commit $mainCommit
     if ((Read-Host 'Deploy main to the live application? Type LIVE') -cne 'LIVE') { throw 'Live deployment cancelled.' }
     Update-SchooltoolRemote
     if ((Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -ne $mainCommit) { throw 'main changed during confirmation. Review the new version and rerun gitdeploy.' }

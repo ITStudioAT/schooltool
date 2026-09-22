@@ -462,13 +462,13 @@ function Invoke-SchooltoolPublish {
             if (-not (Test-SchooltoolAncestor $ExpectedFeatureCommit $releaseCommit)) { throw 'The feature is not fully included in the release.' }
             $pushArguments += @(
                 "--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit",
-                "--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)"
+                "--force-with-lease=$($Feature.ReservationRef):$($Feature.ReservationCommit)"
             )
         }
         $pushArguments += @('origin', "${releaseCommit}:refs/heads/main")
         if ($Feature) {
             $pushArguments += @(':refs/heads/' + $Feature.Branch)
-            $pushArguments += ':refs/heads/codex/active-feature'
+            $pushArguments += ':' + $Feature.ReservationRef
         }
 
         if ($version) {
@@ -513,7 +513,7 @@ function Invoke-SchooltoolPublish {
 
         if (-not $WaitForCI) {
             Write-Host 'GitHub selects the required checks automatically. Application changes require the full background checks; only verified documentation/version changes use the fast checks.' -ForegroundColor DarkGray
-            Write-Host 'CI pending is not live-ready. gitdeploy stops while checks are missing, running or unsuccessful.' -ForegroundColor Yellow
+            Write-Host 'CI pending is not live-ready. gitdeploy waits for running checks with progress, then asks for LIVE. Failed or untrusted checks block deployment.' -ForegroundColor Yellow
         }
         Write-SchooltoolCompletionTime
     }

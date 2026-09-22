@@ -188,7 +188,7 @@
 </template>
 
 <script>
-import { parseLocalDate } from '@/helpers/date'
+import { applicationDate, parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
@@ -258,6 +258,8 @@ export default {
             this.range = returnState.range
             this.offset = returnState.offset
             this.timetable_view_mode = returnState.viewMode
+        } else {
+            this.range = this.defaultRange()
         }
         this.schoolHourStore = useSchoolHourStore()
         if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
@@ -268,13 +270,19 @@ export default {
     async mounted() {
         const courseStore = useCourseStore()
         const returnState = this.pendingTimetableRestore
+        const initialRange = this.range
         courseStore.timetable_return_state = null
         window.addEventListener('scroll', this.persistTimetableView, { capture: true, passive: true })
         window.addEventListener('pagehide', this.persistTimetableView)
         const loadResults = await Promise.all([courseStore.courses_request_promise, this.schoolHoursRequest])
         await this.$nextTick()
         if (this.timetableDisposed || this.selected_course || loadResults.includes(false)) return
-        if (returnState && courseStore.isTimetableStateCurrent(returnState, this.$route?.path)) {
+        const canRestore = returnState && courseStore.isTimetableStateCurrent(returnState, this.$route?.path)
+        if ((!returnState && this.range === initialRange && this.offset === 0) || (returnState && !canRestore)) {
+            this.range = this.defaultRange()
+            this.offset = 0
+        }
+        if (canRestore) {
             const table = this.$el.querySelector('.timetable-table-wrapper')
             if (table) {
                 table.scrollLeft = returnState.tableLeft
@@ -437,7 +445,7 @@ export default {
                 return parsed
             }
 
-            const today = this.normalizeDay(new Date())
+            const today = parseLocalDate(applicationDate())
             const schoolFrom = normalizeConfiguredDate(schoolyear?.from)
             const schoolUntil = normalizeConfiguredDate(schoolyear?.until)
             const sem2Start = normalizeConfiguredDate(
@@ -556,6 +564,13 @@ export default {
     },
 
     methods: {
+        defaultRange() {
+            const today = parseLocalDate(applicationDate())
+            const weekEnd = this.endOfWeek(today)
+            return this.timetableItems.some((item) =>
+                !this.hasFreeStatus(item) && item.dateObj >= today && item.dateObj <= weekEnd
+            ) ? RANGE_WEEK : RANGE_NEXT_WEEK
+        },
         persistTimetableView() {
             if (!this.timetableReady || this.timetableDisposed || this.selected_course) return
             const table = this.$el.querySelector('.timetable-table-wrapper')
@@ -590,7 +605,7 @@ export default {
             return end
         },
         currentRangeBounds() {
-            const today = this.normalizeDay(new Date())
+            const today = parseLocalDate(applicationDate())
             let referenceDate = new Date(today)
 
             if (this.range === RANGE_TODAY) {
@@ -625,6 +640,7 @@ export default {
         nextCourseWeekStart(today) {
             const currentWeekEnd = this.endOfWeek(today)
             const nextCourseDate = this.timetableItems
+                .filter((item) => !this.hasFreeStatus(item))
                 .map((item) => item?.dateObj)
                 .find((date) => date instanceof Date && !isNaN(date.getTime()) && date > currentWeekEnd)
 
@@ -748,7 +764,7 @@ export default {
             return `${y}-${m}-${d}`
         },
         isDayToday(day) {
-            return this.normalizeDay(day).getTime() === this.normalizeDay(new Date()).getTime()
+            return this.normalizeDay(day).getTime() === parseLocalDate(applicationDate()).getTime()
         },
         formatDayOfWeek(day) {
             return day.toLocaleDateString('de-DE', { weekday: 'short' })
@@ -804,7 +820,7 @@ export default {
                 || statusStr.includes('entfallen')
         },
         isToday(item) {
-            const today = this.normalizeDay(new Date())
+            const today = parseLocalDate(applicationDate())
             return item.dateObj.getTime() === today.getTime()
         },
         isAttendanceChecked(item) {

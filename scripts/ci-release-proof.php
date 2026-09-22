@@ -131,6 +131,44 @@ class SchooltoolCiReleaseProof
         ];
     }
 
+    /** Reports progress only; deployment still requires verify(). */
+    public function status(string $commit): array
+    {
+        $this->assertCommit($commit);
+        $this->initialize();
+        $run = $this->latestRun($commit, allowMissing: true);
+        if ($run === []) {
+            return [
+                'commit' => $commit, 'status' => 'missing', 'jobs' => [],
+                'url' => 'https://github.com/'.self::Repository.'/actions/workflows/ci.yml?query=branch%3Amain',
+            ];
+        }
+
+        $this->assertRunIdentity($run, $commit);
+        $jobs = $this->jobs($run);
+        $progress = [];
+        foreach ([...self::CommonJobs, ...self::FullJobs, ...array_keys($jobs)] as $name) {
+            if (isset($progress[$name])) {
+                continue;
+            }
+            if (! in_array($name, [...self::CommonJobs, ...self::FullJobs], true)
+                && ! str_starts_with($name, 'Documentation checks (policy v2; base=')) {
+                continue;
+            }
+            $job = $jobs[$name] ?? [];
+            $progress[$name] = [
+                'name' => $name, 'status' => $job['status'] ?? 'pending',
+                'conclusion' => $job['conclusion'] ?? null,
+            ];
+        }
+
+        return [
+            'commit' => $commit, 'run_id' => $run['id'], 'run_attempt' => $run['run_attempt'],
+            'status' => $run['status'] ?? '', 'conclusion' => $run['conclusion'] ?? null,
+            'url' => 'https://github.com/'.self::Repository.'/actions/runs/'.$run['id'],
+            'jobs' => array_values($progress),
+        ];
+    }
     public function baseline(string $head): ?string
     {
         $this->assertCommit($head);
@@ -180,10 +218,13 @@ class SchooltoolCiReleaseProof
         }
     }
 
-    private function latestRun(string $commit): array
+    private function latestRun(string $commit, bool $allowMissing = false): array
     {
         $response = $this->request('/actions/workflows/'.$this->workflow['id'].'/runs?event=push&branch=main&head_sha='.$commit.'&per_page=100&page=1');
         $runs = $response['workflow_runs'] ?? [];
+        if ($allowMissing && ($response['total_count'] ?? null) === 0 && ($response['workflow_runs'] ?? null) === []) {
+            return [];
+        }
         if (! is_array($runs) || $runs === [] || ! is_int($response['total_count'] ?? null)
             || $response['total_count'] > 100 || count($runs) !== $response['total_count']) {
             throw new RuntimeException('No unambiguous exact-commit release check is available.');
@@ -195,6 +236,14 @@ class SchooltoolCiReleaseProof
 
     private function assertRun(array $run, string $commit): void
     {
+        $this->assertRunIdentity($run, $commit);
+        if (($run['status'] ?? null) !== 'completed' || ($run['conclusion'] ?? null) !== 'success') {
+            throw new RuntimeException('The exact release check is missing, pending, failed, or not trusted.');
+        }
+    }
+
+    private function assertRunIdentity(array $run, string $commit): void
+    {
         foreach (['repository', 'head_repository'] as $key) {
             if (($run[$key]['id'] ?? null) !== $this->repository['id'] || ($run[$key]['full_name'] ?? null) !== self::Repository) {
                 throw new RuntimeException('The release check belongs to a different repository.');
@@ -203,10 +252,9 @@ class SchooltoolCiReleaseProof
         if (($run['head_sha'] ?? null) !== $commit || ($run['head_branch'] ?? null) !== 'main'
             || ($run['event'] ?? null) !== 'push' || ($run['workflow_id'] ?? null) !== $this->workflow['id']
             || ($run['path'] ?? null) !== '.github/workflows/ci.yml'
-            || ($run['status'] ?? null) !== 'completed' || ($run['conclusion'] ?? null) !== 'success'
             || ! is_int($run['id'] ?? null) || $run['id'] < 1
             || ! is_int($run['run_attempt'] ?? null) || $run['run_attempt'] < 1) {
-            throw new RuntimeException('The exact release check is missing, pending, failed, or not trusted.');
+            throw new RuntimeException('The exact release check has an untrusted commit, workflow, event or attempt.');
         }
     }
 
@@ -298,12 +346,16 @@ class SchooltoolCiReleaseProof
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
         $action = $argv[1] ?? '';
-        if (count($argv) !== 4 || ! in_array($action, ['verify', 'baseline'], true)
-            || ($argv[2] ?? '') !== ($action === 'verify' ? '--commit' : '--head')) {
-            throw new RuntimeException('Usage: ci-release-proof.php verify --commit SHA | baseline --head SHA');
+        if (count($argv) !== 4 || ! in_array($action, ['verify', 'status', 'baseline'], true)
+            || ($argv[2] ?? '') !== ($action === 'baseline' ? '--head' : '--commit')) {
+            throw new RuntimeException('Usage: ci-release-proof.php verify|status --commit SHA | baseline --head SHA');
         }
         $proof = SchooltoolCiReleaseProof::fromRepository(getcwd());
-        $result = $action === 'verify' ? $proof->verify($argv[3]) : ['base' => $proof->baseline($argv[3])];
+        $result = match ($action) {
+            'verify' => $proof->verify($argv[3]),
+            'status' => $proof->status($argv[3]),
+            'baseline' => ['base' => $proof->baseline($argv[3])],
+        };
         echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).PHP_EOL;
     } catch (Throwable $exception) {
         fwrite(STDERR, $exception->getMessage().PHP_EOL);
