@@ -39,18 +39,6 @@
                     Benutzer
                 </v-btn>
             </div>
-            <v-spacer />
-            <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="grey"
-                class="register-system-nav__settings-btn"
-                title="Anmeldetool-Einstellungen"
-                :disabled="action !== ''"
-                @click="$router.push('/admin/settings?tab=register')">
-                <v-icon size="20">mdi-cog-outline</v-icon>
-            </v-btn>
         </v-sheet>
 
         <v-row v-if="activePanel === 'users'" class="w-100 ma-0" dense>
@@ -195,13 +183,4 @@ export default {
     min-width: 0;
 }
 
-.register-system-nav__settings-btn {
-    flex-shrink: 0;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-}
-
-.register-system-nav__settings-btn:hover {
-    opacity: 1;
-}
 </style>

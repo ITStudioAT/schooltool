@@ -155,10 +155,6 @@
                         <Roles />
                     </div>
 
-                    <div v-else-if="isRegisterTab && sub_action === 'users'" class="settings-users-wrap">
-                        <RegisterUsers />
-                    </div>
-
                     <div v-else-if="isTutoringTab && sub_action === 'tutoring_settings'" class="settings-tutoring-wrap">
                         <TutoringSettings />
                     </div>
@@ -213,7 +209,6 @@ const Licences = defineAsyncComponent(() => import('@/pages/admin/superAdmin/com
 const LicenceSchools = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/LicenceSchools.vue'))
 const Roles = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Roles.vue'))
 const Log = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Log.vue'))
-const RegisterUsers = defineAsyncComponent(() => import('@/pages/admin/settings/components/RegisterUsers.vue'))
 const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/settings/components/ModuleStatusesCard.vue'))
 const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/ActiveSchool.vue'))
 const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
@@ -225,7 +220,7 @@ const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/
 const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, PreviewAccess, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, ModuleStatusesCard, ActiveSchool, UserImpersonation, StorageAudit, PreviewAccess, TutoringSettings, TutoringSubjects, TutoringUsers, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -267,7 +262,7 @@ export default {
             }
         },
         '$route.query.tab'(val) {
-            if (val === 'materials' || val === 'restaurant' || val === 'groups') {
+            if (val === 'materials' || val === 'restaurant' || val === 'groups' || val === 'register') {
                 this.syncRouteQuery()
                 return
             }
@@ -335,7 +330,6 @@ export default {
             return {
                 super_admin: ['super_admin'],
                 admin: ['super_admin', 'admin'],
-                register: ['super_admin', 'admin', 'register_admin'],
                 teaching: ['super_admin', 'admin', 'teaching_admin'],
                 tutoring: ['super_admin', 'admin', 'tutoring_admin'],
             }
@@ -359,7 +353,7 @@ export default {
         canAccessAdminSettingsTab() {
             return ['super_admin', 'admin'].some((role) => this.configuredRoleNames.includes(role))
         },
-        canAccessRegisterSettingsTab() {
+        canAccessRegisterSystem() {
             if (typeof this.configuredCapabilities.register_system === 'boolean') {
                 return this.configuredCapabilities.register_system
             }
@@ -387,11 +381,10 @@ export default {
             return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register', 'tutoring'].includes(this.main_action)
+            return ['super_admin', 'admin', 'tutoring'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
-            if (this.main_action === 'register') return 'users'
             if (this.main_action === 'teaching') return 'teaching_admin'
             if (this.main_action === 'tutoring') return 'tutoring_settings'
             return 'general'
@@ -401,9 +394,6 @@ export default {
         },
         isAdminTab() {
             return this.main_action === 'admin'
-        },
-        isRegisterTab() {
-            return this.main_action === 'register'
         },
         isTutoringTab() {
             return this.main_action === 'tutoring'
@@ -439,12 +429,6 @@ export default {
                     { key: 'tutoring_settings', label: 'Einstellungen', meta: 'Nachhilfe', icon: 'mdi-cog-outline' },
                     { key: 'tutoring_subjects', label: 'Fächer', meta: 'Fächer verwalten', icon: 'mdi-television-shimmer' },
                     { key: 'tutoring_users', label: 'Benutzer', meta: 'Nachhilfe', icon: 'mdi-account-multiple-outline' },
-                ]
-            }
-
-            if (this.isRegisterTab) {
-                return [
-                    { key: 'users', label: 'Benutzer', meta: 'Anmeldetool', icon: 'mdi-account-group-outline' },
                 ]
             }
 
@@ -493,7 +477,6 @@ export default {
             return [
                 { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
                 { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
-                { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group', visible: this.canAccessTutoringSettingsTab },
             ].filter((item) => item.visible !== false)
         },
@@ -503,14 +486,12 @@ export default {
         availableTabKeys(
             canAccessSuperAdminTab,
             canAccessAdminTab,
-            canAccessRegisterTab,
             canAccessTutoringTab,
             canAccessTeachingTab,
         ) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
                 canAccessAdminTab ? 'admin' : null,
-                canAccessRegisterTab ? 'register' : null,
                 canAccessTutoringTab ? 'tutoring' : null,
                 canAccessTeachingTab ? 'teaching' : null,
             ].filter(Boolean)
@@ -533,9 +514,6 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRegisterTab = typeof configuredCapabilities.register_system === 'boolean'
-                ? configuredCapabilities.register_system
-                : ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
                 ? configuredCapabilities.tutoring
                 : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
@@ -545,7 +523,6 @@ export default {
             const keys = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
-                canAccessRegisterTab,
                 canAccessTutoringTab,
                 canAccessTeachingTab,
             )
@@ -560,9 +537,6 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRegisterTab = typeof configuredCapabilities.register_system === 'boolean'
-                ? configuredCapabilities.register_system
-                : ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
                 ? configuredCapabilities.tutoring
                 : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
@@ -572,7 +546,6 @@ export default {
             const availableTabs = this.availableTabKeys(
                 canAccessSuperAdminTab,
                 canAccessAdminTab,
-                canAccessRegisterTab,
                 canAccessTutoringTab,
                 canAccessTeachingTab,
             )
@@ -586,9 +559,6 @@ export default {
             } else if (resolvedTab === 'tutoring') {
                 keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
                 fallback = 'tutoring_settings'
-            } else if (resolvedTab === 'register') {
-                keys = ['users']
-                fallback = 'users'
             } else if (resolvedTab === 'teaching') {
                 keys = ['teaching_admin']
                 fallback = 'teaching_admin'
@@ -615,6 +585,11 @@ export default {
             return keys.includes(panel) ? panel : 'module_visibility'
         },
         syncRouteQuery() {
+            if (this.$route.query?.tab === 'register' && this.canAccessRegisterSystem) {
+                this.$router.replace('/admin/register_system?panel=users')
+                return
+            }
+
             if (this.$route.query?.tab === 'groups' && this.configuredRoleNames.includes('super_admin')) {
                 const panel = this.$route.query?.panel === 'groups_own' ? 'groups_own' : 'groups_overview'
                 this.$router.replace(`/admin/groups?panel=${panel}`)

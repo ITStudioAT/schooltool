@@ -25,3 +25,6 @@ Use the Materials 2 Admin submenu appearance for the Super-Admin section selecto
 
 ## Match the Super Admin submenu to Materials 2 Admin
 Use the Materials 2 Admin submenu appearance for the Super-Admin, Admin, Gruppen, and Restaurant section selectors: dark slate bar, contiguous primary v-btn-toggle buttons with subtle dividers, icons, and two-line labels with metadata badges. Keep the other settings tabs and nested panel menus unchanged.
+
+## Keep register users in the register tool
+Register user management lives at /admin/register_system?panel=users under Anmeldetool > Benutzer. Do not embed it or show an Anmeldetool tab in global Settings. Preserve legacy settings?tab=register links by redirecting permitted users to that route; keep capability checks and existing fallback behavior.

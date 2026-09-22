@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createTestingPinia } from '@pinia/testing'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
-import { defineComponent, h, inject, provide } from 'vue'
+import { defineComponent, h, inject, provide, reactive } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 import Settings from '@/pages/admin/settings/Settings.vue'
@@ -124,6 +124,30 @@ describe('Admin settings page', () => {
 
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'schools'])
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Alle Lizenzen', 'Lizenzvergaben'])
+    })
+
+    it('redirects a legacy register link when settings are already mounted', async () => {
+        const replace = vi.fn()
+        const route = reactive({ fullPath: '/admin/settings?tab=tutoring', query: { tab: 'tutoring' } })
+
+        render(Settings, {
+            global: {
+                plugins: [createTestingPinia({
+                    initialState: {
+                        AdminAdminStore: {
+                            config: { is_auth: true, roles: ['register_admin', 'tutoring_admin'] },
+                        },
+                    },
+                })],
+                mocks: { $route: route, $router: { replace } },
+                stubs: { ...vuetifyStubs, AdminSectionHero: true, TutoringSettings: true },
+            },
+        })
+
+        route.fullPath = '/admin/settings?tab=register'
+        route.query.tab = 'register'
+        await waitFor(() => expect(replace).toHaveBeenCalledWith('/admin/register_system?panel=users'))
+        expect(screen.queryByText('Anmeldetool')).not.toBeInTheDocument()
     })
 
     it.each([
@@ -281,14 +305,10 @@ describe('Admin settings page', () => {
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=admin&panel=schools')
     })
 
-    it('builds the register sub navigation with users only', () => {
-        const items = (Settings as any).computed.subNavigationItems.call({
-            isRegisterTab: true,
-            isAdminTab: false,
-        })
-
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['users'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Benutzer'])
+    it('removes register users from the available global settings tabs', () => {
+        expect((Settings as any).methods.availableTabKeys(true, true, true, true)).not.toContain('register')
+        expect((Settings as any).computed.tabRoleMap.call({})).not.toHaveProperty('register')
+        expect((Settings as any).components).not.toHaveProperty('RegisterUsers')
     })
 
     it('does not expose materials sub navigation in global settings', () => {
@@ -1587,11 +1607,11 @@ describe('Admin settings page', () => {
         expect(replace).toHaveBeenCalledWith('/admin/profile')
     })
 
-    it('hides the register settings tab when the register capability is disabled', () => {
+    it.each([true, false])('hides the register settings tab regardless of register access: %s', (canAccessRegisterSystem) => {
         const items = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: false,
             canAccessAdminSettingsTab: false,
-            canAccessRegisterSettingsTab: false,
+            canAccessRegisterSystem,
             canAccessTutoringSettingsTab: false,
             canAccessTeachingSettingsTab: false,
             canAccessMaterialsSettingsTab: false,
@@ -1603,7 +1623,12 @@ describe('Admin settings page', () => {
         expect(items.map((item: { key: string }) => item.key)).not.toContain('register')
     })
 
-    it('redirects removed register panels back to the register users settings view', () => {
+    it.each([
+        [undefined, undefined, '/admin/register_system?panel=users'],
+        ['users', true, '/admin/register_system?panel=users'],
+        ['notifications', true, '/admin/register_system?panel=users'],
+        ['users', false, '/admin/profile'],
+    ])('redirects the legacy register panel %s with access %s to %s', (panel, canAccessRegister, target) => {
         const replace = vi.fn()
 
         render(Settings, {
@@ -1616,6 +1641,7 @@ describe('Admin settings page', () => {
                                 config: {
                                     is_auth: true,
                                     roles: ['register_admin'],
+                                    capabilities: canAccessRegister === undefined ? {} : { register_system: canAccessRegister },
                                     selected_school: { long_name: 'Testschule' },
                                 },
                             },
@@ -1624,10 +1650,10 @@ describe('Admin settings page', () => {
                 ],
                 mocks: {
                     $route: {
-                        fullPath: '/admin/settings?tab=register&panel=notifications',
+                        fullPath: `/admin/settings?tab=register${panel ? `&panel=${panel}` : ''}`,
                         query: {
                             tab: 'register',
-                            panel: 'notifications',
+                            panel,
                         },
                     },
                     $router: {
@@ -1642,9 +1668,10 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.getByText('RegisterUsers Component')).toBeInTheDocument()
+        expect(screen.queryByText('RegisterUsers Component')).not.toBeInTheDocument()
+        expect(screen.queryByText('Anmeldetool')).not.toBeInTheDocument()
         expect(screen.queryByText('Benachrichtigungen')).not.toBeInTheDocument()
         expect(screen.queryByText('Vorlagen')).not.toBeInTheDocument()
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=register')
+        expect(replace).toHaveBeenCalledWith(target)
     })
 })

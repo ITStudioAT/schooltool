@@ -121,17 +121,16 @@ describe('Register system user navigation', () => {
         expect(screen.getByText('Anmeldetool-Liste')).toBeInTheDocument()
     })
 
-    it('prevents leaving the page while editing and keeps the settings shortcut working afterwards', async () => {
+    it('prevents leaving the page while editing and allows it after closing the dialog', async () => {
         const { router, store } = await renderPage()
         store.action = 'edit_register'
-        const failure = await router.push('/admin/settings?tab=register')
+        const failure = await router.push('/admin/settings')
         expect(isNavigationFailure(failure, NavigationFailureType.aborted)).toBe(true)
         expect(router.currentRoute.value.path).toBe('/admin/register_system')
 
         store.action = ''
-        await waitFor(() => expect(screen.getByTitle('Anmeldetool-Einstellungen')).toBeEnabled())
-        await fireEvent.click(screen.getByTitle('Anmeldetool-Einstellungen'))
-        await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/admin/settings?tab=register'))
+        await router.push('/admin/settings')
+        expect(router.currentRoute.value.fullPath).toBe('/admin/settings')
     })
 
     it('keeps navigation disabled while an edit dialog is open', async () => {
@@ -139,6 +138,6 @@ describe('Register system user navigation', () => {
         store.action = 'edit_register'
         await waitFor(() => expect(screen.getByRole('button', { name: 'Benutzer', exact: true })).toBeDisabled())
         expect(screen.getByRole('button', { name: 'Anmeldesysteme' })).toBeDisabled()
-        expect(screen.getByTitle('Anmeldetool-Einstellungen')).toBeDisabled()
+        expect(screen.queryByTitle('Anmeldetool-Einstellungen')).not.toBeInTheDocument()
     })
 })
