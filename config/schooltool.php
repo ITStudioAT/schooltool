@@ -17,7 +17,7 @@ return [
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_DATABASE'),
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_USERNAME'),
             env('SCHOOLTOOL_PREVIEW_CONTROL_DB_PASSWORD'),
-        ], static fn($value): bool => $value !== null && $value !== '') !== [],
+        ], static fn ($value): bool => $value !== null && $value !== '') !== [],
     ],
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),

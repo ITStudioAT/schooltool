@@ -767,6 +767,7 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
+
 it('saves main for background CI with an optional version or explicit local full checks', function (?string $version, bool $full): void {
     file_put_contents($this->workflowPc.'/fix.txt', "Main correction\n");
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : '').($full ? ' -Full' : ''));

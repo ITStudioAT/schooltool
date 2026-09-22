@@ -322,6 +322,7 @@ function Wait-SchooltoolCiRelease {
     }
     finally { $clock.Stop() }
 }
+
 function gitdeploy {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean

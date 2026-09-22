@@ -131,6 +131,7 @@ it('rejects untrusted progress metadata before waiting', function (string $field
     ['event', 'workflow_dispatch'], ['workflow_id', 26], ['path', '.github/workflows/other.yml'],
     ['run_attempt', 0], ['repository', ['id' => 6, 'full_name' => 'other/repository']],
 ]);
+
 it('rejects untrusted or unsuccessful workflow runs', function (string $field, mixed $value) {
     $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($field, $value): array {
         if (isset($response['workflow_runs'])) {

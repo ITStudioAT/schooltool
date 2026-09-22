@@ -169,6 +169,7 @@ class SchooltoolCiReleaseProof
             'jobs' => array_values($progress),
         ];
     }
+
     public function baseline(string $head): ?string
     {
         $this->assertCommit($head);
