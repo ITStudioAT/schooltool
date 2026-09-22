@@ -1623,7 +1623,7 @@ POWERSHELL;
         'changes outside the reviewed patch',
     ],
     'changed evidence log' => ['[System.IO.File]::AppendAllText($evidencePath, "changed")', 'reviewed patch evidence changed'],
-    'snapshot-lifetime exact patch' => ['', '', 'snapshot-lifetime'],
+    'snapshot-lifetime exact patch needs the current deployment protocol' => ['', 'older or different preview deployment protocol', 'snapshot-lifetime'],
     'snapshot-lifetime missing scope' => ['$receipt.Evidence.PSObject.Properties.Remove("Scope")', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
     'snapshot-lifetime unknown scope' => ['$receipt.Evidence.Scope = "anything"', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
     'snapshot-lifetime missing file' => ['$receipt.Evidence.ReviewedFiles = @($receipt.Evidence.ReviewedFiles | Select-Object -First 5)', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
