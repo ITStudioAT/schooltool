@@ -15,6 +15,30 @@
             right-orb-color="#86efac" />
 
         <v-sheet rounded="xl" class="register-system-nav mb-2">
+            <div class="register-system-nav__sections" role="group" aria-label="Anmeldetool-Bereiche">
+                <v-btn
+                    size="small"
+                    rounded="lg"
+                    :variant="activePanel === 'registers' ? 'flat' : 'text'"
+                    :color="activePanel === 'registers' ? 'primary' : 'white'"
+                    :aria-pressed="activePanel === 'registers'"
+                    :disabled="action !== ''"
+                    prepend-icon="mdi-clipboard-list-outline"
+                    @click="selectPanel('registers')">
+                    Anmeldesysteme
+                </v-btn>
+                <v-btn
+                    size="small"
+                    rounded="lg"
+                    :variant="activePanel === 'users' ? 'flat' : 'text'"
+                    :color="activePanel === 'users' ? 'primary' : 'white'"
+                    :aria-pressed="activePanel === 'users'"
+                    :disabled="action !== ''"
+                    prepend-icon="mdi-account-group-outline"
+                    @click="selectPanel('users')">
+                    Benutzer
+                </v-btn>
+            </div>
             <v-spacer />
             <v-btn
                 icon
@@ -23,19 +47,26 @@
                 color="grey"
                 class="register-system-nav__settings-btn"
                 title="Anmeldetool-Einstellungen"
+                :disabled="action !== ''"
                 @click="$router.push('/admin/settings?tab=register')">
                 <v-icon size="20">mdi-cog-outline</v-icon>
             </v-btn>
         </v-sheet>
 
-        <Schoolyears />
-        <ActiveRegisters />
-        <Registers v-if="selected_schoolyear" />
+        <v-row v-if="activePanel === 'users'" class="w-100 ma-0" dense>
+            <RegisterUsers />
+        </v-row>
+        <template v-else>
+            <Schoolyears />
+            <ActiveRegisters />
+            <Registers v-if="selected_schoolyear" />
+        </template>
 
     </v-container>
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
@@ -45,8 +76,10 @@ import Schoolyears from '@/pages/admin/components/schoolyears/Schoolyears.vue'
 import Registers from '@/pages/admin/registerSystem/components/RegisterSystem/Registers.vue'
 import ActiveRegisters from '@/pages/admin/registerSystem/components/RegisterSystem/ActiveRegisters.vue'
 
+const RegisterUsers = defineAsyncComponent(() => import('@/pages/admin/settings/components/RegisterUsers.vue'))
+
 export default {
-    components: { AdminSectionHero, Schoolyears, Registers, ActiveRegisters },
+    components: { AdminSectionHero, Schoolyears, Registers, ActiveRegisters, RegisterUsers },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -56,6 +89,14 @@ export default {
     },
 
     unmounted() {},
+
+    beforeRouteUpdate() {
+        return this.action === ''
+    },
+
+    beforeRouteLeave() {
+        return this.action === ''
+    },
 
     data() {
         return {
@@ -69,6 +110,10 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'action', 'selected_schoolyear', 'main_menu']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
         ...mapWritableState(useRegisterStore, ['registers', 'active_registers']),
+
+        activePanel() {
+            return this.$route.query.panel === 'users' ? 'users' : 'registers'
+        },
 
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule'
@@ -99,6 +144,9 @@ export default {
         },
 
         activeSection() {
+            if (this.activePanel === 'users') {
+                return { icon: 'mdi-account-group-outline', label: 'Benutzer', note: 'Benutzer des Anmeldetools verwalten.' }
+            }
             const sections = {
                 '': { icon: 'mdi-view-list-outline', label: 'Übersicht', note: 'Anmeldesysteme und Schuljahre verwalten.' },
                 edit_register: { icon: 'mdi-pencil-outline', label: 'Anmeldesystem bearbeiten', note: 'Einstellungen und Felder anpassen.' },
@@ -109,7 +157,19 @@ export default {
         },
     },
 
-    methods: {},
+    methods: {
+        selectPanel(panel) {
+            if (this.action !== '' || this.activePanel === panel) return
+
+            const query = { ...this.$route.query }
+            if (panel === 'users') {
+                query.panel = 'users'
+            } else {
+                delete query.panel
+            }
+            this.$router.push({ path: this.$route.path, query })
+        },
+    },
 }
 </script>
 
@@ -125,6 +185,14 @@ export default {
     padding: 6px 10px;
     display: flex;
     align-items: center;
+    gap: 8px;
+}
+
+.register-system-nav__sections {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
 }
 
 .register-system-nav__settings-btn {
