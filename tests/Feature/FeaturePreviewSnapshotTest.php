@@ -44,6 +44,55 @@ test('snapshot command does not expose database errors or secrets', function ():
         ->doesntExpectOutputToContain('very-secret')->doesntExpectOutputToContain('personal_data')->assertFailed();
 });
 
+test('preview plans bind complete lifecycle state and refuse stale or missing confirmation', function (string $change): void {
+    $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-preview-plan-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    config(['schooltool.preview.instance' => true, 'schooltool.preview.snapshot_directory' => $directory, 'schooltool.preview.snapshot_key_path' => $directory.DIRECTORY_SEPARATOR.'recipient.key']);
+    $sourceIdentity = ['database' => 'isolated-source-fixture'];
+    $guard = Mockery::mock(FeaturePreviewDatabaseGuard::class);
+    $guard->shouldReceive('target')->andReturn(Mockery::mock(Connection::class));
+    $guard->shouldReceive('sourceIdentity')->andReturnUsing(function () use (&$sourceIdentity): array {
+        return $sourceIdentity;
+    });
+    $files = Mockery::mock(FeaturePreviewSnapshotFiles::class);
+    $files->shouldReceive('assertConfigurationSafe');
+    $identity = app(FeaturePreviewSnapshotIdentityStore::class);
+    $service = new FeaturePreviewSnapshotService($guard, app(FeaturePreviewSnapshotArchive::class), $identity, $files);
+    app()->instance(FeaturePreviewSnapshotService::class, $service);
+    $feature = str_repeat('a', 32);
+    $state = ['feature_id' => $feature, 'source_commit' => str_repeat('b', 40), 'source_identity' => $sourceIdentity, 'backup' => 'first-private-backup'];
+    $originalStorage = storage_path();
+    mkdir($directory.DIRECTORY_SEPARATOR.'runtime'.DIRECTORY_SEPARATOR.'framework', 0700, true);
+    app()->useStoragePath($directory.DIRECTORY_SEPARATOR.'runtime');
+    try {
+        $service->generateKey();
+        $identity->write($state);
+        $token = $service->status($feature)['state_token'];
+        expect($token)->toMatch('/\A[a-f0-9]{64}\z/');
+        $service->assertPlan($feature, $token);
+        $this->artisan('preview:snapshot', ['action' => 'assert-plan', '--feature' => $feature, '--state-token' => $token])->assertSuccessful();
+
+        match ($change) {
+            'feature' => $identity->write(array_replace($state, ['feature_id' => str_repeat('c', 32)])),
+            'same feature source' => $identity->write(array_replace($state, ['source_commit' => str_repeat('d', 40)])),
+            'returned feature' => $identity->write(array_replace($state, ['backup' => 'later-private-backup'])),
+            'pending' => $identity->write(['phase' => 'importing'], 'snapshot-pending.json'),
+            'source identity' => $sourceIdentity = ['database' => 'different-isolated-source'],
+            'recipient key' => file_put_contents($directory.DIRECTORY_SEPARATOR.'recipient.key', FeaturePreviewSnapshotArchive::generateKeyPair()),
+            'published release' => file_put_contents(storage_path('framework/preview-release.json'), json_encode(['source' => str_repeat('e', 40)])),
+            'maintenance' => file_put_contents(storage_path('framework/down'), '{}'),
+            'missing' => $token = '',
+            'malformed' => $token = str_repeat('z', 64),
+        };
+        expect(fn () => $service->assertPlan($feature, $token))->toThrow(RuntimeException::class);
+        $this->artisan('preview:snapshot', ['action' => 'assert-plan', '--feature' => $feature, '--state-token' => $token])->assertFailed();
+        expect($identity->read()['source_commit'])->toBe($change === 'same feature source' ? str_repeat('d', 40) : $state['source_commit']);
+    } finally {
+        app()->useStoragePath($originalStorage);
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with(['feature', 'same feature source', 'returned feature', 'pending', 'source identity', 'recipient key', 'published release', 'maintenance', 'missing', 'malformed']);
+
 test('export removes completed ciphertext if the final source connection check fails', function (): void {
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-snapshot-final-check-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);

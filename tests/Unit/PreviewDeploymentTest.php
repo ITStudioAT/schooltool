@@ -131,6 +131,8 @@ BASH,
 printf 'php %s\n' "$*" >> "$PREVIEW_TEST_LOG"
 if [ "$COMPOSER_CACHE_DIR" != "$PREVIEW_TEST_EXTERNAL_CACHE" ]; then exit 41; fi
 if [ "$PREVIEW_TEST_FAILURE" = check ] && [ "${2:-}" = preview:check ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = stale-plan ] && [ "${3:-}" = assert-plan ]; then exit 1; fi
+if [ "${3:-}" = assert-plan ] && [ "$LARAVEL_STORAGE_PATH" != "$PREVIEW_TEST_TARGET_STORAGE" ]; then exit 42; fi
 if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = activate ] && [ "${3:-}" = activate ]; then exit 1; fi
@@ -161,7 +163,7 @@ fi
 exec /usr/bin/mkdir "$@"
 BASH,
         'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
-        'flock' => "#!/bin/bash\nshift 4\nexec \"\$@\"\n",
+        'flock' => "#!/bin/bash\nprintf 'preview lock acquired\\n' >> \"\$PREVIEW_TEST_LOG\"\nshift 4\nexec \"\$@\"\n",
     ];
     foreach ($executables as $name => $contents) {
         file_put_contents($directory.'/bin/'.$name, str_replace("\r\n", "\n", $contents));
@@ -170,6 +172,7 @@ BASH,
     $environment = [
         'PATH' => previewBashPath($directory.'/bin').':/usr/bin:/bin',
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
+        'PREVIEW_TEST_TARGET_STORAGE' => previewBashPath($target.'/storage'),
         'PREVIEW_TEST_CACHE_MODE' => previewBashPath($directory.'/cache-mode'),
         'PREVIEW_TEST_CACHE_CREATION' => previewBashPath($directory.'/cache-creation'),
         'COMPOSER_CACHE_DIR' => previewBashPath($directory.'/external-cache-must-not-be-used'),
@@ -179,6 +182,7 @@ BASH,
         'PREVIEW_TEST_OWNER' => $scenario === 'wrong owner' ? 'another-app' : 'schooltool-feature',
         'PREVIEW_TEST_FAILURE' => match ($scenario) {
             'runtime check failure' => 'check',
+            'stale preview plan', 'stale snapshot plan' => 'stale-plan',
             'snapshot failure' => 'import',
             'migration failure' => 'migrate',
             'activation failure' => 'activate',
@@ -194,8 +198,8 @@ BASH,
     ];
 
     try {
-        $snapshot = in_array($scenario, ['snapshot success', 'snapshot failure'], true);
-        $process = new Process([previewBashExecutable(), '-c', 'umask 022; export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-'], $directory, $environment);
+        $snapshot = in_array($scenario, ['snapshot success', 'snapshot failure', 'stale snapshot plan'], true);
+        $process = new Process([previewBashExecutable(), '-c', 'umask 022; export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-', 'schooltool-feature', $scenario === 'missing preview plan' ? '' : str_repeat('a', 64)], $directory, $environment);
         $process->run();
         $commands = is_file($directory.'/commands.log') ? file_get_contents($directory.'/commands.log') : '';
         expect($commands)->not->toContain('app:update', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
@@ -210,6 +214,9 @@ BASH,
             expect($commands)->toContain('composer cache '.previewBashPath($composerCache))
                 ->and(file_get_contents($composerCache.'/download.zip'))->toBe("package cache fixture\n")
                 ->and(is_dir($directory.'/external-cache-must-not-be-used'))->toBeFalse();
+            expect($commands)->toContain('preview:snapshot assert-plan', '--state-token='.str_repeat('a', 64))
+                ->and(strpos($commands, 'preview lock acquired'))->toBeLessThan(strpos($commands, 'preview:snapshot assert-plan'))
+                ->and(strpos($commands, 'preview:snapshot assert-plan'))->toBeLessThan(strpos($commands, 'rsync '));
             if ($scenario === 'composer cache reused') {
                 expect(file_get_contents($composerCache.'/existing-package.zip'))->toBe('cached package fixture')
                     ->and(file_exists($directory.'/cache-creation'))->toBeFalse();
@@ -236,19 +243,26 @@ BASH,
             if ($scenario === 'runtime path is file') {
                 expect($commands)->toBe('')->and(file_get_contents($target.'/storage'))->toBe('do not overwrite');
             }
+            if (in_array($scenario, ['stale preview plan', 'stale snapshot plan'], true)) {
+                expect($commands)->toContain('preview:snapshot assert-plan')
+                    ->not->toContain('preview:snapshot receive', 'preview:snapshot import', 'preview:snapshot checkpoint', 'file_put_contents');
+            }
+            if ($scenario === 'missing preview plan') {
+                expect($commands)->toBe('')->and($process->getErrorOutput())->toContain('state token is required');
+            }
             if (in_array($scenario, ['config cache missing', 'config cache unsafe mode', 'config cache wrong owner'], true)) {
                 expect($commands)->not->toContain('preview:snapshot activate', 'artisan view:cache')
                     ->and($process->getErrorOutput())->toContain('configuration cache must be a private regular file');
             }
             if (str_starts_with($scenario, 'composer ')) {
-                expect($commands)->toBe('')
+                expect($commands)->toBe("preview lock acquired\n")
                     ->and($process->getErrorOutput())->toContain('Preview Composer cache');
             }
         }
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner', 'composer cache reused', 'composer cache is file', 'composer cache symlink', 'composer parent symlink', 'composer cache wrong owner', 'composer parent wrong owner', 'composer cache unsafe mode', 'composer parent unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink']);
+})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'stale preview plan', 'stale snapshot plan', 'missing preview plan', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner', 'composer cache reused', 'composer cache is file', 'composer cache symlink', 'composer parent symlink', 'composer cache wrong owner', 'composer parent wrong owner', 'composer cache unsafe mode', 'composer parent unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink']);
 
 it('transfers a preview with strict key authentication and private snapshot permissions', function (bool $snapshot): void {
     if (PHP_OS_FAMILY !== 'Windows') {
@@ -299,7 +313,7 @@ function Copy-SchooltoolRemoteFile {
     }
 }
 $target = Get-SchooltoolPreviewTarget
-$status = [pscustomobject]@{ needs_snapshot=($env:PREVIEW_TEST_SNAPSHOT -eq '1'); public_key=('c' * 64) }
+$status = [pscustomobject]@{ needs_snapshot=($env:PREVIEW_TEST_SNAPSHOT -eq '1'); public_key=('c' * 64); state_token=('b' * 64) }
 $archive = Join-Path $env:PREVIEW_TEST_DIRECTORY 'preview.tar.gz'
 Send-SchooltoolPreview -Archive $archive -Checksum (Get-SchooltoolFileChecksum $archive) -Id ('a' * 32) -SourceBranch 'feature/new-function' -FeatureId ('d' * 32) -Target $target -SnapshotStatus $status
 $env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-main@example.test'

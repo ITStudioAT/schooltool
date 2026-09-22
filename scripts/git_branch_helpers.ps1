@@ -68,19 +68,16 @@ function Test-SchooltoolAncestor {
     $LASTEXITCODE -eq 0
 }
 
-function Get-SchooltoolActiveFeature {
-    param([switch]$AllowMissing)
-    $reservationRef = 'refs/remotes/origin/codex/active-feature'
-    $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
-    if (-not (Test-SchooltoolRef $reservationRef)) {
-        if ($features.Count -gt 1) { throw 'More than one remote feature exists. Resolve the extra branches before using this workflow.' }
-        if ($features.Count -gt 0) {
-            throw 'An existing feature has no workflow reservation. Use gitwork to register the single existing feature first.'
-        }
-        if ($AllowMissing) { return $null }
-        throw 'There is no active feature. Use gitstart NAME first.'
-    }
-    $reservationCommit = Invoke-SchooltoolGit rev-parse $reservationRef
+function Get-SchooltoolFeatureReservationRef {
+    param([string]$Branch)
+    $branchName = Get-SchooltoolFeatureBranch $Branch
+    'refs/heads/codex/features/' + $branchName.Substring('feature/'.Length)
+}
+
+function Read-SchooltoolFeatureReservation {
+    param([string]$ReservationRef)
+    $trackingRef = $ReservationRef.Replace('refs/heads/', 'refs/remotes/origin/')
+    $reservationCommit = Invoke-SchooltoolGit rev-parse $trackingRef
     $parents = (Invoke-SchooltoolGit rev-list --parents -n 1 $reservationCommit) -split ' '
     if ($parents.Count -ne 1) { throw 'The active feature reservation is invalid; nothing was changed.' }
     try {
@@ -90,10 +87,32 @@ function Get-SchooltoolActiveFeature {
     if ($metadata.branch -isnot [string] -or $metadata.id -isnot [string] -or $metadata.branch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$' -or $metadata.id -cnotmatch '^[a-f0-9]{32}$') {
         throw 'The active feature reservation contains invalid metadata.'
     }
-    if ($features.Count -ne 1 -or $features[0] -cne $metadata.branch) {
+    if (-not (Test-SchooltoolRef "refs/remotes/origin/$($metadata.branch)")) {
         throw 'The active feature reservation and remote branches disagree. No branches were changed.'
     }
-    [pscustomobject]@{ Branch = [string]$metadata.branch; Id = [string]$metadata.id; ReservationCommit = $reservationCommit }
+    [pscustomobject]@{ Branch = [string]$metadata.branch; Id = [string]$metadata.id; ReservationCommit = $reservationCommit; ReservationRef = $ReservationRef }
+}
+
+function Get-SchooltoolActiveFeature {
+    param([string]$Branch, [switch]$AllowMissing)
+    if (-not $Branch) { $Branch = Assert-SchooltoolFeature }
+    $Branch = Get-SchooltoolFeatureBranch $Branch
+    $reservationRef = Get-SchooltoolFeatureReservationRef $Branch
+    $feature = $null
+    if (Test-SchooltoolRef $reservationRef.Replace('refs/heads/', 'refs/remotes/origin/')) {
+        $feature = Read-SchooltoolFeatureReservation $reservationRef
+        if ($feature.Branch -cne $Branch) { throw 'The feature reservation belongs to another branch.' }
+    }
+    if (Test-SchooltoolRef refs/remotes/origin/codex/active-feature) {
+        $legacy = Read-SchooltoolFeatureReservation 'refs/heads/codex/active-feature'
+        if ($legacy.Branch -ceq $Branch) {
+            if ($feature) { throw 'This feature has conflicting legacy and branch reservations. Resolve them without changing its lifecycle identity.' }
+            $feature = $legacy
+        }
+    }
+    if ($feature) { return $feature }
+    if ($AllowMissing) { return $null }
+    throw "Feature $Branch has no workflow reservation. Use gitwork NAME to register an existing branch, or gitstart NAME to begin one."
 }
 
 function New-SchooltoolFeatureReservation {
@@ -118,14 +137,15 @@ function New-SchooltoolFeatureReservation {
             if (Test-Path -LiteralPath $path) { [System.IO.File]::Delete($path) }
         }
     }
-    [pscustomobject]@{ Branch = $Branch; Id = $id; ReservationCommit = $commit }
+    [pscustomobject]@{ Branch = $Branch; Id = $id; ReservationCommit = $commit; ReservationRef = (Get-SchooltoolFeatureReservationRef $Branch) }
 }
 
 function Assert-SchooltoolFeatureSnapshot {
     param($Feature, [string]$FeatureCommit, [string]$MainCommit)
     Update-SchooltoolRemote
-    $current = Get-SchooltoolActiveFeature
-    if ($current.ReservationCommit -ne $Feature.ReservationCommit -or $current.Branch -cne $Feature.Branch) {
+    $current = Get-SchooltoolActiveFeature -Branch $Feature.Branch
+    if ($current.ReservationCommit -ne $Feature.ReservationCommit -or $current.Branch -cne $Feature.Branch -or $current.Id -cne $Feature.Id -or
+        ($Feature.ReservationRef -and $current.ReservationRef -cne $Feature.ReservationRef)) {
         throw 'The active feature changed during preparation. Nothing was published.'
     }
     if ((Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$($Feature.Branch)") -ne $FeatureCommit) {
@@ -302,15 +322,6 @@ function Assert-SchooltoolCheckedSource {
     }
 }
 
-function Assert-SchooltoolNoOtherLocalFeature {
-    param([string]$AllowedBranch)
-    foreach ($localFeature in @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=2)' refs/heads/feature/)) {
-        if ($localFeature -cne $AllowedBranch -and -not (Test-SchooltoolAncestor "refs/heads/$localFeature" refs/remotes/origin/main)) {
-            throw "Local $localFeature contains unfinished work. Finish or resolve it before starting another feature."
-        }
-    }
-}
-
 function Assert-SchooltoolSaved {
     $branch = Invoke-SchooltoolGit branch --show-current
     if (-not (Test-SchooltoolRef "refs/remotes/origin/$branch")) {
@@ -348,8 +359,7 @@ function Switch-SchooltoolBranch {
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
     if ($Branch -like 'feature/*') {
-        $active = Get-SchooltoolActiveFeature
-        if ($active.Branch -cne $Branch) { throw 'The requested feature is not the active feature.' }
+        Get-SchooltoolActiveFeature -Branch $Branch | Out-Null
     }
     if (-not (Test-SchooltoolRef "refs/remotes/origin/$Branch")) {
         throw "Branch $Branch does not exist on origin."
@@ -376,15 +386,14 @@ function gitstart {
     Assert-SchooltoolClean
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
-    $active = Get-SchooltoolActiveFeature -AllowMissing
-    if ($active) { throw "Feature $($active.Branch) is already active. Use gitwork." }
-    Assert-SchooltoolNoOtherLocalFeature
+    $active = Get-SchooltoolActiveFeature -Branch $branch -AllowMissing
+    if ($active) { throw "Feature $branch already exists. Use gitwork NAME." }
     if ((Test-SchooltoolRef "refs/heads/$branch") -or (Test-SchooltoolRef "refs/remotes/origin/$branch")) {
         throw "$branch already exists. Use gitwork instead."
     }
     $mainHead = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
     $reservation = New-SchooltoolFeatureReservation $branch
-    Invoke-SchooltoolGit push --atomic '--force-with-lease=refs/heads/codex/active-feature:' "--force-with-lease=refs/heads/${branch}:" origin "$($reservation.ReservationCommit):refs/heads/codex/active-feature" "${mainHead}:refs/heads/$branch"
+    Invoke-SchooltoolGit push --atomic "--force-with-lease=$($reservation.ReservationRef):" "--force-with-lease=refs/heads/${branch}:" origin "$($reservation.ReservationCommit):$($reservation.ReservationRef)" "${mainHead}:refs/heads/$branch"
     Update-SchooltoolRemote
     Invoke-SchooltoolGit switch --track -c $branch "refs/remotes/origin/$branch"
     Invoke-SchooltoolLocalPreparation
@@ -396,23 +405,24 @@ function gitwork {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     Update-SchooltoolRemote
-    if (-not (Test-SchooltoolRef refs/remotes/origin/codex/active-feature)) {
-        $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
-        if ($features.Count -eq 1) {
-            $existing = Get-SchooltoolFeatureBranch $features[0]
-            if ($Name -and (Get-SchooltoolFeatureBranch $Name) -cne $existing) { throw 'A different feature is already open.' }
-            Assert-SchooltoolNoOtherLocalFeature $existing
-            $head = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$existing"
-            $reservation = New-SchooltoolFeatureReservation $existing
-            Invoke-SchooltoolGit push --atomic '--force-with-lease=refs/heads/codex/active-feature:' origin "$($reservation.ReservationCommit):refs/heads/codex/active-feature"
-            Assert-SchooltoolFeatureSnapshot -Feature $reservation -FeatureCommit $head
-            Write-Host "Existing feature $existing registered for this workflow." -ForegroundColor Cyan
-        }
+    Assert-SchooltoolSaved
+    $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
+    if (-not $Name) {
+        if ($features.Count -eq 0) { throw 'There is no open feature. Use gitstart NAME.' }
+        if ($features.Count -ne 1) { throw "Choose a feature explicitly with gitwork NAME. Open features: $($features -join ', ')" }
+        $Name = $features[0]
     }
-    $active = Get-SchooltoolActiveFeature
-    if ($Name -and (Get-SchooltoolFeatureBranch $Name) -cne $active.Branch) { throw "Only $($active.Branch) is active. Use gitwork without a name." }
-    Assert-SchooltoolNoOtherLocalFeature $active.Branch
-    Switch-SchooltoolBranch $active.Branch
+    $branch = Get-SchooltoolFeatureBranch $Name
+    if ($branch -cnotin $features) { throw "Feature $branch does not exist on origin. Use gitstart NAME." }
+    $active = Get-SchooltoolActiveFeature -Branch $branch -AllowMissing
+    if (-not $active) {
+        $head = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$branch"
+        $reservation = New-SchooltoolFeatureReservation $branch
+        Invoke-SchooltoolGit push --atomic "--force-with-lease=$($reservation.ReservationRef):" "--force-with-lease=refs/heads/${branch}:$head" origin "$($reservation.ReservationCommit):$($reservation.ReservationRef)" "${head}:refs/heads/$branch"
+        Assert-SchooltoolFeatureSnapshot -Feature $reservation -FeatureCommit $head
+        Write-Host "Existing feature $branch registered for this workflow." -ForegroundColor Cyan
+    }
+    Switch-SchooltoolBranch $branch
 }
 
 function gitmain {
@@ -484,6 +494,8 @@ function gitcheck {
     Update-SchooltoolRemote
     $branch = Invoke-SchooltoolGit branch --show-current
     Write-Host "Branch: $branch" -ForegroundColor Cyan
+    $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
+    Write-Host "Open features: $($features -join ', '). Select with gitwork NAME; preview with gitpreview -Feature NAME." -ForegroundColor Cyan
     Invoke-SchooltoolGit status --short
     if (Test-SchooltoolRef "refs/remotes/origin/$branch") {
         $counts = (Invoke-SchooltoolGit rev-list --left-right --count "HEAD...refs/remotes/origin/$branch") -split '\s+'

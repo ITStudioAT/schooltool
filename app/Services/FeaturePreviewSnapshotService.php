@@ -71,12 +71,51 @@ class FeaturePreviewSnapshotService
             throw new RuntimeException('A previous preview snapshot deployment is incomplete. Inspect its private backup and complete recovery before another deployment.');
         }
 
+        $publicKey = FeaturePreviewSnapshotArchive::publicKey($this->keyPair());
+        $sourceIdentity = $this->database->sourceIdentity();
+
         return [
-            'public_key' => FeaturePreviewSnapshotArchive::publicKey($this->keyPair()),
-            'needs_snapshot' => ($state['feature_id'] ?? null) !== $feature || ($state['source_identity'] ?? null) !== $this->database->sourceIdentity(),
+            'public_key' => $publicKey,
+            'needs_snapshot' => ($state['feature_id'] ?? null) !== $feature || ($state['source_identity'] ?? null) !== $sourceIdentity,
+            'state_token' => hash('sha256', json_encode([$state, $pending, $sourceIdentity, $publicKey, $this->runtimeState()], JSON_THROW_ON_ERROR)),
             'feature_id' => $state['feature_id'] ?? null,
             'snapshot_directory' => str_replace('\\', '/', $this->identity->directory()),
         ];
+    }
+
+    public function assertPlan(string $feature, string $stateToken): void
+    {
+        if (preg_match('/\A[a-f0-9]{64}\z/', $stateToken) !== 1) {
+            throw new RuntimeException('A verified preview state token is required before deployment.');
+        }
+        if (! hash_equals($stateToken, $this->status($feature)['state_token'])) {
+            throw new RuntimeException('The preview changed after its deployment plan was confirmed. Prepare and confirm a new plan; no preview data was replaced.');
+        }
+    }
+
+    /** @return array<string, ?string> */
+    private function runtimeState(): array
+    {
+        $state = [];
+        foreach (['preview-release.json', 'down'] as $name) {
+            $path = storage_path('framework/'.$name);
+            clearstatcache(true, $path);
+            if (is_link($path) || (file_exists($path) && ! is_file($path))) {
+                throw new RuntimeException('Preview runtime identity must use regular files.');
+            }
+            if (! file_exists($path)) {
+                $state[$name] = null;
+
+                continue;
+            }
+            $checksum = hash_file('sha256', $path);
+            if ($checksum === false) {
+                throw new RuntimeException('Cannot verify the current preview runtime identity.');
+            }
+            $state[$name] = $checksum;
+        }
+
+        return $state;
     }
 
     /** @return array{artifact: string, path: string, sha256: string} */

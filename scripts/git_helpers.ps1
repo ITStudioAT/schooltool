@@ -462,13 +462,13 @@ function Invoke-SchooltoolPublish {
             if (-not (Test-SchooltoolAncestor $ExpectedFeatureCommit $releaseCommit)) { throw 'The feature is not fully included in the release.' }
             $pushArguments += @(
                 "--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit",
-                "--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)"
+                "--force-with-lease=$($Feature.ReservationRef):$($Feature.ReservationCommit)"
             )
         }
         $pushArguments += @('origin', "${releaseCommit}:refs/heads/main")
         if ($Feature) {
             $pushArguments += @(':refs/heads/' + $Feature.Branch)
-            $pushArguments += ':refs/heads/codex/active-feature'
+            $pushArguments += ':' + $Feature.ReservationRef
         }
 
         if ($version) {
