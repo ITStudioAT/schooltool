@@ -242,7 +242,9 @@ it('validates the published frontend release with the complete background CI pol
         ->toContain('Test-SchooltoolAncestor $mainBeforeChecks $releaseCommit')
         ->toContain('$pushArguments = @(\'--atomic\', "--force-with-lease=refs/heads/main:$mainBeforeChecks")')
         ->toContain('--force-with-lease=refs/heads/$($Feature.Branch):$ExpectedFeatureCommit')
-        ->toContain('--force-with-lease=refs/heads/codex/active-feature:$($Feature.ReservationCommit)')
+        ->toContain('--force-with-lease=$($Feature.ReservationRef):$($Feature.ReservationCommit)')
+        ->toContain('$pushArguments += \':\' + $Feature.ReservationRef')
+        ->not->toContain(':refs/heads/codex/active-feature')
         ->toContain('$pushArguments += @(\'origin\', "${releaseCommit}:refs/heads/main")')
         ->toContain('Use gitdeploy for live publication; it requires successful CI for this exact release.');
 });
