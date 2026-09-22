@@ -1224,7 +1224,7 @@ export default {
 
 .admin-dashboard-page__content {
     max-width: 1224px;
-    margin-inline: auto;
+    margin-inline: 0;
     padding: 0;
 }
 
