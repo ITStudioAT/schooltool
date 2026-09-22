@@ -6,8 +6,6 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 Dieser Ablauf verwendet `main` und mehrere unabhängig offene `feature/*`. Genau eine gemeinsame Online-Vorschau zeigt das ausdrücklich ausgewählte Feature. GitHub, die Live-Anwendung und die Online-Vorschau werden getrennt aktualisiert. Alle Windows-Befehle werden im Projektverzeichnis ausgeführt.
 
-Das vollständige [PDF-Handbuch mit Schrittfolgen und Beispielen](public/documentation/Schooltool_Git_Workflow.pdf) dokumentiert den gesamten Ablauf. Die reproduzierbare Quelle ist `scripts/build_git_workflow_pdf.py` (Python mit ReportLab; Windows-Schriften Arial und Consolas).
-
 Die Anleitung beschreibt den implementierten Ablauf und seine Einrichtung. Sie ist kein Nachweis eines erfolgreichen Online-Deployments. Ein funktionierender SSH-Zugang allein bedeutet noch nicht, dass Datenbanktrennung und Vorschau eingerichtet sind. Alle Werte in `<…>` sind durch geprüfte eigene Werte zu ersetzen; keine Schlüssel oder Kennwörter in dieses Dokument eintragen.
 
 ### Befehle und Auswirkungen
