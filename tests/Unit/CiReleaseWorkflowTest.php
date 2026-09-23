@@ -17,6 +17,18 @@ function releaseCiWorkflow(): array
     return Yaml::parseFile(dirname(__DIR__, 2).'/.github/workflows/ci.yml');
 }
 
+it('checks saved features and exact preview artifacts asynchronously without hiding failures', function (): void {
+    $workflow = releaseCiWorkflow();
+    expect($workflow['on']['push']['branches'])->toBe(['main', 'feature/**', 'preview/**'])
+        ->and($workflow['jobs']['release-integrity']['if'])->toBe("github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/preview/'))");
+    foreach ($workflow['jobs'] as $job) {
+        expect($job['continue-on-error'] ?? false)->toBeFalse();
+        foreach ($job['steps'] as $step) {
+            expect($step['continue-on-error'] ?? false)->toBeFalse();
+        }
+    }
+});
+
 it('runs every expensive gate on main code changes and isolates platform resources', function (): void {
     $workflow = releaseCiWorkflow();
 
@@ -82,6 +94,7 @@ it('keeps pull requests scheduled manual and non-main runs on the full lane', fu
     ['schedule', 'refs/heads/main'],
     ['workflow_dispatch', 'refs/heads/main'],
     ['push', 'refs/heads/feature/example'],
+    ['push', 'refs/heads/preview/0123456789abcdef0123456789abcdef'],
 ]);
 
 it('provides the locked Windows dependency extensions without bypassing platform checks', function (): void {

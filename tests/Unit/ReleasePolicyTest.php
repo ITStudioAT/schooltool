@@ -270,6 +270,59 @@ it('proves frontend equivalence while allowing only each bound source marker to 
     expect(json_decode($command->getOutput(), true, flags: JSON_THROW_ON_ERROR)['equivalent'])->toBeTrue();
 });
 
+it('smokes the exact release runtime in isolation and rejects broken candidates', function (string $failure, ?string $error): void {
+    $root = dirname(__DIR__, 2);
+    $directory = $this->policyDirectory;
+    $composer = json_decode(file_get_contents($root.'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
+    $composer['extra']['laravel']['dont-discover'] = ['*'];
+    releasePolicyWrite($directory, 'composer.json', json_encode($composer, JSON_THROW_ON_ERROR));
+    releasePolicyWrite($directory, 'composer.lock', file_get_contents($root.'/composer.lock'));
+    releasePolicyWrite($directory, 'vendor/autoload.php', '<?php return require '.var_export($root.'/vendor/autoload.php', true).';');
+    releasePolicyWrite($directory, '.gitignore', "vendor/\n");
+    releasePolicyWrite($directory, 'artisan', '<?php');
+    releasePolicyWrite($directory, 'public/index.php', '<?php');
+    foreach (['database', 'routes', 'scripts', 'resources', 'lang'] as $path) {
+        releasePolicyWrite($directory, $path.'/.gitkeep', '');
+    }
+    releasePolicyWrite($directory, 'bootstrap/app.php', <<<'PHP'
+<?php
+return Illuminate\Foundation\Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(health: '/up')
+    ->withProviders([App\Providers\SmokeProbe::class])
+    ->withExceptions(static function (): void {})
+    ->create();
+PHP);
+    releasePolicyWrite($directory, 'config/database.php', "<?php return ['default' => env('DB_CONNECTION'), 'connections' => ['sqlite' => ['driver' => 'sqlite', 'database' => env('DB_DATABASE')]]];");
+    $probe = match ($failure) {
+        'syntax' => 'this is invalid php;',
+        'bootstrap' => 'throw new \\RuntimeException("BROKEN_CANDIDATE");',
+        'external database' => '$this->app["db"]->connection("mysql")->getPdo();',
+        'external HTTP' => '\\Illuminate\\Support\\Facades\\Http::get("https://example.invalid");',
+        default => 'if (env("SMOKE_PARENT_SECRET") !== null || env("DB_DATABASE") !== ":memory:" || ! str_contains(__FILE__, "schooltool-smoke-")) { throw new \\RuntimeException("SMOKE_ISOLATION_FAILED"); }',
+    };
+    releasePolicyWrite($directory, 'app/Providers/SmokeProbe.php', '<?php namespace App\\Providers; class SmokeProbe extends \\Illuminate\\Support\\ServiceProvider { public function boot(): void { '.$probe.' } }');
+    $source = releasePolicyCommit($directory);
+    $overrides = $failure === 'missing asset' ? ['manifest.json' => '{"main":{"file":"assets/absent.js"}}'] : [];
+    $release = releasePolicyArtifacts($directory, $source, $overrides);
+    file_put_contents($directory.'/app/Providers/SmokeProbe.php', '<?php throw new RuntimeException("LOCAL_CHECKOUT_EXECUTED");');
+    $process = new Process([PHP_BINARY, $root.'/scripts/release-policy.php', 'smoke', '--base', $release, '--head', $release], $directory, ['SMOKE_PARENT_SECRET' => 'must-not-reach-child'], timeout: 60);
+    $process->run();
+    if ($error !== null) {
+        expect($process->isSuccessful())->toBeFalse()
+            ->and($process->getOutput())->toContain($error)->not->toContain('LOCAL_CHECKOUT_EXECUTED');
+    } else {
+        expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+            ->and(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['commit' => $release, 'runtime' => 'bootstrap-and-health']);
+    }
+})->with([
+    'healthy exact candidate' => ['none', null],
+    'syntax error' => ['syntax', 'Release smoke check failed'],
+    'runtime exception' => ['bootstrap', 'BROKEN_CANDIDATE'],
+    'external database' => ['external database', 'Isolated runtime smoke failed'],
+    'external HTTP' => ['external HTTP', 'Isolated runtime smoke failed'],
+    'missing frontend entry' => ['missing asset', 'missing frontend asset'],
+]);
+
 it('requires full checks for changed frontend payloads and runtime metadata', function (string $path): void {
     $base = releasePolicyArtifacts($this->policyDirectory, $this->policyBase);
     releasePolicyWrite($this->policyDirectory, 'README.md', 'Documentation changed');

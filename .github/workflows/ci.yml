@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - 'feature/**'
+      - 'preview/**'
   pull_request:
   workflow_dispatch:
   schedule:
@@ -477,7 +479,7 @@ jobs:
 
   release-integrity:
     name: Verify commit-bound deployment release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/preview/'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

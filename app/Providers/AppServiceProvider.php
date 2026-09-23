@@ -9,6 +9,8 @@ use App\Services\EmailAliasResolver;
 use App\Services\FeaturePreviewMailService;
 use App\Services\FeaturePreviewRuntimeService;
 use App\Services\SchoolUserLicenceAssignmentService;
+use App\Services\SchoolyearService;
+use Illuminate\Auth\Events\Authenticated;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
@@ -24,6 +26,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Fortify;
 use Laravel\Pulse\Facades\Pulse;
+use Laravel\Sanctum\Events\TokenAuthenticated;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -154,6 +157,12 @@ class AppServiceProvider extends ServiceProvider
 
         Event::subscribe(TwoFactorSecuritySubscriber::class);
         Event::subscribe(StudentTimetableV3SessionSubscriber::class);
+        Event::listen([Authenticated::class, TokenAuthenticated::class], function (Authenticated|TokenAuthenticated $event): void {
+            $user = $event instanceof Authenticated ? $event->user : $event->token->tokenable;
+            if ($user instanceof User && ! $user->schoolyear_id) {
+                app(SchoolyearService::class)->ensureActualSchoolyearForUser($user);
+            }
+        });
 
         Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
 

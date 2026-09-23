@@ -79,7 +79,7 @@ class AdminController extends Controller
 
         /** @var User|null $user */
         $user = Auth::check() ? Auth::user() : null;
-        if ($user && ! $user->schoolyear_id && $user->hasAnyRole(self::STUDENTS_TIMETABLES_ROLES)) {
+        if ($user && ! $user->schoolyear_id) {
             app(SchoolyearService::class)->ensureActualSchoolyearForUser($user);
         }
 

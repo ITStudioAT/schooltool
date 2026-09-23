@@ -1223,7 +1223,7 @@ export default {
 }
 
 .admin-dashboard-page__content {
-    max-width: 1224px;
+    max-width: none;
     margin-inline: 0;
     padding: 0;
 }
@@ -1349,6 +1349,7 @@ export default {
 }
 
 .admin-dashboard-page__main {
+    max-width: 1224px;
     padding: 28px 34px 40px;
 }
 

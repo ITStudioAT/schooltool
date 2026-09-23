@@ -257,10 +257,10 @@ POWERSHELL;
     'shell syntax in run ID' => '$script:proofResponse.run_id = "123;echo"',
 ]);
 
-it('deploys only an unchanged release with the same successful CI attempt after confirmation', function (string $scenario, bool $allowed): void {
+it('deploys only a smoke-checked unchanged release without waiting for CI', function (string $scenario, bool $allowed, string $shell): void {
     $command = '$script:scenario = '.var_export($scenario, true)."\n".<<<'POWERSHELL'
 $script:confirmation = $false
-$script:proofCalls = 0
+$script:smokePassed = $false
 function Assert-SchooltoolRepository {}
 function Assert-SchooltoolClean {}
 function Update-SchooltoolRemote {}
@@ -274,54 +274,115 @@ function Invoke-SchooltoolGit {
         'branch --show-current' { 'main'; return }
         'rev-parse HEAD' { if ($script:confirmation -and $script:scenario -eq 'checkout changed') { 'e'*40 } else { 'a'*40 }; return }
         'rev-parse refs/remotes/origin/main' { if ($script:confirmation -and $script:scenario -eq 'main changed') { 'f'*40 } else { 'a'*40 }; return }
-        'ls-remote --refs origin refs/heads/main' { ('a'*40) + "`trefs/heads/main"; return }
+        'ls-remote --refs origin refs/heads/main' { ('a'*40) + [char]9 + 'refs/heads/main'; return }
     }
     if ($arguments -like 'show *:deployment/source-commit') { 'b'*40; return }
     if ($arguments -like 'show *:deployment/frontend-build.sha256') { 'c'*64; return }
     if ($arguments -like 'rev-parse *:deployment/source-manifest.sha256') { 'd'*40; return }
     throw "Unexpected Git fixture: $arguments"
 }
-function Assert-SchooltoolCiRelease {
+function Assert-SchooltoolReleasePackage {
+    param([string]$Commit, [string]$SourceCommit)
+    if ($Commit -cne ('a'*40) -or $SourceCommit -cne ('b'*40)) { throw 'Unpinned package.' }
+    if ($script:scenario -eq 'bad package') { throw 'Package rejected.' }
+}
+function Invoke-SchooltoolReleaseSmoke {
     param([string]$Commit)
-    if ($Commit -cne ('a'*40)) { throw 'Unpinned proof request.' }
-    $script:proofCalls++
-    if ($script:scenario -eq 'not approved' -or ($script:proofCalls -eq 2 -and $script:scenario -eq 'approval revoked')) { throw 'GitHub checks not successful.' }
-    $attempt = if ($script:proofCalls -eq 2 -and $script:scenario -eq 'attempt changed') { 2 } else { 1 }
-    [pscustomobject]@{commit=$Commit;run_id=123;run_attempt=$attempt;lane='full';url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
+    if ($Commit -cne ('a'*40) -or $script:confirmation) { throw 'Unpinned or late smoke.' }
+    if ($script:scenario -eq 'smoke failed') { throw 'Smoke failed.' }
+    $script:smokePassed = $true
 }
-function Get-SchooltoolCiStatus {
-    [pscustomobject]@{status='completed';conclusion='success';run_id=123;run_attempt=1;jobs=@();url='https://github.com/ITStudioAT/schooltool/actions/runs/123'}
-}
+function Assert-SchooltoolCiRelease { throw 'CI_MUST_NOT_BLOCK' }
+function Wait-SchooltoolCiRelease { throw 'CI_MUST_NOT_BLOCK' }
+function Get-SchooltoolCiStatus { throw 'CI_MUST_NOT_BLOCK' }
 function Read-Host { $script:confirmation=$true; if ($script:scenario -eq 'cancelled') { '' } else { 'LIVE' } }
-function Invoke-SchooltoolRemote {
-    param($Target,[string]$Command)
-    if ($Command -like '*composer pdeploy') {
-        if ($script:proofCalls -ne 2 -or $Command -notlike "*SCHOOLTOOL_CI_RUN_ID='123' SCHOOLTOOL_CI_RUN_ATTEMPT='1' composer pdeploy") { throw 'Deployment lost its checked proof.' }
-        Write-Output 'PINNED_LIVE_DEPLOYMENT'
-    } else { Write-Output 'READ_ONLY_PREFLIGHT' }
+function Invoke-SchooltoolRemote { Write-Output 'READ_ONLY_PREFLIGHT' }
+function Send-SchooltoolLiveRelease {
+    param($Target, $Commit, $SourceCommit, $ArchiveHash, $ManifestBlob)
+    if (-not $script:confirmation -or -not $script:smokePassed -or $Commit -cne ('a'*40) -or $SourceCommit -cne ('b'*40) -or $ArchiveHash -cne ('c'*64) -or $ManifestBlob -cne ('d'*40)) { throw 'Deployment lost its confirmed identity.' }
+    Write-Output 'PINNED_LIVE_DEPLOYMENT'
 }
 try { gitdeploy }
 catch { Write-Output ('DEPLOYMENT_BLOCKED: ' + $_.Exception.Message) }
 POWERSHELL;
-    $process = deploymentSshProcess($command);
-    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
+    $process = deploymentSshProcess($command, $shell);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->not->toContain('CI_MUST_NOT_BLOCK');
     if ($allowed) {
         expect($process->getOutput())->toContain('PINNED_LIVE_DEPLOYMENT')->not->toContain('DEPLOYMENT_BLOCKED');
     } else {
         expect($process->getOutput())->toContain('DEPLOYMENT_BLOCKED')->not->toContain('PINNED_LIVE_DEPLOYMENT');
     }
-    if ($scenario === 'not approved') {
+    if (in_array($scenario, ['bad package', 'smoke failed'], true)) {
         expect($process->getOutput())->not->toContain('READ_ONLY_PREFLIGHT');
     }
 })->with([
-    'same approved attempt' => ['approved', true],
-    'pending or failed first proof' => ['not approved', false],
-    'approval revoked during confirmation' => ['approval revoked', false],
-    'rerun started during confirmation' => ['attempt changed', false],
+    'pending failed or missing CI cannot block' => ['ci irrelevant', true],
+    'package failed' => ['bad package', false],
+    'smoke failed' => ['smoke failed', false],
     'remote main advanced' => ['main changed', false],
     'local checkout changed' => ['checkout changed', false],
     'operator cancelled' => ['cancelled', false],
-]);
+])->with(['powershell', 'pwsh']);
+it('rejects backend changes hidden among release artifacts including renamed source files', function (bool $changed): void {
+    $code = '$script:changed = '.($changed ? '$true' : '$false')."\n".<<<'POWERSHELL'
+function php {
+    $global:LASTEXITCODE = 0
+    @{equivalent=$true;base=('a'*40);head=('a'*40)} | ConvertTo-Json -Compress
+}
+function Invoke-SchooltoolGit {
+    if (($args[0..3] -join ' ') -cne '--no-replace-objects diff --no-renames --name-only') { throw 'Source rename detection is unsafe.' }
+    'deployment/source-manifest.sha256'
+    if ($script:changed) { 'app/Source.php' }
+}
+try {
+    Assert-SchooltoolReleasePackage -Commit ('a'*40) -SourceCommit ('b'*40)
+    if ($script:changed) { throw 'SOURCE_CHANGE_ACCEPTED' }
+    Write-Output 'PACKAGE_ACCEPTED'
+}
+catch {
+    if (-not $script:changed -or $_.Exception.Message -cne 'The release commit contains changes beyond its bound artifacts.') { throw }
+    Write-Output 'SOURCE_CHANGE_BLOCKED'
+}
+POWERSHELL;
+    $process = deploymentSshProcess($code);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toContain($changed ? 'SOURCE_CHANGE_BLOCKED' : 'PACKAGE_ACCEPTED');
+})->with([false, true]);
+
+it('transfers the pinned live launcher and preserves failures while cleaning up', function (bool $fail, string $shell): void {
+    $code = '$script:fail = '.($fail ? '$true' : '$false')."\n".<<<'POWERSHELL'
+function Invoke-SchooltoolGit {
+    if (($args -join ' ') -cne ('--no-replace-objects show ' + ('a'*40) + ':scripts/pdeploy_cloudways.sh')) { throw 'Wrong launcher source.' }
+    '#!/bin/bash'
+    '# background-ci-v1 SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY'
+}
+function Copy-SchooltoolRemoteFile {
+    param($Target,$LocalPath,$RemotePath)
+    $script:localPath = $LocalPath
+    $script:remotePath = $RemotePath
+    if ([IO.File]::ReadAllText($LocalPath).Contains("`r")) { throw 'Launcher line endings changed.' }
+    if (-not $RemotePath.StartsWith($Target.Path + '/storage/framework/schooltool-pdeploy-')) { throw 'Unsafe staging path.' }
+    Write-Output 'PINNED_LAUNCHER_UPLOADED'
+}
+function Invoke-SchooltoolRemote {
+    param($Target,$Command)
+    if ($Command.StartsWith('rm -f -- ')) { Write-Output 'REMOTE_LAUNCHER_REMOVED'; return }
+    foreach ($pin in @('SCHOOLTOOL_EXPECTED_MAIN_COMMIT','SCHOOLTOOL_EXPECTED_SOURCE_COMMIT','SCHOOLTOOL_EXPECTED_FRONTEND_SHA256','SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB',"SCHOOLTOOL_PUBLICATION_POLICY='background-ci-v1'",'sha256sum -c -')) {
+        if (-not $Command.Contains($pin)) { throw 'Missing pinned handoff.' }
+    }
+    if ($Command.Contains('SCHOOLTOOL_CI_RUN')) { throw 'Invented CI evidence.' }
+    if ($script:fail) { throw 'SIMULATED_DEPLOYMENT_FAILURE' }
+    Write-Output 'STAGED_LAUNCHER_EXECUTED'
+}
+try { Send-SchooltoolLiveRelease (Get-SchooltoolDeploymentTarget 'MAIN') ('a'*40) ('b'*40) ('c'*64) ('d'*40) }
+catch { if (-not $script:fail -or $_.Exception.Message -cne 'SIMULATED_DEPLOYMENT_FAILURE') { throw }; Write-Output 'FAILURE_PRESERVED' }
+if (Test-Path -LiteralPath $script:localPath) { throw 'Local launcher not removed.' }
+POWERSHELL;
+    $process = deploymentSshProcess($code, $shell);
+    expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toContain('PINNED_LAUNCHER_UPLOADED', 'REMOTE_LAUNCHER_REMOVED', $fail ? 'FAILURE_PRESERVED' : 'STAGED_LAUNCHER_EXECUTED');
+})->with([false, true])->with(['powershell', 'pwsh']);
 
 it('waits for CI safely with progress in native PowerShell', function (string $scenario, string $expected, string $shell): void {
     $command = '$script:scenario = '.var_export($scenario, true)."\n".<<<'POWERSHELL'

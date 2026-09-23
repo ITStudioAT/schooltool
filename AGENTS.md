@@ -108,7 +108,7 @@ and state only a limitation that affects the result.
   for a focused run. Do not accidentally invoke the full suite.
 - PHP formatting after PHP changes: `vendor/bin/pint --dirty --format agent`.
 - Before a commit: `php scripts/check-encoding.php` (also enforced by the hook).
-- Full checks are for the explicit full/release path, not a default development step.
+- Full local checks are only for explicitly requested full validation, not ordinary publication.
 - A successful check need not be rerun unless relevant code/configuration changes.
 - Do not hide failures, delete tests, skip failed cases or call unverified work tested.
 
@@ -118,11 +118,12 @@ Follow the existing gitsave/gitpreview/gitrelease/gitdeploy helpers.
 Use `codex/` for task branches unless the user requests another name.
 Do not force-push, rewrite published history or change dependencies without scope.
 
-- Main gitsave builds a source-bound release and relies on exact-commit CI;
+- Main gitsave builds a source-bound release and starts nonblocking background CI;
   do not add optional `-Full` unless requested or justified by a concrete issue.
-- Preview/feature-release mandatory local checks remain required by those helpers.
-- Production deployment requires explicit intent, exact successful CI evidence,
-  pinned source/frontend identity and the existing LIVE confirmation.
+- Preview/feature-release require build and package preflight, not full local suites.
+- Production deployment requires explicit intent, the bounded isolated runtime smoke,
+  pinned source/frontend identity and the existing LIVE confirmation. Full CI is
+  asynchronous and must not block save, preview, release or live deployment.
 - Never bypass a gate with bare deployment scripts or reuse unrelated test logs.
 - Destructive release migrations require the authorized target and a validated backup.
 - Keep tests of local changes separate from publication; do not start publication

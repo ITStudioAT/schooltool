@@ -440,7 +440,7 @@ function gitsave {
         return
     }
     $branch = Assert-SchooltoolFeature
-    if ($Full) { throw 'Full local release checks are available on main; use gitpreview or gitrelease to check a feature.' }
+    if ($Full) { throw 'Full local release checks are optional on main; saved features use background CI.' }
     if ($Version) { throw 'Versions can only be published on main or with gitrelease.' }
     Update-SchooltoolRemote
     $active = Get-SchooltoolActiveFeature
@@ -570,7 +570,7 @@ function gitrelease {
         try {
             Invoke-SchooltoolGit merge --no-ff --no-edit -m $Message $featureHead
             Save-SchooltoolCandidate $candidate
-            Invoke-SchooltoolPublish -message $Message -version $Version -Full -ExpectedMainCommit $mainHead -Feature $active -ExpectedFeatureCommit $featureHead -Candidate $candidate
+            Invoke-SchooltoolPublish -message $Message -version $Version -ExpectedMainCommit $mainHead -Feature $active -ExpectedFeatureCommit $featureHead -Candidate $candidate
             $releaseHead = Invoke-SchooltoolGit rev-parse HEAD
         }
         finally { Pop-Location }

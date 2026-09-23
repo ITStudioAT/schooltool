@@ -323,6 +323,68 @@ function Wait-SchooltoolCiRelease {
     finally { $clock.Stop() }
 }
 
+function Assert-SchooltoolReleasePackage {
+    param([string]$Commit, [string]$SourceCommit)
+    $result = & php (Join-Path $PSScriptRoot 'release-policy.php') assets --base $Commit --head $Commit
+    if ($LASTEXITCODE -ne 0) { throw "Release package verification failed: $($result -join ' ')" }
+    $integrity = ($result -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    if ($integrity.equivalent -ne $true -or $integrity.base -cne $Commit -or $integrity.head -cne $Commit) { throw 'Invalid release package verification result.' }
+    $artifacts = @('deployment/frontend-build.sha256', 'deployment/frontend-build.tar.gz', 'deployment/source-commit', 'deployment/source-manifest.sha256')
+    foreach ($path in @(Invoke-SchooltoolGit --no-replace-objects diff --no-renames --name-only $SourceCommit $Commit)) {
+        if ($path -cnotin $artifacts) { throw 'The release commit contains changes beyond its bound artifacts.' }
+    }
+}
+
+function Send-SchooltoolLiveRelease {
+    param($Target, [string]$Commit, [string]$SourceCommit, [string]$ArchiveHash, [string]$ManifestBlob)
+    # Run the exact release launcher, including on servers still using the old CI handoff.
+    $launcher = (Invoke-SchooltoolGit --no-replace-objects show "${Commit}:scripts/pdeploy_cloudways.sh") -join "`n"
+    if (-not $launcher.Contains('background-ci-v1') -or -not $launcher.Contains('SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY')) {
+        throw 'Publish the background CI workflow to main before using this gitdeploy.'
+    }
+    $id = [guid]::NewGuid().ToString('N')
+    $localPath = Join-Path ([System.IO.Path]::GetTempPath()) "schooltool-pdeploy-$id.sh"
+    $remotePath = "$($Target.Path)/storage/framework/schooltool-pdeploy-$id.sh"
+    $uploaded = $false
+    try {
+        [System.IO.File]::WriteAllText($localPath, ($launcher.Replace("`r`n", "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+        $launcherHash = Get-SchooltoolFileChecksum $localPath
+        Copy-SchooltoolRemoteFile -Target $Target -LocalPath $localPath -RemotePath $remotePath
+        $uploaded = $true
+        Invoke-SchooltoolRemote -Target $Target -Command "echo '$launcherHash  $remotePath' | sha256sum -c -; SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY='$($Target.Path)' SCHOOLTOOL_EXPECTED_MAIN_COMMIT='$Commit' SCHOOLTOOL_EXPECTED_SOURCE_COMMIT='$SourceCommit' SCHOOLTOOL_EXPECTED_FRONTEND_SHA256='$ArchiveHash' SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB='$ManifestBlob' SCHOOLTOOL_PUBLICATION_POLICY='background-ci-v1' bash '$remotePath'"
+    }
+    finally {
+        if (Test-Path -LiteralPath $localPath) { [System.IO.File]::Delete($localPath) }
+        if ($uploaded) {
+            try { Invoke-SchooltoolRemote -Target $Target -Command "rm -f -- '$remotePath'" }
+            catch { Write-Warning "Deployment launcher cleanup failed: $remotePath" }
+        }
+    }
+}
+
+function Invoke-SchooltoolReleaseSmoke {
+    param([string]$Commit)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $output = Join-Path ([IO.Path]::GetTempPath()) ('schooltool-smoke-' + [guid]::NewGuid().ToString('N'))
+    try {
+        $process = Start-Process -FilePath (Get-Command php -CommandType Application).Source -ArgumentList @(
+            ('"' + (Join-Path $PSScriptRoot 'release-policy.php') + '"'), 'smoke', '--base', $Commit, '--head', $Commit
+        ) -NoNewWindow -PassThru -RedirectStandardOutput $output -RedirectStandardError "$output.err"
+        $null = $process.Handle
+        if (-not $process.WaitForExit(60000)) { $process.Kill(); $process.WaitForExit(); throw 'Release smoke check exceeded 60 seconds. Nothing was deployed.' }
+        $process.WaitForExit()
+        $process.Refresh()
+        if ($process.ExitCode -ne 0) { throw "Release smoke check failed: $([IO.File]::ReadAllText($output)) $([IO.File]::ReadAllText("$output.err"))" }
+        $smoke = [IO.File]::ReadAllText($output) | ConvertFrom-Json -ErrorAction Stop
+        if ($smoke.commit -cne $Commit -or $smoke.php_files -lt 1 -or $smoke.runtime -cne 'bootstrap-and-health') { throw 'Release smoke result does not match the exact candidate.' }
+        Write-Host "Smoke passed: isolated application bootstrap and /up, $($smoke.php_files) PHP files and frontend references ($([math]::Round($timer.Elapsed.TotalSeconds, 1)) seconds). SQLite memory only." -ForegroundColor Green
+    }
+    finally {
+        if ($process) { $process.Dispose() }
+        foreach ($path in @($output, "$output.err")) { if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) } }
+    }
+}
+
 function gitdeploy {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
@@ -338,20 +400,19 @@ function gitdeploy {
     if ($sourceCommit -cnotmatch '^[a-f0-9]{40,64}$' -or $archiveHash -cnotmatch '^[a-f0-9]{64}$' -or $manifestBlob -cnotmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$') {
         throw 'main does not contain a valid release artifact. Publish it with gitsave or gitrelease first.'
     }
-    $proof = Wait-SchooltoolCiRelease -Commit $mainCommit
-    Invoke-SchooltoolRemote -Target $target -Command 'test -f scripts/pdeploy_cloudways.sh; grep -q SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB scripts/pdeploy_cloudways.sh; command -v composer >/dev/null'
+    Assert-SchooltoolReleasePackage -Commit $mainCommit -SourceCommit $sourceCommit
+    Invoke-SchooltoolReleaseSmoke -Commit $mainCommit
+    Invoke-SchooltoolRemote -Target $target -Command 'test -f scripts/pdeploy_cloudways.sh; test -d storage/framework; command -v php >/dev/null; command -v bash >/dev/null; command -v sha256sum >/dev/null'
     Write-Host "Live target: $($target.Ssh) $($target.Path)" -ForegroundColor Yellow
     Write-Host "GitHub main: $mainCommit. The application update includes its planned live database migrations." -ForegroundColor Yellow
-    Write-Host "Verified GitHub checks: $($proof.url), attempt $($proof.run_attempt)." -ForegroundColor Cyan
+    Write-Host 'Package integrity verified. GitHub tests run in the background; deployment does not wait for their result.' -ForegroundColor Cyan
     Assert-SchooltoolCiMain -Commit $mainCommit
     if ((Read-Host 'Deploy main to the live application? Type LIVE') -cne 'LIVE') { throw 'Live deployment cancelled.' }
     Update-SchooltoolRemote
     if ((Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -ne $mainCommit) { throw 'main changed during confirmation. Review the new version and rerun gitdeploy.' }
-    $confirmedProof = Assert-SchooltoolCiRelease -Commit $mainCommit
-    if ($confirmedProof.run_id -ne $proof.run_id -or $confirmedProof.run_attempt -ne $proof.run_attempt) { throw 'The GitHub check attempt changed during confirmation. Review the new checks and rerun gitdeploy.' }
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     if ((Invoke-SchooltoolGit branch --show-current) -cne $originalBranch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $originalHead) { throw 'The local checkout changed during confirmation. Rerun gitdeploy.' }
-    Invoke-SchooltoolRemote -Target $target -Command "SCHOOLTOOL_EXPECTED_MAIN_COMMIT='$mainCommit' SCHOOLTOOL_EXPECTED_SOURCE_COMMIT='$sourceCommit' SCHOOLTOOL_EXPECTED_FRONTEND_SHA256='$archiveHash' SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB='$manifestBlob' SCHOOLTOOL_CI_RUN_ID='$($proof.run_id)' SCHOOLTOOL_CI_RUN_ATTEMPT='$($proof.run_attempt)' composer pdeploy"
+    Send-SchooltoolLiveRelease -Target $target -Commit $mainCommit -SourceCommit $sourceCommit -ArchiveHash $archiveHash -ManifestBlob $manifestBlob
     Write-Host "Live deployment completed for the confirmed main $mainCommit." -ForegroundColor Green
 }

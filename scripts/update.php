@@ -212,38 +212,132 @@ function frontendDependenciesAreCurrent(): bool
     $statePath = updateProjectPath('storage/framework/frontend-dependencies.sha256');
     $installedLockPath = updateProjectPath('node_modules/.package-lock.json');
 
-    if (! is_dir(updateProjectPath('node_modules'))) {
+    if (! is_dir(updateProjectPath('node_modules')) || is_file($statePath.'.installing')) {
         return false;
     }
 
-    if (! is_file($installedLockPath)) {
+    $lock = json_decode((string) @file_get_contents($lockPath), true);
+    $manifest = json_decode((string) @file_get_contents(updateProjectPath('package.json')), true);
+    $installedLock = json_decode((string) @file_get_contents($installedLockPath), true);
+    if (! is_array($lock['packages'] ?? null) || ! is_array($manifest)) {
         return false;
+    }
+
+    foreach (['dependencies', 'devDependencies', 'optionalDependencies'] as $group) {
+        if (($manifest[$group] ?? []) != ($lock['packages'][''][$group] ?? [])) {
+            return false;
+        }
     }
 
     $lockHash = hash_file('sha256', $lockPath);
+    $savedHash = is_file($statePath) ? trim((string) file_get_contents($statePath)) : '';
+    $hasMatchingReceipt = is_string($lockHash) && hash_equals($lockHash, $savedHash);
 
-    if (! is_string($lockHash)) {
+    // npm's hidden lock is a disposable cache, not an installation receipt.
+    if (! is_string($lockHash) || (! $hasMatchingReceipt && ! is_array($installedLock['packages'] ?? null))) {
         return false;
     }
 
-    if (is_file($statePath)) {
-        $savedHash = trim((string) file_get_contents($statePath));
-
-        return hash_equals($lockHash, $savedHash);
-    }
-
-    $lockModifiedAt = filemtime($lockPath);
-    $installedLockModifiedAt = filemtime($installedLockPath);
-
-    if ($lockModifiedAt === false || $installedLockModifiedAt === false || $installedLockModifiedAt < $lockModifiedAt) {
+    $process = proc_open(['node', '-p', 'process.platform + "/" + process.arch'], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes, updateProjectPath());
+    if (! is_resource($process)) {
         return false;
     }
+    fclose($pipes[0]);
+    $platform = trim((string) stream_get_contents($pipes[1]));
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    if (proc_close($process) !== 0 || ! str_contains($platform, '/')) {
+        return false;
+    }
+    [$operatingSystem, $architecture] = explode('/', $platform, 2);
 
-    if (! writeDependencyState($statePath, $lockHash)) {
+    foreach ($lock['packages'] as $path => $package) {
+        if ($path === '') {
+            continue;
+        }
+        if (! str_starts_with($path, 'node_modules/') || str_contains($path, '..') || ! is_array($package) || ($package['link'] ?? false)) {
+            return false;
+        }
+        if (($package['optional'] ?? false)
+            && (! frontendPlatformMatches($package['os'] ?? [], $operatingSystem)
+                || ! frontendPlatformMatches($package['cpu'] ?? [], $architecture))) {
+            continue;
+        }
+
+        $packageDirectory = updateProjectPath($path);
+        // npm may omit optional packages after an unsupported platform or install failure.
+        if (($package['optional'] ?? false) && ! isset($installedLock['packages'][$path]) && ! is_dir($packageDirectory)) {
+            continue;
+        }
+        $installedPackage = json_decode((string) @file_get_contents($packageDirectory.'/package.json'), true);
+        if (! is_string($package['version'] ?? null) || ($installedPackage['version'] ?? null) !== $package['version']) {
+            return false;
+        }
+        if (! $hasMatchingReceipt) {
+            foreach (['version', 'resolved', 'integrity'] as $identity) {
+                if (($installedLock['packages'][$path][$identity] ?? null) !== ($package[$identity] ?? null)) {
+                    return false;
+                }
+            }
+        }
+
+        $bins = $installedPackage['bin'] ?? [];
+        $bins = is_string($bins) ? [basename($path) => $bins] : $bins;
+        foreach ($bins as $name => $target) {
+            $modulesDirectory = substr($path, 0, strrpos($path, 'node_modules/') + strlen('node_modules'));
+            $shim = updateProjectPath($modulesDirectory.'/.bin/'.$name.($operatingSystem === 'win32' ? '.cmd' : ''));
+            if (! is_file($packageDirectory.'/'.$target) || ! is_file($shim)) {
+                return false;
+            }
+        }
+    }
+
+    if (! $hasMatchingReceipt && ! writeDependencyState($statePath, $lockHash)) {
         fwrite(STDERR, "Could not initialize the frontend dependency state; continuing with the existing installation.\n");
     }
 
     return true;
+}
+
+/** @param array<int, string> $constraints */
+function frontendPlatformMatches(array $constraints, string $platform): bool
+{
+    if (in_array('!'.$platform, $constraints, true)) {
+        return false;
+    }
+
+    $allowed = array_filter($constraints, fn (string $value): bool => ! str_starts_with($value, '!'));
+
+    return $allowed === [] || in_array($platform, $allowed, true) || in_array('any', $allowed, true);
+}
+
+function frontendInstallationIsIdle(): bool
+{
+    if (PHP_OS_FAMILY !== 'Windows') {
+        return true;
+    }
+
+    $check = <<<'POWERSHELL'
+$ErrorActionPreference = 'Stop'
+$modulePath = [IO.Path]::GetFullPath($env:SCHOOLTOOL_FRONTEND_MODULES_PATH).TrimEnd('\') + '\'
+$active = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($modulePath, [StringComparison]::OrdinalIgnoreCase) })
+if ($active.Count -gt 0) {
+    foreach ($process in $active) {
+        [Console]::Error.WriteLine("Frontend installation blocked by PID $($process.ProcessId): $($process.ExecutablePath)")
+    }
+    [Console]::Error.WriteLine('Stop this project''s Vite/dev process and retry preparation. No packages have been removed.')
+    exit 1
+}
+POWERSHELL;
+    $process = proc_open(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', $check],
+        [STDIN, STDOUT, STDERR],
+        $pipes,
+        updateProjectPath(),
+        array_merge(getenv(), ['SCHOOLTOOL_FRONTEND_MODULES_PATH' => updateProjectPath('node_modules')]),
+    );
+
+    return is_resource($process) && proc_close($process) === 0;
 }
 
 function installFrontendDependencies(): int
@@ -252,6 +346,17 @@ function installFrontendDependencies(): int
         fwrite(STDOUT, "Frontend dependencies match package-lock.json; skipping npm ci.\n");
 
         return 0;
+    }
+
+    if (! frontendInstallationIsIdle()) {
+        return 1;
+    }
+
+    $statePath = updateProjectPath('storage/framework/frontend-dependencies.sha256');
+    if (! writeDependencyState($statePath.'.installing', 'incomplete')) {
+        fwrite(STDERR, "Could not mark the frontend dependency installation as incomplete.\n");
+
+        return 1;
     }
 
     $command = ['npm', 'ci'];
@@ -264,7 +369,8 @@ function installFrontendDependencies(): int
     $lockHash = hash_file('sha256', updateProjectPath('package-lock.json'));
 
     if (! is_string($lockHash)
-        || ! writeDependencyState(updateProjectPath('storage/framework/frontend-dependencies.sha256'), $lockHash)) {
+        || ! writeDependencyState($statePath, $lockHash)
+        || ! unlink($statePath.'.installing')) {
         fwrite(STDERR, "Could not save the frontend dependency state.\n");
 
         return 1;
@@ -395,6 +501,10 @@ function updateUsage(): int
     fwrite(STDERR, "Usage: php scripts/update.php [--target=local|cloudways] [--prepare] [--dry-run]\n");
 
     return 2;
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') !== __FILE__) {
+    return;
 }
 
 $arguments = array_slice($argv, 1);

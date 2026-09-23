@@ -49,7 +49,7 @@ function Read-SchooltoolPreviewReceipt {
         $receipt = [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json -ErrorAction Stop
     }
     catch { throw 'The preview receipt is invalid or belongs to another Windows account/computer. Nothing was published.' }
-    if ($receipt.Format -cnotin @('schooltool-preview-v1', 'schooltool-preview-v2') -or $receipt.Id -cne $Id) { throw 'Invalid preview check receipt.' }
+    if ($receipt.Format -cnotin @('schooltool-preview-v1', 'schooltool-preview-v2', 'schooltool-preview-v3') -or $receipt.Id -cne $Id) { throw 'Invalid preview check receipt.' }
     Assert-SchooltoolPreviewEvidence $receipt
     foreach ($field in @('FeatureCommit', 'MainCommit', 'SourceCommit', 'ArtifactCommit')) {
         if ($receipt.$field -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid preview commit identity.' }
@@ -73,6 +73,11 @@ function Read-SchooltoolPreviewReceipt {
 
 function Assert-SchooltoolPreviewEvidence {
     param([object]$Receipt)
+    if ($Receipt.Format -ceq 'schooltool-preview-v3') {
+        if ($Receipt.EvidenceKind -cne 'inline-build-and-integrity') { throw 'V3 preview receipts require inline build and integrity evidence.' }
+        if ($Receipt.Checks -cne 'preflight-success') { throw 'Invalid preview check receipt.' }
+        return
+    }
     if ($Receipt.Format -ceq 'schooltool-preview-v2' -and $Receipt.EvidenceKind -cne 'inline-full-checks') {
         throw 'New preview receipts require the complete inline full checks.'
     }
@@ -130,7 +135,7 @@ function Assert-SchooltoolPreviewReceipt {
     Assert-SchooltoolPreviewPlainPath $Receipt.Candidate.Path
     Push-Location -LiteralPath $Receipt.Candidate.Path
     try {
-        if ($Receipt.Format -ceq 'schooltool-preview-v2') {
+        if ($Receipt.Format -cin @('schooltool-preview-v2', 'schooltool-preview-v3')) {
             Assert-SchooltoolRepository -Candidate $Receipt.Candidate
         }
         elseif (Invoke-SchooltoolGit branch --show-current) {

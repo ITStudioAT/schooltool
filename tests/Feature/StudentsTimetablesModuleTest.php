@@ -2095,7 +2095,7 @@ it('allows the studentstimetables admin role to list and select schoolyears', fu
     expect($user->refresh()->schoolyear_id)->toBe($schoolyear->id);
 });
 
-it('selects the actual schoolyear in admin config for students timetables users without a selected schoolyear', function () {
+it('selects the schoolwide schoolyear in admin config for students timetables users without a selected schoolyear', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
     $actualSchoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -2119,10 +2119,10 @@ it('selects the actual schoolyear in admin config for students timetables users 
     $this->actingAs($user)
         ->getJson('/api/admin/config')
         ->assertSuccessful()
-        ->assertJsonPath('selected_schoolyear.id', $actualSchoolyear->id)
-        ->assertJsonPath('selected_schoolyear.name', 'Aktuelles Schuljahr');
+        ->assertJsonPath('selected_schoolyear.id', $fallbackSchoolyear->id)
+        ->assertJsonPath('selected_schoolyear.name', 'Fallback Schuljahr');
 
-    expect($user->refresh()->schoolyear_id)->toBe($actualSchoolyear->id);
+    expect($user->refresh()->schoolyear_id)->toBe($fallbackSchoolyear->id);
 });
 
 it('returns dummy dashboard data for a licensed school', function () {
@@ -4369,13 +4369,14 @@ it('uses persisted subject-plan rules for compulsory arts modules in expected ad
         ->toBe(['BE1', 'ME2']);
 });
 
-it('uses the actual schoolyear for the robot student selector when no user schoolyear is selected', function () {
+it('uses the schoolwide schoolyear for the robot student selector when no user schoolyear is selected', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
         'from' => now()->subMonth()->toDateString(),
         'until' => now()->addMonth()->toDateString(),
     ]);
+    SchoolTool::query()->where('school_id', $user->school_id)->update(['active_schoolyear_id' => $schoolyear->id]);
     $user->forceFill(['schoolyear_id' => null])->save();
 
     Import116::factory()->create([

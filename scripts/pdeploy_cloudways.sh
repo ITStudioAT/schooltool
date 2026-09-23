@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+launcher_path="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+project_directory="$(cd -- "${SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY:-$(dirname -- "$launcher_path")/..}" && pwd)"
 cd "$project_directory"
 
 if [[ "${SCHOOLTOOL_PREVIEW_INSTANCE:-false}" =~ ^(true|1|yes|on)$ ]] || { [ -f .env ] && grep -Eiq "^[[:space:]]*SCHOOLTOOL_PREVIEW_INSTANCE[[:space:]]*=[[:space:]]*['\"]?(true|1|yes|on)['\"]?([[:space:]]*(#.*)?)?$" .env; }; then
@@ -14,14 +15,13 @@ expected_source="${SCHOOLTOOL_EXPECTED_SOURCE_COMMIT:-}"
 expected_frontend="${SCHOOLTOOL_EXPECTED_FRONTEND_SHA256:-}"
 expected_manifest="${SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB:-}"
 if [[ ! "$expected_main" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_source" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_frontend" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$expected_manifest" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]]; then
-    echo "Deployment requires pinned main, source, frontend and source manifest identities. Use gitdeploy after its GitHub checks succeed." >&2
+    echo "Deployment requires pinned main, source, frontend and source manifest identities. Use gitdeploy after its package checks and LIVE confirmation." >&2
     exit 1
 fi
 
-# gitdeploy validates the exact GitHub proof. These IDs identify its handoff;
-# they are not a server-verifiable attestation against an SSH operator.
-if [[ ! "${SCHOOLTOOL_CI_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || [[ ! "${SCHOOLTOOL_CI_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Deployment requires the checked GitHub run ID and attempt. Use gitdeploy after its GitHub checks succeed." >&2
+# This identifies the confirmed package handoff, not a claim that tests passed.
+if [[ "${SCHOOLTOOL_PUBLICATION_POLICY:-}" != 'background-ci-v1' ]]; then
+    echo "Deployment requires the background-ci-v1 package handoff. Use gitdeploy." >&2
     exit 1
 fi
 
@@ -89,7 +89,7 @@ if [ "${SCHOOLTOOL_CLOUDWAYS_PDEPLOY_LOCKED:-false}" != true ]; then
         --close \
         --conflict-exit-code "$pdeploy_lock_conflict_exit_code" \
         "$pdeploy_lock" \
-        "$BASH" "$project_directory/scripts/pdeploy_cloudways.sh" "$@"; then
+        "$BASH" "$launcher_path" "$@"; then
         exit 0
     else
         deployment_exit_code=$?

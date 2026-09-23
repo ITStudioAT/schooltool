@@ -89,6 +89,108 @@ class SchooltoolReleasePolicy
         return ['equivalent' => true, 'base' => $base, 'head' => $head];
     }
 
+    /** @return array{commit: string, php_files: int, runtime: string, elapsed_seconds: float} */
+    public static function smoke(string $repository, string $commit): array
+    {
+        $started = microtime(true);
+        self::validateRevisions($repository, $commit, $commit);
+        self::frontendEntries($repository, $commit, true);
+        $temporary = sys_get_temp_dir().'/schooltool-smoke-'.bin2hex(random_bytes(16)).'.tar';
+        $snapshot = substr($temporary, 0, -4);
+        $count = 0;
+
+        try {
+            self::git($repository, ['archive', '--format=tar', '--output='.$temporary, $commit, 'app', 'artisan', 'bootstrap', 'config', 'database', 'routes', 'scripts', 'public/index.php', 'resources', 'lang', 'composer.json', 'composer.lock']);
+            $archive = new PharData($temporary);
+            foreach (new RecursiveIteratorIterator($archive) as $file) {
+                if ($file->isLink()) {
+                    throw new RuntimeException('Release smoke snapshots must not contain links.');
+                }
+                if (! $file->isFile() || ($file->getExtension() !== 'php' && $file->getFilename() !== 'artisan') || str_ends_with($file->getFilename(), '.blade.php')) {
+                    continue;
+                }
+                if (microtime(true) - $started > 45) {
+                    throw new RuntimeException('Release smoke check exceeded its 45 second budget. Nothing was deployed.');
+                }
+                try {
+                    token_get_all($file->getContent(), TOKEN_PARSE);
+                } catch (ParseError $exception) {
+                    throw new RuntimeException('Release smoke check failed in '.$file->getFilename().': '.$exception->getMessage(), previous: $exception);
+                }
+                $count++;
+            }
+            if ($count === 0) {
+                throw new RuntimeException('Release smoke check found no PHP source.');
+            }
+            mkdir($snapshot, 0700);
+            $archive->extractTo($snapshot);
+            self::runtimeSmoke($repository, $snapshot);
+        } finally {
+            unset($file, $archive);
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+            if (is_dir($snapshot)) {
+                $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($snapshot, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+                foreach ($files as $entry) {
+                    $entry->isDir() && ! $entry->isLink() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
+                }
+                rmdir($snapshot);
+            }
+        }
+
+        return ['commit' => $commit, 'php_files' => $count, 'runtime' => 'bootstrap-and-health', 'elapsed_seconds' => round(microtime(true) - $started, 3)];
+    }
+
+    private static function runtimeSmoke(string $repository, string $snapshot): void
+    {
+        if (! is_file($repository.'/vendor/autoload.php') || json_decode(file_get_contents($snapshot.'/composer.lock'), true, flags: JSON_THROW_ON_ERROR) !== json_decode(file_get_contents($repository.'/composer.lock'), true, flags: JSON_THROW_ON_ERROR)) {
+            throw new RuntimeException('Runtime smoke requires locally installed dependencies matching the exact release lock. Prepare that release locally first.');
+        }
+        $environment = [];
+        foreach (['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT'] as $name) {
+            if (getenv($name) !== false) {
+                $environment[$name] = getenv($name);
+            }
+        }
+        $environment += [
+            'APP_ENV' => 'testing', 'APP_KEY' => 'base64:'.base64_encode(random_bytes(32)),
+            'APP_DEBUG' => 'false', 'APP_URL' => 'http://localhost', 'APP_MAINTENANCE_DRIVER' => 'file',
+            'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:', 'DB_DATABASE_TEST' => ':memory:',
+            'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'QUEUE_CONNECTION' => 'sync',
+            'MAIL_MAILER' => 'array', 'BROADCAST_CONNECTION' => 'log', 'LOG_CHANNEL' => 'stderr',
+            'PULSE_ENABLED' => 'false', 'TELESCOPE_ENABLED' => 'false', 'NIGHTWATCH_ENABLED' => 'false',
+            'SCHOOLTOOL_PREVIEW_INSTANCE' => 'false', 'LARAVEL_STORAGE_PATH' => $snapshot.'/storage',
+            'COMPOSER_VENDOR_DIR' => $repository.'/vendor',
+            'APP_CONFIG_CACHE' => 'bootstrap/cache/smoke-config.php', 'APP_ROUTES_CACHE' => 'bootstrap/cache/smoke-routes.php',
+            'APP_SERVICES_CACHE' => 'bootstrap/cache/smoke-services.php', 'APP_PACKAGES_CACHE' => 'bootstrap/cache/smoke-packages.php',
+            'APP_EVENTS_CACHE' => 'bootstrap/cache/smoke-events.php',
+        ];
+        $process = proc_open([
+            PHP_BINARY, '-d', 'allow_url_fopen=0', '-d', 'disable_functions=curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,socket_connect,mail,exec,shell_exec,system,passthru,proc_open,popen',
+            __DIR__.'/release-smoke.php', $snapshot, $repository.'/vendor',
+        ], [0 => ['pipe', 'r'], 1 => ['file', $snapshot.'/smoke.out', 'w'], 2 => ['file', $snapshot.'/smoke.err', 'w']], $pipes, $snapshot, $environment);
+        if (! is_resource($process)) {
+            throw new RuntimeException('Cannot start the isolated runtime smoke check.');
+        }
+        fclose($pipes[0]);
+        $deadline = microtime(true) + 20;
+        do {
+            $status = proc_get_status($process);
+            if (! $status['running']) {
+                break;
+            }
+            usleep(50000);
+        } while (microtime(true) < $deadline);
+        if ($status['running']) {
+            proc_terminate($process);
+        }
+        $exit = proc_close($process);
+        if ($status['running'] || ($status['exitcode'] !== 0 && $exit !== 0) || trim(file_get_contents($snapshot.'/smoke.out')) !== 'BOOTSTRAP_HEALTH_OK') {
+            throw new RuntimeException('Isolated runtime smoke failed: '.substr(file_get_contents($snapshot.'/smoke.err'), 0, 2000));
+        }
+    }
+
     private static function validateRevisions(string $repository, string $base, string $head): void
     {
         foreach ([$base, $head] as $commit) {
@@ -102,7 +204,7 @@ class SchooltoolReleasePolicy
     }
 
     /** @return array<string, array{type: string, mode: int, hash: string}> */
-    private static function frontendEntries(string $repository, string $commit): array
+    private static function frontendEntries(string $repository, string $commit, bool $smoke = false): array
     {
         $source = trim(self::git($repository, ['show', $commit.':deployment/source-commit']));
         $parents = explode(' ', trim(self::git($repository, ['rev-list', '--parents', '-n', '1', $commit])));
@@ -142,6 +244,7 @@ class SchooltoolReleasePolicy
         $entries = [];
         $sourceFound = false;
         $ended = false;
+        $manifest = null;
 
         for ($offset = 0; $offset < strlen($tar);) {
             $header = substr($tar, $offset, 512);
@@ -199,6 +302,9 @@ class SchooltoolReleasePolicy
             }
 
             $contents = substr($tar, $offset, $length);
+            if ($smoke && $name === 'manifest.json' && $type === '0') {
+                $manifest = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+            }
             $offset += (int) (ceil($length / 512) * 512);
 
             if ($name === 'deployment-source.txt') {
@@ -215,6 +321,27 @@ class SchooltoolReleasePolicy
 
         if (! $ended || ! $sourceFound || ! isset($entries['manifest.json'], $entries['environment-versions.json'])) {
             throw new RuntimeException('Incomplete frontend archive.');
+        }
+
+        if ($smoke) {
+            if (! is_array($manifest) || $manifest === []) {
+                throw new RuntimeException('Release smoke check requires a nonempty frontend manifest.');
+            }
+            foreach ($manifest as $chunk) {
+                if (! is_array($chunk) || ! isset($chunk['file'])) {
+                    throw new RuntimeException('Release smoke check found an invalid frontend chunk.');
+                }
+                foreach ([$chunk['file'], ...($chunk['css'] ?? []), ...($chunk['assets'] ?? [])] as $asset) {
+                    if (! is_string($asset) || ($entries[$asset]['type'] ?? null) !== '0') {
+                        throw new RuntimeException('Release smoke check found a missing frontend asset.');
+                    }
+                }
+                foreach ([...($chunk['imports'] ?? []), ...($chunk['dynamicImports'] ?? [])] as $import) {
+                    if (! is_string($import) || ! isset($manifest[$import])) {
+                        throw new RuntimeException('Release smoke check found a missing frontend import.');
+                    }
+                }
+            }
         }
 
         ksort($entries, SORT_STRING);
@@ -391,15 +518,17 @@ if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE
     $head = '';
 
     try {
-        if (count($argv) !== 6 || ! in_array($argv[1], ['classify', 'assets'], true) || $argv[2] !== '--base' || $argv[4] !== '--head') {
-            throw new RuntimeException('Usage: release-policy.php classify|assets --base <exact-commit> --head <exact-commit>');
+        if (count($argv) !== 6 || ! in_array($argv[1], ['classify', 'assets', 'smoke'], true) || $argv[2] !== '--base' || $argv[4] !== '--head') {
+            throw new RuntimeException('Usage: release-policy.php classify|assets|smoke --base <exact-commit> --head <exact-commit>');
         }
 
         $base = $argv[3];
         $head = $argv[5];
-        $result = $argv[1] === 'assets'
-            ? SchooltoolReleasePolicy::verifyFrontendEquivalence(getcwd(), $base, $head)
-            : SchooltoolReleasePolicy::classify(getcwd(), $base, $head);
+        $result = match ($argv[1]) {
+            'assets' => SchooltoolReleasePolicy::verifyFrontendEquivalence(getcwd(), $base, $head),
+            'smoke' => SchooltoolReleasePolicy::smoke(getcwd(), $head),
+            default => SchooltoolReleasePolicy::classify(getcwd(), $base, $head),
+        };
         echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).PHP_EOL;
     } catch (Throwable $exception) {
         echo json_encode(['lane' => 'full', 'reason' => $exception->getMessage(), 'base' => $base, 'head' => $head], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE).PHP_EOL;

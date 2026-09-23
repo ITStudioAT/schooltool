@@ -20,7 +20,7 @@ function Assert-SchooltoolPreviewDeploymentProtocol {
     $candidateScript = Join-Path $Candidate.Path 'scripts/deploy_preview_cloudways.sh'
     if (-not $script:SchooltoolPreviewDeploymentChecksum -or -not (Test-Path -LiteralPath $candidateScript -PathType Leaf) -or
         (Get-SchooltoolFileChecksum $candidateScript) -cne $script:SchooltoolPreviewDeploymentChecksum) {
-        throw 'The checked candidate uses an older or different preview deployment protocol. Its receipt is preserved. Incorporate the current workflow and prepare a new fully checked candidate before deployment.'
+        throw 'The checked candidate uses an older or different preview deployment protocol. Its receipt is preserved. Incorporate the current workflow and prepare a new candidate with current preflight checks before deployment.'
     }
 }
 
@@ -125,7 +125,7 @@ function gitpreview {
             Invoke-SchooltoolCommand 'Checking preview source encoding...' { php scripts/check-encoding.php }
             Assert-SchooltoolClean
             $checkedTree = Get-SchooltoolSourceTree
-            Invoke-SchooltoolReleaseChecks -Full
+            Invoke-SchooltoolReleaseChecks
             Assert-SchooltoolClean
             Assert-SchooltoolCheckedSource $checkedTree
             Invoke-SchooltoolCommand 'Creating the preview artifact...' { php scripts/frontend-release.php create $sourceCommit }
@@ -143,7 +143,7 @@ function gitpreview {
             $candidateEnvironment = $null
             Restore-SchooltoolCandidateEnvironment $completedEnvironment
             $receipt = [pscustomobject]@{
-                Format = 'schooltool-preview-v2'; Id = $id; Checks = 'full-success'; EvidenceKind = 'inline-full-checks'; CheckedAt = [DateTime]::UtcNow.ToString('o')
+                Format = 'schooltool-preview-v3'; Id = $id; Checks = 'preflight-success'; EvidenceKind = 'inline-build-and-integrity'; CheckedAt = [DateTime]::UtcNow.ToString('o')
                 Root = $root; Directory = $bundleDirectory; Origin = (Get-SchooltoolPreviewOrigin); PushOrigin = (Get-SchooltoolPreviewOrigin -Push)
                 Feature = $feature; FeatureCommit = $featureCommit; MainCommit = $mainCommit; Candidate = $candidate
                 SourceCommit = $sourceCommit; ArtifactCommit = (Invoke-SchooltoolGit rev-parse HEAD); SourceTree = $checkedTree; Checksum = $checksum
@@ -199,6 +199,7 @@ function gitpreview {
         Start-SchooltoolPreviewPublication $id
         Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${originalBranch}:$featureCommit" "--force-with-lease=refs/heads/preview/${id}:" origin "${sourceCommit}:refs/heads/$originalBranch" "$($receipt.ArtifactCommit):refs/heads/preview/$id" | Out-Host
         $published = $true
+        Write-Host "GitHub tests the exact preview artifact $($receipt.ArtifactCommit) in the background; deployment does not wait for the result." -ForegroundColor Cyan
         Push-Location -LiteralPath $root
         try { Invoke-SchooltoolGit merge --ff-only $sourceCommit | Out-Host }
         finally { Pop-Location }

@@ -33,18 +33,36 @@ class SchoolyearService
                 ->first();
         }
 
-        if (! $user->school_id) {
+        if (! $user->exists || ! $user->school_id) {
             return null;
         }
 
-        $schoolyear = $this->actualSchoolyearForSchool((int) $user->school_id);
+        $activeSchoolyearId = SchoolTool::query()
+            ->where('school_id', $user->school_id)
+            ->value('active_schoolyear_id');
+
+        $schoolyear = $activeSchoolyearId ? Schoolyear::query()
+            ->where('school_id', $user->school_id)
+            ->find($activeSchoolyearId) : null;
 
         if (! $schoolyear) {
             return null;
         }
 
+        $assigned = User::query()
+            ->whereKey($user->getKey())
+            ->where('school_id', $user->school_id)
+            ->whereNull('schoolyear_id')
+            ->update(['schoolyear_id' => $schoolyear->id]);
+
+        if (! $assigned) {
+            $user->refresh();
+
+            return $user->selectedSchoolyear?->school_id === $user->school_id ? $user->selectedSchoolyear : null;
+        }
+
         $user->schoolyear_id = $schoolyear->id;
-        $user->save();
+        $user->syncOriginalAttribute('schoolyear_id');
         $user->setRelation('selectedSchoolyear', $schoolyear);
 
         return $schoolyear;

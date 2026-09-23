@@ -39,6 +39,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Services/StudentsTimetables/StudentTimetableV3*,app/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3*,resources/js/pages/admin/studentsTimetables/timetableV3/**} | .ai/rules/controllers-admin-students-timetables-js-pages-admin-students-timetables-timetable-v3.md |
 | {app/Jobs/Teaching/Import116Job.php,app/Models/Import116.php,app/Services/StudentsTimetables/RecognitionImportService.php,app/Services/StudentsTimetables/StudentTimetableStudySelectionRefreshService.php,app/Http/Controllers/Admin/StudentsTimetables/**} | .ai/rules/controllers-admin-students-timetables.md |
 | app/Http/Controllers/Admin/Teaching/FileUploadController.php, app/Http/Controllers/Admin/Teaching/TeachingBackupController.php | .ai/rules/controllers-admin-teaching.md |
+| {app/Services/SchoolyearService.php,app/Services/AdminService.php,app/Providers/AppServiceProvider.php,app/Http/Controllers/Admin/AdminController.php} | .ai/rules/controllers-admin.md |
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
 | {UPDATES.md,public/documentation/**} | .ai/rules/documentation-2.md |
@@ -95,7 +96,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
 | {scripts/git_helpers.ps1,scripts/update-changelog.mjs} | .ai/rules/scripts-2.md |
-| {scripts/git_helpers.ps1,scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/deploy_preview_cloudways.sh,scripts/git_preview_helpers.ps1,tests/Unit/PreviewDeploymentTest.php} | .ai/rules/scripts-unit-2.md |
+| {scripts/git_helpers.ps1,scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/deploy_preview_cloudways.sh,scripts/git_preview_helpers.ps1,tests/Unit/PreviewDeploymentTest.php}, {scripts/update.php,tests/Unit/LocalDeploymentGuardTest.php} | .ai/rules/scripts-unit-2.md |
 | scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php, scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php, scripts/git*preview*.ps1,tests/Unit/GitBranchWorkflowTest.php | .ai/rules/scripts-unit.md |
 | scripts/*cloudways*.sh, scripts/frontend-release.php, scripts/git*.ps1, scripts/install_powershell_helpers.ps1, scripts/*cloudways*.sh, scripts/frontend-release.php, scripts/git*.ps1, scripts/install_powershell_helpers.ps1 | .ai/rules/scripts.md |
 | {app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,app/Services/StudentsTimetablesStudentService.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/services-feature.md |

@@ -1,11 +1,14 @@
 <?php
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolyearService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Laravel\Sanctum\Events\TokenAuthenticated;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -18,6 +21,69 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin']);
     Role::firstOrCreate(['name' => 'register_admin']);
 });
+
+it('assigns the own schoolwide schoolyear on authentication for every role', function (string $role): void {
+    $school = School::factory()->create();
+    $default = Schoolyear::factory()->create(['school_id' => $school->id, 'from' => now()->subYears(2), 'until' => now()->subYear()]);
+    Schoolyear::factory()->create(['school_id' => $school->id, 'from' => now()->subMonth(), 'until' => now()->addMonth()]);
+    SchoolTool::factory()->create(['school_id' => $school->id, 'active_schoolyear_id' => $default->id]);
+    Role::findOrCreate($role, 'web');
+    $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
+    $user->assignRole($role);
+    $user->load('selectedSchoolyear');
+
+    Auth::guard('web')->setUser($user);
+
+    expect($user->schoolyear_id)->toBe($default->id)
+        ->and($user->selectedSchoolyear->id)->toBe($default->id)
+        ->and($user->fresh()->schoolyear_id)->toBe($default->id);
+})->with(['super_admin', 'admin', 'teacher', 'student', 'user', 'restaurant_user', 'studentstimetables_user']);
+
+it('assigns the own schoolwide schoolyear for a token authenticated user', function (): void {
+    $school = School::factory()->create();
+    $default = Schoolyear::factory()->create(['school_id' => $school->id]);
+    SchoolTool::factory()->create(['school_id' => $school->id, 'active_schoolyear_id' => $default->id]);
+    $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
+    $token = $user->createToken('schoolyear-test')->accessToken;
+
+    event(new TokenAuthenticated($token));
+
+    expect($user->fresh()->schoolyear_id)->toBe($default->id);
+});
+
+it('preserves an existing or concurrently selected personal schoolyear', function (bool $staleUser): void {
+    $school = School::factory()->create();
+    $personal = Schoolyear::factory()->create(['school_id' => $school->id]);
+    $default = Schoolyear::factory()->create(['school_id' => $school->id]);
+    SchoolTool::factory()->create(['school_id' => $school->id, 'active_schoolyear_id' => $default->id]);
+    $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $staleUser ? null : $personal->id]);
+    if ($staleUser) {
+        $user->fresh()->update(['schoolyear_id' => $personal->id]);
+    }
+
+    Auth::guard('web')->setUser($user);
+
+    expect($user->fresh()->schoolyear_id)->toBe($personal->id)
+        ->and($user->schoolyear_id)->toBe($personal->id);
+})->with([false, true]);
+
+it('leaves the personal schoolyear empty without a valid same-school default', function (string $configuration): void {
+    $school = School::factory()->create();
+    $other = School::factory()->create();
+    $foreign = Schoolyear::factory()->create(['school_id' => $other->id]);
+    SchoolTool::factory()->create(['school_id' => $other->id, 'active_schoolyear_id' => $foreign->id]);
+    Schoolyear::factory()->create(['school_id' => $school->id, 'is_active' => true, 'from' => now()->subMonth(), 'until' => now()->addMonth()]);
+    if ($configuration !== 'missing settings') {
+        SchoolTool::factory()->create(['school_id' => $school->id, 'active_schoolyear_id' => $configuration === 'foreign default' ? $foreign->id : null]);
+    }
+    $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
+
+    Auth::guard('web')->setUser($user);
+    $this->service->ensureActualSchoolyearForUser($user);
+
+    expect($user->fresh()->schoolyear_id)->toBeNull()
+        ->and($user->selectedSchoolyear)->toBeNull();
+})->with(['missing settings', 'empty default', 'foreign default']);
 
 describe('setToUser', function () {
     it('sets schoolyear to user successfully', function () {

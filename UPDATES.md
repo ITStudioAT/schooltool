@@ -1,6 +1,10 @@
 # UPDATES
 
-## 3.49.3
+## 3.49.3 !!!
+
+### Home
+
+- Header über ganze Breite
 
 ### Einstellungen
 
@@ -9,7 +13,8 @@
 
 ### System
 
-- Gezielte Entwicklungsprüfungen und schnellerer Veröffentlichungspfad für reine Frontend-Änderungen.
+- Gezielte Entwicklungsprüfungen und schnellerer Veröffentlichungspfad
+- Benutzer ohne persönliches Schuljahr: Zuordnung von schulweitem Schuljahr
 
 ## 3.49.2
 

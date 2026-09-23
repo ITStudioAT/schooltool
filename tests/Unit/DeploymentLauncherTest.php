@@ -168,8 +168,7 @@ function terminalPullFixtureHandoff(string $directory): array
         'SCHOOLTOOL_EXPECTED_SOURCE_COMMIT' => trim(file_get_contents($directory.'/deployment/source-commit')),
         'SCHOOLTOOL_EXPECTED_FRONTEND_SHA256' => hash_file('sha256', $directory.'/deployment/frontend-build.tar.gz'),
         'SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB' => sha1('blob '.strlen($manifest)."\0".$manifest),
-        'SCHOOLTOOL_CI_RUN_ID' => '123456789',
-        'SCHOOLTOOL_CI_RUN_ATTEMPT' => '2',
+        'SCHOOLTOOL_PUBLICATION_POLICY' => 'background-ci-v1',
     ];
 }
 
@@ -193,6 +192,30 @@ function runTerminalPullFixture(string $directory, array $environment = [], bool
     return $process;
 }
 
+it('reenters the staged release launcher under the lock instead of the old server launcher', function (): void {
+    $directory = createTerminalPullFixture();
+    try {
+        copy($directory.'/scripts/pdeploy_cloudways.sh', $directory.'/storage/framework/staged.sh');
+        file_put_contents($directory.'/scripts/pdeploy_cloudways.sh', "#!/usr/bin/env bash\necho OLD_LAUNCHER_EXECUTED >&2\nexit 99\n");
+        touch($directory.'/storage/framework/fail-cloudways-preflight');
+        $process = new Process([
+            deploymentBashExecutable(), '-lc',
+            'export PATH="$1/bin:$PATH"; /usr/bin/bash "$1/storage/framework/staged.sh"',
+            'schooltool-staged-test', deploymentBashPath($directory),
+        ], $directory, terminalPullFixtureHandoff($directory) + [
+            'SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY' => deploymentBashPath($directory),
+            'SCHOOLTOOL_TEST_PHP_BINARY' => deploymentBashPath(PHP_BINARY),
+        ]);
+        $process->run();
+        expect($process->isSuccessful())->toBeFalse()
+            ->and($process->getErrorOutput())->toContain('requires the configured main branch')->not->toContain('OLD_LAUNCHER_EXECUTED')
+            ->and(is_file($directory.'/storage/framework/terminal-lock-attempted'))->toBeTrue()
+            ->and(is_file($directory.'/storage/framework/down'))->toBeFalse();
+    } finally {
+        (new Filesystem)->deleteDirectory($directory);
+    }
+});
+
 it('rejects a bare manual pull before locks preflight maintenance or deployment', function (): void {
     $directory = createTerminalPullFixture();
 
@@ -200,26 +223,26 @@ it('rejects a bare manual pull before locks preflight maintenance or deployment'
         $process = runTerminalPullFixture($directory, withHandoff: false);
 
         expect($process->isSuccessful())->toBeFalse()
-            ->and($process->getErrorOutput())->toContain('Use gitdeploy after its GitHub checks succeed.')
+            ->and($process->getErrorOutput())->toContain('Use gitdeploy after its package checks and LIVE confirmation.')
             ->and(glob($directory.'/storage/framework/*'))->toBe([]);
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
 });
 
-it('rejects missing or malformed CI handoff metadata before any deployment effect', function (string $field, string|false $value): void {
+it('rejects missing or malformed package handoff metadata before any deployment effect', function (string $field, string|false $value): void {
     $directory = createTerminalPullFixture();
 
     try {
         $process = runTerminalPullFixture($directory, [$field => $value]);
 
         expect($process->isSuccessful())->toBeFalse()
-            ->and($process->getErrorOutput())->toContain('requires the checked GitHub run ID and attempt')
+            ->and($process->getErrorOutput())->toContain('requires the background-ci-v1 package handoff')
             ->and(glob($directory.'/storage/framework/*'))->toBe([]);
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['SCHOOLTOOL_CI_RUN_ID', 'SCHOOLTOOL_CI_RUN_ATTEMPT'])->with([
+})->with(['SCHOOLTOOL_PUBLICATION_POLICY'])->with([
     'missing' => false,
     'empty' => '',
     'zero' => '0',
@@ -232,7 +255,7 @@ it('rejects missing or malformed CI handoff metadata before any deployment effec
     'shell text' => '1; touch storage/framework/unexpected',
 ]);
 
-it('requires each release pin even when CI handoff metadata is present', function (string $field): void {
+it('requires each release pin even when package handoff metadata is present', function (string $field): void {
     $directory = createTerminalPullFixture();
 
     try {

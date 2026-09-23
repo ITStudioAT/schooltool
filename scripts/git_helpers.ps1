@@ -90,7 +90,7 @@ function Invoke-SchooltoolReleaseCheckProcesses {
     $analysisError = "$temporaryPrefix-analysis.err"
 
     $frontendCommand = if ($Full) { 'npm run test:ui && npm run build' } else { 'npm run build' }
-    $scope = if ($Full) { 'full local tests and release build' } else { 'release build; GitHub checks are required before live deployment' }
+    $scope = if ($Full) { 'full local tests and release build' } else { 'release build; tests run on GitHub in the background' }
     Write-Host "Running $scope..." -ForegroundColor Cyan
 
     $workingDirectory = (Get-Location).Path
@@ -108,7 +108,8 @@ function Invoke-SchooltoolReleaseCheckProcesses {
         -OutputPath $frontendOutput `
         -ErrorPath $frontendError `
         -WorkingDirectory $workingDirectory
-    Wait-SchooltoolCheckProcess -Name 'Frontend tests and release build' -Process $frontendProcess -OutputPath $frontendOutput -ErrorPath $frontendError
+    $frontendName = if ($Full) { 'Frontend tests and release build' } else { 'Frontend release build' }
+    Wait-SchooltoolCheckProcess -Name $frontendName -Process $frontendProcess -OutputPath $frontendOutput -ErrorPath $frontendError
     Write-Host "Check logs retained at $temporaryPrefix-*" -ForegroundColor DarkGray
 }
 
@@ -281,8 +282,8 @@ function Invoke-SchooltoolPublish {
         }
 
         if ($ExpectedMainCommit) {
-            if (-not $Candidate -or $Candidate.Kind -cne 'release' -or -not $Full -or -not $Feature -or -not $ExpectedFeatureCommit) {
-                throw 'Feature releases require an isolated detached release candidate and full checks.'
+            if (-not $Candidate -or $Candidate.Kind -cne 'release' -or -not $Feature -or -not $ExpectedFeatureCommit) {
+                throw 'Feature releases require an isolated detached release candidate and bound feature identity.'
             }
             Assert-SchooltoolClean
             Assert-SchooltoolFeatureSnapshot -Feature $Feature -FeatureCommit $ExpectedFeatureCommit -MainCommit $ExpectedMainCommit
@@ -509,11 +510,10 @@ function Invoke-SchooltoolPublish {
         Write-Host ''
         Write-Host 'SAVED ON GITHUB.' -ForegroundColor Green
         Write-Host 'Windows PCs may pull main and run: composer deploy' -ForegroundColor Green
-        Write-Host 'Use gitdeploy for live publication; it requires successful CI for this exact release.' -ForegroundColor Cyan
+        Write-Host 'Use gitdeploy for live publication after package and target checks and LIVE confirmation.' -ForegroundColor Cyan
 
         if (-not $WaitForCI) {
-            Write-Host 'GitHub selects the required checks automatically. Application changes require the full background checks; only verified documentation/version changes use the fast checks.' -ForegroundColor DarkGray
-            Write-Host 'CI pending is not live-ready. gitdeploy waits for running checks with progress, then asks for LIVE. Failed or untrusted checks block deployment.' -ForegroundColor Yellow
+            Write-Host 'GitHub checks run in the background. Publication does not wait for CI; inspect failures and fix them afterwards.' -ForegroundColor Yellow
         }
         Write-SchooltoolCompletionTime
     }

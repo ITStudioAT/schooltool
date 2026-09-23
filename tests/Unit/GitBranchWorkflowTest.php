@@ -129,6 +129,8 @@ function ConvertTo-LegacyPreviewTestReceipt {
     $archive = 'refs/schooltool/archived-heads/20260921-' + ('a' * 32) + '/' + $branch
     Invoke-SchooltoolGit update-ref --no-deref $archive $Receipt.ArtifactCommit ('0' * 40)
     $Receipt.Format = 'schooltool-preview-v1'
+    $Receipt.EvidenceKind = 'inline-full-checks'
+    $Receipt.Checks = 'full-success'
     $Receipt.Candidate = [pscustomobject]@{ Branch = $branch; Path = $old.Path }
 }
 POWERSHELL;
@@ -280,7 +282,7 @@ it('includes the latest main automatically in the isolated release candidate', f
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n"."gitrelease 'Release feature'");
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'merge-base', '--is-ancestor', $hotfix, 'main'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:hotfix.txt'))->toBe('Published correction');
@@ -304,7 +306,7 @@ POWERSHELL);
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature);
 });
 
-it('publishes a fully checked release with an optional version through the actual pipeline', function (?string $version): void {
+it('publishes a source-bound release without full checks through the actual pipeline', function (?string $version): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/feature.txt', "Completed work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Finish feature"'));
@@ -314,7 +316,7 @@ it('publishes a fully checked release with an optional version through the actua
     assertBranchWorkflowSucceeded($result);
     $release = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main');
 
-    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
         ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'main'))->toBe($release)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Completed work')
@@ -395,7 +397,7 @@ it('stops the actual release pipeline when checks fail or publication is cancell
         ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/'))->toBe("refs/heads/feature/new-function\nrefs/heads/main");
 })->with(['failed checks' => 'checks', 'cancelled confirmation' => 'confirmation']);
 
-it('does not bypass full checks when the feature already contains a complete release artifact', function (): void {
+it('checks the merged candidate even when the feature already contains a complete release artifact', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     $source = commitBranchWorkflowFile($this->workflowPc, 'feature.txt', "Completed work\n");
     mkdir($this->workflowPc.'/deployment');
@@ -785,7 +787,7 @@ it('saves main for background CI with an optional version or explicit local full
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save main correction"'.($version ? ' "'.$version.'"' : '').($full ? ' -Full' : ''));
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain($full ? 'FULL_CHECKS_REQUESTED' : 'BACKGROUND_CI_REQUIRED', 'SAVED ON GITHUB.', 'gitdeploy waits for running checks')
+    expect($result->getOutput())->toContain($full ? 'FULL_CHECKS_REQUESTED' : 'BACKGROUND_CI_REQUIRED', 'SAVED ON GITHUB.', 'Publication does not wait for CI')
         ->and($result->getOutput())->not->toContain($full ? 'BACKGROUND_CI_REQUIRED' : 'FULL_CHECKS_REQUESTED', 'READY.', 'Cloudways may run: composer pdeploy')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Main correction')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe($version ? 'v'.$version : '');
@@ -1424,7 +1426,7 @@ POWERSHELL;
     $result = runBranchWorkflowCommand($this->workflowPc, $command."\n"."gitpreview '$mode'");
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('')
@@ -1449,12 +1451,12 @@ it('prepares schema changes for the isolated preview database without modifying 
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitpreview prepare');
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('FULL_CHECKS_REQUESTED')
+    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
 
-it('stops a preview when full checks fail without uploading or publishing', function (): void {
+it('stops a preview when build preflight fails without uploading or publishing', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
 function Invoke-SchooltoolReleaseChecks { throw 'PREVIEW_CHECKS_FAILED' }
@@ -1560,8 +1562,10 @@ POWERSHELL;
     'changed push origin' => ['Invoke-SchooltoolGit remote set-url --push origin https://example.test/changed.git', 'checkout or origin differs'],
     'changed artifact identity' => ['$receipt.ArtifactCommit = ("a" * 40); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Invalid detached preview candidate identity'],
     'changed checked tree' => ['$receipt.SourceTree = ("a" * 64); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Source files or the active branch changed'],
-    'new receipt cannot use legacy evidence' => ['$receipt.EvidenceKind = "legacy-reviewed"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require the complete inline full checks'],
-    'new receipt cannot use patch evidence' => ['$receipt.EvidenceKind = "reviewed-patch"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require the complete inline full checks'],
+    'new receipt cannot use legacy evidence' => ['$receipt.EvidenceKind = "legacy-reviewed"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require inline build and integrity evidence'],
+    'new receipt cannot use patch evidence' => ['$receipt.EvidenceKind = "reviewed-patch"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require inline build and integrity evidence'],
+    'new receipt cannot claim full success' => ['$receipt.Checks = "full-success"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Invalid preview check receipt'],
+    'v2 cannot claim fast evidence' => ['$receipt.Format = "schooltool-preview-v2"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require the complete inline full checks'],
     'advanced main' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -p HEAD -m "Concurrent main"; Invoke-SchooltoolGit push origin "${next}:refs/heads/main"', 'main changed'],
     'advanced feature' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -p HEAD -m "Concurrent feature"; Invoke-SchooltoolGit push origin "${next}:refs/heads/feature/new-function"', 'feature changed'],
     'changed reservation' => ['$ref = "refs/remotes/origin/codex/features/new-function"; $next = Invoke-SchooltoolGit commit-tree "${ref}^{tree}" -m "Concurrent reservation"; Invoke-SchooltoolGit push origin "${next}:refs/heads/test-reservation-transfer"; $remote = Invoke-SchooltoolGit remote get-url origin; Invoke-SchooltoolGit -C $remote update-ref refs/heads/codex/features/new-function $next', 'active feature changed'],

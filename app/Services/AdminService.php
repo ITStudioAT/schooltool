@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
-use App\Models\SchoolTool;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
@@ -287,7 +286,9 @@ class AdminService
     public function completeLogin(User $user, bool $remember = false): User
     {
         $this->validateUserCanLogin($user);
-        $this->syncTeacherSchoolyearFromSchoolTool($user);
+        if (! $user->schoolyear_id) {
+            app(SchoolyearService::class)->ensureActualSchoolyearForUser($user);
+        }
 
         $user->login_at = now();
         $user->login_ip = request()->ip();
@@ -489,23 +490,6 @@ class AdminService
             ->where('is_active', true)
             ->pluck('password')
             ->contains(fn (string $hashedPassword): bool => Hash::check($password, $hashedPassword));
-    }
-
-    private function syncTeacherSchoolyearFromSchoolTool(User $user): void
-    {
-        if (! $user->hasRole('teacher') || $user->schoolyear_id) {
-            return;
-        }
-
-        $activeSchoolyearId = SchoolTool::query()
-            ->where('school_id', $user->school_id)
-            ->value('active_schoolyear_id');
-
-        if (! $activeSchoolyearId) {
-            return;
-        }
-
-        $user->schoolyear_id = (int) $activeSchoolyearId;
     }
 
     private function resolveRemember(array $data): bool
