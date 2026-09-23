@@ -219,6 +219,96 @@ it('discards only the selected feature atomically and retains exact recovery his
         ->and(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('');
 })->with(['powershell', 'pwsh'])->with([false, true]);
 
+it('returns the shared preview to main before safely discarding its last legacy feature', function (string $scenario, string $shell): void {
+    $commit = prepareBranchWorkflowDiscard($this);
+    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
+    runBranchWorkflowGit($this->workflowRemote, 'update-ref', 'refs/heads/codex/active-feature', $reservation);
+    runBranchWorkflowGit($this->workflowRemote, 'update-ref', '-d', 'refs/heads/codex/features/discard-me', $reservation);
+    $command = branchWorkflowPreviewMocks()."\n".'$scenario = "'.$scenario.'"; '.<<<'POWERSHELL'
+Update-SchooltoolRemote
+$legacy = Get-SchooltoolActiveFeature -Branch feature/discard-me
+$script:mainActive = $false
+$script:planChanged = $false
+$script:sent = 0
+function Invoke-SchooltoolRemoteJson {
+    # The old running server returns this contract without mode/deployment_ready fields.
+    [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = (-not $script:mainActive); state_token = $(if ($script:planChanged) { 'c' * 64 } else { 'b' * 64 }); feature_id = $(if ($script:mainActive) { '0' * 32 } else { $legacy.Id }) }
+}
+function Read-Host {
+    param([string]$Prompt)
+    if ($Prompt -match 'Type REFRESH$') {
+        if ($scenario -ceq 'cancel refresh') { return '' }
+        Write-Host 'REFRESH_CONFIRMED'
+        return 'REFRESH'
+    }
+    if ($Prompt -match 'Type PREVIEW$') {
+        if ($scenario -ceq 'cancel preview') { return '' }
+        if ($scenario -ceq 'changed main') {
+            $changed = Invoke-SchooltoolGit commit-tree 'HEAD^{tree}' -p refs/remotes/origin/main -m 'Concurrent main'
+            Invoke-SchooltoolGit push origin "${changed}:refs/heads/main" | Out-Host
+        }
+        if ($scenario -ceq 'changed preview') { $script:planChanged = $true }
+        return 'PREVIEW'
+    }
+    if ($Prompt -ceq 'Type DISCARD feature/discard-me to continue') { return 'DISCARD feature/discard-me' }
+    throw 'Unexpected confirmation.'
+}
+function Send-SchooltoolPreview {
+    param([string]$SourceBranch, [string]$FeatureId, $SnapshotStatus)
+    if ($SourceBranch -cne 'main' -or $FeatureId -cne ('0' * 32) -or -not $SnapshotStatus.needs_snapshot) { throw 'Invalid main snapshot plan.' }
+    $script:sent++
+    if ($scenario -ceq 'transfer failure') { throw 'EXPECTED_TRANSFER_FAILURE' }
+    $script:mainActive = $true
+}
+$existingLock = $null
+if ($scenario -ceq 'lock') { $existingLock = Lock-SchooltoolFeatureOperation $legacy }
+try {
+    if ($scenario -ceq 'resume') {
+        gitpreview prepare -Main
+        $id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
+        gitpreview resume $id -Main
+    }
+    else { gitpreview -Main }
+    if ($scenario -cin @('changed main', 'changed preview', 'lock', 'transfer failure')) { throw 'Expected protection did not stop publication.' }
+    if ($scenario -cin @('success', 'resume')) { gitdiscard feature/discard-me }
+}
+catch {
+    $expected = switch ($scenario) {
+        'changed main' { 'main changed since preview preparation' }
+        'changed preview' { 'shared preview changed during preparation' }
+        'lock' { 'Git failed: git push' }
+        'transfer failure' { 'EXPECTED_TRANSFER_FAILURE' }
+        default { throw }
+    }
+    if ($_.Exception.Message -notmatch [regex]::Escape($expected)) { throw }
+}
+finally { Unlock-SchooltoolFeatureOperation $existingLock }
+Write-Output "MAIN_ACTIVE=$script:mainActive SENT=$script:sent"
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain);
+    if ($scenario !== 'changed main') {
+        expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+    }
+    if (in_array($scenario, ['success', 'resume'], true)) {
+        expect($result->getOutput())->toContain('MAIN_ACTIVE=True SENT=1', 'REFRESH_CONFIRMED')
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/', 'refs/heads/codex/features/', 'refs/heads/codex/active-feature'))->toBe('')
+            ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation);
+    } else {
+        expect($result->getOutput())->toContain('MAIN_ACTIVE=False SENT='.($scenario === 'transfer failure' ? '1' : '0'))
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->toBe($commit)
+            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/active-feature'))->toBe($reservation);
+        if ($scenario !== 'transfer failure') {
+            expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
+        } else {
+            expect(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toHaveCount(1);
+        }
+    }
+})->with(['success', 'resume', 'cancel refresh', 'cancel preview', 'changed main', 'changed preview', 'lock', 'transfer failure'])->with(['powershell', 'pwsh']);
+
 it('refuses unsafe feature discard without deleting feature or reservation', function (string $condition): void {
     $commit = prepareBranchWorkflowDiscard($this);
     $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
@@ -237,6 +327,8 @@ it('refuses unsafe feature discard without deleting feature or reservation', fun
         $code .= "\n".'function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ("b" * 64); feature_id = (Get-SchooltoolActiveFeature -Branch feature/discard-me).Id } }';
     } elseif ($condition === 'preview unavailable') {
         $code .= "\nfunction Invoke-SchooltoolRemoteJson { throw 'Preview unavailable' }";
+    } elseif ($condition === 'main preview incomplete') {
+        $code .= "\nfunction Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ('b' * 64); feature_id = \$null; mode = 'main'; deployment_ready = \$false } }";
     } elseif ($condition === 'cancel') {
         $code .= "\nfunction Read-Host { 'CANCEL' }";
     } elseif ($condition === 'preview operation in progress') {
@@ -254,7 +346,7 @@ it('refuses unsafe feature discard without deleting feature or reservation', fun
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->toBe($commit)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me'))->toBe($reservation)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-})->with(['dirty', 'feature checkout', 'worktree', 'local ahead', 'preview active', 'preview unavailable', 'cancel', 'preview operation in progress', 'changed after consent', 'preview changed after consent', 'different push origin']);
+})->with(['dirty', 'feature checkout', 'worktree', 'local ahead', 'preview active', 'preview unavailable', 'main preview incomplete', 'cancel', 'preview operation in progress', 'changed after consent', 'preview changed after consent', 'different push origin']);
 
 it('keeps the reservation when an exact discard lease loses a concurrent feature update', function (): void {
     $commit = prepareBranchWorkflowDiscard($this);
@@ -1452,12 +1544,12 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Completed feature');
 });
 
-it('binds refresh and deployment through the real dispatcher without evaluating argument text', function (): void {
+it('binds refresh and deployment through the real dispatcher without evaluating argument text', function (string $shell): void {
     copy(dirname(__DIR__, 2).'/scripts/git_workflow.ps1', $this->workflowPc.'/scripts/git_workflow.ps1');
     file_put_contents($this->workflowPc.'/scripts/git_helpers.ps1', <<<'POWERSHELL'
 function gitpreview {
-    param([string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData, [Alias('Feature')][string]$FeatureName)
-    Write-Output "PREVIEW_MODE=$Mode REFRESH=$RefreshData BUNDLE=$BundleId FEATURE=$FeatureName"
+    param([string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData, [Alias('Feature')][string]$FeatureName, [switch]$Main)
+    Write-Output "PREVIEW_MODE=$Mode REFRESH=$RefreshData BUNDLE=$BundleId FEATURE=$FeatureName MAIN=$Main"
 }
 function gitdeploy { Write-Output 'LIVE_DEPLOY_REQUESTED' }
 function gitdiscard { param([string]$Name); Write-Output "DISCARD_NAME=$Name" }
@@ -1466,6 +1558,7 @@ POWERSHELL);
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-RefreshData')
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('resume', '0123456789abcdef0123456789abcdef', '-RefreshData')
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-Feature', 'first-feature')
+& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-Main')
 & ./scripts/git_workflow.ps1 -Command gitdeploy
 & ./scripts/git_workflow.ps1 -Command gitdiscard -CommandArguments @('discard-me')
 try {
@@ -1484,11 +1577,11 @@ catch {
     if ($_.Exception.Message -match 'EVALUATED_ARGUMENT|UNEXPECTED_ARGUMENT_ACCEPTED') { throw }
     Write-Output 'INVALID_ARGUMENT_REJECTED'
 }
-POWERSHELL);
+POWERSHELL, $shell);
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'PREVIEW_MODE=resume REFRESH=True BUNDLE=0123456789abcdef0123456789abcdef', 'FEATURE=feature/first-feature', 'LIVE_DEPLOY_REQUESTED', 'DISCARD_NAME=discard-me', 'INVALID_DISCARD_ARGUMENT_REJECTED', 'INVALID_ARGUMENT_REJECTED');
-});
+    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'PREVIEW_MODE=resume REFRESH=True BUNDLE=0123456789abcdef0123456789abcdef', 'FEATURE=feature/first-feature', 'MAIN=True', 'LIVE_DEPLOY_REQUESTED', 'DISCARD_NAME=discard-me', 'INVALID_DISCARD_ARGUMENT_REJECTED', 'INVALID_ARGUMENT_REJECTED');
+})->with(['powershell', 'pwsh']);
 
 it('atomically rejects publication if main advances after release confirmation begins', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));

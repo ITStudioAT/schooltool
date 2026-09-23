@@ -84,7 +84,7 @@ function Read-SchooltoolFeatureReservation {
         $metadata = (Invoke-SchooltoolGit show "${reservationCommit}:feature.json") | ConvertFrom-Json -ErrorAction Stop
     }
     catch { throw 'The active feature reservation cannot be read; nothing was changed.' }
-    if ($metadata.branch -isnot [string] -or $metadata.id -isnot [string] -or $metadata.branch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$' -or $metadata.id -cnotmatch '^[a-f0-9]{32}$') {
+    if ($metadata.branch -isnot [string] -or $metadata.id -isnot [string] -or $metadata.branch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$' -or $metadata.id -cnotmatch '^[a-f0-9]{32}$' -or $metadata.id -ceq ('0' * 32)) {
         throw 'The active feature reservation contains invalid metadata.'
     }
     if (-not (Test-SchooltoolRef "refs/remotes/origin/$($metadata.branch)")) {
@@ -568,8 +568,10 @@ function Get-SchooltoolDiscardPreviewState {
         throw 'Cannot verify the shared preview. No feature was discarded.'
     }
     if ($status.feature_id -ceq $Feature.Id) {
-        throw 'This feature is active in the shared preview. Select another preview and complete its deployment before discarding this feature.'
+        throw 'This feature is active in the shared preview. From saved main run gitpreview -Main (REFRESH and PREVIEW), wait for successful completion, then retry gitdiscard. Preview test data will be replaced with fresh live data.'
     }
+    if ('deployment_ready' -cin @($status.PSObject.Properties.Name) -and $status.deployment_ready -isnot [bool]) { throw 'Cannot verify preview readiness. No feature was discarded.' }
+    if ('deployment_ready' -cin @($status.PSObject.Properties.Name) -and -not $status.deployment_ready) { throw 'The preview deployment is not ready. Inspect recovery before discarding a feature.' }
     $status.state_token
 }
 

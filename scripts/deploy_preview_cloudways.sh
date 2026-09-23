@@ -32,7 +32,9 @@ if ! command -v stat >/dev/null 2>&1 || [ "$(stat -c %U -- "$target_directory")"
     echo "The preview target directory must belong to the verified application Unix account." >&2
     exit 1
 fi
-if [[ ! "$source_branch" =~ ^feature/[a-z0-9]+(-[a-z0-9]+)*$ ]] || [[ ! "$bundle_checksum" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$feature_id" =~ ^[a-f0-9]{32}$ ]]; then
+main_snapshot_id=00000000000000000000000000000000
+if { [ "$source_branch" != main ] && [[ ! "$source_branch" =~ ^feature/[a-z0-9]+(-[a-z0-9]+)*$ ]]; } || [[ ! "$bundle_checksum" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$feature_id" =~ ^[a-f0-9]{32}$ ]] ||
+    { [ "$source_branch" = main ] && [ "$feature_id" != "$main_snapshot_id" ]; } || { [ "$source_branch" != main ] && [ "$feature_id" = "$main_snapshot_id" ]; }; then
     echo "Preview source identity is missing or invalid. Deploy through gitpreview." >&2
     exit 1
 fi
@@ -147,6 +149,10 @@ deployment_started=false
 preview_finished=false
 on_exit() {
     if [ "$deployment_started" = true ] && [ "$preview_finished" != true ]; then
+        # A failed final completion after artisan up must close the preview again.
+        if [ "$source_branch" = main ]; then
+            (umask 077; printf '%s\n' '{"retry":60,"status":503,"secret":null,"redirect":null,"template":null}' > "$target_directory/storage/framework/down")
+        fi
         echo "Preview deployment failed. Only the preview remains in maintenance mode. If snapshot import started, recover with php artisan preview:snapshot restore --replace before retrying; otherwise inspect the failed code/migrations first." >&2
     fi
 }
@@ -183,5 +189,8 @@ php artisan view:cache --no-interaction
 php -r 'if (file_put_contents("storage/framework/preview-release.json", json_encode(["branch" => $argv[1], "source" => $argv[2], "bundle_sha256" => $argv[3], "feature_id" => $argv[4], "deployed_at" => gmdate(DATE_ATOM)], JSON_PRETTY_PRINT)) === false) { fwrite(STDERR, "Cannot record preview identity.\n"); exit(1); }' "$source_branch" "$source_commit" "$bundle_checksum" "$feature_id"
 php artisan preview:snapshot activate --feature="$feature_id" --source="$source_commit" --no-interaction
 php artisan up --no-interaction
+if [ "$source_branch" = main ]; then
+    php artisan preview:snapshot complete-main --source="$source_commit" --no-interaction
+fi
 preview_finished=true
 echo "Preview deployment completed for $source_branch ($source_commit). Only the isolated preview database was migrated; no seeders, workers or scheduler were run."

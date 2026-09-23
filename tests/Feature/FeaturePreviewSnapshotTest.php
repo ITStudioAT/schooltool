@@ -93,6 +93,66 @@ test('preview plans bind complete lifecycle state and refuse stale or missing co
     }
 })->with(['feature', 'same feature source', 'returned feature', 'pending', 'source identity', 'recipient key', 'published release', 'maintenance', 'missing', 'malformed']);
 
+test('main preview becomes discardable only after complete activation and keeps recovery on failure', function (string $failure): void {
+    $directory = sys_get_temp_dir().'/schooltool-main-preview-'.bin2hex(random_bytes(8));
+    mkdir($directory.'/runtime/framework', 0700, true);
+    $originalStorage = storage_path();
+    app()->useStoragePath($directory.'/runtime');
+    config(['schooltool.preview.instance' => true, 'schooltool.preview.snapshot_directory' => $directory, 'schooltool.preview.snapshot_key_path' => $directory.'/recipient.key']);
+    $sourceIdentity = ['database' => 'isolated-source-fixture'];
+    $connection = Mockery::mock(Connection::class);
+    $connection->shouldReceive('table')->with('migrations')->andReturnSelf();
+    $connection->shouldReceive('orderBy')->with('migration')->andReturnSelf();
+    $connection->shouldReceive('pluck')->with('migration')->andReturn(collect(['fixture_migration']));
+    $guard = Mockery::mock(FeaturePreviewDatabaseGuard::class);
+    $guard->shouldReceive('target')->andReturn($connection);
+    $guard->shouldReceive('sourceIdentity')->andReturn($sourceIdentity);
+    $files = Mockery::mock(FeaturePreviewSnapshotFiles::class);
+    $files->shouldReceive('assertConfigurationSafe');
+    $identity = app(FeaturePreviewSnapshotIdentityStore::class);
+    $service = new FeaturePreviewSnapshotService($guard, app(FeaturePreviewSnapshotArchive::class), $identity, $files);
+    $mainId = FeaturePreviewSnapshotService::MAIN_SNAPSHOT_ID;
+    $source = str_repeat('a', 40);
+    try {
+        $service->generateKey();
+        $identity->write(['feature_id' => str_repeat('b', 32), 'source_identity' => $sourceIdentity]);
+        $identity->write(['feature_id' => $mainId, 'source_identity' => $sourceIdentity, 'phase' => 'imported', 'backup' => 'verified-private-backup'], 'snapshot-pending.json');
+        file_put_contents(storage_path('framework/down'), '{}');
+        $service->activate($mainId, $source);
+        expect($identity->read('snapshot-pending.json')['phase'])->toBe('activated')
+            ->and($identity->read('snapshot-pending.json')['backup'])->toBe('verified-private-backup');
+        expect(fn () => $service->status($mainId))->toThrow(RuntimeException::class, 'incomplete');
+        expect(fn () => $service->completeMain($source))->toThrow(RuntimeException::class, 'not completely activated');
+        unlink(storage_path('framework/down'));
+        file_put_contents(storage_path('framework/preview-release.json'), json_encode(['branch' => 'main', 'source' => $source, 'feature_id' => $mainId], JSON_THROW_ON_ERROR));
+        if ($failure === 'maintenance') {
+            file_put_contents(storage_path('framework/down'), '{}');
+        } elseif ($failure === 'wrong release') {
+            file_put_contents(storage_path('framework/preview-release.json'), json_encode(['branch' => 'feature/old', 'source' => $source, 'feature_id' => $mainId], JSON_THROW_ON_ERROR));
+        } elseif ($failure === 'wrong source') {
+            $source = str_repeat('c', 40);
+        }
+        if ($failure !== 'none') {
+            expect(fn () => $service->completeMain($source))->toThrow(RuntimeException::class)
+                ->and($identity->read('snapshot-pending.json')['backup'])->toBe('verified-private-backup');
+            expect(fn () => $service->status($mainId))->toThrow(RuntimeException::class, 'incomplete');
+
+            return;
+        }
+        $service->completeMain($source);
+        $status = $service->status($mainId);
+        expect($status['mode'])->toBe('main')->and($status['feature_id'])->toBe($mainId)
+            ->and($status['needs_snapshot'])->toBeFalse()->and($status['deployment_ready'])->toBeTrue()
+            ->and($identity->read('snapshot-pending.json'))->toBe([])
+            ->and($service->status(str_repeat('d', 32))['needs_snapshot'])->toBeTrue();
+        unlink(storage_path('framework/preview-release.json'));
+        expect($service->status($mainId)['deployment_ready'])->toBeFalse();
+    } finally {
+        app()->useStoragePath($originalStorage);
+        (new Filesystem)->deleteDirectory($directory);
+    }
+})->with(['none', 'maintenance', 'wrong release', 'wrong source']);
+
 test('export removes completed ciphertext if the final source connection check fails', function (): void {
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-snapshot-final-check-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);

@@ -55,6 +55,31 @@ Bereits separat geprüfte ältere Nachweise (`legacy-reviewed` und die fest begr
 
 Die installierten Profilfunktionen laden den Workflow bei jedem Aufruf aus dem Projekt. Falls das Terminal noch ältere Funktionsdefinitionen hält, im Projektordner `. ./scripts/git_helpers.ps1` ausführen. Das überschreibt keine Profildatei.
 
+### Gemeinsame Vorschau auf main zurückstellen
+
+`gitpreview -Main` veröffentlicht den exakt gespeicherten aktuellen `main` ausschließlich in der isolierten Vorschau. Es entsteht kein Ersatz-Feature und keine Feature-Reservierung. Live bleibt unverändert. Alle PCs benötigen die aktuellen Helfer; im bestehenden Terminal `. ./scripts/git_helpers.ps1` laden.
+
+Der erste Umstieg verwendet vor der Installation weiterhin die vorhandenen Status-, Export- und Planprüfungen. Die neue Abschlussfunktion kommt mit dem geprüften Vorschaupaket und wird erst nach dessen Installation aufgerufen. Ein separates Live-Deployment ist dafür nicht erforderlich. Fehlen schon die vorhandenen Snapshot-Befehle oder ist eine ältere Vorschau noch nicht isoliert eingerichtet, stoppt die Planung vor Veröffentlichung; dann gilt die dokumentierte Ersteinrichtung.
+
+Zuerst lokale Änderungen prüfen und mit `gitsave "Main-Vorschau unterstützen"` normal veröffentlichen. Danach auf sauberem, mit GitHub übereinstimmendem `main`:
+
+```powershell
+gitpreview -Main
+```
+
+Beim Wechsel von einem Feature zuerst `REFRESH`, danach `PREVIEW` bestätigen. Die aktiven Vorschau-Testdaten werden nach privater Sicherung durch eine frische Live-Kopie ersetzt. Es gibt keine getrennt aufgehobenen Testdaten pro Feature. Nur die Vorschau erhält die Migrationen des geprüften Codes. Bei erneutem Veröffentlichen desselben Main-Modus bleiben Testdaten normalerweise erhalten; `gitpreview -Main -RefreshData` ersetzt sie ausdrücklich erneut.
+
+`gitpreview prepare -Main` erstellt nur einen lokalen, quellengebundenen Kandidaten. `gitpreview resume <Bundle-ID> -Main` setzt ihn vor einem Veröffentlichungsversuch fort. `-Main` und `-Feature` sind gegenseitig ausgeschlossen. Ein geänderter Main-Stand, ein veränderter Vorschauplan oder eine belegte Operationssperre stoppen den Ablauf.
+
+Erst nach erfolgreichem Import, Migrationen, Aktivierung und Abschluss gilt die Vorschau als Main-Modus. Bis dahin bleiben Wiederherstellungsnachweis und Verwerfen-Schutz wirksam; bei Fehlern Zustand und erhaltene Sicherung prüfen, keine Marker löschen oder denselben begonnenen Kandidaten blind wiederholen. Nach erfolgreichem Abschluss kann das zuvor aktive Feature verworfen werden:
+
+```powershell
+gitdiscard "feature/matura"
+# Bestätigung: DISCARD feature/matura
+```
+
+Ein noch belegter Feature-Worktree muss vorher bewusst freigegeben werden. Bei sauberem Hilfs-Worktree kann `git -C "EXAKTER-PFAD" switch --detach HEAD` den Branch freigeben, ohne Dateien oder Commit zu entfernen. Vorher dort Status und laufende Arbeit prüfen.
+
 ### Ein Feature ohne Übernahme verwerfen
 
 ```powershell

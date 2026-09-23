@@ -43,13 +43,16 @@ switch ($Command) {
             elseif ($argument -eq '-RefreshData' -and -not $parameters.ContainsKey('RefreshData')) {
                 $parameters.RefreshData = $true
             }
+            elseif ($argument -ceq '-Main' -and -not $parameters.ContainsKey('Main')) {
+                $parameters.Main = $true
+            }
             elseif ($argument -in @('deploy', 'prepare', 'resume') -and -not $parameters.ContainsKey('Mode')) {
                 $parameters.Mode = $argument
             }
             elseif ($parameters.Mode -eq 'resume' -and $argument -cmatch '^[a-f0-9]{32}$' -and -not $parameters.ContainsKey('BundleId')) {
                 $parameters.BundleId = $argument
             }
-            else { throw 'Usage: gitpreview [deploy|prepare] or gitpreview resume BUNDLE_ID [-RefreshData]' }
+            else { throw 'Usage: gitpreview [deploy|prepare|resume BUNDLE_ID] [-Main | -Feature NAME] [-RefreshData]' }
         }
         if ($expectFeature) { throw 'Usage: gitpreview [deploy|prepare|resume BUNDLE_ID] [-Feature NAME] [-RefreshData]' }
         if ($parameters.Mode -eq 'resume' -and -not $parameters.ContainsKey('BundleId')) { throw 'Usage: gitpreview resume BUNDLE_ID [-RefreshData]' }

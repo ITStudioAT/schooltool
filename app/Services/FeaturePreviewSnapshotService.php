@@ -15,6 +15,9 @@ use Throwable;
 
 class FeaturePreviewSnapshotService
 {
+    /** Reserved snapshot identity for main; never a registered feature lifecycle. */
+    public const string MAIN_SNAPSHOT_ID = '00000000000000000000000000000000';
+
     private const array EMPTY_TABLES = ['sessions', 'password_reset_tokens', 'personal_access_tokens', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks'];
 
     /** Historical ledger entries remain valid after the module's schema is retired. */
@@ -95,7 +98,11 @@ class FeaturePreviewSnapshotService
             'public_key' => $publicKey,
             'needs_snapshot' => ($state['feature_id'] ?? null) !== $feature || ($state['source_identity'] ?? null) !== $sourceIdentity,
             'state_token' => hash('sha256', json_encode([$state, $pending, $sourceIdentity, $publicKey, $this->runtimeState()], JSON_THROW_ON_ERROR)),
+            // Keep the reserved identity visible so older clients also require REFRESH when leaving main.
             'feature_id' => $state['feature_id'] ?? null,
+            'mode' => ($state['feature_id'] ?? null) === self::MAIN_SNAPSHOT_ID ? 'main' : 'feature',
+            'deployment_ready' => ! file_exists(storage_path('framework/down'))
+                && (($state['feature_id'] ?? null) !== self::MAIN_SNAPSHOT_ID || $this->mainReleaseMatches((string) ($state['source_commit'] ?? ''))),
             'snapshot_directory' => str_replace('\\', '/', $this->identity->directory()),
         ];
     }
@@ -389,8 +396,16 @@ class FeaturePreviewSnapshotService
         $state['source_commit'] = $source;
         $state['migrations'] = $target->table('migrations')->orderBy('migration')->pluck('migration')->all();
         $state['activated_at'] = gmdate(DATE_ATOM);
+        $state['mode'] = $feature === self::MAIN_SNAPSHOT_ID ? 'main' : 'feature';
         unset($state['phase'], $state['staging']);
         $this->identity->write($state);
+        if ($feature === self::MAIN_SNAPSHOT_ID) {
+            // Keep the verified backup and block status/discard until the launcher has reopened successfully.
+            $state['phase'] = 'activated';
+            $this->identity->write($state, 'snapshot-pending.json');
+
+            return;
+        }
         if ($pending !== []) {
             $path = $this->identity->path('snapshot-pending.json');
             $this->identity->assertPrivateFile($path);
@@ -398,6 +413,38 @@ class FeaturePreviewSnapshotService
                 throw new RuntimeException('Snapshot activated but its pending marker needs recovery.');
             }
         }
+    }
+
+    public function completeMain(string $source): void
+    {
+        $this->database->target();
+        $pending = $this->identity->read('snapshot-pending.json');
+        $state = $this->identity->read();
+        if (preg_match('/\A[a-f0-9]{40}\z/', $source) !== 1 || file_exists(storage_path('framework/down'))
+            || ($pending['phase'] ?? null) !== 'activated' || ($pending['feature_id'] ?? null) !== self::MAIN_SNAPSHOT_ID
+            || ($state['feature_id'] ?? null) !== self::MAIN_SNAPSHOT_ID || ($state['source_commit'] ?? null) !== $source
+            || ($pending['source_commit'] ?? null) !== $source || ! $this->mainReleaseMatches($source)
+            || ($state['source_identity'] ?? null) !== $this->database->sourceIdentity()) {
+            throw new RuntimeException('Main preview is not completely activated. Keep its recovery state and inspect the deployment.');
+        }
+        $path = $this->identity->path('snapshot-pending.json');
+        $this->identity->assertPrivateFile($path);
+        if (! unlink($path)) {
+            throw new RuntimeException('Main preview completion could not be recorded. Recovery state remains.');
+        }
+    }
+
+    private function mainReleaseMatches(string $source): bool
+    {
+        $path = storage_path('framework/preview-release.json');
+        if (! is_file($path) || is_link($path) || preg_match('/\A[a-f0-9]{40}\z/', $source) !== 1) {
+            return false;
+        }
+        $release = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+        return ($release['branch'] ?? null) === 'main'
+            && ($release['source'] ?? null) === $source
+            && ($release['feature_id'] ?? null) === self::MAIN_SNAPSHOT_ID;
     }
 
     /** @return Generator<int, array<string, mixed>> */

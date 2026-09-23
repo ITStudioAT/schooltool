@@ -134,14 +134,18 @@ if [ "$PREVIEW_TEST_FAILURE" = check ] && [ "${2:-}" = preview:check ]; then exi
 if [ "$PREVIEW_TEST_FAILURE" = stale-plan ] && [ "${3:-}" = assert-plan ]; then exit 1; fi
 if [ "${3:-}" = assert-plan ]; then
     if [ "$PWD" != "$PREVIEW_TEST_TARGET" ] || [ -n "${LARAVEL_STORAGE_PATH:-}" ]; then exit 42; fi
+    if [ -f "$PREVIEW_TEST_UPDATED" ]; then exit 44; fi
     printf 'preview plan uses target runtime\n' >> "$PREVIEW_TEST_LOG"
 fi
+if [ "${3:-}" = complete-main ] && [ ! -f "$PREVIEW_TEST_UPDATED" ]; then exit 45; fi
 if [ "${3:-}" = assert-current ] || [ "${3:-}" = receive ] || [ "${2:-}" = install ]; then
     if [ "$PWD" != "$PREVIEW_TEST_CANDIDATE" ]; then exit 43; fi
 fi
 if [ "$PREVIEW_TEST_FAILURE" = import ] && [ "${3:-}" = import ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = migrate ] && [ "${2:-}" = migrate ]; then exit 1; fi
 if [ "$PREVIEW_TEST_FAILURE" = activate ] && [ "${3:-}" = activate ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = reopen ] && [ "${2:-}" = up ]; then exit 1; fi
+if [ "$PREVIEW_TEST_FAILURE" = complete ] && [ "${3:-}" = complete-main ]; then exit 1; fi
 if [ "${2:-}" = preview:snapshot ] && [ "${3:-}" = receive ]; then printf '/private/incoming.stpreview\n'; fi
 if [ "${2:-}" = config:cache ]; then
     printf 'config cache umask %s\n' "$(umask)" >> "$PREVIEW_TEST_LOG"
@@ -168,7 +172,7 @@ if [[ "${@: -1}" == */composer-cache ]]; then
 fi
 exec /usr/bin/mkdir "$@"
 BASH,
-        'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\n",
+        'rsync' => "#!/bin/bash\nprintf 'rsync %s\\n' \"\$*\" >> \"\$PREVIEW_TEST_LOG\"\nprintf 'new candidate installed\\n' > \"\$PREVIEW_TEST_UPDATED\"\n",
         'flock' => "#!/bin/bash\nprintf 'preview lock acquired\\n' >> \"\$PREVIEW_TEST_LOG\"\nshift 4\nexec \"\$@\"\n",
     ];
     foreach ($executables as $name => $contents) {
@@ -180,6 +184,7 @@ BASH,
         'PREVIEW_TEST_LOG' => previewBashPath($directory.'/commands.log'),
         'PREVIEW_TEST_TARGET' => previewBashPath($target),
         'PREVIEW_TEST_CANDIDATE' => previewBashPath($candidate),
+        'PREVIEW_TEST_UPDATED' => previewBashPath($directory.'/new-runtime-installed'),
         'LARAVEL_STORAGE_PATH' => false,
         'PREVIEW_TEST_CACHE_MODE' => previewBashPath($directory.'/cache-mode'),
         'PREVIEW_TEST_CACHE_CREATION' => previewBashPath($directory.'/cache-creation'),
@@ -191,9 +196,11 @@ BASH,
         'PREVIEW_TEST_FAILURE' => match ($scenario) {
             'runtime check failure' => 'check',
             'stale preview plan', 'stale snapshot plan' => 'stale-plan',
-            'snapshot failure' => 'import',
-            'migration failure' => 'migrate',
-            'activation failure' => 'activate',
+            'snapshot failure', 'main snapshot failure' => 'import',
+            'migration failure', 'main migration failure' => 'migrate',
+            'activation failure', 'main activation failure' => 'activate',
+            'main reopen failure' => 'reopen',
+            'main completion failure' => 'complete',
             'config cache missing' => 'cache-missing',
             'config cache unsafe mode' => 'cache-mode',
             'config cache wrong owner' => 'cache-owner',
@@ -206,13 +213,14 @@ BASH,
     ];
 
     try {
-        $snapshot = in_array($scenario, ['snapshot success', 'snapshot failure', 'stale snapshot plan'], true);
-        $process = new Process([previewBashExecutable(), '-c', 'umask 022; export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), 'feature/new-function', str_repeat('b', 64), str_repeat('c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-', 'schooltool-feature', $scenario === 'missing preview plan' ? '' : str_repeat('a', 64)], $directory, $environment);
+        $mainPreview = str_starts_with($scenario, 'main ');
+        $snapshot = $mainPreview || in_array($scenario, ['snapshot success', 'snapshot failure', 'stale snapshot plan'], true);
+        $process = new Process([previewBashExecutable(), '-c', 'umask 022; export PATH="$1:/usr/bin:/bin"; shift; exec bash "$@"', 'preview-test', previewBashPath($directory.'/bin'), previewBashPath($candidate.'/scripts/deploy_preview_cloudways.sh'), previewBashPath($target), $mainPreview ? 'main' : 'feature/new-function', str_repeat('b', 64), str_repeat($mainPreview ? '0' : 'c', 32), $snapshot ? '/tmp/schooltool-preview-'.str_repeat('d', 32).'/'.str_repeat('e', 32).'.stpreview' : '-', $snapshot ? str_repeat('f', 64) : '-', 'schooltool-feature', $scenario === 'missing preview plan' ? '' : str_repeat('a', 64)], $directory, $environment);
         $process->run();
         $commands = is_file($directory.'/commands.log') ? file_get_contents($directory.'/commands.log') : '';
         expect($commands)->not->toContain('app:update', 'db:seed', 'horizon', 'queue:restart', 'cache:clear', 'optimize:clear', 'schedule:');
 
-        if (in_array($scenario, ['success', 'snapshot success', 'composer cache reused'], true)) {
+        if (in_array($scenario, ['success', 'snapshot success', 'composer cache reused', 'main success'], true)) {
             expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
                 ->and($commands)->toContain('preview:check', '--no-scripts', 'config:cache', 'view:cache', 'artisan up')
                 ->and($commands)->toContain('--exclude=/.env', '--exclude=/storage', 'artisan migrate --force --no-interaction', 'preview:snapshot activate');
@@ -236,13 +244,26 @@ BASH,
                     ->and(strpos($commands, 'preview:snapshot import'))->toBeLessThan(strpos($commands, 'artisan migrate'))
                     ->and(strpos($commands, 'artisan migrate'))->toBeLessThan(strpos($commands, 'preview:snapshot activate'))
                     ->and(strpos($commands, 'preview:snapshot activate'))->toBeLessThan(strpos($commands, 'artisan up'));
+                if ($mainPreview) {
+                    expect($commands)->toContain('preview:snapshot complete-main --source='.str_repeat('a', 40))
+                        ->and(strpos($commands, 'artisan up'))->toBeLessThan(strpos($commands, 'preview:snapshot complete-main'));
+                }
             } else {
                 expect($commands)->toContain('preview:snapshot assert-current', 'preview:snapshot checkpoint')->not->toContain('preview:snapshot import')
                     ->and(strpos($commands, 'preview:snapshot checkpoint'))->toBeLessThan(strpos($commands, 'artisan migrate'));
             }
         } else {
-            expect($process->isSuccessful())->toBeFalse()
-                ->and($commands)->not->toContain('artisan up');
+            expect($process->isSuccessful())->toBeFalse();
+            if ($mainPreview) {
+                expect(json_decode(file_get_contents($target.'/storage/framework/down'), true)['status'])->toBe(503)
+                    ->and($process->getErrorOutput())->toContain('remains in maintenance');
+            }
+            if (! in_array($scenario, ['main reopen failure', 'main completion failure'], true)) {
+                expect($commands)->not->toContain('artisan up');
+            }
+            if ($mainPreview) {
+                return;
+            }
             if (in_array($scenario, ['snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner'], true)) {
                 expect($commands)->toContain('rsync ')->and($process->getErrorOutput())->toContain('remains in maintenance');
             } else {
@@ -270,7 +291,7 @@ BASH,
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'stale preview plan', 'stale snapshot plan', 'missing preview plan', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner', 'composer cache reused', 'composer cache is file', 'composer cache symlink', 'composer parent symlink', 'composer cache wrong owner', 'composer parent wrong owner', 'composer cache unsafe mode', 'composer parent unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink']);
+})->with(['success', 'snapshot success', 'wrong account', 'wrong owner', 'wrong instance', 'runtime check failure', 'stale preview plan', 'stale snapshot plan', 'missing preview plan', 'public storage exposed', 'runtime path is file', 'config cache is directory', 'snapshot failure', 'migration failure', 'activation failure', 'config cache missing', 'config cache unsafe mode', 'config cache wrong owner', 'composer cache reused', 'composer cache is file', 'composer cache symlink', 'composer parent symlink', 'composer cache wrong owner', 'composer parent wrong owner', 'composer cache unsafe mode', 'composer parent unsafe mode', 'composer cache child symlink', 'composer cache child unsafe mode', 'composer cache child hardlink', 'main success', 'main snapshot failure', 'main migration failure', 'main activation failure', 'main reopen failure', 'main completion failure']);
 
 it('transfers a preview with strict key authentication and private snapshot permissions', function (bool $snapshot): void {
     if (PHP_OS_FAMILY !== 'Windows') {

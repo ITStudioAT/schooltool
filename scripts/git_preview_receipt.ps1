@@ -2,6 +2,18 @@ function Get-SchooltoolPreviewDirectory {
     [System.IO.Path]::GetFullPath((Join-Path (Invoke-SchooltoolGit rev-parse --git-common-dir) 'schooltool-preview'))
 }
 
+function Assert-SchooltoolPreviewSourceSnapshot {
+    param($Feature, [string]$FeatureCommit, [string]$MainCommit, [switch]$Main)
+    if (-not $Main) {
+        Assert-SchooltoolFeatureSnapshot -Feature $Feature -FeatureCommit $FeatureCommit -MainCommit $MainCommit
+        return
+    }
+    Update-SchooltoolRemote
+    if ($Feature -or $FeatureCommit -cne $MainCommit -or (Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -cne $MainCommit) {
+        throw 'main changed since preview preparation. Prepare a new main preview; nothing was discarded.'
+    }
+}
+
 function Get-SchooltoolPreviewOrigin {
     param([switch]$Push)
     $urls = @(if ($Push) { Invoke-SchooltoolGit remote get-url --push --all origin } else { Invoke-SchooltoolGit remote get-url --all origin })
@@ -49,14 +61,15 @@ function Read-SchooltoolPreviewReceipt {
         $receipt = [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json -ErrorAction Stop
     }
     catch { throw 'The preview receipt is invalid or belongs to another Windows account/computer. Nothing was published.' }
-    if ($receipt.Format -cnotin @('schooltool-preview-v1', 'schooltool-preview-v2', 'schooltool-preview-v3') -or $receipt.Id -cne $Id) { throw 'Invalid preview check receipt.' }
+    if ($receipt.Format -cnotin @('schooltool-preview-v1', 'schooltool-preview-v2', 'schooltool-preview-v3', 'schooltool-main-preview-v1') -or $receipt.Id -cne $Id) { throw 'Invalid preview check receipt.' }
     Assert-SchooltoolPreviewEvidence $receipt
     foreach ($field in @('FeatureCommit', 'MainCommit', 'SourceCommit', 'ArtifactCommit')) {
         if ($receipt.$field -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid preview commit identity.' }
     }
+    $mainPreview = $receipt.Format -ceq 'schooltool-main-preview-v1'
     if ($receipt.Checksum -cnotmatch '^[a-f0-9]{64}$' -or $receipt.SourceTree -cnotmatch '^[a-f0-9]{64}$' -or
-        $receipt.Feature.Id -cnotmatch '^[a-f0-9]{32}$' -or $receipt.Feature.ReservationCommit -cnotmatch '^[a-f0-9]{40}$' -or
-        $receipt.Feature.Branch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$') {
+        ($mainPreview -and ($receipt.Feature -or $receipt.FeatureCommit -cne $receipt.MainCommit -or $receipt.SourceCommit -cne $receipt.MainCommit)) -or
+        (-not $mainPreview -and ($receipt.Feature.Id -cnotmatch '^[a-f0-9]{32}$' -or $receipt.Feature.ReservationCommit -cnotmatch '^[a-f0-9]{40}$' -or $receipt.Feature.Branch -cnotmatch '^feature/[a-z0-9]+(?:-[a-z0-9]+)*$'))) {
         throw 'Invalid preview receipt identity.'
     }
     if ($receipt.Format -ceq 'schooltool-preview-v1') {
@@ -73,7 +86,7 @@ function Read-SchooltoolPreviewReceipt {
 
 function Assert-SchooltoolPreviewEvidence {
     param([object]$Receipt)
-    if ($Receipt.Format -ceq 'schooltool-preview-v3') {
+    if ($Receipt.Format -cin @('schooltool-preview-v3', 'schooltool-main-preview-v1')) {
         if ($Receipt.EvidenceKind -cne 'inline-build-and-integrity') { throw 'V3 preview receipts require inline build and integrity evidence.' }
         if ($Receipt.Checks -cne 'preflight-success') { throw 'Invalid preview check receipt.' }
         return
@@ -119,23 +132,25 @@ function Assert-SchooltoolPreviewEvidence {
 function Assert-SchooltoolPreviewReceipt {
     param([object]$Receipt, [string]$Root)
     Assert-SchooltoolPreviewEvidence $Receipt
+    $mainPreview = $Receipt.Format -ceq 'schooltool-main-preview-v1'
+    $sourceBranch = if ($mainPreview) { 'main' } else { $Receipt.Feature.Branch }
     Push-Location -LiteralPath $Root
     try {
         Assert-SchooltoolRepository
         Assert-SchooltoolClean
         if ($Receipt.Root -cne (Get-Location).Path -or $Receipt.Directory -cne (Get-SchooltoolPreviewDirectory) -or
             $Receipt.Origin -cne (Get-SchooltoolPreviewOrigin) -or $Receipt.PushOrigin -cne (Get-SchooltoolPreviewOrigin -Push) -or
-            (Invoke-SchooltoolGit branch --show-current) -cne $Receipt.Feature.Branch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $Receipt.FeatureCommit) {
+            (Invoke-SchooltoolGit branch --show-current) -cne $sourceBranch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $Receipt.FeatureCommit) {
             throw 'The original checkout or origin differs from the checked preview receipt.'
         }
-        Assert-SchooltoolFeatureSnapshot -Feature $Receipt.Feature -FeatureCommit $Receipt.FeatureCommit -MainCommit $Receipt.MainCommit
+        Assert-SchooltoolPreviewSourceSnapshot -Feature $Receipt.Feature -FeatureCommit $Receipt.FeatureCommit -MainCommit $Receipt.MainCommit -Main:$mainPreview
         if (Test-SchooltoolRef "refs/remotes/origin/preview/$($Receipt.Id)") { throw 'The preview bundle was already published. Automatic replay is blocked.' }
     }
     finally { Pop-Location }
     Assert-SchooltoolPreviewPlainPath $Receipt.Candidate.Path
     Push-Location -LiteralPath $Receipt.Candidate.Path
     try {
-        if ($Receipt.Format -cin @('schooltool-preview-v2', 'schooltool-preview-v3')) {
+        if ($Receipt.Format -cin @('schooltool-preview-v2', 'schooltool-preview-v3', 'schooltool-main-preview-v1')) {
             Assert-SchooltoolRepository -Candidate $Receipt.Candidate
         }
         elseif (Invoke-SchooltoolGit branch --show-current) {
