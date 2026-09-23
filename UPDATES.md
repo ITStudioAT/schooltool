@@ -1,5 +1,20 @@
 # UPDATES
 
+## 3.49.2
+
+### System
+
+- Mehrere Feature-Branches möglich
+
+### Minor Updates
+
+- Admin/Home: Linksbündig
+- Anmeldesystem: Benutzerverwaltung direkt im Anmeldesystem
+
+### Nachhilfe
+
+- entfernt
+
 ## 3.49.1
 
 ### Teaching

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.49.1',
+    'version' => '3.49.2',
     'preview' => [
         'instance' => filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN),
         'url' => env('SCHOOLTOOL_PREVIEW_URL', ''),
