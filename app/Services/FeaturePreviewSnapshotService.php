@@ -10,6 +10,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use PDO;
+use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
@@ -476,7 +477,7 @@ class FeaturePreviewSnapshotService
                 if ($live && (in_array($table, self::EMPTY_TABLES, true) || str_starts_with($table, 'telescope_') || str_starts_with($table, 'pulse_'))) {
                     continue;
                 }
-                $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+                $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, false);
                 $statement = $pdo->query('SELECT '.implode(', ', array_map($this->database->identifier(...), $columns)).' FROM '.$quoted);
                 try {
                     while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
@@ -519,7 +520,7 @@ class FeaturePreviewSnapshotService
                     }
                 } finally {
                     $statement->closeCursor();
-                    $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
+                    $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, true);
                 }
             }
         } finally {

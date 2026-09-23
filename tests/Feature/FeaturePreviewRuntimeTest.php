@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
+use Pdo\Mysql;
 
 beforeEach(function (): void {
     $this->originalStoragePath = storage_path();
@@ -204,9 +205,9 @@ test('snapshot connection cannot change the captured preview credentials or hard
         'host', 'database', 'username', 'password' => $configuration[$change] = 'foreign',
         'port' => $configuration['port'] = 3307,
         'persistent' => $configuration['options'][PDO::ATTR_PERSISTENT] = true,
-        'multiple statements' => $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = true,
-        'local files' => $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = true,
-        'initial command' => $configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND] = 'SELECT 1',
+        'multiple statements' => $configuration['options'][Mysql::ATTR_MULTI_STATEMENTS] = true,
+        'local files' => $configuration['options'][Mysql::ATTR_LOCAL_INFILE] = true,
+        'initial command' => $configuration['options'][Mysql::ATTR_INIT_COMMAND] = 'SELECT 1',
         'source alias' => $name = 'preview_snapshot_source',
     };
     expect(fn () => app('db.factory')->make($configuration, $name)->getPdo())

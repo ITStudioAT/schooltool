@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
 use PDO;
+use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
@@ -177,9 +178,9 @@ class FeaturePreviewDatabaseGuard
     {
         $configuration['options'][PDO::ATTR_PERSISTENT] = false;
         $configuration['options'][PDO::ATTR_ERRMODE] = PDO::ERRMODE_EXCEPTION;
-        $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
-        $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = false;
-        unset($configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND]);
+        $configuration['options'][Mysql::ATTR_MULTI_STATEMENTS] = false;
+        $configuration['options'][Mysql::ATTR_LOCAL_INFILE] = false;
+        unset($configuration['options'][Mysql::ATTR_INIT_COMMAND]);
 
         return $configuration;
     }

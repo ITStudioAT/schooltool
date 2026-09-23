@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Str;
+use Pdo\Mysql;
 
 return [
 
@@ -59,7 +60,7 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
 
@@ -79,8 +80,8 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::ATTR_TIMEOUT => env('CLOUDWAYS_DB_TIMEOUT', 15),
-                PDO::MYSQL_ATTR_SSL_CA => env('CLOUDWAYS_DB_SSL_CA'),
-                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => env('CLOUDWAYS_DB_SSL_VERIFY', true),
+                Mysql::ATTR_SSL_CA => env('CLOUDWAYS_DB_SSL_CA'),
+                Mysql::ATTR_SSL_VERIFY_SERVER_CERT => env('CLOUDWAYS_DB_SSL_VERIFY', true),
             ], static fn (mixed $value): bool => $value !== null && $value !== '') : [],
         ],
 
@@ -100,7 +101,7 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
 
