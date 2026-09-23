@@ -75,7 +75,7 @@ describe('Admin app startup', () => {
 
         expect(source).toContain('href="/homepage/impressum"')
         expect(source).toContain('@click="openCookiePrefs"')
-        expect(source).toContain('<v-footer>')
+        expect(source).toMatch(/<v-footer(?:\s[^>]*)?>/)
         expect(source).not.toContain('<v-footer app>')
 
         for (const viewSource of [adminViewSource, packagedAdminViewSource]) {

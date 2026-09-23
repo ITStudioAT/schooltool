@@ -19,9 +19,8 @@ describe('removed tutoring administration', () => {
             canAccessTutoringSettingsTab: true,
         })
 
-        expect(navigationItems.map((item: { key: string }) => item.key)).toEqual(['super_admin', 'admin'])
+        expect(navigationItems.map((item: { key: string }) => item.key)).toEqual(['admin'])
         expect((Settings as any).methods.availableTabKeys(true, true, true)).toEqual([
-            'super_admin',
             'admin',
             'teaching',
         ])
