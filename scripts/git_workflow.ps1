@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitsave', 'gitupdate', 'gitrelease', 'gitcheck', 'gitpreview', 'gitdeploy')]
+    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitsave', 'gitupdate', 'gitrelease', 'gitdiscard', 'gitcheck', 'gitpreview', 'gitdeploy')]
     [string]$Command,
 
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -13,8 +13,8 @@ $ErrorActionPreference = 'Stop'
 $parameters = @{}
 $arguments = @($CommandArguments | Where-Object { $null -ne $_ })
 switch ($Command) {
-    'gitstart' {
-        if ($arguments.Count -ne 1) { throw 'Usage: gitstart NAME' }
+    { $_ -in @('gitstart', 'gitdiscard') } {
+        if ($arguments.Count -ne 1) { throw "Usage: $Command NAME" }
         $parameters.Name = $arguments[0]
     }
     'gitwork' {

@@ -129,6 +129,7 @@ function gitmain { Invoke-ProjectGitWorkflow 'gitmain' `$args }
 function gitsave { Invoke-ProjectGitWorkflow 'gitsave' `$args }
 function gitupdate { Invoke-ProjectGitWorkflow 'gitupdate' `$args }
 function gitrelease { Invoke-ProjectGitWorkflow 'gitrelease' `$args }
+function gitdiscard { Invoke-ProjectGitWorkflow 'gitdiscard' `$args }
 function gitcheck { Invoke-ProjectGitWorkflow 'gitcheck' `$args }
 function gitpreview { Invoke-ProjectGitWorkflow 'gitpreview' `$args }
 function gitdeploy { Invoke-ProjectGitWorkflow 'gitdeploy' `$args }
@@ -177,5 +178,5 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Could not configure the repository hooks path.'
 }
 
-Write-Host 'Open a new PowerShell terminal to use gitstart, gitwork, gitmain, gitsave, gitupdate, gitrelease, gitcheck, gitpreview and gitdeploy.' -ForegroundColor Cyan
+Write-Host 'Open a new PowerShell terminal to use gitstart, gitwork, gitmain, gitsave, gitupdate, gitrelease, gitdiscard, gitcheck, gitpreview and gitdeploy.' -ForegroundColor Cyan
 Write-Host 'Or reload the profile in your current terminal with: . $PROFILE' -ForegroundColor Cyan

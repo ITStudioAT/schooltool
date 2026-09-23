@@ -195,6 +195,7 @@ exit($complete ? 0 : 25);
         $null = $output.GetAwaiter().GetResult()
         $null = $errors.GetAwaiter().GetResult()
         $process.WaitForExit()
+        if ($process.ExitCode -eq 21) { throw 'SSH transfer rejected its parent directory: it must be canonical, owned by the application account and not group/world writable (exit 21).' }
         if ($process.ExitCode -ne 0) { throw "SSH transfer failed (exit $($process.ExitCode))." }
         $localStream.Dispose()
         $localStream = $null
@@ -344,11 +345,15 @@ function Send-SchooltoolLiveRelease {
     }
     $id = [guid]::NewGuid().ToString('N')
     $localPath = Join-Path ([System.IO.Path]::GetTempPath()) "schooltool-pdeploy-$id.sh"
-    $remotePath = "$($Target.Path)/storage/framework/schooltool-pdeploy-$id.sh"
+    $remoteDirectory = "$($Target.Path)/storage/framework/schooltool-pdeploy-$id"
+    $remotePath = "$remoteDirectory/launcher.sh"
+    $directoryCreated = $false
     $uploaded = $false
     try {
         [System.IO.File]::WriteAllText($localPath, ($launcher.Replace("`r`n", "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
         $launcherHash = Get-SchooltoolFileChecksum $localPath
+        Invoke-SchooltoolRemote -Target $Target -Command "umask 077; mkdir -m 700 -- '$remoteDirectory'"
+        $directoryCreated = $true
         Copy-SchooltoolRemoteFile -Target $Target -LocalPath $localPath -RemotePath $remotePath
         $uploaded = $true
         Invoke-SchooltoolRemote -Target $Target -Command "echo '$launcherHash  $remotePath' | sha256sum -c -; SCHOOLTOOL_DEPLOY_PROJECT_DIRECTORY='$($Target.Path)' SCHOOLTOOL_EXPECTED_MAIN_COMMIT='$Commit' SCHOOLTOOL_EXPECTED_SOURCE_COMMIT='$SourceCommit' SCHOOLTOOL_EXPECTED_FRONTEND_SHA256='$ArchiveHash' SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB='$ManifestBlob' SCHOOLTOOL_PUBLICATION_POLICY='background-ci-v1' bash '$remotePath'"
@@ -358,6 +363,10 @@ function Send-SchooltoolLiveRelease {
         if ($uploaded) {
             try { Invoke-SchooltoolRemote -Target $Target -Command "rm -f -- '$remotePath'" }
             catch { Write-Warning "Deployment launcher cleanup failed: $remotePath" }
+        }
+        if ($directoryCreated) {
+            try { Invoke-SchooltoolRemote -Target $Target -Command "rmdir -- '$remoteDirectory'" }
+            catch { Write-Warning "Deployment launcher directory retained: $remoteDirectory" }
         }
     }
 }

@@ -535,6 +535,81 @@ function Assert-SchooltoolVersion {
     }
 }
 
+function Get-SchooltoolDiscardPreviewState {
+    param($Feature)
+    $target = Get-SchooltoolPreviewTarget
+    $status = Invoke-SchooltoolRemoteJson -Target $target -Command "php artisan preview:snapshot status --feature='$($Feature.Id)' --no-interaction"
+    if ($status.state_token -cnotmatch '^[a-f0-9]{64}$' -or 'feature_id' -cnotin @($status.PSObject.Properties.Name) -or
+        ($null -ne $status.feature_id -and $status.feature_id -cnotmatch '^[a-f0-9]{32}$')) {
+        throw 'Cannot verify the shared preview. No feature was discarded.'
+    }
+    if ($status.feature_id -ceq $Feature.Id) {
+        throw 'This feature is active in the shared preview. Select another preview and complete its deployment before discarding this feature.'
+    }
+    $status.state_token
+}
+
+function Assert-SchooltoolDiscardCheckout {
+    param([string]$Branch, [string]$FeatureCommit, [string]$LocalCommit, [string]$MainCommit)
+    Assert-SchooltoolRepository
+    Assert-SchooltoolClean
+    if ((Invoke-SchooltoolGit branch --show-current) -cne 'main' -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $MainCommit) {
+        throw 'Run gitdiscard from clean main. Use gitmain first; no checkout is switched automatically.'
+    }
+    if (@(Invoke-SchooltoolGit worktree list --porcelain) -ccontains "branch refs/heads/$Branch") {
+        throw 'The feature is checked out in a worktree. Leave that worktree intact and switch it away from the feature first.'
+    }
+    $localExists = Test-SchooltoolRef "refs/heads/$Branch"
+    if ($localExists -ne (-not [string]::IsNullOrEmpty($LocalCommit))) { throw 'The local feature changed. Nothing was discarded locally.' }
+    if ($localExists) {
+        & git symbolic-ref --quiet "refs/heads/$Branch" | Out-Null
+        if ($LASTEXITCODE -ne 1) { throw 'The local feature must be a direct reference.' }
+        if ((Invoke-SchooltoolGit rev-parse "refs/heads/$Branch") -cne $LocalCommit -or $LocalCommit -cne $FeatureCommit) {
+            throw 'Local and remote feature commits differ. Save or reconcile the feature before discarding it.'
+        }
+    }
+}
+
+function gitdiscard {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $branch = Get-SchooltoolFeatureBranch $Name
+    Assert-SchooltoolRepository
+    Assert-SchooltoolClean
+    if ((Invoke-SchooltoolGit branch --show-current) -cne 'main') { throw 'Run gitdiscard from clean main. Use gitmain first.' }
+    Update-SchooltoolRemote
+    $main = Invoke-SchooltoolGit rev-parse HEAD
+    if ($main -cne (Invoke-SchooltoolGit rev-parse refs/remotes/origin/main)) { throw 'Local main must match origin/main. Run gitmain first.' }
+    $feature = Get-SchooltoolActiveFeature -Branch $branch
+    $remote = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$branch"
+    $local = if (Test-SchooltoolRef "refs/heads/$branch") { Invoke-SchooltoolGit rev-parse "refs/heads/$branch" } else { '' }
+    $base = Invoke-SchooltoolGit merge-base $main $remote
+    if (-not $base -or -not (Test-SchooltoolAncestor $base $remote) -or -not (Test-SchooltoolAncestor $base $main)) {
+        throw 'Feature and main do not share verified history.'
+    }
+    Assert-SchooltoolDiscardCheckout $branch $remote $local $main
+    $previewState = Get-SchooltoolDiscardPreviewState $feature
+    Write-Host "Discard $branch at $remote; lifecycle $($feature.Id). main will not receive these commits." -ForegroundColor Yellow
+    Write-Host 'The matching remote reservation will close. Local recovery refs, preview bundles and other features remain.' -ForegroundColor Yellow
+    if ((Read-Host "Type DISCARD $branch to continue") -cne "DISCARD $branch") { Write-Host 'Discard cancelled. No feature was removed.'; return }
+    Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $remote -MainCommit $main
+    Assert-SchooltoolDiscardCheckout $branch $remote $local $main
+    if ((Get-SchooltoolDiscardPreviewState $feature) -cne $previewState) { throw 'The shared preview changed. Nothing was discarded.' }
+    $recovery = "refs/schooltool/discarded/$($feature.Id)/$([guid]::NewGuid().ToString('N'))"
+    Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
+    Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
+    Write-Host "Recovery: $recovery/feature and $recovery/reservation" -ForegroundColor Cyan
+    Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${branch}:$remote" "--force-with-lease=$($feature.ReservationRef):$($feature.ReservationCommit)" origin ":refs/heads/$branch" ":$($feature.ReservationRef)"
+    try {
+        Assert-SchooltoolDiscardCheckout $branch $remote $local $main
+        if ($local) { Invoke-SchooltoolGit update-ref --no-deref -d "refs/heads/$branch" $local }
+    }
+    catch {
+        Write-Warning "The remote feature and reservation are already closed; local cleanup stopped and recovery refs remain: $($_.Exception.Message)"
+        return
+    }
+    Write-Host "Discarded $branch locally and on origin without merging. main, databases and preview files are unchanged." -ForegroundColor Green
+}
+
 function gitrelease {
     param(
         [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Message,

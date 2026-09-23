@@ -363,11 +363,14 @@ function Copy-SchooltoolRemoteFile {
     $script:remotePath = $RemotePath
     if ([IO.File]::ReadAllText($LocalPath).Contains("`r")) { throw 'Launcher line endings changed.' }
     if (-not $RemotePath.StartsWith($Target.Path + '/storage/framework/schooltool-pdeploy-')) { throw 'Unsafe staging path.' }
+    if (-not $script:privateDirectory -or $RemotePath -cne ($script:privateDirectory + '/launcher.sh')) { throw 'Private transfer directory missing.' }
     Write-Output 'PINNED_LAUNCHER_UPLOADED'
 }
 function Invoke-SchooltoolRemote {
     param($Target,$Command)
+    if ($Command -match "^umask 077; mkdir -m 700 -- '([^']+)'$") { $script:privateDirectory = $Matches[1]; Write-Output 'PRIVATE_DIRECTORY_CREATED'; return }
     if ($Command.StartsWith('rm -f -- ')) { Write-Output 'REMOTE_LAUNCHER_REMOVED'; return }
+    if ($Command -ceq "rmdir -- '$script:privateDirectory'") { Write-Output 'PRIVATE_DIRECTORY_REMOVED'; return }
     foreach ($pin in @('SCHOOLTOOL_EXPECTED_MAIN_COMMIT','SCHOOLTOOL_EXPECTED_SOURCE_COMMIT','SCHOOLTOOL_EXPECTED_FRONTEND_SHA256','SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB',"SCHOOLTOOL_PUBLICATION_POLICY='background-ci-v1'",'sha256sum -c -')) {
         if (-not $Command.Contains($pin)) { throw 'Missing pinned handoff.' }
     }
@@ -381,7 +384,7 @@ if (Test-Path -LiteralPath $script:localPath) { throw 'Local launcher not remove
 POWERSHELL;
     $process = deploymentSshProcess($code, $shell);
     expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
-        ->and($process->getOutput())->toContain('PINNED_LAUNCHER_UPLOADED', 'REMOTE_LAUNCHER_REMOVED', $fail ? 'FAILURE_PRESERVED' : 'STAGED_LAUNCHER_EXECUTED');
+        ->and($process->getOutput())->toContain('PRIVATE_DIRECTORY_CREATED', 'PINNED_LAUNCHER_UPLOADED', 'REMOTE_LAUNCHER_REMOVED', 'PRIVATE_DIRECTORY_REMOVED', $fail ? 'FAILURE_PRESERVED' : 'STAGED_LAUNCHER_EXECUTED');
 })->with([false, true])->with(['powershell', 'pwsh']);
 
 it('waits for CI safely with progress in native PowerShell', function (string $scenario, string $expected, string $shell): void {
