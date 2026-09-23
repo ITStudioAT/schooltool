@@ -112,6 +112,7 @@ function gitpreview {
     $candidate = if ($receipt) { $receipt.Candidate } else { New-SchooltoolCandidateWorktree -Kind 'preview' -SourceCommit $featureCommit }
     $newCandidate = -not $receipt
     $published = $false
+    $operation = $null
     $candidateEnvironment = $null
     Push-Location -LiteralPath $candidate.Path
     try {
@@ -181,6 +182,7 @@ function gitpreview {
             Write-Host "Preview cancelled. Nothing published. Continue with: $resumeCommand" -ForegroundColor Yellow
             return
         }
+        $operation = Lock-SchooltoolFeatureOperation $feature
         Assert-SchooltoolPreviewReceipt -Receipt (Read-SchooltoolPreviewReceipt $id) -Root $root
         Assert-SchooltoolPreviewDeploymentProtocol $candidate
         Push-Location -LiteralPath $root
@@ -212,6 +214,7 @@ function gitpreview {
         throw
     }
     finally {
+        Unlock-SchooltoolFeatureOperation $operation
         try {
             try { if ($newCandidate) { Save-SchooltoolCandidate $candidate } }
             finally { if ($candidateEnvironment) { Restore-SchooltoolCandidateEnvironment $candidateEnvironment } }

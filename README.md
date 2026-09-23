@@ -28,6 +28,7 @@ Die Anleitung beschreibt den implementierten Ablauf und seine Einrichtung. Sie i
 | `gitpreview resume <Bundle-ID> -Feature "neue-funktion"` | Derselbe Windows-PC und Benutzer, ursprünglicher Projektordner | Setzt einen vor der Veröffentlichung abgebrochenen Kandidaten mit erfolgreicher Build- und Paketprüfung fort. Prüft Nachweis, Paket, Quellstand und aktuelle GitHub-Branches erneut; veröffentlicht erst nach `PREVIEW`. Datenersatz verlangt zusätzlich `REFRESH`. |
 | `gitrelease "Beschreibung"` | Windows, gespeichertes Feature | Prüft einen separaten Merge-Kandidaten des mit `gitwork NAME` ausgewählten Features mit aktuellem `main`. Nach `RELEASE` auf GitHub veröffentlichen und ausschließlich dieses Feature schließen; andere Features und Reservierungen bleiben erhalten. Lokal zu `main` wechseln und Abhängigkeiten/Frontend vorbereiten, ohne Migrationen oder Seeder. Kein Live-Deployment. |
 | `gitrelease "Beschreibung" "3.49.0"` | Windows, gespeichertes Feature | Zusätzlich Version, Changelog, Dokumentation und Versions-Tag veröffentlichen. |
+| `gitdiscard "testfunktion"` | Windows, sauberer aktueller `main` | Verwirft `feature/testfunktion` ohne Merge. Nach `DISCARD feature/testfunktion` den exakt geprüften Remote-Branch und seine Reservierung atomar schließen und den passenden lokalen Branch entfernen. Wiederherstellungsreferenzen bleiben erhalten. |
 | `gitdeploy` | Windows, sauberes Projekt | Prüft das exakte Release-Paket und einen kurzen isolierten Laufzeit-Smoke. Nach `LIVE` Quellstand erneut prüfen und über SSH installieren, einschließlich vorgesehener Live-Datenbankschritte. Wartet nicht auf umfangreiche GitHub-Tests. |
 | `composer deploy` | Windows, sauberer aktueller `main` | Vollständiges lokales Anwendungsupdate einschließlich lokaler Datenbankschritte. Vorher `gitmain`; auf dem Feature gesperrt. |
 | `composer pdeploy` | Cloudways, intern durch `gitdeploy` | Benötigt die vom bestätigten SSH-Aufruf übergebenen Release-Identitäten und die Kennung `background-ci-v1`. Ein bloßer manueller Aufruf ist gesperrt; im Alltag `gitdeploy` am PC verwenden. |
@@ -53,6 +54,20 @@ Prüfkandidaten liegen in eigenen Arbeitsverzeichnissen ohne benannten Branch (D
 Bereits separat geprüfte ältere Nachweise (`legacy-reviewed` und die fest begrenzten `reviewed-patch`-Umfänge) behalten ihre Herkunfts-, Hash- und Quelldelta-Prüfungen. Lose Textlogs werden nicht automatisch übernommen. Neue V3-Nachweise bescheinigen ausschließlich `preflight-success` mit `inline-build-and-integrity`. V1-/V2-Nachweise behalten ihre ursprünglichen Nachweisregeln; ein schneller Check wird niemals nachträglich als bestandene Vollprüfung ausgegeben.
 
 Die installierten Profilfunktionen laden den Workflow bei jedem Aufruf aus dem Projekt. Falls das Terminal noch ältere Funktionsdefinitionen hält, im Projektordner `. ./scripts/git_helpers.ps1` ausführen. Das überschreibt keine Profildatei.
+
+### Ein Feature ohne Übernahme verwerfen
+
+```powershell
+gitmain
+gitdiscard "testfunktion"
+# Bestätigung: DISCARD feature/testfunktion
+```
+
+Auch `gitdiscard "feature/testfunktion"` ist möglich. Ungesicherte Änderungen, abweichende lokale/remote Feature-Commits, ein Worktree mit diesem Branch, eine fehlende oder widersprüchliche Reservierung sowie ein aktives oder nicht sicher prüfbares Vorschau-Feature stoppen den Ablauf. Für die lesende Vorschauprüfung ist die vorhandene PREVIEW-SSH-Konfiguration erforderlich. Der Befehl wechselt keinen Branch und ändert keine Datenbank. Andere Features, vorhandene Vorschau-Kandidaten und Prüfnachweise bleiben erhalten; ein verworfenes Feature kann mit seinen alten Nachweisen nicht mehr veröffentlicht werden.
+
+Vor dem Löschen werden beide exakten Commit-IDs unter `refs/schooltool/discarded/<Lifecycle-ID>/<Vorgangs-ID>/feature` und `/reservation` gesichert. Nach einer teilweise abgeschlossenen Remote-Aktion niemals blind erneut löschen: Die Ausgabe unterscheidet Remote-Abschluss und lokale Aufräumprobleme. Die lokalen Wiederherstellungsreferenzen und etwaige Operationssperren erst nach Prüfung eines unterbrochenen Vorgangs anfassen.
+
+`gitdiscard` und `gitpreview` verwenden nach ihrer Bestätigung dieselbe exklusive Lifecycle-Sperre auf GitHub (`codex/operations/<Lifecycle-ID>`). Deshalb müssen alle beteiligten PCs vor Nutzung des neuen Befehls die aktualisierten Helfer laden. Eine fremde oder nach Abbruch verbliebene Sperre wird nicht überschrieben. Zum erstmaligen Laden `. ./scripts/git_helpers.ps1` ausführen; dauerhaft die Profil-Wrapper mit `composer setup:powershell` aktualisieren. Weitere Schritte und Grenzen stehen in der [Bedienungsanleitung](public/documentation/git-workflow/index.html); ihre Docusaurus-Quelle liegt unter `C:/docusaurus/schooltool/src/pages/git-workflow.md`.
 
 ### Erste Veröffentlichung des neuen Ablaufs
 

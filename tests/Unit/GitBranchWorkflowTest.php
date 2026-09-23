@@ -177,6 +177,110 @@ afterEach(function (): void {
     }
 });
 
+function branchWorkflowDiscardMocks(): string
+{
+    return <<<'POWERSHELL'
+function Get-SchooltoolPreviewTarget { [pscustomobject]@{ Site = 'PREVIEW' } }
+function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ('b' * 64); feature_id = $null } }
+function Read-Host { 'DISCARD feature/discard-me' }
+POWERSHELL;
+}
+
+function prepareBranchWorkflowDiscard(object $test): string
+{
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($test->workflowPc, 'gitstart discard-me'));
+    $commit = commitBranchWorkflowFile($test->workflowPc, 'discard.txt', "Unmerged feature\n");
+    runBranchWorkflowGit($test->workflowPc, 'push', 'origin', 'feature/discard-me');
+    runBranchWorkflowGit($test->workflowPc, 'switch', 'main');
+
+    return $commit;
+}
+
+it('discards only the selected feature atomically and retains exact recovery history', function (string $shell, bool $legacy): void {
+    $commit = prepareBranchWorkflowDiscard($this);
+    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
+    if ($legacy) {
+        runBranchWorkflowGit($this->workflowRemote, 'update-ref', 'refs/heads/codex/active-feature', $reservation);
+        runBranchWorkflowGit($this->workflowRemote, 'update-ref', '-d', 'refs/heads/codex/features/discard-me', $reservation);
+    }
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart keep-me'));
+    $otherReservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/keep-me');
+    runBranchWorkflowGit($this->workflowPc, 'switch', 'main');
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowDiscardMocks()."\ngitdiscard feature/discard-me", $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/discard-me', 'refs/heads/codex/features/discard-me', 'refs/heads/codex/active-feature', 'refs/heads/codex/operations/'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/discard-me'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin/feature/discard-me', 'refs/remotes/origin/codex/features/discard-me', 'refs/remotes/origin/codex/active-feature', 'refs/remotes/origin/codex/operations/'))->toBe('')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/keep-me'))->toBe($otherReservation)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('');
+})->with(['powershell', 'pwsh'])->with([false, true]);
+
+it('refuses unsafe feature discard without deleting feature or reservation', function (string $condition): void {
+    $commit = prepareBranchWorkflowDiscard($this);
+    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
+    $code = branchWorkflowDiscardMocks();
+    if ($condition === 'dirty') {
+        file_put_contents($this->workflowPc.'/unsaved.txt', 'keep');
+    } elseif ($condition === 'feature checkout') {
+        runBranchWorkflowGit($this->workflowPc, 'switch', 'feature/discard-me');
+    } elseif ($condition === 'worktree') {
+        runBranchWorkflowGit($this->workflowPc, 'worktree', 'add', $this->workflowDirectory.'/in-use', 'feature/discard-me');
+    } elseif ($condition === 'local ahead') {
+        runBranchWorkflowGit($this->workflowPc, 'switch', 'feature/discard-me');
+        commitBranchWorkflowFile($this->workflowPc, 'local.txt', 'unpublished');
+        runBranchWorkflowGit($this->workflowPc, 'switch', 'main');
+    } elseif ($condition === 'preview active') {
+        $code .= "\n".'function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ("b" * 64); feature_id = (Get-SchooltoolActiveFeature -Branch feature/discard-me).Id } }';
+    } elseif ($condition === 'preview unavailable') {
+        $code .= "\nfunction Invoke-SchooltoolRemoteJson { throw 'Preview unavailable' }";
+    } elseif ($condition === 'cancel') {
+        $code .= "\nfunction Read-Host { 'CANCEL' }";
+    } elseif ($condition === 'preview operation in progress') {
+        assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'Lock-SchooltoolFeatureOperation (Get-SchooltoolActiveFeature -Branch feature/discard-me) | Out-Null'));
+    } elseif ($condition === 'changed after consent') {
+        $code .= "\n".'function Read-Host { [IO.File]::WriteAllText((Join-Path (Get-Location) "unsaved.txt"), "keep"); "DISCARD feature/discard-me" }';
+    } elseif ($condition === 'preview changed after consent') {
+        $code .= "\n".'$script:checks = 0; function Invoke-SchooltoolRemoteJson { $script:checks++; [pscustomobject]@{ state_token = (($script:checks.ToString()) * 64); feature_id = $null } }';
+    } elseif ($condition === 'different push origin') {
+        runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', '--push', 'origin', $this->workflowDirectory.'/wrong-origin.git');
+    }
+    $result = runBranchWorkflowCommand($this->workflowPc, $code."\ngitdiscard discard-me");
+
+    expect($result->isSuccessful())->toBe($condition === 'cancel', $result->getOutput().$result->getErrorOutput())
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->toBe($commit)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me'))->toBe($reservation)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+})->with(['dirty', 'feature checkout', 'worktree', 'local ahead', 'preview active', 'preview unavailable', 'cancel', 'preview operation in progress', 'changed after consent', 'preview changed after consent', 'different push origin']);
+
+it('keeps the reservation when an exact discard lease loses a concurrent feature update', function (): void {
+    $commit = prepareBranchWorkflowDiscard($this);
+    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
+    $code = branchWorkflowDiscardMocks()."\n".<<<'POWERSHELL'
+function Invoke-SchooltoolGit {
+    if ($args[0] -ceq 'push' -and $args -ccontains ':refs/heads/feature/discard-me') {
+        $changed = & git commit-tree 'HEAD^{tree}' -p refs/remotes/origin/feature/discard-me -m 'Concurrent feature work'
+        & git push origin "${changed}:refs/heads/feature/discard-me" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Race fixture failed' }
+    }
+    $result = & git @args
+    if ($LASTEXITCODE -ne 0) { throw 'Expected exact lease rejection' }
+    $result
+}
+gitdiscard discard-me
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $code);
+    expect($result->isSuccessful())->toBeFalse()
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->not->toBe($commit)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me'))->toBe($reservation)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/discard-me'))->toBe($commit)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('');
+});
+
 it('shares unfinished development between two devices without changing main', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/pc.txt', "PC work\n");
@@ -448,6 +552,7 @@ gitsave 'Versioned main' '3.48.0'
 gitupdate
 gitrelease 'Release with spaces'
 gitrelease 'Versioned release' '3.48.0'
+gitdiscard 'unused-feature'
 gitcheck
 gitpreview -RefreshData
 gitpreview resume '0123456789abcdef0123456789abcdef' -RefreshData
@@ -463,7 +568,7 @@ POWERSHELL);
     foreach (['WindowsPowerShell', 'PowerShell'] as $edition) {
         $editionProfile = file_get_contents($this->workflowPc.'/.git/test-documents/'.$edition.'/Microsoft.PowerShell_profile.ps1');
         expect(substr_count($editionProfile, '# >>> project git dispatcher >>>'))->toBe(1)
-            ->and($editionProfile)->toContain('function gitcheck {', 'function gitrelease {');
+            ->and($editionProfile)->toContain('function gitcheck {', 'function gitrelease {', 'function gitdiscard {');
         if ($edition === 'PowerShell') {
             expect($editionProfile)->toContain('# Preserve existing PowerShell 7 settings');
         }
@@ -487,6 +592,7 @@ POWERSHELL);
             ['command' => 'gitupdate', 'arguments' => []],
             ['command' => 'gitrelease', 'arguments' => ['Release with spaces']],
             ['command' => 'gitrelease', 'arguments' => ['Versioned release', '3.48.0']],
+            ['command' => 'gitdiscard', 'arguments' => ['unused-feature']],
             ['command' => 'gitcheck', 'arguments' => []],
             ['command' => 'gitpreview', 'arguments' => ['-RefreshData']],
             ['command' => 'gitpreview', 'arguments' => ['resume', '0123456789abcdef0123456789abcdef', '-RefreshData']],
@@ -1354,12 +1460,22 @@ function gitpreview {
     Write-Output "PREVIEW_MODE=$Mode REFRESH=$RefreshData BUNDLE=$BundleId FEATURE=$FeatureName"
 }
 function gitdeploy { Write-Output 'LIVE_DEPLOY_REQUESTED' }
+function gitdiscard { param([string]$Name); Write-Output "DISCARD_NAME=$Name" }
 POWERSHELL);
     $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-RefreshData')
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('resume', '0123456789abcdef0123456789abcdef', '-RefreshData')
 & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-Feature', 'first-feature')
 & ./scripts/git_workflow.ps1 -Command gitdeploy
+& ./scripts/git_workflow.ps1 -Command gitdiscard -CommandArguments @('discard-me')
+try {
+    & ./scripts/git_workflow.ps1 -Command gitdiscard -CommandArguments @('discard-me', '--force')
+    throw 'UNEXPECTED_ARGUMENT_ACCEPTED'
+}
+catch {
+    if ($_.Exception.Message -eq 'UNEXPECTED_ARGUMENT_ACCEPTED') { throw }
+    Write-Output 'INVALID_DISCARD_ARGUMENT_REJECTED'
+}
 try {
     & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('$(throw "EVALUATED_ARGUMENT")')
     throw 'UNEXPECTED_ARGUMENT_ACCEPTED'
@@ -1371,7 +1487,7 @@ catch {
 POWERSHELL);
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'PREVIEW_MODE=resume REFRESH=True BUNDLE=0123456789abcdef0123456789abcdef', 'FEATURE=feature/first-feature', 'LIVE_DEPLOY_REQUESTED', 'INVALID_ARGUMENT_REJECTED');
+    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'PREVIEW_MODE=resume REFRESH=True BUNDLE=0123456789abcdef0123456789abcdef', 'FEATURE=feature/first-feature', 'LIVE_DEPLOY_REQUESTED', 'DISCARD_NAME=discard-me', 'INVALID_DISCARD_ARGUMENT_REJECTED', 'INVALID_ARGUMENT_REJECTED');
 });
 
 it('atomically rejects publication if main advances after release confirmation begins', function (): void {
@@ -1431,6 +1547,7 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
         ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.tar.gz'))->toHaveCount(1);
 
     $previewRefs = runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/');

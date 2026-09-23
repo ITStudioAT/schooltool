@@ -535,6 +535,30 @@ function Assert-SchooltoolVersion {
     }
 }
 
+function Lock-SchooltoolFeatureOperation {
+    param($Feature)
+    if ($Feature.Id -cnotmatch '^[a-f0-9]{32}$') { throw 'Invalid feature lifecycle for operation lock.' }
+    $origin = Get-SchooltoolPreviewOrigin
+    if ($origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
+    $ref = "refs/heads/codex/operations/$($Feature.Id)"
+    $tree = Invoke-SchooltoolGit rev-parse 'HEAD^{tree}'
+    $commit = Invoke-SchooltoolGit commit-tree $tree -m "Feature operation $([guid]::NewGuid().ToString('N'))"
+    Write-Host "Acquiring feature operation lock $ref ($commit). If interrupted, inspect this exact lock before recovery."
+    Invoke-SchooltoolGit push "--force-with-lease=${ref}:" $origin "${commit}:$ref" | Out-Host
+    [pscustomobject]@{ Ref = $ref; Commit = $commit; Origin = $origin }
+}
+
+function Unlock-SchooltoolFeatureOperation {
+    param($Lock)
+    if (-not $Lock) { return }
+    try {
+        Invoke-SchooltoolGit push "--force-with-lease=$($Lock.Ref):$($Lock.Commit)" $Lock.Origin ":$($Lock.Ref)" | Out-Host
+        $tracking = $Lock.Ref.Replace('refs/heads/', 'refs/remotes/origin/')
+        if (Test-SchooltoolRef $tracking) { Invoke-SchooltoolGit update-ref --no-deref -d $tracking $Lock.Commit }
+    }
+    catch { Write-Warning "Feature operation cleanup could not be verified for $($Lock.Ref) ($($Lock.Commit)); inspect the interrupted operation before removing any retained lock." }
+}
+
 function Get-SchooltoolDiscardPreviewState {
     param($Feature)
     $target = Get-SchooltoolPreviewTarget
@@ -576,6 +600,8 @@ function gitdiscard {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     if ((Invoke-SchooltoolGit branch --show-current) -cne 'main') { throw 'Run gitdiscard from clean main. Use gitmain first.' }
+    $origin = Get-SchooltoolPreviewOrigin
+    if ($origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
     Update-SchooltoolRemote
     $main = Invoke-SchooltoolGit rev-parse HEAD
     if ($main -cne (Invoke-SchooltoolGit rev-parse refs/remotes/origin/main)) { throw 'Local main must match origin/main. Run gitmain first.' }
@@ -591,23 +617,32 @@ function gitdiscard {
     Write-Host "Discard $branch at $remote; lifecycle $($feature.Id). main will not receive these commits." -ForegroundColor Yellow
     Write-Host 'The matching remote reservation will close. Local recovery refs, preview bundles and other features remain.' -ForegroundColor Yellow
     if ((Read-Host "Type DISCARD $branch to continue") -cne "DISCARD $branch") { Write-Host 'Discard cancelled. No feature was removed.'; return }
-    Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $remote -MainCommit $main
-    Assert-SchooltoolDiscardCheckout $branch $remote $local $main
-    if ((Get-SchooltoolDiscardPreviewState $feature) -cne $previewState) { throw 'The shared preview changed. Nothing was discarded.' }
-    $recovery = "refs/schooltool/discarded/$($feature.Id)/$([guid]::NewGuid().ToString('N'))"
-    Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
-    Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
-    Write-Host "Recovery: $recovery/feature and $recovery/reservation" -ForegroundColor Cyan
-    Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${branch}:$remote" "--force-with-lease=$($feature.ReservationRef):$($feature.ReservationCommit)" origin ":refs/heads/$branch" ":$($feature.ReservationRef)"
+    if ($origin -cne (Get-SchooltoolPreviewOrigin) -or $origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Origin changed during confirmation. Nothing was discarded.' }
+    $operation = Lock-SchooltoolFeatureOperation $feature
     try {
+        Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $remote -MainCommit $main
         Assert-SchooltoolDiscardCheckout $branch $remote $local $main
-        if ($local) { Invoke-SchooltoolGit update-ref --no-deref -d "refs/heads/$branch" $local }
+        if ((Get-SchooltoolDiscardPreviewState $feature) -cne $previewState) { throw 'The shared preview changed. Nothing was discarded.' }
+        $recovery = "refs/schooltool/discarded/$($feature.Id)/$([guid]::NewGuid().ToString('N'))"
+        Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
+        Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
+        Write-Host "Recovery: $recovery/feature and $recovery/reservation" -ForegroundColor Cyan
+        Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${branch}:$remote" "--force-with-lease=$($feature.ReservationRef):$($feature.ReservationCommit)" $operation.Origin ":refs/heads/$branch" ":$($feature.ReservationRef)"
+        try {
+            Assert-SchooltoolDiscardCheckout $branch $remote $local $main
+            if ($local) { Invoke-SchooltoolGit update-ref --no-deref -d "refs/heads/$branch" $local }
+            $trackingReservation = $feature.ReservationRef.Replace('refs/heads/', 'refs/remotes/origin/')
+            foreach ($tracking in @(@{ Ref = "refs/remotes/origin/$branch"; Commit = $remote }, @{ Ref = $trackingReservation; Commit = $feature.ReservationCommit })) {
+                if (Test-SchooltoolRef $tracking.Ref) { Invoke-SchooltoolGit update-ref --no-deref -d $tracking.Ref $tracking.Commit }
+            }
+        }
+        catch {
+            Write-Warning "The remote feature and reservation are already closed; local cleanup stopped and recovery refs remain: $($_.Exception.Message)"
+            return
+        }
+        Write-Host "Discarded $branch locally and on origin without merging. main, databases and preview files are unchanged." -ForegroundColor Green
     }
-    catch {
-        Write-Warning "The remote feature and reservation are already closed; local cleanup stopped and recovery refs remain: $($_.Exception.Message)"
-        return
-    }
-    Write-Host "Discarded $branch locally and on origin without merging. main, databases and preview files are unchanged." -ForegroundColor Green
+    finally { Unlock-SchooltoolFeatureOperation $operation }
 }
 
 function gitrelease {
