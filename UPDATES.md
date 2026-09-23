@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.49.3 !!!
+## 3.49.4
 
 ### Home
 
@@ -15,6 +15,7 @@
 
 - Gezielte Entwicklungsprüfungen und schnellerer Veröffentlichungspfad
 - Benutzer ohne persönliches Schuljahr: Zuordnung von schulweitem Schuljahr
+- Header auf allen Seiten angepasst
 
 ## 3.49.2
 

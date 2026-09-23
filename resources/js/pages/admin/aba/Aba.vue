@@ -1,24 +1,21 @@
 <template>
     <v-container fluid class="aba-page ma-0 w-100 pa-2">
-        <AdminSectionHero
+        <AdminPageHeader
             class="mb-3"
-            eyebrow="Intern"
-            title="ABA"
-            :active-section="activeSection"
-            :chips="headerChips"
-            :show-current-user-chip="true"
-            secondary-color="#1d4ed8"
-            right-orb-color="#93c5fd" />
+            location="ABA"
+            :section="activeSection.label"
+            :context-label="currentSchoolyearLabel" />
 
-        <v-sheet rounded="xl" class="aba-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
-            <div class="aba-nav__buttons">
+        <v-sheet class="aba-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
+            <div class="aba-nav__buttons" role="group" aria-label="ABA-Bereiche">
                 <v-btn
                     v-for="item in navigationItems"
                     :key="item.key"
-                    rounded="xl"
-                    :color="activeNavKey === item.key ? 'primary' : 'secondary'"
-                    :variant="activeNavKey === item.key ? 'flat' : 'tonal'"
+                    :color="activeNavKey === item.key ? 'primary' : undefined"
+                    variant="flat"
                     class="aba-nav__button"
+                    :class="{ 'v-btn--active': activeNavKey === item.key }"
+                    :aria-pressed="item.key !== 'schoolyear' ? activeNavKey === item.key : undefined"
                     :disabled="isNavigationLocked"
                     @click="navigateTo(item.key)">
                     <v-icon size="18" :icon="item.icon" class="mr-2" />
@@ -83,12 +80,12 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
-import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import Overview from '@/pages/admin/aba/components/Overview.vue'
 import Settings from '@/pages/admin/aba/components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Settings },
+    components: { AdminPageHeader, Overview, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -112,23 +109,11 @@ export default {
         isNavigationLocked() {
             return this.action != '' || this.action_2 != '' || this.isRefreshing
         },
-        selectedSchoolLabel() {
-            return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gewählt'
-        },
         currentSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr'
         },
         selectedSchoolyearId() {
             return this.config?.selected_schoolyear?.id || null
-        },
-        headerChips() {
-            return [
-                {
-                    key: 'school',
-                    text: this.selectedSchoolLabel,
-                    icon: 'mdi-domain',
-                },
-            ]
         },
         activeNavKey() {
             return this.mainAction

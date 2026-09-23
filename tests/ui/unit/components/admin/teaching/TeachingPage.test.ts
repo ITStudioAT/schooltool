@@ -316,21 +316,13 @@ describe('Teaching page navigation', () => {
         })
     })
 
-    it('builds hero chips from selected school context', () => {
+    it('does not aggregate courses without a selected teaching context', () => {
         const ctx = {
-            selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',
-            selectedSchoolyearLabel: '2025/26',
-            courses: [],
-            myCourses: [],
-            myStudentCount: 0,
-            schoolyearStats: null,
+            lessonContextKey: null,
+            courses: [{ id: 1, user_id: 7 }],
         }
 
-        const chips = (Teaching as any).computed.headerChips.call(ctx)
-
-        expect(chips).toEqual([
-            { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
-        ])
+        expect((Teaching as any).computed.myCourses.call(ctx)).toEqual([])
     })
 
     it('builds the teaching header title with the active schoolyear', () => {
@@ -621,14 +613,14 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))")
     })
 
-    it('uses the reusable compact header without hopper schools or an overview card', async () => {
+    it('uses the branded header and keeps lesson information in the section below', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
         )
 
-        expect(source).toContain('<AdminCompactSectionHero')
-        expect(source).toContain(':status-items="headerStatusItems"')
-        expect(source).toContain(':progress-label="schoolyearProgressLabel"')
+        expect(source).toContain('<AdminPageHeader')
+        expect(source).toContain('aria-label="Unterricht und Schuljahr"')
+        expect(source).toContain('{{ schoolyearProgressLabel }}')
         expect(source).not.toContain('<AdminSectionHero')
         expect(source).not.toContain('Hopper-Schulen')
         expect(source).not.toContain('<template #chips>')

@@ -1,5 +1,6 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2">
+    <v-container fluid class="admin-users-page ma-0 w-100 pa-2">
+        <AdminCompactSectionHero class="mb-3" eyebrow="Benutzerverwaltung" title="Rollen" />
         <!-- Menüleiste oben -->
         <v-row class="d-flex flex-row ga-2 mb-2 mt-0 w-100" no-gutters>
             <its-menu-button subtitle="Benutzer" icon="mdi-arrow-left" color="secondary" to="/admin/users" />
@@ -77,12 +78,13 @@
     </v-container>
 </template>
 <script>
+import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 import ItsMenuButton from "@/pages/components/ItsMenuButton.vue";
 import ItsTable from "@/pages/components/ItsTable.vue";
 import ItemShow from "./ItemShow.vue";
 
 export default {
-    components: { ItsMenuButton, ItsTable, ItemShow },
+    components: { AdminCompactSectionHero, ItsMenuButton, ItsTable, ItemShow },
 
     data() {
         return {

@@ -1,5 +1,6 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2">
+    <v-container fluid class="admin-users-page ma-0 w-100 pa-2">
+        <AdminCompactSectionHero class="mb-3" eyebrow="Verwaltung" title="Benutzer" />
         <!-- Menüleiste oben -->
         <v-row class="d-flex flex-row ga-2 mb-2 mt-0 w-100" no-gutters>
             <its-menu-button
@@ -25,6 +26,7 @@
     </v-container>
 </template>
 <script>
+import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -38,7 +40,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { ItsMenuButton, ItsInfoBox },
+    components: { AdminCompactSectionHero, ItsMenuButton, ItsInfoBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

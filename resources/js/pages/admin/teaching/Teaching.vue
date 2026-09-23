@@ -1,19 +1,49 @@
 <template>
     <v-container fluid class="teaching-page ma-0 w-100 pa-2">
-        <AdminCompactSectionHero
+        <AdminPageHeader
             class="mb-3"
-            eyebrow="Unterricht"
-            :title="teachingHeaderTitle"
-            :chips="headerChips"
-            :status-items="headerStatusItems"
-            :progress="schoolyearStats?.progress"
-            :progress-label="schoolyearProgressLabel"
-            :progress-secondary-label="currentSemesterProgressLabel"
-            :progress-marker="schoolyearSemesterStartProgress"
-            progress-marker-label="Beginn des 2. Semesters"
-            :show-current-user-chip="true"
-            secondary-color="#1d4ed8"
-            right-orb-color="#a5b4fc" />
+            :location="teachingHeaderTitle"
+            :context-label="teacherCoursesLabel"
+            :status-label="teacherMetricsLabel"
+            status-icon="mdi-account-group-outline" />
+
+        <section class="teaching-context mb-3" aria-label="Unterricht und Schuljahr">
+            <div class="teaching-context__items">
+                <div v-for="item in headerStatusItems" :key="item.key" class="teaching-context__item">
+                    <v-icon :icon="item.icon" size="17" />
+                    <span>{{ item.text }}</span>
+                </div>
+                <div v-if="!lessonStatusNote" class="teaching-context__empty">
+                    <v-icon icon="mdi-calendar-clock" size="17" />
+                    <span>{{ lessonAvailabilityLabel }}</span>
+                </div>
+            </div>
+            <div class="teaching-context__progress">
+                <div class="teaching-context__progress-heading">
+                    <v-icon icon="mdi-chart-timeline-variant-shimmer" size="19" />
+                    <div>
+                        <div class="teaching-context__progress-label">{{ schoolyearProgressLabel }}</div>
+                        <div class="teaching-context__semester">{{ currentSemesterProgressLabel || 'Semesterfortschritt nicht verfügbar' }}</div>
+                    </div>
+                </div>
+                <div v-if="schoolyearStats" class="teaching-context__progress-track">
+                    <v-progress-linear
+                        :model-value="schoolyearStats.progress"
+                        :aria-label="schoolyearProgressLabel"
+                        color="#86efac"
+                        bg-color="#ef4444"
+                        :bg-opacity="0.62"
+                        height="9"
+                        rounded
+                        rounded-bar />
+                    <span v-if="schoolyearSemesterStartProgress !== null"
+                        class="teaching-context__progress-marker"
+                        :style="{ left: `${schoolyearSemesterStartProgress}%` }"
+                        aria-label="Beginn des 2. Semesters"
+                        title="Beginn des 2. Semesters"></span>
+                </div>
+            </div>
+        </section>
 
         <TeachingDueReminders />
 
@@ -199,7 +229,7 @@ import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
 import { administration as teachingAdministration } from '@/routes/admin/teaching'
-import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
+import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import TeachingDueReminders from './overview/components/TeachingDueReminders.vue'
 
 function calendarDateValue(date) {
@@ -221,7 +251,7 @@ function normalizeTeachingSection(section) {
 }
 
 export default {
-    components: { AdminCompactSectionHero, TeachingDueReminders, Overview, Settings, Admin, TeacherAdministration, Search, Schoolyear, DataBackup, Curricula },
+    components: { AdminPageHeader, TeachingDueReminders, Overview, Settings, Admin, TeacherAdministration, Search, Schoolyear, DataBackup, Curricula },
 
     created() {
         this.syncSection(this.$route.params.section)
@@ -248,7 +278,8 @@ export default {
             requests.push(this.schoolHourStore.index())
         }
 
-        await Promise.all(requests)
+        const results = await Promise.all(requests)
+        this.teacherMetricsStatus = results.includes(false) ? 'error' : 'ready'
     },
 
     mounted() {
@@ -276,6 +307,7 @@ export default {
             nowTs: Date.now(),
             nowTimer: null,
             lessonContextLoading: false,
+            teacherMetricsStatus: 'loading',
             _urlRestored: false,
         }
     },
@@ -283,7 +315,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
         ...mapWritableState(useSchoolStore, ['hopper_accounts']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id', 'pending_new_course_token']),
+        ...mapWritableState(useCourseStore, ['courses', 'courses_request_promise', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id', 'pending_new_course_token']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isNavigationLocked() {
@@ -332,10 +364,35 @@ export default {
             return roles.slice(0, 2).join(' / ')
         },
         myCourses() {
-            const userId = this.config?.user?.id
+            if (!this.lessonContextKey) return []
+            const { user, selected_school: school, selected_schoolyear: schoolyear } = this.config
             const list = Array.isArray(this.courses) ? this.courses : []
-            if (!userId) return list
-            return list.filter((course) => course?.user_id === userId)
+            return list.filter((course) => Number(course?.user_id) === Number(user.id)
+                && Number(course?.school_id) === Number(school.id)
+                && Number(course?.schoolyear_id) === Number(schoolyear.id))
+        },
+        teacherMetricsAvailable() {
+            return !!this.lessonContextKey && !this.lessonContextLoading
+                && !this.courses_request_promise && this.teacherMetricsStatus === 'ready'
+        },
+        teacherCoursesLabel() {
+            if (!this.teacherMetricsAvailable) return 'Kurse und Schüler:innen'
+
+            return this.myCourses.length === 1 ? '1 Kurs' : `${this.myCourses.length} Kurse`
+        },
+        teacherMetricsLabel() {
+            if (this.teacherMetricsAvailable) {
+                return this.myStudentCount === 1 ? '1 Schüler:in' : `${this.myStudentCount} Schüler:innen`
+            }
+            if (!this.lessonContextKey || this.teacherMetricsStatus === 'error') return 'Kennzahlen nicht verfügbar'
+
+            return 'Kennzahlen werden geladen …'
+        },
+        lessonAvailabilityLabel() {
+            if (!this.lessonContextKey || this.teacherMetricsStatus === 'error') return 'Unterrichtszeiten nicht verfügbar'
+            if (this.lessonContextLoading || this.teacherMetricsStatus === 'loading') return 'Unterrichtszeiten werden geladen …'
+
+            return 'Kein weiterer Unterricht geplant'
         },
         myStudentCount() {
             const ids = new Set()
@@ -500,16 +557,6 @@ export default {
                 semester,
                 progress: Math.round((elapsedDays / totalDays) * 100),
             }
-        },
-        headerChips() {
-            const chips = [
-                { key: 'school', text: this.selectedSchoolLabel, icon: 'mdi-domain' },
-            ]
-            if (this.courses.length) {
-                chips.push({ key: 'courses', text: `${this.myCourses.length} Kurse`, icon: 'mdi-book-open-variant' })
-                chips.push({ key: 'students', text: `${this.myStudentCount} Schüler:innen`, icon: 'mdi-account-group' })
-            }
-            return chips
         },
         headerStatusItems() {
             const items = [
@@ -699,6 +746,7 @@ export default {
     methods: {
         async reloadLessonContext(contextKey) {
             this.lessonContextLoading = true
+            this.teacherMetricsStatus = 'loading'
             if (!contextKey) return
             const courses = useCourseStore()
             const schoolHours = useSchoolHourStore()
@@ -706,7 +754,10 @@ export default {
             await Promise.all([courses.courses_request_promise, schoolHours.school_hours_request_promise])
             if (contextKey !== this.lessonContextKey) return
             const results = await Promise.all([courses.index(), schoolHours.index()])
-            if (contextKey === this.lessonContextKey && !results.includes(false)) this.lessonContextLoading = false
+            if (contextKey === this.lessonContextKey) {
+                this.teacherMetricsStatus = results.includes(false) ? 'error' : 'ready'
+                if (!results.includes(false)) this.lessonContextLoading = false
+            }
         },
         formatLessonDuration(until) {
             const remaining = until.getTime() - this.nowTs
@@ -931,8 +982,48 @@ export default {
     min-height: 100vh;
 }
 
-.teaching-page :deep(.admin-compact-section-hero__status-item) {
-    white-space: normal;
+.teaching-context {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px 32px;
+    padding: 16px 20px;
+    border: 1px solid #e7e9ef;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #25332c;
+}
+
+.teaching-context__items { flex: 1 1 320px; min-width: 0; }
+.teaching-context__item,
+.teaching-context__empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+}
+.teaching-context__item + .teaching-context__item,
+.teaching-context__empty { margin-top: 5px; }
+.teaching-context__empty { color: #65716c; }
+.teaching-context__progress { flex: 1 1 420px; min-width: 0; }
+.teaching-context__progress-heading { display: flex; align-items: center; gap: 9px; }
+.teaching-context__progress-label { font-size: 0.78rem; font-weight: 700; }
+.teaching-context__semester { margin-top: 3px; font-size: 0.72rem; color: #65716c; }
+.teaching-context__progress-track { position: relative; margin-top: 10px; }
+.teaching-context__progress-marker {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    transform: translateX(-50%);
+    background: #25332c;
+}
+
+@media (max-width: 599px) {
+    .teaching-context { padding: 14px; }
+    .teaching-context__progress { flex-basis: 100%; }
 }
 
 .teaching-nav {

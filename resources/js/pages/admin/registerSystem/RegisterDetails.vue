@@ -1,30 +1,13 @@
 <template>
     <v-container fluid class="register-details-page ma-0 w-100 pa-2">
 
-        <AdminSectionHero
+        <AdminPageHeader
             class="mb-3"
-            eyebrow="Anmeldetool"
-            :title="selected_register?.name || 'Details'"
-            :active-section="activeSection"
-            :chips="heroChips"
-            :show-current-user-chip="false"
-            primary-color="#0d2016"
-            secondary-color="#15803d"
-            left-orb-color="#4ade80"
-            right-orb-color="#86efac">
-            <template #chips>
-                <v-btn
-                    rounded="xl"
-                    color="white"
-                    variant="tonal"
-                    size="small"
-                    prepend-icon="mdi-arrow-left"
-                    to="/admin/register_system"
-                    :disabled="action !== ''">
-                    Zurück
-                </v-btn>
-            </template>
-        </AdminSectionHero>
+            location="Anmeldetool"
+            :section="activeSection.label"
+            :context-label="selectedSchoolyearLabel"
+            :status-label="registrationStatusLabel"
+            :is-open="selected_register?.is_active === true" />
 
         <div class="d-flex mb-2">
             <v-btn
@@ -62,7 +45,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
-import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import Overview from './components/RegisterDetails/Overview.vue'
 import MainMenu from './components/RegisterDetails/MainMenu.vue'
 import DatesWithMenu from './components/RegisterDetails/DatesWithMenu.vue'
@@ -72,7 +55,7 @@ import ShowBookings from './components/RegisterDetails/ShowBookings.vue'
 import RegisterUsers from './components/RegisterDetails/RegisterUsers.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, DatesWithMenu, AddDates, AddPerson, ShowBookings, RegisterUsers, MainMenu },
+    components: { AdminPageHeader, Overview, DatesWithMenu, AddDates, AddPerson, ShowBookings, RegisterUsers, MainMenu },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -92,27 +75,20 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'main_menu', 'action', 'selected_register', 'selected_schoolyear']),
         ...mapWritableState(useRegisterStore, ['active_registers']),
 
-        heroChips() {
-            const chips = []
-            if (this.selected_schoolyear?.name) {
-                chips.push({ key: 'sy', text: this.selected_schoolyear.name, icon: 'mdi-calendar-month-outline' })
-            }
-            if (this.selected_register?.bookings_count != null) {
-                chips.push({ key: 'bookings', text: `${this.selected_register.bookings_count} Anmeldungen`, icon: 'mdi-account-multiple-outline' })
-            }
-            if (this.selected_register?.dates_count != null) {
-                chips.push({ key: 'dates', text: `${this.selected_register.dates_count} Termine`, icon: 'mdi-calendar-clock-outline' })
-            }
-            if (this.selected_register) {
-                chips.push({
-                    key: 'status',
-                    text: this.selected_register.is_active ? 'Geöffnet' : 'Geschlossen',
-                    icon: this.selected_register.is_active ? 'mdi-check-circle-outline' : 'mdi-circle-off-outline',
-                    color: this.selected_register.is_active ? 'success' : 'white',
-                    variant: this.selected_register.is_active ? 'flat' : 'tonal',
-                })
-            }
-            return chips
+        selectedSchoolyearLabel() {
+            if (this.selected_register?.schoolyear_name) return this.selected_register.schoolyear_name
+            const schoolyear = this.selected_schoolyear || this.config?.selected_schoolyear
+
+            return schoolyear && String(schoolyear.id) === String(this.selected_register?.schoolyear_id)
+                ? schoolyear.name
+                : 'Kein Schuljahr verfügbar'
+        },
+
+        registrationStatusLabel() {
+            if (this.selected_register?.is_active === true) return 'Anmeldesystem geöffnet'
+            if (this.selected_register?.is_active === false) return 'Anmeldesystem geschlossen'
+
+            return 'Öffnungsstatus nicht verfügbar'
         },
 
         activeSection() {

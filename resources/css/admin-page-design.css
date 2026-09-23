@@ -1,0 +1,436 @@
+/* Signed-in page surfaces. App bar, drawer, dialogs and document canvases keep their own styling. */
+.v-main.admin-workspace {
+    --admin-page-background: #f7f8fa;
+    --admin-page-surface: #ffffff;
+    --admin-page-border: #e7e9ef;
+    --admin-page-text: #25332c;
+    --admin-page-muted: #65716c;
+    --admin-page-shadow: 0 4px 18px rgb(24 34 48 / 4%);
+    --admin-page-gutter: 8px;
+    background: var(--admin-page-background) !important;
+    color: var(--admin-page-text);
+}
+
+.v-main.admin-workspace :is(
+    .teaching-page, .students-timetables-page, .materials-page, .materials-v2-page,
+    .settings-page, .profile-page, .group-administration, .groups-page,
+    .restaurant-page, .mpe-page, .menu-plans-page, .aba-page, .aba-details-page,
+    .register-system-page, .register-details-page, .admin-users-page
+) {
+    background: var(--admin-page-background);
+    color: var(--admin-page-text);
+    min-width: 0;
+}
+
+.v-main.admin-workspace :is(
+    .teaching-page, .students-timetables-page, .materials-page, .settings-page-inner,
+    .profile-page:not(.profile-page--embedded), .group-administration,
+    .restaurant-page, .aba-page, .aba-details-page, .register-system-page,
+    .register-details-page, .admin-users-page
+),
+.v-main.admin-workspace :is(.mpe-page, .menu-plans-page, .groups-page) > .v-container {
+    padding-top: 0 !important;
+}
+
+.v-main.admin-workspace :is(.settings-bg, .materials-v2-orb),
+.v-main.admin-workspace .materials-page::before,
+.v-main.admin-workspace .materials-page::after {
+    display: none;
+}
+
+/* A header spans its page's existing eight-pixel gutter, never the browser viewport. */
+.v-main.admin-workspace .admin-page-header {
+    width: calc(100% + 2 * var(--admin-page-gutter));
+    max-width: none;
+    min-height: 76px;
+    margin-inline: calc(-1 * var(--admin-page-gutter));
+    padding: 14px 26px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: var(--admin-page-surface) !important;
+    color: var(--admin-page-text);
+    box-shadow: var(--admin-page-shadow);
+    overflow: visible;
+}
+
+.admin-page-header__layout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+}
+
+.admin-page-header__heading {
+    flex: 1 1 300px;
+    min-width: 0;
+}
+
+.admin-page-header__context {
+    flex: 0 1 360px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.v-main.admin-workspace :is(.admin-section-hero__bg-orb, .admin-compact-section-hero__bg-orb) {
+    display: none;
+}
+
+.v-main.admin-workspace :is(.admin-section-hero__eyebrow, .admin-compact-section-hero__eyebrow) {
+    color: var(--admin-page-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    opacity: 1;
+}
+
+.v-main.admin-workspace :is(.admin-section-hero__title, .admin-compact-section-hero__title) {
+    margin-top: 3px;
+    color: var(--admin-page-text);
+    font-size: clamp(1.1rem, 1.6vw, 1.45rem);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.v-main.admin-workspace :is(.admin-section-hero__chips, .admin-compact-section-hero__chips) {
+    gap: 6px;
+    margin-top: 8px;
+    min-width: 0;
+}
+
+.v-main.admin-workspace .admin-page-header :is(.v-chip.text-white, .v-btn.text-white) {
+    max-width: 100%;
+    color: var(--admin-page-text) !important;
+    background: #f2f4f7 !important;
+    box-shadow: none !important;
+}
+
+.v-main.admin-workspace .admin-page-header .v-chip {
+    height: auto;
+    min-height: 26px;
+    padding-block: 4px;
+    box-shadow: none;
+}
+
+.v-main.admin-workspace .admin-page-header .v-chip.text-white .v-chip__underlay {
+    opacity: 0;
+}
+
+.v-main.admin-workspace .admin-page-header .v-chip__content {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.v-main.admin-workspace .admin-section-hero__focus-card {
+    height: auto;
+    border: 0;
+    border-left: 1px solid var(--admin-page-border);
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--admin-page-text) !important;
+}
+
+.v-main.admin-workspace .admin-section-hero__focus-card > .v-card-text {
+    padding: 4px 0 4px 20px !important;
+}
+
+.v-main.admin-workspace :is(.admin-section-hero__focus-label, .admin-section-hero__focus-note) {
+    color: var(--admin-page-muted);
+    opacity: 1;
+    overflow-wrap: anywhere;
+}
+
+.v-main.admin-workspace .admin-section-hero__focus-value {
+    margin-top: 5px;
+    font-size: 0.9rem;
+    color: var(--admin-page-text);
+    overflow-wrap: anywhere;
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__content {
+    padding: 0;
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__top-row {
+    flex-wrap: wrap;
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__heading {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__status-row {
+    flex-wrap: wrap;
+    border-color: var(--admin-page-border);
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__status-item {
+    white-space: normal;
+}
+
+.v-main.admin-workspace .admin-compact-section-hero__progress {
+    min-width: 0;
+    max-width: 100%;
+    border-color: var(--admin-page-border);
+    background: #f2f7f5;
+    box-shadow: none;
+}
+
+/* SEPP keeps a wide working area, with a full-width header above it. */
+.v-main.admin-workspace .students-timetables-shell {
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
+}
+
+.v-main.admin-workspace .students-timetables-content {
+    max-width: 1760px;
+    margin-inline: auto !important;
+}
+
+/* Named module navigation surfaces only: no blanket toolbar or button overrides. */
+.v-main.admin-workspace :is(
+    .teaching-nav, .teaching-subnav, .st-nav, .restaurant-nav, .restaurant-settings-nav,
+    .aba-nav, .aba-details-nav, .register-system-nav, .profile-nav,
+    .group-administration-nav, .settings-subnav, .settings-general-subnav,
+    .settings-licence-subnav, .settings-tabs-sheet, .settings-roles-bar,
+    .teaching-admin-toolbar, .teaching-administration-toolbar,
+    .teaching-settings-toolbar-secondary, .curricula-submenu
+) {
+    background: var(--admin-page-surface) !important;
+    border-color: var(--admin-page-border);
+    color: var(--admin-page-text);
+    box-shadow: var(--admin-page-shadow);
+}
+
+.v-main.admin-workspace :is(
+    .teaching-nav__button-meta, .restaurant-nav__button-meta,
+    .group-administration-button-meta, .settings-section-subnav__meta,
+    .teaching-administration-button-meta, .teaching-settings-toolbar-btn-meta
+) {
+    color: var(--admin-page-muted);
+    background: #f2f4f7;
+    border-color: var(--admin-page-border);
+}
+
+.v-main.admin-workspace :is(
+    .aba-nav, .aba-details-nav, .register-system-nav,
+    .register-details-page > .d-flex, .restaurant-nav, .settings-subnav,
+    .teaching-admin-toolbar, .teaching-administration-toolbar,
+    .teaching-settings-toolbar-secondary, .curricula-submenu, .mpe-header
+) .v-btn.text-white {
+    color: rgb(var(--v-theme-primary)) !important;
+}
+
+.v-main.admin-workspace :is(.settings-general-subnav__item--idle, .settings-empty-text, .settings-roles-label) {
+    color: var(--admin-page-muted) !important;
+}
+
+.v-main.admin-workspace .settings-general-subnav__item--idle {
+    background: #f2f4f7 !important;
+}
+
+.v-main.admin-workspace .settings-tabs-sheet .v-tab:not(.v-tab--selected) {
+    color: var(--admin-page-muted) !important;
+}
+
+/* ABA main-page navigation follow the accepted Unterricht menu. */
+.v-main.admin-workspace .aba-nav {
+    border-radius: 16px;
+    padding: 10px;
+}
+
+.v-main.admin-workspace .aba-nav__buttons {
+    gap: 6px 0;
+    min-width: 0;
+}
+
+.v-main.admin-workspace .aba-nav__button {
+    min-height: 56px;
+    height: auto;
+    min-width: 0;
+    padding: 8px 16px;
+    border-radius: 0;
+    border-inline-end: 1px solid rgba(0, 0, 0, 0.12);
+    font-size: 0.875rem;
+    font-weight: 650;
+}
+
+.v-main.admin-workspace .aba-nav__button:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.v-main.admin-workspace .aba-nav__button-copy {
+    min-width: 0;
+    gap: 4px;
+    line-height: 1.15;
+}
+
+.v-main.admin-workspace .aba-nav__button-title {
+    font-size: inherit;
+}
+
+.v-main.admin-workspace .aba-nav__button-meta {
+    max-width: 280px;
+    padding: 2px 8px;
+    border: 1px solid var(--admin-page-border);
+    border-radius: 999px;
+    color: var(--admin-page-muted);
+    background: #f2f4f7;
+    font-size: 0.76rem;
+    font-weight: 700;
+    opacity: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+    .v-main.admin-workspace .aba-nav__buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .v-main.admin-workspace .aba-nav__buttons > .v-spacer { display: none; }
+    .v-main.admin-workspace .aba-nav__button {
+        width: 100%;
+        justify-content: center;
+    }
+    .v-main.admin-workspace .aba-nav__button .v-btn__content {
+        min-width: 0;
+        white-space: normal;
+    }
+}
+
+@media (max-width: 480px) {
+    .v-main.admin-workspace .aba-nav__buttons { grid-template-columns: 1fr; }
+    .v-main.admin-workspace .aba-nav__button { border-inline-end: 0; }
+}
+
+/* Existing card families keep their content, layouts and semantic status colors. */
+.v-main.admin-workspace :is(
+    .materials-shell, .profile-card, .admin-overview-card, .sa-card,
+    .crud-shell, .settings-empty-card, .mpe-stage, .rd-card,
+    .its-grid-box--overview > .its-grid-box__card
+) {
+    background: var(--admin-page-surface) !important;
+    border: 1px solid var(--admin-page-border);
+    color: var(--admin-page-text);
+    box-shadow: var(--admin-page-shadow);
+}
+
+.v-main.admin-workspace .its-grid-box--overview > .its-grid-box__card > .its-grid-box__title {
+    background: var(--admin-page-surface);
+    border-color: var(--admin-page-border);
+}
+
+/* ABA detail panels previously assumed a dark page behind them. */
+.v-main.admin-workspace .aba-details-page :is(
+    .basis-card, .basis-doc, .extraction-note, .extraction-stat, .extraction-comparison,
+    .extraction-section-card, .title-page-details__hero, .title-page-details__item,
+    .title-page-details__image-card
+) {
+    background: var(--admin-page-surface);
+    border-color: var(--admin-page-border);
+    color: var(--admin-page-text);
+    box-shadow: var(--admin-page-shadow);
+}
+
+.v-main.admin-workspace .aba-details-page :is(
+    .basis-card__title, .basis-field__value, .basis-doc__name, .extraction-note__title,
+    .extraction-stat__count, .extraction-comparison__title, .extraction-comparison__row-title,
+    .extraction-section-card__title, .extraction-section-card__preview, .toc-details__entry,
+    .title-page-details__hero-title, .title-page-details__hero-subtitle,
+    .title-page-details__item-value, .title-page-details__item-line-value,
+    .extraction-overwrite-switch__label
+) {
+    color: var(--admin-page-text);
+}
+
+.v-main.admin-workspace .aba-details-page :is(
+    .basis-card__subtitle, .extraction-note__meta, .extraction-comparison__subtitle,
+    .extraction-comparison__row-meta, .extraction-section-card__meta,
+    .title-page-details__hero-subtitle-label, .title-page-details__item-label,
+    .title-page-details__item-line-label, .title-page-details__extras-label,
+    .extraction-footnote, .extraction-empty__title
+) {
+    color: var(--admin-page-muted);
+}
+
+.v-main.admin-workspace .mpe-header {
+    background: var(--admin-page-surface);
+    border: 1px solid var(--admin-page-border);
+    color: var(--admin-page-text);
+    flex-wrap: wrap;
+}
+
+.v-main.admin-workspace :is(.mpe-header__left, .mpe-header__right) {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.v-main.admin-workspace .mpe-header__actions {
+    flex-wrap: wrap;
+    white-space: normal;
+}
+
+.v-main.admin-workspace :is(.mpe-header__eyebrow, .mpe-header__range, .mpe-header__hint, .mpe-badge span) {
+    color: var(--admin-page-muted);
+}
+
+.v-main.admin-workspace .mpe-badge {
+    background: #dff7f2;
+    border-color: transparent;
+    color: #078b7a;
+}
+
+.v-main.admin-workspace :is(.workspace-bar__label, .workspace-bar__name) {
+    color: var(--admin-page-text);
+}
+
+/* Materials 2 has its own search header; only its surface expands. */
+.v-main.admin-workspace .materials-v2-header {
+    position: relative;
+    min-height: 76px;
+    background: var(--admin-page-surface);
+    color: var(--admin-page-text);
+    box-shadow: var(--admin-page-shadow);
+}
+
+@media (max-width: 960px) {
+    .v-main.admin-workspace .admin-compact-section-hero__progress {
+        flex: 0 1 auto;
+    }
+}
+
+@media (max-width: 699px) {
+    .v-main.admin-workspace .admin-page-header {
+        padding: 12px 16px;
+    }
+
+    .admin-page-header__context {
+        flex-basis: 100%;
+    }
+
+    .v-main.admin-workspace .admin-section-hero__focus-card {
+        border-left: 0;
+        border-top: 1px solid var(--admin-page-border);
+    }
+
+    .v-main.admin-workspace .admin-section-hero__focus-card > .v-card-text {
+        padding: 10px 0 0 !important;
+    }
+
+    .v-main.admin-workspace .admin-compact-section-hero__progress {
+        flex-basis: auto;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .v-main.admin-workspace :is(.admin-compact-section-hero__progress-label, .admin-compact-section-hero__progress-secondary-label) {
+        white-space: normal;
+    }
+}

@@ -34,10 +34,13 @@
                 </div>
 
                 <div
-                    v-if="config?.selected_school?.long_name || config?.selected_school?.name"
+                    v-if="config?.selected_school?.long_name || config?.selected_school?.name || config?.user?.last_name || config?.user?.first_name"
                     class="admin-dashboard-page__metadata">
-                    <span class="admin-dashboard-page__meta-chip">
+                    <span v-if="config?.selected_school?.long_name || config?.selected_school?.name" class="admin-dashboard-page__meta-chip">
                         {{ config?.selected_school?.long_name || config?.selected_school?.name }}
+                    </span>
+                    <span v-if="config?.user?.last_name || config?.user?.first_name" class="admin-dashboard-page__meta-user">
+                        {{ config?.user?.last_name }} {{ config?.user?.first_name }}
                     </span>
                 </div>
 
@@ -1315,9 +1318,20 @@ export default {
 
 .admin-dashboard-page__metadata {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 0;
+    max-width: 420px;
     margin-left: auto;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.admin-dashboard-page__meta-user {
+    color: #65716c;
+    font-size: 0.75rem;
+    line-height: 1.3;
 }
 
 .admin-dashboard-page__meta-chip,
@@ -1799,7 +1813,8 @@ export default {
     }
 
     .admin-dashboard-page__metadata {
-        display: none;
+        flex-basis: 100%;
+        max-width: 100%;
     }
 
     .admin-dashboard-page__overview-grid,

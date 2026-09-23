@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import RegisterSystem from '@/pages/admin/registerSystem/RegisterSystem.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useUserStore } from '@/stores/admin/UserStore20'
+import { useRegisterStore } from '@/stores/admin/RegisterStore'
 
 async function renderPage(path = '/admin/register_system', stubUsers = true) {
     const router = createRouter({
@@ -34,7 +35,7 @@ async function renderPage(path = '/admin/register_system', stubUsers = true) {
                 VDivider: true,
                 VBtn: { template: '<button type="button"><slot /></button>' },
                 'v-btn': { template: '<button type="button"><slot /></button>' },
-                AdminSectionHero: true,
+                VIcon: true,
                 Schoolyears: { template: '<div>Schuljahrauswahl</div>' },
                 ActiveRegisters: true,
                 Registers: { template: '<div>Anmeldetool-Liste</div>' },
@@ -43,10 +44,51 @@ async function renderPage(path = '/admin/register_system', stubUsers = true) {
         },
     })
 
-    return { router, store: useAdminStore(pinia), userStore: useUserStore(pinia) }
+    return { router, store: useAdminStore(pinia), userStore: useUserStore(pinia), registerStore: useRegisterStore(pinia) }
 }
 
 describe('Register system user navigation', () => {
+    it('shows the current identity and counts opened systems only in the selected schoolyear', async () => {
+        const { store, registerStore } = await renderPage()
+        store.config = {
+            selected_school: { long_name: 'Testschule Wien' },
+            user: { last_name: 'Muster', first_name: 'Alex' },
+        }
+        store.selected_schoolyear = { id: 1, name: '2030/31' }
+        registerStore.active_registers = [{ schoolyear_id: 1 }, { schoolyear_id: 2 }, { schoolyear_id: '1' }]
+        registerStore.active_registers_status = 'ready'
+
+        await waitFor(() => expect(screen.getByText('2 Anmeldesysteme geöffnet')).toBeInTheDocument())
+        expect(screen.getByText('Testschule Wien')).toBeInTheDocument()
+        expect(screen.getByText('Muster Alex')).toBeInTheDocument()
+        expect(screen.getByText('2030/31')).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Anmeldetool', exact: true })).toBeInTheDocument()
+
+        store.selected_schoolyear = { id: 3, name: '2032/33' }
+        store.config.user = { last_name: 'Vertretung', first_name: 'Kim' }
+        await waitFor(() => expect(screen.getByText('Kein Anmeldesystem geöffnet')).toBeInTheDocument())
+        expect(screen.getByText('2032/33')).toBeInTheDocument()
+        expect(screen.getByText('Vertretung Kim')).toBeInTheDocument()
+        expect(screen.queryByText('Muster Alex')).not.toBeInTheDocument()
+    })
+
+    it('does not display an unknown or failed opening status as closed', async () => {
+        const { store, registerStore } = await renderPage()
+        expect(screen.getByText('Öffnungsstatus wird geladen …')).toBeInTheDocument()
+        registerStore.active_registers_status = 'error'
+        await waitFor(() => expect(screen.getByText('Öffnungsstatus nicht verfügbar')).toBeInTheDocument())
+        expect(screen.queryByText('Kein Anmeldesystem geöffnet')).not.toBeInTheDocument()
+        registerStore.active_registers_status = 'ready'
+        store.selected_schoolyear = null
+        await waitFor(() => expect(screen.getByText('Kein Schuljahr ausgewählt')).toBeInTheDocument())
+        expect(screen.getByText('Öffnungsstatus nicht verfügbar')).toBeInTheDocument()
+    })
+
+    it('loads opening status on a users deep link where the overview is not mounted', async () => {
+        const { registerStore } = await renderPage('/admin/register_system?panel=users')
+        expect(registerStore.loadActiveRegisters).toHaveBeenCalledOnce()
+    })
+
     it('opens users inside the register tool and supports browser back', async () => {
         const { router } = await renderPage()
         expect(screen.getByText('Anmeldetool-Liste')).toBeInTheDocument()

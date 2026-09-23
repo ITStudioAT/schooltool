@@ -3,15 +3,15 @@
         <div class="materials-v2-orb materials-v2-orb--one" />
         <div class="materials-v2-orb materials-v2-orb--two" />
 
-        <div class="materials-v2-content">
-            <MaterialsV2Header
-                :search="search"
-                :loading="loading"
-                :school-name="schoolName"
-                :school-logo-src="schoolLogoSrc"
-                @update:search="search = $event"
-                @clear="clearSearch" />
+        <MaterialsV2Header
+            :search="search"
+            :loading="loading"
+            :school-name="schoolName"
+            :school-logo-src="schoolLogoSrc"
+            @update:search="search = $event"
+            @clear="clearSearch" />
 
+        <div class="materials-v2-content">
             <nav class="materials-v2-system-navigation" aria-label="Systemkategorien">
                 <v-tabs
                     :model-value="isAdminView ? null : selectedCategory"

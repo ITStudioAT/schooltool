@@ -23,7 +23,7 @@
             :preview="config?.preview"
             :title="config?.selected_school?.long_name || ''" />
 
-        <v-main class="bg-background" v-if="config">
+        <v-main class="bg-background" :class="{ 'admin-workspace': isAdminShellVisible }" v-if="config">
             <v-progress-linear
                 :active="is_loading > 0"
                 absolute

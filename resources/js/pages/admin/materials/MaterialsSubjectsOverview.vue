@@ -1,5 +1,6 @@
 <template>
     <v-container fluid class="materials-page ma-0 w-100 pa-2">
+        <AdminCompactSectionHero class="mb-3" eyebrow="Materialien" title="Fachkatalog" />
         <v-row class="w-100" dense>
             <v-col cols="12" xl="10" class="subjects-overview-page-col">
                 <v-card class="materials-shell pa-4 pa-md-8 subjects-overview-shell" rounded="xl" elevation="0">
@@ -231,10 +232,12 @@
 </template>
 
 <script>
+import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 
 export default {
+    components: { AdminCompactSectionHero },
     name: 'MaterialsSubjectsOverview',
     data() {
         return {

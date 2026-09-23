@@ -1,13 +1,15 @@
 <template>
-    <v-sheet rounded="xl" class="schoolyears-nav mb-3" :class="{ 'is-locked': action !== '' }">
+    <v-sheet :rounded="menuStyle ? undefined : 'xl'" class="schoolyears-nav mb-3" :class="{ 'is-locked': action !== '', 'schoolyears-nav--menu': menuStyle }">
         <div class="schoolyears-nav__buttons">
             <v-btn
                 v-for="schoolyear in schoolyears"
                 :key="schoolyear.id"
-                rounded="xl"
-                :color="schoolyear.id === selected_schoolyear?.id ? 'success' : 'secondary'"
-                :variant="schoolyear.id === selected_schoolyear?.id ? 'flat' : 'tonal'"
+                :rounded="menuStyle ? undefined : 'xl'"
+                :color="schoolyear.id === selected_schoolyear?.id ? (menuStyle ? 'primary' : 'success') : (menuStyle ? undefined : 'secondary')"
+                :variant="menuStyle || schoolyear.id === selected_schoolyear?.id ? 'flat' : 'tonal'"
                 class="schoolyears-nav__button"
+                :class="{ 'v-btn--active': menuStyle && schoolyear.id === selected_schoolyear?.id }"
+                :aria-pressed="schoolyear.id === selected_schoolyear?.id"
                 :disabled="action !== ''"
                 @click="setActiveSchoolyear(schoolyear)">
                 <v-icon size="16" :icon="schoolyear.id === selected_schoolyear?.id ? 'mdi-check-circle-outline' : 'mdi-calendar-month-outline'" class="mr-2" />
@@ -24,6 +26,10 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 
 export default {
+    props: {
+        menuStyle: { type: Boolean, default: false },
+    },
+
     setup() {
         return useValidationRulesSetup()
     },
@@ -102,5 +108,28 @@ export default {
 .schoolyears-nav.is-locked {
     opacity: 0.68;
     pointer-events: none;
+}
+
+.schoolyears-nav--menu {
+    border-radius: 16px;
+    border-color: var(--admin-page-border, #e7e9ef);
+    background: var(--admin-page-surface, #ffffff);
+    color: var(--admin-page-text, #25332c);
+    box-shadow: var(--admin-page-shadow);
+    padding: 8px;
+}
+
+.schoolyears-nav--menu .schoolyears-nav__buttons { width: 100%; gap: 4px 0; }
+.schoolyears-nav--menu .schoolyears-nav__button {
+    min-height: 44px !important;
+    height: auto !important;
+    border-radius: 0;
+    font-weight: 650;
+    border-inline-end: 1px solid rgba(0, 0, 0, 0.12);
+}
+.schoolyears-nav--menu .schoolyears-nav__button:first-child { border-radius: 4px 0 0 4px; }
+.schoolyears-nav--menu .schoolyears-nav__button:last-child { border-inline-end: 0; border-radius: 0 4px 4px 0; }
+@media (max-width: 480px) {
+    .schoolyears-nav--menu .schoolyears-nav__button { width: 100%; border-inline-end: 0; }
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-    <v-sheet rounded="xl" class="admin-compact-section-hero" :style="heroStyle">
+    <v-sheet class="admin-compact-section-hero admin-page-header" :style="heroStyle">
         <div class="admin-compact-section-hero__bg-orb admin-compact-section-hero__bg-orb--left"></div>
         <div class="admin-compact-section-hero__bg-orb admin-compact-section-hero__bg-orb--right"></div>
 

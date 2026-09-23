@@ -90,6 +90,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/StudentsTimetables,app/Models,app/Services/StudentsTimetables,resources/js/pages/admin/studentsTimetables}/** | .ai/rules/pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/{UserController.php,UserWithRoleController.php,StudentsTimetables/AdminUserController.php,StudentsTimetables/TeacherAccountController.php},resources/js/pages/admin/superAdmin/components/Users.vue,tests/**} | .ai/rules/pages-admin-super-admin-components.md |
 | {app/Models/TeachingCourseStudent.php,app/Http/Controllers/Admin/Teaching/**,resources/js/pages/admin/teaching/**} | .ai/rules/pages-admin-teaching.md |
+| {resources/css/admin-page-design.css,resources/js/pages/admin/**} | .ai/rules/pages-admin.md |
 | {app/Services/StudentsTimetables/StudentTimetablesStudentOverviewService.php,resources/js/pages/homepage/studentsTimetables/overviewV2/**} | .ai/rules/pages-homepage-students-timetables-overview-v2.md |
 | resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php | .ai/rules/pdfs-feature.md |
 | resources/views/pdfs/students-timetable-overview.blade.php, resources/views/pdfs/** | .ai/rules/pdfs.md |

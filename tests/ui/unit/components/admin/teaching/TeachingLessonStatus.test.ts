@@ -22,7 +22,7 @@ function course(overrides: Record<string, unknown> = {}) {
 function mountTeaching() {
     const components = Object.fromEntries(Object.entries((Teaching as any).components).map(([name, component]) => [
         name,
-        name === 'AdminCompactSectionHero' ? component : { name, template: '<div />' },
+        name === 'AdminPageHeader' ? component : { name, template: '<div />' },
     ]))
     wrapper = mount({ ...Teaching, components }, {
         global: {
@@ -37,7 +37,7 @@ function mountTeaching() {
 }
 
 function statusTexts() {
-    return wrapper!.findAll('.admin-compact-section-hero__status-item').map((item) => item.text())
+    return wrapper!.findAll('.teaching-context__item').map((item) => item.text())
 }
 
 describe('Teaching header lesson status', () => {
@@ -64,6 +64,49 @@ describe('Teaching header lesson status', () => {
         wrapper = undefined
         vi.restoreAllMocks()
         vi.useRealTimers()
+    })
+
+    it('counts only the selected teacher in the current schoolyear and keeps the clock below the header', async () => {
+        useCourseStore().courses = [
+            course({ students_info: [{ id: 21 }, { id: 22, canceled_at: '2026-09-01' }] }),
+            course({ id: 19, user_id: '7', students_info: [{ id: 21 }, { id: 23 }] }),
+            course({ id: 20, user_id: 8, students_info: [{ id: 24 }] }),
+            course({ id: 21, schoolyear_id: 99, students_info: [{ id: 25 }] }),
+            course({ id: 22, school_id: 99, students_info: [{ id: 26 }] }),
+        ] as any
+        mountTeaching()
+        await flushPromises()
+        const header = wrapper!.find('header')
+        expect(header.text()).toContain('2 Kurse')
+        expect(header.text()).toContain('2 Schüler:innen')
+        expect(header.text()).not.toContain('14.09.2026')
+        expect(wrapper!.find('[aria-label="Unterricht und Schuljahr"]').text()).toContain('14.09.2026')
+
+        ;(useAdminStore().config as any).user = { id: 8, last_name: 'Ausgewählt', first_name: 'Kim' }
+        await flushPromises()
+        expect(header.text()).toContain('1 Kurs')
+        expect(header.text()).toContain('1 Schüler:in')
+        expect(header.text()).toContain('Ausgewählt Kim')
+    })
+
+    it('shows confirmed zero counts and an explicit empty lesson state', async () => {
+        useCourseStore().courses = []
+        mountTeaching()
+        expect(wrapper!.find('header').text()).toContain('Kennzahlen werden geladen')
+        await flushPromises()
+        expect(wrapper!.find('header').text()).toContain('0 Kurse')
+        expect(wrapper!.find('header').text()).toContain('0 Schüler:innen')
+        expect(wrapper!.text()).toContain('Kein weiterer Unterricht geplant')
+    })
+
+    it('does not replace failed initial loading with zero counts or an empty schedule', async () => {
+        useCourseStore().courses = []
+        vi.mocked(useCourseStore().index).mockResolvedValueOnce(false)
+        mountTeaching()
+        await flushPromises()
+        expect(wrapper!.find('header').text()).toContain('Kennzahlen nicht verfügbar')
+        expect(wrapper!.find('header').text()).not.toContain('0 Kurse')
+        expect(wrapper!.text()).toContain('Unterrichtszeiten nicht verfügbar')
     })
 
     it('renders the next lesson beside the clock and updates into the active lesson', async () => {

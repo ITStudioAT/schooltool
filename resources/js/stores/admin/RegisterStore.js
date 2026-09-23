@@ -7,6 +7,7 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
         registers: [],
         selected_register: null,
         active_registers: [],
+        active_registers_status: 'idle',
         register_dates: [],
     }),
 
@@ -36,11 +37,14 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
+            this.active_registers_status = 'loading'
             try {
                 const response = await axios.post(`/api/admin/registers/get_active`, {})
                 this.active_registers = response.data
+                this.active_registers_status = 'ready'
                 return true
             } catch (error) {
+                this.active_registers_status = 'error'
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',

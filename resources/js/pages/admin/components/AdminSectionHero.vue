@@ -1,10 +1,10 @@
 <template>
-    <v-sheet rounded="xl" class="admin-section-hero" :style="heroStyle">
+    <v-sheet class="admin-section-hero admin-page-header" :style="heroStyle">
         <div class="admin-section-hero__bg-orb admin-section-hero__bg-orb--left"></div>
         <div class="admin-section-hero__bg-orb admin-section-hero__bg-orb--right"></div>
 
-        <v-row class="ma-0" align="stretch" dense>
-            <v-col cols="12" lg="8" class="pa-2 pa-md-4">
+        <div class="admin-page-header__layout">
+            <div class="admin-page-header__heading">
                 <div class="admin-section-hero__eyebrow">{{ eyebrow }}</div>
                 <h1 class="admin-section-hero__title">{{ title }}</h1>
                 <div class="admin-section-hero__chips">
@@ -31,10 +31,10 @@
 
                     <slot name="chips"></slot>
                 </div>
-            </v-col>
+            </div>
 
-            <v-col cols="12" lg="4" class="pa-2 pa-md-4">
-                <v-card variant="tonal" color="white" class="admin-section-hero__focus-card" rounded="xl">
+            <div class="admin-page-header__context">
+                <v-card variant="flat" class="admin-section-hero__focus-card" rounded="xl">
                     <v-card-text class="pa-4">
                         <div class="admin-section-hero__focus-label">{{ focusLabel }}</div>
                         <div class="admin-section-hero__focus-value">
@@ -52,8 +52,8 @@
                         </div>
                     </v-card-text>
                 </v-card>
-            </v-col>
-        </v-row>
+            </div>
+        </div>
     </v-sheet>
 </template>
 

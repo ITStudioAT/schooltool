@@ -1,5 +1,6 @@
 <template>
     <v-container fluid class="materials-page ma-0 w-100 pa-2">
+        <AdminCompactSectionHero class="mb-3" eyebrow="Materialverwaltung" title="Materialien" />
         <template v-if="isWorkspaceCheckLoading">
             <v-row class="w-100" dense>
                 <v-col cols="12" lg="10" xl="9" class="mx-auto">
@@ -76,6 +77,7 @@
 </template>
 
 <script>
+import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 import { defineAsyncComponent } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
@@ -89,6 +91,7 @@ const MaterialsPermissionsView = defineAsyncComponent(() => import('./components
 export default {
     name: 'Materials',
     components: {
+        AdminCompactSectionHero,
         MaterialsMenu,
         MaterialsFreigabeView,
         MaterialsOverviewView,

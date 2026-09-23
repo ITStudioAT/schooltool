@@ -1,6 +1,8 @@
 <template>
     <v-container fluid class="restaurant-page ma-0 w-100 pa-2">
+        <AdminPageHeader v-if="main_action === 'overview'" class="mb-3" location="Restaurant" />
         <AdminSectionHero
+            v-else
             class="mb-3"
             eyebrow="Intern"
             title="Restaurant"
@@ -131,6 +133,7 @@ import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import Overview from './components/Overview.vue'
 
 const Foods = defineAsyncComponent(() => import('./components/Foods.vue'))
@@ -143,7 +146,7 @@ const Settings = defineAsyncComponent(() => import('./components/Settings.vue'))
 const CdgymLegacy = defineAsyncComponent(() => import('./components/CdgymLegacy.vue'))
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings, CdgymLegacy },
+    components: { AdminPageHeader, AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings, CdgymLegacy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

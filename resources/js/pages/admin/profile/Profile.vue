@@ -1,27 +1,19 @@
 <template>
     <v-container fluid class="profile-page ma-0 w-100 pa-2" :class="{ 'profile-page--embedded': embedded }" v-if="config && config.user">
 
-        <AdminSectionHero
+        <AdminPageHeader
             v-if="!embedded"
             class="mb-3"
-            eyebrow="Konto"
-            title="Benutzerprofil & Sicherheit"
-            :active-section="activeSection"
-            :chips="heroChips"
-            :show-current-user-chip="true"
-            user-chip-prefix="Angemeldet als"
-            primary-color="#1e1b4b"
-            secondary-color="#4338ca"
-            left-orb-color="#818cf8"
-            right-orb-color="#c7d2fe" />
+            location="Profil"
+            :section="step === '' ? '' : activeSection.label" />
 
-        <v-sheet rounded="xl" class="profile-nav mb-3">
-            <div class="profile-nav__buttons">
+        <v-sheet class="profile-nav mb-3">
+            <div class="profile-nav__buttons" role="group" aria-label="Profilbereiche">
                 <v-btn
-                    rounded="xl"
-                    :color="step === '' ? 'primary' : 'secondary'"
-                    :variant="step === '' ? 'flat' : 'tonal'"
-                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === '', 'profile-nav__button--idle': step !== '' }]"
+                    :color="step === '' ? 'primary' : undefined"
+                    variant="flat"
+                    :aria-pressed="step === ''"
+                    :class="['profile-nav__button', { 'v-btn--active': step === '', 'profile-nav__button--selected': step === '', 'profile-nav__button--idle': step !== '' }]"
                     @click="abort">
                     <v-icon size="18" icon="mdi-account-outline" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -31,10 +23,10 @@
                 </v-btn>
 
                 <v-btn
-                    rounded="xl"
-                    :color="step === 'APPEARANCE' ? 'primary' : 'secondary'"
-                    :variant="step === 'APPEARANCE' ? 'flat' : 'tonal'"
-                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'APPEARANCE', 'profile-nav__button--idle': step !== 'APPEARANCE' }]"
+                    :color="step === 'APPEARANCE' ? 'primary' : undefined"
+                    variant="flat"
+                    :aria-pressed="step === 'APPEARANCE'"
+                    :class="['profile-nav__button', { 'v-btn--active': step === 'APPEARANCE', 'profile-nav__button--selected': step === 'APPEARANCE', 'profile-nav__button--idle': step !== 'APPEARANCE' }]"
                     @click="openAppearance">
                     <v-icon size="18" icon="mdi-palette-outline" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -44,10 +36,10 @@
                 </v-btn>
 
                 <v-btn
-                    rounded="xl"
-                    :color="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'primary' : 'secondary'"
-                    :variant="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'flat' : 'tonal'"
-                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN', 'profile-nav__button--idle': !(step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN') }]"
+                    :color="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'primary' : undefined"
+                    variant="flat"
+                    :aria-pressed="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN'"
+                    :class="['profile-nav__button', { 'v-btn--active': step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN', 'profile-nav__button--selected': step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN', 'profile-nav__button--idle': !(step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN') }]"
                     @click="wantToChangePassword">
                     <v-icon size="18" icon="mdi-form-textbox-password" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -57,10 +49,10 @@
                 </v-btn>
 
                 <v-btn
-                    rounded="xl"
-                    :color="is2FaStep ? 'primary' : 'secondary'"
-                    :variant="is2FaStep ? 'flat' : 'tonal'"
-                    :class="['profile-nav__button', { 'profile-nav__button--selected': is2FaStep, 'profile-nav__button--idle': !is2FaStep }]"
+                    :color="is2FaStep ? 'primary' : undefined"
+                    variant="flat"
+                    :aria-pressed="is2FaStep"
+                    :class="['profile-nav__button', { 'v-btn--active': is2FaStep, 'profile-nav__button--selected': is2FaStep, 'profile-nav__button--idle': !is2FaStep }]"
                     @click="wantToChange2Fa">
                     <v-icon size="18" icon="mdi-two-factor-authentication" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -70,10 +62,10 @@
                 </v-btn>
 
                 <v-btn
-                    rounded="xl"
-                    :color="step === 'HOPPER_SCHOOLS' ? 'primary' : 'secondary'"
-                    :variant="step === 'HOPPER_SCHOOLS' ? 'flat' : 'tonal'"
-                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'HOPPER_SCHOOLS', 'profile-nav__button--idle': step !== 'HOPPER_SCHOOLS' }]"
+                    :color="step === 'HOPPER_SCHOOLS' ? 'primary' : undefined"
+                    variant="flat"
+                    :aria-pressed="step === 'HOPPER_SCHOOLS'"
+                    :class="['profile-nav__button', { 'v-btn--active': step === 'HOPPER_SCHOOLS', 'profile-nav__button--selected': step === 'HOPPER_SCHOOLS', 'profile-nav__button--idle': step !== 'HOPPER_SCHOOLS' }]"
                     @click="openHopperSchools">
                     <v-icon size="18" icon="mdi-account-switch-outline" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -358,7 +350,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useUserStore } from '@/stores/admin/UserStore'
 import { useNavigationStore } from '@/stores/admin/NavigationStore'
-import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import HopperSchools from '@/pages/admin/profile/components/HopperSchools.vue'
 import TwoFactorAuthentication from '@/pages/admin/profile/components/TwoFactorAuthentication.vue'
 
@@ -367,7 +359,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { AdminSectionHero, HopperSchools, TwoFactorAuthentication },
+    components: { AdminPageHeader, HopperSchools, TwoFactorAuthentication },
 
     props: {
         embedded: { type: Boolean, default: false },
@@ -423,21 +415,6 @@ export default {
 
         schoolAppearanceTextColor() {
             return resolveAdminShellTextColor(this.schoolAppearanceColor)
-        },
-
-        heroChips() {
-            const chips = []
-            if (this.data?.email) {
-                chips.push({ key: 'email', text: this.data.email, icon: 'mdi-email-outline' })
-            }
-            chips.push({
-                key: '2fa',
-                text: this.data?.two_factor_enabled ? '2-FA aktiv' : this.data?.two_factor_pending ? '2-FA offen' : '2-FA inaktiv',
-                icon: this.data?.two_factor_enabled ? 'mdi-shield-check-outline' : 'mdi-shield-off-outline',
-                color: this.data?.two_factor_enabled ? 'success' : 'white',
-                variant: this.data?.two_factor_enabled ? 'flat' : 'tonal',
-            })
-            return chips
         },
 
         activeSection() {
@@ -566,22 +543,26 @@ export default {
 }
 
 .profile-nav {
-    border: 1px solid rgba(16, 38, 58, 0.08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
-    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(10px);
+    border: 1px solid var(--admin-page-border, #e7e9ef);
+    border-radius: 16px;
+    background: var(--admin-page-surface, #ffffff);
+    box-shadow: var(--admin-page-shadow);
     padding: 10px;
 }
 
 .profile-nav__buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px 0;
 }
 
 .profile-nav__button {
-    height: 40px !important;
-    padding: 0 14px;
+    min-height: 56px !important;
+    height: auto !important;
+    min-width: 0;
+    padding: 8px 16px;
+    border-radius: 0;
+    border-inline-end: 1px solid rgba(0, 0, 0, 0.12);
     text-transform: none;
     letter-spacing: 0;
     justify-content: flex-start;
@@ -589,6 +570,15 @@ export default {
 
 .profile-nav__button--selected {
     color: #fff;
+}
+
+.profile-nav__button--selected :deep(.v-btn__overlay) {
+    opacity: 0.16;
+}
+
+.profile-nav__button:focus-visible {
+    outline: 2px solid #25332c;
+    outline-offset: 2px;
 }
 
 .profile-nav__button--idle {
@@ -599,16 +589,26 @@ export default {
     display: inline-flex;
     flex-direction: column;
     align-items: flex-start;
-    line-height: 1.2;
+    min-width: 0;
+    line-height: 1.15;
+    gap: 4px;
 }
 
 .profile-nav__button-title {
     font-weight: 650;
-    font-size: 0.92rem;
+    font-size: 0.875rem;
 }
 
 .profile-nav__button-meta {
-    font-size: 0.72rem;
+    max-width: 100%;
+    padding: 2px 8px;
+    border: 1px solid var(--admin-page-border, #e7e9ef);
+    border-radius: 999px;
+    background: #f2f4f7;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .profile-nav__button--selected .profile-nav__button-title {
@@ -616,7 +616,7 @@ export default {
 }
 
 .profile-nav__button--selected .profile-nav__button-meta {
-    color: rgba(255, 255, 255, 0.82);
+    color: var(--admin-page-muted, #65716c);
 }
 
 .profile-nav__button--idle .profile-nav__button-title {
@@ -624,7 +624,21 @@ export default {
 }
 
 .profile-nav__button--idle .profile-nav__button-meta {
-    color: rgba(16, 38, 58, 0.86);
+    color: var(--admin-page-muted, #65716c);
+}
+
+.profile-nav__button:first-child { border-radius: 4px 0 0 4px; }
+.profile-nav__button:last-child { border-inline-end: 0; border-radius: 0 4px 4px 0; }
+
+@media (max-width: 700px) {
+    .profile-nav__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .profile-nav__button { width: 100%; justify-content: center; }
+    .profile-nav__button :deep(.v-btn__content) { min-width: 0; white-space: normal; }
+}
+
+@media (max-width: 480px) {
+    .profile-nav__buttons { grid-template-columns: 1fr; }
+    .profile-nav__button { border-inline-end: 0; }
 }
 
 .profile-card {
@@ -636,8 +650,18 @@ export default {
 }
 
 .appearance-color-option {
+    min-height: 52px;
+    height: auto !important;
+    padding-block: 10px;
+    letter-spacing: 0;
     border: 2px solid rgba(255, 255, 255, 0.46);
     box-shadow: 0 7px 18px rgba(16, 38, 58, 0.18);
+}
+
+.appearance-color-option :deep(.v-btn__content) {
+    min-width: 0;
+    white-space: normal;
+    text-align: left;
 }
 
 .appearance-color-option--selected {
