@@ -1834,16 +1834,17 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowPc, 'log', '-1', '--format=%s', runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/schooltool/candidates/')))->toBe('Retained candidate work');
 })->with(['preview', 'release']);
 
-it('blocks preview replay after an actual publication or transfer failure', function (string $failure): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+it('blocks preview replay after an actual publication or transfer failure', function (string $failure, string $powershell): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"', $powershell));
     $command = branchWorkflowPreviewMocks()."\n".'$failure = "'.$failure.'"; '.<<<'POWERSHELL'
 gitpreview prepare
 $id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
 $script:publicationCalls = 0
 $script:transferCalls = 0
+$script:publicationRefspec = "$((Read-SchooltoolPreviewReceipt $id).ArtifactCommit):refs/heads/preview/$id"
 $script:originalGit = (Get-Command Invoke-SchooltoolGit).ScriptBlock
 function Invoke-SchooltoolGit {
-    if ($args[0] -ceq 'push') {
+    if ($args[0] -ceq 'push' -and $args -ccontains $script:publicationRefspec) {
         $script:publicationCalls++
         if ($failure -ceq 'push') { throw 'EXPECTED_PUSH_FAILURE' }
     }
@@ -1858,13 +1859,14 @@ try { gitpreview resume $id; throw 'REPLAY_WAS_ALLOWED' }
 catch { if ($_.Exception.Message -notmatch 'Publication was already attempted') { throw } }
 Write-Output "PUBLICATION_CALLS=$script:publicationCalls TRANSFER_CALLS=$script:transferCalls"
 POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
     assertBranchWorkflowSucceeded($result);
     expect($result->getOutput())->toContain('PUBLICATION_CALLS=1 TRANSFER_CALLS='.($failure === 'push' ? '0' : '1'))
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT')
         ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toHaveCount(1)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-})->with(['push', 'transfer']);
+})->with(['push', 'transfer'])->with(['powershell', 'pwsh']);
 
 it('refuses changed detached candidate identity without changing user branches', function (string $mutation, string $message): void {
     $command = <<<'POWERSHELL'
