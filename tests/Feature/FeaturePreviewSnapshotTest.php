@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Services\FeaturePreviewControlClient;
 use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\FeaturePreviewRuntimeService;
 use App\Services\FeaturePreviewSnapshotArchive;
 use App\Services\FeaturePreviewSnapshotFiles;
 use App\Services\FeaturePreviewSnapshotIdentityStore;
@@ -41,6 +42,16 @@ test('snapshot command does not expose database errors or secrets', function ():
     $service->shouldReceive('status')->once()->andThrow(new PDOException('password=very-secret SELECT personal_data'));
     app()->instance(FeaturePreviewSnapshotService::class, $service);
     $this->artisan('preview:snapshot', ['action' => 'status', '--feature' => str_repeat('a', 32)])
+        ->doesntExpectOutputToContain('very-secret')->doesntExpectOutputToContain('personal_data')->assertFailed();
+});
+
+test('snapshot import reports the cause location without leaking private exception contents', function (): void {
+    $service = Mockery::mock(FeaturePreviewSnapshotService::class);
+    $cause = new PDOException('password=very-secret SELECT personal_data');
+    $service->shouldReceive('import')->once()->andThrow(new RuntimeException('Preview snapshot import failed.', previous: $cause));
+    app()->instance(FeaturePreviewSnapshotService::class, $service);
+    $this->artisan('preview:snapshot', ['action' => 'import', '--feature' => str_repeat('a', 32), '--replace' => true])
+        ->expectsOutputToContain('Cause: PDOException at FeaturePreviewSnapshotTest.php:')
         ->doesntExpectOutputToContain('very-secret')->doesntExpectOutputToContain('personal_data')->assertFailed();
 });
 
@@ -207,7 +218,7 @@ test('snapshot transport is received only from a private verified temporary dire
     }
 });
 
-test('real MySQL snapshot copies data and private files while preserving live and reencrypting secrets', function (bool $emptySlowTarget): void {
+test('real MySQL snapshot copies data and private files while preserving live and reencrypting secrets', function (bool $emptySlowTarget, bool $runtime = false): void {
     if (getenv('SCHOOLTOOL_SNAPSHOT_MYSQL_TEST') !== '1') {
         $this->markTestSkipped('Explicit opt-in for disposable local MySQL schemas and users.');
     }
@@ -224,6 +235,7 @@ test('real MySQL snapshot copies data and private files while preserving live an
     $writer = $prefix.'writer';
     $password = bin2hex(random_bytes(24));
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-snapshot-integration-'.bin2hex(random_bytes(8));
+    $runtimeStorage = storage_path('framework/testing/snapshot-runtime-'.bin2hex(random_bytes(8)));
     $originalStorage = storage_path();
     $createdDatabases = [];
     $createdUsers = [];
@@ -309,8 +321,8 @@ test('real MySQL snapshot copies data and private files while preserving live an
 
         $mainKey = 'base64:'.base64_encode(random_bytes(32));
         $previewKey = 'base64:'.base64_encode(random_bytes(32));
-        $configure = function (string $area, string $key, bool $preview) use ($directory): void {
-            $storage = $directory.DIRECTORY_SEPARATOR.$area.DIRECTORY_SEPARATOR.'storage';
+        $configure = function (string $area, string $key, bool $preview) use ($directory, $runtime, $runtimeStorage): void {
+            $storage = $runtime && $preview ? $runtimeStorage : $directory.DIRECTORY_SEPARATOR.$area.DIRECTORY_SEPARATOR.'storage';
             foreach (['app/private', 'app/public', 'framework/sessions', 'framework/cache/data', 'framework/views'] as $suffix) {
                 (new Filesystem)->ensureDirectoryExists($storage.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $suffix), 0700);
             }
@@ -411,6 +423,11 @@ test('real MySQL snapshot copies data and private files while preserving live an
         app()->instance('encrypter', new Encrypter(base64_decode(substr($previewKey, 7)), 'AES-256-CBC'));
         Crypt::clearResolvedInstance('encrypter');
         config(['app.key' => $previewKey]);
+        $sourcePdo = $source->getPdo();
+        $sourceValue = fn (string $table, string $column): mixed => $sourcePdo->query('SELECT `'.$column.'` FROM `'.$table.'` LIMIT 1')->fetchColumn();
+        if ($runtime) {
+            app(FeaturePreviewRuntimeService::class)->install();
+        }
         $result = $service->import($feature, $importPath, $export['sha256'], true);
         $copied = $target->table('users')->first();
         expect($result['imported'])->toBeTrue()
@@ -436,13 +453,13 @@ test('real MySQL snapshot copies data and private files while preserving live an
             ->and(file_get_contents(storage_path('app/public/logo.bin')))->toBe("binary\0logo")
             ->and(is_file(storage_path('app/private/old.txt')))->toBeFalse()
             ->and(glob(storage_path('framework/sessions/*')))->toBe([])
-            ->and($source->table('users')->value('token_2fa'))->toBe('123456')
-            ->and($source->table('users')->value('two_factor_secret'))->toBe($sourceSecret)
-            ->and($source->table('users')->value('uuid'))->toBe('live-email-verification')
-            ->and($source->table('teachers')->value('token'))->toBe('live-teacher-invitation')
-            ->and($source->table('tutoring_offers')->value('token'))->toBe('legacy-private-token')
-            ->and($source->table('tutoring_offer_requests')->value('token'))->toBe('legacy-private-token')
-            ->and($source->table('personal_access_tokens')->count())->toBe(1);
+            ->and($sourceValue('users', 'token_2fa'))->toBe('123456')
+            ->and($sourceValue('users', 'two_factor_secret'))->toBe($sourceSecret)
+            ->and($sourceValue('users', 'uuid'))->toBe('live-email-verification')
+            ->and($sourceValue('teachers', 'token'))->toBe('live-teacher-invitation')
+            ->and($sourceValue('tutoring_offers', 'token'))->toBe('legacy-private-token')
+            ->and($sourceValue('tutoring_offer_requests', 'token'))->toBe('legacy-private-token')
+            ->and((int) $sourcePdo->query('SELECT COUNT(*) FROM personal_access_tokens')->fetchColumn())->toBe(1);
         $identity = app(FeaturePreviewSnapshotIdentityStore::class);
         expect($identity->read())->toBe([])->and($identity->read('snapshot-pending.json')['phase'])->toBe('imported');
         expect(fn () => $service->status($feature))->toThrow(RuntimeException::class);
@@ -489,5 +506,6 @@ test('real MySQL snapshot copies data and private files while preserving live an
             $admin->exec('DROP USER '.$admin->quote($user).'@'.$admin->quote($accountHost));
         }
         (new Filesystem)->deleteDirectory($directory);
+        (new Filesystem)->deleteDirectory($runtimeStorage);
     }
-})->with(['existing preview data' => false, 'empty preview and slow file streaming' => true]);
+})->with(['existing preview data' => [false], 'empty preview and slow file streaming' => [true], 'installed runtime perimeter' => [false, true]]);

@@ -42,6 +42,10 @@ class FeaturePreviewSnapshotCommand extends Command
                 ? $exception->getMessage()
                 : 'Preview snapshot operation failed safely. Check the private database, key and filesystem configuration.';
             $this->getOutput()->getErrorStyle()->writeln($message);
+            if ($cause = $exception->getPrevious()) {
+                // Report an actionable code location without SQL, credentials, bindings or private file contents.
+                $this->getOutput()->getErrorStyle()->writeln('Cause: '.get_class($cause).' at '.basename($cause->getFile()).':'.$cause->getLine());
+            }
 
             return self::FAILURE;
         }

@@ -230,6 +230,12 @@ class FeaturePreviewRuntimeService
             $configuration = config('database.connections.'.$name);
             if (is_array($configuration)) {
                 $allowed[$name] = $this->normalizedDatabaseConfiguration($configuration, $name);
+                if (in_array($configuration['driver'] ?? null, ['mysql', 'mariadb'], true)) {
+                    // The snapshot uses a separate PDO, with the same captured credentials and stricter options.
+                    $snapshot = FeaturePreviewDatabaseGuard::snapshotConfiguration($configuration);
+                    $snapshot['name'] = 'preview_snapshot_target';
+                    $allowed['preview_snapshot_target'] = $this->normalizedDatabaseConfiguration($snapshot, 'preview_snapshot_target');
+                }
             }
         }
         $assertAllowed = function (array $configuration, string $name) use ($allowed): void {

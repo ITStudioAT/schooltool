@@ -159,11 +159,7 @@ class FeaturePreviewDatabaseGuard
             throw new RuntimeException('The snapshot database configuration is unavailable.');
         }
         $this->assertConfiguration($configuration);
-        $configuration['options'][PDO::ATTR_PERSISTENT] = false;
-        $configuration['options'][PDO::ATTR_ERRMODE] = PDO::ERRMODE_EXCEPTION;
-        $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
-        $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = false;
-        unset($configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND]);
+        $configuration = self::snapshotConfiguration($configuration);
         $connection = app('db.factory')->make($configuration, $name);
         $connection->unsetEventDispatcher();
         $connection->disableQueryLog();
@@ -172,6 +168,20 @@ class FeaturePreviewDatabaseGuard
         });
 
         return $connection;
+    }
+
+    /** @param array<string, mixed> $configuration
+     * @return array<string, mixed>
+     */
+    public static function snapshotConfiguration(array $configuration): array
+    {
+        $configuration['options'][PDO::ATTR_PERSISTENT] = false;
+        $configuration['options'][PDO::ATTR_ERRMODE] = PDO::ERRMODE_EXCEPTION;
+        $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+        $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = false;
+        unset($configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND]);
+
+        return $configuration;
     }
 
     private function extendSnapshotIdleTimeout(PDO $pdo): void

@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\FeaturePreviewDatabaseGuard;
 use App\Services\FeaturePreviewRuntimeService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Connectors\ConnectorInterface;
@@ -190,6 +191,27 @@ test('preview refuses reconfiguration and forged on demand use of an allowed con
     expect(fn () => DB::connection()->getPdo())
         ->toThrow(RuntimeException::class, 'Only the configured preview');
 });
+
+test('snapshot connection cannot change the captured preview credentials or hardening', function (string $change): void {
+    config(['database.default' => 'mysql']);
+    $configuration = FeaturePreviewDatabaseGuard::snapshotConfiguration(config('database.connections.mysql'));
+    $connector = Mockery::mock(ConnectorInterface::class);
+    $connector->shouldNotReceive('connect');
+    app()->instance('db.connector.mysql', $connector);
+    app(FeaturePreviewRuntimeService::class)->install();
+    $name = 'preview_snapshot_target';
+    match ($change) {
+        'host', 'database', 'username', 'password' => $configuration[$change] = 'foreign',
+        'port' => $configuration['port'] = 3307,
+        'persistent' => $configuration['options'][PDO::ATTR_PERSISTENT] = true,
+        'multiple statements' => $configuration['options'][PDO::MYSQL_ATTR_MULTI_STATEMENTS] = true,
+        'local files' => $configuration['options'][PDO::MYSQL_ATTR_LOCAL_INFILE] = true,
+        'initial command' => $configuration['options'][PDO::MYSQL_ATTR_INIT_COMMAND] = 'SELECT 1',
+        'source alias' => $name = 'preview_snapshot_source',
+    };
+    expect(fn () => app('db.factory')->make($configuration, $name)->getPdo())
+        ->toThrow(RuntimeException::class, 'Only the configured preview');
+})->with(['host', 'database', 'username', 'password', 'port', 'persistent', 'multiple statements', 'local files', 'initial command', 'source alias']);
 
 test('preview closes a previously opened additional database and blocks retained connection references', function (): void {
     config(['database.connections.external' => ['driver' => 'sqlite', 'database' => ':memory:']]);
