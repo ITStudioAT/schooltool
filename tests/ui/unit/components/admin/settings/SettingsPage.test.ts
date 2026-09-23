@@ -98,22 +98,23 @@ describe('Admin settings page', () => {
     it('builds the updated super-admin sub navigation with grundeinstellungen first', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isAdminTab: false,
+            isSuperAdminTab: true,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation', 'preview'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'schoolyears', 'users', 'school_groups', 'log', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation', 'preview'])
         expect(items[0]).toMatchObject({
             key: 'general',
             label: 'Grundeinstellungen',
         })
-        expect(items[2]).toMatchObject({
+        expect(items[6]).toMatchObject({
             key: 'licence_models',
             label: 'Lizenzen Modelle',
         })
-        expect(items[3]).toMatchObject({
+        expect(items[7]).toMatchObject({
             key: 'storage_audit',
             label: 'Speicherprüfung',
         })
-        expect(items[4]).toMatchObject({
+        expect(items[8]).toMatchObject({
             key: 'roles',
             label: 'Rollen',
         })
@@ -721,7 +722,7 @@ describe('Admin settings page', () => {
             canAccessAdminSettingsTab: false,
         })
 
-        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('super_admin')
+        expect(allowedItems.map((item: { key: string }) => item.key)).toEqual(['admin'])
         expect(allowedItems.map((item: { key: string }) => item.key)).toContain('admin')
         expect(adminOnlyItems.map((item: { key: string }) => item.key)).not.toContain('super_admin')
         expect(adminOnlyItems.map((item: { key: string }) => item.key)).toContain('admin')
@@ -772,7 +773,9 @@ describe('Admin settings page', () => {
         })
 
         expect(screen.getAllByText('Grundeinstellungen').length).toBeGreaterThan(0)
-        expect(screen.getByRole('navigation', { name: 'Super-Admin Einstellungen' })).toBeInTheDocument()
+        expect(screen.getByRole('navigation', { name: 'Verwaltung Einstellungen' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Super-Admin', exact: true })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Admin', exact: true })).not.toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Grundeinstellungen Allgemein' })).toHaveAttribute('aria-pressed', 'true')
         expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
         expect(container.querySelector('.settings-general-subnav')).not.toBeNull()
@@ -893,7 +896,7 @@ describe('Admin settings page', () => {
 
         expect(container.querySelector('.settings-subnav')).not.toBeNull()
         expect(container.querySelector('.settings-schoolyears-wrap')).not.toBeNull()
-        expect(screen.getByRole('navigation', { name: 'Admin Einstellungen' })).toHaveClass('settings-section-subnav')
+        expect(screen.getByRole('navigation', { name: 'Verwaltung Einstellungen' })).toHaveClass('settings-section-subnav')
         expect(screen.getAllByText('Schuljahre').length).toBeGreaterThan(0)
         expect(screen.getByText('Schoolyears Component')).toBeInTheDocument()
         expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()

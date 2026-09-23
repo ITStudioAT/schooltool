@@ -13,7 +13,7 @@ function releaseProofRun(string $sha, int $id = 100): array
     ];
 }
 
-function releaseProofJobs(array $run, ?string $base = null): array
+function releaseProofJobs(array $run, ?string $base = null, string $lane = 'documentation'): array
 {
     $jobs = [];
     foreach ([...SchooltoolCiReleaseProof::CommonJobs, ...SchooltoolCiReleaseProof::FullJobs] as $index => $name) {
@@ -21,14 +21,16 @@ function releaseProofJobs(array $run, ?string $base = null): array
             'id' => $run['id'] * 100 + $index, 'name' => $name,
             'run_id' => $run['id'], 'run_attempt' => $run['run_attempt'], 'head_sha' => $run['head_sha'],
             'status' => 'completed',
-            'conclusion' => $base !== null && in_array($name, SchooltoolCiReleaseProof::FullJobs, true) ? 'skipped' : 'success',
+            'conclusion' => $base !== null && in_array($name, SchooltoolCiReleaseProof::FullJobs, true)
+                && ! ($lane === 'frontend' && $name === SchooltoolCiReleaseProof::FrontendJob) ? 'skipped' : 'success',
         ];
     }
-    if ($base !== null) {
+    foreach (['documentation' => 'Documentation', 'frontend' => 'Frontend'] as $markerLane => $label) {
         $jobs[] = [
-            'id' => $run['id'] * 100 + 20, 'name' => 'Documentation checks (policy v2; base='.$base.')',
-            'run_id' => $run['id'], 'run_attempt' => 1, 'head_sha' => $run['head_sha'],
-            'status' => 'completed', 'conclusion' => 'success',
+            'id' => $run['id'] * 100 + 20 + ($markerLane === 'frontend' ? 1 : 0),
+            'name' => $label.' checks (policy v3; base='.($base ?? '').')',
+            'run_id' => $run['id'], 'run_attempt' => $run['run_attempt'], 'head_sha' => $run['head_sha'],
+            'status' => 'completed', 'conclusion' => $base !== null && $markerLane === $lane ? 'success' : 'skipped',
         ];
     }
 
@@ -212,27 +214,34 @@ it('reads every jobs page before issuing proof', function () {
     expect($pages)->toHaveCount(2);
 });
 
-it('accepts documentation only with a separately full proven compatible ancestor', function () {
-    $proof = releaseProofFixture(static function (string $endpoint, array $response): array {
+it('accepts reduced lanes only with a separately full proven compatible ancestor', function (string $lane) {
+    $assetChecks = 0;
+    $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($lane): array {
         if (str_contains($endpoint, '/runs/100/attempts/')) {
-            $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40));
+            $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40), $lane);
             $response = ['total_count' => count($jobs), 'jobs' => $jobs];
         }
 
         return $response;
-    });
-    expect($proof->verify(str_repeat('a', 40))['lane'])->toBe('documentation');
-});
+    }, classify: static fn (string $base, string $head): array => ['lane' => $lane, 'base' => $base, 'head' => $head],
+        assets: static function (string $base, string $head) use (&$assetChecks): array {
+            $assetChecks++;
 
-it('rejects unsafe documentation reuse', function (string $fault) {
+            return ['equivalent' => true, 'base' => $base, 'head' => $head];
+        });
+    expect($proof->verify(str_repeat('a', 40))['lane'])->toBe($lane)
+        ->and($assetChecks)->toBe($lane === 'documentation' ? 1 : 0);
+})->with(['documentation', 'frontend']);
+
+it('rejects unsafe reduced lane reuse', function (string $fault, string $lane) {
     $proof = releaseProofFixture(
-        static function (string $endpoint, array $response) use ($fault): array {
+        static function (string $endpoint, array $response) use ($fault, $lane): array {
             if (str_contains($endpoint, '/runs/100/attempts/')) {
-                $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40));
+                $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40), $lane);
                 $response = ['total_count' => count($jobs), 'jobs' => $jobs];
             }
-            if ($fault === 'docs-chain' && str_contains($endpoint, '/runs/90/attempts/')) {
-                $jobs = releaseProofJobs(releaseProofRun(str_repeat('b', 40), 90), str_repeat('d', 40));
+            if (in_array($fault, ['documentation-chain', 'frontend-chain'], true) && str_contains($endpoint, '/runs/90/attempts/')) {
+                $jobs = releaseProofJobs(releaseProofRun(str_repeat('b', 40), 90), str_repeat('d', 40), explode('-', $fault)[0]);
                 $response = ['total_count' => count($jobs), 'jobs' => $jobs];
             }
 
@@ -245,10 +254,15 @@ it('rejects unsafe documentation reuse', function (string $fault) {
 
             return $fault === 'policy-changed' && str_starts_with($arguments[2] ?? '', str_repeat('b', 40)) ? str_repeat('d', 40) : str_repeat('c', 40);
         },
-        static fn (string $base, string $head): array => ['lane' => $fault === 'code-changed' ? 'full' : 'documentation', 'base' => $base, 'head' => $head],
+        static fn (string $base, string $head): array => [
+            'lane' => $fault === 'code-changed' ? 'full' : $lane,
+            'base' => $fault === 'wrong-base' ? str_repeat('d', 40) : $base,
+            'head' => $fault === 'wrong-head' ? str_repeat('d', 40) : $head,
+        ],
     );
     expect(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
-})->with(['docs-chain', 'not-ancestor', 'policy-changed', 'code-changed']);
+})->with(['documentation-chain', 'frontend-chain', 'not-ancestor', 'policy-changed', 'code-changed', 'wrong-base', 'wrong-head'])
+    ->with(['documentation', 'frontend']);
 
 it('returns only a full proven compatible ancestor as baseline', function () {
     expect(releaseProofFixture()->baseline(str_repeat('a', 40)))->toBe(str_repeat('b', 40));
@@ -341,3 +355,124 @@ it('rejects mismatched or unproven frontend archives in documentation proofs', f
     );
     expect(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
 })->with(['different-archive', 'wrong-base', 'wrong-head', 'corrupt-archive']);
+
+it('requires both reduced-lane markers to be explicitly skipped for full proof', function (string $fault) {
+    $proof = releaseProofFixture(static function (string $endpoint, array $response) use ($fault): array {
+        if (isset($response['jobs'])) {
+            $last = array_key_last($response['jobs']);
+            match ($fault) {
+                'missing' => array_pop($response['jobs']),
+                'success' => $response['jobs'][$last]['conclusion'] = 'success',
+                'failure' => $response['jobs'][$last]['conclusion'] = 'failure',
+                'pending' => $response['jobs'][$last]['status'] = 'in_progress',
+                'legacy' => $response['jobs'][$last]['name'] = 'Frontend checks (policy v2; base=)',
+            };
+            $response['total_count'] = count($response['jobs']);
+        }
+
+        return $response;
+    });
+    expect(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+})->with(['missing', 'success', 'failure', 'pending', 'legacy']);
+
+it('rejects incomplete conflicting or stale frontend lane jobs', function (string $fault) {
+    $proof = releaseProofFixture(
+        static function (string $endpoint, array $response) use ($fault): array {
+            if (! str_contains($endpoint, '/runs/100/attempts/')) {
+                return $response;
+            }
+            $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40), 'frontend');
+            foreach ($jobs as &$job) {
+                if ($job['name'] === SchooltoolCiReleaseProof::FrontendJob) {
+                    match ($fault) {
+                        'frontend-skipped' => $job['conclusion'] = 'skipped',
+                        'frontend-failed' => $job['conclusion'] = 'failure',
+                        'frontend-pending' => $job['status'] = 'in_progress',
+                        'old-attempt' => $job['run_attempt'] = 0,
+                        default => null,
+                    };
+                }
+                if ($fault === 'backend-success' && $job['name'] === 'Windows PowerShell workflow tests') {
+                    $job['conclusion'] = 'success';
+                }
+                if ($fault === 'integrity-skipped' && $job['name'] === 'Verify commit-bound deployment release') {
+                    $job['conclusion'] = 'skipped';
+                }
+                if ($fault === 'legacy-approval' && $job['name'] === 'Release approval (policy v3)') {
+                    $job['name'] = 'Release approval (policy v2)';
+                }
+                if (str_starts_with($job['name'], 'Documentation checks (')) {
+                    match ($fault) {
+                        'both-lanes-success' => $job['conclusion'] = 'success',
+                        'inactive-failed' => $job['conclusion'] = 'failure',
+                        'baseline-disagreement' => $job['name'] = 'Documentation checks (policy v3; base='.str_repeat('d', 40).')',
+                        'self-baseline' => $job['name'] = 'Documentation checks (policy v3; base='.str_repeat('a', 40).')',
+                        default => null,
+                    };
+                }
+                if (str_starts_with($job['name'], 'Frontend checks (')) {
+                    match ($fault) {
+                        'marker-failed' => $job['conclusion'] = 'failure',
+                        'marker-pending' => $job['status'] = 'in_progress',
+                        'legacy-marker' => $job['name'] = 'Frontend checks (policy v2; base='.str_repeat('b', 40).')',
+                        'empty-baseline' => $job['name'] = 'Frontend checks (policy v3; base=)',
+                        'self-baseline' => $job['name'] = 'Frontend checks (policy v3; base='.str_repeat('a', 40).')',
+                        default => null,
+                    };
+                }
+            }
+            unset($job);
+            if ($fault === 'duplicate-marker') {
+                $duplicate = $jobs[array_key_last($jobs)];
+                $duplicate['id']++;
+                $duplicate['name'] = 'Frontend checks (policy v3; base='.str_repeat('d', 40).')';
+                $jobs[] = $duplicate;
+            }
+
+            return ['total_count' => count($jobs), 'jobs' => $jobs];
+        },
+        classify: static fn (string $base, string $head): array => ['lane' => 'frontend', 'base' => $base, 'head' => $head],
+    );
+    expect(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+})->with([
+    'frontend-skipped', 'frontend-failed', 'frontend-pending', 'old-attempt', 'backend-success', 'integrity-skipped',
+    'legacy-approval', 'both-lanes-success', 'inactive-failed', 'baseline-disagreement', 'marker-failed',
+    'marker-pending', 'legacy-marker', 'empty-baseline', 'self-baseline', 'duplicate-marker',
+]);
+
+it('does not accept frontend proof when its full ancestor was subsequently invalidated', function (string $fault) {
+    $proof = releaseProofFixture(
+        static function (string $endpoint, array $response) use ($fault): array {
+            if (str_contains($endpoint, '/runs/100/attempts/')) {
+                $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40), 'frontend');
+
+                return ['total_count' => count($jobs), 'jobs' => $jobs];
+            }
+            if ($fault === 'failed-ancestor' && str_contains($endpoint, 'head_sha='.str_repeat('b', 40))) {
+                $response['workflow_runs'][0]['conclusion'] = 'failure';
+            }
+            if ($fault === 'rerun' && str_ends_with($endpoint, '/actions/runs/100')) {
+                $response['run_attempt']++;
+            }
+
+            return $response;
+        },
+        classify: static fn (string $base, string $head): array => ['lane' => 'frontend', 'base' => $base, 'head' => $head],
+    );
+    expect(fn () => $proof->verify(str_repeat('a', 40)))->toThrow(RuntimeException::class);
+})->with(['failed-ancestor', 'rerun']);
+
+it('reports frontend proof progress without granting approval', function () {
+    $proof = releaseProofFixture(static function (string $endpoint, array $response): array {
+        if (str_contains($endpoint, '/runs/100/attempts/')) {
+            $jobs = releaseProofJobs(releaseProofRun(str_repeat('a', 40)), str_repeat('b', 40), 'frontend');
+
+            return ['total_count' => count($jobs), 'jobs' => $jobs];
+        }
+
+        return $response;
+    });
+    $progress = $proof->status(str_repeat('a', 40));
+    expect($progress)->not->toHaveKey('lane')
+        ->and(array_column($progress['jobs'], 'name'))->toContain('Frontend checks (policy v3; base='.str_repeat('b', 40).')');
+});

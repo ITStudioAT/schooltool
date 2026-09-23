@@ -47,7 +47,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/pages/admin/studentsTimetables/timetableV3/**,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/ui/unit/pages/admin/studentsTimetables/**} | .ai/rules/feature-ui-unit-pages-admin-students-timetables.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/**,app/Services/StudentsTimetables/TimetableImportService.php,resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue,tests/{Feature,Unit,ui}/**} | .ai/rules/feature-unitui.md |
 | {app/Services/StudentsTimetables/**,resources/js/pages/admin/studentsTimetables/timetableV3/**,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/feature.md |
-| **/*TimetableV3*, vite.config.js, {README.md,scripts/deploy_preview_cloudways.sh} | .ai/rules/general.md |
+| **/*TimetableV3*, vite.config.js, {README.md,scripts/deploy_preview_cloudways.sh}, ** | .ai/rules/general.md |
 | {app/Models/User.php,app/Http/Controllers/Admin/AdminShellColorPreferenceController.php,app/Http/Resources/Admin/UserWithRoleResource.php,resources/js/pages/admin/{App.vue,profile/Profile.vue},resources/js/helpers/adminShellTheme.js} | .ai/rules/helpers.md |
 | {app/Http/Requests/Homepage/UpdateStudentTimetableV3StateRequest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/homepage-feature.md |
 | resources/js/pages/homepage/index/Index.vue | .ai/rules/homepage-index.md |
@@ -151,4 +151,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Http/Controllers/Admin/AdminController.php,app/Services/AdminService.php,tests/Feature/AdminControllerTest.php,tests/Unit/AdminServiceTest.php} | .ai/rules/unit.md |
 | {app/Jobs/ImportTeachersListJob.php,config/schooltool.php,resources/js/pages/admin/superAdmin/components/TeachersList.vue,tests/{Unit,ui}/**/*TeachersList*} | .ai/rules/unitui.md |
 | {app/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController.php,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,resources/views/pdfs/students-timetable-overview.blade.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/views-pdfs-feature.md |
-| {.github/workflows/ci.yml,scripts/git*.ps1,scripts/ci-*.php,scripts/release-policy.php,scripts/pdeploy_cloudways.sh,tests/Unit/*Release*Test.php} | .ai/rules/workflows-unit.md |
+| {.github/workflows/ci.yml,scripts/git*.ps1,scripts/ci-*.php,scripts/release-policy.php,scripts/pdeploy_cloudways.sh,tests/Unit/*Release*Test.php}, {.github/workflows/ci.yml,scripts/git*.ps1,scripts/ci-*.php,scripts/release-policy.php,tests/Unit/*Release*Test.php} | .ai/rules/workflows-unit.md |

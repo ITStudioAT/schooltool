@@ -20,19 +20,22 @@ function releaseCiWorkflow(): array
 it('runs every expensive gate on main code changes and isolates platform resources', function (): void {
     $workflow = releaseCiWorkflow();
 
-    foreach (['php-quality', 'frontend', 'php-tests', 'infrastructure', 'windows-workflow'] as $name) {
+    foreach (['php-quality', 'php-tests', 'infrastructure', 'windows-workflow'] as $name) {
         expect($workflow['jobs'][$name]['needs'])->toBe('classify')
             ->and($workflow['jobs'][$name]['if'])->toBe("needs.classify.outputs.lane == 'full'");
     }
 
-    expect($workflow['jobs']['php-tests']['services']['mysql']['image'])->toBe('mysql:8.4')
+    expect($workflow['jobs']['frontend']['needs'])->toBe('classify')
+        ->and($workflow['jobs']['frontend']['if'])->toBe("needs.classify.outputs.lane == 'full' || needs.classify.outputs.lane == 'frontend'")
+        ->and($workflow['jobs']['php-tests']['services']['mysql']['image'])->toBe('mysql:8.4')
         ->and($workflow['jobs']['infrastructure']['services']['mysql']['image'])->toBe('mysql:8.4')
         ->and($workflow['jobs']['windows-workflow']['runs-on'])->toBe('windows-latest')
         ->and($workflow['permissions'])->toBe(['contents' => 'read', 'actions' => 'read'])
-        ->and($workflow['jobs']['documentation']['name'])->toBe('Documentation checks (policy v2; base=${{ needs.classify.outputs.base }})');
+        ->and($workflow['jobs']['documentation']['name'])->toBe('Documentation checks (policy v3; base=${{ needs.classify.outputs.base }})')
+        ->and($workflow['jobs']['frontend-proof']['name'])->toBe('Frontend checks (policy v3; base=${{ needs.classify.outputs.base }})');
 });
 
-it('requires exact baseline proof before selecting the documentation lane', function (): void {
+it('requires exact baseline proof before selecting either shortened release lane', function (): void {
     $workflow = releaseCiWorkflow();
     $classify = $workflow['jobs']['classify'];
     $script = $classify['steps'][2]['run'];
@@ -44,8 +47,42 @@ it('requires exact baseline proof before selecting the documentation lane', func
         ->toContain('[[ "$base" =~ ^[0-9a-f]{40}$ ]]')
         ->toContain('[[ "$RELEASE_EVENT" == push && "$RELEASE_REF" == refs/heads/main ]]')
         ->and($workflow['jobs']['documentation']['if'])
-        ->toBe("needs.classify.outputs.lane == 'documentation' && needs.classify.outputs.base-proven == 'true'");
+        ->toBe("needs.classify.outputs.lane == 'documentation' && needs.classify.outputs.base-proven == 'true'")
+        ->and($workflow['jobs']['frontend-proof']['needs'])->toBe('classify')
+        ->and($workflow['jobs']['frontend-proof']['if'])
+        ->toBe("needs.classify.outputs.lane == 'frontend' && needs.classify.outputs.base-proven == 'true'")
+        ->and($workflow['jobs']['release-approval']['needs'])->toBe([
+            'validate', 'classify', 'documentation', 'frontend-proof', 'php-quality', 'frontend',
+            'php-tests', 'infrastructure', 'windows-workflow', 'release-integrity',
+        ])
+        ->and($workflow['jobs']['release-approval']['steps'][0]['env']['FRONTEND_PROOF_RESULT'])
+        ->toBe('${{ needs.frontend-proof.result }}');
 });
+
+it('keeps pull requests scheduled manual and non-main runs on the full lane', function (string $event, string $ref): void {
+    $bash = PHP_OS_FAMILY === 'Windows' ? 'C:/Program Files/Git/bin/bash.exe' : (new ExecutableFinder)->find('bash');
+    $output = tempnam(sys_get_temp_dir(), 'schooltool-ci-classify-');
+    $script = releaseCiWorkflow()['jobs']['classify']['steps'][2]['run'];
+
+    try {
+        $process = new Process([$bash, '-c', "php() { exit 91; }\njq() { exit 92; }\n".$script], dirname(__DIR__, 2), [
+            'RELEASE_EVENT' => $event,
+            'RELEASE_REF' => $ref,
+            'GITHUB_OUTPUT' => $output,
+        ]);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
+            ->and(file_get_contents($output))->toBe("lane=full\nbase=\nbase-proven=false\n");
+    } finally {
+        unlink($output);
+    }
+})->with([
+    ['pull_request', 'refs/pull/123/merge'],
+    ['schedule', 'refs/heads/main'],
+    ['workflow_dispatch', 'refs/heads/main'],
+    ['push', 'refs/heads/feature/example'],
+]);
 
 it('provides the locked Windows dependency extensions without bypassing platform checks', function (): void {
     $steps = releaseCiWorkflow()['jobs']['windows-workflow']['steps'];
@@ -105,12 +142,17 @@ function runReleaseApproval(array $overrides, string $lane): Process
     $environment = array_fill_keys(array_keys($step['env']), 'success');
     $environment['RELEASE_LANE'] = $lane;
     $environment['BASE_PROVEN'] = 'true';
-    $environment['DOCUMENTATION_RESULT'] = $lane === 'full' ? 'skipped' : 'success';
+    $environment['DOCUMENTATION_RESULT'] = $lane === 'documentation' ? 'success' : 'skipped';
+    $environment['FRONTEND_PROOF_RESULT'] = $lane === 'frontend' ? 'success' : 'skipped';
 
-    if ($lane === 'documentation') {
-        foreach (['PHP_QUALITY_RESULT', 'FRONTEND_RESULT', 'PHP_TESTS_RESULT', 'INFRASTRUCTURE_RESULT', 'WINDOWS_WORKFLOW_RESULT'] as $name) {
+    if (in_array($lane, ['documentation', 'frontend'], true)) {
+        foreach (['PHP_QUALITY_RESULT', 'PHP_TESTS_RESULT', 'INFRASTRUCTURE_RESULT', 'WINDOWS_WORKFLOW_RESULT'] as $name) {
             $environment[$name] = 'skipped';
         }
+    }
+
+    if ($lane === 'documentation') {
+        $environment['FRONTEND_RESULT'] = 'skipped';
     }
 
     $process = new Process([$bash, '-c', $step['run']], dirname(__DIR__, 2), array_replace($environment, $overrides));
@@ -132,17 +174,50 @@ it('rejects a failed skipped cancelled unknown or incomplete release gate', func
     ['WINDOWS_WORKFLOW_RESULT', 'skipped', 'full'],
     ['RELEASE_LANE', 'unknown', 'full'],
     ['DOCUMENTATION_RESULT', 'success', 'full'],
+    ['FRONTEND_PROOF_RESULT', 'success', 'full'],
+    ['FRONTEND_PROOF_RESULT', '', 'full'],
     ['BASE_PROVEN', 'false', 'documentation'],
     ['DOCUMENTATION_RESULT', 'skipped', 'documentation'],
     ['VALIDATE_RESULT', 'failure', 'documentation'],
     ['PHP_TESTS_RESULT', 'failure', 'documentation'],
+    ['FRONTEND_PROOF_RESULT', 'success', 'documentation'],
+    ['FRONTEND_PROOF_RESULT', 'cancelled', 'documentation'],
 ]);
 
-it('accepts only a complete full or proven documentation release gate', function (string $lane): void {
+it('rejects every incomplete or unexpected frontend lane gate', function (string $key, string|false $value): void {
+    expect(runReleaseApproval([$key => $value], 'frontend')->isSuccessful())->toBeFalse();
+})->with(function (): array {
+    $expected = [
+        'VALIDATE_RESULT' => 'success',
+        'CLASSIFY_RESULT' => 'success',
+        'RELEASE_INTEGRITY_RESULT' => 'success',
+        'FRONTEND_RESULT' => 'success',
+        'FRONTEND_PROOF_RESULT' => 'success',
+        'DOCUMENTATION_RESULT' => 'skipped',
+        'PHP_QUALITY_RESULT' => 'skipped',
+        'PHP_TESTS_RESULT' => 'skipped',
+        'INFRASTRUCTURE_RESULT' => 'skipped',
+        'WINDOWS_WORKFLOW_RESULT' => 'skipped',
+        'BASE_PROVEN' => 'true',
+    ];
+    $cases = [];
+
+    foreach ($expected as $key => $required) {
+        foreach (['success', 'skipped', 'failure', 'cancelled', 'pending', '', 'false', false] as $value) {
+            if ($value !== $required) {
+                $cases[$key.'='.var_export($value, true)] = [$key, $value];
+            }
+        }
+    }
+
+    return $cases;
+});
+
+it('accepts only a complete full or proven shortened release gate', function (string $lane): void {
     $process = runReleaseApproval([], $lane);
 
     expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
-})->with(['full', 'documentation']);
+})->with(['full', 'documentation', 'frontend']);
 
 it('discovers all PHP tests exactly once in sorted sequential batches of at most ten', function (): void {
     $directory = sys_get_temp_dir().'/schooltool-ci-batches-'.bin2hex(random_bytes(8));

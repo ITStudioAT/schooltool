@@ -28,7 +28,7 @@
                     <LoadingAnimation />
                 </v-overlay>
             </v-main>
-            <v-footer app>
+            <v-footer v-show="is_loading === 0" app>
                 <v-row justify="center" no-gutters>
                     <v-col cols="12" class="text-center">
                         <v-btn text variant="text" to="/homepage/impressum">Impressum</v-btn>

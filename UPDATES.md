@@ -1,5 +1,16 @@
 # UPDATES
 
+## 3.49.3
+
+### Einstellungen
+
+- Gemeinsames Menü für Admin und Superadmin mit berechtigungsabhängigen Einträgen.
+- Impressum und Cookie-Einstellungen bleiben beim Seitenaufbau unten und werden während des Ladens ausgeblendet.
+
+### System
+
+- Gezielte Entwicklungsprüfungen und schnellerer Veröffentlichungspfad für reine Frontend-Änderungen.
+
 ## 3.49.2
 
 ### System
@@ -10,6 +21,7 @@
 
 - Admin/Home: Linksbündig
 - Anmeldesystem: Benutzerverwaltung direkt im Anmeldesystem
+- Footer: Beim Laden nicht mehr zeigen
 
 ### Nachhilfe
 

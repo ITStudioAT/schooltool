@@ -206,7 +206,7 @@ it('validates the published frontend release with the complete background CI pol
         ->toContain('php-tests:')
         ->toContain('infrastructure:')
         ->toContain('release-integrity:')
-        ->toContain('Release approval (policy v2)')
+        ->toContain('Release approval (policy v3)')
         ->toContain('php scripts/ci-php-tests.php coverage')
         ->toContain('php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"')
         ->toContain('if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'')

@@ -15,27 +15,6 @@
                 :chips="headerChips"
                 :show-current-user-chip="true" />
 
-            <v-sheet rounded="xl" class="settings-tabs-sheet mb-2">
-                <v-tabs v-model="main_action" color="white" bg-color="transparent" slider-color="white" show-arrows>
-                    <v-tab v-for="item in navigationItems" :key="item.key" :value="item.key" :prepend-icon="item.icon">
-                        {{ item.label }}
-                    </v-tab>
-                </v-tabs>
-            </v-sheet>
-
-            <div v-if="activeRoles.length > 0" class="settings-roles-bar mb-2">
-                <v-icon size="14" color="rgba(255,255,255,0.4)" class="mr-1">mdi-shield-account</v-icon>
-                <v-chip
-                    v-for="role in activeRoles"
-                    :key="role"
-                    size="x-small"
-                    variant="tonal"
-                    color="indigo-lighten-3"
-                    class="settings-role-chip">
-                    {{ role }}
-                </v-chip>
-            </div>
-
             <nav
                 v-if="isSuperAdminTab || isAdminTab"
                 class="settings-subnav settings-section-subnav mb-2"
@@ -255,7 +234,7 @@ export default {
                 this.$router.replace('/admin/profile')
                 return
             }
-            const tab = val || 'super_admin'
+            const tab = !val || val === 'super_admin' ? 'admin' : val
             if (this.navigationItems.some((i) => i.key === tab)) {
                 this.main_action = tab
             }
@@ -361,15 +340,16 @@ export default {
             return ['super_admin', 'admin'].includes(this.main_action)
         },
         defaultSubAction() {
+            if (this.isSuperAdminTab) return 'general'
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'teaching') return 'teaching_admin'
             return 'general'
         },
         isSuperAdminTab() {
-            return this.main_action === 'super_admin'
+            return this.main_action === 'admin' && this.canAccessSuperAdminSettingsTab
         },
         isAdminTab() {
-            return this.main_action === 'admin'
+            return this.main_action === 'admin' && this.canAccessAdminSettingsTab
         },
         isTeachingTab() {
             return this.main_action === 'teaching'
@@ -401,7 +381,8 @@ export default {
                 return []
             }
 
-            if (this.isAdminTab) {
+            if (!this.isSuperAdminTab) {
+                if (!this.isAdminTab) return []
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
                     { key: 'schools', label: 'Schule', meta: 'Darstellung', icon: 'mdi-palette-outline' },
@@ -414,6 +395,10 @@ export default {
             return [
                 { key: 'general', label: 'Grundeinstellungen', meta: 'Allgemein', icon: 'mdi-tune-variant' },
                 { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
+                { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
+                { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
+                { key: 'school_groups', label: 'Schulgruppen', meta: 'Gruppen', icon: 'mdi-account-multiple-outline' },
+                { key: 'log', label: 'Log', meta: 'System', icon: 'mdi-file-document-outline' },
                 { key: 'licence_models', label: 'Lizenzen Modelle', meta: 'Lizenzverwaltung', icon: 'mdi-card-account-details' },
                 { key: 'storage_audit', label: 'Speicherprüfung', meta: 'R2 & Datenbank', icon: 'mdi-database-search' },
                 { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
@@ -440,8 +425,7 @@ export default {
         },
         navigationItems() {
             return [
-                { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
-                { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
+                { key: 'admin', label: 'Verwaltung', icon: 'mdi-cog-outline', visible: this.canAccessAdminSettingsTab },
             ].filter((item) => item.visible !== false)
         },
     },
@@ -453,8 +437,7 @@ export default {
             canAccessTeachingTab,
         ) {
             return [
-                canAccessSuperAdminTab ? 'super_admin' : null,
-                canAccessAdminTab ? 'admin' : null,
+                canAccessSuperAdminTab || canAccessAdminTab ? 'admin' : null,
                 canAccessTeachingTab ? 'teaching' : null,
             ].filter(Boolean)
         },
@@ -470,7 +453,8 @@ export default {
             return ['super_admin', 'admin', 'lunch_admin'].some((role) => configuredRoleNames.includes(role))
         },
         initialTab() {
-            const tab = this.$route?.query?.tab || 'super_admin'
+            const requestedTab = this.$route?.query?.tab
+            const tab = !requestedTab || requestedTab === 'super_admin' ? 'admin' : requestedTab
             const adminStore = useAdminStore()
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
             const configuredCapabilities = adminStore?.config?.capabilities || {}
@@ -488,8 +472,9 @@ export default {
             return keys.includes(tab) ? tab : keys[0]
         },
         initialSubAction() {
-            const panel = this.$route?.query?.panel || 'general'
-            const tab = this.$route?.query?.tab || 'super_admin'
+            const panel = this.$route?.query?.panel || (this.$route?.query?.tab === 'admin' ? 'schoolyears' : 'general')
+            const requestedTab = this.$route?.query?.tab
+            const tab = !requestedTab || requestedTab === 'super_admin' ? 'admin' : requestedTab
             const adminStore = useAdminStore()
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
             const configuredCapabilities = adminStore?.config?.capabilities || {}
@@ -510,6 +495,10 @@ export default {
             if (resolvedTab === 'admin') {
                 keys = ['schoolyears', 'schools', 'users', 'school_groups', 'log']
                 fallback = 'schoolyears'
+                if (canAccessSuperAdminTab) {
+                    keys.push('general', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation', 'preview')
+                    fallback = 'general'
+                }
             } else if (resolvedTab === 'teaching') {
                 keys = ['teaching_admin']
                 fallback = 'teaching_admin'
@@ -518,7 +507,7 @@ export default {
                 fallback = 'general'
             }
 
-            if (resolvedTab === 'super_admin' && panel === 'general' && this.$route?.query?.general_panel === 'licences') {
+            if (canAccessSuperAdminTab && resolvedTab === 'admin' && panel === 'general' && this.$route?.query?.general_panel === 'licences') {
                 return 'licence_models'
             }
 
@@ -580,7 +569,7 @@ export default {
 
             const query = {}
 
-            if (this.main_action !== 'super_admin') {
+            if (!this.canAccessSuperAdminSettingsTab) {
                 query.tab = this.main_action
             }
 

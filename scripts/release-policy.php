@@ -20,6 +20,7 @@ class SchooltoolReleasePolicy
         $raw = self::git($repository, ['diff', '--raw', '--no-abbrev', '--no-renames', '-z', $base, $head, '--']);
         $entries = $raw === '' ? [] : explode("\0", rtrim($raw, "\0"));
         $sourceChanges = 0;
+        $frontendChanges = 0;
 
         if (count($entries) % 2 !== 0) {
             throw new RuntimeException('Malformed Git change list.');
@@ -41,6 +42,12 @@ class SchooltoolReleasePolicy
 
             $sourceChanges++;
 
+            if (self::isFrontendPath($path)) {
+                $frontendChanges++;
+
+                continue;
+            }
+
             if (in_array($path, ['README.md', 'UPDATES.md'], true) || self::isDocumentationPath($path)) {
                 continue;
             }
@@ -57,8 +64,10 @@ class SchooltoolReleasePolicy
         }
 
         if ($sourceChanges > 0) {
-            $result['lane'] = 'documentation';
-            $result['reason'] = 'Only documentation and literal application version changes.';
+            $result['lane'] = $frontendChanges > 0 ? 'frontend' : 'documentation';
+            $result['reason'] = $frontendChanges > 0
+                ? 'Only frontend, documentation and literal application version changes.'
+                : 'Only documentation and literal application version changes.';
         } else {
             $result['reason'] = 'No documentation source changes.';
         }
@@ -248,6 +257,22 @@ class SchooltoolReleasePolicy
         }
 
         return intval($value, 8);
+    }
+
+    private static function isFrontendPath(string $path): bool
+    {
+        if (! preg_match('/\Aresources\/(js|routes|css|sass)\/(?:[A-Za-z0-9_][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\z/D', $path, $matches)) {
+            return false;
+        }
+
+        $extensions = match ($matches[1]) {
+            'js' => ['vue', 'js', 'ts', 'json'],
+            'routes' => ['js'],
+            'css' => ['css'],
+            'sass' => ['scss', 'sass'],
+        };
+
+        return in_array(pathinfo($path, PATHINFO_EXTENSION), $extensions, true);
     }
 
     private static function isDocumentationPath(string $path): bool

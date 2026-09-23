@@ -11,7 +11,7 @@ class SchooltoolCiReleaseProof
         'Validate source and dependencies',
         'Classify release changes',
         'Verify commit-bound deployment release',
-        'Release approval (policy v2)',
+        'Release approval (policy v3)',
     ];
 
     public const FullJobs = [
@@ -21,6 +21,8 @@ class SchooltoolCiReleaseProof
         'MySQL, Redis, and Horizon integration',
         'Windows PowerShell workflow tests',
     ];
+
+    public const FrontendJob = 'Frontend tests and release build';
 
     private array $repository;
 
@@ -76,37 +78,46 @@ class SchooltoolCiReleaseProof
         foreach (self::FullJobs as $name) {
             $full = $full && ($jobs[$name]['conclusion'] ?? null) === 'success';
         }
-        $documentation = array_filter(array_keys($jobs), static fn (string $name): bool => str_starts_with($name, 'Documentation checks (policy v2; base='));
+        $markers = $this->laneMarkers($jobs);
+        $lane = 'full';
         if ($full) {
             foreach (self::FullJobs as $name) {
                 $this->assertJob($jobs, $name, 'success');
             }
-            foreach ($documentation as $name) {
-                $this->assertJob($jobs, $name, 'skipped');
+            foreach ($markers as $marker) {
+                $this->assertJob($jobs, $marker['name'], 'skipped');
             }
         } else {
-            if ($fullOnly || count($documentation) !== 1) {
-                throw new RuntimeException('The release has no complete policy v2 full-test proof.');
+            $successful = array_filter($markers, static fn (array $marker): bool => ($jobs[$marker['name']]['conclusion'] ?? null) === 'success');
+            if ($fullOnly || count($successful) !== 1) {
+                throw new RuntimeException('The release has no complete policy v3 full-test proof.');
             }
-            $name = array_values($documentation)[0];
-            if (preg_match('/^Documentation checks \(policy v2; base=([a-f0-9]{40})\)$/D', $name, $matches) !== 1) {
-                throw new RuntimeException('The documentation proof has no exact baseline.');
+            $lane = array_key_first($successful);
+            $base = $successful[$lane]['base'];
+            if (! preg_match('/^[a-f0-9]{40}$/D', $base)) {
+                throw new RuntimeException('The reduced release proof has no exact baseline.');
             }
-            $base = $matches[1];
-            $this->assertJob($jobs, $name, 'success');
+            foreach ($markers as $markerLane => $marker) {
+                if ($marker['base'] !== $base) {
+                    throw new RuntimeException('The reduced release markers disagree on their baseline.');
+                }
+                $this->assertJob($jobs, $marker['name'], $markerLane === $lane ? 'success' : 'skipped');
+            }
             foreach (self::FullJobs as $fullName) {
-                $this->assertJob($jobs, $fullName, 'skipped');
+                $this->assertJob($jobs, $fullName, $lane === 'frontend' && $fullName === self::FrontendJob ? 'success' : 'skipped');
             }
             $this->assertCompatibleBaseline($base, $commit);
             $classification = ($this->classify)($base, $commit);
-            if (($classification['lane'] ?? null) !== 'documentation'
+            if (($classification['lane'] ?? null) !== $lane
                 || ($classification['base'] ?? null) !== $base || ($classification['head'] ?? null) !== $commit) {
-                throw new RuntimeException('Documentation evidence does not cover these source changes.');
+                throw new RuntimeException('Reduced release evidence does not cover these source changes.');
             }
-            $assets = ($this->assets)($base, $commit);
-            if (($assets['equivalent'] ?? null) !== true
-                || ($assets['base'] ?? null) !== $base || ($assets['head'] ?? null) !== $commit) {
-                throw new RuntimeException('Documentation evidence does not cover these frontend artifacts.');
+            if ($lane === 'documentation') {
+                $assets = ($this->assets)($base, $commit);
+                if (($assets['equivalent'] ?? null) !== true
+                    || ($assets['base'] ?? null) !== $base || ($assets['head'] ?? null) !== $commit) {
+                    throw new RuntimeException('Documentation evidence does not cover these frontend artifacts.');
+                }
             }
             $this->verify($base, true);
         }
@@ -127,7 +138,7 @@ class SchooltoolCiReleaseProof
             'run_id' => $run['id'],
             'run_attempt' => $run['run_attempt'],
             'url' => 'https://github.com/'.self::Repository.'/actions/runs/'.$run['id'],
-            'lane' => $full ? 'full' : 'documentation',
+            'lane' => $lane,
         ];
     }
 
@@ -152,7 +163,8 @@ class SchooltoolCiReleaseProof
                 continue;
             }
             if (! in_array($name, [...self::CommonJobs, ...self::FullJobs], true)
-                && ! str_starts_with($name, 'Documentation checks (policy v2; base=')) {
+                && ! str_starts_with($name, 'Documentation checks (policy v3; base=')
+                && ! str_starts_with($name, 'Frontend checks (policy v3; base=')) {
                 continue;
             }
             $job = $jobs[$name] ?? [];
@@ -298,6 +310,22 @@ class SchooltoolCiReleaseProof
         if (($jobs[$name]['status'] ?? null) !== 'completed' || ($jobs[$name]['conclusion'] ?? null) !== $conclusion) {
             throw new RuntimeException('Required release job is not valid: '.$name);
         }
+    }
+
+    /** @return array<string, array{name: string, base: string}> */
+    private function laneMarkers(array $jobs): array
+    {
+        $markers = [];
+        foreach (['documentation' => 'Documentation', 'frontend' => 'Frontend'] as $lane => $label) {
+            $names = array_values(array_filter(array_keys($jobs), static fn (string $name): bool => str_starts_with($name, $label.' checks (')));
+            if (count($names) !== 1
+                || ! preg_match('/^'.$label.' checks \(policy v3; base=([a-f0-9]{40}|)\)$/D', $names[0], $matches)) {
+                throw new RuntimeException('The release has missing, ambiguous, or obsolete lane evidence.');
+            }
+            $markers[$lane] = ['name' => $names[0], 'base' => $matches[1]];
+        }
+
+        return $markers;
     }
 
     private function assertCompatibleBaseline(string $base, string $head): void

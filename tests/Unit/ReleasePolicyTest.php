@@ -65,12 +65,50 @@ it('requires full checks for code executable documentation and unknown paths', f
     expect(SchooltoolReleasePolicy::classify($this->policyDirectory, $this->policyBase, $head)['lane'])->toBe('full');
 })->with([
     'app/Service.php', 'tests/Unit/ExampleTest.php', 'composer.lock', 'package-lock.json',
-    'resources/js/main.js', 'public/build/assets/main.js', '.github/workflows/ci.yml', '.ai/rules/scripts.md',
+    'resources/views/app.blade.php', 'public/build/assets/main.js', '.github/workflows/ci.yml', '.ai/rules/scripts.md',
+    'resources/js/tool.php', 'resources/js/.hidden/tool.js', 'resources/js-evil/main.js', 'resources/routes/web.php',
+    'vite.config.js', 'vitest.config.js', 'tests/ui/vitest.preload.mjs', 'tests/ui/unit/example.test.ts',
     'scripts/release-policy.php', 'deployment/unknown.json', 'documentation/index.html', 'public/documentation-evil/index.html',
     'public/documentation/payload.php', 'public/documentation/payload.phtml', 'public/documentation/payload.php.jpg',
     'public/documentation/.htaccess', 'public/documentation/.hidden/index.html', 'public/documentation/web.config',
     'public/documentation/unsafe.shtml', 'public/documentation/unsafe.cgi',
 ]);
+
+it('selects frontend checks for browser source and optional release notes', function (string $path): void {
+    releasePolicyWrite($this->policyDirectory, $path, 'frontend fixture');
+    releasePolicyWrite($this->policyDirectory, 'UPDATES.md', 'Release notes');
+    releasePolicyWrite($this->policyDirectory, 'config/schooltool.php', str_replace('3.48.7', '3.49.0', $this->policyConfig));
+    $head = releasePolicyCommit($this->policyDirectory);
+
+    expect(SchooltoolReleasePolicy::classify($this->policyDirectory, $this->policyBase, $head))
+        ->toMatchArray(['lane' => 'frontend', 'base' => $this->policyBase, 'head' => $head]);
+})->with(['resources/js/pages/Home.vue', 'resources/js/main.js', 'resources/js/types.ts', 'resources/js/locales/de.json', 'resources/routes/admin.js', 'resources/css/app.css', 'resources/sass/app.scss']);
+
+it('requires full checks when a frontend change accompanies backend or dependency changes', function (string $path): void {
+    releasePolicyWrite($this->policyDirectory, 'resources/js/pages/Home.vue', 'frontend fixture');
+    releasePolicyWrite($this->policyDirectory, $path, 'non-frontend fixture');
+    $head = releasePolicyCommit($this->policyDirectory);
+
+    expect(SchooltoolReleasePolicy::classify($this->policyDirectory, $this->policyBase, $head)['lane'])->toBe('full');
+})->with(['app/Service.php', 'routes/web.php', 'composer.lock', 'package-lock.json', 'scripts/git_helpers.ps1']);
+
+it('keeps frontend deletions and unsafe Git modes on the full lane', function (string $operation): void {
+    $path = 'resources/js/main.js';
+    releasePolicyWrite($this->policyDirectory, $path, 'frontend fixture');
+    $base = releasePolicyCommit($this->policyDirectory);
+
+    if ($operation === 'delete') {
+        unlink($this->policyDirectory.'/'.$path);
+        $head = releasePolicyCommit($this->policyDirectory);
+    } else {
+        $blob = releasePolicyGit($this->policyDirectory, 'rev-parse', $base.':'.$path);
+        releasePolicyGit($this->policyDirectory, 'update-index', '--cacheinfo', $operation.','.$blob.','.$path);
+        releasePolicyGit($this->policyDirectory, 'commit', '-m', 'Unsafe frontend mode');
+        $head = releasePolicyGit($this->policyDirectory, 'rev-parse', 'HEAD');
+    }
+
+    expect(SchooltoolReleasePolicy::classify($this->policyDirectory, $base, $head)['lane'])->toBe('full');
+})->with(['delete', '100755', '120000']);
 
 it('rejects config edits beyond the version literal', function (string $replacement): void {
     $after = str_replace("'version' => '3.48.7'", $replacement, $this->policyConfig);

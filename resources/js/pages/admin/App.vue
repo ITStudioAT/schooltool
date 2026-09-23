@@ -45,7 +45,7 @@
             <its-notification />
         </v-main>
 
-        <v-footer>
+        <v-footer v-if="config" v-show="is_loading === 0" class="flex-grow-0">
             <v-row justify="center" no-gutters>
                 <v-col cols="12" class="text-center">
                     <v-btn text variant="text" href="/homepage/impressum">Impressum</v-btn>

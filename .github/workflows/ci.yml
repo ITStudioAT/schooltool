@@ -37,7 +37,7 @@ jobs:
           php-version: '8.4'
           extensions: gd, intl, zip
           coverage: none
-      - name: Classify against a fully verified policy v2 baseline
+      - name: Classify against a fully verified policy v3 baseline
         id: policy
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,6 +63,9 @@ jobs:
                   lane=documentation
                   proven=true
                 fi
+              elif [[ "$proposed" == frontend ]]; then
+                lane=frontend
+                proven=true
               elif [[ "$proposed" != full ]]; then
                 exit 1
               fi
@@ -129,7 +132,7 @@ jobs:
         run: npm audit --audit-level=critical
 
   documentation:
-    name: 'Documentation checks (policy v2; base=${{ needs.classify.outputs.base }})'
+    name: 'Documentation checks (policy v3; base=${{ needs.classify.outputs.base }})'
     needs: classify
     if: needs.classify.outputs.lane == 'documentation' && needs.classify.outputs.base-proven == 'true'
     runs-on: ubuntu-latest
@@ -165,6 +168,32 @@ jobs:
       - name: Exercise release-policy safety checks
         run: php vendor/bin/pest --compact tests/Unit/ReleasePolicyTest.php tests/Unit/CiReleaseProofTest.php tests/Unit/CiReleaseWorkflowTest.php tests/Unit/ChangedCodeCoverageGateTest.php
 
+  frontend-proof:
+    name: 'Frontend checks (policy v3; base=${{ needs.classify.outputs.base }})'
+    needs: classify
+    if: needs.classify.outputs.lane == 'frontend' && needs.classify.outputs.base-proven == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact source and history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Recheck the frontend-only delta against the proven baseline
+        env:
+          RELEASE_BASE: ${{ needs.classify.outputs.base }}
+          RELEASE_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          php scripts/release-policy.php classify --base "$RELEASE_BASE" --head "$RELEASE_HEAD" > "$RUNNER_TEMP/frontend-policy.json"
+          jq -e --arg base "$RELEASE_BASE" --arg head "$RELEASE_HEAD" '.lane == "frontend" and .base == $base and .head == $head' "$RUNNER_TEMP/frontend-policy.json" > /dev/null
+          php -l config/schooltool.php
+
   php-quality:
     name: PHP formatting and static analysis
     needs: classify
@@ -199,7 +228,7 @@ jobs:
   frontend:
     name: Frontend tests and release build
     needs: classify
-    if: needs.classify.outputs.lane == 'full'
+    if: needs.classify.outputs.lane == 'full' || needs.classify.outputs.lane == 'frontend'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -526,12 +555,13 @@ jobs:
           retention-days: 14
 
   release-approval:
-    name: Release approval (policy v2)
+    name: Release approval (policy v3)
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - validate
       - classify
       - documentation
+      - frontend-proof
       - php-quality
       - frontend
       - php-tests
@@ -550,6 +580,7 @@ jobs:
           RELEASE_LANE: ${{ needs.classify.outputs.lane }}
           BASE_PROVEN: ${{ needs.classify.outputs.base-proven }}
           DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          FRONTEND_PROOF_RESULT: ${{ needs.frontend-proof.result }}
           PHP_QUALITY_RESULT: ${{ needs.php-quality.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           PHP_TESTS_RESULT: ${{ needs.php-tests.result }}
@@ -566,20 +597,31 @@ jobs:
           done
 
           case "$RELEASE_LANE" in
-            full)
-              test "$DOCUMENTATION_RESULT" = "skipped"
+              full)
+                test "$DOCUMENTATION_RESULT" = "skipped"
+                test "$FRONTEND_PROOF_RESULT" = "skipped"
               for result in "$PHP_QUALITY_RESULT" "$FRONTEND_RESULT" "$PHP_TESTS_RESULT" "$INFRASTRUCTURE_RESULT" "$WINDOWS_WORKFLOW_RESULT"; do
                 test "$result" = "success"
               done
               ;;
-            documentation)
-              test "$BASE_PROVEN" = "true"
-              test "$DOCUMENTATION_RESULT" = "success"
+              documentation)
+                test "$BASE_PROVEN" = "true"
+                test "$DOCUMENTATION_RESULT" = "success"
+                test "$FRONTEND_PROOF_RESULT" = "skipped"
               for result in "$PHP_QUALITY_RESULT" "$FRONTEND_RESULT" "$PHP_TESTS_RESULT" "$INFRASTRUCTURE_RESULT" "$WINDOWS_WORKFLOW_RESULT"; do
                 test "$result" = "skipped"
-              done
-              ;;
+                done
+                ;;
+              frontend)
+                test "$BASE_PROVEN" = "true"
+                test "$DOCUMENTATION_RESULT" = "skipped"
+                test "$FRONTEND_PROOF_RESULT" = "success"
+                test "$FRONTEND_RESULT" = "success"
+                for result in "$PHP_QUALITY_RESULT" "$PHP_TESTS_RESULT" "$INFRASTRUCTURE_RESULT" "$WINDOWS_WORKFLOW_RESULT"; do
+                  test "$result" = "skipped"
+                done
+                ;;
             *) exit 1 ;;
           esac
 
-          echo "Exact release passed policy v2 ($RELEASE_LANE)."
+          echo "Exact release passed policy v3 ($RELEASE_LANE)."

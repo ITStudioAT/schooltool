@@ -12,6 +12,22 @@ function runBranchWorkflowGit(string $directory, string ...$arguments): string
     return trim($process->getOutput());
 }
 
+function configureBranchWorkflowClone(string $directory): void
+{
+    file_put_contents($directory.'/.git/config', "\n".<<<'GIT'
+[user]
+    name = Workflow Test
+    email = workflow@example.test
+[commit]
+    gpgsign = false
+[tag]
+    gpgsign = false
+[core]
+    autocrlf = false
+    hooksPath = .git/no-test-hooks
+GIT."\n", FILE_APPEND);
+}
+
 function runBranchWorkflowCommand(string $directory, string $command, string $powershell = 'powershell'): Process
 {
     $bootstrap = <<<'POWERSHELL'
@@ -131,9 +147,7 @@ beforeEach(function (): void {
     runBranchWorkflowGit($this->workflowDirectory, 'init', '--bare', '--initial-branch=main', $this->workflowRemote);
     runBranchWorkflowGit($this->workflowDirectory, 'clone', $this->workflowRemote, $this->workflowPc);
 
-    foreach (['user.name' => 'Workflow Test', 'user.email' => 'workflow@example.test', 'commit.gpgsign' => 'false', 'tag.gpgsign' => 'false', 'core.autocrlf' => 'false', 'core.hooksPath' => '.git/no-test-hooks'] as $key => $value) {
-        runBranchWorkflowGit($this->workflowPc, 'config', $key, $value);
-    }
+    configureBranchWorkflowClone($this->workflowPc);
 
     mkdir($this->workflowPc.'/scripts');
     copy(dirname(__DIR__, 2).'/scripts/check-encoding.php', $this->workflowPc.'/scripts/check-encoding.php');
@@ -146,9 +160,7 @@ beforeEach(function (): void {
     $this->workflowMain = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
     runBranchWorkflowGit($this->workflowDirectory, '-c', 'core.autocrlf=false', 'clone', $this->workflowRemote, $this->workflowLaptop);
 
-    foreach (['user.name' => 'Workflow Test', 'user.email' => 'workflow@example.test', 'commit.gpgsign' => 'false', 'tag.gpgsign' => 'false', 'core.autocrlf' => 'false', 'core.hooksPath' => '.git/no-test-hooks'] as $key => $value) {
-        runBranchWorkflowGit($this->workflowLaptop, 'config', $key, $value);
-    }
+    configureBranchWorkflowClone($this->workflowLaptop);
 });
 
 afterEach(function (): void {
