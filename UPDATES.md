@@ -1,6 +1,10 @@
 # UPDATES
 
-## 3.49.5 !!
+## 3.49.5
+
+### Teaching
+
+- Curricula schuljahresübergreifend
 
 ## 3.49.4
 
