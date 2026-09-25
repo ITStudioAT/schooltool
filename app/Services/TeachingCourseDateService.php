@@ -40,9 +40,9 @@ class TeachingCourseDateService
 
         $courses = $materialsByDate->isEmpty() ? collect() : TeachingCourse::query()
             ->whereKey($dates->pluck('teaching_course_id')->unique())
-            ->select(['id', 'school_id', 'schoolyear_id', 'teaching_curriculum_id'])
+            ->select(['id', 'school_id', 'user_id', 'teaching_curriculum_id'])
             ->with([
-                'teachingCurriculum:id,school_id,schoolyear_id,topics',
+                'teachingCurriculum:id,school_id,user_id,topics',
                 'teachingCurriculum.documents' => fn ($query) => $query
                     ->where('source_type', 'unit_file')
                     ->select(['id', 'teaching_curriculum_id', 'topic_id', 'unit_id']),
@@ -55,7 +55,7 @@ class TeachingCourseDateService
             $curriculum = $course->teachingCurriculum;
             if (! $curriculum
                 || (int) $curriculum->school_id !== (int) $course->school_id
-                || (int) $curriculum->schoolyear_id !== (int) $course->schoolyear_id) {
+                || (int) $curriculum->user_id !== (int) $course->user_id) {
                 continue;
             }
 
@@ -738,7 +738,7 @@ class TeachingCourseDateService
                     $course && $curriculum
                     && (int) $course->teaching_curriculum_id === (int) $curriculum->id
                     && (int) $course->school_id === (int) $curriculum->school_id
-                    && (int) $course->schoolyear_id === (int) $curriculum->schoolyear_id
+                    && (int) $course->user_id === (int) $curriculum->user_id
                     && $file->source_type === 'unit_file',
                     404,
                 );

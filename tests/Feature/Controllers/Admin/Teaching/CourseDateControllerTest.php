@@ -418,6 +418,48 @@ it('sets curriculum file visibility idempotently and copies source bytes private
     Storage::disk('local')->assertExists($attachment->file_path);
 });
 
+it('shares files from an assigned curriculum created in another schoolyear', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $previousSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $file->curriculum->update(['schoolyear_id' => $previousSchoolyear->id]);
+
+    $this->actingAs($this->admin)->getJson('/api/admin/teaching/curricula')->assertOk()
+        ->assertJsonPath('data.0.id', $file->teaching_curriculum_id);
+    $this->getJson("/api/admin/teaching/curricula/{$file->teaching_curriculum_id}")->assertOk()
+        ->assertJsonPath('data.id', $file->teaching_curriculum_id);
+    $this->getJson("/api/admin/teaching/curricula/{$file->teaching_curriculum_id}/topics/topic-1/units/unit-1/files")
+        ->assertOk()->assertJsonPath('data.0.id', $file->id);
+
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.unadopted_curriculum_attachments_count', 1);
+
+    $this->putJson($url, ['student_visible' => true])->assertOk()
+        ->assertJsonPath('data.adopted_materials.0.attachments.0.student_visible', true);
+
+    $attachment = $material->attachments()->sole();
+    expect($attachment->source_teaching_curriculum_document_id)->toBe($file->id);
+    $this->getJson('/api/admin/teaching/courses')->assertOk()
+        ->assertJsonPath('data.0.course_dates.0.shared_curriculum_attachments_count', 1);
+    $this->actingAs($this->studentA, 'web')
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download")->assertOk();
+});
+
+it('rejects file sharing when the assigned curriculum belongs to another owner', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $file->curriculum->update(['user_id' => $this->teacher->id]);
+
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertNotFound();
+    expect($material->attachments()->count())->toBe(0);
+});
+
+it('rejects file sharing when the assigned curriculum belongs to another school', function () {
+    [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
+    $file->curriculum->update(['school_id' => $this->otherSchool->id]);
+
+    $this->actingAs($this->admin)->putJson($url, ['student_visible' => true])->assertNotFound();
+    expect($material->attachments()->count())->toBe(0);
+});
+
 it('reports unadopted curriculum files as private and tracks copied visibility in timetable summaries', function () {
     [$date, $file, $material, $url] = curriculumVisibilityFixture($this);
     $this->actingAs($this->admin);
