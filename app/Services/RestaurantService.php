@@ -806,6 +806,13 @@ class RestaurantService
             })
             ->all();
 
+        $existingFoods = $menu->foods()->get();
+        $temporaryCourseNumber = (int) $existingFoods->max(fn (RestaurantFood $food): int => (int) $food->pivot->course_number) + 1;
+
+        foreach ($existingFoods as $food) {
+            $menu->foods()->updateExistingPivot($food->id, ['course_number' => $temporaryCourseNumber++]);
+        }
+
         $menu->foods()->sync($syncPayload);
     }
 

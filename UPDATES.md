@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.49.6
+
+### Restaurant
+
+- Reihenfolge der Speisen im Menü: Gefixt
+
 ## 3.49.5
 
 ### Teaching

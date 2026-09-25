@@ -207,6 +207,31 @@ test('update changes menu title, price, and course order', function () {
     ]);
 });
 
+test('update swaps existing courses without violating the unique course number', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $menu = RestaurantMenu::factory()->forUser($this->admin)->create([
+        'title' => 'Spinatknödel',
+        'price' => '9.90',
+    ]);
+    $menu->foods()->sync([
+        $this->foodOne->id => ['course_number' => 1],
+        $this->foodTwo->id => ['course_number' => 2],
+    ]);
+
+    $this->putJson("/api/admin/restaurant/menus/{$menu->id}", [
+        'title' => 'Spinatknödel',
+        'food_ids' => [$this->foodTwo->id, $this->foodOne->id],
+        'price' => '9.9',
+    ])->assertOk()
+        ->assertJsonPath('data.foods.0.title', 'Pasta')
+        ->assertJsonPath('data.foods.0.course_number', 1)
+        ->assertJsonPath('data.foods.1.title', 'Suppe')
+        ->assertJsonPath('data.foods.1.course_number', 2);
+
+    expect($menu->fresh()->foods->pluck('id')->all())->toBe([$this->foodTwo->id, $this->foodOne->id]);
+});
+
 test('destroy deletes menu and detaches foods', function () {
     $this->actingAs($this->admin, 'sanctum');
 
