@@ -348,8 +348,14 @@ function Invoke-SchooltoolLocalPreparation {
         php artisan view:clear --no-interaction
     }
     Invoke-SchooltoolCommand 'Building the selected branch...' { npm run build }
-    Write-Host 'Local files are ready. No migrations or seeders were run. Restart running development servers/workers.' -ForegroundColor Green
-    Write-Host 'Database schema changes require a separate feature database; Git does not switch databases.' -ForegroundColor Yellow
+    Write-Host 'Local files are ready. Restart running development servers/workers.' -ForegroundColor Green
+    Write-Host 'Git does not switch databases. gitupdate checks additive migrations for the configured local database; use a separate database for experimental schema changes.' -ForegroundColor Yellow
+}
+
+function Invoke-SchooltoolLocalMigrations {
+    Invoke-SchooltoolCommand 'Applying checked local database migrations...' {
+        php artisan schooltool:gitupdate-migrate --no-interaction
+    }
 }
 
 function Switch-SchooltoolBranch {
@@ -488,6 +494,7 @@ function gitupdate {
     Invoke-SchooltoolGit merge --ff-only "refs/remotes/origin/$branch"
     Invoke-SchooltoolGit merge --no-edit refs/remotes/origin/main
     Invoke-SchooltoolLocalPreparation
+    Invoke-SchooltoolLocalMigrations
     Write-Host 'main was incorporated. Test the feature, then use gitsave to share this state.' -ForegroundColor Green
     Write-SchooltoolCompletionTime
 }

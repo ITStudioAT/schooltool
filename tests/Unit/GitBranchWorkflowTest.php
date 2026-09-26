@@ -34,6 +34,7 @@ function runBranchWorkflowCommand(string $directory, string $command, string $po
 $ErrorActionPreference = 'Stop'
 . $env:SCHOOLTOOL_TEST_HELPERS
 function Invoke-SchooltoolLocalPreparation { Write-Output 'Local preparation mocked; database untouched.' }
+function Invoke-SchooltoolLocalMigrations { Write-Output 'LOCAL_MIGRATIONS_CHECKED' }
 function New-SchooltoolCandidateTestDatabase { [pscustomobject]@{ Database = 'pest_test_test_123456789012345678901234'; ReceiptPath = 'schooltool-test-db-mocked.json' } }
 function Remove-SchooltoolCandidateTestDatabase { Write-Host 'MOCK_TEST_DATABASE_REMOVED' }
 try {
@@ -502,12 +503,28 @@ it('brings main hotfixes into development without publishing the feature', funct
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
     $hotfix = commitBranchWorkflowFile($this->workflowLaptop, 'hotfix.txt', "Published correction\n");
     runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitupdate'));
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitupdate');
+    assertBranchWorkflowSucceeded($result);
 
-    expect(runBranchWorkflowGit($this->workflowPc, 'merge-base', '--is-ancestor', $hotfix, 'HEAD'))->toBe('')
+    expect($result->getOutput())->toContain('LOCAL_MIGRATIONS_CHECKED')
+        ->and(runBranchWorkflowGit($this->workflowPc, 'merge-base', '--is-ancestor', $hotfix, 'HEAD'))->toBe('')
         ->and(file_get_contents($this->workflowPc.'/feature.txt'))->toBe("Unreleased work\n")
         ->and(file_get_contents($this->workflowPc.'/hotfix.txt'))->toBe("Published correction\n")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix);
+});
+
+it('stops gitupdate when checked local migrations fail without publishing the feature', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    $remoteHead = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function');
+
+    $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
+function Invoke-SchooltoolLocalMigrations { throw 'LOCAL_MIGRATIONS_FAILED' }
+gitupdate
+POWERSHELL);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('LOCAL_MIGRATIONS_FAILED')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($remoteHead);
 });
 
 it('includes the latest main automatically in the isolated release candidate', function (): void {

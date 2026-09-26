@@ -347,7 +347,7 @@ Dieser Befehl stellt die zuvor gesicherte Vorschau-Datenbank, Vorschau-Dateien u
 | Feature freigeben | `gitsave "Funktion fertig"` → `gitrelease "Neue Funktion"` → `gitdeploy` → Smoke und `LIVE` |
 | Lokal den vollständigen Hauptstand installieren | `gitmain` → `composer deploy` |
 
-Git wechselt keine lokalen Datenbanken. Vor experimentellen Feature-Migrationen eine eigene lokale Feature-Datenbank verwenden. Bereits ausgeführte Migrationen werden durch `gitmain` oder `gitwork` nicht rückgängig gemacht.
+Git wechselt keine lokalen Datenbanken. `gitupdate` führt ausstehende additive Migrationen nach Prüfung von Ziel und SQL automatisch auf der konfigurierten lokalen Datenbank aus; unklare oder destruktive Migrationen werden gestoppt. Für experimentelle Feature-Migrationen eine eigene lokale Feature-Datenbank verwenden. `gitmain` und `gitwork` führen keine Migrationen aus und machen bereits ausgeführte Migrationen nicht rückgängig.
 
 # Code simplifying with Claude
 
