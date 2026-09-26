@@ -28,7 +28,7 @@
                         <v-list
                             dense
                             variant="flat"
-                            class="crud-list"
+                            class="crud-list teacher-list"
                             select-strategy="single-leaf"
                             v-model:selected="selected_teachers"
                             color="success-lighten-2">
@@ -39,31 +39,49 @@
                                 class="crud-list-item"
                                 :class="{ 'is-selected': isSelectedTeacher(item.id) }">
                                 <template #title>
-                                    <div class="person-row crud-item-row">
-                                        <div class="d-flex align-start" style="min-width: 0">
-                                                <div class="person-body" style="min-width: 0">
-                                                    <div class="person-name d-flex align-center ga-1">
-                                                        <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
-                                                        <span>
-                                                            {{ item.last_name }} {{ item.first_name }}
-                                                            <span v-if="item.short">({{ item.short }})</span>
-                                                        </span>
-                                                    </div>
-                                                    <div v-if="item.roles?.length" class="person-roles d-flex flex-wrap ga-1 mt-1">
-                                                        <v-chip
-                                                            v-for="role in item.roles"
-                                                            :key="role"
-                                                            size="x-small"
-                                                            rounded="lg"
-                                                            color="primary"
-                                                            variant="tonal">
-                                                            {{ role }}
-                                                        </v-chip>
-                                                    </div>
-                                                    <div class="person-roles"><CopyEmailButton :email="item.email" /></div>
-                                                </div>
+                                    <div class="person-row crud-item-row teacher-person-row">
+                                        <div class="teacher-summary">
+                                            <div class="person-name d-flex align-center ga-1">
+                                                <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
+                                                <span>
+                                                    {{ item.last_name }} {{ item.first_name }}
+                                                    <span v-if="item.short">({{ item.short }})</span>
+                                                </span>
                                             </div>
+                                            <div v-if="item.roles?.length" class="person-roles d-flex flex-wrap ga-1 mt-1">
+                                                <v-chip
+                                                    v-for="role in item.roles"
+                                                    :key="role"
+                                                    size="x-small"
+                                                    rounded="lg"
+                                                    color="primary"
+                                                    variant="tonal">
+                                                    {{ role }}
+                                                </v-chip>
+                                            </div>
+                                            <div class="person-roles"><CopyEmailButton :email="item.email" /></div>
                                         </div>
+                                        <div class="teacher-class-head" @click.stop @mousedown.stop>
+                                            <label class="teacher-class-head__label" :for="`class-head-${item.id}`">Klassenvorstand</label>
+                                            <v-autocomplete
+                                                :id="`class-head-${item.id}`"
+                                                class="teacher-class-head__select"
+                                                :model-value="item.class_head_classes"
+                                                :items="classes"
+                                                placeholder="Klassen auswählen"
+                                                multiple
+                                                chips
+                                                closable-chips
+                                                density="compact"
+                                                variant="outlined"
+                                                hide-details
+                                                clearable
+                                                autocomplete="off"
+                                                :loading="savingClassHeadIds.includes(item.id)"
+                                                :disabled="savingClassHeadIds.includes(item.id) || !config?.selected_schoolyear"
+                                                @update:model-value="saveClassHeads(item, $event)" />
+                                        </div>
+                                    </div>
                                 </template>
                             </v-list-item>
                         </v-list>
@@ -273,12 +291,13 @@ export default {
             teacherStore: null,
             is_valid: false,
             importDialog: false,
+            savingClassHeadIds: [],
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config', 'main_action']),
-        ...mapWritableState(useTeacherStore, ['teachers', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
+        ...mapWritableState(useTeacherStore, ['teachers', 'classes', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
         teacherDialogOpen: {
             get() {
                 return ['create_teacher', 'edit_teacher', 'delete_teacher'].includes(this.action)
@@ -300,9 +319,35 @@ export default {
             const total = Number(this.meta?.total)
             return Number.isFinite(total) && total >= 0 ? total : this.teachers.length
         },
+        teacherScopeKey() {
+            return `${this.config?.selected_school?.id ?? this.config?.user?.school_id ?? ''}:${this.config?.selected_schoolyear?.id ?? ''}`
+        },
+    },
+
+    watch: {
+        async teacherScopeKey() {
+            if (this.teacherStore) {
+                this.selected_teachers = []
+                await this.teacherStore.index()
+            }
+        },
     },
 
     methods: {
+        async saveClassHeads(teacher, classNames) {
+            if (this.savingClassHeadIds.includes(teacher.id)) {
+                return
+            }
+
+            this.savingClassHeadIds.push(teacher.id)
+            try {
+                if (!(await this.teacherStore.saveClassHeads(teacher.id, classNames))) {
+                    await this.teacherStore.index(this.meta.current_page)
+                }
+            } finally {
+                this.savingClassHeadIds = this.savingClassHeadIds.filter((id) => id !== teacher.id)
+            }
+        },
         async abortReturn() {
             await this.teacherStore.index()
             this.main_action = 'teachers'
@@ -369,3 +414,58 @@ export default {
 
 <style scoped src="../../../../../css/admin-index-page.css"></style>
 <style scoped src="../../../../../css/admin-crud-panel.css"></style>
+<style scoped>
+.teacher-list :deep(.v-list-item-title) {
+    overflow: visible;
+    white-space: normal;
+}
+
+.teacher-person-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(255px, 295px);
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+}
+
+.teacher-summary,
+.teacher-class-head {
+    min-width: 0;
+}
+
+.teacher-class-head {
+    border-left: 1px solid rgba(16, 38, 58, 0.12);
+    padding-left: 18px;
+}
+
+.teacher-class-head__label {
+    display: block;
+    margin-bottom: 6px;
+    color: rgba(16, 38, 58, 0.75);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.teacher-class-head__select {
+    width: 100%;
+}
+
+.teacher-class-head :deep(.v-field__input) {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 1050px) {
+    .teacher-person-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .teacher-class-head {
+        border-top: 1px solid rgba(16, 38, 58, 0.12);
+        border-left: 0;
+        padding-top: 12px;
+        padding-left: 0;
+    }
+}
+</style>

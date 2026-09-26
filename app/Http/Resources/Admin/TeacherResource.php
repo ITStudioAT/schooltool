@@ -25,6 +25,7 @@ class TeacherResource extends JsonResource
             'login_ip' => $this->login_ip,
             'roles' => $this->roles->sortBy('name')->pluck('name')->values(),
             'is_active' => (bool) $this->is_active,
+            'class_head_classes' => $this->class_head_classes ?? [],
         ];
     }
 }

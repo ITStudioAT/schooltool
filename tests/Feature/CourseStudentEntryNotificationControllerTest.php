@@ -6,6 +6,7 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingClassHead;
 use App\Models\TeachingClassHeadEmail;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
@@ -140,6 +141,81 @@ test('configured recipients are listed individually and available by default', f
             'group_label' => 'Schüler:in',
             'email' => 'student@example.test',
         ]);
+});
+
+test('schoolwide class head assignments replace legacy course recipients', function () {
+    $head = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'new.head@example.test',
+    ]);
+    $head->assignRole('teacher');
+    TeachingClassHead::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $head->id,
+        'class_name' => '2A',
+    ]);
+    $otherHeads = collect([2, 3])->map(function (int $number): User {
+        $teacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => "new.head.{$number}@example.test",
+        ]);
+        $teacher->assignRole('teacher');
+        TeachingClassHead::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $teacher->id,
+            'class_name' => '2A',
+        ]);
+
+        return $teacher;
+    });
+
+    $response = $this->getJson("/api/admin/teaching/course_student_entries/{$this->entry->id}/notifications")
+        ->assertOk()
+        ->assertJsonCount(6, 'data')
+        ->assertJsonFragment(['group_label' => 'Klassenvorstand', 'email' => 'new.head@example.test']);
+
+    expect(collect($response->json('data'))->pluck('email'))
+        ->toContain('new.head.2@example.test', 'new.head.3@example.test')
+        ->not->toContain('head.one@example.test', 'head.two@example.test');
+
+    foreach ($otherHeads->prepend($head) as $teacher) {
+        $this->putJson("/api/admin/teachers/{$teacher->id}/class-head", ['class_names' => []])
+            ->assertOk();
+    }
+
+    $response = $this->getJson("/api/admin/teaching/course_student_entries/{$this->entry->id}/notifications")
+        ->assertOk()
+        ->assertJsonCount(4, 'data');
+
+    expect(collect($response->json('data'))->pluck('email'))
+        ->not->toContain('new.head@example.test', 'head.one@example.test', 'head.two@example.test');
+});
+
+test('class head notification excludes users who no longer have the teacher role', function () {
+    $formerTeacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'former.teacher@example.test',
+    ]);
+    $formerTeacher->assignRole('teacher');
+    TeachingClassHead::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $formerTeacher->id,
+        'class_name' => '2A',
+    ]);
+    $formerTeacher->removeRole('teacher');
+
+    $response = $this->getJson("/api/admin/teaching/course_student_entries/{$this->entry->id}/notifications")
+        ->assertOk()
+        ->assertJsonCount(4, 'data');
+
+    expect(collect($response->json('data'))->pluck('email'))
+        ->not->toContain('former.teacher@example.test', 'head.one@example.test', 'head.two@example.test');
 });
 
 test('configured recipients can be previewed before an entry is created', function () {

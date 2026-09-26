@@ -158,15 +158,15 @@ describe('MyCourses counts', () => {
             data: { class_head_emails: [] },
             class_head_email_drafts: {},
             class_head_emails: [
-                { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
+                { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7, teacher_ids: [4, 7, 9], source: 'school' },
             ],
         }
 
         syncClassHeadEmailRows.call(context, ['1A', '1B'])
 
         expect(context.data.class_head_emails).toEqual([
-            { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7 },
-            { class_name: '1B', teacher_1_id: null, teacher_2_id: null },
+            { class_name: '1A', teacher_1_id: 4, teacher_2_id: 7, teacher_ids: [4, 7, 9], source: 'school' },
+            { class_name: '1B', teacher_1_id: null, teacher_2_id: null, teacher_ids: [] },
         ])
     })
 
@@ -184,34 +184,35 @@ describe('MyCourses counts', () => {
         syncClassHeadEmailRows.call(context, ['1A'])
 
         expect(context.data.class_head_emails).toEqual([
-            { class_name: '1A', teacher_1_id: 9, teacher_2_id: null },
+            { class_name: '1A', teacher_1_id: 9, teacher_2_id: null, teacher_ids: [9] },
         ])
     })
 
-    it('renders exactly two teacher selectors for every selected class head row', () => {
+    it('shows class head assignments without editing them in the course form', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('v-for="classHeadEmail in data.class_head_emails"')
-        expect(source.match(/v-model="classHeadEmail\.teacher_[12]_id"/g)).toHaveLength(2)
-        expect(source.match(/<v-autocomplete/g)).toHaveLength(2)
+        expect(source).toContain('classHeadTeacherLabel(classHeadEmail)')
         expect(source).toContain('Klassenvorstand')
-        expect(source).not.toContain('v-model="classHeadEmail.email_1"')
-        expect(source).not.toContain('v-model="classHeadEmail.email_2"')
+        expect(source).not.toContain('v-model="classHeadEmail.teacher_1_id"')
+        expect(source).not.toContain('v-model="classHeadEmail.teacher_2_id"')
     })
 
-    it('excludes the teacher selected in the other class head selector', () => {
-        const classHeadTeacherItemsFor = (MyCourses as any).methods.classHeadTeacherItemsFor
+    it('labels one or two class heads from the shared teacher list', () => {
+        const classHeadTeacherLabel = (MyCourses as any).methods.classHeadTeacherLabel
         const context = {
             classHeadTeacherItems: [
                 { title: 'Huber, Anna (HA)', value: 4 },
                 { title: 'Moser, Paul (MP)', value: 7 },
+                { title: 'Neuer, Kim (NK)', value: 9 },
             ],
         }
 
-        expect(classHeadTeacherItemsFor.call(context, { teacher_1_id: 4, teacher_2_id: 7 }, 1)).toEqual([
-            { title: 'Huber, Anna (HA)', value: 4 },
-        ])
+        expect(classHeadTeacherLabel.call(context, { teacher_ids: [4, 7, 9] }))
+            .toBe('Huber, Anna (HA), Moser, Paul (MP), Neuer, Kim (NK)')
+        expect(classHeadTeacherLabel.call(context, { teacher_1_id: null, teacher_2_id: null }))
+            .toBe('Nicht zugeordnet')
     })
 
     it('renders legacy schemas through 2025/26 and Bereiche afterward', () => {

@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { updateClassHead } from '@/actions/App/Http/Controllers/Admin/TeacherController'
 
 export const useTeacherStore = defineStore('AdminTeacherStore', {
     state: () => ({
         teachers: [],
+        classes: [],
         selected_teachers: [],
         search_string: '',
         meta: [],
@@ -25,12 +27,38 @@ export const useTeacherStore = defineStore('AdminTeacherStore', {
             try {
                 const response = await axios.get(`/api/admin/teachers`, { params: { role, search_string, page } })
                 this.teachers = response.data.data
+                this.classes = response.data.classes ?? []
                 this.meta = response.data.meta
                 return true
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async saveClassHeads(teacherId, classNames) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.put(updateClassHead.url(teacherId), { class_names: classNames })
+                const teacher = this.teachers.find((item) => item.id === teacherId)
+                if (teacher) {
+                    teacher.class_head_classes = response.data.class_names
+                }
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Klassenvorstand konnte nicht gespeichert werden.',
                     type: 'error',
                     timeout: 3000,
                 })
