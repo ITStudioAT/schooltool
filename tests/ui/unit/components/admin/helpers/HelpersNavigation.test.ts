@@ -122,6 +122,41 @@ describe('Helpers navigation', () => {
         expect(secondClass).not.toBeChecked()
     })
 
+    it('uses the local date for each announcement draft and updates the earliest election date', async () => {
+        await renderPage()
+        await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument())
+
+        await fireEvent.click(screen.getByRole('checkbox', { name: 'Klasse 1A auswählen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Ausschreiben' }))
+
+        const today = new Date()
+        const localDate = [
+            today.getFullYear(),
+            String(today.getMonth() + 1).padStart(2, '0'),
+            String(today.getDate()).padStart(2, '0'),
+        ].join('-')
+        const announcementDate = screen.getByLabelText('Ausschreibungsdatum')
+        const draft = screen.getByText(/Wahlausschreibung zur Wahl der Klassensprecherinnen/)
+
+        expect(announcementDate).toHaveValue(localDate)
+        expect(draft).toHaveTextContent('Wahltermin: wird vom Klassenvorstand bzw. von der Klassenvorständin festgelegt.')
+        expect(draft).toHaveTextContent('Wahltag: [eintragen], Wahlzeit: [eintragen], Wahlort: [eintragen].')
+
+        await fireEvent.update(announcementDate, '2030-01-28')
+
+        expect(screen.getByText(/Frühester Wahltermin bei Ausschreibung an diesem Datum:/)).toHaveTextContent('11.02.2030')
+        expect(draft).toHaveTextContent('Ausschreibungsdatum (geplant): 28.01.2030')
+        expect(draft).toHaveTextContent('Frühester Wahltermin bei Ausschreibung am geplanten Datum: 11.02.2030')
+        expect(draft).toHaveTextContent('Die tatsächliche Wahlausschreibung muss den vollständigen Wahltermin enthalten')
+
+        await fireEvent.update(announcementDate, '')
+        expect(screen.getByText('Bitte ein Ausschreibungsdatum wählen, um den frühesten Wahltermin zu berechnen.')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Ausschreiben' }))
+        expect(screen.getByLabelText('Ausschreibungsdatum')).toHaveValue(localDate)
+    })
+
     it('opens Matura directly and preserves unrelated query parameters when switching back', async () => {
         const { router } = await renderPage('/admin/helpers?panel=matura&filter=active')
 

@@ -103,7 +103,13 @@
             <v-card>
                 <v-card-title>Wahlausschreibung · Entwurf</v-card-title>
                 <v-card-text>
-                    <p class="mb-3">Wahltag, Wahlzeit und Wahlort sind vor einer tatsächlichen Ausschreibung einzutragen.</p>
+                    <p class="mb-3">Der Klassenvorstand bzw. die Klassenvorständin legt den Wahltermin fest. Wahltag, Wahlzeit und Wahlort sind vor einer tatsächlichen Ausschreibung einzutragen.</p>
+                    <div class="helpers-announcement-date mb-3">
+                        <label for="helpers-announcement-date">Ausschreibungsdatum</label>
+                        <input id="helpers-announcement-date" v-model="announcementDate" type="date">
+                        <p v-if="announcementDate" class="mb-0" aria-live="polite">Frühester Wahltermin bei Ausschreibung an diesem Datum: {{ earliestElectionDateLabel }} (14 Kalendertage später).</p>
+                        <p v-else class="mb-0" aria-live="polite">Bitte ein Ausschreibungsdatum wählen, um den frühesten Wahltermin zu berechnen.</p>
+                    </div>
                     <pre class="helpers-announcement-text">{{ announcementText }}</pre>
                     <p class="mt-3 mb-0">
                         Rechtsgrundlagen:
@@ -137,6 +143,7 @@ export default {
             selectedClasses: [],
             announcementDialog: false,
             announcementClasses: [],
+            announcementDate: '',
             classesLoading: false,
             classesError: false,
             classesRequestId: 0,
@@ -162,17 +169,32 @@ export default {
 
             return (this.selected_schoolyear || this.config?.selected_schoolyear)?.id ?? null
         },
+        announcementDateLabel() {
+            if (!this.announcementDate) return '[Ausschreibungsdatum eintragen]'
+
+            const [year, month, day] = this.announcementDate.split('-')
+
+            return `${day}.${month}.${year}`
+        },
+        earliestElectionDateLabel() {
+            if (!this.announcementDate) return '[Ausschreibungsdatum eintragen]'
+
+            const [year, month, day] = this.announcementDate.split('-').map(Number)
+            const earliestDate = new Date(year, month - 1, day + 14)
+
+            return earliestDate.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
         announcementText() {
             const classes = this.announcementClasses.join(', ')
 
             return [
-                `Wahlausschreibung zur Wahl der Klassensprecherinnen und Klassensprecher sowie ihrer Stellvertretungen\nSchuljahr: ${this.selectedSchoolyearLabel}\nKlassen: ${classes}`,
-                'Wahltermin: [Wahltag eintragen], [Wahlzeit eintragen], [Wahlort eintragen].',
+                `Wahlausschreibung zur Wahl der Klassensprecherinnen und Klassensprecher sowie ihrer Stellvertretungen\nSchuljahr: ${this.selectedSchoolyearLabel}\nKlassen: ${classes}\nAusschreibungsdatum (geplant): ${this.announcementDateLabel}`,
+                `Wahltermin: wird vom Klassenvorstand bzw. von der Klassenvorständin festgelegt. Wahltag: [eintragen], Wahlzeit: [eintragen], Wahlort: [eintragen].\nFrühester Wahltermin bei Ausschreibung am geplanten Datum: ${this.earliestElectionDateLabel} (14 Kalendertage später).`,
                 'Gemäß § 59a Abs. 1 bis 4 Schulunterrichtsgesetz (SchUG) und § 1 der Verordnung „Wahl der Schülervertreter“ wählen die Schülerinnen und Schüler jeder genannten Klasse ihre Klassenvertretung und Stellvertretung in gleicher, unmittelbarer, geheimer und persönlicher Wahl. Wahlberechtigt und wählbar sind die Schülerinnen und Schüler der jeweiligen Klasse.',
                 'Die Wahl erfolgt unter Leitung der Schulleitung oder einer beauftragten Lehrkraft (§ 59a Abs. 5 SchUG; § 9 der Wahlverordnung). Wahlberechtigte können bis spätestens drei Schultage vor der Wahl Kandidatinnen und Kandidaten vorschlagen. Die vorgeschlagene Person muss den Vorschlag annehmen (§ 8 der Wahlverordnung). Vor dem Wahltag erhalten die Wahlberechtigten Gelegenheit, die Kandidierenden kennenzulernen (§ 59a Abs. 5 SchUG).',
                 'Die Stimmabgabe erfolgt persönlich am Wahlort mit einheitlichen Stimmzetteln und unter Wahrung des Wahlgeheimnisses. Jede wahlberechtigte Person gibt einen Stimmzettel ab und reiht zwei Personen für die Klassenvertretung und Stellvertretung (§ 59a Abs. 6 SchUG; §§ 10 und 11 der Wahlverordnung).',
                 'Die Stimmen werden unmittelbar nach der Wahl durch die Wahlleitung gemeinsam mit zwei wahlberechtigten Wahlzeugen geprüft und ausgezählt. Für die Klassenvertretung ist eine Mehrheit der Erstplatzierungen erforderlich; andernfalls folgt eine Stichwahl. Die Stellvertretung richtet sich nach den Wahlpunkten des ersten Wahlgangs. Das Ergebnis wird im Wahlprotokoll festgehalten und in der Schule kundgemacht (§ 59a Abs. 7 bis 9 SchUG; § 12 der Wahlverordnung). Die Wahl kann innerhalb einer Woche ab Kundmachung angefochten werden (§ 13 der Wahlverordnung).',
-                'Diese Wahlausschreibung ist von der Schulleitung spätestens zwei Wochen vor der Wahl zu veranlassen und in der Schule anzuschlagen (§ 7 der Wahlverordnung).',
+                'Die tatsächliche Wahlausschreibung muss den vollständigen Wahltermin enthalten und von der Schulleitung spätestens zwei Wochen vor der Wahl in der Schule angeschlagen werden (§ 7 der Wahlverordnung).',
             ].join('\n\n')
         },
     },
@@ -217,6 +239,12 @@ export default {
                 .map((schoolClass) => this.formatClassName(schoolClass))
             if (this.announcementClasses.length === 0) return
 
+            const today = new Date()
+            this.announcementDate = [
+                today.getFullYear(),
+                String(today.getMonth() + 1).padStart(2, '0'),
+                String(today.getDate()).padStart(2, '0'),
+            ].join('-')
             this.announcementDialog = true
         },
         async loadClasses(schoolyearId) {
@@ -436,6 +464,20 @@ export default {
     white-space: pre-wrap;
     font: inherit;
     line-height: 1.5;
+}
+
+.helpers-announcement-date {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.helpers-announcement-date input {
+    border: 1px solid var(--admin-page-border, #e7e9ef);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font: inherit;
 }
 
 .helpers-classes-table input[type='checkbox'] {

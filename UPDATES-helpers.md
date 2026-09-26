@@ -5,6 +5,7 @@
 ### Klassensprecherwahl
 - Übersicht aller Klassen
 - Text für Ausschreibung erstellen
+- Ausschreibungsdatum
 
 ## 0.1
 
