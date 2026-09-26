@@ -154,6 +154,16 @@ beforeEach(function (): void {
     mkdir($this->workflowPc.'/scripts');
     copy(dirname(__DIR__, 2).'/scripts/check-encoding.php', $this->workflowPc.'/scripts/check-encoding.php');
     copy(dirname(__DIR__, 2).'/scripts/deploy_preview_cloudways.sh', $this->workflowPc.'/scripts/deploy_preview_cloudways.sh');
+    file_put_contents($this->workflowPc.'/artisan', <<<'PHP'
+<?php
+
+if (array_slice($argv, 1) === ['cache:forget', 'admin.environment_versions.v13', '--no-interaction']) {
+    exit(0);
+}
+
+fwrite(STDERR, "Unexpected artisan command.\n");
+exit(1);
+PHP);
     file_put_contents($this->workflowPc.'/shared.txt', "Original\n");
     file_put_contents($this->workflowPc.'/.gitignore', ".env\n");
     runBranchWorkflowGit($this->workflowPc, 'add', '.');
