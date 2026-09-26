@@ -203,21 +203,11 @@
                                 <v-col cols="12" sm="2">
                                     <v-chip color="primary" variant="tonal">{{ classHeadEmail.class_name }}</v-chip>
                                 </v-col>
-                                <v-col cols="12" sm="5">
-                                    <v-autocomplete
-                                        v-model="classHeadEmail.teacher_1_id"
-                                        :items="classHeadTeacherItemsFor(classHeadEmail, 1)"
-                                        label="Klassenvorstand 1"
-                                        clearable
-                                        autocomplete="off" />
-                                </v-col>
-                                <v-col cols="12" sm="5">
-                                    <v-autocomplete
-                                        v-model="classHeadEmail.teacher_2_id"
-                                        :items="classHeadTeacherItemsFor(classHeadEmail, 2)"
-                                        label="Klassenvorstand 2"
-                                        clearable
-                                        autocomplete="off" />
+                                <v-col cols="12" sm="10">
+                                    {{ classHeadTeacherLabel(classHeadEmail) }}
+                                    <div v-if="classHeadEmail.source === 'course'" class="text-caption text-medium-emphasis">
+                                        Bisherige kursbezogene Angabe
+                                    </div>
                                 </v-col>
                             </v-row>
                         </v-card-text>
@@ -564,12 +554,9 @@ export default {
     },
 
     methods: {
-        classHeadTeacherItemsFor(classHeadEmail, position) {
-            const otherTeacherId = Number(position === 1 ? classHeadEmail.teacher_2_id : classHeadEmail.teacher_1_id)
-
-            if (!otherTeacherId) return this.classHeadTeacherItems
-
-            return this.classHeadTeacherItems.filter((teacher) => teacher.value !== otherTeacherId)
+        classHeadTeacherLabel(classHeadEmail) {
+            const teacherIds = classHeadEmail.teacher_ids || [classHeadEmail.teacher_1_id, classHeadEmail.teacher_2_id].filter(Boolean)
+            return teacherIds.map((id) => this.classHeadTeacherItems.find((teacher) => teacher.value === Number(id))?.title || 'Unbekannt').join(', ') || 'Nicht zugeordnet'
         },
         syncClassHeadEmailRows(selectedClasses) {
             const currentRows = Array.isArray(this.data?.class_head_emails) ? this.data.class_head_emails : []
@@ -587,6 +574,8 @@ export default {
                     class_name: className,
                     teacher_1_id: source.teacher_1_id || null,
                     teacher_2_id: source.teacher_2_id || null,
+                    teacher_ids: source.teacher_ids || [source.teacher_1_id, source.teacher_2_id].filter(Boolean),
+                    ...(source.source ? { source: source.source } : {}),
                 }
 
                 this.class_head_email_drafts[className] = { ...classHeadEmail }
@@ -604,6 +593,8 @@ export default {
                     class_name: classHeadEmail.class_name,
                     teacher_1_id: classHeadEmail.teacher_1_id || null,
                     teacher_2_id: classHeadEmail.teacher_2_id || null,
+                    teacher_ids: classHeadEmail.teacher_ids || [classHeadEmail.teacher_1_id, classHeadEmail.teacher_2_id].filter(Boolean),
+                    ...(classHeadEmail.source ? { source: classHeadEmail.source } : {}),
                 }
             })
 
@@ -924,6 +915,7 @@ export default {
                     students: source.students || [],
                     students_deleted: source.students_deleted || [],
                 }
+                delete payload.class_head_emails
 
                 let result = null
                 if (data.id) {

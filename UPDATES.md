@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.49.9 !!!
+
+### Teaching
+
+- Zuordnung von Klassenvorständen zu Klassen
+
 ## 3.49.8
 
 ### System

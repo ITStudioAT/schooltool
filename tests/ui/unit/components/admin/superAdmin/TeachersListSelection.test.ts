@@ -6,6 +6,7 @@ import { makeNestedProps, useNested, useNestedItem } from 'vuetify/lib/composabl
 import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
 import TeachersList from '@/pages/admin/superAdmin/components/TeachersList.vue'
 import { useTeacherStore } from '@/stores/admin/TeacherStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
 
 let wrapper
@@ -30,6 +31,20 @@ const SelectionListItem = defineComponent({
     },
 })
 
+const ClassHeadSelect = defineComponent({
+    props: { modelValue: Array },
+    emits: ['update:modelValue'],
+    setup(props, { emit }) {
+        return () => h('button', {
+            class: 'class-head-select',
+            onClick: (event: MouseEvent) => {
+                event.stopPropagation()
+                emit('update:modelValue', ['1A', '1B'])
+            },
+        }, props.modelValue?.join(', ') || 'Klassen wählen')
+    },
+})
+
 beforeEach(() => {
     setActivePinia(createPinia())
 })
@@ -37,6 +52,7 @@ beforeEach(() => {
 afterEach(() => {
     wrapper?.unmount()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
 })
 
 describe('Teacher single selection', () => {
@@ -60,6 +76,7 @@ describe('Teacher single selection', () => {
                     'v-divider': true,
                     'v-list': SelectionList,
                     'v-list-item': SelectionListItem,
+                    'v-autocomplete': ClassHeadSelect,
                 },
             },
         })
@@ -80,5 +97,45 @@ describe('Teacher single selection', () => {
 
         await rows[1].trigger('click')
         expect(store.selected_teachers).toEqual([])
+    })
+
+    it('saves multiple class head classes directly from the teacher row', async () => {
+        useAdminStore().config = { selected_schoolyear: { id: 5 } } as never
+        const store = useTeacherStore()
+        store.teachers = [{ id: 1, last_name: 'Huber', first_name: 'Anna', class_head_classes: [] }]
+        store.classes = ['1A', '1B']
+        vi.spyOn(store, 'index').mockResolvedValue(true)
+        const saveClassHeads = vi.spyOn(store, 'saveClassHeads').mockResolvedValue(true)
+        wrapper = mount(Teachers, {
+            global: {
+                stubs: {
+                    SearchField: true,
+                    Pagination: true,
+                    TeachersListImportDialog: true,
+                    'v-divider': true,
+                    'v-list': SelectionList,
+                    'v-list-item': SelectionListItem,
+                    'v-autocomplete': ClassHeadSelect,
+                },
+            },
+        })
+        await flushPromises()
+
+        await wrapper.find('.class-head-select').trigger('click')
+        await flushPromises()
+
+        expect(saveClassHeads).toHaveBeenCalledWith(1, ['1A', '1B'])
+        expect(store.selected_teachers).toEqual([])
+    })
+
+    it('sends all selected classes to the class head endpoint and updates the row', async () => {
+        const put = vi.fn().mockResolvedValue({ data: { class_names: ['1A', '1B'] } })
+        vi.stubGlobal('axios', { put })
+        const store = useTeacherStore()
+        store.teachers = [{ id: 1, class_head_classes: [] }]
+
+        expect(await store.saveClassHeads(1, ['1A', '1B'])).toBe(true)
+        expect(put).toHaveBeenCalledWith('/api/admin/teachers/1/class-head', { class_names: ['1A', '1B'] })
+        expect(store.teachers[0].class_head_classes).toEqual(['1A', '1B'])
     })
 })

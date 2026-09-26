@@ -7,10 +7,16 @@ use App\Http\Requests\Admin\TeacherDeleteTeachersRequest;
 use App\Http\Requests\Admin\TeacherIndexRequest;
 use App\Http\Requests\Admin\TeacherStoreRequest;
 use App\Http\Requests\Admin\TeacherUpdateRequest;
+use App\Http\Requests\Admin\UpdateTeacherClassHeadRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\TeacherResource;
+use App\Models\Import116;
+use App\Models\Schoolyear;
+use App\Models\TeachingClassHead;
 use App\Models\User;
 use App\Services\TeacherService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class TeacherController extends Controller
 {
@@ -40,10 +46,90 @@ class TeacherController extends Controller
             ->orderBy('id')
             ->paginate(config('schooltool.pagination'));
 
+        $classHeads = TeachingClassHead::query()
+            ->where('school_id', $auth_user->school_id)
+            ->where('schoolyear_id', $auth_user->schoolyear_id)
+            ->whereIn('user_id', $teachers->getCollection()->modelKeys())
+            ->get(['user_id', 'class_name'])
+            ->groupBy('user_id');
+
+        $teachers->getCollection()->each(function (User $teacher) use ($classHeads): void {
+            $teacher->setAttribute('class_head_classes', $classHeads->get($teacher->id)?->pluck('class_name')->sort()->values()->all() ?? []);
+        });
+
+        $classes = Import116::query()
+            ->where('school_id', $auth_user->school_id)
+            ->where('schoolyear_id', $auth_user->schoolyear_id)
+            ->distinct()
+            ->orderBy('class')
+            ->pluck('class');
+
         return response()->json([
             'data' => TeacherResource::collection($teachers),
             'meta' => new PaginateResource($teachers),
+            'classes' => $classes,
         ]);
+    }
+
+    public function updateClassHead(UpdateTeacherClassHeadRequest $request, User $user): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $user->school_id !== (int) $authUser->school_id || ! $user->hasRole('teacher')) {
+            abort(404);
+        }
+
+        $schoolyear = Schoolyear::query()
+            ->where('school_id', $authUser->school_id)
+            ->findOrFail($authUser->schoolyear_id);
+
+        $validated = $request->validated();
+
+        $classNames = collect($validated['class_names'])->sort()->values()->all();
+
+        DB::transaction(function () use ($authUser, $schoolyear, $user, $classNames): void {
+            Schoolyear::query()->whereKey($schoolyear->id)->lockForUpdate()->firstOrFail();
+            $scope = ['school_id' => $authUser->school_id, 'schoolyear_id' => $schoolyear->id];
+            $previousClasses = TeachingClassHead::query()
+                ->where($scope)
+                ->where('user_id', $user->id)
+                ->pluck('class_name')
+                ->all();
+
+            foreach (array_diff($previousClasses, $classNames) as $removedClass) {
+                TeachingClassHead::query()
+                    ->where($scope)
+                    ->where('user_id', $user->id)
+                    ->where('class_name', $removedClass)
+                    ->delete();
+
+                if (! TeachingClassHead::query()->where($scope)->where('class_name', $removedClass)->whereNotNull('user_id')->exists()) {
+                    TeachingClassHead::query()->firstOrCreate([
+                        ...$scope,
+                        'class_name' => $removedClass,
+                        'user_id' => null,
+                    ]);
+                }
+            }
+
+            foreach (array_diff($classNames, $previousClasses) as $addedClass) {
+                TeachingClassHead::query()
+                    ->where($scope)
+                    ->where('class_name', $addedClass)
+                    ->whereNull('user_id')
+                    ->delete();
+
+                TeachingClassHead::query()->firstOrCreate([
+                    ...$scope,
+                    'user_id' => $user->id,
+                    'class_name' => $addedClass,
+                ]);
+            }
+        });
+
+        return response()->json(['class_names' => $classNames]);
     }
 
     /**

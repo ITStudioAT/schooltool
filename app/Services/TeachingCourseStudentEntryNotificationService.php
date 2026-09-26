@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\Teaching\Import116Job;
 use App\Mail\TeachingCourseStudentEntryNotificationMail;
 use App\Models\Import116;
+use App\Models\TeachingClassHead;
 use App\Models\TeachingClassHeadEmail;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
@@ -248,6 +249,32 @@ class TeachingCourseStudentEntryNotificationService
         $className = trim((string) ($import?->class ?: $student->schoolclass));
         if ($className === '') {
             return [];
+        }
+
+        $classHeadIds = TeachingClassHead::query()
+            ->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
+            ->where('class_name', $className)
+            ->orderBy('id')
+            ->pluck('user_id');
+
+        if ($classHeadIds->isNotEmpty()) {
+            $assignedIds = $classHeadIds->filter()->values();
+            $emails = User::teachers($course->school_id)
+                ->where('is_active', true)
+                ->whereIn('id', $assignedIds)
+                ->pluck('email', 'id');
+
+            return $assignedIds
+                ->map(fn (int $id): ?string => $emails->get($id))
+                ->filter(fn (mixed $email): bool => $this->isUsableEmail($email))
+                ->values()
+                ->map(fn (string $email, int $index): array => $this->availableRecipient(
+                    'class_teacher',
+                    $index === 0 ? 'Klassenvorstand' : 'Klassenvorstand '.($index + 1),
+                    $email,
+                ))
+                ->all();
         }
 
         $classHeadEmail = TeachingClassHeadEmail::query()
