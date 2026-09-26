@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.49.8 !!!
+
+### System
+
+- Import: Versionsnummer Cache löschen
+
 ## 3.49.7
 
 ### Teaching

@@ -376,6 +376,11 @@ function Switch-SchooltoolBranch {
     }
     Invoke-SchooltoolGit merge --ff-only "refs/remotes/origin/$Branch"
     Invoke-SchooltoolLocalPreparation
+    if ($Branch -ceq 'main') {
+        Invoke-SchooltoolCommand 'Clearing cached admin environment versions...' {
+            php artisan cache:forget admin.environment_versions.v13 --no-interaction
+        }
+    }
     Write-SchooltoolCompletionTime
 }
 

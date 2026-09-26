@@ -569,7 +569,7 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'health']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
         appVersion() {
-            return this.config?.environment_versions?.app || this.config?.version || 'x.x.x'
+            return this.config?.version || this.config?.environment_versions?.app || 'x.x.x'
         },
         versionItems() {
             const versions = this.config?.environment_versions || {}

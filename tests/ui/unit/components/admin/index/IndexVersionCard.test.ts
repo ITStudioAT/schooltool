@@ -41,6 +41,17 @@ describe('Admin index version card', () => {
         expect(versionItems.call(context)).toContainEqual({ key: 'composer', label: 'Composer', value: 'nicht verfügbar' })
     })
 
+    it('shows the current config version when cached environment versions are stale', () => {
+        const appVersion = (IndexPage as any).computed.appVersion
+
+        expect(appVersion.call({
+            config: {
+                version: '3.49.7',
+                environment_versions: { app: '3.49.6' },
+            },
+        })).toBe('3.49.7')
+    })
+
     it('formats safe artisan about information for the expanded card', () => {
         const aboutSections = (IndexPage as any).computed.aboutSections
         const context: Record<string, any> = {

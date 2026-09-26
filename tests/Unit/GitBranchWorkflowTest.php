@@ -392,6 +392,37 @@ it('shares unfinished development between two devices without changing main', fu
         ->and(file_exists($this->workflowPc.'/pc.txt'))->toBeFalse();
 });
 
+it('forgets the admin version cache only after gitmain preparation succeeds', function (): void {
+    $successfulCommand = <<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation { Write-Output 'LOCAL_PREPARATION_SUCCEEDED' }
+function php {
+    if (($args -join ' ') -cne 'artisan cache:forget admin.environment_versions.v13 --no-interaction') {
+        throw 'Unexpected cache command.'
+    }
+    Write-Output 'ADMIN_VERSION_CACHE_FORGOTTEN'
+    $global:LASTEXITCODE = 0
+}
+gitmain
+POWERSHELL;
+    $success = runBranchWorkflowCommand($this->workflowPc, $successfulCommand);
+
+    assertBranchWorkflowSucceeded($success);
+    expect($success->getOutput())->toContain('LOCAL_PREPARATION_SUCCEEDED', 'ADMIN_VERSION_CACHE_FORGOTTEN')
+        ->and(strpos($success->getOutput(), 'LOCAL_PREPARATION_SUCCEEDED'))
+        ->toBeLessThan(strpos($success->getOutput(), 'ADMIN_VERSION_CACHE_FORGOTTEN'));
+
+    $failedCommand = <<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation { throw 'LOCAL_PREPARATION_FAILED' }
+function php { Write-Output 'ADMIN_VERSION_CACHE_FORGOTTEN'; $global:LASTEXITCODE = 0 }
+gitmain
+POWERSHELL;
+    $failure = runBranchWorkflowCommand($this->workflowPc, $failedCommand);
+
+    expect($failure->isSuccessful())->toBeFalse()
+        ->and($failure->getOutput())->toContain('LOCAL_PREPARATION_FAILED')
+        ->not->toContain('ADMIN_VERSION_CACHE_FORGOTTEN');
+});
+
 it('refuses branch switches with unsaved work', function (bool $committed): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/unfinished.txt', "Keep this work\n");
