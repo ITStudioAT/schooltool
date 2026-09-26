@@ -6,6 +6,7 @@ import { server } from './msw/server'
 
 const unresolvedVuetifyComponentNames = [
     'v-alert',
+    'v-autocomplete',
     'v-btn',
     'v-btn-toggle',
     'v-card',
