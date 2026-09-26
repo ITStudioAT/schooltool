@@ -7,8 +7,10 @@ describe('CourseLists', () => {
             id: 18,
             title: 'Biologie, 5A',
             students_info: [
-                { course_student_id: 12, first_name: 'Berta', last_name: 'Zweite', email: 'berta@example.test', class: '5B' },
-                { course_student_id: 11, first_name: 'Anna', last_name: 'Muster, "A"', email: 'anna@example.test', schoolclass: '5A' },
+                { course_student_id: 12, first_name: 'Berta', last_name: 'Zweite', sex: 'w', email: 'berta@example.test', class: '5B' },
+                { course_student_id: 11, first_name: 'Anna', last_name: 'Muster, "A"', sex: 'm', email: 'anna@example.test', schoolclass: '5A' },
+                { course_student_id: 15, first_name: 'Emil', last_name: 'Dritte', sex: 'd', email: 'emil@example.test', class: '5C' },
+                { course_student_id: 16, first_name: 'Franz', last_name: 'Vierte', email: 'franz@example.test', class: '5D' },
                 { course_student_id: 13, first_name: 'Cora', last_name: 'Abgemeldet', canceled_at: '2026-09-01' },
                 { course_student_id: 14, first_name: 'Dora', last_name: 'Gelöscht', deleted_at: '2026-09-01' },
                 { first_name: 'Eva', last_name: 'Ohne Kurszuordnung' },
@@ -17,11 +19,17 @@ describe('CourseLists', () => {
         const component = CourseLists as any
         const activeStudents = component.computed.activeStudents.call({ selected_course: selectedCourse })
         const courseName = component.computed.courseName.call({ selected_course: selectedCourse })
-        const csv = component.methods.studentListCsv.call({ activeStudents, courseName })
+        const csv = component.methods.studentListCsv.call({
+            activeStudents,
+            courseName,
+            studentSexTitle: component.methods.studentSexTitle,
+        })
 
-        expect(csv).toBe('\uFEFF"Vorname","Nachname","E-Mail","Kurs","Klasse"\r\n'
-            + '"Anna","Muster, ""A""","anna@example.test","Biologie, 5A","5A"\r\n'
-            + '"Berta","Zweite","berta@example.test","Biologie, 5A","5B"\r\n')
+        expect(csv).toBe('\uFEFF"Vorname","Nachname","Geschlecht","E-Mail","Kurs","Klasse"\r\n'
+            + '"Emil","Dritte","divers","emil@example.test","Biologie, 5A","5C"\r\n'
+            + '"Anna","Muster, ""A""","männlich","anna@example.test","Biologie, 5A","5A"\r\n'
+            + '"Franz","Vierte","","franz@example.test","Biologie, 5A","5D"\r\n'
+            + '"Berta","Zweite","weiblich","berta@example.test","Biologie, 5A","5B"\r\n')
     })
 
     it('uses a readable course name and date in the downloaded filename', () => {

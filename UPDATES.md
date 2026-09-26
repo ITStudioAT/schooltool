@@ -1,10 +1,11 @@
 # UPDATES
 
-## 3.49.9 !!!
+## 3.49.9
 
 ### Teaching
 
 - Zuordnung von Klassenvorständen zu Klassen
+- Listenausgabe: Geschlecht hinzugefügt
 
 ## 3.49.8
 

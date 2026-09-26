@@ -3,7 +3,7 @@
         <v-card rounded="xl" variant="tonal" color="primary" class="pa-4">
             <div class="text-overline text-primary mb-1">Option 1</div>
             <div class="text-h6 mb-2">Schülerliste</div>
-            <p class="text-body-2 mb-3">Vorname, Nachname, E-Mail, Kurs und Klasse als CSV-Datei herunterladen.</p>
+            <p class="text-body-2 mb-3">Vorname, Nachname, Geschlecht, E-Mail, Kurs und Klasse als CSV-Datei herunterladen.</p>
 
             <div class="d-flex justify-end">
                 <v-btn
@@ -49,12 +49,21 @@ export default {
         },
     },
     methods: {
+        studentSexTitle(student) {
+            const sex = String(student?.sex || '').trim().toLowerCase()
+            if (sex === 'm') return 'männlich'
+            if (sex === 'w' || sex === 'f') return 'weiblich'
+            if (sex === 'd') return 'divers'
+
+            return ''
+        },
         studentListCsv() {
             const rows = [
-                ['Vorname', 'Nachname', 'E-Mail', 'Kurs', 'Klasse'],
+                ['Vorname', 'Nachname', 'Geschlecht', 'E-Mail', 'Kurs', 'Klasse'],
                 ...this.activeStudents.map((student) => [
                     student.first_name,
                     student.last_name,
+                    this.studentSexTitle(student),
                     student.email,
                     this.courseName,
                     student.schoolclass || student.class,
