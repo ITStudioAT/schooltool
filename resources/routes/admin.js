@@ -13,6 +13,7 @@ const Users_UsersWithRoles = () => import('@/pages/admin/users/UsersWithRoles/It
 
 const RegisterSystem = () => import('@/pages/admin/registerSystem/RegisterSystem.vue')
 const RegisterSystem_Details = () => import('@/pages/admin/registerSystem/RegisterDetails.vue')
+const Helpers = () => import('@/pages/admin/helpers/Helpers.vue')
 
 
 const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
@@ -43,6 +44,7 @@ export const routes = [
     { path: '/admin/users/users_with_roles', component: Users_UsersWithRoles, meta: { capability: 'users' } },
     { path: '/admin/register_system', component: RegisterSystem, meta: { capability: 'register_system' } },
     { path: '/admin/register_system/details', component: RegisterSystem_Details, meta: { capability: 'register_system' } },
+    { path: '/admin/helpers', component: Helpers, meta: { capability: 'home' } },
     { path: '/admin/super_admin/:section?', redirect: '/admin' },
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },

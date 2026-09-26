@@ -10,7 +10,7 @@ describe('Admin index version card', () => {
 
         expect(source).toContain('admin-dashboard-page__app-version')
         expect(source).not.toContain('<div class="admin-dashboard-page__eyebrow">Version</div>')
-        expect(source).toContain('v{{ appVersion }}')
+        expect(source).toContain('{{ appVersion }}')
         expect(source).toContain('version_details_visible: false')
         expect(source).toContain('v-show="version_details_visible"')
         expect(source).toContain(`{{ version_details_visible ? 'Weniger anzeigen' : 'Mehr anzeigen' }}`)
@@ -36,7 +36,7 @@ describe('Admin index version card', () => {
             },
         }
 
-        expect(appVersion.call(context)).toBe('3.20.19')
+        expect(appVersion.call(context)).toBe('v3.20.19')
         expect(versionItems.call(context)).toContainEqual({ key: 'laravel', label: 'Laravel', value: '13.9.0' })
         expect(versionItems.call(context)).toContainEqual({ key: 'composer', label: 'Composer', value: 'nicht verfügbar' })
     })
@@ -49,7 +49,16 @@ describe('Admin index version card', () => {
                 version: '3.49.7',
                 environment_versions: { app: '3.49.6' },
             },
-        })).toBe('3.49.7')
+        })).toBe('v3.49.7')
+    })
+
+    it('shows a branch-specific Home version while main keeps the plain version', () => {
+        const appVersion = (IndexPage as any).computed.appVersion
+
+        expect(appVersion.call({ config: { version: '3.49.7', home_version: 'App-Version: v3.49.7 · feature/helpers: v0.1' } }))
+            .toBe('App-Version: v3.49.7 · feature/helpers: v0.1')
+        expect(appVersion.call({ config: { version: '3.49.7', home_version: 'v3.49.7' } }))
+            .toBe('v3.49.7')
     })
 
     it('formats safe artisan about information for the expanded card', () => {

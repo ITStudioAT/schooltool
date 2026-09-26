@@ -33,6 +33,7 @@ use App\Services\FeaturePreviewService;
 use App\Services\SchoolService;
 use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
+use App\Support\HomeVersionLabel;
 use App\Traits\HasRoleTrait;
 use Composer\InstalledVersions;
 use Illuminate\Http\Request;
@@ -118,6 +119,7 @@ class AdminController extends Controller
             'title' => 'SchoolTool',
             'company' => 'ITStudio Dipl.-Ing. Günther Kron',
             'version' => config('schooltool.version', 'x.x.x'),
+            'home_version' => $user ? HomeVersionLabel::forProject(base_path(), config('schooltool.version', 'x.x.x')) : null,
             'timeout' => config('spa.timeout', 3000),
             'payment_active' => config('schooltool.payment_active', false),
             'licence_renewal_days' => (int) config('schooltool.licence_renewal_days', 30),

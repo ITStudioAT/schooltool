@@ -275,6 +275,51 @@ describe('dashboardMenu', function () {
         expect($profileItem)->toBeNull();
     });
 
+    it('shows Helpers only to users with admin shell access', function (string $roleName, bool $allowed) {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
+        $this->actingAs($user);
+
+        $item = collect($this->service->dashboardMenu())->firstWhere('title', 'Helpers');
+
+        if (! $allowed) {
+            expect($item)->toBeNull();
+
+            return;
+        }
+
+        expect($item)->toMatchArray([
+            'to' => '/admin/helpers',
+            'active_paths' => ['/admin/helpers'],
+            'is_active' => true,
+        ]);
+    })->with([['admin', true], ['user', false]]);
+
+    it('places Helpers directly after Materialien and before restaurant', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'materials_visible_admin' => true,
+            'materials_visible_user' => true,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole([
+            Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']),
+        ]);
+        ($this->attachActiveLicences)($user, ['Materialientool', 'Restaurant']);
+        $this->actingAs($user);
+
+        $titles = collect($this->service->dashboardMenu())->pluck('title')->all();
+        $materialsIndex = array_search('Materialien', $titles, true);
+
+        expect($materialsIndex)->not->toBeFalse()
+            ->and(array_slice($titles, $materialsIndex, 4))
+            ->toBe(['Materialien', 'Helpers', 'Materialien 2', 'Restaurant']);
+    });
+
     it('hides module menu items for user with only admin and super_admin roles', function () {
         $user = User::factory()->create([
             'first_name' => 'Multi',
@@ -292,12 +337,12 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(6)
+            ->toHaveCount(7)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
+            ->toBe(['Home', 'Helpers', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
             ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA');
 
-        expect($result[2])->toMatchArray([
+        expect($result[3])->toMatchArray([
             'to' => '/admin/profile',
             'active_paths' => ['/admin/profile'],
             'is_active' => true,
@@ -393,7 +438,7 @@ describe('dashboardMenu', function () {
         $menu = $this->service->dashboardMenu();
         $titles = array_column($menu, 'title');
 
-        expect($titles)->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
+        expect($titles)->toBe(['Home', 'Helpers', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
             ->and(collect($menu)->last()['divider_before'])->toBeTrue();
     });
 

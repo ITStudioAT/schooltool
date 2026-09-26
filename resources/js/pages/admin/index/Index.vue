@@ -143,7 +143,7 @@
                                 <div>
                                     <h1 class="admin-dashboard-page__section-title">Aktuelle Version</h1>
                                     <div class="admin-dashboard-page__app-version" data-testid="app-version">
-                                        v{{ appVersion }}
+                                        {{ appVersion }}
                                     </div>
                                 </div>
                                 <v-btn
@@ -569,7 +569,9 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'health']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
         appVersion() {
-            return this.config?.version || this.config?.environment_versions?.app || 'x.x.x'
+            const version = this.config?.version || this.config?.environment_versions?.app || 'x.x.x'
+
+            return this.config?.home_version || `v${version}`
         },
         versionItems() {
             const versions = this.config?.environment_versions || {}
