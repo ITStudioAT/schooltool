@@ -529,7 +529,7 @@ describe('MyTimetable time range labels', () => {
         courseStore.courses = [course]
         courseStore.selected_course = selectedCourseId ? { id: selectedCourseId } : null
         const inactivePanels = [
-            'show_students', 'show_infos', 'show_works', 'show_print', 'show_dates',
+            'show_students', 'show_infos', 'show_works', 'show_print', 'show_lists', 'show_dates',
             'show_curriculum', 'show_attendance', 'show_performances', 'show_performances_plus',
         ]
         inactivePanels.forEach((key) => { courseStore[key] = true })

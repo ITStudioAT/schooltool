@@ -42,5 +42,6 @@ test('install update creates roles and assigns super admin', function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     expect(User::role('super_admin')->whereKey($user->id)->exists())->toBeTrue();
-    expect(Role::whereIn('name', ['super_admin', 'admin', 'user'])->count())->toBe(3);
+    expect(Role::whereIn('name', ['super_admin', 'admin', 'user', 'Director'])->count())->toBe(4);
+    expect(Role::where('name', 'Director')->where('guard_name', 'web')->exists())->toBeTrue();
 });

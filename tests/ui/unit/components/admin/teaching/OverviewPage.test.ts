@@ -28,7 +28,7 @@ describe('Teaching overview controls', () => {
         try {
             await nextTick()
             const vm = wrapper.vm as any
-            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'evaluations', 'infos', 'works', 'print'])
+            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'evaluations', 'infos', 'works', 'print', 'lists'])
             expect(vm.functionalPanelSelection).toBe('evaluations')
             expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
             expect(wrapper.findComponent({ name: 'CourseEvaluations' }).props('course').id).toBe(18)

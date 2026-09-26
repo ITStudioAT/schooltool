@@ -120,6 +120,7 @@ class AppUpdateCommand extends Command
             'studentstimetables_admin',
             'studentstimetables_moderator',
             'studentstimetables_user',
+            'Director',
         ]);
         $this->info('✅ Roles checked');
 

@@ -34,7 +34,7 @@
                 </div>
 
                 <div
-                    v-if="config?.selected_school?.long_name || config?.selected_school?.name || config?.user?.last_name || config?.user?.first_name"
+                    v-if="config?.selected_school?.long_name || config?.selected_school?.name || config?.user?.last_name || config?.user?.first_name || config?.user?.email"
                     class="admin-dashboard-page__metadata">
                     <span v-if="config?.selected_school?.long_name || config?.selected_school?.name" class="admin-dashboard-page__meta-chip">
                         {{ config?.selected_school?.long_name || config?.selected_school?.name }}
@@ -42,6 +42,7 @@
                     <span v-if="config?.user?.last_name || config?.user?.first_name" class="admin-dashboard-page__meta-user">
                         {{ config?.user?.last_name }} {{ config?.user?.first_name }}
                     </span>
+                    <span v-if="config?.user?.email" class="admin-dashboard-page__meta-user">{{ config.user.email }}</span>
                 </div>
 
                 <v-btn
