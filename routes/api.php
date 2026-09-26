@@ -924,6 +924,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, register_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_shell_access'])->group(function () {
         Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
+        Route::get('/admin/helpers/classes', [SchoolyearController::class, 'classes'])->name('admin.helpers.classes');
     });
 
     /* SANCTUM - admin */

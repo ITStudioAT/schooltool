@@ -9,6 +9,8 @@
  * - Setting the active schoolyear for a user
  */
 
+use App\Models\ClassRepresentativeElection;
+use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -101,6 +103,88 @@ test('teacher can list schoolyears', function () {
 test('guest cannot list schoolyears', function () {
     $this->getJson('/api/admin/schoolyears')
         ->assertStatus(401);
+});
+
+test('helpers overview lists distinct classes from the personally selected schoolyear', function () {
+    Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '2B',
+    ]);
+    Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+    ]);
+
+    ClassRepresentativeElection::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class_name' => '8A',
+        'announced_at' => now(),
+    ]);
+    Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->deleted()->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '6C',
+    ]);
+    foreach (['5L1', '5L2', '7A-M', '7A-R', '8A-BU', '8A-DG', '8M-BU', '8M-DG'] as $class) {
+        Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->create([
+            'schoolyear_id' => $this->schoolyear->id,
+            'class' => $class,
+        ]);
+    }
+    Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+    ]);
+
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    Import116::factory()->forSchool($this->school)->importedBy($this->adminUser)->create([
+        'schoolyear_id' => $otherSchoolyear->id,
+        'class' => '3C',
+    ]);
+
+    $otherSchool = School::factory()->create();
+    Import116::factory()->forSchool($otherSchool)->importedBy($this->adminUser)->create([
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '4D',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum')
+        ->getJson("/api/admin/helpers/classes?schoolyear_id={$this->schoolyear->id}")
+        ->assertSuccessful()
+        ->assertExactJson(['data' => [
+            ['name' => '1A', 'variants' => ['1A'], 'student_count' => 2, 'announced' => false],
+            ['name' => '2B', 'variants' => ['2B'], 'student_count' => 1, 'announced' => false],
+            ['name' => '5L1', 'variants' => ['5L1'], 'student_count' => 1, 'announced' => false],
+            ['name' => '5L2', 'variants' => ['5L2'], 'student_count' => 1, 'announced' => false],
+            ['name' => '7A', 'variants' => ['7A-M', '7A-R'], 'student_count' => 2, 'announced' => false],
+            ['name' => '8A', 'variants' => ['8A-BU', '8A-DG'], 'student_count' => 2, 'announced' => true],
+            ['name' => '8M', 'variants' => ['8M-BU', '8M-DG'], 'student_count' => 2, 'announced' => false],
+        ]]);
+});
+
+test('helpers classes require admin shell access and a schoolyear from the own school', function () {
+    $this->getJson("/api/admin/helpers/classes?schoolyear_id={$this->schoolyear->id}")->assertUnauthorized();
+
+    Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
+    $student = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $student->assignRole('student');
+
+    $this->actingAs($student, 'sanctum')
+        ->getJson("/api/admin/helpers/classes?schoolyear_id={$this->schoolyear->id}")
+        ->assertForbidden();
+
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+
+    $this->actingAs($this->adminUser, 'sanctum')
+        ->getJson('/api/admin/helpers/classes')
+        ->assertUnprocessable();
+
+    $this->getJson("/api/admin/helpers/classes?schoolyear_id={$otherSchoolyear->id}")
+        ->assertNotFound();
 });
 
 // ============================================================================
