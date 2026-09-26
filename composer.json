@@ -68,7 +68,15 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
-        }
+        },
+        "exclude-from-classmap": [
+            "/tests/Feature/FeaturePreviewRuntimeTest.php",
+            "/tests/Feature/TeachingBackupCurriculumAttachmentsTest.php",
+            "/tests/Feature/TeachingBackupEntryAreasTest.php",
+            "/tests/Feature/TeachingEntryAreaControllerTest.php",
+            "/tests/Feature/TeachingEntryDefinitionControllerTest.php",
+            "/tests/Feature/TeachingEntryGradingPartControllerTest.php"
+        ]
     },
     "scripts": {
         "deploy": [
