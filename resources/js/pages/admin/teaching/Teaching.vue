@@ -843,6 +843,7 @@ export default {
             courseStore.show_infos = false
             courseStore.show_works = false
             courseStore.show_print = false
+            courseStore.show_lists = false
             courseStore.show_dates = false
             courseStore.show_table = false
             courseStore.show_curriculum = false

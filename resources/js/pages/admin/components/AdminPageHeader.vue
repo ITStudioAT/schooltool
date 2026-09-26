@@ -17,9 +17,10 @@
                     {{ statusLabel }}
                 </span>
             </div>
-            <div v-if="schoolName || userName" class="admin-page-header__identity">
+            <div v-if="schoolName || userName || userEmail" class="admin-page-header__identity">
                 <span v-if="schoolName" class="admin-page-header__school">{{ schoolName }}</span>
                 <span v-if="userName" class="admin-page-header__user">{{ userName }}</span>
+                <span v-if="userEmail" class="admin-page-header__user">{{ userEmail }}</span>
             </div>
         </header>
         <div v-if="$slots.actions" class="admin-page-header-actions">
@@ -65,6 +66,9 @@ export default {
                 .map((name) => String(name || '').trim())
                 .filter(Boolean)
                 .join(' ')
+        },
+        userEmail() {
+            return String(this.config?.user?.email || '').trim()
         },
     },
 }

@@ -107,6 +107,12 @@
                 <CoursePrint />
             </v-col>
         </v-row>
+
+        <v-row v-if="secondaryOverviewPanelSelection === 'lists'" class="mt-n6">
+            <v-col>
+                <CourseLists />
+            </v-col>
+        </v-row>
     </v-col>
 
     <v-col cols="12" v-if="selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
@@ -204,6 +210,7 @@ const CourseDates = defineAsyncComponent(() => import('./components/CourseDates.
 const CourseTable = defineAsyncComponent(() => import('./components/CourseTable.vue'))
 const CourseWorks = defineAsyncComponent(() => import('./components/CourseWorks.vue'))
 const CoursePrint = defineAsyncComponent(() => import('./components/CoursePrint.vue'))
+const CourseLists = defineAsyncComponent(() => import('./components/CourseLists.vue'))
 const MyTimetable = defineAsyncComponent(() => import('./components/MyTimetable.vue'))
 const PerformancesDummy = defineAsyncComponent(() => import('../more/components/PerformancesDummy.vue'))
 const PerformancesPlusDummy = defineAsyncComponent(() => import('../more/components/PerformancesPlusDummy.vue'))
@@ -219,6 +226,7 @@ export default {
         CourseTable,
         CourseWorks,
         CoursePrint,
+        CourseLists,
         MyTimetable,
         PerformancesDummy,
         PerformancesPlusDummy,
@@ -272,6 +280,7 @@ export default {
             'show_table',
             'show_curriculum',
             'show_print',
+            'show_lists',
             'show_attendance',
             'show_performances',
             'selected_course_student',
@@ -287,7 +296,7 @@ export default {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         secondaryOverviewPanelSelection() {
-            const secondaryPanels = ['infos', 'dates', 'table', 'attendance', 'works', 'print']
+            const secondaryPanels = ['infos', 'dates', 'table', 'attendance', 'works', 'print', 'lists']
             const selectedPanel = this.functionalPanelSelection
 
             return secondaryPanels.includes(selectedPanel) ? selectedPanel : null
@@ -458,6 +467,7 @@ export default {
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
+                panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
             return panels
         },
@@ -471,6 +481,7 @@ export default {
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
+                if (this.show_lists) return 'lists'
                 if (this.show_dates) return 'dates'
                 if (this.show_table) return 'table'
                 if (this.show_attendance) return 'attendance'
@@ -484,6 +495,7 @@ export default {
                 this.show_infos = value === 'infos'
                 this.show_works = value === 'works'
                 this.show_print = value === 'print'
+                this.show_lists = value === 'lists'
                 this.show_dates = value === 'dates'
                 this.show_table = value === 'table'
                 this.show_attendance = value === 'attendance'
@@ -538,6 +550,7 @@ export default {
                     this.show_infos = false
                     this.show_works = false
                     this.show_print = false
+                    this.show_lists = false
                     this.show_dates = false
                     this.show_table = false
                     this.show_attendance = false
@@ -563,6 +576,7 @@ export default {
                     'infos',
                     'works',
                     'print',
+                    'lists',
                     'performances',
                     'performances_plus',
                 ]
@@ -590,6 +604,7 @@ export default {
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
+                    this.show_lists = urlPanel === 'lists'
                     this.show_dates = urlPanel === 'dates'
                     this.show_table = urlPanel === 'table'
                     this.show_attendance = urlPanel === 'attendance'
@@ -604,6 +619,7 @@ export default {
                     this.show_infos = false
                     this.show_works = false
                     this.show_print = false
+                    this.show_lists = false
                     this.show_dates = false
                     this.show_table = false
                     this.show_attendance = false
@@ -624,6 +640,7 @@ export default {
             this.show_infos = false
             this.show_works = false
             this.show_print = false
+            this.show_lists = false
             this.show_dates = false
             this.show_table = true
             this.show_attendance = false

@@ -1,10 +1,12 @@
 # UPDATES
 
-## 3.49.8 !!!
+## 3.49.8
 
 ### System
 
 - Import: Versionsnummer Cache löschen
+- Anzeige der E-Mail des eingeloggten Users
+- Director-Rolle
 
 ## 3.49.7
 

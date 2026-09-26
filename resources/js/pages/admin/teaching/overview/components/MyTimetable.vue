@@ -329,6 +329,7 @@ export default {
             'show_infos',
             'show_works',
             'show_print',
+            'show_lists',
             'show_dates',
             'show_table',
             'show_curriculum',
@@ -740,6 +741,7 @@ export default {
             this.show_infos = false
             this.show_works = false
             this.show_print = false
+            this.show_lists = false
             this.show_dates = false
             this.show_table = true
             this.show_curriculum = false
