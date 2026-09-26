@@ -1,6 +1,6 @@
 # UPDATES
 
-## 0.1
+## 0.2
 
 ### Klassensprecherwahl
 - Übersicht aller Klassen
