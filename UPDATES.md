@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.49.7
+
+### Teaching
+
+- Import E-Mail-Adressen über Login-Dateien (Zip-Import)
+
+### System
+
+- Anzeige der E-Mail-Adresse des Admin-Users
+
 ## 3.49.6
 
 ### Restaurant

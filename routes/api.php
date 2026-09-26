@@ -90,6 +90,7 @@ use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupRecoveryController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourImportsController;
+use App\Http\Controllers\Admin\Teaching\StudentEmailZipImportController;
 use App\Http\Controllers\Admin\Teaching\TeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
@@ -494,6 +495,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, teaching_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:teaching_upload_access', 'tool-licensed:Lehrertool,auto,scope:teaching_upload_access'])->group(function () {
+        Route::post('/admin/teaching/student-emails/import', StudentEmailZipImportController::class)
+            ->name('admin.teaching.studentEmails.import')
+            ->middleware('throttle:uploads');
         Route::post('/admin/teaching_upload/{slug}', [FileUploadController::class, 'upload'])
             ->middleware('throttle:uploads');
         Route::patch('/admin/teaching_upload/{slug}', [FileUploadController::class, 'uploadNext'])

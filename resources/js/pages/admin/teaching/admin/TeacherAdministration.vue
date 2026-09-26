@@ -35,6 +35,7 @@
             <section class="teaching-administration-content">
                 <v-row class="w-100 ma-0" dense>
                     <Import116 v-if="selectedPanel === 'import'" />
+                    <StudentEmailZipImport v-if="selectedPanel === 'email_import'" />
                     <Holidays v-if="selectedPanel === 'holidays'" />
                     <SchoolHours v-if="selectedPanel === 'school_hours'" />
                 </v-row>
@@ -56,6 +57,7 @@ const props = defineProps({
 
 const Teachers = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Teachers.vue'))
 const Import116 = defineAsyncComponent(() => import('./import116/Import116.vue'))
+const StudentEmailZipImport = defineAsyncComponent(() => import('./import116/StudentEmailZipImport.vue'))
 const Holidays = defineAsyncComponent(() => import('./holidays/Holidays.vue'))
 const SchoolHours = defineAsyncComponent(() => import('./schoolhours/SchoolHours.vue'))
 const route = useRoute()
@@ -68,6 +70,7 @@ const activeSchoolyearLabel = computed(() => adminStore.config?.selected_schooly
 const panels = [
     { id: 'teachers', label: 'Lehrer', icon: 'mdi-account-tie' },
     { id: 'import', label: 'Import 116', icon: 'mdi-import' },
+    { id: 'email_import', label: 'E-Mail-Import', icon: 'mdi-email-plus-outline' },
     { id: 'holidays', label: 'Ferien', icon: 'mdi-beach' },
     { id: 'school_hours', label: 'Schulstunden', icon: 'mdi-clock-time-four-outline' },
 ]

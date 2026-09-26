@@ -60,6 +60,7 @@ async function mountAdministration(query = '?panel=teachers', withTeaching = fal
                 'v-btn-toggle': VBtnToggleStub,
                 Teachers: { props: ['hideBackButton'], template: '<div data-panel="teachers">Teacher accounts</div>' },
                 Import116: { template: '<div data-panel="import">Import content</div>' },
+                StudentEmailZipImport: { template: '<div data-panel="email_import">Email import content</div>' },
                 Holidays: { template: '<div data-panel="holidays">Holiday content</div>' },
                 SchoolHours: { template: '<div data-panel="school_hours">School hours content</div>' },
                 Overview: { template: '<div data-panel="overview">Teaching overview</div>' },
@@ -121,7 +122,7 @@ describe('Teaching administration panels', () => {
         await flushPromises()
 
         expect(wrapper.findAll('.teaching-administration-button-meta').map((label) => label.text())).toEqual([
-            '2026/2027', '2026/2027', '2026/2027', '2026/2027',
+            '2026/2027', '2026/2027', '2026/2027', '2026/2027', '2026/2027',
         ])
 
         store.config.selected_schoolyear = { concerns: '2027/2028' }
@@ -129,7 +130,7 @@ describe('Teaching administration panels', () => {
         expect(wrapper.findAll('.teaching-administration-button-meta').every((label) => label.text() === '2027/2028')).toBe(true)
     })
 
-    it.each(['teachers', 'import', 'holidays', 'school_hours'])('restores %s directly from the URL', async (panel) => {
+    it.each(['teachers', 'import', 'email_import', 'holidays', 'school_hours'])('restores %s directly from the URL', async (panel) => {
         await mountAdministration(`?panel=${panel}`)
 
         expect(wrapper.findAll('[data-panel]')).toHaveLength(1)
@@ -140,8 +141,8 @@ describe('Teaching administration panels', () => {
     it('updates the URL on selection and restores the previous panel with browser back', async () => {
         const router = await mountAdministration('?panel=teachers&keep=value')
 
-        expect(wrapper.findAll('.teaching-administration-button-title').map((title) => title.text())).toEqual(['Lehrer', 'Import 116', 'Ferien', 'Schulstunden'])
-        await wrapper.findAll('button')[2].trigger('click')
+        expect(wrapper.findAll('.teaching-administration-button-title').map((title) => title.text())).toEqual(['Lehrer', 'Import 116', 'E-Mail-Import', 'Ferien', 'Schulstunden'])
+        await wrapper.findAll('button')[3].trigger('click')
         await flushPromises()
         expect(router.currentRoute.value.query).toEqual({ panel: 'holidays', keep: 'value' })
         expect(wrapper.get('[data-panel]').attributes('data-panel')).toBe('holidays')
