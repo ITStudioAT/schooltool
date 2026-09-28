@@ -155,6 +155,7 @@ POWERSHELL);
 
 it('propagates SSH errors without treating them as deployment success', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
+function Get-Service { [pscustomobject]@{ Status = 'Running' } }
 function Get-SchooltoolPreviewExecutable { 'Mock-Ssh' }
 function Mock-Ssh { $global:LASTEXITCODE = 23 }
 try { Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'PREVIEW') 'true'; throw 'FAILED_SSH_ACCEPTED' }

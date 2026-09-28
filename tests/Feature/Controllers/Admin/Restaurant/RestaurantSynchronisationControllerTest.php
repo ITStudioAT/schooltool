@@ -19,9 +19,18 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
 
 uses(RefreshDatabase::class);
+
+class RestaurantSynchronisationWindowsTestService extends RestaurantSynchronisationService
+{
+    protected static function operatingSystemFamily(): string
+    {
+        return 'Windows';
+    }
+}
 
 function restaurantSyncFixtureSnapshot(School $school): array
 {
@@ -59,6 +68,7 @@ function restaurantSyncFixtureSnapshot(School $school): array
 }
 
 beforeEach(function () {
+    app()->bind(RestaurantSynchronisationService::class, RestaurantSynchronisationWindowsTestService::class);
     $this->app['env'] = 'local';
     config(['app.env' => 'local', 'schooltool.preview.instance' => false]);
     foreach (['super_admin', 'admin', 'lunch_admin', 'lunch_user', 'lunch_candidate', 'teacher'] as $role) {
@@ -110,18 +120,44 @@ test('synchronisation rejects production preview instances and nonlocal database
     $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => str_repeat('a', 64), 'confirmed' => true])->assertForbidden();
     $this->app['env'] = 'local';
     config(['schooltool.preview.instance' => true]);
-    expect(RestaurantSynchronisationService::available())->toBeFalse();
+    expect(app(RestaurantSynchronisationService::class)::available())->toBeFalse();
     $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertNotFound();
     $default = config('database.default');
     $configuration = DB::connection()->getConfig();
     $configuration['host'] = 'cloudways.invalid';
     config(['schooltool.preview.instance' => false, 'database.connections.restaurant_guard_fixture' => $configuration,
         'database.default' => 'restaurant_guard_fixture']);
-    expect(RestaurantSynchronisationService::available())->toBeFalse();
+    expect(app(RestaurantSynchronisationService::class)::available())->toBeFalse();
     config(['database.default' => $default]);
 });
 
+test('synchronisation rejects non-Windows systems at the HTTP and service boundaries', function () {
+    $service = new class($this->source) extends RestaurantSynchronisationService
+    {
+        protected static function operatingSystemFamily(): string
+        {
+            return 'Linux';
+        }
+    };
+    app()->instance(RestaurantSynchronisationService::class, $service);
+
+    expect($service::available())->toBeFalse()
+        ->and((new ReflectionMethod(RestaurantSynchronisationService::class, 'operatingSystemFamily'))->invoke(null))->toBe(PHP_OS_FAMILY);
+    $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')->assertForbidden();
+    $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => str_repeat('a', 64), 'confirmed' => true])->assertForbidden();
+    expect(fn () => $service->preview($this->actor))->toThrow(HttpException::class)
+        ->and(fn () => $service->apply($this->actor, str_repeat('a', 64)))->toThrow(HttpException::class);
+});
+
 test('http preview starts its live adapter in a filtered web environment', function () {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        app()->bind(RestaurantSynchronisationService::class, RestaurantSynchronisationService::class);
+        $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')->assertForbidden();
+        expect(RestaurantMenuPlanBooking::count())->toBe(1);
+
+        return;
+    }
+
     $savedEnvironment = [];
     $savedServer = $_SERVER;
     $savedEnv = $_ENV;
@@ -165,9 +201,10 @@ test('live reader preserves the native Windows environment needed for SSH startu
         $_SERVER = ['APP_ENV' => getenv('APP_ENV'), 'REQUEST_METHOD' => 'POST'];
         $_ENV = ['APP_ENV' => getenv('APP_ENV')];
         $environment = (new ReflectionMethod(RestaurantLiveSource::class, 'processEnvironment'))->invoke(null);
-        $process = new Process(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-            '. ./scripts/git_ssh_helpers.ps1; $ssh = Get-SchooltoolPreviewExecutable ssh; & $ssh -G -F none -o BatchMode=yes -- fixture@example.invalid; exit $LASTEXITCODE'],
-            base_path(), $environment, null, 10);
+        $command = PHP_OS_FAMILY === 'Windows' ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+            '. ./scripts/git_ssh_helpers.ps1; $ssh = Get-SchooltoolPreviewExecutable ssh; & $ssh -G -F none -o BatchMode=yes -- fixture@example.invalid; exit $LASTEXITCODE']
+            : [PHP_BINARY, '-r', 'exit(getenv("PATH") === false ? 1 : 0);'];
+        $process = new Process($command, base_path(), $environment, null, 10);
         // -G only evaluates local SSH configuration; no network connection or authentication occurs.
         $process->run();
         expect($process->getExitCode())->toBe(0);

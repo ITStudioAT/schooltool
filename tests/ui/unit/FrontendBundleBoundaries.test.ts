@@ -84,11 +84,12 @@ describe('frontend bundle boundaries', () => {
             'Foods',
             'Menus',
             'MenuPlans',
+            'Bookings',
+            'Synchronisation',
             'Reports',
             'RestaurantSepa',
             'Users',
             'Settings',
-            'CdgymLegacy',
         ]
 
         expect(source).toContain("import Overview from './components/Overview.vue'")

@@ -16,7 +16,7 @@ class RestaurantSynchronisationController extends Controller
         if (! $actor = $this->userHasRole(['super_admin'])) {
             abort(403, 'Nur Superadmins dürfen Restaurantdaten synchronisieren.');
         }
-        abort_unless(RestaurantSynchronisationService::available(), 403, 'Die Synchronisation ist nur lokal verfügbar.');
+        abort_unless($service::available(), 403, 'Die Synchronisation ist nur lokal verfügbar.');
 
         try {
             return response()->json(['data' => $service->preview($actor)], 200, ['Cache-Control' => 'no-store, private']);
@@ -32,7 +32,7 @@ class RestaurantSynchronisationController extends Controller
         if (! $actor = $this->userHasRole(['super_admin'])) {
             abort(403, 'Nur Superadmins dürfen Restaurantdaten synchronisieren.');
         }
-        abort_unless(RestaurantSynchronisationService::available(), 403, 'Die Synchronisation ist nur lokal verfügbar.');
+        abort_unless($service::available(), 403, 'Die Synchronisation ist nur lokal verfügbar.');
         $validated = $request->validate(['token' => ['required', 'string', 'size:64', 'regex:/\A[a-zA-Z0-9]+\z/'], 'confirmed' => ['required', 'accepted']]);
 
         try {

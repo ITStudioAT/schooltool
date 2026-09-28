@@ -54,9 +54,14 @@ class RestaurantSynchronisationService
 
     public function __construct(private RestaurantLiveSource $source) {}
 
+    protected static function operatingSystemFamily(): string
+    {
+        return PHP_OS_FAMILY;
+    }
+
     public static function available(): bool
     {
-        if (PHP_OS_FAMILY !== 'Windows' || ! app()->environment('local') || config('schooltool.preview.instance')) {
+        if (static::operatingSystemFamily() !== 'Windows' || ! app()->environment('local') || config('schooltool.preview.instance')) {
             return false;
         }
         $connection = DB::connection();
@@ -70,7 +75,7 @@ class RestaurantSynchronisationService
     private function authorize(User $actor): void
     {
         abort_unless($actor->hasRole('super_admin'), 403, 'Nur Superadmins dürfen Restaurantdaten synchronisieren.');
-        abort_unless(self::available(), 403, 'Die Synchronisation ist ausschließlich in der lokalen Windows-Anwendung verfügbar.');
+        abort_unless(static::available(), 403, 'Die Synchronisation ist ausschließlich in der lokalen Windows-Anwendung verfügbar.');
     }
 
     public function preview(User $actor): array
