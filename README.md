@@ -102,7 +102,7 @@ Vor dem Löschen werden beide exakten Commit-IDs unter `refs/schooltool/discarde
 4. Bei bereits eingerichtetem Cloudways-Deployment `gitdeploy` mit kurzem Smoke und `LIVE` verwenden. Ein noch nicht eingerichteter Server benötigt eine separat geprüfte Erstinstallation; der ungeprüfte manuelle `composer pdeploy` ist kein Ersatz für die Freigabe. Die aktuelle laufende Anwendung wird durch das Aktualisieren der PC-Helfer allein nicht verändert.
 5. Die Vorschau wie unten getrennt einrichten und einmalig mit dem veröffentlichten Anwendungscode bereitstellen. Erst nach erfolgreichen Konfigurationsprüfungen das erste `gitpreview` starten.
 
-Ein Versionswechsel ist für diese Einrichtung nicht nötig. Wenn einer gewünscht ist, vorher passende Notizen unter der exakten Version in `UPDATES.md` ergänzen. Das Docusaurus-Projekt muss lokal verfügbar sein; Standardpfad ist `C:/docusaurus/schooltool`, abweichend über `SCHOOLTOOL_DOCUMENTATION_ROOT` konfigurierbar. Die Version wird ohne `v` angegeben.
+Ein Versionswechsel ist für diese Einrichtung nicht nötig. Wenn einer gewünscht ist, vorher passende Notizen unter der exakten Version in `UPDATES.md` ergänzen. Ist das Docusaurus-Projekt lokal verfügbar, wird es automatisch erkannt und gebaut; ohne Docusaurus überspringt dieser PC den Dokumentationsschritt. Ein abweichender Pfad kann über `SCHOOLTOOL_DOCUMENTATION_ROOT` konfiguriert werden. Die Version wird ohne `v` angegeben.
 
 ### Einrichtung auf jedem weiteren Windows-PC
 
@@ -151,7 +151,9 @@ Bei einer ersten interaktiven Verbindung den angezeigten Fingerabdruck nur nach 
 & "$env:WINDIR\System32\OpenSSH\ssh.exe" -F none -o StrictHostKeyChecking=ask -o IdentitiesOnly=yes -o ForwardAgent=no -i "$env:USERPROFILE\.ssh\schooltool-main" '<hauptanwendungs-login>@<server-host>' 'id -un'
 ```
 
-Folgende Windows-Benutzervariablen je Gerät setzen. Die Namen sind verbindlich; die Werte stammen aus der überprüften Einrichtung, nicht aus dieser Vorlage.
+Das Hauptanwendungsziel ist im Projekt zentral hinterlegt. Auf einem neuen Gerät genügt ein eigener, auf Cloudways freigeschalteter privater Schlüssel unter `$env:USERPROFILE\.ssh\schooltool-main` und die bereits verifizierte Datei `$env:USERPROFILE\.ssh\known_hosts`. Der Helfer startet den Windows-SSH-Agent bei Bedarf selbst. Ein passwortgeschützter Schlüssel muss nach der Anmeldung einmal mit `ssh-add` entsperrt werden.
+
+Die folgenden Windows-Benutzervariablen bleiben als explizite Überschreibungen und für die getrennte Vorschau-Umgebung verfügbar:
 
 | Variable | Wert |
 | --- | --- |

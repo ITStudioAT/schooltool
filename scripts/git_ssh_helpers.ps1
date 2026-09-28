@@ -17,17 +17,58 @@ function Get-SchooltoolPreviewExecutable {
     throw "$Name was not found. Install Windows OpenSSH Client or Git for Windows."
 }
 
+function Get-SchooltoolDeploymentDefaults {
+    param([ValidateSet('MAIN', 'PREVIEW')][string]$Site)
+
+    if ($Site -ne 'MAIN') { return @{} }
+
+    $sshDirectory = Join-Path $env:USERPROFILE '.ssh'
+    @{
+        SSH = 'sftp_schooltool_at@165.227.156.99'
+        PATH = '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html'
+        UNIX_USER = 'hdhyrwwjyz'
+        KEY_CANDIDATES = @(
+            (Join-Path $sshDirectory 'schooltool-main')
+            (Join-Path $sshDirectory 'schooltool_cloudways_rsa')
+            (Join-Path $sshDirectory 'schooltool_cloudways_ed25519')
+        )
+    }
+}
+
+function Get-SchooltoolDeploymentSetting {
+    param([string]$Name, [string]$Fallback)
+
+    $processValue = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ($processValue) { return $processValue }
+
+    if ($env:SCHOOLTOOL_IGNORE_USER_SETTINGS -ne '1') {
+        $userValue = [Environment]::GetEnvironmentVariable($Name, 'User')
+        if ($userValue) { return $userValue }
+    }
+
+    $Fallback
+}
+
+function Start-SchooltoolSshAgent {
+    $service = Get-Service -Name 'ssh-agent' -ErrorAction SilentlyContinue
+    if (-not $service -or $service.Status -eq 'Running') { return }
+
+    try { Start-Service -Name 'ssh-agent' -ErrorAction Stop }
+    catch { throw 'Windows OpenSSH Authentication Agent could not be started. Start the ssh-agent service and load the Schooltool key once with ssh-add.' }
+}
+
 function Get-SchooltoolDeploymentTarget {
     param([ValidateSet('MAIN', 'PREVIEW')][string]$Site)
 
     $prefix = "SCHOOLTOOL_${Site}"
-    $scope = if ([Environment]::GetEnvironmentVariable("${prefix}_SSH", 'Process')) { 'Process' } else { 'User' }
-    $address = [Environment]::GetEnvironmentVariable("${prefix}_SSH", $scope)
-    $path = [Environment]::GetEnvironmentVariable("${prefix}_PATH", $scope)
-    $key = [Environment]::GetEnvironmentVariable("${prefix}_KEY", $scope)
-    $unixUser = [Environment]::GetEnvironmentVariable("${prefix}_UNIX_USER", $scope)
-    $knownHosts = [Environment]::GetEnvironmentVariable("${prefix}_KNOWN_HOSTS", $scope)
+    $defaults = Get-SchooltoolDeploymentDefaults $Site
+    $address = Get-SchooltoolDeploymentSetting "${prefix}_SSH" $defaults.SSH
+    $path = Get-SchooltoolDeploymentSetting "${prefix}_PATH" $defaults.PATH
+    $configuredKey = Get-SchooltoolDeploymentSetting "${prefix}_KEY" ''
+    $unixUser = Get-SchooltoolDeploymentSetting "${prefix}_UNIX_USER" $defaults.UNIX_USER
+    $knownHosts = Get-SchooltoolDeploymentSetting "${prefix}_KNOWN_HOSTS" ''
     if (-not $knownHosts) { $knownHosts = Join-Path $env:USERPROFILE '.ssh/known_hosts' }
+    $keys = if ($configuredKey) { @($configuredKey) } else { @($defaults.KEY_CANDIDATES | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) }
 
     if ($address -cnotmatch '^(?<user>[a-z_][a-z0-9_-]*)@(?<host>[a-zA-Z0-9][a-zA-Z0-9.-]*)$') {
         throw "Set ${prefix}_SSH to the verified application account in user@host form."
@@ -43,14 +84,23 @@ function Get-SchooltoolDeploymentTarget {
     if (-not $path -or $path -cnotmatch '^/(?:[a-zA-Z0-9_-][a-zA-Z0-9_.-]*/)+public_html$') {
         throw "Set ${prefix}_PATH to the verified canonical application public_html directory."
     }
-    foreach ($file in @(@{ Name = "${prefix}_KEY"; Path = $key }, @{ Name = "${prefix}_KNOWN_HOSTS"; Path = $knownHosts })) {
+    $files = @($keys | ForEach-Object { @{ Name = "${prefix}_KEY"; Path = $_ } })
+    $files += @{ Name = "${prefix}_KNOWN_HOSTS"; Path = $knownHosts }
+    foreach ($file in $files) {
         if (-not $file.Path -or -not [System.IO.Path]::IsPathRooted($file.Path) -or $file.Path -match '[\r\n\x00]' -or -not (Test-Path -LiteralPath $file.Path -PathType Leaf)) {
             throw "Configure $($file.Name) with an existing absolute local file path. No server was changed."
         }
     }
-    if ($key.EndsWith('.pub', [StringComparison]::OrdinalIgnoreCase)) {
-        throw "${prefix}_KEY must name the private key file, not its public .pub file."
+    if ($keys.Count -eq 0) {
+        throw "Configure ${prefix}_KEY with an existing absolute local file path. No server was changed."
     }
+    foreach ($key in $keys) {
+        if ($key.EndsWith('.pub', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "${prefix}_KEY must name the private key file, not its public .pub file."
+        }
+    }
+
+    $identityOptions = @($keys | ForEach-Object { '-i'; $_ })
 
     [pscustomobject]@{
         Site = $Site
@@ -58,6 +108,7 @@ function Get-SchooltoolDeploymentTarget {
         User = $unixUser
         LoginUser = $account
         Path = $path
+        Keys = $keys
         Options = @(
             '-F', 'none',
             '-o', 'BatchMode=yes', '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no',
@@ -65,8 +116,8 @@ function Get-SchooltoolDeploymentTarget {
             '-o', 'StrictHostKeyChecking=yes', '-o', 'UpdateHostKeys=no', '-o', 'ForwardAgent=no',
             '-o', 'ClearAllForwardings=yes', '-o', 'ConnectTimeout=15',
             '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
-            '-o', 'GlobalKnownHostsFile=none', '-o', "UserKnownHostsFile=$knownHosts", '-i', $key
-        )
+            '-o', 'GlobalKnownHostsFile=none', '-o', "UserKnownHostsFile=$knownHosts"
+        ) + $identityOptions
     }
 }
 
@@ -80,6 +131,7 @@ function Get-SchooltoolRemoteGuard {
 function Invoke-SchooltoolRemote {
     param([object]$Target, [string]$Command)
 
+    Start-SchooltoolSshAgent
     $executable = Get-SchooltoolPreviewExecutable 'ssh'
     $options = @($Target.Options)
     & $executable @options -T -- $Target.Ssh ((Get-SchooltoolRemoteGuard $Target) + $Command)
