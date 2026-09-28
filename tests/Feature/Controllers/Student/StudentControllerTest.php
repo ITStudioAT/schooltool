@@ -138,6 +138,168 @@ test('login step email returns enter_password for existing student', function ()
         ->assertJsonPath('schoolyear_id', $this->schoolyear->id);
 });
 
+test('student import does not reactivate an inactive account with the student role', function (string $loginType): void {
+    Notification::fake();
+
+    $this->student->is_active = false;
+    $this->student->save();
+    $import = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $this->student->email,
+        'user_id' => $this->student->id,
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $this->student->import116_id = $import->id;
+    $this->student->save();
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => $loginType,
+        'school_id' => $this->school->id,
+        'email' => $this->student->email,
+    ])->assertForbidden();
+
+    $student = $this->student->fresh();
+    expect((bool) $student->is_active)->toBeFalse()
+        ->and($student->hasRole('student'))->toBeTrue();
+    $this->assertGuest();
+    Notification::assertNothingSent();
+})->with([
+    'using a password' => 'login_with_password',
+    'using a code' => 'login_without_password',
+]);
+
+test('matching import grants the student role and activates an existing account before identity verification', function (bool $isActive, string $loginType): void {
+    Notification::fake();
+    $this->student->removeRole('student');
+    if ($isActive) {
+        $this->student->assignRole('teacher');
+    }
+    $this->student->is_active = $isActive;
+    $this->student->save();
+    $originalPassword = $this->student->password;
+    $usersBefore = User::query()->count();
+
+    $import = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $this->student->email,
+        'user_id' => $this->student->id,
+        'import_user_id' => $this->teacher->id,
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => $loginType,
+        'school_id' => $this->school->id,
+        'email' => $this->student->email,
+    ])->assertOk()
+        ->assertJsonPath('status', $loginType === 'login_with_password' ? 'enter_password' : 'code_sent')
+        ->assertJsonPath('login_context', 'student')
+        ->assertJsonPath('schoolyear_id', $this->schoolyear->id);
+
+    $student = $this->student->fresh();
+    expect((bool) $student->is_active)->toBeTrue()
+        ->and($student->hasRole('student'))->toBeTrue()
+        ->and($student->hasRole('teacher'))->toBe($isActive)
+        ->and($student->password)->toBe($originalPassword)
+        ->and((int) $student->import116_id)->toBe($import->id)
+        ->and(User::query()->count())->toBe($usersBefore);
+    $this->assertGuest();
+
+    $credentials = [
+        'type' => $loginType,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $student->email,
+    ];
+    if ($loginType === 'login_with_password') {
+        Notification::assertNothingSent();
+        $endpoint = '/api/homepage/student/login_step_password';
+        $this->postJson($endpoint, [...$credentials, 'password' => 'incorrect-password'])
+            ->assertOk()->assertJsonPath('status', 'password_not_valid');
+        $validCredentials = [...$credentials, 'password' => 'password123'];
+    } else {
+        Notification::assertSentOnDemand(StandardEmail::class);
+        $endpoint = '/api/homepage/student/login_step_code';
+        $this->postJson($endpoint, [...$credentials, 'login_code' => '000000'])
+            ->assertOk()->assertJsonPath('status', 'code_not_valid');
+        $validCredentials = [...$credentials, 'login_code' => (string) $student->token_2fa];
+        $student->token_2fa_expires_at = now()->subMinute();
+        $student->save();
+        $this->postJson($endpoint, $validCredentials)
+            ->assertOk()->assertJsonPath('status', 'code_not_valid');
+        $student->token_2fa_expires_at = now()->addMinute();
+        $student->save();
+    }
+
+    $this->assertGuest();
+    $this->postJson($endpoint, $validCredentials)
+        ->assertOk()->assertJsonPath('status', 'login_ok');
+    $this->assertAuthenticatedAs($student, 'web');
+})->with([
+    'inactive account and password' => [false, 'login_with_password'],
+    'inactive account and code' => [false, 'login_without_password'],
+    'active account and password' => [true, 'login_with_password'],
+    'active account and code' => [true, 'login_without_password'],
+]);
+
+test('an account without the student role is not released by a missing or mismatched import', function (string $importScope): void {
+    Notification::fake();
+    $this->student->removeRole('student');
+    $this->student->is_active = false;
+    $this->student->save();
+
+    if ($importScope !== 'missing') {
+        $school = $importScope === 'other school' ? School::factory()->create() : $this->school;
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        Import116::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $importScope === 'other school' ? $this->schoolyear->id : $schoolyear->id,
+            'email' => $this->student->email,
+            'import_user_id' => $this->teacher->id,
+        ]);
+    }
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'email' => $this->student->email,
+    ])->assertForbidden();
+
+    $student = $this->student->fresh();
+    expect((bool) $student->is_active)->toBeFalse()
+        ->and($student->hasRole('student'))->toBeFalse();
+    $this->assertGuest();
+    Notification::assertNothingSent();
+})->with(['missing', 'other school', 'other schoolyear']);
+
+test('changed import email does not reactivate a linked inactive student', function (): void {
+    Notification::fake();
+    $this->student->is_active = false;
+    $this->student->save();
+    $originalEmail = $this->student->email;
+    $import = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'changed.student@example.test',
+        'user_id' => $this->student->id,
+        'import_user_id' => $this->teacher->id,
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'email' => $import->email,
+    ])->assertForbidden();
+
+    $student = $this->student->fresh();
+    expect((bool) $student->is_active)->toBeFalse()
+        ->and($student->hasRole('student'))->toBeTrue()
+        ->and($student->email)->toBe($originalEmail);
+    $this->assertGuest();
+    Notification::assertNothingSent();
+});
+
 test('login step password authenticates with valid password', function () {
     $response = $this->postJson('/api/homepage/student/login_step_password', [
         'type' => 'login_with_password',

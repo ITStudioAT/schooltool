@@ -47,6 +47,16 @@ function mountOverview(stats = {}) {
 }
 
 describe('Restaurant overview component', () => {
+    it('opens bookings beside the menu plans button', async () => {
+        const { wrapper, routerPush } = mountOverview()
+        const card = wrapper.findAll('section').find((section) => section.text().includes('Gebuchte Menüs'))
+        expect(card?.text()).toContain('Zu Menüplänen')
+        const button = card?.findAll('button').find((item) => item.text() === 'Buchungen')
+        expect(button).toBeDefined()
+        await button?.trigger('click')
+        expect(routerPush).toHaveBeenCalledWith('/admin/restaurant/bookings')
+    })
+
     it('shows the overview cards and colors pending confirmations red when needed', () => {
         const { wrapper } = mountOverview()
 

@@ -42,6 +42,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {app/Services/SchoolyearService.php,app/Services/AdminService.php,app/Providers/AppServiceProvider.php,app/Http/Controllers/Admin/AdminController.php} | .ai/rules/controllers-admin.md |
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
+| {app/Http/Controllers/Student/StudentController.php,app/Services/StudentService.php,app/Http/Controllers/Admin/UserController.php,tests/Feature/Controllers/Student/StudentControllerTest.php} | .ai/rules/controllers-student.md |
 | {UPDATES.md,public/documentation/**} | .ai/rules/documentation-2.md |
 | public/documentation/** | .ai/rules/documentation.md |
 | {routes/api.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/feature-feature.md |

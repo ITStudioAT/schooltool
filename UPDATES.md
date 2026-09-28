@@ -1,5 +1,17 @@
 # UPDATES
 
+## 3.49.10
+
+### System
+
+- Login für Import116-Students
+- Integritäts-Packages-Issues gefixt
+
+### Restaurant
+
+- Synchronisation Live zu Local nur für super_admins
+- Anzeige Besteller der aktuellen Buchungen
+
 ## 3.49.9
 
 ### Teaching

@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\RestaurantBookingService;
 use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantMenuPlanService;
+use App\Services\RestaurantService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,117 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantMenuPlanController extends Controller
 {
+    public function bookings(RestaurantService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $bookings = $service->bookingsForOrderablePlansQuery($authUser)
+            ->where('school_id', $authUser->school_id)
+            ->whereHas('user', fn ($query) => $query->where('school_id', $authUser->school_id))
+            ->whereHas('menuPlanEntry.menuPlan', fn ($query) => $query->where('school_id', $authUser->school_id))
+            ->with(['user:id,import116_id,first_name,last_name,sex', 'user.roles', 'menuPlanEntry', 'import116:id,school_id,schoolyear_id,student_code,first_name,last_name,class'])
+            ->get();
+
+        $recipients = $this->bookingListRecipients($bookings, $authUser);
+
+        $rows = $bookings->map(function (RestaurantMenuPlanBooking $booking) use ($recipients): array {
+            $recipient = $recipients[$booking->id] ?? null;
+            $lastName = $recipient?->last_name ?? ($booking->child_name ?: $booking->user?->last_name);
+            $firstName = $recipient?->first_name ?? ($booking->child_name ? '' : $booking->user?->first_name);
+            $isBookedUser = ! $booking->child_name
+                || $this->normalizeComparableString($booking->child_name) === $this->normalizeComparableString($booking->user?->full_name);
+
+            if (! $recipient && $isBookedUser) {
+                $lastName = $booking->user?->last_name;
+                $firstName = $booking->user?->first_name;
+            }
+
+            $person = trim("{$lastName} {$firstName}") ?: 'Unbekannt';
+
+            if ($recipient && filled($recipient->class)) {
+                $person .= ", {$recipient->class}";
+            } elseif (! $recipient && $isBookedUser && $booking->user?->hasRole('teacher')) {
+                $person .= match ($booking->user->sex) {
+                    'w', 'f' => ', Lehrerin',
+                    'm' => ', Lehrer',
+                    default => ', Lehrkraft',
+                };
+            }
+
+            return [
+                'id' => $booking->id,
+                'person' => $person,
+                'date' => $booking->menuPlanEntry->plan_date->toDateString(),
+                'menu' => $booking->menuPlanEntry->menu_title,
+                'last_name' => $lastName,
+                'first_name' => $firstName,
+            ];
+        })->sort(function (array $left, array $right): int {
+            return strnatcasecmp((string) $left['last_name'], (string) $right['last_name'])
+                ?: strnatcasecmp((string) $left['first_name'], (string) $right['first_name'])
+                ?: strcmp($left['date'], $right['date'])
+                ?: ($left['id'] <=> $right['id']);
+        })->values()->map(fn (array $row): array => array_diff_key($row, array_flip(['last_name', 'first_name'])));
+
+        return response()->json(['data' => $rows], 200, $this->noStoreHeaders());
+    }
+
+    /**
+     * @param  Collection<int, RestaurantMenuPlanBooking>  $bookings
+     * @return array<int, Import116>
+     */
+    private function bookingListRecipients(Collection $bookings, User $authUser): array
+    {
+        if ($bookings->isEmpty()) {
+            return [];
+        }
+
+        $imports = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where(function ($query) use ($bookings): void {
+                $query->whereIn('id', $bookings->pluck('import116_id')->merge($bookings->pluck('user.import116_id'))->filter())
+                    ->orWhereIn('user_id', $bookings->pluck('user_id'))
+                    ->orWhereIn('student_code', $bookings->pluck('import116.student_code')->filter())
+                    ->orWhere(function ($nameQuery) use ($bookings): void {
+                        $nameQuery->whereIn(DB::raw('LOWER(TRIM(first_name))'), $bookings->pluck('user.first_name')->map(fn ($name) => $this->normalizeComparableString($name))->filter())
+                            ->whereIn(DB::raw('LOWER(TRIM(last_name))'), $bookings->pluck('user.last_name')->map(fn ($name) => $this->normalizeComparableString($name))->filter());
+                    });
+            })
+            ->get();
+
+        return $bookings->mapWithKeys(function (RestaurantMenuPlanBooking $booking) use ($imports, $authUser): array {
+            $matches = $imports->filter(function (Import116 $import) use ($booking, $authUser, $imports): bool {
+                $linkedRecipient = $booking->import116;
+
+                if ($linkedRecipient?->school_id === $authUser->school_id) {
+                    return $import->id === $linkedRecipient->id || $import->student_code === $linkedRecipient->student_code;
+                }
+
+                if ($booking->child_name) {
+                    $childName = $this->normalizeComparableString($booking->child_name);
+
+                    return $childName === $this->normalizeComparableString("{$import->first_name} {$import->last_name}")
+                        || $childName === $this->normalizeComparableString("{$import->last_name} {$import->first_name}");
+                }
+
+                if ($imports->contains('id', $booking->user?->import116_id)) {
+                    return $import->id === $booking->user->import116_id;
+                }
+
+                if ($imports->contains('user_id', $booking->user_id)) {
+                    return $import->user_id === $booking->user_id;
+                }
+
+                return $this->normalizedStudentKey($import->first_name, $import->last_name) === $this->normalizedStudentKey($booking->user?->first_name, $booking->user?->last_name);
+            })->values();
+
+            return $matches->count() === 1 ? [$booking->id => $matches->first()] : [];
+        })->all();
+    }
+
     public function index(RestaurantMenuPlanService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {

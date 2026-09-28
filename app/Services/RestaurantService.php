@@ -114,6 +114,12 @@ class RestaurantService
 
     public function bookedMenusCountForOrderablePlans(User $authUser): int
     {
+        return (int) $this->bookingsForOrderablePlansQuery($authUser)->sum('quantity');
+    }
+
+    /** @return Builder<RestaurantMenuPlanBooking> */
+    public function bookingsForOrderablePlansQuery(User $authUser): Builder
+    {
         $onlineSettings = $this->onlineSettingsForUser($authUser);
         $now = now();
 
@@ -124,18 +130,12 @@ class RestaurantService
             ->get()
             ->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now));
 
-        if ($orderablePlans->isEmpty()) {
-            return 0;
-        }
-
-        // Get the sum of booking quantities for all entries of orderable plans
         return RestaurantMenuPlanBooking::query()
             ->whereIn('restaurant_menu_plan_entry_id', function ($query) use ($orderablePlans) {
                 $query->select('id')
                     ->from('restaurant_menu_plan_entries')
                     ->whereIn('restaurant_menu_plan_id', $orderablePlans->pluck('id'));
-            })
-            ->sum('quantity');
+            });
     }
 
     public function userSettingsForUser(User $user): array

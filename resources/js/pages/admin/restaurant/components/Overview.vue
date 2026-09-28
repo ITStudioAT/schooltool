@@ -95,6 +95,16 @@ the<template>
                             @click="openMenuPlans">
                             Zu Menüplänen
                         </v-btn>
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            class="px-2"
+                            :loading="navigating === 'bookings'"
+                            :disabled="navigating !== null"
+                            @click="openBookings">
+                            Buchungen
+                        </v-btn>
                     </div>
                 </ItsGridBox>
             </v-col>
@@ -151,6 +161,9 @@ export default {
         openMenuPlans() {
             this.navigate('menuPlans', '/admin/restaurant/menu-plans')
         },
+        openBookings() {
+            this.navigate('bookings', '/admin/restaurant/bookings')
+        },
     },
 }
 </script>
@@ -165,5 +178,8 @@ export default {
 
 .restaurant-overview-action {
     margin-top: 0.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 </style>

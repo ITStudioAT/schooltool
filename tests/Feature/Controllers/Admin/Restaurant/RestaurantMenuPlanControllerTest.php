@@ -10,8 +10,10 @@ use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
+use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\RestaurantMenuPlanPdfService;
+use App\Services\RestaurantService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
@@ -57,6 +59,202 @@ beforeEach(function () {
 test('returns 401 when menu plans index is unauthenticated', function () {
     $this->getJson('/api/admin/restaurant/menu-plans')->assertUnauthorized();
 });
+
+test('bookings requires authentication and restaurant administration access', function () {
+    $this->getJson('/api/admin/restaurant/bookings')->assertUnauthorized();
+    $this->actingAs($this->teacher, 'sanctum')->getJson('/api/admin/restaurant/bookings')->assertForbidden();
+});
+
+test('bookings lists orderable menus by last name first name and ascending menu date within the school', function () {
+    $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'is_available' => true,
+        'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+    ]);
+    $otherPlan = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id]);
+    $anna = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Anna', 'last_name' => 'Bauer']);
+    $bert = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Bert', 'last_name' => 'Bauer']);
+    $zoe = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Zoe', 'last_name' => 'Adler']);
+    $foreignUser = User::factory()->create(['school_id' => $this->otherSchool->id]);
+
+    $createBooking = function (User $user, RestaurantMenuPlan $menuPlan, string $date, string $title, ?int $schoolId = null): RestaurantMenuPlanBooking {
+        $entry = RestaurantMenuPlanEntry::factory()->create([
+            'restaurant_menu_plan_id' => $menuPlan->id,
+            'restaurant_menu_id' => $this->menu->id,
+            'plan_date' => $date,
+            'menu_title' => $title,
+        ]);
+
+        return RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $schoolId ?? $user->school_id,
+            'user_id' => $user->id,
+            'restaurant_menu_plan_entry_id' => $entry->id,
+            'price' => 8.50,
+            'quantity' => 1,
+            'booked_at' => now(),
+        ]);
+    };
+
+    $late = $createBooking($anna, $plan, '2026-10-02', 'Menü Freitag');
+    $bertBooking = $createBooking($bert, $plan, '2026-09-01', 'Menü September');
+    $early = $createBooking($anna, $plan, '2026-04-01', 'Menü April');
+    $adlerBooking = $createBooking($zoe, $plan, '2026-11-01', 'Menü November');
+    $createBooking($foreignUser, $otherPlan, '2026-04-01', 'Andere Schule');
+    $createBooking($anna, $otherPlan, '2026-04-01', 'Fremder Plan');
+    $createBooking($foreignUser, $plan, '2026-04-01', 'Fremde Person', $this->school->id);
+    $createBooking($anna, $plan, '2026-04-02', 'Fremde Buchung', $this->otherSchool->id);
+
+    $response = $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()
+        ->assertHeader('cache-control', 'max-age=0, no-store, private')
+        ->assertJsonCount(4, 'data')
+        ->assertJsonPath('data.1.person', 'Bauer Anna')
+        ->assertJsonPath('data.1.date', '2026-04-01')
+        ->assertJsonPath('data.1.menu', 'Menü April');
+
+    expect(array_column($response->json('data'), 'id'))->toBe([
+        $adlerBooking->id, $early->id, $late->id, $bertBooking->id,
+    ]);
+});
+
+test('bookings returns an empty list for a school without bookings', function () {
+    $this->admin->assignRole('lunch_admin');
+    $this->admin->removeRole('admin');
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()->assertJsonPath('data', []);
+});
+
+test('bookings uses the child recipient name and sorts it by last name', function () {
+    $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'is_available' => true,
+        'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+    ]);
+    $child = Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'first_name' => 'Zoe', 'last_name' => 'Adler', 'class' => '1A',
+    ]);
+    $this->admin->update(['first_name' => 'Anna', 'last_name' => 'Bauer']);
+    foreach ([null, $child] as $recipient) {
+        $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+        RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->admin->id,
+            'restaurant_menu_plan_entry_id' => $entry->id,
+            'child_name' => $recipient ? 'Zoe Adler' : null,
+            'import116_id' => $recipient?->id,
+            'child_type' => $recipient ? 'child' : null,
+            'price' => 8.50,
+            'quantity' => 1,
+        ]);
+    }
+
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.person', 'Adler Zoe, 1A')
+        ->assertJsonPath('data.1.person', 'Bauer Anna');
+});
+
+test('bookings and overview count share the current orderable menu plan scope', function () {
+    $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
+    $includedIds = [];
+
+    foreach ([
+        ['is_available' => true, 'start_date' => '2026-04-06', 'end_date' => '2026-04-10'],
+        ['is_available' => true, 'start_date' => '2026-04-13', 'end_date' => '2026-04-17'],
+        ['is_available' => false, 'start_date' => '2026-04-06', 'end_date' => '2026-04-10'],
+        ['is_available' => true, 'start_date' => '2026-03-16', 'end_date' => '2026-03-20'],
+        ['is_available' => true, 'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+            'use_individual_schedule_values' => true, 'order_start_at' => '2026-03-24 00:00:00', 'order_end_at' => '2026-04-01 00:00:00'],
+        ['is_available' => true, 'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+            'use_individual_schedule_values' => true, 'order_start_at' => '2026-03-01 00:00:00', 'order_end_at' => '2026-03-22 23:59:59'],
+    ] as $index => $attributes) {
+        $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, ...$attributes]);
+        $entry = RestaurantMenuPlanEntry::factory()->create([
+            'restaurant_menu_plan_id' => $plan->id, 'plan_date' => $plan->start_date,
+            'restaurant_menu_id' => $this->menu->id,
+        ]);
+        $booking = RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $this->school->id, 'user_id' => $this->admin->id,
+            'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 2,
+        ]);
+
+        if ($index < 2) {
+            $includedIds[] = $booking->id;
+        }
+    }
+
+    $response = $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()->assertJsonCount(2, 'data');
+
+    expect(array_column($response->json('data'), 'id'))->toBe($includedIds)
+        ->and(app(RestaurantService::class)->bookedMenusCountForOrderablePlans($this->admin))->toBe(4);
+
+    $this->travelTo(now()->setDate(2026, 5, 1));
+    $this->getJson('/api/admin/restaurant/bookings')->assertSuccessful()->assertJsonPath('data', []);
+    expect(app(RestaurantService::class)->bookedMenusCountForOrderablePlans($this->admin))->toBe(0);
+});
+
+test('bookings resolves the current schoolyear class through the user and ignores stale and foreign imports', function () {
+    $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
+    $schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $oldSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $this->admin->update(['schoolyear_id' => $schoolyear->id]);
+    $student = User::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $schoolyear->id,
+        'first_name' => 'Felix', 'last_name' => 'Meier',
+    ]);
+    $current = Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'schoolyear_id' => $schoolyear->id, 'first_name' => 'Felix', 'last_name' => 'Meier',
+        'class' => '2B', 'user_id' => $student->id,
+    ]);
+    $old = Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'schoolyear_id' => $oldSchoolyear->id, 'student_code' => $current->student_code,
+        'first_name' => 'Felix', 'last_name' => 'Meier', 'class' => '1B', 'user_id' => $student->id,
+    ]);
+    Import116::factory()->forSchool($this->otherSchool)->importedBy($this->admin)->create([
+        'schoolyear_id' => $schoolyear->id, 'first_name' => 'Felix', 'last_name' => 'Meier',
+        'class' => 'Fremd', 'user_id' => $student->id,
+    ]);
+    $student->update(['import116_id' => $current->id]);
+    Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'schoolyear_id' => $schoolyear->id, 'first_name' => 'Felix', 'last_name' => 'Meier', 'class' => '3C',
+    ]);
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'is_available' => true,
+        'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+    ]);
+    foreach ([null, $old->id] as $importId) {
+        $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+        RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $this->school->id, 'user_id' => $student->id,
+            'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1,
+            'import116_id' => $importId, 'child_name' => $importId ? 'Felix Meier' : null,
+        ]);
+    }
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.person', 'Meier Felix, 2B')
+        ->assertJsonPath('data.1.person', 'Meier Felix, 2B');
+});
+
+test('bookings identifies teachers from their role and stored sex', function (?string $sex, string $label) {
+    $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
+    $this->teacher->update(['first_name' => 'Alex', 'last_name' => 'Bauer', 'sex' => $sex]);
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'is_available' => true,
+        'start_date' => '2026-04-06', 'end_date' => '2026-04-10',
+    ]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id, 'user_id' => $this->teacher->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1,
+    ]);
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings')
+        ->assertSuccessful()->assertJsonPath('data.0.person', "Bauer Alex, {$label}");
+})->with([
+    ['m', 'Lehrer'], ['w', 'Lehrerin'], ['f', 'Lehrerin'], [null, 'Lehrkraft'], ['d', 'Lehrkraft'],
+]);
 
 test('returns 403 when role has no menu plan access', function () {
     $this->actingAs($this->teacher, 'sanctum')

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Restaurant\RestaurantCategoryResource;
 use App\Http\Resources\Admin\Restaurant\RestaurantIngredientIconResource;
 use App\Services\RestaurantService;
+use App\Services\RestaurantSynchronisationService;
 use Illuminate\Http\JsonResponse;
 
 class RestaurantSettingsController extends Controller
@@ -32,6 +33,7 @@ class RestaurantSettingsController extends Controller
             'online_settings' => $settings['online_settings'],
             'can_manage_online_settings' => $settings['can_manage_online_settings'],
             'stats' => $settings['stats'],
+            'can_synchronise' => $authUser->hasRole('super_admin') && RestaurantSynchronisationService::available(),
         ]);
     }
 }

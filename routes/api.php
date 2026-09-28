@@ -48,6 +48,7 @@ use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantOnlineSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSepaSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantSynchronisationController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
 use App\Http\Controllers\Admin\RoleController;
@@ -533,6 +534,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/restaurant/billings/preview', [RestaurantBillingController::class, 'preview']);
         Route::get('/admin/restaurant/billings/{id}/print', [RestaurantBillingController::class, 'print']);
         Route::apiResource('/admin/restaurant/billings', RestaurantBillingController::class)->only(['index', 'store']);
+        Route::get('/admin/restaurant/bookings', [RestaurantMenuPlanController::class, 'bookings'])->name('restaurant.bookings');
+        Route::post('/admin/restaurant/synchronisation/preview', [RestaurantSynchronisationController::class, 'preview'])->name('restaurant.synchronisation.preview');
+        Route::post('/admin/restaurant/synchronisation/apply', [RestaurantSynchronisationController::class, 'apply'])->name('restaurant.synchronisation.apply');
         Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
         Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/booking-users', [RestaurantMenuPlanController::class, 'searchEntryBookingUsers']);
         Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'entryBookings']);

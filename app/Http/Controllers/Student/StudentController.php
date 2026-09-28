@@ -66,7 +66,12 @@ class StudentController extends Controller
 
         $import_user = $service->isStudentInImport116($email, $school_id, $schoolyear_id);
 
-        if (! $user && $import_user) {
+        if ($import_user && (! $user || ! $user->hasRole('student'))) {
+            $importAccount = $service->existingUserForImport116($import_user);
+            if ($importAccount && $importAccount->hasRole('student') && ! $parentAccess->isActiveStudentUser($importAccount)) {
+                abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+            }
+
             $user = $service->createUserFromImport116($import_user);
         }
 
@@ -81,17 +86,6 @@ class StudentController extends Controller
                 $data['status'] = 'code_sent';
             }
 
-            $data['login_context'] = 'student';
-            $data['schoolyear_id'] = $schoolyear_id;
-
-            return response()->json($data, 200);
-        }
-
-        if ($user && $import_user && $parentAccess->isActiveStudentUser($user, false)) {
-            $user = $service->createUserFromImport116($import_user);
-            $userService->sendCode($user, 'Ihr Login-Code für das Unterrichtstool', $email, 'login');
-
-            $data['status'] = 'code_sent';
             $data['login_context'] = 'student';
             $data['schoolyear_id'] = $schoolyear_id;
 
