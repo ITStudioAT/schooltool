@@ -34,6 +34,14 @@ class RestaurantSynchronisationWindowsTestService extends RestaurantSynchronisat
     }
 }
 
+class RestaurantSynchronisationLinuxTestService extends RestaurantSynchronisationService
+{
+    protected static function operatingSystemFamily(): string
+    {
+        return 'Linux';
+    }
+}
+
 function restaurantSyncFixtureSnapshot(School $school): array
 {
     $data = ['school' => ['id' => $school->id, 'short_name' => $school->short_name, 'long_name' => $school->long_name],
@@ -382,6 +390,13 @@ test('settings expose synchronisation only to a local superadmin', function () {
     $user = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => null]);
     $user->assignRole('admin');
     $this->actingAs($user, 'sanctum')->getJson('/api/admin/restaurant/settings')->assertSuccessful()->assertJsonPath('can_synchronise', false);
+});
+
+test('settings hide synchronisation on non-Windows workstations', function () {
+    app()->bind(RestaurantSynchronisationService::class, RestaurantSynchronisationLinuxTestService::class);
+
+    $this->actingAs($this->actor, 'sanctum')->getJson('/api/admin/restaurant/settings')
+        ->assertSuccessful()->assertJsonPath('can_synchronise', false);
 });
 
 test('preview blocks an existing student linked to a different local account', function () {

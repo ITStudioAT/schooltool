@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 
 class RestaurantSettingsController extends Controller
 {
-    public function index(RestaurantService $service): JsonResponse
+    public function index(RestaurantService $service, RestaurantSynchronisationService $synchronisation): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -33,7 +33,7 @@ class RestaurantSettingsController extends Controller
             'online_settings' => $settings['online_settings'],
             'can_manage_online_settings' => $settings['can_manage_online_settings'],
             'stats' => $settings['stats'],
-            'can_synchronise' => $authUser->hasRole('super_admin') && RestaurantSynchronisationService::available(),
+            'can_synchronise' => $authUser->hasRole('super_admin') && $synchronisation::available(),
         ]);
     }
 }

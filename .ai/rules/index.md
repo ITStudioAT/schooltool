@@ -99,7 +99,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
 | {app/Services/RestaurantSynchronisationService.php,resources/js/pages/admin/restaurant/components/Synchronisation.vue,tests/Feature/Controllers/Admin/Restaurant/RestaurantSynchronisationControllerTest.php} | .ai/rules/restaurant.md |
-| {scripts/git_helpers.ps1,scripts/update-changelog.mjs} | .ai/rules/scripts-2.md |
+| {scripts/git_helpers.ps1,scripts/update-changelog.mjs}, {scripts/git_helpers.ps1,scripts/git_workflow.ps1,scripts/install_powershell_helpers.ps1} | .ai/rules/scripts-2.md |
 | {scripts/git_preview*.ps1,scripts/deploy_preview_cloudways.sh,app/Services/FeaturePreviewSnapshotService.php} | .ai/rules/scripts-services.md |
 | {scripts/git_helpers.ps1,scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/deploy_preview_cloudways.sh,scripts/git_preview_helpers.ps1,tests/Unit/PreviewDeploymentTest.php}, {scripts/update.php,tests/Unit/LocalDeploymentGuardTest.php}, {scripts/git_branch_helpers.ps1,scripts/git_preview_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php} | .ai/rules/scripts-unit-2.md |
 | scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php, scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php, scripts/git*preview*.ps1,tests/Unit/GitBranchWorkflowTest.php | .ai/rules/scripts-unit.md |
