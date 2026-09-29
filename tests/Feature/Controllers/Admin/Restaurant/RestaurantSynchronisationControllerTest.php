@@ -12,7 +12,9 @@ use App\Models\School;
 use App\Models\User;
 use App\Services\RestaurantLiveSource;
 use App\Services\RestaurantSynchronisationService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -222,7 +224,9 @@ test('preview reports scope without database mutation or exposing personal data'
         ->and(DB::table('users')->get()->toJson())->toBe($before);
 });
 
-test('legacy SEPA JSON check is rejected before writes and its repair preserves encrypted children and other constraints', function () {
+test('legacy SEPA JSON check is rejected before writes and its repair preserves encrypted children and other constraints', function (string $migration) {
+    // MySQL DDL commits the fixture transaction; rebuild the disposable schema for the next test.
+    RefreshDatabaseState::$migrated = false;
     DB::statement('ALTER TABLE restaurant_sepa_mandates ADD CONSTRAINT restaurant_sepa_mandates_chk_1 CHECK (json_valid(child_entries))');
     DB::statement("ALTER TABLE restaurant_sepa_mandates ADD CONSTRAINT restaurant_sepa_status_fixture CHECK (status <> 'invalid')");
     $children = [['name' => 'Fixture Child', 'schoolclass' => '1A']];
@@ -230,7 +234,7 @@ test('legacy SEPA JSON check is rejected before writes and its repair preserves 
     $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
         ->assertUnprocessable()->assertJsonPath('message', 'Die lokale SEPA-Tabelle enthält noch eine alte JSON-Prüfung für child_entries. Vor der Synchronisation muss die vorbereitete SEPA-Reparaturmigration ausgeführt werden. Es wurde nichts übernommen.');
     expect(RestaurantMenuPlanBooking::count())->toBe(1)->and(RestaurantSepaMandate::firstOrFail()->child_entries)->toBeNull();
-    $repair = require database_path('migrations/2026_09_28_192256_remove_legacy_json_check_from_restaurant_sepa_mandates.php');
+    $repair = require database_path("migrations/{$migration}.php");
     $repair->up();
     $repair->up();
     expect(DB::table('information_schema.TABLE_CONSTRAINTS')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())
@@ -240,6 +244,37 @@ test('legacy SEPA JSON check is rejected before writes and its repair preserves 
     $stored = DB::table('restaurant_sepa_mandates')->value('child_entries');
     expect(RestaurantSepaMandate::firstOrFail()->child_entries)->toBe($children)
         ->and(json_decode($stored, true))->toBeNull()->and(Crypt::decryptString($stored))->toBe(json_encode($children, JSON_THROW_ON_ERROR));
+})->with([
+    'existing installations' => '2026_09_28_192256_remove_legacy_json_check_from_restaurant_sepa_mandates',
+    'before encryption' => '2026_07_27_153638_remove_legacy_sepa_json_check_before_encryption',
+]);
+
+test('legacy SEPA children survive schema widening and encryption before the later repair migration', function () {
+    RefreshDatabaseState::$migrated = false;
+    $children = [['name' => 'Fixture Child', 'schoolclass' => '1A']];
+    $plaintext = json_encode($children, JSON_THROW_ON_ERROR);
+    DB::table('restaurant_sepa_mandates')->update(['child_entries' => $plaintext]);
+    DB::statement('ALTER TABLE restaurant_sepa_mandates MODIFY child_entries JSON NULL');
+    DB::statement('ALTER TABLE restaurant_sepa_mandates ADD CONSTRAINT restaurant_sepa_mandates_chk_1 CHECK (json_valid(child_entries))');
+    DB::statement("ALTER TABLE restaurant_sepa_mandates ADD CONSTRAINT restaurant_sepa_status_fixture CHECK (status <> 'invalid')");
+
+    $repair = require database_path('migrations/2026_07_27_153638_remove_legacy_sepa_json_check_before_encryption.php');
+    $repair->up();
+    $repair->up();
+    $widen = require database_path('migrations/2026_07_27_153639_widen_sensitive_restaurant_sepa_columns.php');
+    $widen->up();
+    $encrypt = require database_path('migrations/2026_07_27_153640_encrypt_existing_restaurant_sepa_data.php');
+    $encrypt->up();
+    $stored = DB::table('restaurant_sepa_mandates')->value('child_entries');
+    $encrypt->up();
+    $repair->up();
+
+    expect(RestaurantSepaMandate::firstOrFail()->child_entries)->toBe($children)
+        ->and(json_decode(Crypt::decryptString($stored), true, 512, JSON_THROW_ON_ERROR))->toBe($children)
+        ->and(DB::table('restaurant_sepa_mandates')->value('child_entries'))->toBe($stored)
+        ->and(DB::table('information_schema.TABLE_CONSTRAINTS')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())
+            ->where('TABLE_NAME', 'restaurant_sepa_mandates')->where('CONSTRAINT_NAME', 'restaurant_sepa_status_fixture')->exists())->toBeTrue();
+    $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')->assertSuccessful();
 });
 
 test('apply uses the reviewed snapshot recreates missing students remaps collisions and preserves unrelated accounts', function () {
@@ -300,8 +335,12 @@ test('failed database writes roll back restaurant and shared changes and staged 
     $this->snapshot['files'] = [['disk' => 'public', 'path' => $path, 'sha256' => hash('sha256', $bytes), 'content' => base64_encode($bytes)]];
     $userIndex = array_search($this->restaurantUser->id, array_column($this->snapshot['users'], 'id'), true);
     $this->snapshot['users'][$userIndex]['first_name'] = 'Would change';
-    $this->snapshot['tables']['restaurant_sepa_mandates'][0]['flow_uuid'] = null;
     $token = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')->assertSuccessful()->json('data.token');
+    DB::listen(function (QueryExecuted $query): void {
+        if (str_starts_with($query->sql, 'insert into `restaurant_sepa_mandates`')) {
+            throw new RuntimeException('Fixture database write failure.');
+        }
+    });
     $beforeName = $this->restaurantUser->first_name;
     $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => $token, 'confirmed' => true])->assertUnprocessable();
     expect($this->restaurantUser->fresh()->first_name)->toBe($beforeName)
@@ -353,6 +392,86 @@ test('preview blocks an existing student linked to a different local account', f
     $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
         ->assertUnprocessable()->assertJsonPath('message', 'Ein vorhandener Schüler gehört lokal zu einem anderen Benutzerkonto.');
     expect($student->fresh()->user_id)->toBe($otherUser->id)->not->toBe($oldUserId);
+});
+
+test('synchronisation plans removal of a local only student link without changing student data or unrelated accounts', function () {
+    $this->student->update(['study_selection' => ['religion' => 'ETH'], 'course_results' => ['completed' => [['code' => 'ETH1', 'grade' => 1]]]]);
+    $this->snapshot = restaurantSyncFixtureSnapshot($this->school);
+    $userIndex = array_search($this->restaurantUser->id, array_column($this->snapshot['users'], 'id'), true);
+    $this->snapshot['users'][$userIndex]['import116_id'] = null;
+    $unrelated = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => null, 'import116_id' => $this->student->id]);
+    $unrelated->assignRole('teacher');
+    $unrelatedBefore = $unrelated->fresh()->getRawOriginal();
+    $studentBefore = (array) DB::table('import116')->where('id', $this->student->id)->first();
+    $password = $this->restaurantUser->password;
+    $token = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertSuccessful()->assertJsonPath('data.removed_student_links', 1)->json('data.token');
+    expect($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id);
+    $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => $token, 'confirmed' => true])->assertSuccessful();
+    expect($this->restaurantUser->fresh()->import116_id)->toBeNull()
+        ->and($this->restaurantUser->fresh()->password)->toBe($password)
+        ->and($this->restaurantUser->fresh()->hasRole('teacher'))->toBeTrue()
+        ->and((array) DB::table('import116')->where('id', $this->student->id)->first())->toBe($studentBefore)
+        ->and($unrelated->fresh()->getRawOriginal())->toBe($unrelatedBefore)
+        ->and($unrelated->fresh()->hasRole('teacher'))->toBeTrue();
+    $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertSuccessful()->assertJsonPath('data.removed_student_links', 0);
+});
+
+test('preview reports independent identity schema image and settings conflicts together without a token or data writes', function () {
+    $otherStudent = Import116::factory()->forSchool($this->school)->importedBy($this->actor)->create(['schoolyear_id' => null, 'user_id' => null]);
+    $this->snapshot = restaurantSyncFixtureSnapshot($this->school);
+    $userIndex = array_search($this->restaurantUser->id, array_column($this->snapshot['users'], 'id'), true);
+    $this->snapshot['users'][$userIndex]['import116_id'] = $otherStudent->id;
+    $this->snapshot['columns']['restaurant_menus'][] = 'unknown_column';
+    $this->snapshot['files'] = [['disk' => 'public', 'path' => 'bad.png', 'content' => base64_encode('fixture'), 'sha256' => str_repeat('a', 64)]];
+    $this->snapshot['settings']['unrelated_setting'] = true;
+    $response = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertUnprocessable()->assertJsonMissingPath('data.token');
+    expect($response->json('conflicts'))->toContain(
+        'Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.',
+        'Das Live- und lokale Restaurant-Schema unterscheiden sich. Die Übernahme ist gesperrt.',
+        'Ein Restaurantbild ist unvollständig oder wurde verändert.',
+        'Restaurant-Einstellungen können nicht vollständig zugeordnet werden.',
+    )->and($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id)
+        ->and(RestaurantMenuPlanBooking::count())->toBe(1)->and(Storage::disk('public')->allFiles())->toBe([]);
+});
+
+test('preview collects missing schoolyear and duplicate account conflicts without following invalid mappings', function () {
+    $this->snapshot['schoolyears'] = [['id' => 999999, 'from' => '1900-01-01', 'until' => '1900-12-31']];
+    $this->snapshot['imports'][0]['schoolyear_id'] = 999999;
+    $user = $this->snapshot['users'][0];
+    $user['id'] = 999999;
+    $this->snapshot['users'][] = $user;
+    $response = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertUnprocessable()->assertJsonMissingPath('data.token');
+    expect($response->json('conflicts'))->toContain(
+        'Ein benötigtes Schuljahr fehlt lokal oder ist mehrdeutig. Schuljahre werden nicht automatisch verändert.',
+        'Mehrere Live-Konten würden demselben lokalen Konto zugeordnet. Die Übernahme ist gesperrt.',
+    )->and($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id);
+});
+
+test('preview rejects null required restaurant fields before an import can start', function () {
+    $this->snapshot['tables']['restaurant_sepa_mandates'][0]['flow_uuid'] = null;
+    $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertUnprocessable()->assertJsonPath('message', 'Live-Restaurantdaten enthalten eine leere Pflichtangabe. Der Datensatz muss vor der Übernahme korrigiert werden.')
+        ->assertJsonMissingPath('data.token');
+    expect(RestaurantSepaMandate::firstOrFail()->flow_uuid)->not->toBeNull();
+});
+
+test('preview and apply both reject changed existing image targets before database writes', function () {
+    $bytes = 'fixture image bytes';
+    $checksum = hash('sha256', $bytes);
+    $target = "restaurant/synchronisation/{$this->school->id}/{$checksum}.png";
+    $this->snapshot['files'] = [['disk' => 'public', 'path' => 'fixture.png', 'sha256' => $checksum, 'content' => base64_encode($bytes)]];
+    Storage::disk('public')->put($target, 'unexpected existing bytes');
+    $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertUnprocessable()->assertJsonPath('message', 'Ein vorhandenes lokales Bild hat eine unerwartete Prüfsumme.');
+    Storage::disk('public')->put($target, $bytes);
+    $token = $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertSuccessful()->json('data.token');
+    Storage::disk('public')->put($target, 'changed after preview');
+    $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => $token, 'confirmed' => true])
+        ->assertUnprocessable()->assertJsonPath('message', 'Ein vorhandenes lokales Bild hat eine unerwartete Prüfsumme.');
+    expect(RestaurantMenuPlanBooking::count())->toBe(1)->and(Storage::disk('public')->get($target))->toBe('changed after preview');
 });
 
 test('synchronisation reuses a proven student placeholder without changing login identity', function (string $placeholderType) {

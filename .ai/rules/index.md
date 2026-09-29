@@ -43,6 +43,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {resources/js/pages/homepage/studentsTimetables/overviewV2/**,app/Http/Controllers/Homepage/StudentsTimetablesStudentController.php,tests/Feature/StudentsTimetablesModuleTest.php} | .ai/rules/controllers-homepage-feature.md |
 | app/{Http/Controllers,Services}/StudentsTimetables/** | .ai/rules/controllers-services-students-timetables.md |
 | {app/Http/Controllers/Student/StudentController.php,app/Services/StudentService.php,app/Http/Controllers/Admin/UserController.php,tests/Feature/Controllers/Student/StudentControllerTest.php} | .ai/rules/controllers-student.md |
+| database/migrations/*sepa*.php | .ai/rules/database-migrations.md |
 | {UPDATES.md,public/documentation/**} | .ai/rules/documentation-2.md |
 | public/documentation/** | .ai/rules/documentation.md |
 | {routes/api.php,tests/Feature/StudentsTimetablesModuleTest.php,tests/Feature/StudentsTimetablesStudentLoginTest.php} | .ai/rules/feature-feature.md |
@@ -97,6 +98,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/views/pdfs/students-timetable-overview.blade.php, resources/views/pdfs/** | .ai/rules/pdfs.md |
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
+| {app/Services/RestaurantSynchronisationService.php,resources/js/pages/admin/restaurant/components/Synchronisation.vue,tests/Feature/Controllers/Admin/Restaurant/RestaurantSynchronisationControllerTest.php} | .ai/rules/restaurant.md |
 | {scripts/git_helpers.ps1,scripts/update-changelog.mjs} | .ai/rules/scripts-2.md |
 | {scripts/git_preview*.ps1,scripts/deploy_preview_cloudways.sh,app/Services/FeaturePreviewSnapshotService.php} | .ai/rules/scripts-services.md |
 | {scripts/git_helpers.ps1,scripts/git_branch_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/deploy_preview_cloudways.sh,scripts/git_preview_helpers.ps1,tests/Unit/PreviewDeploymentTest.php}, {scripts/update.php,tests/Unit/LocalDeploymentGuardTest.php}, {scripts/git_branch_helpers.ps1,scripts/git_preview_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}, {scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php} | .ai/rules/scripts-unit-2.md |

@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Models\RestaurantSepaMandate;
 use App\Models\School;
 use App\Models\User;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +15,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use JsonException;
 use RuntimeException;
 
 class RestaurantSynchronisationService
@@ -93,7 +97,8 @@ class RestaurantSynchronisationService
 
         return ['token' => $token, 'captured_at' => $source['captured_at'], 'expires_in_minutes' => 15,
             'school' => $school->long_name, 'summary' => $plan['summary'], 'files' => count($plan['files']),
-            'reused_student_accounts' => $plan['reused_student_accounts']];
+            'reused_student_accounts' => $plan['reused_student_accounts'],
+            'removed_student_links' => $plan['removed_student_links']];
     }
 
     public function apply(User $actor, string $token): void
@@ -150,6 +155,7 @@ class RestaurantSynchronisationService
 
     private function localState(int $schoolId, bool $lock = false): array
     {
+        $conflicts = [];
         $checks = DB::table('information_schema.TABLE_CONSTRAINTS as tables')
             ->join('information_schema.CHECK_CONSTRAINTS as checks', function ($join): void {
                 $join->on('checks.CONSTRAINT_SCHEMA', '=', 'tables.CONSTRAINT_SCHEMA')
@@ -159,15 +165,18 @@ class RestaurantSynchronisationService
             ->where('tables.TABLE_NAME', 'restaurant_sepa_mandates')
             ->where('tables.CONSTRAINT_TYPE', 'CHECK')->pluck('checks.CHECK_CLAUSE');
         if ($checks->contains(fn (string $clause): bool => (bool) preg_match('/\Ajson_valid\(`?child_entries`?\)\z/i', preg_replace('/\s+/', '', $clause)))) {
-            throw new RuntimeException('Die lokale SEPA-Tabelle enthält noch eine alte JSON-Prüfung für child_entries. Vor der Synchronisation muss die vorbereitete SEPA-Reparaturmigration ausgeführt werden. Es wurde nichts übernommen.');
+            $conflicts[] = 'Die lokale SEPA-Tabelle enthält noch eine alte JSON-Prüfung für child_entries. Vor der Synchronisation muss die vorbereitete SEPA-Reparaturmigration ausgeführt werden. Es wurde nichts übernommen.';
         }
         $tables = [...array_keys(self::TABLES), 'users', 'import116', 'school_tools', 'model_has_roles'];
         $engines = DB::table('information_schema.TABLES')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())->whereIn('TABLE_NAME', $tables)->pluck('ENGINE');
         if ($engines->count() !== count($tables) || $engines->contains(fn (string $engine): bool => strcasecmp($engine, 'InnoDB') !== 0)) {
-            throw new RuntimeException('Die Synchronisation benötigt für alle betroffenen Tabellen transaktionale InnoDB-Tabellen.');
+            $conflicts[] = 'Die Synchronisation benötigt für alle betroffenen Tabellen transaktionale InnoDB-Tabellen.';
         }
         if (DB::table('information_schema.TRIGGERS')->where('TRIGGER_SCHEMA', DB::connection()->getDatabaseName())->whereIn('EVENT_OBJECT_TABLE', $tables)->exists()) {
-            throw new RuntimeException('Betroffene Tabellen enthalten Datenbank-Trigger. Die Synchronisation ist zum Schutz anderer Daten gesperrt.');
+            $conflicts[] = 'Betroffene Tabellen enthalten Datenbank-Trigger. Die Synchronisation ist zum Schutz anderer Daten gesperrt.';
+        }
+        if ($engines->count() !== count($tables)) {
+            $this->assertNoConflicts($conflicts);
         }
         $state = ['tables' => [], 'max_ids' => [], 'users' => [], 'imports' => [], 'schoolyears' => [], 'settings' => []];
         foreach (self::TABLES as $table => $scope) {
@@ -203,7 +212,7 @@ class RestaurantSynchronisationService
             foreach ($rows as $row) {
                 foreach (self::REFERENCES as $column => $parent) {
                     if (isset($row[$column], $state['tables'][$parent]) && ! in_array($row[$column], array_column($state['tables'][$parent], 'id'), true)) {
-                        throw new RuntimeException('Lokale Restaurantdaten enthalten eine Beziehung außerhalb der ausgewählten Schule.');
+                        $conflicts[] = 'Lokale Restaurantdaten enthalten eine Beziehung außerhalb der ausgewählten Schule.';
                     }
                 }
             }
@@ -227,10 +236,12 @@ class RestaurantSynchronisationService
                     continue;
                 }
                 if ($foreign->exists()) {
-                    throw new RuntimeException('Restaurantdaten sind mit einer anderen Schule verknüpft. Die Übernahme wurde gesperrt.');
+                    $conflicts[] = 'Restaurantdaten sind mit einer anderen Schule verknüpft. Die Übernahme wurde gesperrt.';
                 }
             }
         }
+
+        $state['conflicts'] = $conflicts;
 
         return $state;
     }
@@ -242,151 +253,218 @@ class RestaurantSynchronisationService
             || array_keys($source['tables'] ?? []) !== array_keys(self::TABLES) || $local['settings'] === []) {
             throw new RuntimeException('Schulidentität oder Restaurantumfang stimmt nicht überein.');
         }
+        $conflicts = $local['conflicts'] ?? [];
         $maps = [];
+        $validTables = [];
         $yearMap = [];
         foreach ($source['schoolyears'] as $year) {
-            $matches = array_values(array_filter($local['schoolyears'], fn (array $row): bool => $row['from'] === $year['from'] && $row['until'] === $year['until']));
-            if (count($matches) !== 1) {
-                throw new RuntimeException('Ein benötigtes Schuljahr fehlt lokal oder ist mehrdeutig. Schuljahre werden nicht automatisch verändert.');
+            try {
+                $matches = array_values(array_filter($local['schoolyears'], fn (array $row): bool => $row['from'] === $year['from'] && $row['until'] === $year['until']));
+                if (count($matches) !== 1) {
+                    throw new RuntimeException('Ein benötigtes Schuljahr fehlt lokal oder ist mehrdeutig. Schuljahre werden nicht automatisch verändert.');
+                }
+                $yearMap[$year['id']] = $matches[0]['id'];
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
-            $yearMap[$year['id']] = $matches[0]['id'];
         }
         $importMaximum = $local['max_ids']['import116'];
         foreach ($source['imports'] as $import) {
-            $year = $import['schoolyear_id'] ? ($yearMap[$import['schoolyear_id']] ?? throw new RuntimeException('Schuljahrzuordnung fehlt.')) : null;
-            $matches = array_values(array_filter($local['imports'], fn (array $row): bool => $row['student_code'] === $import['student_code'] && $row['schoolyear_id'] === $year));
-            if (count($matches) > 1 || trim($import['student_code']) === '') {
-                throw new RuntimeException('Eine Import-116-Schüleridentität ist nicht eindeutig.');
+            try {
+                $year = $import['schoolyear_id'] ? ($yearMap[$import['schoolyear_id']] ?? throw new RuntimeException('Schuljahrzuordnung fehlt.')) : null;
+                $matches = array_values(array_filter($local['imports'], fn (array $row): bool => $row['student_code'] === $import['student_code'] && $row['schoolyear_id'] === $year));
+                if (count($matches) > 1 || trim($import['student_code']) === '') {
+                    throw new RuntimeException('Eine Import-116-Schüleridentität ist nicht eindeutig.');
+                }
+                $maps['import116'][$import['id']] = $matches[0]['id'] ?? ++$importMaximum;
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
-            $maps['import116'][$import['id']] = $matches[0]['id'] ?? ++$importMaximum;
         }
         $userMaximum = $local['max_ids']['users'];
         $reusedStudentAccounts = 0;
         foreach ($source['users'] as $user) {
-            $isLiveTeacher = in_array(mb_strtolower(trim($user['email'])), $source['teacher_emails'] ?? [], true);
-            $isLocalTeacher = DB::table('teachers')->where('school_id', $schoolId)->whereRaw('LOWER(email) = ?', [mb_strtolower(trim($user['email']))])->exists();
-            if ($isLiveTeacher !== $isLocalTeacher) {
-                throw new RuntimeException('Die Herkunft eines Restaurantbenutzers aus der Lehrerliste unterscheidet sich. Lehrerdaten werden nicht durch die Restaurant-Synchronisation verändert.');
+            try {
+                $isLiveTeacher = in_array(mb_strtolower(trim($user['email'])), $source['teacher_emails'] ?? [], true);
+                $isLocalTeacher = DB::table('teachers')->where('school_id', $schoolId)->whereRaw('LOWER(email) = ?', [mb_strtolower(trim($user['email']))])->exists();
+                if ($isLiveTeacher !== $isLocalTeacher) {
+                    $conflicts[] = 'Die Herkunft eines Restaurantbenutzers aus der Lehrerliste unterscheidet sich. Lehrerdaten werden nicht durch die Restaurant-Synchronisation verändert.';
+                }
+                $matches = array_values(array_filter($local['users'], fn (array $row): bool => mb_strtolower(trim($row['email'])) === mb_strtolower(trim($user['email']))));
+                if (count($matches) > 1 || trim($user['email']) === '') {
+                    throw new RuntimeException('Eine Benutzeridentität ist nicht eindeutig. Es wurden keine Konten verändert.');
+                }
+                $placeholder = $matches === [] ? $this->matchingStudentPlaceholder($user, $source, $local, $maps, $schoolId) : null;
+                $id = $matches[0]['id'] ?? $placeholder['id'] ?? ++$userMaximum;
+                if (in_array($id, $maps['users'] ?? [], true)) {
+                    throw new RuntimeException('Mehrere Live-Konten würden demselben lokalen Konto zugeordnet. Die Übernahme ist gesperrt.');
+                }
+                $maps['users'][$user['id']] = $id;
+                $reusedStudentAccounts += $placeholder !== null ? 1 : 0;
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
-            $matches = array_values(array_filter($local['users'], fn (array $row): bool => mb_strtolower(trim($row['email'])) === mb_strtolower(trim($user['email']))));
-            if (count($matches) > 1 || trim($user['email']) === '') {
-                throw new RuntimeException('Eine Benutzeridentität ist nicht eindeutig. Es wurden keine Konten verändert.');
-            }
-            $placeholder = $matches === [] ? $this->matchingStudentPlaceholder($user, $source, $local, $maps, $schoolId) : null;
-            $id = $matches[0]['id'] ?? $placeholder['id'] ?? ++$userMaximum;
-            if (in_array($id, $maps['users'] ?? [], true)) {
-                throw new RuntimeException('Mehrere Live-Konten würden demselben lokalen Konto zugeordnet. Die Übernahme ist gesperrt.');
-            }
-            $maps['users'][$user['id']] = $id;
-            $reusedStudentAccounts += $placeholder !== null ? 1 : 0;
         }
         foreach ($source['tables'] as $table => $rows) {
-            $columns = array_values(array_diff(Schema::getColumnListing($table), ['booking_slot_key']));
-            if ($columns !== $source['columns'][$table]) {
-                throw new RuntimeException('Das Live- und lokale Restaurant-Schema unterscheiden sich. Die Übernahme ist gesperrt.');
-            }
-            if (! in_array('id', $columns, true)) {
-                continue;
-            }
-            $owned = array_column($local['tables'][$table], 'id');
-            $maximum = max($local['max_ids'][$table], max(array_column($rows, 'id') ?: [0]));
-            foreach ($rows as $row) {
-                if ((int) $row['id'] <= 0 || (isset($row['school_id']) && (int) $row['school_id'] !== $schoolId)) {
-                    throw new RuntimeException('Ein Live-Datensatz liegt außerhalb des geprüften Schulkontexts.');
+            try {
+                $columnDefinitions = Schema::getColumns($table);
+                $columns = array_values(array_diff(array_column($columnDefinitions, 'name'), ['booking_slot_key']));
+                if ($columns !== $source['columns'][$table]) {
+                    throw new RuntimeException('Das Live- und lokale Restaurant-Schema unterscheiden sich. Die Übernahme ist gesperrt.');
                 }
-                $collision = DB::table($table)->where('id', $row['id'])->exists() && ! in_array($row['id'], $owned, true);
-                $maps[$table][$row['id']] = $collision ? ++$maximum : $row['id'];
+                $validTables[$table] = true;
+                $owned = array_column($local['tables'][$table], 'id');
+                $maximum = max($local['max_ids'][$table] ?? 0, max(array_column($rows, 'id') ?: [0]));
+                foreach ($rows as $row) {
+                    try {
+                        foreach ($columnDefinitions as $column) {
+                            if (! $column['nullable'] && ! $column['auto_increment'] && $column['generation'] === null
+                                && ($row[$column['name']] ?? null) === null) {
+                                throw new RuntimeException('Live-Restaurantdaten enthalten eine leere Pflichtangabe. Der Datensatz muss vor der Übernahme korrigiert werden.');
+                            }
+                        }
+                        if (! in_array('id', $columns, true)) {
+                            continue;
+                        }
+                        if ((int) ($row['id'] ?? 0) <= 0 || (isset($row['school_id']) && (int) $row['school_id'] !== $schoolId)) {
+                            throw new RuntimeException('Ein Live-Datensatz liegt außerhalb des geprüften Schulkontexts.');
+                        }
+                        $collision = DB::table($table)->where('id', $row['id'])->exists() && ! in_array($row['id'], $owned, true);
+                        $maps[$table][$row['id']] = $collision ? ++$maximum : $row['id'];
+                    } catch (RuntimeException|JsonException $exception) {
+                        $this->collectConflict($conflicts, $exception);
+                    }
+                }
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
         }
         $encryptedColumns = array_keys(array_filter((new RestaurantSepaMandate)->getCasts(), fn (string $cast): bool => str_starts_with($cast, 'encrypted')));
         if ($source['encrypted'] !== $encryptedColumns) {
-            throw new RuntimeException('Die SEPA-Verschlüsselungszuordnung stimmt nicht überein.');
+            $conflicts[] = 'Die SEPA-Verschlüsselungszuordnung stimmt nicht überein.';
         }
         $plan = ['tables' => [], 'users' => [], 'imports' => [], 'summary' => [], 'files' => [], 'roles' => [],
-            'reused_student_accounts' => $reusedStudentAccounts];
+            'reused_student_accounts' => $reusedStudentAccounts, 'removed_student_links' => 0];
         $fileMap = [];
         foreach ($source['files'] as $file) {
-            $bytes = base64_decode($file['content'], true);
-            if (! in_array($file['disk'], ['local', 'public'], true) || $bytes === false || ! hash_equals($file['sha256'], hash('sha256', $bytes))) {
-                throw new RuntimeException('Ein Restaurantbild ist unvollständig oder wurde verändert.');
+            try {
+                $bytes = base64_decode($file['content'], true);
+                if (! in_array($file['disk'], ['local', 'public'], true) || $bytes === false || ! hash_equals($file['sha256'], hash('sha256', $bytes))) {
+                    throw new RuntimeException('Ein Restaurantbild ist unvollständig oder wurde verändert.');
+                }
+                $extension = strtolower(pathinfo($file['path'], PATHINFO_EXTENSION));
+                if (! in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'], true)) {
+                    throw new RuntimeException('Ein Restaurantbild hat ein nicht unterstütztes Dateiformat.');
+                }
+                $targetPath = "restaurant/synchronisation/{$schoolId}/{$file['sha256']}.{$extension}";
+                $this->assertFileTarget($file['disk'], $targetPath);
+                $disk = Storage::disk($file['disk']);
+                if ($disk->exists($targetPath) && ! hash_equals($file['sha256'], hash('sha256', $disk->get($targetPath)))) {
+                    throw new RuntimeException('Ein vorhandenes lokales Bild hat eine unerwartete Prüfsumme.');
+                }
+                $fileMap[$file['path']] = $targetPath;
+                $plan['files'][] = ['disk' => $file['disk'], 'path' => $targetPath, 'content' => $file['content'], 'sha256' => $file['sha256']];
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
-            $extension = strtolower(pathinfo($file['path'], PATHINFO_EXTENSION));
-            if (! in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'], true)) {
-                throw new RuntimeException('Ein Restaurantbild hat ein nicht unterstütztes Dateiformat.');
-            }
-            $targetPath = "restaurant/synchronisation/{$schoolId}/{$file['sha256']}.{$extension}";
-            $fileMap[$file['path']] = $targetPath;
-            $plan['files'][] = ['disk' => $file['disk'], 'path' => $targetPath, 'content' => $file['content'], 'sha256' => $file['sha256']];
         }
         foreach ($source['tables'] as $table => $rows) {
-            foreach ($rows as $row) {
-                if (isset($row['id'])) {
-                    $row['id'] = $maps[$table][$row['id']];
-                }
-                foreach (self::REFERENCES as $column => $parent) {
-                    if (isset($row[$column])) {
-                        $row[$column] = $maps[$parent][$row[$column]] ?? throw new RuntimeException('Eine benötigte Restaurant-Beziehung fehlt im Live-Snapshot.');
-                    }
-                }
-                foreach (['food_image_path', 'image_path'] as $column) {
-                    if (! empty($row[$column])) {
-                        $row[$column] = $fileMap[$row[$column]] ?? throw new RuntimeException('Ein benötigtes Bild fehlt im Snapshot.');
-                    }
-                }
-                if (! empty($row['foods_snapshot'])) {
-                    $foods = json_decode($row['foods_snapshot'], true, 512, JSON_THROW_ON_ERROR);
-                    foreach ($foods as &$food) {
-                        $food = $this->remapFood($food, $fileMap, $maps, array_column($plan['files'], 'content', 'path'));
-                    }
-                    unset($food);
-                    $row['foods_snapshot'] = json_encode($foods, JSON_THROW_ON_ERROR);
-                }
-                if ($table === 'restaurant_billings') {
-                    $billing = json_decode($row['snapshot'], true, 512, JSON_THROW_ON_ERROR);
-                    foreach ($billing['rows'] ?? [] as $index => $person) {
-                        $billing['rows'][$index]['user_id'] = $maps['users'][$person['user_id']] ?? 0;
-                    }
-                    $row['snapshot'] = json_encode($billing, JSON_THROW_ON_ERROR);
-                }
-                $plan['tables'][$table][] = $row;
+            if (! isset($validTables[$table])) {
+                continue;
             }
-            $plan['tables'][$table] ??= [];
-            $plan['summary'][] = $this->counts($table, $local['tables'][$table], $plan['tables'][$table], $table === 'restaurant_sepa_mandates' ? $encryptedColumns : []);
+            try {
+                foreach ($rows as $row) {
+                    try {
+                        if (isset($row['id'])) {
+                            if (! isset($maps[$table][$row['id']])) {
+                                continue;
+                            }
+                            $row['id'] = $maps[$table][$row['id']];
+                        }
+                        foreach (self::REFERENCES as $column => $parent) {
+                            if (isset($row[$column])) {
+                                $row[$column] = $maps[$parent][$row[$column]] ?? throw new RuntimeException('Eine benötigte Restaurant-Beziehung fehlt im Live-Snapshot.');
+                            }
+                        }
+                        foreach (['food_image_path', 'image_path'] as $column) {
+                            if (! empty($row[$column])) {
+                                $row[$column] = $fileMap[$row[$column]] ?? throw new RuntimeException('Ein benötigtes Bild fehlt im Snapshot.');
+                            }
+                        }
+                        if (! empty($row['foods_snapshot'])) {
+                            $foods = json_decode($row['foods_snapshot'], true, 512, JSON_THROW_ON_ERROR);
+                            foreach ($foods as &$food) {
+                                $food = $this->remapFood($food, $fileMap, $maps, array_column($plan['files'], 'content', 'path'));
+                            }
+                            unset($food);
+                            $row['foods_snapshot'] = json_encode($foods, JSON_THROW_ON_ERROR);
+                        }
+                        if ($table === 'restaurant_billings') {
+                            $billing = json_decode($row['snapshot'], true, 512, JSON_THROW_ON_ERROR);
+                            foreach ($billing['rows'] ?? [] as $index => $person) {
+                                $billing['rows'][$index]['user_id'] = $maps['users'][$person['user_id']] ?? 0;
+                            }
+                            $row['snapshot'] = json_encode($billing, JSON_THROW_ON_ERROR);
+                        }
+                        $plan['tables'][$table][] = $row;
+                    } catch (RuntimeException|JsonException $exception) {
+                        $this->collectConflict($conflicts, $exception);
+                    }
+                }
+                $plan['tables'][$table] ??= [];
+                $plan['summary'][] = $this->counts($table, $local['tables'][$table], $plan['tables'][$table], $table === 'restaurant_sepa_mandates' ? $encryptedColumns : []);
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
+            }
         }
         foreach ($source['users'] as $sourceUser) {
-            $id = $maps['users'][$sourceUser['id']];
-            $existing = collect($local['users'])->firstWhere('id', $id);
-            $fields = array_intersect_key($sourceUser, array_flip(array_diff(self::USER_FIELDS, ['id', 'email', 'is_active'])));
-            $fields['import116_id'] = $fields['import116_id'] ? ($maps['import116'][$fields['import116_id']] ?? throw new RuntimeException('Schülerzuordnung fehlt.')) : null;
-            if ($existing && $existing['import116_id'] && $fields['import116_id'] && $existing['import116_id'] !== $fields['import116_id']) {
-                throw new RuntimeException('Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.');
+            if (! isset($maps['users'][$sourceUser['id']])) {
+                continue;
             }
-            if ($existing && $existing['import116_id'] && ! $fields['import116_id']) {
-                throw new RuntimeException('Ein lokales Benutzerkonto hat eine bestehende Schülerzuordnung, die im Live-Stand fehlt. Sie wird nicht still entfernt.');
-            }
-            if ($fields['restaurant_booking_defaults']) {
-                $defaults = json_decode($fields['restaurant_booking_defaults'], true, 512, JSON_THROW_ON_ERROR);
-                foreach ($defaults['recipients'] ?? [] as $index => $recipient) {
-                    if (! empty($recipient['import116_id'])) {
-                        $defaults['recipients'][$index]['import116_id'] = $maps['import116'][$recipient['import116_id']] ?? throw new RuntimeException('Eine vorgemerkte Schülerzuordnung fehlt.');
-                    }
+            try {
+                $id = $maps['users'][$sourceUser['id']];
+                $existing = collect($local['users'])->firstWhere('id', $id);
+                $fields = array_intersect_key($sourceUser, array_flip(array_diff(self::USER_FIELDS, ['id', 'email', 'is_active'])));
+                $fields['import116_id'] = $fields['import116_id'] ? ($maps['import116'][$fields['import116_id']] ?? throw new RuntimeException('Schülerzuordnung fehlt.')) : null;
+                if ($existing && $existing['import116_id'] && $fields['import116_id'] && $existing['import116_id'] !== $fields['import116_id']) {
+                    throw new RuntimeException('Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.');
                 }
-                $fields['restaurant_booking_defaults'] = json_encode($defaults, JSON_THROW_ON_ERROR);
+                if ($existing && $existing['import116_id'] && ! $fields['import116_id']) {
+                    $plan['removed_student_links']++;
+                }
+                if ($fields['restaurant_booking_defaults']) {
+                    $defaults = json_decode($fields['restaurant_booking_defaults'], true, 512, JSON_THROW_ON_ERROR);
+                    foreach ($defaults['recipients'] ?? [] as $index => $recipient) {
+                        if (! empty($recipient['import116_id'])) {
+                            $defaults['recipients'][$index]['import116_id'] = $maps['import116'][$recipient['import116_id']] ?? throw new RuntimeException('Eine vorgemerkte Schülerzuordnung fehlt.');
+                        }
+                    }
+                    $fields['restaurant_booking_defaults'] = json_encode($defaults, JSON_THROW_ON_ERROR);
+                }
+                $plan['users'][] = ['id' => $id, 'fields' => $fields, 'existing' => $existing !== null,
+                    'email' => $sourceUser['email'], 'is_active' => $sourceUser['is_active']];
+                $plan['roles'][$id] = array_values(array_intersect($sourceUser['restaurant_roles'], self::ROLES));
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
             }
-            $plan['users'][] = ['id' => $id, 'fields' => $fields, 'existing' => $existing !== null,
-                'email' => $sourceUser['email'], 'is_active' => $sourceUser['is_active']];
-            $plan['roles'][$id] = array_values(array_intersect($sourceUser['restaurant_roles'], self::ROLES));
         }
         foreach ($source['imports'] as $import) {
-            $id = $maps['import116'][$import['id']];
-            $existing = collect($local['imports'])->firstWhere('id', $id);
-            $fields = array_intersect_key($import, array_flip(array_diff(self::IMPORT_FIELDS, ['id'])));
-            $fields['schoolyear_id'] = $import['schoolyear_id'] ? $yearMap[$import['schoolyear_id']] : null;
-            $fields['user_id'] = $import['user_id'] ? ($maps['users'][$import['user_id']] ?? throw new RuntimeException('Import-116-Benutzerzuordnung fehlt.')) : ($existing['user_id'] ?? null);
-            if ($existing && $existing['user_id'] && $fields['user_id'] && $existing['user_id'] !== $fields['user_id']) {
-                throw new RuntimeException('Ein vorhandener Schüler gehört lokal zu einem anderen Benutzerkonto.');
+            if (! isset($maps['import116'][$import['id']])) {
+                continue;
             }
-            $plan['imports'][] = ['id' => $id, 'fields' => $fields, 'existing' => $existing !== null];
+            try {
+                $id = $maps['import116'][$import['id']];
+                $existing = collect($local['imports'])->firstWhere('id', $id);
+                $fields = array_intersect_key($import, array_flip(array_diff(self::IMPORT_FIELDS, ['id'])));
+                $fields['schoolyear_id'] = $import['schoolyear_id'] ? $yearMap[$import['schoolyear_id']] : null;
+                $fields['user_id'] = $import['user_id'] ? ($maps['users'][$import['user_id']] ?? throw new RuntimeException('Import-116-Benutzerzuordnung fehlt.')) : ($existing['user_id'] ?? null);
+                if ($existing && $existing['user_id'] && $fields['user_id'] && $existing['user_id'] !== $fields['user_id']) {
+                    throw new RuntimeException('Ein vorhandener Schüler gehört lokal zu einem anderen Benutzerkonto.');
+                }
+                $plan['imports'][] = ['id' => $id, 'fields' => $fields, 'existing' => $existing !== null];
+            } catch (RuntimeException|JsonException $exception) {
+                $this->collectConflict($conflicts, $exception);
+            }
         }
         foreach (['users' => 'users', 'imports' => 'import116'] as $key => $table) {
             $current = array_map(fn (array $row): array => array_intersect_key($row, array_flip($key === 'users' ? self::USER_FIELDS : self::IMPORT_FIELDS)), $local[$key]);
@@ -397,7 +475,7 @@ class RestaurantSynchronisationService
         }
         $plan['settings'] = array_intersect_key($source['settings'], array_flip(array_filter(Schema::getColumnListing('school_tools'), fn (string $column): bool => str_starts_with($column, 'restaurant_'))));
         if (count($plan['settings']) !== count($source['settings']) || $plan['settings'] === []) {
-            throw new RuntimeException('Restaurant-Einstellungen können nicht vollständig zugeordnet werden.');
+            $conflicts[] = 'Restaurant-Einstellungen können nicht vollständig zugeordnet werden.';
         }
         $plan['summary'][] = ['table' => 'school_tools (Restaurant)', 'added' => 0, 'changed' => $plan['settings'] == array_intersect_key($local['settings'][0], $plan['settings']) ? 0 : 1, 'removed' => 0];
         $oldRoles = array_map(fn (array $row): string => $row['model_id'].':'.$row['name'], $local['roles']);
@@ -409,6 +487,8 @@ class RestaurantSynchronisationService
         }
         $plan['summary'][] = ['table' => 'Restaurant-Rollen', 'added' => count(array_diff($newRoles, $oldRoles)),
             'changed' => 0, 'removed' => count(array_diff($oldRoles, $newRoles))];
+        $this->assertNoConflicts($conflicts);
+
         // Plain SEPA values only exist in the encrypted preview; database rows use the local application key.
         foreach ($plan['tables']['restaurant_sepa_mandates'] as &$row) {
             foreach ($encryptedColumns as $column) {
@@ -420,6 +500,31 @@ class RestaurantSynchronisationService
         unset($row);
 
         return $plan;
+    }
+
+    /** @param list<string> $conflicts */
+    private function collectConflict(array &$conflicts, RuntimeException|JsonException $exception): void
+    {
+        if ($exception instanceof QueryException) {
+            throw $exception;
+        }
+        $conflicts[] = match (true) {
+            $exception instanceof JsonException => 'Restaurantdaten enthalten ungültige JSON-Inhalte.',
+            $exception instanceof DecryptException => 'Lokale SEPA-Daten können mit dem lokalen Anwendungsschlüssel nicht entschlüsselt werden.',
+            default => $exception->getMessage(),
+        };
+    }
+
+    /** @param list<string> $conflicts */
+    private function assertNoConflicts(array $conflicts): void
+    {
+        $conflicts = array_values(array_unique($conflicts));
+        if (count($conflicts) === 1) {
+            throw new RuntimeException($conflicts[0]);
+        }
+        if ($conflicts !== []) {
+            throw ValidationException::withMessages(['synchronisation' => $conflicts]);
+        }
     }
 
     /**

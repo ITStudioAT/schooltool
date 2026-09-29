@@ -18,7 +18,12 @@
             <v-btn color="primary" variant="tonal" :loading="isPreviewing" :disabled="isApplying" @click="loadPreview">
                 Vorschau laden
             </v-btn>
-            <v-alert v-if="errorMessage" type="error" variant="tonal" class="mt-3">{{ errorMessage }}</v-alert>
+            <v-alert v-if="errorMessage" type="error" variant="tonal" class="mt-3">
+                {{ errorMessage }}
+                <ul v-if="conflicts.length" class="mt-2 pl-5">
+                    <li v-for="conflict in conflicts" :key="conflict">{{ conflict }}</li>
+                </ul>
+            </v-alert>
             <v-alert v-if="successMessage" type="success" variant="tonal" class="mt-3">{{ successMessage }}</v-alert>
             <template v-if="preview">
                 <p class="mt-4 mb-2">
@@ -37,6 +42,11 @@
                     {{ preview.reused_student_accounts }} eindeutig zugeordnete Schüler-Platzhalterkonten werden wiederverwendet.
                     Ihre Konto-IDs, lokalen Anmeldeadressen und Passwörter bleiben erhalten.
                 </p>
+                <v-alert v-if="preview.removed_student_links" type="warning" variant="tonal" class="mt-3">
+                    Bei {{ preview.removed_student_links }} Benutzerkonten wird die lokale Schülerzuordnung entfernt,
+                    weil sie beim zugeordneten Live-Konto fehlt. Die Schülerdatensätze und Unterrichtsdaten bleiben erhalten.
+                    Dies erfolgt erst nach der Bestätigung der Übernahme.
+                </v-alert>
                 <v-checkbox v-model="confirmed" :disabled="isApplying" label="Ich möchte die oben beschriebenen lokalen Restaurantdaten durch diesen geprüften Stand ersetzen." />
                 <v-btn color="primary" :loading="isApplying" :disabled="!confirmed || isPreviewing" @click="applyPreview">
                     Geprüften Stand übernehmen
@@ -57,6 +67,7 @@ const confirmed = ref(false)
 const isPreviewing = ref(false)
 const isApplying = ref(false)
 const errorMessage = ref('')
+const conflicts = ref([])
 const successMessage = ref('')
 
 function formatTime(value) {
@@ -76,17 +87,24 @@ function tableLabel(table) {
     return labels[table] || table
 }
 
+function showFailure(error, fallback) {
+    const data = error.response?.data
+    errorMessage.value = data?.message || fallback
+    conflicts.value = Array.isArray(data?.conflicts) ? data.conflicts : []
+}
+
 async function loadPreview() {
     isPreviewing.value = true
     preview.value = null
     confirmed.value = false
     errorMessage.value = ''
+    conflicts.value = []
     successMessage.value = ''
     try {
         const response = await axios.post(previewRoute.url())
         preview.value = response.data.data
     } catch (error) {
-        errorMessage.value = error.response?.data?.message || 'Der Live-Stand konnte nicht geprüft werden.'
+        showFailure(error, 'Der Live-Stand konnte nicht geprüft werden.')
     } finally {
         isPreviewing.value = false
     }
@@ -96,6 +114,7 @@ async function applyPreview() {
     if (!confirmed.value || !preview.value || isApplying.value) return
     isApplying.value = true
     errorMessage.value = ''
+    conflicts.value = []
     try {
         const response = await axios.post(applyRoute.url(), { token: preview.value.token, confirmed: true })
         successMessage.value = response.data.message
@@ -103,7 +122,11 @@ async function applyPreview() {
         confirmed.value = false
         await useRestaurantStore().loadSettings()
     } catch (error) {
-        errorMessage.value = error.response?.data?.message || 'Die Übernahme ist fehlgeschlagen; bitte erneut prüfen.'
+        showFailure(error, 'Die Übernahme ist fehlgeschlagen; bitte erneut prüfen.')
+        if (conflicts.value.length) {
+            preview.value = null
+            confirmed.value = false
+        }
     } finally {
         isApplying.value = false
     }

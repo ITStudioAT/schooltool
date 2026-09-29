@@ -1,6 +1,12 @@
 # UPDATES
 
 
+## 3.49.13
+
+### Restaurant
+- Datensynchronisation fix
+- SEPA-Nummer als 4er-Blocks
+
 ## 3.49.12
 
 ### System
