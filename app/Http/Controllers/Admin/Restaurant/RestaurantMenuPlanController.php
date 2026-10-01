@@ -27,13 +27,38 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantMenuPlanController extends Controller
 {
-    public function bookings(RestaurantService $service): JsonResponse
+    public function bookings(Request $request, RestaurantService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $bookings = $service->bookingsForOrderablePlansQuery($authUser)
+        $validated = $request->validate(['week_start' => ['sometimes', 'required', 'date_format:Y-m-d']]);
+        $selectedWeek = null;
+        $query = null;
+
+        if (isset($validated['week_start'])) {
+            $weekStart = Carbon::parse($validated['week_start'])->startOfDay();
+            abort_unless($weekStart->isMonday(), 422, 'Die ausgewählte Woche muss an einem Montag beginnen.');
+            $weekEnd = $weekStart->copy()->addDays(6);
+            $plans = RestaurantMenuPlan::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('start_date', '<=', $weekEnd->toDateString())
+                ->where('end_date', '>=', $weekStart->toDateString())
+                ->get(['id', 'start_date', 'end_date']);
+            $query = RestaurantMenuPlanBooking::query()
+                ->whereHas('menuPlanEntry', fn ($entries) => $entries
+                    ->whereIn('restaurant_menu_plan_id', $plans->pluck('id'))
+                    ->whereBetween('plan_date', [$weekStart->toDateString(), $weekEnd->toDateString()]));
+            $selectedWeek = [
+                'calendar_week' => $weekStart->isoWeek(),
+                'week_year' => $weekStart->isoWeekYear(),
+                'start_date' => $plans->isEmpty() ? $weekStart->toDateString() : Carbon::parse($plans->min('start_date'))->max($weekStart)->toDateString(),
+                'end_date' => $plans->isEmpty() ? $weekEnd->toDateString() : Carbon::parse($plans->max('end_date'))->min($weekEnd)->toDateString(),
+            ];
+        }
+
+        $bookings = ($query ?? $service->bookingsForOrderablePlansQuery($authUser))
             ->where('school_id', $authUser->school_id)
             ->whereHas('user', fn ($query) => $query->where('school_id', $authUser->school_id))
             ->whereHas('menuPlanEntry.menuPlan', fn ($query) => $query->where('school_id', $authUser->school_id))
@@ -41,8 +66,9 @@ class RestaurantMenuPlanController extends Controller
             ->get();
 
         $recipients = $this->bookingListRecipients($bookings, $authUser);
+        $billings = RestaurantBilling::query()->where('school_id', $authUser->school_id)->get(['start_date', 'end_date']);
 
-        $rows = $bookings->map(function (RestaurantMenuPlanBooking $booking) use ($recipients): array {
+        $rows = $bookings->map(function (RestaurantMenuPlanBooking $booking) use ($recipients, $billings): array {
             $recipient = $recipients[$booking->id] ?? null;
             $lastName = $recipient?->last_name ?? ($booking->child_name ?: $booking->user?->last_name);
             $firstName = $recipient?->first_name ?? ($booking->child_name ? '' : $booking->user?->first_name);
@@ -71,6 +97,9 @@ class RestaurantMenuPlanController extends Controller
                 'person' => $person,
                 'date' => $booking->menuPlanEntry->plan_date->toDateString(),
                 'menu' => $booking->menuPlanEntry->menu_title,
+                'plan_id' => $booking->menuPlanEntry->restaurant_menu_plan_id,
+                'entry_id' => $booking->restaurant_menu_plan_entry_id,
+                'can_delete' => ! $billings->contains(fn (RestaurantBilling $billing): bool => $booking->menuPlanEntry->plan_date->betweenIncluded($billing->start_date, $billing->end_date)),
                 'last_name' => $lastName,
                 'first_name' => $firstName,
             ];
@@ -81,7 +110,7 @@ class RestaurantMenuPlanController extends Controller
                 ?: ($left['id'] <=> $right['id']);
         })->values()->map(fn (array $row): array => array_diff_key($row, array_flip(['last_name', 'first_name'])));
 
-        return response()->json(['data' => $rows], 200, $this->noStoreHeaders());
+        return response()->json(['data' => $rows, 'meta' => ['selected_week' => $selectedWeek]], 200, $this->noStoreHeaders());
     }
 
     /**
@@ -438,25 +467,28 @@ class RestaurantMenuPlanController extends Controller
 
         [$plan, $entry] = $this->resolvePlanAndEntry($authUser, $planId, $entryId, $service);
 
-        if ($this->weekIsBilled((int) $plan->school_id, $entry->plan_date)) {
-            return response()->json([
-                'message' => 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.',
-            ], 409);
-        }
+        return DB::transaction(function () use ($authUser, $plan, $entry, $entryId, $bookingId): JsonResponse {
+            $booking = RestaurantMenuPlanBooking::query()
+                ->where('school_id', $authUser->school_id)
+                ->whereHas('user', fn ($users) => $users->where('school_id', $authUser->school_id))
+                ->where('restaurant_menu_plan_entry_id', $entryId)
+                ->lockForUpdate()
+                ->find($bookingId);
 
-        $booking = RestaurantMenuPlanBooking::query()
-            ->where('restaurant_menu_plan_entry_id', $entryId)
-            ->find($bookingId);
+            if (! $booking) {
+                abort(404, 'Buchung nicht gefunden.');
+            }
 
-        if (! $booking) {
-            abort(404, 'Buchung nicht gefunden.');
-        }
+            if ($this->weekIsBilled((int) $plan->school_id, $entry->plan_date, true)) {
+                return response()->json([
+                    'message' => 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.',
+                ], 409);
+            }
 
-        $booking->delete();
+            $booking->delete();
 
-        return response()->json([
-            'message' => 'Buchung wurde gelöscht.',
-        ]);
+            return response()->json(['message' => 'Buchung wurde gelöscht.']);
+        });
     }
 
     public function print(Request $request, int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
@@ -498,7 +530,7 @@ class RestaurantMenuPlanController extends Controller
         ];
     }
 
-    private function weekIsBilled(int $schoolId, mixed $planDate): bool
+    private function weekIsBilled(int $schoolId, mixed $planDate, bool $lock = false): bool
     {
         if (! $planDate) {
             return false;
@@ -508,11 +540,12 @@ class RestaurantMenuPlanController extends Controller
             ? $planDate->copy()->startOfDay()
             : Carbon::parse((string) $planDate)->startOfDay();
 
-        return RestaurantBilling::query()
+        $query = RestaurantBilling::query()
             ->where('school_id', $schoolId)
             ->whereDate('start_date', '<=', $date->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $date->format('Y-m-d'))
-            ->exists();
+            ->whereDate('end_date', '>=', $date->format('Y-m-d'));
+
+        return $lock ? $query->lockForUpdate()->first(['id']) !== null : $query->exists();
     }
 
     /**

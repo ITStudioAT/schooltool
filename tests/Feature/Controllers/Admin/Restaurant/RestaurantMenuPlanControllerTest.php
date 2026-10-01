@@ -125,6 +125,72 @@ test('bookings returns an empty list for a school without bookings', function ()
         ->assertSuccessful()->assertJsonPath('data', []);
 });
 
+test('weekly bookings includes all plans in the week despite locks and deadlines and excludes other weeks and schools', function () {
+    $this->travelTo(now()->setDate(2026, 10, 1)->setTime(18, 0));
+    $includedIds = [];
+    foreach ([
+        ['2026-10-05', '2026-10-08', '2026-10-05', true, $this->school],
+        ['2026-10-06', '2026-10-09', '2026-10-06', false, $this->school],
+        ['2026-09-28', '2026-10-09', '2026-10-07', false, $this->school],
+        ['2026-09-28', '2026-10-09', '2026-10-01', false, $this->school],
+        ['2026-10-12', '2026-10-15', '2026-10-12', true, $this->school],
+        ['2026-10-05', '2026-10-08', '2026-10-05', true, $this->otherSchool],
+    ] as $index => [$start, $end, $date, $available, $school]) {
+        $plan = RestaurantMenuPlan::factory()->create([
+            'school_id' => $school->id, 'start_date' => $start, 'end_date' => $end,
+            'is_available' => $available, 'use_individual_schedule_values' => true,
+            'order_start_at' => '2026-09-01 00:00:00', 'order_end_at' => '2026-09-02 00:00:00',
+        ]);
+        $entry = RestaurantMenuPlanEntry::factory()->create([
+            'restaurant_menu_plan_id' => $plan->id, 'restaurant_menu_id' => $this->menu->id, 'plan_date' => $date,
+        ]);
+        $booking = RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $school->id, 'user_id' => $this->admin->id,
+            'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 3,
+        ]);
+        if ($index < 3) {
+            $includedIds[] = $booking->id;
+        }
+        if ($index === 0) {
+            $foreignUser = User::factory()->create(['school_id' => $this->otherSchool->id]);
+            RestaurantMenuPlanBooking::query()->create([
+                'school_id' => $this->school->id, 'user_id' => $foreignUser->id,
+                'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1,
+            ]);
+            RestaurantMenuPlanBooking::query()->create([
+                'school_id' => $this->otherSchool->id, 'user_id' => User::factory()->create(['school_id' => $this->school->id])->id,
+                'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1,
+            ]);
+        }
+    }
+    $response = $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/bookings?week_start=2026-10-05')
+        ->assertSuccessful()->assertJsonCount(3, 'data')
+        ->assertJsonPath('meta.selected_week', [
+            'calendar_week' => 41, 'week_year' => 2026, 'start_date' => '2026-10-05', 'end_date' => '2026-10-09',
+        ]);
+    expect(array_column($response->json('data'), 'id'))->toBe($includedIds);
+    $week = collect(app(RestaurantService::class)->menuPlanWeeksForUser($this->admin))->firstWhere('week_start', '2026-10-05');
+    expect($week['bookings_count'])->toBe(count($includedIds));
+    $this->getJson('/api/admin/restaurant/bookings')->assertSuccessful()->assertJsonPath('data', []);
+});
+
+test('weekly bookings validates the selected week start', function (string $weekStart) {
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/bookings?week_start='.$weekStart)->assertUnprocessable();
+})->with(['2026-10-06', '2026-02-30', 'invalid']);
+
+test('weekly bookings identifies an existing empty plan week', function () {
+    RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08', 'is_available' => false,
+    ]);
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings?week_start=2026-10-05')
+        ->assertSuccessful()->assertJsonPath('data', [])
+        ->assertJsonPath('meta.selected_week', [
+            'calendar_week' => 41, 'week_year' => 2026, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08',
+        ]);
+});
+
 test('bookings uses the child recipient name and sorts it by last name', function () {
     $this->travelTo(now()->setDate(2026, 3, 23)->startOfDay());
     $plan = RestaurantMenuPlan::factory()->create([
@@ -1411,6 +1477,9 @@ test('destroy entry booking rejects deleting bookings from billed weeks', functi
         'booked_at' => '2026-04-16 19:39:00',
     ]);
 
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/bookings?week_start=2026-04-20')
+        ->assertSuccessful()->assertJsonPath('data.0.can_delete', true);
+
     RestaurantBilling::factory()->create([
         'school_id' => $this->school->id,
         'created_by_user_id' => $this->admin->id,
@@ -1418,12 +1487,37 @@ test('destroy entry booking rejects deleting bookings from billed weeks', functi
         'end_date' => '2026-04-26',
     ]);
 
+    $this->getJson('/api/admin/restaurant/bookings?week_start=2026-04-20')
+        ->assertSuccessful()->assertJsonPath('data.0.can_delete', false);
+
     $this->actingAs($this->admin, 'sanctum')
         ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings/{$booking->id}")
         ->assertStatus(409)
         ->assertJsonPath('message', 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.');
 
     expect(RestaurantMenuPlanBooking::query()->find($booking->id))->not->toBeNull();
+});
+
+test('destroy entry booking enforces administrator access and the booking school', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    $booking = RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1,
+    ]);
+    $url = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings/{$booking->id}";
+    $this->deleteJson($url)->assertUnauthorized();
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson($url)->assertForbidden();
+    $booking->update(['school_id' => $this->otherSchool->id]);
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url)->assertNotFound();
+    $this->assertModelExists($booking);
+    $booking->update(['school_id' => $this->school->id]);
+    $foreignAdmin = User::factory()->create(['school_id' => $this->otherSchool->id]);
+    $foreignAdmin->assignRole('admin');
+    enableSchoolToolModuleForTests($this->otherSchool, 'restaurant');
+    grantSchoolToolLicenceForTests($this->otherSchool, 'Restaurant');
+    $this->actingAs($foreignAdmin, 'sanctum')->deleteJson($url)->assertNotFound();
+    $this->assertModelExists($booking);
 });
 
 test('print downloads menu plan pdf for current school', function () {

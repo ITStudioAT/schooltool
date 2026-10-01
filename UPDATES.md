@@ -1,6 +1,12 @@
 # UPDATES
 
 
+## 3.49.14
+
+### Restaurant
+
+- Bestellungen aus der Buchungsübersicht stornieren
+
 ## 3.49.13
 
 ### Restaurant
