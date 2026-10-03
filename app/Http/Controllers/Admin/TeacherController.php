@@ -17,9 +17,46 @@ use App\Models\User;
 use App\Services\TeacherService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TeacherController extends Controller
 {
+    public function exportCsv(): StreamedResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $teachers = User::query()
+            ->where('school_id', $authUser->school_id)
+            ->role('teacher')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('id')
+            ->get(['short', 'last_name', 'first_name', 'email', 'is_active']);
+
+        return response()->streamDownload(static function () use ($teachers): void {
+            $stream = fopen('php://output', 'wb');
+            fwrite($stream, "\xEF\xBB\xBF");
+            fputcsv($stream, ['Kurz', 'Nachname', 'Vorname', 'Email', 'Aktiv'], ';', '"', '', "\r\n");
+
+            foreach ($teachers as $teacher) {
+                $values = [$teacher->short, $teacher->last_name, $teacher->first_name, $teacher->email, $teacher->is_active ? 'Ja' : 'Nein'];
+                $values = array_map(static function (?string $value): string {
+                    $value ??= '';
+
+                    return preg_match('/\A(?:[\t\r\n]|\s*[=+\-@])/u', $value) ? "'".$value : $value;
+                }, $values);
+                fputcsv($stream, $values, ';', '"', '', "\r\n");
+            }
+
+            fclose($stream);
+        }, 'Lehrer_Schule_'.$authUser->school_id.'_'.now()->format('Y-m-d').'.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'private, no-store',
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      */

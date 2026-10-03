@@ -513,6 +513,26 @@ it('brings main hotfixes into development without publishing the feature', funct
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix);
 });
 
+it('reports gitupdate merge conflicts and retains both branches for recovery', function (string $powershell): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
+    file_put_contents($this->workflowPc.'/shared.txt', "Feature replacement\n");
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $main = commitBranchWorkflowFile($this->workflowLaptop, 'shared.txt', "Main replacement\n");
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitupdate', $powershell);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->toContain('CONFLICT (content): Merge conflict in shared.txt', 'Git failed: git merge --no-edit refs/remotes/origin/main', 'exit code 1')
+        ->not->toContain('LOCAL_MIGRATIONS_CHECKED', 'main was incorporated');
+    expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'MERGE_HEAD'))->toBe($main)
+        ->and(runBranchWorkflowGit($this->workflowPc, 'diff', '--name-only', '--diff-filter=U'))->toBe('shared.txt')
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
+        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($main);
+})->with(['powershell', 'pwsh']);
+
 it('stops gitupdate when checked local migrations fail without publishing the feature', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     $remoteHead = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function');
@@ -526,6 +546,91 @@ POWERSHELL);
         ->and($result->getOutput())->toContain('LOCAL_MIGRATIONS_FAILED')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($remoteHead);
 });
+
+it('installs locked dependencies on a new device and synchronises changed locks after pulling', function (string $powershell): void {
+    copy(dirname(__DIR__, 2).'/scripts/update.php', $this->workflowPc.'/scripts/update.php');
+    file_put_contents($this->workflowPc.'/.gitignore', ".env\n/vendor\n/node_modules\n/storage\n");
+    file_put_contents($this->workflowPc.'/composer.lock', '{}');
+    file_put_contents($this->workflowPc.'/package.json', '{}');
+    $lock = ['lockfileVersion' => 3, 'packages' => ['' => [], 'node_modules/example' => ['version' => '1.0.0']]];
+    file_put_contents($this->workflowPc.'/package-lock.json', json_encode($lock));
+    runBranchWorkflowGit($this->workflowPc, 'add', '.');
+    runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Add locked dependencies');
+    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'main');
+
+    $bin = $this->workflowDirectory.'/bin';
+    mkdir($bin);
+    foreach (['composer', 'npm'] as $tool) {
+        file_put_contents($bin.'/'.$tool.'.cmd', '@"'.PHP_BINARY.'" "%~dp0dependency-fixture.php" '.$tool.' %*'."\r\n");
+    }
+    file_put_contents($bin.'/dependency-fixture.php', <<<'PHP'
+<?php
+$tool = $argv[1];
+file_put_contents('.git/dependency-commands.jsonl', json_encode(array_slice($argv, 1))."\n", FILE_APPEND);
+if ($tool === 'composer') {
+    if (! is_dir('vendor/composer')) {
+        mkdir('vendor/composer', 0777, true);
+    }
+    file_put_contents('vendor/autoload.php', '<?php');
+    file_put_contents('vendor/composer/installed.php', '<?php return ["root" => ["dev" => true]];');
+} else {
+    if (! is_dir('node_modules/example')) {
+        mkdir('node_modules/example', 0777, true);
+    }
+    $lock = json_decode(file_get_contents('package-lock.json'), true);
+    file_put_contents('node_modules/.package-lock.json', json_encode($lock));
+    file_put_contents('node_modules/example/package.json', json_encode($lock['packages']['node_modules/example']));
+}
+PHP);
+    $command = '$env:PATH = \''.$bin.";' + \$env:PATH\ngitpull --ff-only";
+    $first = runBranchWorkflowCommand($this->workflowLaptop, $command, $powershell);
+    assertBranchWorkflowSucceeded($first);
+    expect($first->getOutput())->toContain('Synchronizing locked local dependencies', 'Abgeschlossen:')
+        ->and(is_file($this->workflowLaptop.'/vendor/autoload.php'))->toBeTrue()
+        ->and(json_decode(file_get_contents($this->workflowLaptop.'/node_modules/example/package.json'), true)['version'])->toBe('1.0.0');
+
+    $unchanged = runBranchWorkflowCommand($this->workflowLaptop, $command, $powershell);
+    assertBranchWorkflowSucceeded($unchanged);
+    expect($unchanged->getOutput())->toContain('skipping composer install', 'skipping npm ci');
+
+    file_put_contents($this->workflowPc.'/composer.lock', '{"updated":true}');
+    $lock['packages']['node_modules/example']['version'] = '1.1.0';
+    file_put_contents($this->workflowPc.'/package-lock.json', json_encode($lock));
+    runBranchWorkflowGit($this->workflowPc, 'add', '.');
+    runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Update locked dependencies');
+    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'main');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, $command, $powershell));
+
+    $commands = array_map(fn (string $line): array => json_decode($line, true), file($this->workflowLaptop.'/.git/dependency-commands.jsonl', FILE_IGNORE_NEW_LINES));
+    expect($commands)->toBe([
+        ['composer', 'install', '--prefer-dist', '--no-interaction', '--no-progress'],
+        ['npm', 'ci'],
+        ['composer', 'install', '--prefer-dist', '--no-interaction', '--no-progress'],
+        ['npm', 'ci'],
+    ])->and(json_decode(file_get_contents($this->workflowLaptop.'/node_modules/example/package.json'), true)['version'])->toBe('1.1.0')
+        ->and(runBranchWorkflowGit($this->workflowLaptop, 'status', '--porcelain'))->toBe('')
+        ->and(file_get_contents($this->workflowLaptop.'/composer.lock'))->toBe('{"updated":true}');
+})->with(['powershell', 'pwsh']);
+
+it('stops dependency preparation when pulling fails and reports installation failures', function (string $failure, string $powershell): void {
+    $command = <<<'POWERSHELL'
+function php {
+    Write-Output 'DEPENDENCY_INSTALL_REQUESTED'
+    $global:LASTEXITCODE = 9
+}
+POWERSHELL;
+    $command .= $failure === 'pull' ? "\ngitpull origin missing-branch" : "\ngitpull --ff-only";
+    $result = runBranchWorkflowCommand($this->workflowLaptop, $command, $powershell);
+
+    expect($result->isSuccessful())->toBeFalse()
+        ->and($result->getOutput())->not->toContain('Abgeschlossen:')
+        ->and(runBranchWorkflowGit($this->workflowLaptop, 'rev-parse', 'HEAD'))->toBe($this->workflowMain);
+    if ($failure === 'pull') {
+        expect($result->getOutput())->not->toContain('DEPENDENCY_INSTALL_REQUESTED');
+    } else {
+        expect($result->getOutput())->toContain('DEPENDENCY_INSTALL_REQUESTED', 'failed with exit code 9');
+    }
+})->with(['pull', 'installation'])->with(['powershell', 'pwsh']);
 
 it('includes the latest main automatically in the isolated release candidate', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
@@ -697,6 +802,7 @@ if ($parseErrors.Count -ne 0) { throw 'Generated profile does not parse.' }
 gitstart 'new-function'
 gitwork
 gitmain
+gitpull --ff-only
 gitsave 'Message with spaces'
 gitsave 'Versioned main' '3.48.0'
 gitupdate
@@ -737,6 +843,7 @@ POWERSHELL);
             ['command' => 'gitstart', 'arguments' => ['new-function']],
             ['command' => 'gitwork', 'arguments' => []],
             ['command' => 'gitmain', 'arguments' => []],
+            ['command' => 'gitpull', 'arguments' => ['--ff-only']],
             ['command' => 'gitsave', 'arguments' => ['Message with spaces']],
             ['command' => 'gitsave', 'arguments' => ['Versioned main', '3.48.0']],
             ['command' => 'gitupdate', 'arguments' => []],

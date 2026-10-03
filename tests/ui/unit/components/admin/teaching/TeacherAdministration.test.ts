@@ -63,6 +63,7 @@ async function mountAdministration(query = '?panel=teachers', withTeaching = fal
                 StudentEmailZipImport: { template: '<div data-panel="email_import">Email import content</div>' },
                 Holidays: { template: '<div data-panel="holidays">Holiday content</div>' },
                 SchoolHours: { template: '<div data-panel="school_hours">School hours content</div>' },
+                Synchronisation: { template: '<div data-panel="synchronisation">Synchronisation content</div>' },
                 Overview: { template: '<div data-panel="overview">Teaching overview</div>' },
                 AdminCompactSectionHero: true,
                 TeachingDueReminders: true,
@@ -122,15 +123,17 @@ describe('Teaching administration panels', () => {
         await flushPromises()
 
         expect(wrapper.findAll('.teaching-administration-button-meta').map((label) => label.text())).toEqual([
-            '2026/2027', '2026/2027', '2026/2027', '2026/2027', '2026/2027',
+            '2026/2027', '2026/2027', '2026/2027', '2026/2027', '2026/2027', 'Alle Schuljahre',
         ])
 
         store.config.selected_schoolyear = { concerns: '2027/2028' }
         await flushPromises()
-        expect(wrapper.findAll('.teaching-administration-button-meta').every((label) => label.text() === '2027/2028')).toBe(true)
+        expect(wrapper.findAll('.teaching-administration-button-meta').map((label) => label.text())).toEqual([
+            '2027/2028', '2027/2028', '2027/2028', '2027/2028', '2027/2028', 'Alle Schuljahre',
+        ])
     })
 
-    it.each(['teachers', 'import', 'email_import', 'holidays', 'school_hours'])('restores %s directly from the URL', async (panel) => {
+    it.each(['teachers', 'import', 'email_import', 'holidays', 'school_hours', 'synchronisation'])('restores %s directly from the URL', async (panel) => {
         await mountAdministration(`?panel=${panel}`)
 
         expect(wrapper.findAll('[data-panel]')).toHaveLength(1)
@@ -141,7 +144,7 @@ describe('Teaching administration panels', () => {
     it('updates the URL on selection and restores the previous panel with browser back', async () => {
         const router = await mountAdministration('?panel=teachers&keep=value')
 
-        expect(wrapper.findAll('.teaching-administration-button-title').map((title) => title.text())).toEqual(['Lehrer', 'Import 116', 'E-Mail-Import', 'Ferien', 'Schulstunden'])
+        expect(wrapper.findAll('.teaching-administration-button-title').map((title) => title.text())).toEqual(['Lehrer', 'Import 116', 'E-Mail-Import', 'Ferien', 'Schulstunden', 'Synchronisation'])
         await wrapper.findAll('button')[3].trigger('click')
         await flushPromises()
         expect(router.currentRoute.value.query).toEqual({ panel: 'holidays', keep: 'value' })

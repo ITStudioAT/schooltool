@@ -57,9 +57,9 @@ function mountRestaurant(section = 'overview', panel?: string) {
                 Foods: true,
                 Menus: true,
                 MenuPlans: true,
+                Bookings: { template: '<div data-testid="restaurant-bookings">Buchungen Inhalt</div>' },
                 Reports: true,
                 RestaurantSepa: true,
-                CdgymLegacy: true,
                 FreeDays: { template: '<div data-testid="settings-free-days">Freie Tage Inhalt</div>' },
                 EatingTimes: { template: '<div data-testid="settings-eating-times">Speisezeiten Inhalt</div>' },
                 Users: { template: '<div data-testid="settings-users">Benutzer Inhalt</div>' },
@@ -88,6 +88,14 @@ function mountRestaurant(section = 'overview', panel?: string) {
 }
 
 describe('Restaurant page navigation', () => {
+    it('keeps the bookings URL and renders its own section', async () => {
+        const { wrapper, routerReplace } = mountRestaurant('bookings')
+        await flushPromises()
+        expect(wrapper.get('[data-testid="restaurant-bookings"]').text()).toBe('Buchungen Inhalt')
+        expect(wrapper.find('[data-testid="restaurant-overview"]').exists()).toBe(false)
+        expect(routerReplace).not.toHaveBeenCalled()
+    })
+
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useFoodStore).mockReset()
@@ -219,20 +227,20 @@ describe('Restaurant page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa'])
     })
 
-    it('adds the old CDGYM version item only for the Christian-Doppler-Gymnasium school', () => {
+    it('adds synchronisation only when the server permits the local superadmin function', () => {
         const cdgymItems = (Restaurant as any).computed.visibleNavigationItems.call({
-            isCdgymSchool: true,
+            canSynchronise: true,
         })
         const otherSchoolItems = (Restaurant as any).computed.visibleNavigationItems.call({
-            isCdgymSchool: false,
+            canSynchronise: false,
         })
 
-        expect(cdgymItems.map((item: { key: string }) => item.key)).toContain('cdgym')
-        expect(cdgymItems.find((item: { key: string }) => item.key === 'cdgym')).toMatchObject({
-            label: 'Alte Version, Cdgym',
-            meta: 'cdgym.info',
+        expect(cdgymItems.map((item: { key: string }) => item.key)).toContain('synchronisation')
+        expect(cdgymItems.find((item: { key: string }) => item.key === 'synchronisation')).toMatchObject({
+            label: 'Synchronisation',
+            meta: 'Intern',
         })
-        expect(otherSchoolItems.map((item: { key: string }) => item.key)).not.toContain('cdgym')
+        expect(otherSchoolItems.map((item: { key: string }) => item.key)).not.toContain('synchronisation')
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -355,7 +363,7 @@ describe('Restaurant page navigation', () => {
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/sepa' })
     })
 
-    it('switches to the cdgym section when unlocked', () => {
+    it('switches to the internal synchronisation section when unlocked', () => {
         const routerReplace = vi.fn()
         const ctx = {
             isNavigationLocked: false,
@@ -366,13 +374,13 @@ describe('Restaurant page navigation', () => {
             },
         }
 
-        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'cdgym')
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'synchronisation')
 
-        expect(ctx.main_action).toBe('cdgym')
-        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/cdgym' })
+        expect(ctx.main_action).toBe('synchronisation')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/synchronisation' })
     })
 
-    it.each(['foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa', 'cdgym', 'settings'])('does not switch to %s when locked', (section) => {
+    it.each(['foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa', 'synchronisation', 'settings'])('does not switch to %s when locked', (section) => {
         const routerReplace = vi.fn()
         const ctx = {
             isNavigationLocked: true,

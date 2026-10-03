@@ -7,13 +7,29 @@ use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingService;
+use App\Services\TeachingWorkMarkdownImport;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CourseStudentEntryController extends Controller
 {
+    public function evaluationPdf(int $courseId, TeachingCourseWork $course_work, string $sha256, ParentStudentAccessService $parentAccess, TeachingWorkMarkdownImport $importer): StreamedResponse
+    {
+        $student = $parentAccess->currentStudent();
+        abort_unless($student, 403);
+        $yearId = SchoolTool::where('school_id', $student->school_id)->value('active_schoolyear_id') ?? $student->schoolyear_id;
+        $course = $course_work->teachingCourse;
+        abort_unless($course && (int) $course->id === $courseId && (int) $course->school_id === (int) $student->school_id &&
+            (int) $course->schoolyear_id === (int) $yearId && $course->teachingCourseStudents()->where('user_id', $student->id)->whereNull('canceled_at')->exists(), 403);
+        abort_unless($course_work->teachingCourseStudentEntries()->where('user_id', $student->id)->where('teaching_course_id', $courseId)->exists(), 403);
+
+        return $importer->streamPdf($course_work, $sha256, (int) $student->id, true);
+    }
+
     public function index($courseId, ParentStudentAccessService $parentAccess, TeachingCourseStudentEntryService $entryService)
     {
         if (! $auth_user = $parentAccess->currentStudent()) {
@@ -64,7 +80,7 @@ class CourseStudentEntryController extends Controller
         // Get entries from TeachingCourseStudentEntry model
         $entries = TeachingCourseStudentEntry::where('teaching_course_id', $course->id)
             ->where('user_id', $auth_user->id)
-            ->with('teachingCourseWork:id,type,title,description,is_group_work,group_size,groups')
+            ->with('teachingCourseWork:id,teaching_course_id,type,title,description,is_group_work,group_size,groups,status')
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
@@ -148,6 +164,10 @@ class CourseStudentEntryController extends Controller
                     'is_group_work' => $workObj->is_group_work ?? false,
                     'group_size' => $workObj->group_size ?? null,
                     'group_members' => $groupMembers,
+                    'evaluation_pdf' => (int) $workObj->teaching_course_id === (int) $entry->teaching_course_id
+                        ? collect($workObj->status['evaluation_pdfs'] ?? [])->filter(fn (array $pdf): bool => $pdf['student_id'] !== null && (int) $pdf['student_id'] === (int) $auth_user->id)
+                            ->map(fn (array $pdf): array => ['name' => $pdf['name'], 'sha256' => $pdf['sha256']])->last()
+                        : null,
                 ];
             } elseif ($entry->description) {
                 // If there's no work but the entry has a description, use that as comment

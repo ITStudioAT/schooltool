@@ -98,7 +98,7 @@
                             class="teaching-nav__button">
                             <span class="teaching-nav__button-copy">
                                 <span class="teaching-nav__button-title">{{ panel.label }}</span>
-                                <span class="teaching-nav__button-meta">{{ activeSchoolyearLabel }}</span>
+                                <span class="teaching-nav__button-meta">{{ panel.id === 'synchronisation' ? 'Alle Schuljahre' : activeSchoolyearLabel }}</span>
                             </span>
                             <span v-if="panel.id === 'school_hours' && hasMissingSchoolHours" class="ml-2 text-error font-weight-black" aria-label="Keine Schulstunden vorhanden">!</span>
                         </v-btn>

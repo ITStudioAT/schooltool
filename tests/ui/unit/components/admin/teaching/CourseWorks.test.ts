@@ -1,7 +1,138 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
+import { createVuetify } from 'vuetify'
+import { VFileInput } from 'vuetify/components/VFileInput'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
+import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
+import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
+
+describe('Work evaluation PDF links', () => {
+    const overall = { student_id: null, name: 'Gesamtübersicht.pdf', sha256: 'a'.repeat(64), origin: 'evaluation_import' }
+    const personal = { student_id: 12, name: 'Beurteilung_Alpha_Ada.pdf', sha256: 'b'.repeat(64), origin: 'evaluation_import' }
+    const foreign = { student_id: 13, name: 'Beurteilung_Beta_Bea.pdf', sha256: 'c'.repeat(64), origin: 'evaluation_import' }
+    const work = { id: 8, status: { evaluation_pdfs: [overall, personal, foreign] } }
+
+    it.each([[null, overall, 'Gesamtauswertung (PDF)'], [12, personal, 'Auswertung (PDF)'], ['12', personal, 'Auswertung (PDF)']])('renders only the report for student %s', (studentId, pdf, label) => {
+        const wrapper = mount(WorkEvaluationPdf, { props: { work, studentId } })
+        try {
+            const link = wrapper.get('[href]')
+            expect(link.text()).toBe(label)
+            expect(link.attributes('href')).toBe(`/api/admin/teaching/course_works/8/evaluations/${pdf.sha256}?inline=1`)
+            expect(link.attributes('title')).toBe(pdf.name)
+            expect(link.attributes('target')).toBe('_blank')
+            expect(wrapper.findAll('[href]')).toHaveLength(1)
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows no PDF for an unrelated person and refreshes the link after replacing a report', async () => {
+        const wrapper = mount(WorkEvaluationPdf, { props: { work, studentId: 99 } })
+        try {
+            expect(wrapper.find('[href]').exists()).toBe(false)
+            await wrapper.setProps({ studentId: 12 })
+            expect(wrapper.get('[href]').attributes('href')).toContain(personal.sha256)
+            const replacement = { ...personal, sha256: 'd'.repeat(64) }
+            await wrapper.setProps({ work: { ...work, status: { evaluation_pdfs: [overall, foreign, replacement] } } })
+            expect(wrapper.get('[href]').attributes('href')).toContain(replacement.sha256)
+            expect(wrapper.get('[href]').attributes('href')).not.toContain(personal.sha256)
+        } finally { wrapper.unmount() }
+    })
+})
+
+describe('CourseWorks evaluation folder import', () => {
+    it('opens with a text course ID and previews a directory through the selected folder field', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { preview: { can_import: true, rows: [] } } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, {
+            global: {
+                plugins: [
+                    createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }),
+                    createVuetify({ components: { VFileInput } }),
+                ],
+                components: { 'v-file-input': VFileInput },
+                stubs: { 'v-file-input': false, VFileInput: false },
+            },
+        })
+        try {
+            const component: any = wrapper.vm
+            component.openEvaluationImport({ id: 1, teaching_course_id: '2' })
+            await wrapper.vm.$nextTick()
+            const report = new File(['report'], 'Beurteilung_Alpha_Ada.md')
+            Object.defineProperty(report, 'webkitRelativePath', { value: 'Auswertung/Beurteilungen/Beurteilung_Alpha_Ada.md' })
+            Object.defineProperty(report, 'text', { value: vi.fn().mockResolvedValue('report') })
+            const input = wrapper.get('input[type="file"]')
+            expect(input.attributes()).toHaveProperty('webkitdirectory')
+            Object.defineProperty(input.element, 'files', { value: [report], configurable: true })
+            await input.trigger('change')
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(wrapper.text()).toContain('Auswertung · 1 Dateien')
+            expect(component.evaluation_import_preview.can_import).toBe(true)
+        } finally {
+            wrapper.unmount()
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('applies only the reviewed snapshot and opens the imported points', async () => {
+        const importedWork = { id: 1, teaching_course_id: 2, groups: [{ points: 4.5 }] }
+        const post = vi.fn().mockResolvedValue({ data: { data: importedWork } })
+        vi.stubGlobal('axios', { post })
+        const payload = new FormData()
+        const ctx: any = { ...((WorkEvaluationImport as any).methods), evaluation_import_work: { id: 1, teaching_course_id: 2 }, selected_course: { id: 2 },
+            evaluation_import_preview: { can_import: true, hash: 'reviewed' }, evaluation_import_payload: payload,
+            $emit: vi.fn(), evaluation_import_open: true }
+        try {
+            await (WorkEvaluationImport as any).methods.applyEvaluationImport.call(ctx)
+            expect(payload.get('apply')).toBe('1')
+            expect(payload.get('hash')).toBe('reviewed')
+            expect(ctx.$emit).toHaveBeenCalledWith('imported', importedWork)
+            expect(ctx.evaluation_import_open).toBe(false)
+            const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 } }
+            await (CourseWorks as any).methods.evaluationImported.call(parent, importedWork)
+            expect(parent.editWork).toHaveBeenCalledWith(importedWork)
+            expect(parent.show_points_grading_view).toBe(true)
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it.each(['Test/Beurteilungen', 'Beurteilungen'])('reads matching reports including the overall Markdown and PDF from %s and resets the picker', async (folder) => {
+        const createFile = (name: string, relative: string, text = 'report') => ({ name, webkitRelativePath: relative, size: 6, text: vi.fn().mockResolvedValue(text) })
+        const report = createFile('Beurteilung_Alpha_Ada.md', `${folder}/Beurteilung_Alpha_Ada.md`)
+        const overview = createFile('Gesamtübersicht.md', `${folder}/Gesamtübersicht.md`)
+        const unrelated = createFile('Abgabe.md', 'Test/Abgaben/Abgabe.md')
+        const unrelatedOverview = createFile('Gesamtübersicht.md', 'Test/Abgaben/Gesamtübersicht.md')
+        const pdf = new File(['%PDF-1.4'], 'Beurteilung_Alpha_Ada.pdf', { type: 'application/pdf' })
+        Object.defineProperty(pdf, 'webkitRelativePath', { value: `${folder}/Beurteilung_Alpha_Ada.pdf` })
+        const overviewPdf = new File(['%PDF-1.4'], 'Gesamtübersicht.pdf', { type: 'application/pdf' })
+        Object.defineProperty(overviewPdf, 'webkitRelativePath', { value: `${folder}/Gesamtübersicht.pdf` })
+        const post = vi.fn().mockResolvedValue({ data: { preview: { can_import: true, rows: [] } } })
+        vi.stubGlobal('axios', { post })
+        const ctx: any = { ...((WorkEvaluationImport as any).methods), evaluation_import_work: { id: 1, teaching_course_id: 2 }, selected_course: { id: 2 }, evaluation_import_open: true }
+        const selectedFiles = [report, overview, unrelated, unrelatedOverview, pdf, overviewPdf]
+        const event = { target: { files: selectedFiles, value: 'folder' } }
+        try {
+            await (WorkEvaluationImport as any).methods.selectEvaluationFolder.call(ctx, event)
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(JSON.parse(post.mock.calls[0][1].get('reports'))).toEqual([{ name: report.name, text: 'report' }, { name: overview.name, text: 'report' }])
+            expect(post.mock.calls[0][1].getAll('pdfs[]').map((file: File) => file.name)).toEqual([pdf.name, overviewPdf.name])
+            expect(unrelated.text).not.toHaveBeenCalled()
+            expect(unrelatedOverview.text).not.toHaveBeenCalled()
+            expect(ctx.evaluation_import_preview.can_import).toBe(true)
+            expect(ctx.evaluation_import_files).toEqual(selectedFiles)
+            expect(event.target.value).toBe('')
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('keeps numeric points as the evaluation instead of converting them to a school grade', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx = { workSupportsPoints: methods.workSupportsPoints }
+        const definition = { has_properties: true, properties_mode: 'points', maximum_points: 5 }
+        expect(methods.workSupportsPoints.call(ctx, definition)).toBe(true)
+        expect(methods.gradeFromPointsForWork.call(ctx, definition, 4.5)).toBe('4.5')
+    })
+})
 
 describe('CourseWorks defaults', () => {
     it('uses the current grading types and requires the enabled maximum plus value', () => {

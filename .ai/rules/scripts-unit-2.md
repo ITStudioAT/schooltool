@@ -5,6 +5,7 @@ paths:
   - '{scripts/update.php,tests/Unit/LocalDeploymentGuardTest.php}'
   - '{scripts/git_branch_helpers.ps1,scripts/git_preview_helpers.ps1,tests/Unit/GitBranchWorkflowTest.php}'
   - '{scripts/git_ssh_helpers.ps1,tests/Unit/GitDeploymentSshTest.php}'
+  - '{scripts/update.php,scripts/frontend-install.ps1,scripts/git_helpers.ps1,tests/Unit/LocalDeploymentGuardTest.php}'
 ---
 
 # Scripts Unit 2
@@ -23,3 +24,6 @@ gitdiscard NAME runs only on clean current main, refuses occupied worktrees, div
 
 ## Stage live launchers in an exclusive private directory
 storage/framework can legitimately be 0775 on Cloudways. Keep the SSH transfer parent guard strict; after LIVE create a unique 0700 child directory and transfer launcher.sh there. Never chmod the shared framework directory or loosen transfer ownership/canonical-path checks. Clean only the exact launcher and then the empty directory; retain uncertain/failed cleanup for inspection. Exit21 is the remote transfer parent guard, before file creation or activation.
+
+## Pause only proven Vite for GitSave installation
+GitSave opts into --prepare --pause-vite only when locked frontend dependencies need installation. Identify blockers by canonical project paths and unchanged PID creation metadata; retain the installer's idle guard and incomplete-install receipt. Standalone Vite may be paused and restored. Shared concurrently --kill-others sessions require the built-in scripts/vite-dev.mjs wrapper (npm run dev): authenticate its nonce, manifest, parent PID and start time, pause only its Vite child, and keep the wrapper/PHP/queues alive. Refuse unmanaged shared sessions, unknown/foreign launchers and junctions. After failed npm ci retain the incomplete marker and keep only Vite paused; a successful later preparation resumes it. Matching installations never stop dev processes.

@@ -16,6 +16,7 @@ use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
+use RuntimeException;
 use Throwable;
 
 class TeachingBackupService
@@ -1580,6 +1581,7 @@ class TeachingBackupService
             }
 
             $oldWorkId = (int) ($row['id'] ?? 0);
+            $row['status'] = $this->restoreWorkEvaluationFiles($row['status'] ?? null, $files, (int) $backup->school_id, $userIdMap);
             $workIdMap[$oldWorkId] = $this->insertRestoredRow('teaching_course_works', $row, [
                 'teaching_course_id' => $courseIdMap[$oldCourseId],
             ]);
@@ -1943,6 +1945,7 @@ class TeachingBackupService
 
         foreach ($this->rowsByColumn($tables['teaching_course_works'] ?? [], 'teaching_course_id', $courseId) as $row) {
             $oldWorkId = (int) ($row['id'] ?? 0);
+            $row['status'] = $this->restoreWorkEvaluationFiles($row['status'] ?? null, $files, (int) $backup->school_id);
             $workIdMap[$oldWorkId] = $this->insertRestoredRow('teaching_course_works', $row, [
                 'teaching_course_id' => $newCourseId,
             ]);
@@ -2584,6 +2587,9 @@ class TeachingBackupService
             });
 
         return $curriculumFiles
+            ->merge(collect($tables['teaching_course_works'] ?? [])
+                ->flatMap(fn (array $row): array => $this->arrayValue($row['status'] ?? [])['evaluation_pdfs'] ?? [])
+                ->map(fn (array $pdf): array => $this->filePayload($pdf['file_path'], 'local', true)))
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
                 ->pluck('file_path')
                 ->filter(fn (mixed $path): bool => is_string($path) && trim($path) !== '')
@@ -3783,6 +3789,23 @@ class TeachingBackupService
     /**
      * @param  array<string, array<string, mixed>>  $files
      */
+    private function restoreWorkEvaluationFiles(mixed $status, array $files, int $schoolId, array $userIdMap = []): ?string
+    {
+        if ($status === null) {
+            return null;
+        }
+        $status = $this->arrayValue($status);
+        foreach ($status['evaluation_pdfs'] ?? [] as $index => $pdf) {
+            $status['evaluation_pdfs'][$index]['file_path'] = $this->restoreFilePath($pdf['file_path'], $files, "teaching/work_evaluations/{$schoolId}/restored");
+            $status['evaluation_pdfs'][$index]['storage_disk'] = 'local';
+            if ($pdf['student_id'] !== null && $userIdMap !== []) {
+                $status['evaluation_pdfs'][$index]['student_id'] = $userIdMap[$pdf['student_id']] ?? throw new RuntimeException('Schülerzuordnung der Auswertungs-PDF fehlt.');
+            }
+        }
+
+        return json_encode($status, JSON_THROW_ON_ERROR);
+    }
+
     private function restoreFilePath(mixed $path, array $files, string $targetDirectory): ?string
     {
         if (! is_string($path) || trim($path) === '') {

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitsave', 'gitupdate', 'gitrelease', 'gitdiscard', 'gitcheck', 'gitpreview', 'gitdeploy')]
+    [ValidateSet('gitstart', 'gitwork', 'gitmain', 'gitpull', 'gitsave', 'gitupdate', 'gitrelease', 'gitdiscard', 'gitcheck', 'gitpreview', 'gitdeploy')]
     [string]$Command,
 
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -12,6 +12,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'git_helpers.ps1')
 $parameters = @{}
 $arguments = @($CommandArguments | Where-Object { $null -ne $_ })
+if ($Command -ceq 'gitpull') {
+    gitpull @arguments
+    return
+}
 switch ($Command) {
     { $_ -in @('gitstart', 'gitdiscard') } {
         if ($arguments.Count -ne 1) { throw "Usage: $Command NAME" }

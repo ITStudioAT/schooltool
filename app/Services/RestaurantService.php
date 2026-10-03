@@ -8,6 +8,7 @@ use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanBooking;
+use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
@@ -108,11 +109,77 @@ class RestaurantService
                 'foods_with_image_count' => $foods->filter(fn (RestaurantFood $food): bool => filled($food->food_image_path))->count(),
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
                 'booked_menus_count' => $bookedMenusCount,
+                'menu_plan_weeks' => $this->menuPlanWeeksForUser($authUser),
             ],
         ];
     }
 
     public function bookedMenusCountForOrderablePlans(User $authUser): int
+    {
+        return (int) $this->bookingsForOrderablePlansQuery($authUser)->sum('quantity');
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function menuPlanWeeksForUser(User $authUser): array
+    {
+        $currentWeekStart = now()->startOfWeek(Carbon::MONDAY);
+        $onlineSettings = $this->onlineSettingsForUser($authUser);
+        $plans = RestaurantMenuPlan::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('end_date', '>=', $currentWeekStart->toDateString())
+            ->with(['entries' => fn ($query) => $query
+                ->select(['id', 'restaurant_menu_plan_id', 'plan_date'])
+                ->withCount(['bookings as bookings_count' => fn ($bookings) => $bookings
+                    ->where('school_id', $authUser->school_id)
+                    ->whereHas('user', fn ($users) => $users->where('school_id', $authUser->school_id))])])
+            ->orderBy('start_date')
+            ->get();
+
+        $weeks = [];
+
+        foreach ($plans as $plan) {
+            $orderStart = $this->orderStartDateTime($plan, $onlineSettings);
+            $orderEnd = $this->orderEndDateTime($plan, $onlineSettings);
+            $entriesByWeek = $plan->entries->groupBy(fn (RestaurantMenuPlanEntry $entry): string => $entry->plan_date->copy()->startOfWeek(Carbon::MONDAY)->toDateString());
+            $weekStart = $plan->start_date->copy()->startOfWeek(Carbon::MONDAY)->max($currentWeekStart)->copy();
+
+            while ($weekStart->lte($plan->end_date)) {
+                $key = $weekStart->toDateString();
+                $startDate = $plan->start_date->copy()->max($weekStart)->toDateString();
+                $endDate = $plan->end_date->copy()->min($weekStart->copy()->addDays(6))->toDateString();
+                $weeks[$key] ??= [
+                    'week_start' => $key,
+                    'calendar_week' => $weekStart->isoWeek(),
+                    'week_year' => $weekStart->isoWeekYear(),
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'bookings_count' => 0,
+                    'plans' => [],
+                ];
+                $weeks[$key]['start_date'] = min($weeks[$key]['start_date'], $startDate);
+                $weeks[$key]['end_date'] = max($weeks[$key]['end_date'], $endDate);
+                $weeks[$key]['bookings_count'] += (int) ($entriesByWeek->get($key)?->sum('bookings_count') ?? 0);
+                $weeks[$key]['plans'][] = [
+                    'id' => $plan->id,
+                    'title' => $plan->title,
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'is_available' => $plan->is_available,
+                    'order_start_at' => $orderStart->year === 1970 ? null : $orderStart->toIso8601String(),
+                    'order_end_at' => $orderEnd->toIso8601String(),
+                    'timezone' => config('app.timezone'),
+                ];
+                $weekStart->addWeek();
+            }
+        }
+
+        ksort($weeks);
+
+        return array_values($weeks);
+    }
+
+    /** @return Builder<RestaurantMenuPlanBooking> */
+    public function bookingsForOrderablePlansQuery(User $authUser): Builder
     {
         $onlineSettings = $this->onlineSettingsForUser($authUser);
         $now = now();
@@ -124,18 +191,12 @@ class RestaurantService
             ->get()
             ->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now));
 
-        if ($orderablePlans->isEmpty()) {
-            return 0;
-        }
-
-        // Get the sum of booking quantities for all entries of orderable plans
         return RestaurantMenuPlanBooking::query()
             ->whereIn('restaurant_menu_plan_entry_id', function ($query) use ($orderablePlans) {
                 $query->select('id')
                     ->from('restaurant_menu_plan_entries')
                     ->whereIn('restaurant_menu_plan_id', $orderablePlans->pluck('id'));
-            })
-            ->sum('quantity');
+            });
     }
 
     public function userSettingsForUser(User $user): array

@@ -63,6 +63,43 @@ POWERSHELL);
         ->and($process->getOutput())->toContain('STRICT_AUTHENTICATION');
 });
 
+it('uses the shared main target and conventional per-device keys without environment variables', function (): void {
+    $process = deploymentSshProcess(<<<'POWERSHELL'
+foreach ($name in @('SSH', 'PATH', 'KEY', 'UNIX_USER', 'KNOWN_HOSTS')) {
+    [Environment]::SetEnvironmentVariable("SCHOOLTOOL_MAIN_$name", $null, 'Process')
+}
+$env:SCHOOLTOOL_IGNORE_USER_SETTINGS = '1'
+$env:USERPROFILE = $env:SCHOOLTOOL_SSH_TEST_DIRECTORY
+$sshDirectory = Join-Path $env:USERPROFILE '.ssh'
+[System.IO.Directory]::CreateDirectory($sshDirectory) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $sshDirectory 'schooltool-main'), 'DEVICE KEY')
+[System.IO.File]::WriteAllText((Join-Path $sshDirectory 'known_hosts'), 'VERIFIED HOST')
+$target = Get-SchooltoolDeploymentTarget 'MAIN'
+if ($target.Ssh -cne 'sftp_schooltool_at@165.227.156.99') { throw 'Shared main SSH target missing.' }
+if ($target.User -cne 'hdhyrwwjyz' -or $target.Path -cne '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html') { throw 'Shared main identity missing.' }
+$selectedKeys = @($target.Keys)
+if ($selectedKeys.Count -ne 1 -or $selectedKeys[0] -cne (Join-Path $sshDirectory 'schooltool-main')) { throw 'Conventional device key not selected.' }
+Write-Output 'PORTABLE_MAIN_TARGET'
+POWERSHELL);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('PORTABLE_MAIN_TARGET');
+});
+
+it('starts the Windows SSH agent before opening a remote connection', function (): void {
+    $process = deploymentSshProcess(<<<'POWERSHELL'
+$script:started = $false
+function Get-Service { [pscustomobject]@{ Status = 'Stopped' } }
+function Start-Service { $script:started = $true }
+function Get-SchooltoolPreviewExecutable { 'Mock-Ssh' }
+function Mock-Ssh { $global:LASTEXITCODE = 0 }
+Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'MAIN') 'true'
+if (-not $script:started) { throw 'SSH agent was not started.' }
+Write-Output 'SSH_AGENT_STARTED'
+POWERSHELL);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('SSH_AGENT_STARTED');
+});
+
 it('prefers native Windows OpenSSH including the 32 bit Sysnative redirect before PATH clients', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
 $env:WINDIR = 'C:\Windows'
@@ -118,6 +155,7 @@ POWERSHELL);
 
 it('propagates SSH errors without treating them as deployment success', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
+function Get-Service { [pscustomobject]@{ Status = 'Running' } }
 function Get-SchooltoolPreviewExecutable { 'Mock-Ssh' }
 function Mock-Ssh { $global:LASTEXITCODE = 23 }
 try { Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'PREVIEW') 'true'; throw 'FAILED_SSH_ACCEPTED' }

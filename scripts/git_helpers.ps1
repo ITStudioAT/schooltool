@@ -243,13 +243,16 @@ function Write-SchooltoolCompletionTime {
 }
 
 function gitpull {
+    Assert-SchooltoolRepository
     git pull @args
     if ($LASTEXITCODE -ne 0) {
         throw "git pull failed with exit code $LASTEXITCODE."
     }
-    $viennaTimeZone = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
-    $finishedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow, $viennaTimeZone)
-    Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f $finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
+    Assert-SchooltoolRepository
+    Invoke-SchooltoolCommand 'Synchronizing locked local dependencies...' {
+        php scripts/update.php --target=local --prepare
+    }
+    Write-SchooltoolCompletionTime
 }
 
 function Invoke-SchooltoolPublish {
@@ -297,7 +300,7 @@ function Invoke-SchooltoolPublish {
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {
-            php scripts/update.php --target=local --prepare
+            php scripts/update.php --target=local --prepare --pause-vite
         }
 
         if ($version) {

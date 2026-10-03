@@ -13,6 +13,119 @@ import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
+import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+
+describe('CourseTable evaluation PDF links', () => {
+    it('shows the overall report in the work dialog and only the selected student report in the entry dialog', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const courseDate = { id: 1, date: '2026-10-02' }
+        const student = { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }
+        useCourseStore(pinia).selected_course = {
+            id: 18, students_info: [student], course_dates: [courseDate],
+        } as never
+        const overall = { student_id: null, name: 'Gesamtübersicht.pdf', sha256: 'a'.repeat(64), origin: 'evaluation_import' }
+        const personal = { student_id: 12, name: 'Beurteilung_Alpha_Ada.pdf', sha256: 'b'.repeat(64), origin: 'evaluation_import' }
+        const foreign = { ...personal, student_id: 13, sha256: 'c'.repeat(64) }
+        const work = {
+            id: 65, teaching_course_id: '18', title: 'Übung: E-Mails', type: 'EM',
+            date_for_all_groups: courseDate.date, finish_until_date: courseDate.date,
+            is_group_work: false, groups: [{ student_ids: [12], points: 4.5 }],
+            status: { evaluation_pdfs: [overall, personal, foreign] },
+        }
+        const wrapper = mount(CourseTable, {
+            props: { view: 'entries' },
+            global: {
+                plugins: [pinia],
+                stubs: {
+                    WorkEvaluationImport: true, 'v-tab': true, 'v-tabs': true,
+                    'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true,
+                    'v-divider': true, 'v-checkbox': true,
+                    CourseStudentNotes: true, CourseStudentIndicators: true,
+                    ItsRichTextEditor: true, CurriculumPdfPreview: true,
+                    ItsGridBox: { template: '<div><slot /></div>' },
+                },
+            },
+        })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            const workStore = useCourseWorkStore(pinia)
+            workStore.courseWorks = [work] as never
+            useCourseStudentEntryStore(pinia).courseEntries = [{
+                id: 77, user_id: 12, date: courseDate.date, type: 'EM',
+                source: 'course_work', teaching_course_work_id: 65, grade: '4.5',
+            }] as never
+            vm.openWorkDialog(courseDate)
+            await flushPromises()
+            expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
+            vm.startEditingDateWork(work)
+            await flushPromises()
+            const form = wrapper.get('.course-table-date-work-form')
+            const overallLink = form.findAll('[href]').find(link => link.text() === 'Gesamtauswertung (PDF)')!
+            expect(overallLink.attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${overall.sha256}?inline=1`)
+            expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
+
+            vm.closeWorkDialog()
+            vm.openEntryDialog(student, courseDate)
+            await flushPromises()
+            const entry = wrapper.get('[data-testid="course-table-cell-entry-card-assessment-77"]')
+            expect(entry.findAll('[href]')).toHaveLength(1)
+            expect(entry.get('[href]').text()).toBe('Auswertung (PDF)')
+            expect(entry.get('[href]').attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${personal.sha256}?inline=1`)
+            vm.toggleCellEntry(vm.cellEntries[0])
+            await flushPromises()
+            expect(entry.findAll('[href]')).toHaveLength(2)
+            expect(entry.get('.course-table-cell-work-entry [href]').attributes('href')).toContain(personal.sha256)
+
+            const replacement = { ...personal, sha256: 'd'.repeat(64) }
+            workStore.courseWorks = [{ ...work, status: { evaluation_pdfs: [overall, foreign, replacement] } }] as never
+            await flushPromises()
+            expect(entry.get('[href]').attributes('href')).toContain(replacement.sha256)
+
+            workStore.courseWorks = [{ ...work, status: { evaluation_pdfs: [overall, foreign] } }] as never
+            await flushPromises()
+            expect(entry.find('[href]').exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+        }
+    })
+})
+
+describe('CourseTable evaluation import', () => {
+    it('opens an import when the API work and selected course use different ID representations', () => {
+        const savedWork = { id: 12, teaching_course_id: '2' }
+        const openEvaluationImport = vi.fn()
+        const ctx = {
+            courseWorks: [savedWork], selected_course: { id: 2 },
+            $refs: { evaluationImport: { openEvaluationImport } },
+        }
+        ;(CourseTable as any).methods.openEvaluationImport.call(ctx, { id: '12' })
+        expect(openEvaluationImport).toHaveBeenCalledWith(savedWork)
+    })
+
+    it('imports the saved selected work and refreshes table values and the open editor', async () => {
+        const savedWork = { id: 12, teaching_course_id: 2, title: 'Saved' }
+        const openEvaluationImport = vi.fn()
+        const ctx: any = {
+            courseWorks: [savedWork], selected_course: { id: 2 },
+            $refs: { evaluationImport: { openEvaluationImport } },
+            workDialogForm: { id: 12 }, applySavedCourseWork: vi.fn(),
+            loadCourseTableData: vi.fn(), resetCourseWorkEntryDrafts: vi.fn(), startEditingDateWork: vi.fn(),
+        }
+        const methods = (CourseTable as any).methods
+        methods.openEvaluationImport.call(ctx, { ...savedWork, title: 'Unsaved' })
+        expect(openEvaluationImport).toHaveBeenCalledWith(savedWork)
+        methods.openEvaluationImport.call(ctx, { id: 99 })
+        expect(openEvaluationImport).toHaveBeenCalledTimes(1)
+        const importedWork = { ...savedWork, groups: [{ points: 4.5 }] }
+        await methods.evaluationImported.call(ctx, importedWork)
+        expect(ctx.applySavedCourseWork).toHaveBeenCalledWith({ data: importedWork })
+        expect(ctx.loadCourseTableData).toHaveBeenCalledWith(2, true)
+        expect(ctx.resetCourseWorkEntryDrafts).toHaveBeenCalled()
+        expect(ctx.startEditingDateWork).toHaveBeenCalledWith(importedWork)
+    })
+})
 
 describe('CourseTable sign properties', () => {
     it('requires and saves a per-work maximum for the enabled Nur-Plus type', async () => {
@@ -476,6 +589,7 @@ describe('CourseTable', () => {
                 plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog, VList, VListItem } })],
                 components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog, 'v-list': VList, 'v-list-item': VListItem },
                 stubs: {
+                    WorkEvaluationImport: true,
                     'v-btn': false, VBtn: false, 'v-icon': false, VIcon: false,
                     'v-dialog': false, VDialog: false, 'v-list': false, VList: false,
                     'v-list-item': false, VListItem: false,
@@ -4032,6 +4146,7 @@ describe('CourseTable', () => {
                 plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog } })],
                 components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog },
                 stubs: {
+                    WorkEvaluationImport: true,
                     'v-btn': false,
                     VBtn: false,
                     'v-icon': false,

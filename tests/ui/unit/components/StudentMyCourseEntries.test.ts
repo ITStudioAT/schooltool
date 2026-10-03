@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import MyCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 
+describe('Student personal work evaluation PDFs', () => {
+    it('links the personal report in its owning course and work only when provided', () => {
+        const methods = (MyCourse as any).methods
+        const entry = { work: { id: 8, evaluation_pdf: { sha256: 'a'.repeat(64) } } }
+        expect(methods.evaluationPdfUrl.call({ courseId: 3 }, entry)).toBe(`/api/homepage/student/courses/3/works/8/evaluations/${'a'.repeat(64)}`)
+        expect(methods.evaluationPdfUrl.call({ courseId: 3 }, { work: { id: 8 } })).toBeNull()
+    })
+})
+
 describe('Student MyCourse entry area categories', () => {
     it('separates assessment, behaviour and additional entries using the configured category', async () => {
         const entries = [

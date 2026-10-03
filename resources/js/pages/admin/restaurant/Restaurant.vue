@@ -116,10 +116,11 @@
                 <Foods v-if="main_action === 'foods'" />
                 <Menus v-if="main_action === 'menus'" />
                 <MenuPlans v-if="main_action === 'menu-plans'" ref="menuPlansSection" />
+                <Bookings v-if="main_action === 'bookings'" />
+                <Synchronisation v-if="main_action === 'synchronisation' && canSynchronise" />
                 <Reports v-if="main_action === 'reports'" />
                 <Users v-if="main_action === 'users'" />
                 <RestaurantSepa v-if="main_action === 'sepa'" />
-                <CdgymLegacy v-if="main_action === 'cdgym' && isCdgymSchool" />
             </v-row>
         </div>
     </v-container>
@@ -139,14 +140,15 @@ import Overview from './components/Overview.vue'
 const Foods = defineAsyncComponent(() => import('./components/Foods.vue'))
 const Menus = defineAsyncComponent(() => import('./components/Menus.vue'))
 const MenuPlans = defineAsyncComponent(() => import('./components/MenuPlans.vue'))
+const Bookings = defineAsyncComponent(() => import('./components/Bookings.vue'))
+const Synchronisation = defineAsyncComponent(() => import('./components/Synchronisation.vue'))
 const Reports = defineAsyncComponent(() => import('./components/Reports.vue'))
 const RestaurantSepa = defineAsyncComponent(() => import('./components/RestaurantSepa.vue'))
 const Users = defineAsyncComponent(() => import('./components/Users.vue'))
 const Settings = defineAsyncComponent(() => import('./components/Settings.vue'))
-const CdgymLegacy = defineAsyncComponent(() => import('./components/CdgymLegacy.vue'))
 
 export default {
-    components: { AdminPageHeader, AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings, CdgymLegacy },
+    components: { AdminPageHeader, AdminSectionHero, Overview, Foods, Menus, MenuPlans, Bookings, Synchronisation, Reports, RestaurantSepa, Users, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -178,8 +180,8 @@ export default {
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gew\u00e4hlt'
         },
-        isCdgymSchool() {
-            return this.config?.selected_school?.long_name === 'Christian-Doppler-Gymnasium Salzburg'
+        canSynchronise() {
+            return this.config?.roles?.includes('super_admin') === true && this.restaurantStore?.settings?.can_synchronise === true
         },
         headerChips() {
             return [
@@ -226,6 +228,11 @@ export default {
                     icon: 'mdi-calendar-text-outline',
                     note: '',
                 },
+                bookings: {
+                    label: 'Buchungen',
+                    icon: 'mdi-format-list-bulleted',
+                    note: '',
+                },
                 reports: {
                     label: 'Auswertungen',
                     icon: 'mdi-chart-box-outline',
@@ -246,10 +253,10 @@ export default {
                     icon: 'mdi-cog-outline',
                     note: '',
                 },
-                cdgym: {
-                    label: 'Alte Version, Cdgym',
-                    icon: 'mdi-open-in-new',
-                    note: 'cdgym.info',
+                synchronisation: {
+                    label: 'Synchronisation',
+                    icon: 'mdi-sync',
+                    note: '',
                 },
             }
 
@@ -301,19 +308,19 @@ export default {
                 },
             ]
 
-            if (this.isCdgymSchool) {
+            if (this.canSynchronise) {
                 items.push({
-                    key: 'cdgym',
-                    label: 'Alte Version, Cdgym',
-                    meta: 'cdgym.info',
-                    icon: 'mdi-open-in-new',
+                    key: 'synchronisation',
+                    label: 'Synchronisation',
+                    meta: 'Intern',
+                    icon: 'mdi-sync',
                 })
             }
 
             return items
         },
         allowedSectionKeys() {
-            return [...this.visibleNavigationItems.map((item) => item.key), 'settings']
+            return [...this.visibleNavigationItems.map((item) => item.key), 'settings', 'bookings']
         },
         settingsNavigationItems() {
             return [
@@ -330,6 +337,11 @@ export default {
     },
 
     watch: {
+        canSynchronise() {
+            if (this.restaurantStore?.settings) {
+                this.ensureAllowedSection()
+            }
+        },
         '$route.params.section'(section) {
             this.main_action = section || 'overview'
             this.ensureAllowedSection()

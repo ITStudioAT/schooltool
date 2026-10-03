@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -76,12 +76,65 @@ function buildDocumentation(documentationRoot) {
     }
 }
 
+function isDocumentationRoot(path) {
+    const changelogPath = resolve(path, 'docs/releases/index.md')
+    if (!existsSync(changelogPath)
+        || !existsSync(resolve(path, 'sidebars.releases.js'))
+        || !existsSync(resolve(path, 'package.json'))) {
+        return false
+    }
+
+    const changelog = normalizeText(readFileSync(changelogPath, 'utf8'))
+
+    return /^\*\*Aktuelle Version:\*\* `\d+\.\d+\.\d+`$/m.test(changelog)
+        && /^## \d+\.\d+\.\d+.*$/m.test(changelog)
+}
+
+export function findDocumentationRoot({
+    configuredRoot = process.env.SCHOOLTOOL_DOCUMENTATION_ROOT,
+    defaultRoot = 'C:/docusaurus/schooltool',
+    searchRoots = [
+        resolve(`${process.env.SystemDrive || 'C:'}/`, 'Dropbox'),
+        process.env.USERPROFILE ? resolve(process.env.USERPROFILE, 'Dropbox') : null,
+    ].filter(Boolean),
+} = {}) {
+    if (configuredRoot) {
+        if (!isDocumentationRoot(configuredRoot)) {
+            throw new Error(`SCHOOLTOOL_DOCUMENTATION_ROOT is not a Docusaurus Schooltool checkout: ${configuredRoot}`)
+        }
+
+        return resolve(configuredRoot)
+    }
+
+    const candidates = [defaultRoot]
+    for (const searchRoot of searchRoots) {
+        candidates.push(resolve(searchRoot, 'schooltool'))
+        if (!existsSync(searchRoot)) {
+            continue
+        }
+
+        for (const entry of readdirSync(searchRoot, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+                candidates.push(resolve(searchRoot, entry.name, 'schooltool'))
+            }
+        }
+    }
+
+    const documentationRoot = candidates.find(isDocumentationRoot)
+
+    return documentationRoot ? resolve(documentationRoot) : null
+}
+
 export function updateReleaseChangelog({
     version,
     projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
-    documentationRoot = process.env.SCHOOLTOOL_DOCUMENTATION_ROOT || 'C:/docusaurus/schooltool',
+    documentationRoot = findDocumentationRoot(),
     build = buildDocumentation,
 }) {
+    if (!documentationRoot) {
+        return false
+    }
+
     const changelogPath = resolve(documentationRoot, 'docs/releases/index.md')
     const sidebarPath = resolve(documentationRoot, 'sidebars.releases.js')
     const changelog = readFileSync(changelogPath, 'utf8')
@@ -117,6 +170,8 @@ export function updateReleaseChangelog({
                 return !standalone || !existsSync(destination)
             },
         })
+
+        return true
     } catch (error) {
         writeFileSync(changelogPath, changelog, 'utf8')
         writeFileSync(sidebarPath, sidebar, 'utf8')
@@ -129,8 +184,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         if (process.argv.length !== 3) {
             throw new Error('Usage: node scripts/update-changelog.mjs <version>')
         }
-        updateReleaseChangelog({ version: process.argv[2] })
-        console.log(`Changelog ${process.argv[2]} built and copied to public/documentation.`)
+        const updated = updateReleaseChangelog({ version: process.argv[2] })
+        console.log(updated
+            ? `Changelog ${process.argv[2]} built and copied to public/documentation.`
+            : 'Docusaurus checkout not found; changelog build skipped on this PC.')
     } catch (error) {
         console.error(error.message)
         process.exitCode = 1

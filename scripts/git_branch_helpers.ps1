@@ -1,7 +1,9 @@
 function Invoke-SchooltoolGit {
     $result = & git @args
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git failed: git $($args -join ' '). No changes were discarded."
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $details = $result -join [Environment]::NewLine
+        throw "Git failed: git $($args -join ' ') (exit code $exitCode). No changes were discarded.$([Environment]::NewLine)$details"
     }
     $result
 }

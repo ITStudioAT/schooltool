@@ -68,6 +68,51 @@ beforeEach(function () {
 // Index Tests - Authorization
 // ============================================================================
 
+test('teacher CSV requires authentication and administration permission', function () {
+    $this->getJson('/api/admin/teachers/export')->assertUnauthorized();
+    $this->actingAs($this->normalUser, 'sanctum')->get('/api/admin/teachers/export')->assertForbidden();
+});
+
+test('teacher CSV exports the complete selected school roster including inactive teachers without credentials', function () {
+    config(['schooltool.pagination' => 1]);
+    $active = User::factory()->create(['school_id' => $this->school->id, 'short' => 'MÜ',
+        'last_name' => 'Müller; "Nord"', 'first_name' => "Anna\nMaria", 'email' => 'müller@example.test', 'is_active' => true]);
+    $inactive = User::factory()->create(['school_id' => $this->school->id, 'short' => '=1+1',
+        'last_name' => 'Zeller', 'first_name' => 'Zoe', 'email' => 'inactive@example.test', 'is_active' => false]);
+    $foreign = User::factory()->create(['email' => 'foreign@example.test']);
+    foreach ([$active, $inactive, $foreign] as $teacher) {
+        $teacher->assignRole('teacher');
+    }
+    $this->actingAs($this->adminUser, 'sanctum');
+    $response = $this->get('/api/admin/teachers/export?school_id='.$foreign->school_id.'&search_string=nobody&page=99&selected_teachers[]='.$active->id.'&is_active=1');
+    $response->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+    expect($response->headers->get('Content-Disposition'))->toContain('attachment;', 'Lehrer_Schule_'.$this->school->id.'_');
+    $csv = $response->streamedContent();
+    expect($csv)->toStartWith("\xEF\xBB\xBF")->toContain("\r\n")
+        ->not->toContain($active->password, $inactive->password, 'foreign@example.test', 'password', 'token', 'roles');
+    $stream = fopen('php://memory', 'w+');
+    fwrite($stream, substr($csv, 3));
+    rewind($stream);
+    $rows = [];
+    while (($row = fgetcsv($stream, null, ';', '"', '')) !== false) {
+        $rows[] = $row;
+    }
+    fclose($stream);
+    expect($rows)->toBe([
+        ['Kurz', 'Nachname', 'Vorname', 'Email', 'Aktiv'],
+        ['MÜ', 'Müller; "Nord"', "Anna\nMaria", 'müller@example.test', 'Ja'],
+        ["'=1+1", 'Zeller', 'Zoe', 'inactive@example.test', 'Nein'],
+    ]);
+});
+
+test('teacher CSV follows the authenticated selected school after a school switch', function () {
+    $teacher = User::factory()->create(['email' => 'other-school@example.test']);
+    $teacher->assignRole('teacher');
+    $this->adminUser->update(['school_id' => $teacher->school_id]);
+    $response = $this->actingAs($this->adminUser, 'sanctum')->get('/api/admin/teachers/export')->assertOk();
+    expect($response->streamedContent())->toContain('other-school@example.test')->not->toContain('admin@test.com');
+});
+
 test('admin can access index endpoint', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 

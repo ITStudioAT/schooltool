@@ -116,6 +116,19 @@
                                 @click="importDialog = true">
                                 Importieren
                             </v-btn>
+                            <v-btn
+                                block
+                                color="primary"
+                                variant="tonal"
+                                rounded="lg"
+                                class="crud-action-btn-offset"
+                                prepend-icon="mdi-download"
+                                :loading="exporting"
+                                :disabled="exporting"
+                                @click="exportTeachers">
+                                Exportieren
+                            </v-btn>
+                            <div class="kpi-sub">CSV mit allen Lehrern dieser Schule, einschließlich inaktiver Einträge.</div>
                         </div>
 
                         <template v-if="selected_teachers.length >= 1">
@@ -263,6 +276,8 @@ import Pagination from '@/pages/components/Pagination.vue'
 import TeachersListImportDialog from '@/pages/admin/superAdmin/components/TeachersListImportDialog.vue'
 import CopyEmailButton from '@/pages/admin/superAdmin/components/CopyEmailButton.vue'
 import { useTeacherStore } from '@/stores/admin/TeacherStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { exportCsv } from '@/actions/App/Http/Controllers/Admin/TeacherController'
 
 export default {
     props: {
@@ -292,6 +307,7 @@ export default {
             is_valid: false,
             importDialog: false,
             savingClassHeadIds: [],
+            exporting: false,
         }
     },
 
@@ -334,6 +350,36 @@ export default {
     },
 
     methods: {
+        async exportTeachers() {
+            if (this.exporting) {
+                return
+            }
+
+            this.exporting = true
+            try {
+                const response = await axios.get(exportCsv.url(), { responseType: 'blob' })
+                const objectUrl = URL.createObjectURL(response.data)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = response.headers['content-disposition']?.match(/filename="?([^";]+)"?/)?.[1] || 'Lehrer.csv'
+                document.body.appendChild(link)
+                try {
+                    link.click()
+                } finally {
+                    link.remove()
+                    URL.revokeObjectURL(objectUrl)
+                }
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: 'Die Lehrer konnten nicht exportiert werden. Bitte versuchen Sie es erneut.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.exporting = false
+            }
+        },
         async saveClassHeads(teacher, classNames) {
             if (this.savingClassHeadIds.includes(teacher.id)) {
                 return

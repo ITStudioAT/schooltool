@@ -239,7 +239,7 @@
         </tr>
         <tr>
             <td class="label-cell">IBAN</td>
-            <td class="value-cell">{{ $mandate['iban'] }}</td>
+            <td class="value-cell">{{ implode(' ', str_split(preg_replace('/\s+/', '', $mandate['iban']), 4)) }}</td>
         </tr>
         <tr>
             <td class="label-cell">BIC (optional im SEPA-Raum)</td>

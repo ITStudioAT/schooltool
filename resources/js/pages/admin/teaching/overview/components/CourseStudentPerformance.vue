@@ -52,6 +52,7 @@
                                     <div v-if="detail.title" class="font-weight-bold">{{ detail.title }}</div>
                                     <div v-if="detail.description" class="performance-detail-text">Aufgabe: {{ detail.description }}</div>
                                     <div v-if="detail.comment" class="performance-detail-text">Kommentar: {{ detail.comment }}</div>
+                                    <WorkEvaluationPdf :work="detail.work" :student-id="student.user_id || student.id || ''" />
                                     <div v-if="detail.dueDate">Fällig: {{ formatDate(detail.dueDate) }} {{ detail.dueTime }}</div>
                                     <div v-if="detail.doneDate">Erledigt: {{ formatDate(detail.doneDate) }}</div>
                                 </div>
@@ -70,6 +71,7 @@
 <script setup>
 import { computed } from 'vue'
 import CourseStudentHoverDetails from './CourseStudentHoverDetails.vue'
+import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import { teachingCourseMatchesSchoolyear, teachingDateKey, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
 
 const props = defineProps({
@@ -182,6 +184,7 @@ const summaryData = computed(() => {
             title: sourceWork?.title || '',
             description: sourceWork?.description || '',
             comment: sourceWork ? workStudentComment(sourceWork) : String(entry.description || '').trim(),
+            work: sourceWork,
             dueDate: legacy && entry.kind === 'notification' ? entry.due_date : null,
             dueTime: legacy && entry.kind === 'notification' ? entry.due_time : null,
             doneDate: legacy && entry.kind === 'notification' ? entry.done_date : null,

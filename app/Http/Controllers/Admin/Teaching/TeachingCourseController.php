@@ -635,14 +635,21 @@ class TeachingCourseController extends Controller
         $studentsById = $userIds->isEmpty()
             ? collect()
             : User::whereIn('id', $userIds)->get()->keyBy('id');
-        $importsById = $importIds->isEmpty()
+        $importsById = $importIds->isEmpty() && $userIds->isEmpty()
             ? collect()
             : Import116::query()
                 ->where('school_id', $auth_user->school_id)
                 ->where('schoolyear_id', $auth_user->schoolyear_id)
-                ->whereIn('id', $importIds)
+                ->where(fn ($query) => $query
+                    ->whereIn('id', $importIds)
+                    ->orWhereIn('user_id', $userIds))
                 ->get()
                 ->keyBy('id');
+        $classImportsByUserId = $importsById
+            ->filter(fn (Import116 $import): bool => filled($import->user_id))
+            ->groupBy('user_id')
+            ->filter(fn (Collection $imports): bool => $imports->count() === 1)
+            ->map(fn (Collection $imports): Import116 => $imports->first());
 
         $removalReasons = $service->removalReasonsForCourses(collect([$course]))[(int) $course->id] ?? [];
         $courseActor = $this->teachingCourseActor($auth_user, $course);
@@ -656,6 +663,7 @@ class TeachingCourseController extends Controller
                 $courseStudent,
                 $studentsById,
                 $importsById,
+                $classImportsByUserId,
                 $request,
                 $removalReasons,
                 (bool) $course->teaching_show_student_age,
@@ -677,6 +685,7 @@ class TeachingCourseController extends Controller
                 $courseStudent,
                 $studentsById,
                 $importsById,
+                $classImportsByUserId,
                 $request,
                 $removalReasons,
                 (bool) $course->teaching_show_student_age,
@@ -1096,6 +1105,7 @@ class TeachingCourseController extends Controller
         TeachingCourseStudent $courseStudent,
         Collection $studentsById,
         Collection $importsById,
+        Collection $classImportsByUserId,
         Request $request,
         array $removalReasons = [],
         bool $showStudentAge = false,
@@ -1134,6 +1144,11 @@ class TeachingCourseController extends Controller
         }
 
         $payload['sex'] = $payload['sex'] ?? $import?->sex;
+        $classImport = $import ?? ($source === 'user' ? $classImportsByUserId->get((int) $courseStudent->user_id) : null);
+        if ($classImport && trim((string) $classImport->class) !== '') {
+            $payload['schoolclass'] = $classImport->class;
+            $payload['class'] = $classImport->class;
+        }
 
         if ($showStudentAge) {
             $payload['birth_date'] = $import?->birth_date?->format('Y-m-d');

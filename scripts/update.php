@@ -311,6 +311,57 @@ function frontendPlatformMatches(array $constraints, string $platform): bool
     return $allowed === [] || in_array($platform, $allowed, true) || in_array('any', $allowed, true);
 }
 
+function developmentFrontendExecutablesAreAvailable(bool $checkShims = true): bool
+{
+    foreach (['concurrently', 'vite'] as $name) {
+        $packageDirectory = updateProjectPath('node_modules/'.$name);
+        $package = json_decode((string) @file_get_contents($packageDirectory.'/package.json'), true);
+        $target = is_string($package['bin'] ?? null) ? $package['bin'] : ($package['bin'][$name] ?? null);
+
+        if (! is_string($target) || ! is_file($packageDirectory.'/'.$target)) {
+            return false;
+        }
+
+        $shim = updateProjectPath('node_modules/.bin/'.$name.(PHP_OS_FAMILY === 'Windows' ? '.cmd' : ''));
+        if ($checkShims && ! is_file($shim)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function prepareDevelopmentFrontendDependencies(): int
+{
+    if (developmentFrontendExecutablesAreAvailable()) {
+        return 0;
+    }
+
+    if (! developmentFrontendExecutablesAreAvailable(checkShims: false)) {
+        fwrite(STDERR, "Development frontend packages are missing or incomplete. Run npm ci before composer dev.\n");
+
+        return 1;
+    }
+
+    fwrite(STDOUT, "Restoring missing npm development executables.\n");
+    $command = ['npm', 'rebuild', '--ignore-scripts', '--bin-links=true', '--no-audit', '--no-fund'];
+    $exitCode = runUpdateCommand(PHP_OS_FAMILY === 'Windows' ? windowsShellCommand($command) : $command);
+    if ($exitCode !== 0) {
+        fwrite(STDERR, "Could not restore npm development executables. Development services were not started.\n");
+
+        return $exitCode;
+    }
+
+    clearstatcache();
+    if (! developmentFrontendExecutablesAreAvailable()) {
+        fwrite(STDERR, "npm rebuild did not restore the development executables. Check node_modules permissions and run npm ci.\n");
+
+        return 1;
+    }
+
+    return 0;
+}
+
 function frontendInstallationIsIdle(): bool
 {
     if (PHP_OS_FAMILY !== 'Windows') {
@@ -340,12 +391,19 @@ POWERSHELL;
     return is_resource($process) && proc_close($process) === 0;
 }
 
-function installFrontendDependencies(): int
+function installFrontendDependencies(bool $pauseVite = false): int
 {
     if (frontendDependenciesAreCurrent()) {
         fwrite(STDOUT, "Frontend dependencies match package-lock.json; skipping npm ci.\n");
 
         return 0;
+    }
+
+    if ($pauseVite && PHP_OS_FAMILY === 'Windows') {
+        return runUpdateCommand([
+            'powershell.exe', '-NoProfile', '-NonInteractive', '-File',
+            updateProjectPath('scripts/frontend-install.ps1'), '-PhpExecutable', PHP_BINARY,
+        ]);
     }
 
     if (! frontendInstallationIsIdle()) {
@@ -450,7 +508,7 @@ function assertLocalUpdateUsesPublishedMain(): void
     }
 }
 
-function runLocalUpdate(bool $prepareOnly): int
+function runLocalUpdate(bool $prepareOnly, bool $pauseVite = false): int
 {
     fwrite(STDOUT, "Update target: Windows development workstation.\n");
 
@@ -470,7 +528,7 @@ function runLocalUpdate(bool $prepareOnly): int
         return $composerExitCode;
     }
 
-    $npmExitCode = installFrontendDependencies();
+    $npmExitCode = installFrontendDependencies($pauseVite);
 
     if ($npmExitCode !== 0 || $prepareOnly) {
         return $npmExitCode;
@@ -498,7 +556,7 @@ function runLocalUpdate(bool $prepareOnly): int
 
 function updateUsage(): int
 {
-    fwrite(STDERR, "Usage: php scripts/update.php [--target=local|cloudways] [--prepare] [--dry-run]\n");
+    fwrite(STDERR, "Usage: php scripts/update.php [--target=local|cloudways] [--prepare [--pause-vite]] [--dry-run] [--dev-preflight]\n");
 
     return 2;
 }
@@ -516,9 +574,22 @@ if (filter_var(getenv('SCHOOLTOOL_PREVIEW_INSTANCE') ?: false, FILTER_VALIDATE_B
 $target = requestedUpdateTarget($arguments);
 $prepareOnly = in_array('--prepare', $arguments, true);
 $dryRun = in_array('--dry-run', $arguments, true);
+$pauseVite = in_array('--pause-vite', $arguments, true);
 
 if (! in_array($target, ['local', 'cloudways'], true)) {
     exit(updateUsage());
+}
+
+if ($pauseVite && ($target !== 'local' || ! $prepareOnly || $dryRun || in_array('--dev-preflight', $arguments, true))) {
+    exit(updateUsage());
+}
+
+if (in_array('--dev-preflight', $arguments, true)) {
+    if ($target !== 'local' || $prepareOnly || $dryRun) {
+        exit(updateUsage());
+    }
+
+    exit(prepareDevelopmentFrontendDependencies());
 }
 
 if ($dryRun) {
@@ -531,7 +602,7 @@ if ($dryRun) {
 }
 
 if ($target === 'local') {
-    $exitCode = runLocalUpdate($prepareOnly);
+    $exitCode = runLocalUpdate($prepareOnly, $pauseVite);
     if ($exitCode === 0 && ! $prepareOnly) {
         echo 'Abgeschlossen: ', (new DateTimeImmutable('now', new DateTimeZone('Europe/Vienna')))->format('d.m.Y H:i:s T'), ' (Europe/Vienna)', PHP_EOL;
     }

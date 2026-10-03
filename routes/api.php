@@ -48,6 +48,7 @@ use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantOnlineSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSepaSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantSynchronisationController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
 use App\Http\Controllers\Admin\RoleController;
@@ -103,6 +104,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
+use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -184,6 +186,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}/works/{course_work}/evaluations/{sha256}', [CourseStudentEntryController::class, 'evaluationPdf'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.evaluation-pdf');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
     });
@@ -478,6 +481,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/mark_account_status', [UserController::class, 'markAccountStatus']);
 
         // teachers, teachers_list
+        Route::get('/admin/teachers/export', [TeacherController::class, 'exportCsv'])->name('admin.teachers.export');
         Route::put('/admin/teachers/{user}/class-head', [TeacherController::class, 'updateClassHead'])->name('admin.teachers.classHead.update');
         Route::apiResource('/admin/teachers', TeacherController::class);
         Route::post('/admin/teachers/delete_teachers', [TeacherController::class, 'deleteTeachers']);
@@ -533,6 +537,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/restaurant/billings/preview', [RestaurantBillingController::class, 'preview']);
         Route::get('/admin/restaurant/billings/{id}/print', [RestaurantBillingController::class, 'print']);
         Route::apiResource('/admin/restaurant/billings', RestaurantBillingController::class)->only(['index', 'store']);
+        Route::get('/admin/restaurant/bookings', [RestaurantMenuPlanController::class, 'bookings'])->name('restaurant.bookings');
+        Route::post('/admin/restaurant/synchronisation/preview', [RestaurantSynchronisationController::class, 'preview'])->name('restaurant.synchronisation.preview');
+        Route::post('/admin/restaurant/synchronisation/apply', [RestaurantSynchronisationController::class, 'apply'])->name('restaurant.synchronisation.apply');
         Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
         Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/booking-users', [RestaurantMenuPlanController::class, 'searchEntryBookingUsers']);
         Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'entryBookings']);
@@ -568,6 +575,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, teaching_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auto,scope:teaching_access'])->group(function () {
+        Route::get('/admin/teaching/synchronisation/status', [TeachingSynchronisationController::class, 'status'])->name('teaching.synchronisation.status');
+        Route::post('/admin/teaching/synchronisation/preview', [TeachingSynchronisationController::class, 'preview'])->name('teaching.synchronisation.preview');
+        Route::post('/admin/teaching/synchronisation/apply', [TeachingSynchronisationController::class, 'apply'])->name('teaching.synchronisation.apply');
+        Route::get('/admin/teaching/synchronisation/backups/{backup}', [TeachingSynchronisationController::class, 'downloadBackup'])->name('teaching.synchronisation.backup');
         Route::get('/admin/teaching/search116', [TeachingController::class, 'search116']);
         Route::get('/admin/teaching/reminders/due', [TeachingReminderController::class, 'index'])->name('teaching.reminders.due');
         Route::get('/admin/teaching/load_settings', [TeachingController::class, 'loadSettings']);
@@ -671,6 +682,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
+        Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
+        Route::get('/admin/teaching/course_works/{course_work}/evaluations/{sha256}', [CourseWorkController::class, 'downloadEvaluation'])->name('teaching.course-works.download-evaluation');
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
         Route::get('/admin/teaching/courses/{course}/evaluations', [CourseEvaluationController::class, 'show'])->name('admin.teaching.courses.evaluations');
         Route::get('/admin/teaching/course_student_entry_notification_recipients', [CourseStudentEntryNotificationController::class, 'preview']);

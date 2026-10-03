@@ -81,16 +81,6 @@ function gitpush {
         Pop-Location
     }
 }
-function gitpull {
-    git pull @args
-    if (`$LASTEXITCODE -ne 0) {
-        throw "git pull failed with exit code `$LASTEXITCODE."
-    }
-    `$viennaTimeZone = [TimeZoneInfo]::FindSystemTimeZoneById('W. Europe Standard Time')
-    `$finishedAt = [TimeZoneInfo]::ConvertTime([DateTimeOffset]::UtcNow, `$viennaTimeZone)
-    Write-Host ("Abgeschlossen: {0} (Europe/Vienna)" -f `$finishedAt.ToString('dd.MM.yyyy HH:mm:ss zzz')) -ForegroundColor Green
-}
-
 function Invoke-ProjectGitWorkflow {
     param([string]`$Command, [string[]]`$CommandArguments)
     `$repositoryRoot = git rev-parse --show-toplevel 2>`$null
@@ -126,6 +116,7 @@ function Invoke-ProjectGitWorkflow {
 function gitstart { Invoke-ProjectGitWorkflow 'gitstart' `$args }
 function gitwork { Invoke-ProjectGitWorkflow 'gitwork' `$args }
 function gitmain { Invoke-ProjectGitWorkflow 'gitmain' `$args }
+function gitpull { Invoke-ProjectGitWorkflow 'gitpull' `$args }
 function gitsave { Invoke-ProjectGitWorkflow 'gitsave' `$args }
 function gitupdate { Invoke-ProjectGitWorkflow 'gitupdate' `$args }
 function gitrelease { Invoke-ProjectGitWorkflow 'gitrelease' `$args }

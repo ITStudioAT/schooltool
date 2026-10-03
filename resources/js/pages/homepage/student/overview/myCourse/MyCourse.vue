@@ -380,6 +380,7 @@
                                                                         <div v-if="entryComment(entry)" class="entry-comment">
                                                                             {{ entryComment(entry) }}
                                                                         </div>
+                                                                        <v-btn v-if="entry.work?.evaluation_pdf" size="small" variant="tonal" prepend-icon="mdi-file-pdf-box" :href="evaluationPdfUrl(entry)" :title="entry.work.evaluation_pdf.name" target="_blank" rel="noopener">Auswertung (PDF)</v-btn>
                                                                     </div>
                                                                     <v-chip v-if="entry.type" size="small" variant="outlined">
                                                                         {{ entryTypeChipLabel(entry.type) }}
@@ -530,6 +531,7 @@ import {
     teachingCategoryEvaluationValueLabels,
 } from '@/helpers/teachingCategoryEvaluation'
 import ParentAccessPanel from '../../components/ParentAccessPanel.vue'
+import { evaluationPdf } from '@/actions/App/Http/Controllers/Student/CourseStudentEntryController'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import StudentFeedbackEntries from '../../components/StudentFeedbackEntries.vue'
 import '../../../../../../css/student.css'
@@ -1062,6 +1064,10 @@ export default {
     },
 
     methods: {
+        evaluationPdfUrl(entry) {
+            if (!entry.work?.evaluation_pdf) return null
+            return evaluationPdf.url({ courseId: this.courseId, course_work: entry.work.id, sha256: entry.work.evaluation_pdf.sha256 })
+        },
         feedbackEntry(entry) {
             return {
                 ...entry,

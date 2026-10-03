@@ -1,5 +1,54 @@
 # UPDATES
 
+## 3.50.0
+
+### Unterricht
+
+- Lehrer lokal mit Live-Daten synchronisieren
+- Bewertungen importieren
+- Bewertungen anzeigen in Admin und bei Schüler:innen
+
+### System
+
+- Neue Laravel-Version incl. aller Dependencies installiert
+
+## 3.49.14
+
+### Restaurant
+
+- Bestellungen aus der Buchungsübersicht stornieren
+
+## 3.49.13
+
+### Restaurant
+
+- Datensynchronisation fix
+- SEPA-Nummer als 4er-Blocks
+
+## 3.49.12
+
+### System
+
+- Git-Workflow Dokusaurus fixed
+
+## 3.49.12
+
+### System
+
+- Git-Workflow fixed
+
+## 3.49.10
+
+### System
+
+- Login für Import116-Students
+- Integritäts-Packages-Issues gefixt
+
+### Restaurant
+
+- Synchronisation Live zu Local nur für super_admins
+- Anzeige Besteller der aktuellen Buchungen
+
 ## 3.49.9
 
 ### Teaching

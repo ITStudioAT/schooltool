@@ -307,6 +307,7 @@ it('transfers a preview with strict key authentication and private snapshot perm
 $ErrorActionPreference = 'Stop'
 . $env:PREVIEW_TEST_HELPERS
 function Invoke-PreviewTestSsh { Write-Output ('SSH ' + ($args -join '|')); $global:LASTEXITCODE = 0 }
+function Get-Service { [pscustomobject]@{ Status = 'Running' } }
 function Get-SchooltoolPreviewExecutable { param([string]$Name); if ($Name -ne 'ssh') { throw 'UNEXPECTED_TRANSPORT' }; 'Invoke-PreviewTestSsh' }
 $env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
 $env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-feature@example.test'

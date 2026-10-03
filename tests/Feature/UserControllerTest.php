@@ -466,11 +466,13 @@ test('guest is unauthorized from loading users', function () {
 // ============================================================================
 
 test('super admin can toggle a single user active state via users20 endpoint', function () {
+    Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
     $target = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'is_active' => true,
     ]);
+    $target->assignRole('student');
 
     $this->actingAs($this->superAdmin, 'sanctum');
 
@@ -482,7 +484,8 @@ test('super admin can toggle a single user active state via users20 endpoint', f
             'is_active' => false,
         ]);
 
-    expect((bool) $target->fresh()->is_active)->toBeFalse();
+    expect((bool) $target->fresh()->is_active)->toBeFalse()
+        ->and($target->fresh()->hasRole('student'))->toBeTrue();
 });
 
 test('super admin can force active state for multiple users via users20 endpoint', function () {

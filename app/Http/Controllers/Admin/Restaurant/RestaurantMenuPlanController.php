@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\RestaurantBookingService;
 use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantMenuPlanService;
+use App\Services\RestaurantService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,146 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantMenuPlanController extends Controller
 {
+    public function bookings(Request $request, RestaurantService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $validated = $request->validate(['week_start' => ['sometimes', 'required', 'date_format:Y-m-d']]);
+        $selectedWeek = null;
+        $query = null;
+
+        if (isset($validated['week_start'])) {
+            $weekStart = Carbon::parse($validated['week_start'])->startOfDay();
+            abort_unless($weekStart->isMonday(), 422, 'Die ausgewählte Woche muss an einem Montag beginnen.');
+            $weekEnd = $weekStart->copy()->addDays(6);
+            $plans = RestaurantMenuPlan::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('start_date', '<=', $weekEnd->toDateString())
+                ->where('end_date', '>=', $weekStart->toDateString())
+                ->get(['id', 'start_date', 'end_date']);
+            $query = RestaurantMenuPlanBooking::query()
+                ->whereHas('menuPlanEntry', fn ($entries) => $entries
+                    ->whereIn('restaurant_menu_plan_id', $plans->pluck('id'))
+                    ->whereBetween('plan_date', [$weekStart->toDateString(), $weekEnd->toDateString()]));
+            $selectedWeek = [
+                'calendar_week' => $weekStart->isoWeek(),
+                'week_year' => $weekStart->isoWeekYear(),
+                'start_date' => $plans->isEmpty() ? $weekStart->toDateString() : Carbon::parse($plans->min('start_date'))->max($weekStart)->toDateString(),
+                'end_date' => $plans->isEmpty() ? $weekEnd->toDateString() : Carbon::parse($plans->max('end_date'))->min($weekEnd)->toDateString(),
+            ];
+        }
+
+        $bookings = ($query ?? $service->bookingsForOrderablePlansQuery($authUser))
+            ->where('school_id', $authUser->school_id)
+            ->whereHas('user', fn ($query) => $query->where('school_id', $authUser->school_id))
+            ->whereHas('menuPlanEntry.menuPlan', fn ($query) => $query->where('school_id', $authUser->school_id))
+            ->with(['user:id,import116_id,first_name,last_name,sex', 'user.roles', 'menuPlanEntry', 'import116:id,school_id,schoolyear_id,student_code,first_name,last_name,class'])
+            ->get();
+
+        $recipients = $this->bookingListRecipients($bookings, $authUser);
+        $billings = RestaurantBilling::query()->where('school_id', $authUser->school_id)->get(['start_date', 'end_date']);
+
+        $rows = $bookings->map(function (RestaurantMenuPlanBooking $booking) use ($recipients, $billings): array {
+            $recipient = $recipients[$booking->id] ?? null;
+            $lastName = $recipient?->last_name ?? ($booking->child_name ?: $booking->user?->last_name);
+            $firstName = $recipient?->first_name ?? ($booking->child_name ? '' : $booking->user?->first_name);
+            $isBookedUser = ! $booking->child_name
+                || $this->normalizeComparableString($booking->child_name) === $this->normalizeComparableString($booking->user?->full_name);
+
+            if (! $recipient && $isBookedUser) {
+                $lastName = $booking->user?->last_name;
+                $firstName = $booking->user?->first_name;
+            }
+
+            $person = trim("{$lastName} {$firstName}") ?: 'Unbekannt';
+
+            if ($recipient && filled($recipient->class)) {
+                $person .= ", {$recipient->class}";
+            } elseif (! $recipient && $isBookedUser && $booking->user?->hasRole('teacher')) {
+                $person .= match ($booking->user->sex) {
+                    'w', 'f' => ', Lehrerin',
+                    'm' => ', Lehrer',
+                    default => ', Lehrkraft',
+                };
+            }
+
+            return [
+                'id' => $booking->id,
+                'person' => $person,
+                'date' => $booking->menuPlanEntry->plan_date->toDateString(),
+                'menu' => $booking->menuPlanEntry->menu_title,
+                'plan_id' => $booking->menuPlanEntry->restaurant_menu_plan_id,
+                'entry_id' => $booking->restaurant_menu_plan_entry_id,
+                'can_delete' => ! $billings->contains(fn (RestaurantBilling $billing): bool => $booking->menuPlanEntry->plan_date->betweenIncluded($billing->start_date, $billing->end_date)),
+                'last_name' => $lastName,
+                'first_name' => $firstName,
+            ];
+        })->sort(function (array $left, array $right): int {
+            return strnatcasecmp((string) $left['last_name'], (string) $right['last_name'])
+                ?: strnatcasecmp((string) $left['first_name'], (string) $right['first_name'])
+                ?: strcmp($left['date'], $right['date'])
+                ?: ($left['id'] <=> $right['id']);
+        })->values()->map(fn (array $row): array => array_diff_key($row, array_flip(['last_name', 'first_name'])));
+
+        return response()->json(['data' => $rows, 'meta' => ['selected_week' => $selectedWeek]], 200, $this->noStoreHeaders());
+    }
+
+    /**
+     * @param  Collection<int, RestaurantMenuPlanBooking>  $bookings
+     * @return array<int, Import116>
+     */
+    private function bookingListRecipients(Collection $bookings, User $authUser): array
+    {
+        if ($bookings->isEmpty()) {
+            return [];
+        }
+
+        $imports = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where(function ($query) use ($bookings): void {
+                $query->whereIn('id', $bookings->pluck('import116_id')->merge($bookings->pluck('user.import116_id'))->filter())
+                    ->orWhereIn('user_id', $bookings->pluck('user_id'))
+                    ->orWhereIn('student_code', $bookings->pluck('import116.student_code')->filter())
+                    ->orWhere(function ($nameQuery) use ($bookings): void {
+                        $nameQuery->whereIn(DB::raw('LOWER(TRIM(first_name))'), $bookings->pluck('user.first_name')->map(fn ($name) => $this->normalizeComparableString($name))->filter())
+                            ->whereIn(DB::raw('LOWER(TRIM(last_name))'), $bookings->pluck('user.last_name')->map(fn ($name) => $this->normalizeComparableString($name))->filter());
+                    });
+            })
+            ->get();
+
+        return $bookings->mapWithKeys(function (RestaurantMenuPlanBooking $booking) use ($imports, $authUser): array {
+            $matches = $imports->filter(function (Import116 $import) use ($booking, $authUser, $imports): bool {
+                $linkedRecipient = $booking->import116;
+
+                if ($linkedRecipient?->school_id === $authUser->school_id) {
+                    return $import->id === $linkedRecipient->id || $import->student_code === $linkedRecipient->student_code;
+                }
+
+                if ($booking->child_name) {
+                    $childName = $this->normalizeComparableString($booking->child_name);
+
+                    return $childName === $this->normalizeComparableString("{$import->first_name} {$import->last_name}")
+                        || $childName === $this->normalizeComparableString("{$import->last_name} {$import->first_name}");
+                }
+
+                if ($imports->contains('id', $booking->user?->import116_id)) {
+                    return $import->id === $booking->user->import116_id;
+                }
+
+                if ($imports->contains('user_id', $booking->user_id)) {
+                    return $import->user_id === $booking->user_id;
+                }
+
+                return $this->normalizedStudentKey($import->first_name, $import->last_name) === $this->normalizedStudentKey($booking->user?->first_name, $booking->user?->last_name);
+            })->values();
+
+            return $matches->count() === 1 ? [$booking->id => $matches->first()] : [];
+        })->all();
+    }
+
     public function index(RestaurantMenuPlanService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
@@ -326,25 +467,28 @@ class RestaurantMenuPlanController extends Controller
 
         [$plan, $entry] = $this->resolvePlanAndEntry($authUser, $planId, $entryId, $service);
 
-        if ($this->weekIsBilled((int) $plan->school_id, $entry->plan_date)) {
-            return response()->json([
-                'message' => 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.',
-            ], 409);
-        }
+        return DB::transaction(function () use ($authUser, $plan, $entry, $entryId, $bookingId): JsonResponse {
+            $booking = RestaurantMenuPlanBooking::query()
+                ->where('school_id', $authUser->school_id)
+                ->whereHas('user', fn ($users) => $users->where('school_id', $authUser->school_id))
+                ->where('restaurant_menu_plan_entry_id', $entryId)
+                ->lockForUpdate()
+                ->find($bookingId);
 
-        $booking = RestaurantMenuPlanBooking::query()
-            ->where('restaurant_menu_plan_entry_id', $entryId)
-            ->find($bookingId);
+            if (! $booking) {
+                abort(404, 'Buchung nicht gefunden.');
+            }
 
-        if (! $booking) {
-            abort(404, 'Buchung nicht gefunden.');
-        }
+            if ($this->weekIsBilled((int) $plan->school_id, $entry->plan_date, true)) {
+                return response()->json([
+                    'message' => 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.',
+                ], 409);
+            }
 
-        $booking->delete();
+            $booking->delete();
 
-        return response()->json([
-            'message' => 'Buchung wurde gelöscht.',
-        ]);
+            return response()->json(['message' => 'Buchung wurde gelöscht.']);
+        });
     }
 
     public function print(Request $request, int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
@@ -386,7 +530,7 @@ class RestaurantMenuPlanController extends Controller
         ];
     }
 
-    private function weekIsBilled(int $schoolId, mixed $planDate): bool
+    private function weekIsBilled(int $schoolId, mixed $planDate, bool $lock = false): bool
     {
         if (! $planDate) {
             return false;
@@ -396,11 +540,12 @@ class RestaurantMenuPlanController extends Controller
             ? $planDate->copy()->startOfDay()
             : Carbon::parse((string) $planDate)->startOfDay();
 
-        return RestaurantBilling::query()
+        $query = RestaurantBilling::query()
             ->where('school_id', $schoolId)
             ->whereDate('start_date', '<=', $date->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $date->format('Y-m-d'))
-            ->exists();
+            ->whereDate('end_date', '>=', $date->format('Y-m-d'));
+
+        return $lock ? $query->lockForUpdate()->first(['id']) !== null : $query->exists();
     }
 
     /**

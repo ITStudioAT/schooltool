@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { prepareReleaseChangelog, updateReleaseChangelog } from '../../../scripts/update-changelog.mjs'
+import { findDocumentationRoot, prepareReleaseChangelog, updateReleaseChangelog } from '../../../scripts/update-changelog.mjs'
 
 const updates = '# UPDATES\n\n## 3.47.1\n\n### Materialien\n\n- Vorschau für neue Dokumente repariert.\n\n## 3.47.0\n\n- Alt.\n'
 const changelog = '---\ntitle: Changelog\n---\n\n# Changelog\n\n**Aktuelle Version:** `3.47.0`\n\n## 3.47.0\n\n- Historie.\n\n## Weitere Informationen\n\n- [Roadmap](./roadmap)\n'
@@ -32,6 +32,39 @@ afterEach(() => {
 })
 
 describe('release changelog', () => {
+    it('discovers a Docusaurus checkout below a shared Dropbox directory', () => {
+        const root = mkdtempSync(join(tmpdir(), 'schooltool-changelog-discovery-'))
+        directories.push(root)
+        const documentationRoot = join(root, 'docusaurus90', 'schooltool')
+        mkdirSync(join(documentationRoot, 'docs/releases'), { recursive: true })
+        writeFileSync(join(documentationRoot, 'docs/releases/index.md'), changelog)
+        writeFileSync(join(documentationRoot, 'sidebars.releases.js'), sidebar)
+        writeFileSync(join(documentationRoot, 'package.json'), '{}')
+
+        expect(findDocumentationRoot({ defaultRoot: join(root, 'missing'), searchRoots: [root] }))
+            .toBe(resolve(documentationRoot))
+    })
+
+    it('allows versioned publication to continue when Docusaurus is not installed', () => {
+        const root = mkdtempSync(join(tmpdir(), 'schooltool-changelog-missing-'))
+        directories.push(root)
+
+        expect(findDocumentationRoot({ defaultRoot: join(root, 'missing'), searchRoots: [] })).toBeNull()
+        expect(updateReleaseChangelog({ version: '3.47.1', documentationRoot: null })).toBe(false)
+    })
+
+    it('ignores a legacy Docusaurus checkout that cannot accept the current changelog', () => {
+        const root = mkdtempSync(join(tmpdir(), 'schooltool-changelog-legacy-'))
+        directories.push(root)
+        const documentationRoot = join(root, 'docusaurus90', 'schooltool')
+        mkdirSync(join(documentationRoot, 'docs/releases'), { recursive: true })
+        writeFileSync(join(documentationRoot, 'docs/releases/index.md'), '**Aktuelle Version:** `v3.32.1`\n\n## Versionen\n')
+        writeFileSync(join(documentationRoot, 'sidebars.releases.js'), sidebar)
+        writeFileSync(join(documentationRoot, 'package.json'), '{}')
+
+        expect(findDocumentationRoot({ defaultRoot: join(root, 'missing'), searchRoots: [root] })).toBeNull()
+    })
+
     it.each(['', 'en/'])('publishes ten visible releases with pagination for locale %s', (locale) => {
         const html = readFileSync(resolve('public/documentation', locale, 'releases/index.html'), 'utf8')
         const article = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/)?.[0]

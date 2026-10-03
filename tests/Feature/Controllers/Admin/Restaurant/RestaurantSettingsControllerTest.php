@@ -4,6 +4,9 @@ use App\Models\Licence;
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
+use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
+use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -51,6 +54,100 @@ beforeEach(function () {
         'schoolyear_id' => null,
     ]);
     $this->admin->assignRole('admin');
+});
+
+test('overview groups all current and future plan weeks and counts bookings regardless of quantities locks and deadlines', function () {
+    $this->travelTo(now()->setDate(2026, 10, 1)->setTime(18, 0));
+    $createPlan = function (string $start, string $end, array $quantities, bool $available = true, ?School $school = null): RestaurantMenuPlan {
+        $school ??= $this->school;
+        $plan = RestaurantMenuPlan::factory()->create([
+            'school_id' => $school->id, 'start_date' => $start, 'end_date' => $end,
+            'is_available' => $available, 'use_individual_schedule_values' => true,
+            'order_start_at' => '2026-09-01 00:00:00', 'order_end_at' => '2026-09-02 00:00:00',
+        ]);
+        foreach ($quantities as $quantity) {
+            $entry = RestaurantMenuPlanEntry::factory()->create([
+                'restaurant_menu_plan_id' => $plan->id, 'plan_date' => $start,
+            ]);
+            RestaurantMenuPlanBooking::query()->create([
+                'school_id' => $school->id, 'user_id' => $this->admin->id,
+                'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => $quantity,
+            ]);
+        }
+
+        return $plan;
+    };
+    $createPlan('2026-09-21', '2026-09-24', [9]);
+    $createPlan('2026-09-28', '2026-09-29', [4], false);
+    $createPlan('2026-10-05', '2026-10-07', [3, 2], false);
+    $createPlan('2026-10-06', '2026-10-08', [1]);
+    $createPlan('2026-10-19', '2026-10-22', [], false);
+    $createPlan('2027-01-04', '2027-01-07', [5]);
+    $createPlan('2026-10-12', '2026-10-15', [8], true, School::factory()->create());
+
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/settings')
+        ->assertSuccessful()
+        ->assertJsonPath('stats.menu_plan_weeks', fn (array $weeks): bool => array_map(fn (array $week): array => array_diff_key($week, ['plans' => true]), $weeks) === [
+            ['week_start' => '2026-09-28', 'calendar_week' => 40, 'week_year' => 2026, 'start_date' => '2026-09-28', 'end_date' => '2026-09-29', 'bookings_count' => 1],
+            ['week_start' => '2026-10-05', 'calendar_week' => 41, 'week_year' => 2026, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08', 'bookings_count' => 3],
+            ['week_start' => '2026-10-19', 'calendar_week' => 43, 'week_year' => 2026, 'start_date' => '2026-10-19', 'end_date' => '2026-10-22', 'bookings_count' => 0],
+            ['week_start' => '2027-01-04', 'calendar_week' => 1, 'week_year' => 2027, 'start_date' => '2027-01-04', 'end_date' => '2027-01-07', 'bookings_count' => 1],
+        ]);
+});
+
+test('overview splits a plan spanning weeks and uses the ISO week year at the year boundary', function () {
+    $this->travelTo(now()->setDate(2027, 1, 1)->startOfDay());
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'start_date' => '2026-12-21', 'end_date' => '2027-01-08', 'is_available' => false,
+    ]);
+    foreach (['2026-12-22', '2026-12-29', '2027-01-05'] as $date) {
+        $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'plan_date' => $date]);
+        RestaurantMenuPlanBooking::query()->create([
+            'school_id' => $this->school->id, 'user_id' => $this->admin->id,
+            'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 3,
+        ]);
+    }
+
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/settings')
+        ->assertSuccessful()
+        ->assertJsonPath('stats.menu_plan_weeks', fn (array $weeks): bool => array_map(fn (array $week): array => array_diff_key($week, ['plans' => true]), $weeks) === [
+            ['week_start' => '2026-12-28', 'calendar_week' => 53, 'week_year' => 2026, 'start_date' => '2026-12-28', 'end_date' => '2027-01-03', 'bookings_count' => 1],
+            ['week_start' => '2027-01-04', 'calendar_week' => 1, 'week_year' => 2027, 'start_date' => '2027-01-04', 'end_date' => '2027-01-08', 'bookings_count' => 1],
+        ]);
+});
+
+test('overview returns no weeks when the school has no menu plans', function () {
+    $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/settings')
+        ->assertSuccessful()->assertJsonPath('stats.menu_plan_weeks', []);
+});
+
+test('overview exposes effective opening deadlines and individual overrides for each plan including locked plans', function () {
+    $this->travelTo(now()->setDate(2026, 10, 1)->setTime(18, 0));
+    SchoolTool::query()->where('school_id', $this->school->id)->update([
+        'restaurant_menu_order_start_mode' => 'scheduled',
+        'restaurant_menu_order_start_week_offset' => 2,
+        'restaurant_menu_order_start_day_of_week' => 0,
+        'restaurant_menu_order_start_time' => '15:00:00',
+        'restaurant_menu_order_end_week_offset' => 1,
+        'restaurant_menu_order_end_day_of_week' => 4,
+        'restaurant_menu_order_end_time' => '16:00:00',
+    ]);
+    $standard = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08',
+        'is_available' => true, 'use_individual_schedule_values' => false,
+    ]);
+    $locked = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08',
+        'is_available' => false, 'use_individual_schedule_values' => true,
+        'order_start_at' => '2026-10-03 12:00:00', 'order_end_at' => '2026-10-04 15:00:00',
+    ]);
+    $response = $this->actingAs($this->admin, 'sanctum')->getJson('/api/admin/restaurant/settings')->assertSuccessful();
+    $plans = collect($response->json('stats.menu_plan_weeks.0.plans'))->keyBy('id');
+    expect($plans[$standard->id]['order_start_at'])->toBe('2026-09-27T15:00:00+02:00')
+        ->and($plans[$standard->id]['order_end_at'])->toBe('2026-10-01T16:00:00+02:00')
+        ->and($plans[$locked->id]['is_available'])->toBeFalse()
+        ->and($plans[$locked->id]['order_start_at'])->toBe('2026-10-03T12:00:00+02:00')
+        ->and($plans[$locked->id]['timezone'])->toBe('Europe/Vienna');
 });
 
 test('settings creates default categories for empty school', function () {

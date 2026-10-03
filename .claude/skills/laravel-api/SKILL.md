@@ -48,26 +48,20 @@ All code must follow Laravel best practices and PSR-12 standards:
 ```
 routes/api/
   routes.php              # Main entry point, version grouping
-
   tasks.php               # All task routes, all versions
-
   projects.php            # All project routes, all versions
 
 app/Http/
   Controllers/{Resource}/V1/
     StoreController.php   # Always invokable
-
     IndexController.php
     ShowController.php
   Requests/{Resource}/V1/
     StoreTaskRequest.php  # Validation + payload() method
-
   Payloads/{Resource}/
     StoreTaskPayload.php  # Simple DTOs with toArray()
-
   Responses/
     JsonDataResponse.php  # Implements Responsable
-
     JsonErrorResponse.php
   Middleware/
     HttpSunset.php
@@ -79,7 +73,6 @@ app/Services/             # Only when logic too complex for Actions
 
 app/Models/
   Task.php                # HasUlids trait, simple data access
-
 ```
 
 ## Building a New Resource Endpoint
