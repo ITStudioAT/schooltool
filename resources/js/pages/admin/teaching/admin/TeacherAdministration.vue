@@ -17,7 +17,7 @@
                         class="teaching-administration-button">
                         <span class="teaching-administration-button-copy">
                             <span class="teaching-administration-button-title">{{ panel.label }}</span>
-                            <span class="teaching-administration-button-meta">{{ activeSchoolyearLabel }}</span>
+                            <span class="teaching-administration-button-meta">{{ panel.id === 'synchronisation' ? 'Alle Schuljahre' : activeSchoolyearLabel }}</span>
                         </span>
                         <span
                             v-if="panel.id === 'school_hours' && hasMissingSchoolHours"
@@ -31,6 +31,7 @@
 
     <v-row class="w-100 ma-0" dense>
         <Teachers v-if="selectedPanel === 'teachers'" :hide-back-button="true" />
+        <Synchronisation v-else-if="selectedPanel === 'synchronisation'" />
         <v-col v-else cols="12" md="6" lg="7" xl="4">
             <section class="teaching-administration-content">
                 <v-row class="w-100 ma-0" dense>
@@ -60,6 +61,7 @@ const Import116 = defineAsyncComponent(() => import('./import116/Import116.vue')
 const StudentEmailZipImport = defineAsyncComponent(() => import('./import116/StudentEmailZipImport.vue'))
 const Holidays = defineAsyncComponent(() => import('./holidays/Holidays.vue'))
 const SchoolHours = defineAsyncComponent(() => import('./schoolhours/SchoolHours.vue'))
+const Synchronisation = defineAsyncComponent(() => import('./Synchronisation.vue'))
 const route = useRoute()
 const router = useRouter()
 const schoolHourStore = useSchoolHourStore()
@@ -73,6 +75,7 @@ const panels = [
     { id: 'email_import', label: 'E-Mail-Import', icon: 'mdi-email-plus-outline' },
     { id: 'holidays', label: 'Ferien', icon: 'mdi-beach' },
     { id: 'school_hours', label: 'Schulstunden', icon: 'mdi-clock-time-four-outline' },
+    { id: 'synchronisation', label: 'Synchronisation', icon: 'mdi-sync' },
 ]
 const hasMissingSchoolHours = computed(() => schoolHourStore.school_hours_loaded && schoolHourStore.school_hours.length === 0)
 const selectedPanel = computed({

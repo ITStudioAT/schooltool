@@ -104,6 +104,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
+use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -479,6 +480,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/mark_account_status', [UserController::class, 'markAccountStatus']);
 
         // teachers, teachers_list
+        Route::get('/admin/teachers/export', [TeacherController::class, 'exportCsv'])->name('admin.teachers.export');
         Route::put('/admin/teachers/{user}/class-head', [TeacherController::class, 'updateClassHead'])->name('admin.teachers.classHead.update');
         Route::apiResource('/admin/teachers', TeacherController::class);
         Route::post('/admin/teachers/delete_teachers', [TeacherController::class, 'deleteTeachers']);
@@ -572,6 +574,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, teaching_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auto,scope:teaching_access'])->group(function () {
+        Route::get('/admin/teaching/synchronisation/status', [TeachingSynchronisationController::class, 'status'])->name('teaching.synchronisation.status');
+        Route::post('/admin/teaching/synchronisation/preview', [TeachingSynchronisationController::class, 'preview'])->name('teaching.synchronisation.preview');
+        Route::post('/admin/teaching/synchronisation/apply', [TeachingSynchronisationController::class, 'apply'])->name('teaching.synchronisation.apply');
+        Route::get('/admin/teaching/synchronisation/backups/{backup}', [TeachingSynchronisationController::class, 'downloadBackup'])->name('teaching.synchronisation.backup');
         Route::get('/admin/teaching/search116', [TeachingController::class, 'search116']);
         Route::get('/admin/teaching/reminders/due', [TeachingReminderController::class, 'index'])->name('teaching.reminders.due');
         Route::get('/admin/teaching/load_settings', [TeachingController::class, 'loadSettings']);

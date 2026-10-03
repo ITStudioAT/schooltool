@@ -1,5 +1,10 @@
 # UPDATES
 
+## 3.49.15 !!!
+
+### Unterricht
+
+- Lehrer lokal mit Live-Daten synchronisieren
 
 ## 3.49.14
 
@@ -10,17 +15,20 @@
 ## 3.49.13
 
 ### Restaurant
+
 - Datensynchronisation fix
 - SEPA-Nummer als 4er-Blocks
 
 ## 3.49.12
 
 ### System
+
 - Git-Workflow Dokusaurus fixed
 
 ## 3.49.12
 
 ### System
+
 - Git-Workflow fixed
 
 ## 3.49.10

@@ -25,6 +25,41 @@ function runLocalDeploymentFixture(string $directory, array $arguments = []): Pr
     return $process;
 }
 
+function createDevelopmentFrontendFixture(string $directory): void
+{
+    $filesystem = new Filesystem;
+    $lock = ['lockfileVersion' => 3, 'packages' => ['' => ['devDependencies' => ['concurrently' => '1.0.0', 'vite' => '1.0.0']]]];
+    foreach (['concurrently', 'vite'] as $name) {
+        $filesystem->ensureDirectoryExists($directory.'/node_modules/'.$name);
+        $package = [
+            'name' => $name,
+            'version' => '1.0.0',
+            'bin' => [$name => 'cli.js'],
+            'scripts' => ['install' => 'node -e "require(\'fs\').writeFileSync(\'../../install-script-ran\', \'1\')"'],
+        ];
+        file_put_contents($directory.'/node_modules/'.$name.'/package.json', json_encode($package));
+        file_put_contents($directory.'/node_modules/'.$name.'/cli.js', "#!/usr/bin/env node\nconsole.log('{$name} fixture');\n");
+        $lock['packages']['node_modules/'.$name] = ['version' => '1.0.0', 'bin' => $package['bin']];
+    }
+    file_put_contents($directory.'/package.json', json_encode(['name' => 'schooltool-dev-fixture', 'devDependencies' => $lock['packages']['']['devDependencies']]));
+    file_put_contents($directory.'/package-lock.json', json_encode($lock));
+    file_put_contents($directory.'/node_modules/.package-lock.json', json_encode($lock));
+    file_put_contents($directory.'/storage/framework/frontend-dependencies.sha256', hash_file('sha256', $directory.'/package-lock.json'));
+}
+
+function createDevelopmentNpmFailureFixture(string $directory, int $exitCode): string
+{
+    $bin = $directory.'/fake-bin';
+    (new Filesystem)->ensureDirectoryExists($bin);
+    $wrapper = $bin.'/npm'.(PHP_OS_FAMILY === 'Windows' ? '.cmd' : '');
+    file_put_contents($wrapper, PHP_OS_FAMILY === 'Windows'
+        ? "@echo off\r\necho called > npm-called\r\nexit /b {$exitCode}\r\n"
+        : "#!/bin/sh\necho called > npm-called\nexit {$exitCode}\n");
+    chmod($wrapper, 0755);
+
+    return $bin.PATH_SEPARATOR.getenv('PATH');
+}
+
 beforeEach(function (): void {
     $filesystem = new Filesystem;
     $this->deploymentFixture = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-local-deploy-'.bin2hex(random_bytes(6));
@@ -35,6 +70,7 @@ beforeEach(function (): void {
         $filesystem->ensureDirectoryExists($this->deploymentCheckout.DIRECTORY_SEPARATOR.$path);
     }
     $filesystem->copy(dirname(__DIR__, 2).'/scripts/update.php', $this->deploymentCheckout.'/scripts/update.php');
+    $filesystem->copy(dirname(__DIR__, 2).'/scripts/frontend-install.ps1', $this->deploymentCheckout.'/scripts/frontend-install.ps1');
     file_put_contents($this->deploymentCheckout.'/.gitignore', "/vendor\n/node_modules\n/storage\n");
     file_put_contents($this->deploymentCheckout.'/composer.lock', '{}');
     $frontendLock = json_encode(['lockfileVersion' => 3, 'packages' => ['' => []]]);
@@ -59,7 +95,50 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    if (PHP_OS_FAMILY === 'Windows' && ($this->frontendFixtureProcesses ?? []) !== []) {
+        $ownedProcessIds = [];
+        foreach ($this->frontendFixtureProcesses as $process) {
+            if ($process->isRunning()) {
+                $ownedProcessIds[] = $process->getPid();
+            }
+        }
+        $cleanup = new Process(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', <<<'POWERSHELL'
+$root = [IO.Path]::GetFullPath($env:SCHOOLTOOL_PROCESS_FIXTURE).TrimEnd('\') + '\'
+$processes = @(Get-CimInstance Win32_Process)
+$owned = @{}
+foreach ($id in @($env:SCHOOLTOOL_PROCESS_IDS | ConvertFrom-Json)) { $owned[[int]$id] = $true }
+do {
+    $added = $false
+    foreach ($process in $processes) {
+        if (-not $owned.ContainsKey([int]$process.ProcessId) -and $owned.ContainsKey([int]$process.ParentProcessId)) {
+            $parent = $processes | Where-Object ProcessId -EQ $process.ParentProcessId | Select-Object -First 1
+            if ($parent -and $parent.CreationDate -le $process.CreationDate) {
+                $owned[[int]$process.ProcessId] = $true
+                $added = $true
+            }
+        }
+    }
+} while ($added)
+foreach ($process in @($processes | Sort-Object CreationDate -Descending)) {
+    if ($owned.ContainsKey([int]$process.ProcessId) -or ($process.ExecutablePath -and $process.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($process.CommandLine -and $process.ExecutablePath -and [IO.Path]::GetFileName($process.ExecutablePath) -eq 'node.exe' -and $process.CommandLine.Replace('\','/').Contains($root.Replace('\','/')))) {
+        $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.ProcessId)"
+        if ($current -and $current.CreationDate -eq $process.CreationDate -and $current.CommandLine -ceq $process.CommandLine) {
+            Stop-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
+        }
+    }
+}
+POWERSHELL], env: ['SCHOOLTOOL_PROCESS_FIXTURE' => $this->deploymentFixture, 'SCHOOLTOOL_PROCESS_IDS' => json_encode($ownedProcessIds)]);
+        $cleanup->mustRun();
+    }
+    foreach ($this->frontendFixtureProcesses ?? [] as $process) {
+        $process->stop(1);
+    }
     $filesystem = new Filesystem;
+    $resolvedFixture = realpath($this->deploymentFixture);
+    if ($resolvedFixture === false || ! str_starts_with($resolvedFixture, realpath(sys_get_temp_dir()).DIRECTORY_SEPARATOR.'schooltool-local-deploy-')) {
+        throw new RuntimeException('Unsafe deployment fixture cleanup path.');
+    }
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->deploymentFixture, FilesystemIterator::SKIP_DOTS));
     foreach ($files as $file) {
         if ($file->isFile()) {
@@ -67,6 +146,208 @@ afterEach(function (): void {
         }
     }
     $filesystem->deleteDirectory($this->deploymentFixture);
+});
+
+function startFrontendViteProcessFixture(object $test, string $directory, string $kind = 'vite', ?string $esbuildDirectory = null): Process
+{
+    $filesystem = new Filesystem;
+    $entry = $kind === 'vitest' ? 'node_modules/vitest/vitest.mjs' : 'node_modules/vite/bin/vite.js';
+    $filesystem->ensureDirectoryExists(dirname($directory.'/'.$entry));
+    $filesystem->ensureDirectoryExists($directory.'/storage');
+    $esbuildDirectory ??= $directory;
+    $binary = $esbuildDirectory.'/node_modules/@esbuild/win32-x64/esbuild.exe';
+    $filesystem->ensureDirectoryExists(dirname($binary));
+    $filesystem->copy(dirname(__DIR__, 2).'/node_modules/@esbuild/win32-x64/esbuild.exe', $binary);
+    $versionProcess = new Process([$binary, '--version']);
+    $versionProcess->mustRun();
+    $javascript = 'const fs = require("node:fs"), cp = require("node:child_process");'.
+        'fs.appendFileSync('.json_encode($directory.'/storage/vite-runs').', process.pid + "\n");'.
+        'cp.spawn('.json_encode($binary).', ['.json_encode('--service='.trim($versionProcess->getOutput())).', "--ping"], { stdio: ["pipe", "pipe", "pipe"] });'.
+        'setInterval(() => {}, 1000);';
+    if ($kind === 'vitest') {
+        $javascript = 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);'.$javascript;
+    }
+    file_put_contents($directory.'/'.$entry, $javascript);
+    $launchEntry = $directory.'/'.$entry;
+    if ($kind === 'supervised') {
+        $launchEntry = $directory.'/node_modules/concurrently/index.js';
+        $filesystem->ensureDirectoryExists(dirname($launchEntry));
+        file_put_contents($launchEntry, 'const cp = require("node:child_process"); const child = cp.spawn(process.execPath, ['.json_encode($directory.'/'.$entry).']); child.on("exit", () => process.exit(42)); setInterval(() => {}, 1000);');
+    }
+    $command = ['node', $launchEntry];
+    if ($kind === 'managed') {
+        $filesystem->copy(dirname(__DIR__, 2).'/scripts/vite-dev.mjs', $directory.'/scripts/vite-dev.mjs');
+        $package = json_decode(file_get_contents(dirname(__DIR__, 2).'/package.json'), true);
+        file_put_contents($directory.'/package.json', json_encode(['scripts' => ['dev' => $package['scripts']['dev']]]));
+        foreach (['server', 'queue'] as $service) {
+            file_put_contents($directory.'/'.$service.'.php', '<?php file_put_contents(__DIR__."/storage/'.$service.'-pid", (string) getmypid()); while (true) { usleep(100000); file_put_contents(__DIR__."/storage/'.$service.'-heartbeat", "1", FILE_APPEND); }');
+        }
+        $command = ['node', dirname(__DIR__, 2).'/node_modules/concurrently/dist/bin/concurrently.js', '--kill-others', '--names=server,queue,vite',
+            'php server.php', 'php queue.php', 'npm run dev'];
+    }
+    $process = new Process($command, $directory);
+    $process->start();
+    $test->frontendFixtureProcesses[] = $process;
+    $deadline = microtime(true) + 5;
+    while ((! is_file($directory.'/storage/vite-runs') || ($kind === 'managed' && (! is_file($directory.'/storage/queue-heartbeat') || ! is_file($directory.'/storage/server-heartbeat')))) && microtime(true) < $deadline && $process->isRunning()) {
+        usleep(20000);
+    }
+    if (! $process->isRunning() || ! is_file($directory.'/storage/vite-runs') || ($kind === 'managed' && (! is_file($directory.'/storage/queue-heartbeat') || ! is_file($directory.'/storage/server-heartbeat')))) {
+        throw new RuntimeException('Frontend process fixture failed to start: '.$process->getOutput().$process->getErrorOutput());
+    }
+
+    return $process;
+}
+
+function frontendPreparationProcessFixture(object $test, int $npmExitCode = 0): Process
+{
+    $directory = $test->deploymentCheckout;
+    foreach (['storage/framework/frontend-dependencies.sha256', 'node_modules/.package-lock.json'] as $file) {
+        if (is_file($directory.'/'.$file)) {
+            unlink($directory.'/'.$file);
+        }
+    }
+
+    return new Process([PHP_BINARY, 'scripts/update.php', '--target=local', '--prepare', '--pause-vite'], $directory,
+        ['SCHOOLTOOL_PREVIEW_INSTANCE' => 'false', 'PATH' => createDevelopmentNpmFailureFixture($directory, $npmExitCode)], timeout: 30);
+}
+
+test('gitsave frontend coordination leaves current packages and their running Vite untouched', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $vite = startFrontendViteProcessFixture($this, $this->deploymentCheckout);
+    $process = runLocalDeploymentFixture($this->deploymentCheckout, ['--prepare', '--pause-vite']);
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($vite->isRunning())->toBeTrue()
+        ->and($process->getOutput())->toContain('skipping npm ci')->not->toContain('Pausing')
+        ->and(file($this->deploymentCheckout.'/storage/vite-runs'))->toHaveCount(1);
+});
+
+test('gitsave frontend coordination pauses and restores only the blocking project Vite', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $vite = startFrontendViteProcessFixture($this, $this->deploymentCheckout);
+    $other = startFrontendViteProcessFixture($this, $this->deploymentFixture.'/other-schooltool');
+    $lock = hash_file('sha256', $this->deploymentCheckout.'/package-lock.json');
+    $process = frontendPreparationProcessFixture($this);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput())
+        ->and($vite->isRunning())->toBeFalse()->and($other->isRunning())->toBeTrue()
+        ->and(file($this->deploymentCheckout.'/storage/vite-runs'))->toHaveCount(2)
+        ->and(is_file($this->deploymentCheckout.'/npm-called'))->toBeTrue()
+        ->and(is_file($this->deploymentCheckout.'/storage/framework/frontend-dependencies.sha256.installing'))->toBeFalse()
+        ->and(hash_file('sha256', $this->deploymentCheckout.'/package-lock.json'))->toBe($lock);
+});
+
+test('gitsave frontend coordination prepares absent packages normally when no project Vite runs', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $process = frontendPreparationProcessFixture($this);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput())
+        ->and(is_file($this->deploymentCheckout.'/npm-called'))->toBeTrue()
+        ->and($process->getOutput())->not->toContain('Pausing', 'Restored');
+});
+
+test('gitsave frontend coordination is unavailable outside bounded local preparation', function (array $arguments): void {
+    $process = new Process([PHP_BINARY, 'scripts/update.php', '--pause-vite', ...$arguments], $this->deploymentCheckout, ['SCHOOLTOOL_PREVIEW_INSTANCE' => 'false']);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getOutput())->not->toContain('Composer dependencies', '$ ')
+        ->and(is_file($this->deploymentCheckout.'/storage/frontend-installed'))->toBeFalse()
+        ->and(is_file($this->deploymentCheckout.'/storage/application-updated'))->toBeFalse();
+})->with([
+    'full update' => [[]],
+    'production' => [['--target=cloudways', '--prepare']],
+    'dry run' => [['--target=local', '--prepare', '--dry-run']],
+    'development preflight' => [['--target=local', '--prepare', '--dev-preflight']],
+]);
+
+test('gitsave frontend coordination keeps failed npm installation incomplete without restarting broken Vite', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $vite = startFrontendViteProcessFixture($this, $this->deploymentCheckout);
+    $process = frontendPreparationProcessFixture($this, 37);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(37, $process->getErrorOutput().$process->getOutput())
+        ->and($vite->isRunning())->toBeFalse()
+        ->and(file($this->deploymentCheckout.'/storage/vite-runs'))->toHaveCount(1)
+        ->and(is_file($this->deploymentCheckout.'/storage/framework/frontend-dependencies.sha256.installing'))->toBeTrue()
+        ->and($process->getOutput())->toContain('Vite remains stopped');
+});
+
+test('gitsave frontend coordination preserves shared PHP services while pausing and restoring managed Vite', function (int $npmExitCode): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $directory = $this->deploymentCheckout;
+    $supervisor = startFrontendViteProcessFixture($this, $directory, 'managed');
+    $before = [];
+    foreach (['server', 'queue'] as $service) {
+        $before[$service] = ['pid' => file_get_contents($directory.'/storage/'.$service.'-pid'),
+            'heartbeat' => filesize($directory.'/storage/'.$service.'-heartbeat')];
+    }
+    $process = frontendPreparationProcessFixture($this, $npmExitCode);
+    $process->run();
+    expect($process->getExitCode())->toBe($npmExitCode, $process->getOutput().$process->getErrorOutput())
+        ->and($supervisor->isRunning())->toBeTrue($supervisor->getOutput().$supervisor->getErrorOutput().$process->getOutput().$process->getErrorOutput());
+    clearstatcache();
+    foreach (['server', 'queue'] as $service) {
+        expect(file_get_contents($directory.'/storage/'.$service.'-pid'))->toBe($before[$service]['pid'])
+            ->and(filesize($directory.'/storage/'.$service.'-heartbeat'))->toBeGreaterThan($before[$service]['heartbeat']);
+    }
+    expect(file($directory.'/storage/vite-runs'))->toHaveCount($npmExitCode === 0 ? 2 : 1);
+    if ($npmExitCode !== 0) {
+        expect($process->getOutput())->toContain('Only Vite remains paused');
+        $retry = frontendPreparationProcessFixture($this);
+        $retry->run();
+        expect($retry->isSuccessful())->toBeTrue($retry->getOutput().$retry->getErrorOutput())
+            ->and($supervisor->isRunning())->toBeTrue()->and(file($directory.'/storage/vite-runs'))->toHaveCount(2);
+    }
+})->with([0, 37]);
+
+test('gitsave frontend coordination refuses unknown shared and foreign launchers without stopping them', function (string $kind): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $directory = $kind === 'foreign' ? $this->deploymentFixture.'/other-schooltool' : $this->deploymentCheckout;
+    $vite = startFrontendViteProcessFixture($this, $directory, $kind === 'foreign' ? 'vite' : $kind, $this->deploymentCheckout);
+    $process = frontendPreparationProcessFixture($this);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(1)
+        ->and($vite->isRunning())->toBeTrue()
+        ->and(is_file($this->deploymentCheckout.'/npm-called'))->toBeFalse()
+        ->and(is_file($this->deploymentCheckout.'/storage/framework/frontend-dependencies.sha256.installing'))->toBeFalse();
+})->with(['vitest', 'supervised', 'foreign']);
+
+test('gitsave frontend coordination rejects changed process identities before stopping a process', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows process coordination fixture');
+    }
+    $vite = startFrontendViteProcessFixture($this, $this->deploymentCheckout);
+    $process = new Process(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', <<<'POWERSHELL'
+. ./scripts/frontend-install.ps1
+$plan = @(Get-SchooltoolFrontendPausePlan -Project (Get-Location).Path)
+if ($plan.Count -ne 1) { throw 'No owned Vite fixture' }
+$expected = $plan[0].Process | Select-Object ProcessId,CreationDate,ExecutablePath,CommandLine,ParentProcessId
+$expected.CreationDate = $expected.CreationDate.AddSeconds(-1)
+try { Assert-SchooltoolFrontendProcess $expected; exit 5 }
+catch { Write-Output $_.Exception.Message; exit 0 }
+POWERSHELL], $this->deploymentCheckout);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('identity changed')->and($vite->isRunning())->toBeTrue();
 });
 
 test('full local deployment accepts only clean freshly fetched published main', function (): void {
@@ -221,4 +502,75 @@ test('frontend preparation keeps failed installations incomplete and clears the 
     if ($exitCode === 0) {
         expect(trim(file_get_contents($receipt)))->toBe(hash_file('sha256', $directory.'/package-lock.json'));
     }
+})->with([0, 37]);
+
+test('development preflight restores missing npm executables without installing packages or running lifecycle scripts', function (string $missing): void {
+    $directory = $this->deploymentCheckout;
+    createDevelopmentFrontendFixture($directory);
+    file_put_contents($directory.'/.npmrc', "bin-links=false\n");
+    $before = hash_file('sha256', $directory.'/package-lock.json');
+
+    if ($missing !== 'all') {
+        (new Filesystem)->ensureDirectoryExists($directory.'/node_modules/.bin');
+        $available = $missing === 'concurrently' ? 'vite' : 'concurrently';
+        file_put_contents($directory.'/node_modules/.bin/'.$available.(PHP_OS_FAMILY === 'Windows' ? '.cmd' : ''), 'fixture');
+    }
+
+    $process = runLocalDeploymentFixture($directory, ['--dev-preflight']);
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+        ->and($process->getOutput())->toContain('Restoring missing npm development executables')
+        ->and(hash_file('sha256', $directory.'/package-lock.json'))->toBe($before)
+        ->and(is_file($directory.'/install-script-ran'))->toBeFalse()
+        ->and(is_file($directory.'/storage/application-updated'))->toBeFalse()
+        ->and(is_file($directory.'/storage/frontend-installed'))->toBeFalse();
+
+    foreach (['concurrently', 'vite'] as $name) {
+        $command = Process::fromShellCommandline('npm exec --no -- '.$name, $directory);
+        $command->run();
+        expect($command->isSuccessful())->toBeTrue($command->getErrorOutput())
+            ->and(trim($command->getOutput()))->toBe($name.' fixture');
+    }
+
+    $healthy = new Process(
+        [PHP_BINARY, 'scripts/update.php', '--target=local', '--dev-preflight'],
+        $directory,
+        ['PATH' => createDevelopmentNpmFailureFixture($directory, 37), 'SCHOOLTOOL_PREVIEW_INSTANCE' => 'false'],
+    );
+    $healthy->run();
+    expect($healthy->isSuccessful())->toBeTrue($healthy->getErrorOutput())
+        ->and($healthy->getOutput())->toBe('')
+        ->and(is_file($directory.'/npm-called'))->toBeFalse();
+})->with(['all', 'concurrently', 'vite']);
+
+test('development preflight refuses incomplete packages instead of reinstalling them', function (string $missing): void {
+    $directory = $this->deploymentCheckout;
+    createDevelopmentFrontendFixture($directory);
+    unlink($directory.'/node_modules/concurrently/'.$missing);
+    $process = new Process(
+        [PHP_BINARY, 'scripts/update.php', '--target=local', '--dev-preflight'],
+        $directory,
+        ['PATH' => createDevelopmentNpmFailureFixture($directory, 37), 'SCHOOLTOOL_PREVIEW_INSTANCE' => 'false'],
+    );
+    $process->run();
+
+    expect($process->getExitCode())->toBe(1)
+        ->and($process->getErrorOutput())->toContain('Run npm ci before composer dev')
+        ->and(is_file($directory.'/npm-called'))->toBeFalse()
+        ->and(is_file($directory.'/storage/application-updated'))->toBeFalse();
+})->with(['package.json', 'cli.js']);
+
+test('development preflight stops when npm repair fails or leaves executables missing', function (int $npmExitCode): void {
+    $directory = $this->deploymentCheckout;
+    createDevelopmentFrontendFixture($directory);
+    $process = new Process(
+        [PHP_BINARY, 'scripts/update.php', '--target=local', '--dev-preflight'],
+        $directory,
+        ['PATH' => createDevelopmentNpmFailureFixture($directory, $npmExitCode), 'SCHOOLTOOL_PREVIEW_INSTANCE' => 'false'],
+    );
+    $process->run();
+
+    expect($process->getExitCode())->toBe($npmExitCode === 0 ? 1 : $npmExitCode)
+        ->and($process->getErrorOutput())->toContain($npmExitCode === 0 ? 'did not restore' : 'Could not restore')
+        ->and(is_file($directory.'/npm-called'))->toBeTrue()
+        ->and(is_file($directory.'/storage/application-updated'))->toBeFalse();
 })->with([0, 37]);

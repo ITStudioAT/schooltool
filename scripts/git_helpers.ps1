@@ -300,7 +300,7 @@ function Invoke-SchooltoolPublish {
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {
-            php scripts/update.php --target=local --prepare
+            php scripts/update.php --target=local --prepare --pause-vite
         }
 
         if ($version) {

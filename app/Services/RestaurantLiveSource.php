@@ -60,7 +60,7 @@ class RestaurantLiveSource
     }
 
     /** @return array<string, string> */
-    private static function processEnvironment(): array
+    public static function processEnvironment(): array
     {
         // Laravel/Symfony's web environment filtering must not remove Windows runtime variables.
         // Read the native process environment, never request headers or server parameters.

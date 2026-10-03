@@ -698,8 +698,14 @@ it('records environment versions before starting development services', function
     );
 
     expect($composer['scripts']['dev'])
+        ->toContain('@dev:prepare')
         ->toContain('@php artisan app:update --versions-only')
         ->toContain("npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"php artisan serve\" \"composer run queues:local\" \"php artisan schedule:work\" \"npm run dev\" --names='server,queues,scheduler,vite'");
+
+    expect($composer['scripts']['dev:prepare'])->toBe(['@php scripts/update.php --dev-preflight'])
+        ->and(array_search('@dev:prepare', $composer['scripts']['dev'], true))
+        ->toBeLessThan(array_search('@php artisan app:update --versions-only', $composer['scripts']['dev'], true))
+        ->and($composer['scripts']['queues:local'][1])->toBe('@dev:prepare');
 });
 
 it('prints a Vienna timestamp only after successful PowerShell pulls', function (): void {
