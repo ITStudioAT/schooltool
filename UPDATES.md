@@ -8,6 +8,10 @@
 - Bewertungen importieren
 - Bewertungen anzeigen in Admin und bei Schüler:innen
 
+### System
+
+- Neue Laravel-Version incl. aller Dependencies installiert
+
 ## 3.49.14
 
 ### Restaurant

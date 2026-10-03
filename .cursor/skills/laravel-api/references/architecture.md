@@ -43,15 +43,12 @@
 ```
 app/
 ├── Actions/               # Single-purpose business logic
-
 │   └── Tasks/
 │       └── CreateTask.php
 ├── Services/              # Complex business logic (only when needed)
-
 │   └── TaskService.php
 ├── Http/
 │   ├── Controllers/       # Invokable, versioned, resource-scoped
-
 │   │   └── Tasks/
 │   │       ├── V1/
 │   │       │   ├── StoreController.php
@@ -60,16 +57,13 @@ app/
 │   │       └── V2/
 │   │           └── StoreController.php
 │   ├── Requests/          # Validation + transformation to DTOs
-
 │   │   └── Tasks/
 │   │       └── V1/
 │   │           └── StoreTaskRequest.php
 │   ├── Payloads/          # DTOs for data transfer
-
 │   │   └── Tasks/
 │   │       └── StoreTaskPayload.php
 │   ├── Responses/         # Responsable classes
-
 │   │   ├── JsonDataResponse.php
 │   │   └── JsonErrorResponse.php
 │   └── Middleware/
@@ -82,9 +76,7 @@ app/
 routes/
 ├── api/
 │   ├── routes.php         # Main API routing file
-
 │   └── tasks.php          # All task routes, all versions
-
 ```
 
 ## Component Patterns
