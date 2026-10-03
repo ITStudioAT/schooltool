@@ -13,9 +13,69 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+test('student evaluation PDF access requires its course school active year enrollment and work entry', function (string $case) {
+    Storage::fake('local');
+    $sha = str_repeat('a', 64);
+    $path = "teaching/work_evaluations/{$this->school->id}/8/{$sha}.pdf";
+    Storage::disk('local')->put($path, '%PDF-1.4 personal');
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'type' => 'TW', 'groups' => [], 'status' => ['evaluation_pdfs' => [
+        ['student_id' => $this->student->id, 'name' => 'personal.pdf', 'sha256' => $sha, 'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'evaluation_import'],
+    ]]]);
+    if ($case !== 'missing entry') {
+        TeachingCourseStudentEntry::create(['teaching_course_id' => $this->course->id, 'teaching_course_work_id' => $work->id, 'user_id' => $this->student->id, 'type' => 'TW', 'source' => 'course_work']);
+    }
+    $courseId = $this->course->id;
+    if ($case === 'wrong route course') {
+        $courseId++;
+    } elseif ($case === 'foreign school') {
+        $this->course->update(['school_id' => School::factory()->create()->id]);
+    } elseif ($case === 'inactive year') {
+        $this->course->update(['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id]);
+    } elseif ($case === 'canceled enrollment') {
+        $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]);
+    }
+    $this->actingAs($this->student);
+    $this->get("/api/homepage/student/courses/{$courseId}/works/{$work->id}/evaluations/{$sha}")->assertForbidden();
+})->with(['missing entry', 'wrong route course', 'foreign school', 'inactive year', 'canceled enrollment']);
+
+test('student work evaluation PDFs expose only the personal current report and deny overall foreign and obsolete PDFs', function () {
+    Storage::fake('local');
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'type' => 'TW', 'title' => 'Übung', 'groups' => []]);
+    TeachingCourseStudentEntry::create(['teaching_course_id' => $this->course->id, 'teaching_course_work_id' => $work->id, 'user_id' => $this->student->id, 'type' => 'TW', 'grade' => '4.5', 'source' => 'course_work']);
+    $attachments = [];
+    foreach ([null, $this->student->id, $this->peer->id] as $index => $studentId) {
+        $content = '%PDF-1.4 report '.$index;
+        $sha = hash('sha256', $content);
+        $path = "teaching/work_evaluations/{$this->school->id}/{$work->id}/{$sha}.pdf";
+        Storage::disk('local')->put($path, $content);
+        $attachments[] = ['name' => "report-{$index}.pdf", 'sha256' => $sha, 'file_path' => $path, 'storage_disk' => 'local', 'student_id' => $studentId, 'origin' => 'evaluation_import'];
+    }
+    $work->update(['status' => ['evaluation_pdfs' => $attachments]]);
+    $base = "/api/homepage/student/courses/{$this->course->id}/works/{$work->id}/evaluations/";
+    $this->actingAs($this->student);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}/entries")->assertOk()
+        ->assertJsonPath('entries.0.work.evaluation_pdf.sha256', $attachments[1]['sha256'])
+        ->assertJsonMissing(['sha256' => $attachments[0]['sha256']])->assertJsonMissing(['sha256' => $attachments[2]['sha256']]);
+    $response = $this->get($base.$attachments[1]['sha256'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    expect($response->streamedContent())->toBe('%PDF-1.4 report 1');
+    $this->get($base.$attachments[0]['sha256'])->assertNotFound();
+    $this->get($base.$attachments[2]['sha256'])->assertNotFound();
+    $current = $attachments[1];
+    $current['sha256'] = hash('sha256', '%PDF-1.4 new report');
+    $current['file_path'] = "teaching/work_evaluations/{$this->school->id}/{$work->id}/{$current['sha256']}.pdf";
+    Storage::disk('local')->put($current['file_path'], '%PDF-1.4 new report');
+    $work->update(['status' => ['evaluation_pdfs' => [$attachments[0], $current, $attachments[2]]]]);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}/entries")->assertOk()->assertJsonPath('entries.0.work.evaluation_pdf.sha256', $current['sha256']);
+    $this->get($base.$current['sha256'])->assertOk();
+    $this->get($base.$attachments[1]['sha256'])->assertNotFound();
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]);
+    $this->get($base.$current['sha256'])->assertForbidden();
+});
 
 beforeEach(function () {
     collect(['student', 'teacher', 'super_admin'])->each(function (string $role) {

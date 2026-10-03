@@ -876,6 +876,7 @@
             </v-card>
         </v-dialog>
 
+        <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
@@ -1024,6 +1025,7 @@
                                     <div v-if="assignment.work.description" class="text-caption mt-1">
                                         {{ assignment.work.description }}
                                     </div>
+                                    <WorkEvaluationPdf :work="assignment.work" class="mt-2" />
                                 </div>
                                 <div class="d-flex ga-1">
                                     <v-btn
@@ -1167,7 +1169,10 @@
                                             class="pa-2"
                                             variant="outlined">
                                             <div class="course-table-work-group-grade-grid">
-                                                <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                                <div>
+                                                    <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                                    <WorkEvaluationPdf :work="savedWorkDialogWork" :student-id="row.studentId" class="mt-2" />
+                                                </div>
                                                 <v-text-field
                                                     :model-value="row.comment"
                                                     density="compact"
@@ -1421,7 +1426,17 @@
                                     </v-alert>
                                 </div>
                             </div>
-                            <div class="d-flex justify-end ga-2 mt-4">
+                            <div class="d-flex flex-wrap justify-end ga-2 mt-4">
+                                <WorkEvaluationPdf :work="savedWorkDialogWork" />
+                                <v-btn
+                                    v-if="workDialogForm.id"
+                                    prepend-icon="mdi-folder-upload-outline"
+                                    variant="tonal"
+                                    :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
+                                    @click="openEvaluationImport(workDialogForm)">
+                                    Auswertung importieren
+                                </v-btn>
+                                <v-spacer />
                                 <v-btn
                                     variant="text"
                                     :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
@@ -1480,7 +1495,10 @@
                                 class="pa-2"
                                 variant="outlined">
                                 <div class="course-table-work-group-grade-grid">
-                                    <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                    <div>
+                                        <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                        <WorkEvaluationPdf :work="savedWorkDialogWork" :student-id="row.studentId" class="mt-2" />
+                                    </div>
                                     <v-text-field
                                         :model-value="row.comment"
                                         density="compact"
@@ -1801,6 +1819,11 @@
                                     <v-icon icon="mdi-comment-text-outline" size="14" class="mt-1" />
                                     <span>{{ cellEntryListComment(entry) }}</span>
                                 </div>
+                                <WorkEvaluationPdf
+                                    v-if="entry.source === 'course_work'"
+                                    :work="courseWorkForCellEntry(entry)"
+                                    :student-id="registeredEntryStudentId || ''"
+                                    class="mt-2" />
                                 <div
                                     v-if="isCellEntryExpanded(entry) && entry.source === 'course_work' && courseWorkForCellEntry(entry)"
                                     class="course-table-cell-work-entry mt-3"
@@ -1887,7 +1910,7 @@
                                             v-if="courseWorkEntryGradeInputMode(entry) === 'fixed'"
                                             :data-testid="`course-table-cell-work-grade-${entry.uid}`"
                                             class="course-table-work-grade-choice-field">
-                                            <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                            <div class="text-caption text-medium-emphasis mb-1">Bewertung</div>
                                             <div class="d-flex flex-wrap ga-1">
                                                 <v-chip
                                                     v-for="item in courseWorkEntryGradeItems(entry)"
@@ -1917,7 +1940,7 @@
                                             :inputmode="courseWorkEntryGradeInputMode(entry) === 'points' ? 'decimal' : undefined"
                                             persistent-hint
                                             :rules="[value => gradeInputValidation(value, courseWorkEntryGradeInputMode(entry), courseWorkForCellEntry(entry)?.type)]"
-                                            label="Note"
+                                            label="Bewertung"
                                             :maxlength="50"
                                             variant="outlined"
                                             :disabled="Boolean(courseWorkEntrySavingUid)"
@@ -1938,6 +1961,9 @@
                                         </div>
                                     </div>
                                     <div class="d-flex align-center flex-wrap ga-2 mt-3">
+                                        <WorkEvaluationPdf
+                                            :work="courseWorkForCellEntry(entry)"
+                                            :student-id="registeredEntryStudentId || ''" />
                                         <v-btn
                                             :data-testid="`course-table-cell-work-open-${entry.uid}`"
                                             prepend-icon="mdi-arrow-right-circle-outline"
@@ -1945,6 +1971,13 @@
                                             :disabled="Boolean(courseWorkEntrySavingUid)"
                                             @click="openCourseWorkFromCellEntry(entry)">
                                             Zur Arbeit
+                                        </v-btn>
+                                        <v-btn
+                                            prepend-icon="mdi-folder-upload-outline"
+                                            variant="tonal"
+                                            :disabled="Boolean(courseWorkEntrySavingUid)"
+                                            @click="openEvaluationImport(courseWorkForCellEntry(entry))">
+                                            Auswertung importieren
                                         </v-btn>
                                         <v-spacer />
                                         <v-btn
@@ -2368,6 +2401,8 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
+import WorkEvaluationImport from './WorkEvaluationImport.vue'
+import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
@@ -2382,7 +2417,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkEvaluationPdf },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2860,6 +2895,12 @@ export default {
         },
         dateWorkAssignments() {
             return this.courseWorksForDate(this.workDialog.courseDate)
+        },
+        savedWorkDialogWork() {
+            return this.courseWorks.find((work) => (
+                String(work.id) === String(this.workDialogForm.id)
+                && String(work.teaching_course_id) === String(this.selected_course?.id)
+            )) || null
         },
         workDialogGroups() {
             return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []
@@ -3373,6 +3414,20 @@ export default {
                 courseDate: null,
                 open: false,
                 student: null,
+            }
+        },
+        openEvaluationImport(work) {
+            const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
+            if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
+            this.$refs.evaluationImport.openEvaluationImport(savedWork)
+        },
+        async evaluationImported(work) {
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            this.applySavedCourseWork({ data: work })
+            await this.loadCourseTableData(work.teaching_course_id, true)
+            this.resetCourseWorkEntryDrafts()
+            if (String(this.workDialogForm.id) === String(work.id)) {
+                this.startEditingDateWork(work)
             }
         },
         openCourseWorkFromCellEntry(entry) {

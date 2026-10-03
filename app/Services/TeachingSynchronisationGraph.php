@@ -542,7 +542,7 @@ class TeachingSynchronisationGraph
             if ($context === 'attendance' && preg_match('/\A(s_)?(\d+)\z/', (string) $key, $match)) {
                 $targetKey = ($match[1] ?? '').$this->studentId($match[2], $maps, $studentMap);
             }
-            if ($context === 'student_ids' || $key === 'student_id') {
+            if ($context === 'student_ids' || ($key === 'student_id' && $item !== null)) {
                 $item = $this->studentId($item, $maps, $studentMap);
             } elseif (isset(self::REFERENCES[$key]) && $item !== null) {
                 $item = $historicalStudentSnapshot && $key === 'user_id' && ! isset($maps['users'][$item]) && isset($maps['historical_users'][$item])

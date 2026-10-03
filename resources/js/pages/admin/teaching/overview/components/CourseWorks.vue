@@ -91,6 +91,8 @@
                                 </div>
                                 <div v-else class="work-grade-distribution-placeholder"></div>
                                 <div class="work-actions d-flex align-center ga-1">
+                                    <WorkEvaluationPdf :work="work" />
+                                    <v-btn size="x-small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openEvaluationImport(work)">Importieren</v-btn>
                                     <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
                                     <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
                                     <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
@@ -114,6 +116,10 @@
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
+                <div v-if="work_form.id" class="d-flex flex-wrap ga-2 mt-3">
+                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click="openEvaluationImport(courseWorks.find(work => work.id === work_form.id))">Auswertung importieren</v-btn>
+                    <WorkEvaluationPdf :work="work_form" />
+                </div>
                 <v-card-text class="pt-2">
                     <v-card variant="outlined" class="pa-3 mb-4">
                         <div :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
@@ -527,9 +533,10 @@
                                                         color="primary">
                                                         {{ studentClassValue(studentObjectById(studentId)) }}
                                                     </v-chip>
-                                                    <div class="text-body-2 font-weight-medium">
-                                                        {{ studentNameById(studentId) }}
-                                                    </div>
+                                                <div class="text-body-2 font-weight-medium">
+                                                    {{ studentNameById(studentId) }}
+                                                </div>
+                                                <WorkEvaluationPdf :work="work_form" :student-id="studentId" />
                                                     <v-spacer />
                                                     <v-btn
                                                         size="x-small"
@@ -663,6 +670,7 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ row.studentLabel }}
                                         </div>
+                                        <WorkEvaluationPdf :work="work_form" :student-id="row.studentId" />
                                         <v-spacer />
                                         <v-chip
                                             size="x-small"
@@ -715,6 +723,7 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ row.studentLabel }}
                                         </div>
+                                        <WorkEvaluationPdf :work="work_form" :student-id="row.studentId" />
                                         <v-spacer />
                                         <v-btn
                                             size="x-small"
@@ -761,6 +770,7 @@
             </v-form>
         </v-card>
 
+        <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
         <v-dialog v-model="comment_dialog_open" persistent max-width="620">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -802,9 +812,11 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import WorkEvaluationImport from './WorkEvaluationImport.vue'
+import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 
 export default {
-    components: { ItsGridBox },
+    components: { ItsGridBox, WorkEvaluationImport, WorkEvaluationPdf },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -1145,6 +1157,15 @@ export default {
     },
 
     methods: {
+        openEvaluationImport(work) {
+            this.$refs.evaluationImport.openEvaluationImport(work)
+        },
+        async evaluationImported(work) {
+            await this.refreshWorks()
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            this.editWork(work)
+            this.show_points_grading_view = true
+        },
         openGroupDialog(index) {
             this.group_dialog_index = index
             this.group_dialog_add_students_open = false
@@ -1230,7 +1251,7 @@ export default {
         workSupportsPoints(work) {
             if (!work) return false
 
-            return Boolean(work.points_note_enabled)
+            return Boolean(work.points_note_enabled || (work.has_properties && work.properties_mode === 'points'))
         },
         toBoolean(value) {
             if (typeof value === 'string') {
@@ -1241,6 +1262,7 @@ export default {
         },
         gradeFromPointsForWork(work, points) {
             if (!this.workSupportsPoints(work) || points == null) return ''
+            if (work.has_properties && work.properties_mode === 'points') return String(points)
 
             const table = Array.isArray(work.points_table) ? work.points_table : []
             const fallbackGrade = String(work.points_sonst_grade || '').trim()
@@ -2385,6 +2407,7 @@ export default {
 </script>
 
 <style scoped>
+
 .work-row {
     border: 1px solid transparent;
     border-radius: 8px;

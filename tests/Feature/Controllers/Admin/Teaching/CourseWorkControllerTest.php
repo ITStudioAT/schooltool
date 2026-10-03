@@ -14,9 +14,183 @@ use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Tests\Support\TeachingWorkEvaluationFixture;
 
 uses(RefreshDatabase::class);
+
+function prepareWorkEvaluationImport(object $context): TeachingCourseWork
+{
+    $definition = enableCourseWorkMaximumPlus($context);
+    $definition->update(['properties_mode' => 'points', 'maximum_points' => 5]);
+    $context->student->update(['first_name' => 'Ada', 'last_name' => 'VAN Alpha', 'schoolclass' => '1A']);
+    $context->course->teachingCourseStudents()->create(['user_id' => $context->student->id]);
+    $context->openStudent = User::factory()->create(['school_id' => $context->school->id, 'first_name' => 'Bea', 'last_name' => 'Beta', 'schoolclass' => '1A']);
+    $context->course->teachingCourseStudents()->create(['user_id' => $context->openStudent->id]);
+    $work = TeachingCourseWork::create(['teaching_course_id' => $context->course->id, 'type' => 'MA', 'title' => 'E-Mails', 'date_for_all_groups' => '2026-10-02',
+        'groups' => [['student_ids' => [$context->student->id], 'grade' => '2', 'points' => [['student_id' => $context->student->id, 'points' => 2]], 'comments' => [['student_id' => $context->student->id, 'comment' => 'Vorher']]],
+            ['student_ids' => [$context->openStudent->id], 'grade' => '3', 'points' => [['student_id' => $context->openStudent->id, 'points' => 3]], 'comments' => [['student_id' => $context->openStudent->id, 'comment' => 'Offen vorher']]]]]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    Storage::fake('local');
+
+    return $work;
+}
+
+function workEvaluationPdf(string $name): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent($name, "%PDF-1.4\n% {$name}\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n");
+}
+
+test('work evaluation folder preview and apply import points comments and private paired PDFs without touching open or foreign students', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $pdfs = [workEvaluationPdf('Gesamtuebersicht_Beurteilungen_Test.pdf'), workEvaluationPdf('Beurteilung_Van Alpha_Ada.pdf')];
+    $payload = ['reports' => TeachingWorkEvaluationFixture::payload(), 'pdfs' => $pdfs];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-evaluations";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($work->fresh()->groups[0]['comments'][0]['comment'])->toBe('Vorher')
+        ->and($preview['rows'][2]['status'])->toBe('Nicht im Kurs – übersprungen');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $fresh = $work->fresh();
+    expect($fresh->groups[0]['grades'][0]['grade'])->toBe('4.5')
+        ->and($fresh->groups[0]['points'][0]['points'])->toBe(4.5)
+        ->and($fresh->groups[0]['comments'][0]['comment'])->toBe('**Gesamt: 4,5 von 5,0 Punkten.** MC: 2,0 von 2,0; E-Mail: 2,5 von 3,0.')
+        ->and($fresh->groups[1]['points'][0]['points'])->toBe(3)
+        ->and($fresh->groups[1]['comments'][0]['comment'])->toBe('Offen vorher')
+        ->and($fresh->status['evaluation_pdfs'])->toHaveCount(2);
+    foreach ($fresh->status['evaluation_pdfs'] as $pdf) {
+        Storage::disk('local')->assertExists($pdf['file_path']);
+    }
+    $sha = $fresh->status['evaluation_pdfs'][0]['sha256'];
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/evaluations/{$sha}")->assertOk();
+    $second = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $second['hash']])->assertOk();
+    expect($work->fresh()->status['evaluation_pdfs'])->toHaveCount(2);
+    $oldPdf = $work->fresh()->status['evaluation_pdfs'][1];
+    $changed = array_map(fn (string $text): string => str_replace(['2,5', '4,5', 'Die Begründung bleibt vollständig.'], ['2,05', '4,05', 'Neue Detailbeurteilung.'], $text), TeachingWorkEvaluationFixture::reports());
+    $newPdf = UploadedFile::fake()->createWithContent('Beurteilung_Van Alpha_Ada.pdf', "%PDF-1.4\n% Aktualisierte Auswertung\n%%EOF\n");
+    $newPayload = ['reports' => TeachingWorkEvaluationFixture::payload($changed), 'pdfs' => [$pdfs[0], $newPdf]];
+    $changedPreview = $this->postJson($url, $newPayload)->assertOk()->json('preview');
+    $this->postJson($url, $newPayload + ['apply' => true, 'hash' => $changedPreview['hash']])->assertOk();
+    expect($work->fresh()->groups[0]['grades'][0]['grade'])->toBe('4.05')
+        ->and($work->fresh()->groups[0]['comments'][0]['comment'])->toBe('**Gesamt: 4,05 von 5,0 Punkten.** MC: 2,0 von 2,0; E-Mail: 2,05 von 3,0.')
+        ->and($work->fresh()->status['evaluation_pdfs'])->toHaveCount(2)
+        ->and($work->fresh()->status['evaluation_pdfs'][1]['sha256'])->not->toBe($oldPdf['sha256']);
+    Storage::disk('local')->assertExists($oldPdf['file_path']);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => []])->assertOk();
+    expect($work->fresh()->status['evaluation_pdfs'])->toHaveCount(2);
+});
+
+test('surname first evaluations preview and import paired overall and personal PDFs while retaining open values', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $reports = TeachingWorkEvaluationFixture::surnameFirstReports();
+    $pdfs = array_map(fn (string $name): UploadedFile => workEvaluationPdf(str_replace('.md', '.pdf', $name)), array_keys($reports));
+    $payload = ['reports' => TeachingWorkEvaluationFixture::payload($reports), 'pdfs' => $pdfs];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-evaluations";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['pdf']['name'])->toBe('Gesamtübersicht.pdf')
+        ->and($preview['rows'][0]['student_id'])->toBe($this->student->id)
+        ->and($preview['rows'][0]['status'])->toBe('Übernehmen')
+        ->and($preview['rows'][1]['status'])->toBe('Offen – unverändert')
+        ->and($preview['rows'][2]['status'])->toBe('Nicht im Kurs – übersprungen')
+        ->and($work->fresh()->groups[0]['points'][0]['points'])->toBe(2);
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $fresh = $work->fresh();
+    expect($fresh->groups[0]['points'][0]['points'])->toBe(4.5)
+        ->and($fresh->groups[0]['comments'][0]['comment'])->toBe('**Gesamt: 4,50 von 5,0 Punkten.** MC: 2,00 von 2,0; E-Mail: 2,50 von 3,0.')
+        ->and($fresh->groups[1]['points'][0]['points'])->toBe(3)
+        ->and($fresh->groups[1]['comments'][0]['comment'])->toBe('Offen vorher')
+        ->and($fresh->status['evaluation_pdfs'])->toHaveCount(3)
+        ->and(array_column($fresh->status['evaluation_pdfs'], 'student_id'))->toEqual([null, $this->student->id, $this->openStudent->id]);
+
+    $attachments = $fresh->status['evaluation_pdfs'];
+    $this->getJson("/api/admin/teaching/course_works?course_id={$this->course->id}")->assertOk()
+        ->assertJsonPath('data.0.status.evaluation_pdfs.0.name', 'Gesamtübersicht.pdf')
+        ->assertJsonCount(3, 'data.0.status.evaluation_pdfs');
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()
+        ->assertJsonPath('data.status.evaluation_pdfs.1.student_id', $this->student->id);
+    $teacherUrl = "/api/admin/teaching/course_works/{$work->id}/evaluations/{$attachments[0]['sha256']}";
+    expect($this->get($teacherUrl.'?inline=1')->assertOk()->headers->get('Content-Disposition'))->toStartWith('inline;');
+    expect($this->get($teacherUrl)->assertOk()->headers->get('Content-Disposition'))->toStartWith('attachment;');
+
+    SchoolTool::where('school_id', $this->school->id)->update(['active_schoolyear_id' => $this->schoolyear->id]);
+    foreach ([$this->student, $this->openStudent] as $index => $student) {
+        $student->assignRole('student');
+        $this->actingAs($student, 'sanctum')->actingAs($student, 'web');
+        $pdf = $attachments[$index + 1];
+        $this->getJson("/api/homepage/student/courses/{$this->course->id}/entries")->assertOk()
+            ->assertJsonPath('entries.0.work.evaluation_pdf.sha256', $pdf['sha256'])
+            ->assertJsonMissing(['sha256' => $attachments[0]['sha256']])
+            ->assertJsonMissing(['sha256' => $attachments[$index === 0 ? 2 : 1]['sha256']]);
+        $studentUrl = "/api/homepage/student/courses/{$this->course->id}/works/{$work->id}/evaluations/";
+        $response = $this->get($studentUrl.$pdf['sha256'])->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        expect($response->streamedContent())->toBe(Storage::disk('local')->get($pdf['file_path']));
+        $this->get($studentUrl.$attachments[0]['sha256'])->assertNotFound();
+        $this->get($studentUrl.$attachments[$index === 0 ? 2 : 1]['sha256'])->assertNotFound();
+        $this->get($teacherUrl.'?inline=1')->assertForbidden();
+    }
+});
+
+test('work evaluation uses the linked current student import identity and class without modifying accounts', function (bool $surnameFirst) {
+    $work = prepareWorkEvaluationImport($this);
+    $this->student->update(['first_name' => 'Registered name', 'schoolclass' => null]);
+    $import = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A',
+        'import_user_id' => $this->admin->id,
+    ]);
+    $membership = $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->firstOrFail();
+    $membership->update(['import116_id' => $import->id]);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-evaluations";
+    $payload = ['reports' => TeachingWorkEvaluationFixture::payload($surnameFirst ? TeachingWorkEvaluationFixture::surnameFirstReports() : null)];
+    $count = User::count();
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['rows'][0]['status'])->toBe('Übernehmen')
+        ->and($preview['rows'][0]['student_id'])->toBe($this->student->id)
+        ->and($this->student->fresh()->schoolclass)->toBeNull()
+        ->and(User::count())->toBe($count);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->groups[0]['points'][0]['points'])->toBe(4.5);
+
+    $import->update(['schoolyear_id' => $this->otherSchoolyear->id]);
+    expect($this->postJson($url, $payload)->assertOk()->json('preview.rows.0.status'))->toBe('Nicht im Kurs – übersprungen');
+    $import->update(['schoolyear_id' => $this->schoolyear->id, 'school_id' => $this->otherSchool->id]);
+    expect($this->postJson($url, $payload)->assertOk()->json('preview.rows.0.status'))->toBe('Nicht im Kurs – übersprungen');
+    $import->update(['school_id' => $this->school->id, 'user_id' => $this->openStudent->id]);
+    expect($this->postJson($url, $payload)->assertOk()->json('preview.rows.0.status'))->toBe('Nicht im Kurs – übersprungen');
+})->with(['legacy' => false, 'surname first' => true]);
+
+test('work evaluation imports enforce school ownership maximum points and unchanged preview', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $payload = ['reports' => TeachingWorkEvaluationFixture::payload()];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-evaluations";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $work->update(['title' => 'Geändert']);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $this->course->teachingEntryArea->entryDefinitions()->update(['maximum_points' => 10]);
+    $this->postJson($url, $payload)->assertUnprocessable();
+    $this->actingAs(User::factory()->create(['school_id' => $this->otherSchool->id, 'schoolyear_id' => $this->otherSchoolyear->id])->assignRole('teacher'), 'sanctum');
+    $this->postJson($url, $payload)->assertForbidden();
+});
+
+test('work evaluation imports reject ambiguous PDF pairs and roll back a failed PDF write', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-evaluations";
+    $name = 'Beurteilung_Van Alpha_Ada.pdf';
+    $this->postJson($url, ['reports' => TeachingWorkEvaluationFixture::payload(), 'pdfs' => [workEvaluationPdf($name), workEvaluationPdf($name)]])->assertUnprocessable();
+    $payload = ['reports' => TeachingWorkEvaluationFixture::payload(), 'pdfs' => [workEvaluationPdf($name)]];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $disk = Storage::disk('local');
+    Storage::shouldReceive('disk')->with('local')->andReturn($mock = Mockery::mock($disk)->makePartial());
+    $mock->shouldReceive('putFileAs')->once()->andReturn(false);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->groups[0]['comments'][0]['comment'])->toBe('Vorher')
+        ->and($work->fresh()->status['evaluation_pdfs'] ?? [])->toBeEmpty()
+        ->and($disk->allFiles())->toBeEmpty();
+});
 
 function enableCourseWorkMaximumPlus(object $context): TeachingEntryDefinition
 {

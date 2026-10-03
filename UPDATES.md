@@ -1,10 +1,12 @@
 # UPDATES
 
-## 3.49.15 !!!
+## 3.50.0
 
 ### Unterricht
 
 - Lehrer lokal mit Live-Daten synchronisieren
+- Bewertungen importieren
+- Bewertungen anzeigen in Admin und bei Schüler:innen
 
 ## 3.49.14
 

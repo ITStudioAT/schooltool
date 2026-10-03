@@ -450,7 +450,7 @@ describe('index', function () {
             ->assertJsonPath('data.students.0.sem_1_grade', 'NB');
     });
 
-    test('uses an explicitly linked user when import and user emails differ', function () {
+    test('uses an explicitly linked user when import and user emails differ', function (?string $accountClass) {
         $this->actingAs($this->admin, 'sanctum');
 
         $import = Import116::factory()->create([
@@ -468,7 +468,7 @@ describe('index', function () {
             'import116_id' => $import->id,
             'first_name' => 'Paul',
             'last_name' => 'Ahlgrimm',
-            'schoolclass' => '3A',
+            'schoolclass' => $accountClass,
             'email' => 'teaching-test-paul@schooltool.invalid',
             'is_active' => false,
         ]);
@@ -494,8 +494,107 @@ describe('index', function () {
             ->assertJsonPath('data.students.0.user_id', $student->id)
             ->assertJsonPath('data.students.0.import116_id', $import->id)
             ->assertJsonPath('data.students.0.first_name', 'Paul')
-            ->assertJsonPath('data.students.0.last_name', 'Ahlgrimm');
-    });
+            ->assertJsonPath('data.students.0.last_name', 'Ahlgrimm')
+            ->assertJsonPath('data.students.0.schoolclass', '3A')
+            ->assertJsonPath('data.students.0.class', '3A');
+        expect($student->fresh()->schoolclass)->toBe($accountClass);
+    })->with([null, '9Z']);
+
+    test('uses the unique current account-linked import class without a participant import id', function (?string $accountClass) {
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => $accountClass,
+        ]);
+        Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $student->id,
+            'class' => '3A',
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => null,
+        ]);
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertSuccessful()
+            ->assertJsonPath('data.students.0.id', $student->id)
+            ->assertJsonPath('data.students.0.schoolclass', '3A')
+            ->assertJsonPath('data.students.0.class', '3A')
+            ->assertJsonPath('data.students.0.import116_id', null);
+
+        $courseStudent->delete();
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertSuccessful()
+            ->assertJsonCount(0, 'data.students')
+            ->assertJsonPath('data.students_deleted.0.schoolclass', '3A');
+
+        expect($student->fresh()->schoolclass)->toBe($accountClass);
+        expect($courseStudent->fresh()->import116_id)->toBeNull();
+    })->with([null, '9Z']);
+
+    test('does not infer the course student class from an unverified account import', function (string $scenario) {
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => null,
+        ]);
+        $attributes = [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $student->id,
+            'first_name' => $student->first_name,
+            'last_name' => $student->last_name,
+            'email' => $student->email,
+            'class' => '3A',
+        ];
+
+        if ($scenario === 'other school') {
+            $attributes['school_id'] = School::factory()->create()->id;
+        }
+        if ($scenario === 'other schoolyear') {
+            $attributes['schoolyear_id'] = Schoolyear::factory()->create(['school_id' => $this->school->id])->id;
+        }
+        if ($scenario === 'unlinked namesake') {
+            $attributes['user_id'] = null;
+        }
+        if ($scenario === 'other user') {
+            $attributes['user_id'] = User::factory()->create(['school_id' => $this->school->id])->id;
+        }
+        if ($scenario === 'blank class') {
+            $attributes['class'] = ' ';
+        }
+
+        Import116::factory()->create($attributes);
+        if ($scenario === 'ambiguous link') {
+            Import116::factory()->create([...$attributes, 'class' => '4B']);
+        }
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => null,
+        ]);
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertSuccessful()
+            ->assertJsonPath('data.students.0.id', $student->id)
+            ->assertJsonPath('data.students.0.schoolclass', null);
+    })->with(['other school', 'other schoolyear', 'unlinked namesake', 'other user', 'ambiguous link', 'blank class']);
 
     test('does not return course students linked to an import from another schoolyear', function () {
         $this->actingAs($this->admin, 'sanctum');

@@ -70,6 +70,22 @@ function entry(overrides = {}) {
 }
 
 describe('Compact course student performance', () => {
+    it('shows only the selected student evaluation PDF inside the work details', async () => {
+        const wrapper = await mountInteractive({
+            schema: { works: [{ short_name: 'MA', name: 'Mitarbeit' }] },
+            entries: [entry({ source: 'course_work', teaching_course_work_id: 8, grade: '4.5' })],
+            works: [{ id: 8, teaching_course_id: course.id, title: 'E-Mails', status: { evaluation_pdfs: [
+                { student_id: null, name: 'Gesamtübersicht.pdf', sha256: 'a'.repeat(64), origin: 'evaluation_import' },
+                { student_id: student.user_id, name: 'personal.pdf', sha256: 'b'.repeat(64), origin: 'evaluation_import' },
+                { student_id: 99, name: 'foreign.pdf', sha256: 'c'.repeat(64), origin: 'evaluation_import' },
+            ] } }],
+        })
+        const tooltip = await hoverDetails(wrapper)
+        const links = tooltip.querySelectorAll('[href]')
+        expect(links).toHaveLength(1)
+        expect(links[0].textContent).toContain('Auswertung (PDF)')
+        expect(links[0].getAttribute('href')).toBe(`/api/admin/teaching/course_works/8/evaluations/${'b'.repeat(64)}?inline=1`)
+    })
     it('renders each repeated entry separately and opens only its details on hover', async () => {
         const wrapper = await mountInteractive({
             schema: { works: [{ short_name: 'MA', name: 'Mitarbeit' }] },

@@ -64,7 +64,7 @@ const ButtonStub = defineComponent({
 
 const wrappers: ReturnType<typeof mount>[] = []
 
-async function mountFeedback({ showBehaviour = true, includeAssessments = true, courseOverrides = {}, url = '/student/course/18' } = {}) {
+async function mountFeedback({ showBehaviour = true, includeAssessments = true, courseOverrides = {}, entryOverrides = [], url = '/student/course/18' } = {}) {
     const assessmentEntries = includeAssessments ? [
         { id: 101, date: '2026-10-12', category: 'Benotung', type: 'MA', title: 'Mitarbeit Herbst', grade: '1' },
         { id: 102, date: '2027-03-15', category: 'Benotung', type: 'MA', title: 'Mitarbeit Frühling', grade: '2' },
@@ -92,6 +92,7 @@ async function mountFeedback({ showBehaviour = true, includeAssessments = true, 
                     ...courseOverrides,
                 },
                 entries: [
+                    ...entryOverrides,
                     ...assessmentEntries,
                     { id: 201, date: '2027-03-16', category: 'Verhalten', type: 'E', comment: 'Hilfsbereit im Frühling' },
                     { id: 301, date: '2027-03-17', category: 'Weitere', type: 'FW', comment: 'Zusätzlicher Hinweis' },
@@ -142,6 +143,22 @@ afterEach(() => {
 })
 
 describe('student combined performance and behaviour page', () => {
+    it('renders the personal evaluation link on Leistungen and preserves it after a reload', async () => {
+        const sha256 = 'b'.repeat(64)
+        const options = {
+            url: '/student/course/18?panel=entries',
+            entryOverrides: [{ id: 109, date: '2026-10-02', category: 'Benotung', type: 'MA', title: 'E-Mails', grade: '4.5',
+                work: { id: 8, evaluation_pdf: { name: 'personal.pdf', sha256 } } }],
+        }
+        const wrapper = await mountFeedback(options)
+        const link = wrapper.get(`[href="/api/homepage/student/courses/18/works/8/evaluations/${sha256}"]`)
+        expect(link.text()).toBe('Auswertung (PDF)')
+        expect(link.attributes('target')).toBe('_blank')
+        expect(link.attributes('title')).toBe('personal.pdf')
+        expect(wrapper.findAll('[href*="/evaluations/"]')).toHaveLength(1)
+        const reloaded = await mountFeedback(options)
+        expect(reloaded.get(`[href="${link.attributes('href')}"]`).text()).toBe('Auswertung (PDF)')
+    })
     it.each([
         ['overview', 'Übersicht'],
         ['entries', 'Leistungen'],

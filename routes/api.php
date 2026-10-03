@@ -186,6 +186,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}/works/{course_work}/evaluations/{sha256}', [CourseStudentEntryController::class, 'evaluationPdf'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.evaluation-pdf');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
     });
@@ -681,6 +682,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
+        Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
+        Route::get('/admin/teaching/course_works/{course_work}/evaluations/{sha256}', [CourseWorkController::class, 'downloadEvaluation'])->name('teaching.course-works.download-evaluation');
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
         Route::get('/admin/teaching/courses/{course}/evaluations', [CourseEvaluationController::class, 'show'])->name('admin.teaching.courses.evaluations');
         Route::get('/admin/teaching/course_student_entry_notification_recipients', [CourseStudentEntryNotificationController::class, 'preview']);

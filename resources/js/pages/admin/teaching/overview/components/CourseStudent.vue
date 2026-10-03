@@ -377,6 +377,7 @@
                                         <div v-if="entryComment(item.entry)" class="text-caption font-weight-bold entry-work-comment-line">
                                             {{ entryComment(item.entry) }}
                                         </div>
+                                        <WorkEvaluationPdf :work="entryWork(item.entry)" :student-id="selected_course_student?.user_id || selected_course_student?.id || ''" />
                                         <div v-if="!entryIsDerivedFromWork(item.entry)" class="entry-actions d-flex align-center ga-1" @click.stop>
                                             <v-btn
                                                 v-if="delete_entry_id !== item.entry.id"
@@ -893,6 +894,7 @@
 <script>
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
+import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
@@ -909,7 +911,7 @@ const entryTypeBackgroundClassCount = 8
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
-    components: { ItsGridBox, ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators },
+    components: { ItsGridBox, ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, WorkEvaluationPdf },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
