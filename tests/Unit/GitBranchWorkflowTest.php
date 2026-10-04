@@ -28,7 +28,7 @@ function configureBranchWorkflowClone(string $directory): void
 GIT."\n", FILE_APPEND);
 }
 
-function runBranchWorkflowCommand(string $directory, string $command, string $powershell = 'powershell'): Process
+function runBranchWorkflowCommand(string &$directory, string $command, string $powershell = 'powershell'): Process
 {
     $bootstrap = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
@@ -40,7 +40,7 @@ function Remove-SchooltoolCandidateTestDatabase { Write-Host 'MOCK_TEST_DATABASE
 try {
 POWERSHELL;
     $process = new Process(
-        [$powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $bootstrap."\n".$command."\n".'} catch { Write-Output $_.Exception.Message; exit 1 }'],
+        [$powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $bootstrap."\n".$command."\n".'Write-Output ("WORKFLOW_LOCATION=" + (Get-Location).Path)'."\n".'} catch { Write-Output $_.Exception.Message; exit 1 }'],
         $directory,
         [
             'SCHOOLTOOL_TEST_HELPERS' => dirname(__DIR__, 2).'/scripts/git_helpers.ps1',
@@ -50,9 +50,108 @@ POWERSHELL;
         timeout: 60,
     );
     $process->run();
+    if ($process->isSuccessful() && preg_match('/^WORKFLOW_LOCATION=(.+)$/m', $process->getOutput(), $location) === 1) {
+        $directory = str_replace('\\', '/', trim($location[1]));
+    }
 
     return $process;
 }
+
+function branchWorkflowCommonDirectory(string $directory): string
+{
+    return runBranchWorkflowGit($directory, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+}
+
+it('opens and reuses feature workspaces while preserving main files and dependencies', function (string $shell): void {
+    $main = $this->workflowPc;
+    file_put_contents($main.'/.gitignore', ".env\n/vendor\n/node_modules\n");
+    runBranchWorkflowGit($main, 'add', '.gitignore');
+    runBranchWorkflowGit($main, 'commit', '-m', 'Ignore private dependencies');
+    runBranchWorkflowGit($main, 'push', 'origin', 'main');
+    mkdir($main.'/vendor');
+    mkdir($main.'/node_modules');
+    file_put_contents($main.'/vendor/installed.txt', 'main PHP packages');
+    file_put_contents($main.'/node_modules/installed.txt', 'main frontend packages');
+    file_put_contents($main.'/.env', 'PRIVATE_MAIN_CONFIGURATION=preserve');
+
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart isolated-feature', $shell));
+    $feature = $this->workflowPc;
+
+    expect($feature)->toBe($main.'-features/isolated-feature');
+    expect(runBranchWorkflowGit($main, 'branch', '--show-current'))->toBe('main');
+    expect(is_file($feature.'/.env'))->toBeFalse();
+    expect(file_get_contents($main.'/vendor/installed.txt'))->toBe('main PHP packages');
+    expect(file_get_contents($main.'/node_modules/installed.txt'))->toBe('main frontend packages');
+
+    file_put_contents($feature.'/composer.lock', '{"feature":"locked"}');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature lock"', $shell));
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitmain', $shell));
+    expect($this->workflowPc)->toBe($main);
+    expect(is_file($main.'/composer.lock'))->toBeFalse();
+
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork isolated-feature', $shell));
+    expect($this->workflowPc)->toBe($feature);
+    expect(file_get_contents($feature.'/composer.lock'))->toBe('{"feature":"locked"}');
+    expect(count(glob($main.'-features/*')))->toBe(1);
+    expect(file_get_contents($main.'/vendor/installed.txt'))->toBe('main PHP packages');
+    expect(file_get_contents($main.'/.env'))->toBe('PRIVATE_MAIN_CONFIGURATION=preserve');
+})->with(['powershell', 'pwsh']);
+
+it('preserves unsaved or unpublished work in an existing target feature workspace', function (bool $committed): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart guarded-feature'));
+    $feature = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitmain'));
+    file_put_contents($feature.'/keep.txt', 'Target work');
+    if ($committed) {
+        runBranchWorkflowGit($feature, 'add', 'keep.txt');
+        runBranchWorkflowGit($feature, 'commit', '-m', 'Unpublished target work');
+    }
+    $head = runBranchWorkflowGit($feature, 'rev-parse', 'HEAD');
+
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitwork guarded-feature');
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+    expect(runBranchWorkflowGit($feature, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(file_get_contents($feature.'/keep.txt'))->toBe('Target work');
+})->with([false, true]);
+
+it('refuses a missing registered feature workspace without recreating or pruning it', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart missing-workspace'));
+    $feature = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitmain'));
+    (new Filesystem)->deleteDirectory($feature);
+
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitwork missing-workspace');
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect($result->getOutput())->toContain('registered feature workspace is missing');
+    expect(is_dir($feature))->toBeFalse();
+    expect(runBranchWorkflowGit($this->workflowPc, 'worktree', 'list', '--porcelain'))->toContain('branch refs/heads/feature/missing-workspace');
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+});
+
+it('refuses occupied feature folders and foreign branch checkouts without discarding files', function (string $condition): void {
+    if ($condition === 'folder') {
+        $folder = $this->workflowPc.'-features/occupied';
+        mkdir($folder, recursive: true);
+        file_put_contents($folder.'/keep.txt', 'Existing folder');
+        $result = runBranchWorkflowCommand($this->workflowPc, 'gitstart occupied');
+        expect(file_get_contents($folder.'/keep.txt'))->toBe('Existing folder');
+        expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/occupied'))->toBe('');
+    } else {
+        runBranchWorkflowGit($this->workflowPc, 'branch', 'feature/occupied');
+        runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'feature/occupied');
+        $folder = $this->workflowDirectory.'/foreign';
+        runBranchWorkflowGit($this->workflowPc, 'worktree', 'add', $folder, 'feature/occupied');
+        $result = runBranchWorkflowCommand($this->workflowPc, 'gitwork occupied');
+        expect(runBranchWorkflowGit($folder, 'branch', '--show-current'))->toBe('feature/occupied');
+        expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/features/occupied'))->toBe('');
+    }
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+})->with(['folder', 'checkout']);
 
 function assertBranchWorkflowSucceeded(Process $process): void
 {
@@ -142,10 +241,12 @@ beforeEach(function (): void {
         $this->markTestSkipped('Windows PowerShell branch workflow verification.');
     }
 
-    $this->workflowDirectory = sys_get_temp_dir().'/schooltool-git-workflow-'.bin2hex(random_bytes(8));
+    $this->workflowDirectory = str_replace('\\', '/', sys_get_temp_dir()).'/schooltool-git-workflow-'.bin2hex(random_bytes(8));
     $this->workflowRemote = $this->workflowDirectory.'/origin.git';
     $this->workflowPc = $this->workflowDirectory.'/pc';
     $this->workflowLaptop = $this->workflowDirectory.'/laptop';
+    $this->workflowPcMain = $this->workflowPc;
+    $this->workflowLaptopMain = $this->workflowLaptop;
     mkdir($this->workflowDirectory);
     runBranchWorkflowGit($this->workflowDirectory, 'init', '--bare', '--initial-branch=main', $this->workflowRemote);
     runBranchWorkflowGit($this->workflowDirectory, 'clone', $this->workflowRemote, $this->workflowPc);
@@ -202,7 +303,7 @@ function prepareBranchWorkflowDiscard(object $test): string
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($test->workflowPc, 'gitstart discard-me'));
     $commit = commitBranchWorkflowFile($test->workflowPc, 'discard.txt', "Unmerged feature\n");
     runBranchWorkflowGit($test->workflowPc, 'push', 'origin', 'feature/discard-me');
-    runBranchWorkflowGit($test->workflowPc, 'switch', 'main');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($test->workflowPc, 'gitmain'));
 
     return $commit;
 }
@@ -216,7 +317,7 @@ it('discards only the selected feature atomically and retains exact recovery his
     }
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart keep-me'));
     $otherReservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/keep-me');
-    runBranchWorkflowGit($this->workflowPc, 'switch', 'main');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitmain'));
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowDiscardMocks()."\ngitdiscard feature/discard-me", $shell);
 
     assertBranchWorkflowSucceeded($result);
@@ -315,7 +416,7 @@ POWERSHELL;
         if ($scenario !== 'transfer failure') {
             expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
         } else {
-            expect(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toHaveCount(1);
+            expect(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toHaveCount(1);
         }
     }
 })->with(['success', 'resume', 'cancel refresh', 'cancel preview', 'changed main', 'changed preview', 'lock', 'transfer failure'])->with(['powershell', 'pwsh']);
@@ -327,13 +428,13 @@ it('refuses unsafe feature discard without deleting feature or reservation', fun
     if ($condition === 'dirty') {
         file_put_contents($this->workflowPc.'/unsaved.txt', 'keep');
     } elseif ($condition === 'feature checkout') {
-        runBranchWorkflowGit($this->workflowPc, 'switch', 'feature/discard-me');
+        assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork discard-me'));
     } elseif ($condition === 'worktree') {
+        runBranchWorkflowGit($this->workflowPc.'-features/discard-me', 'switch', '--detach', 'HEAD');
         runBranchWorkflowGit($this->workflowPc, 'worktree', 'add', $this->workflowDirectory.'/in-use', 'feature/discard-me');
     } elseif ($condition === 'local ahead') {
-        runBranchWorkflowGit($this->workflowPc, 'switch', 'feature/discard-me');
-        commitBranchWorkflowFile($this->workflowPc, 'local.txt', 'unpublished');
-        runBranchWorkflowGit($this->workflowPc, 'switch', 'main');
+        $featureWorkspace = $this->workflowPc.'-features/discard-me';
+        commitBranchWorkflowFile($featureWorkspace, 'local.txt', 'unpublished');
     } elseif ($condition === 'preview active') {
         $code .= "\n".'function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ("b" * 64); feature_id = (Get-SchooltoolActiveFeature -Branch feature/discard-me).Id } }';
     } elseif ($condition === 'preview unavailable') {
@@ -382,6 +483,7 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/discard-me'))->toBe($commit)
         ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('');
+    expect(runBranchWorkflowGit($this->workflowPc.'-features/discard-me', 'branch', '--show-current'))->toBe('feature/discard-me');
 });
 
 it('shares unfinished development between two devices without changing main', function (): void {
@@ -778,6 +880,109 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
 
+it('keeps profile navigation in the selected folder and uses main helpers from older features', function (string $shell, bool $localWorkflow): void {
+    $main = $this->workflowPc;
+    copy(dirname(__DIR__, 2).'/scripts/install_powershell_helpers.ps1', $main.'/scripts/install_powershell_helpers.ps1');
+    file_put_contents($main.'/scripts/git_workflow.ps1', <<<'POWERSHELL'
+param([string]$Command, [string[]]$CommandArguments)
+. $env:SCHOOLTOOL_TEST_HELPERS
+function Invoke-SchooltoolLocalPreparation {
+    if ($env:SCHOOLTOOL_TEST_FAIL_PREPARATION) { throw 'EXPECTED_WORKSPACE_PREPARATION_FAILURE' }
+    Write-Host 'TEST_WORKSPACE_PREPARATION'
+}
+if ($CommandArguments.Count -gt 0) { & $Command -Name $CommandArguments[0] }
+else { & $Command }
+POWERSHELL);
+    runBranchWorkflowGit($main, 'add', 'scripts');
+    runBranchWorkflowGit($main, 'commit', '-m', 'Add dispatcher fixture');
+    runBranchWorkflowGit($main, 'push', 'origin', 'main');
+    $localSetup = $localWorkflow ? <<<'POWERSHELL'
+$localWorkflow = Join-Path (Get-Location) '.git/local-workflow'
+[System.IO.Directory]::CreateDirectory($localWorkflow) | Out-Null
+Copy-Item -LiteralPath './scripts/git_workflow.ps1' -Destination $localWorkflow
+$installParameters = @{ WorkflowDirectory = $localWorkflow }
+POWERSHELL : '$installParameters = @{}';
+    $result = runBranchWorkflowCommand($this->workflowPc, $localSetup."\n".<<<'POWERSHELL'
+$mainFolder = (Get-Location).Path
+$nativeGit = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+function git {
+    if ($args -contains 'remote' -and $args -contains 'get-url') {
+        Write-Output 'https://github.com/ITStudioAT/schooltool.git'
+        $global:LASTEXITCODE = 0
+    } else { & $nativeGit @args }
+}
+$PROFILE = [pscustomobject]@{ CurrentUserCurrentHost = (Join-Path $mainFolder '.git/navigation-profile.ps1') }
+& ./scripts/install_powershell_helpers.ps1 -DocumentsDirectory (Join-Path $mainFolder '.git/documents') @installParameters
+. $PROFILE.CurrentUserCurrentHost
+gitstart profile-feature
+$featureFolder = (Get-Location).Path
+if ($featureFolder -eq $mainFolder) { throw 'Profile returned to main after gitstart.' }
+[System.IO.File]::WriteAllText((Join-Path $featureFolder 'scripts/git_workflow.ps1'), "throw 'OLD_FEATURE_DISPATCHER_USED'")
+& $nativeGit add scripts/git_workflow.ps1
+& $nativeGit commit -m 'Simulate older feature dispatcher'
+& $nativeGit push origin feature/profile-feature
+gitmain
+if ((Get-Location).Path -ne $mainFolder) { throw 'Profile did not return to main.' }
+function gitwork {
+    & $nativeGit switch feature/profile-feature
+    if ($LASTEXITCODE -ne 0) { throw 'STALE_BRANCH_SWITCH_BLOCKED' }
+    throw 'STALE_BRANCH_SWITCH_ALLOWED'
+}
+try { gitwork profile-feature } catch {
+    if ($_.Exception.Message -ne 'STALE_BRANCH_SWITCH_BLOCKED') { throw }
+}
+. $PROFILE.CurrentUserCurrentHost
+if ((Get-Command gitwork).ScriptBlock.File -ne $PROFILE.CurrentUserCurrentHost) { throw 'Profile reload did not replace the stale function.' }
+gitwork profile-feature
+if ((Get-Location).Path -ne $featureFolder) { throw 'Profile did not reuse the feature folder.' }
+gitmain
+try {
+    $env:SCHOOLTOOL_TEST_FAIL_PREPARATION = '1'
+    try { gitwork profile-feature; throw 'PREPARATION_FAILURE_WAS_IGNORED' }
+    catch { if ($_.Exception.Message -ne 'EXPECTED_WORKSPACE_PREPARATION_FAILURE') { throw } }
+    if ((Get-Location).Path -ne $mainFolder) { throw 'Failed profile navigation changed the caller folder.' }
+} finally { Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION }
+Write-Host 'PROFILE_NAVIGATION_VERIFIED'
+POWERSHELL, $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($this->workflowPc)->toBe($main);
+    expect($result->getOutput())->toContain('PROFILE_NAVIGATION_VERIFIED');
+    expect(runBranchWorkflowGit($main, 'branch', '--show-current'))->toBe('main');
+})->with([
+    'Windows PowerShell main helpers' => ['powershell', false],
+    'PowerShell 7 main helpers' => ['pwsh', false],
+    'Windows PowerShell local helpers' => ['powershell', true],
+    'PowerShell 7 local helpers' => ['pwsh', true],
+]);
+
+it('refuses feature creation from a main folder still used by a legacy feature', function (): void {
+    runBranchWorkflowGit($this->workflowPc, 'switch', '-c', 'feature/legacy');
+    runBranchWorkflowGit($this->workflowPc, 'push', '-u', 'origin', 'feature/legacy');
+
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitstart new-feature');
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect($result->getOutput())->toContain('use gitmain');
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/legacy');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/new-feature'))->toBe('');
+});
+
+it('preserves dirty main files and refuses a feature release before publishing', function (): void {
+    $main = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart protected-main'));
+    file_put_contents($this->workflowPc.'/feature.txt', 'Feature work');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    file_put_contents($main.'/keep.txt', 'Unsaved main work');
+
+    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitrelease "Must refuse dirty main"');
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect(file_get_contents($main.'/keep.txt'))->toBe('Unsaved main work');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/protected-main');
+});
+
 it('installs idempotent profile wrappers and dispatches arguments only for a trusted remote', function (): void {
     copy(dirname(__DIR__, 2).'/scripts/install_powershell_helpers.ps1', $this->workflowPc.'/scripts/install_powershell_helpers.ps1');
     file_put_contents($this->workflowPc.'/scripts/git_workflow.ps1', <<<'POWERSHELL'
@@ -792,6 +997,8 @@ $documentsDirectory = Join-Path (Get-Location) '.git/test-documents'
 $coreProfile = Join-Path $documentsDirectory 'PowerShell/Microsoft.PowerShell_profile.ps1'
 [System.IO.Directory]::CreateDirectory((Split-Path -Parent $coreProfile)) | Out-Null
 [System.IO.File]::WriteAllText($coreProfile, "# Preserve existing PowerShell 7 settings`n")
+$vscodeProfile = Join-Path $documentsDirectory 'PowerShell/Microsoft.VSCode_profile.ps1'
+[System.IO.File]::WriteAllText($vscodeProfile, "# Preserve existing VS Code settings`n")
 & ./scripts/install_powershell_helpers.ps1 -DocumentsDirectory $documentsDirectory
 & ./scripts/install_powershell_helpers.ps1 -DocumentsDirectory $documentsDirectory
 $tokens = $null
@@ -829,6 +1036,9 @@ POWERSHELL);
             expect($editionProfile)->toContain('# Preserve existing PowerShell 7 settings');
         }
     }
+    $vscodeProfile = file_get_contents($this->workflowPc.'/.git/test-documents/PowerShell/Microsoft.VSCode_profile.ps1');
+    expect($vscodeProfile)->toContain('# Preserve existing VS Code settings', 'function gitwork {');
+    expect(substr_count($vscodeProfile, '# >>> project git dispatcher >>>'))->toBe(1);
     $entries = array_map(
         function (string $line): array {
             $entry = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
@@ -1064,7 +1274,7 @@ POWERSHELL;
     }
     expect($result->getOutput())->toContain('Data refresh cancelled. Nothing published.')
         ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
 })->with(['first-feature', 'second-feature'])->with([false, true]);
 
@@ -1081,8 +1291,8 @@ POWERSHELL;
     $result = runBranchWorkflowCommand($this->workflowPc, $command);
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.receipt'))->toHaveCount(1)
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toHaveCount(1)
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
 });
 
@@ -1140,7 +1350,7 @@ POWERSHELL;
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->toContain('shared preview changed')
         ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
@@ -1230,6 +1440,31 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Ready work');
 });
 
+it('keeps the feature checkout attached when main changes during release checks', function (): void {
+    $main = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart protected-main'));
+    $feature = $this->workflowPc;
+    file_put_contents($feature.'/feature.txt', 'Ready work');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $mainLiteral = str_replace("'", "''", $main);
+    $command = branchWorkflowReleaseMocks()."\n".'$mainWorkspace = \''.$mainLiteral."'\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    [System.IO.File]::WriteAllText((Join-Path $mainWorkspace 'keep.txt'), 'New main work')
+}
+gitrelease 'Release completed work'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('Release succeeded, but local cleanup stopped');
+    expect($this->workflowPc)->toBe($feature);
+    expect(runBranchWorkflowGit($feature, 'branch', '--show-current'))->toBe('feature/protected-main');
+    expect(file_get_contents($main.'/keep.txt'))->toBe('New main work');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Ready work');
+});
+
 it('lets the other device leave a safely merged deleted feature but preserves unpublished work', function (bool $unpublished): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
@@ -1278,20 +1513,86 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('');
 });
 
-it('does not publish files edited while main release checks are running', function (): void {
+it('rechecks concurrent source edits before saving main', function (string $stage, string $shell): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
+    $command = branchWorkflowReleaseMocks()."\n".'$editStage = \''.$stage."'\n".<<<'POWERSHELL'
+$script:checks = 0
+$script:edited = $false
+$script:gitExecutable = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    $script:checks++
+    Write-Host "SOURCE_CHECK_$script:checks"
+    if ($editStage -eq 'checks' -and -not $script:edited) {
+        $script:edited = $true
+        [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed concurrently')
+    }
+}
+function git {
+    & $script:gitExecutable @args
+    if ($LASTEXITCODE -eq 0 -and $editStage -eq 'commit' -and $args[0] -eq 'commit' -and $args[2] -eq 'Save correction' -and -not $script:edited) {
+        $script:edited = $true
+        [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed concurrently')
+    }
+}
+gitsave 'Save correction'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('attempt 2/3', 'SOURCE_CHECK_2', 'SAVED ON GITHUB.');
+    expect($result->getOutput())->not->toContain('SOURCE_CHECK_3');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Changed concurrently');
+    expect(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:deployment/source-commit'))
+        ->toBe(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main^'));
+})->with([
+    'edit during checks on Windows PowerShell' => ['checks', 'powershell'],
+    'edit during commit on Windows PowerShell' => ['commit', 'powershell'],
+    'edit during checks on PowerShell 7' => ['checks', 'pwsh'],
+    'edit during commit on PowerShell 7' => ['commit', 'pwsh'],
+]);
+
+it('does not retry a main save after Git identity changes or a failed build', function (string $failure): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
+    $command = branchWorkflowReleaseMocks()."\n".'$failure = \''.$failure."'\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    Write-Host 'SOURCE_CHECK_STARTED'
+    if ($failure -eq 'build') { throw 'BUILD_FAILED' }
+    if ($failure -eq 'branch') { Invoke-SchooltoolGit switch -c unrelated | Out-Host }
+    if ($failure -eq 'head') { Invoke-SchooltoolGit commit --allow-empty -m 'Concurrent Git operation' | Out-Host }
+}
+gitsave 'Save correction'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect(substr_count($result->getOutput(), 'SOURCE_CHECK_STARTED'))->toBe(1);
+    expect($result->getOutput())->not->toContain('attempt 2/3');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+    expect(file_get_contents($this->workflowPc.'/fix.txt'))->toBe("Original correction\n");
+})->with(['build', 'branch', 'head']);
+
+it('stops without publishing when source edits continue across all main save attempts', function (): void {
     file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
     $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+$script:checks = 0
 function Invoke-SchooltoolReleaseChecks {
-    [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed during tests')
+    param([switch]$Full)
+    $script:checks++
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), "Changed during tests $script:checks")
 }
 gitsave 'Save correction'
 POWERSHELL;
     $result = runBranchWorkflowCommand($this->workflowPc, $command);
 
     expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('changed during checks')
+        ->and($result->getOutput())->toContain('changed during checks', '3 save attempts', 'fix.txt')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe('Changed during tests');
+        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe('Changed during tests 3');
 });
 
 it('runs main full checks in an isolated staged-source worktree and restores the original environment', function (bool $failChecks): void {
@@ -1806,7 +2107,7 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.tar.gz'))->toHaveCount(1);
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.tar.gz'))->toHaveCount(1);
 
     $previewRefs = runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/');
     if ($mode === 'deploy') {
@@ -1842,7 +2143,7 @@ POWERSHELL;
 
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->toContain('PREVIEW_CHECKS_FAILED')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.receipt'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toBe([])
         ->and($result->getOutput())->not->toContain('UNEXPECTED_UPLOAD')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
@@ -1883,7 +2184,7 @@ it('resumes a checked preview after preparation or cancellation without repeatin
     $command = branchWorkflowPreviewMocks()."\nfunction Read-Host { '' }\ngitpreview $initial\n";
     $prepared = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
     assertBranchWorkflowSucceeded($prepared);
-    $receipts = glob($this->workflowPc.'/.git/schooltool-preview/*.receipt');
+    $receipts = glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt');
     expect($receipts)->toHaveCount(1)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
     $id = basename($receipts[0], '.receipt');
@@ -1902,7 +2203,7 @@ POWERSHELL;
         ->and($result->getOutput())->not->toContain('FULL_CHECKS_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe("refs/heads/preview/$id")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(file_exists($this->workflowPc."/.git/schooltool-preview/$id.started"))->toBeTrue();
+        ->and(file_exists(branchWorkflowCommonDirectory($this->workflowPc)."/schooltool-preview/$id.started"))->toBeTrue();
 })->with([
     'Windows PowerShell prepare' => ['prepare', 'powershell'],
     'Windows PowerShell cancellation' => ['deploy', 'powershell'],
@@ -1998,7 +2299,7 @@ POWERSHELL;
     expect($result->isSuccessful())->toBe($message === '', $result->getOutput().$result->getErrorOutput())
         ->and($result->getOutput())->toContain($message === '' ? 'Preview cancelled. Nothing published.' : $message)
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'CANDIDATE_MUST_NOT_REPEAT', 'PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
 })->with([
     'approved exact patch' => ['', ''],
@@ -2047,7 +2348,7 @@ POWERSHELL;
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->toContain('bundle checksum differs')
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'UPLOAD_MUST_NOT_HAPPEN')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
 });
 
@@ -2065,8 +2366,8 @@ POWERSHELL;
     assertBranchWorkflowSucceeded($result);
     expect($result->getOutput())->toContain('Data refresh cancelled. Nothing published.', '-RefreshData')
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'UPLOAD_MUST_NOT_HAPPEN')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.receipt'))->toHaveCount(1)
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toBe([])
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toHaveCount(1)
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
 });
 
@@ -2121,7 +2422,7 @@ POWERSHELL;
     assertBranchWorkflowSucceeded($result);
     expect($result->getOutput())->toContain('PUBLICATION_CALLS=1 TRANSFER_CALLS='.($failure === 'push' ? '0' : '1'))
         ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT')
-        ->and(glob($this->workflowPc.'/.git/schooltool-preview/*.started'))->toHaveCount(1)
+        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toHaveCount(1)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 })->with(['push', 'transfer'])->with(['powershell', 'pwsh']);

@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
+use App\Services\TeachingWorkDispatchImport;
+use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkMarkdownImport;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +25,103 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function importFolder(Request $request, TeachingCourseWork $course_work, TeachingWorkFolderImport $importer): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate([
+            'folder' => ['required', 'string', 'max:255'],
+            'documents' => ['required', 'string', 'max:6291456'],
+            'pdf_paths' => ['required', 'string', 'max:32768'],
+            'pdfs' => ['sometimes', 'array', 'max:20'],
+            'pdfs.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:4096'],
+        ]);
+        $bundle = $importer->parse($data['folder'], $data['documents'], $data['pdf_paths'], $request->file('pdfs', []));
+        $createdPaths = [];
+        try {
+            $result = DB::transaction(function () use ($course_work, $actor, $importer, $bundle, &$createdPaths): array {
+                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
+                $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                try {
+                    $summary = $importer->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle, $createdPaths);
+                } catch (Throwable $exception) {
+                    Storage::disk('local')->delete($createdPaths);
+                    $createdPaths = [];
+                    throw $exception;
+                }
+
+                return ['summary' => $summary, 'data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh())];
+            });
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($createdPaths);
+            throw $exception;
+        }
+
+        return response()->json($result);
+    }
+
+    public function importDispatch(Request $request, TeachingCourseWork $course_work, TeachingWorkDispatchImport $importer): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate([
+            'protocol' => ['required', 'file', 'extensions:txt', 'mimetypes:text/plain,application/json', 'max:1024'],
+            'purpose' => ['sometimes', Rule::in(['tasks', 'results'])],
+            'apply' => ['sometimes', 'boolean'],
+            'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64'],
+        ]);
+        $upload = $request->file('protocol');
+        $report = $importer->parse($upload->get());
+        if ($report['purpose'] !== ($data['purpose'] ?? 'results')) {
+            throw ValidationException::withMessages(['protocol' => 'Das Protokoll gehört zum anderen Versandvorgang. Bitte den passenden Importeinstieg auswählen.']);
+        }
+        $sha256 = hash_file('sha256', $upload->getRealPath());
+        $name = basename(str_replace('\\', '/', $upload->getClientOriginalName()));
+        $createdPath = null;
+        try {
+            $result = DB::transaction(function () use ($course_work, $actor, $importer, $report, $sha256, $name, $upload, $data, &$createdPath): array {
+                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                $preview = $importer->preview($work, $report, $sha256);
+                if (! ($data['apply'] ?? false)) {
+                    return ['preview' => $preview];
+                }
+                abort_unless($preview['can_import'], 422, 'Versandprotokoll enthält ungeklärte Zuordnungen.');
+                abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Kurs oder Protokoll wurde geändert. Bitte Vorschau erneut laden.');
+                $directory = "teaching/work_dispatches/{$work->teachingCourse->school_id}/{$work->id}";
+                $path = "{$directory}/{$sha256}.txt";
+                if (! Storage::disk('local')->exists($path)) {
+                    $createdPath = $path;
+                    if ($upload->storeAs($directory, "{$sha256}.txt", 'local') !== $path) {
+                        throw ValidationException::withMessages(['protocol' => 'Versandprotokoll konnte nicht gespeichert werden.']);
+                    }
+                }
+                $importer->apply($work, $preview, $sha256, $name, $path);
+
+                return ['data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh())];
+            });
+        } catch (Throwable $exception) {
+            if ($createdPath !== null) {
+                Storage::disk('local')->delete($createdPath);
+            }
+            throw $exception;
+        }
+
+        return response()->json($result);
+    }
+
+    public function downloadDispatch(TeachingCourseWork $course_work, string $sha256, TeachingWorkDispatchImport $importer): StreamedResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+
+        return $importer->streamLog($course_work, $sha256);
+    }
+
     public function importEvaluations(Request $request, TeachingCourseWork $course_work, TeachingWorkMarkdownImport $importer): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
@@ -63,34 +162,7 @@ class CourseWorkController extends Controller
                 abort_unless($preview['can_import'], 422, 'Keine eindeutigen importierbaren Daten.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit oder Auswertung wurde geändert. Bitte Vorschau erneut laden.');
                 $importer->apply($work, $preview);
-                $status = $work->status ?? [];
-                $attachments = $status['evaluation_pdfs'] ?? [];
-                $targets = [['student_id' => null, 'pdf' => $preview['pdf']]];
-                foreach ($preview['rows'] as $row) {
-                    if ($row['student_id']) {
-                        $targets[] = ['student_id' => $row['student_id'], 'pdf' => $row['pdf']];
-                    }
-                }
-                foreach ($targets as $target) {
-                    $pdf = $target['pdf'];
-                    if (! $pdf || collect($attachments)->contains(fn (array $attachment): bool => $attachment['sha256'] === $pdf['sha256'] && $attachment['student_id'] === $target['student_id'])) {
-                        continue;
-                    }
-                    $directory = "teaching/work_evaluations/{$work->teachingCourse->school_id}/{$work->id}";
-                    $path = $directory.'/'.$pdf['sha256'].'.pdf';
-                    if (! Storage::disk('local')->exists($path)) {
-                        $createdPaths[] = $path;
-                        $index = array_search($pdf, $pdfs, true);
-                        if ($uploads[$index]->storeAs($directory, $pdf['sha256'].'.pdf', 'local') !== $path) {
-                            throw ValidationException::withMessages(['pdfs' => 'Auswertungs-PDF konnte nicht gespeichert werden.']);
-                        }
-                    }
-                    $attachments = array_values(array_filter($attachments, fn (array $attachment): bool => ($attachment['origin'] ?? null) !== 'evaluation_import' || $attachment['student_id'] !== $target['student_id']));
-                    $attachments[] = $pdf + ['student_id' => $target['student_id'], 'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'evaluation_import'];
-                }
-                $status['evaluation_pdfs'] = $attachments;
-                $work->status = $status;
-                $work->save();
+                $importer->storePdfs($work, $preview, $uploads, $pdfs, $createdPaths);
 
                 return ['data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh())];
             });
@@ -163,7 +235,7 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
-            unset($validated['status']['evaluation_pdfs']);
+            unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources']);
         }
         $validated['maximum_plus'] = $maximumPlus;
         $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
@@ -226,6 +298,10 @@ class CourseWorkController extends Controller
         if (array_key_exists('status', $validated)) {
             $validated['status'] ??= [];
             $validated['status']['evaluation_pdfs'] = $course_work->status['evaluation_pdfs'] ?? [];
+            $validated['status']['dispatch_logs'] = $course_work->status['dispatch_logs'] ?? [];
+            $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
+            $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
+            $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
         }
         $validated['maximum_plus'] = $maximumPlus;
 

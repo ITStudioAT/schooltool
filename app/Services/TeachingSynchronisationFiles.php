@@ -41,7 +41,8 @@ class TeachingSynchronisationFiles
                     }
                 } elseif (is_array($value)) {
                     $walk($value, $preferred);
-                } elseif (in_array($key, ['materials', 'topics', 'status'], true) && is_string($value) && $value !== '') {
+                } elseif (in_array($key, ['materials', 'topics', 'status'], true) && is_string($value) && $value !== ''
+                    && ($key !== 'status' || preg_match('/\A\s*[\[{]/', $value))) {
                     $walk(json_decode($value, true, 512, JSON_THROW_ON_ERROR), $preferred);
                 }
             }
@@ -234,7 +235,8 @@ class TeachingSynchronisationFiles
                 return $value;
             }
             foreach ($value as $key => $item) {
-                if (in_array($key, ['materials', 'topics', 'report_paths', 'status'], true) && is_string($item) && $item !== '') {
+                if (in_array($key, ['materials', 'topics', 'report_paths', 'status'], true) && is_string($item) && $item !== ''
+                    && ($key !== 'status' || preg_match('/\A\s*[\[{]/', $item))) {
                     $value[$key] = json_encode($walk(json_decode($item, true, 512, JSON_THROW_ON_ERROR)), JSON_THROW_ON_ERROR);
                 } else {
                     $value[$key] = $walk($item, is_string($key) ? $key : null);

@@ -37,7 +37,7 @@ async function renderTable() {
                 'v-autocomplete': true, 'v-checkbox': true, 'v-date-input': true,
                 'v-divider': true, 'v-list-subheader': true, 'v-tab': true,
                 'v-tabs': true, 'v-textarea': true, CourseStudentNotes: true,
-                CourseStudentIndicators: true, ItsRichTextEditor: true,
+                CourseStudentIndicators: true, ItsRichTextEditor: true, WorkEvaluationImport: true,
                 ItsGridBox: { template: '<div><slot /></div>' },
             },
         },

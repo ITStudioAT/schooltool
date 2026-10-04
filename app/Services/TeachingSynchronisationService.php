@@ -23,7 +23,7 @@ class TeachingSynchronisationService
 
     public static function available(): bool
     {
-        return RestaurantSynchronisationService::available()
+        return app(RestaurantSynchronisationService::class)::available()
             && in_array(config('filesystems.default'), ['local', 'public'], true)
             && empty(DB::connection()->getConfig('url')) && empty(DB::connection()->getConfig('unix_socket'))
             && empty(DB::connection()->getConfig('prefix'));

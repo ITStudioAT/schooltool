@@ -399,15 +399,19 @@ function Invoke-SchooltoolPublish {
                     throw 'Could not create the source commit.'
                 }
 
+                $sourceCommit = git rev-parse HEAD
                 $postCommitChanges = git status --porcelain --untracked-files=all | Where-Object {
                     $_ -notmatch '^.. deployment/(frontend-build\.sha256|frontend-build\.tar\.gz|source-commit|source-manifest\.sha256)$'
                 }
 
                 if ($postCommitChanges) {
-                    throw 'The source commit left additional changes in the worktree. Review them before publishing.'
+                    $exception = New-Object System.InvalidOperationException ("Source files changed while committing. Nothing was published; all edits are preserved.`n" + ($postCommitChanges -join "`n"))
+                    $exception.Data['SchooltoolSourceChanged'] = $true
+                    $exception.Data['Branch'] = $branch
+                    $exception.Data['Head'] = $sourceCommit
+                    throw $exception
                 }
 
-                $sourceCommit = git rev-parse HEAD
                 Write-Host "Source commit: $sourceCommit" -ForegroundColor Cyan
             }
 

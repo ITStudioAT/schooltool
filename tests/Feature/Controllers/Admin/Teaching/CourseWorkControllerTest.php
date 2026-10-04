@@ -15,11 +15,436 @@ use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\Support\TeachingWorkEvaluationFixture;
 
 uses(RefreshDatabase::class);
+
+function prepareWorkDispatchImport(object $context): TeachingCourseWork
+{
+    $work = prepareWorkEvaluationImport($context);
+    $context->course->update(['title' => 'INF 1']);
+    $context->student->update(['email' => 'ada@example.test']);
+    $context->openStudent->update(['email' => 'bea@example.test']);
+    $work->update(['title' => 'Übung: E-Mails', 'status' => ['manual' => 'Keep']]);
+
+    return $work;
+}
+
+/** @return array<string, mixed> */
+function workFolderPayload(?array $reports = null, ?array $protocols = null, bool $includePdfs = true): array
+{
+    $folder = '2026-10-02_IT-Grundlagen_Test';
+    if ($reports === null) {
+        $reports = TeachingWorkEvaluationFixture::reports();
+        unset($reports['Beurteilung_Gamma_Chris.md']);
+        $reports['Gesamtuebersicht_Beurteilungen_Test.md'] = str_replace("| Chris Gamma / 5F | Vorhanden | Beurteilt | 2,0 | 2,5 | 4,5 |\n", '', $reports['Gesamtuebersicht_Beurteilungen_Test.md']);
+    }
+    $documents = [];
+    foreach ($reports as $name => $text) {
+        $documents[] = ['path' => $folder.'/Beurteilungen/'.$name, 'text' => $text];
+    }
+    foreach ($protocols ?? [
+        'Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt' => TeachingWorkDispatchFixture::tasksText(true),
+        'Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt' => TeachingWorkDispatchFixture::text(),
+    ] as $path => $text) {
+        $documents[] = ['path' => $folder.'/'.$path, 'text' => $text];
+    }
+    $pdfs = $includePdfs && $reports !== [] ? [workEvaluationPdf('Gesamtuebersicht_Beurteilungen_Test.pdf'), workEvaluationPdf('Beurteilung_Van Alpha_Ada.pdf')] : [];
+
+    return ['folder' => $folder, 'documents' => json_encode($documents, JSON_THROW_ON_ERROR),
+        'pdf_paths' => json_encode(array_map(fn (UploadedFile $file): string => $folder.'/Beurteilungen/'.$file->getClientOriginalName(), $pdfs), JSON_THROW_ON_ERROR), 'pdfs' => $pdfs];
+}
+
+test('teacher test folder logs are archived without grades or student dispatch flags', function (string $subject) {
+    $work = prepareWorkDispatchImport($this);
+    Mail::fake();
+    Notification::fake();
+    $path = 'Versand/Ergebnisse/Versand_2026-10-04_02-47-41/Versandprotokoll.txt';
+    $text = TeachingWorkDispatchFixture::teacherTestText($subject);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $this->postJson($url, workFolderPayload([], [$path => $text], false))->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'] ?? [])->toBe([])->and($status['dispatch_attempts'] ?? [])->toBe([]);
+    expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
+    $this->postJson($url, workFolderPayload([], [$path => $text], false))->assertOk();
+    expect($work->fresh()->status['dispatch_logs'])->toHaveCount(1);
+    foreach (['invalid subject' => 'Andere Nachricht: E-Mails', 'wrong work' => 'Test der Ergebnisbenachrichtigung: Different'] as $case => $invalidSubject) {
+        $response = $this->postJson($url, workFolderPayload([], [$path => TeachingWorkDispatchFixture::teacherTestText($invalidSubject)], false))->assertUnprocessable();
+        if ($case === 'invalid subject') {
+            expect(implode(' ', array_merge(...array_values($response->json('errors')))))->toContain($path)->toContain($invalidSubject);
+        }
+        expect($work->fresh()->status)->toBe($status);
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['Test der Ergebnisbenachrichtigung: E-Mails', 'Formatierungstest der Ergebnisbenachrichtigung: E-Mails']);
+
+test('one folder imports evaluations task tests and result notifications atomically and rescans new or changed contents', function () {
+    $work = prepareWorkDispatchImport($this);
+    Mail::fake();
+    Notification::fake();
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $payload = workFolderPayload();
+    $response = $this->postJson($url, $payload)->assertOk();
+    expect($response->json('summary.messages'))->toHaveCount(3)
+        ->and($work->fresh()->groups[0]['grades'][0]['grade'])->toBe('4.5')
+        ->and($work->fresh()->groups[1]['points'][0]['points'])->toBe(3);
+    $status = $work->fresh()->status;
+    expect($status['evaluation_pdfs'])->toHaveCount(2)->and($status['dispatch_logs'])->toHaveCount(2)
+        ->and($status['dispatch_notifications'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'][0]['purpose'])->toBe('results')
+        ->and($status['folder_import_sources'])->toHaveCount(7);
+    $taskLog = collect($status['dispatch_logs'])->firstWhere('purpose', 'tasks');
+    expect(Storage::disk('local')->get($taskLog['file_path']))->toBe(TeachingWorkDispatchFixture::tasksText(true));
+    $this->postJson($url, workFolderPayload())->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    $groups = $work->fresh()->groups;
+    $groups[0]['grades'][0]['grade'] = '3.5';
+    $groups[0]['points'][0]['points'] = 3.5;
+    $work->update(['groups' => $groups]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    $this->postJson($url, workFolderPayload())->assertOk();
+    expect($work->fresh()->groups[0]['grades'][0]['grade'])->toBe('3.5');
+    $changed = workFolderPayload();
+    $documents = json_decode($changed['documents'], true);
+    foreach ($documents as &$document) {
+        if (str_ends_with($document['path'], '.md')) {
+            $document['text'] = str_replace(['2,5', '4,5'], ['2,0', '4,0'], $document['text']);
+        }
+    }
+    unset($document);
+    $recipients = TeachingWorkDispatchFixture::recipients();
+    $recipients[0]['Providerkennung'] = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    $recipients[0]['Providerzeit'] = '2026-10-05T03:15:00+02:00';
+    $documents[] = ['path' => $changed['folder'].'/Versand/Ergebnisse/Versand_2026-10-05_03-15-00/Versandprotokoll.txt', 'text' => TeachingWorkDispatchFixture::text($recipients)];
+    $changed['documents'] = json_encode($documents, JSON_THROW_ON_ERROR);
+    $changed['pdfs'][1] = UploadedFile::fake()->createWithContent('Beurteilung_Van Alpha_Ada.pdf', "%PDF-1.4\n% Updated original\n%%EOF\n");
+    $this->postJson($url, $changed)->assertOk();
+    $fresh = $work->fresh();
+    expect($fresh->groups[0]['grades'][0]['grade'])->toBe('4')
+        ->and($fresh->status['dispatch_logs'])->toHaveCount(3)
+        ->and($fresh->status['dispatch_notifications'])->toHaveCount(2)
+        ->and($fresh->status['evaluation_pdfs'])->toHaveCount(2)
+        ->and($fresh->status['evaluation_pdfs'][1]['sha256'])->not->toBe($status['evaluation_pdfs'][1]['sha256']);
+    $this->postJson($url, $changed)->assertOk();
+    expect($work->fresh()->status)->toBe($fresh->status);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['folder_import_sources' => []]])->assertOk();
+    expect($work->fresh()->status['folder_import_sources'])->toBe($fresh->status['folder_import_sources']);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('folder import accepts absent optional types and retains existing history', function (string $part) {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $payload = match ($part) {
+        'evaluations' => workFolderPayload(null, [], false),
+        'tasks' => workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt' => TeachingWorkDispatchFixture::tasksText(true)], false),
+        'results' => workFolderPayload([], ['Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt' => TeachingWorkDispatchFixture::text()], false),
+        default => workFolderPayload([], [], false),
+    };
+    $before = $work->groups;
+    $response = $this->postJson($url, $payload)->assertOk();
+    expect($response->json('summary.missing'))->not->toBe([]);
+    if ($part === 'empty') {
+        expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+    } elseif ($part !== 'evaluations') {
+        expect($work->fresh()->groups)->toEqual($before);
+    }
+    if ($part === 'tasks') {
+        expect($work->fresh()->status['dispatch_notifications'])->toBe([])
+            ->and($work->fresh()->status['dispatch_attempts'][0]['mode'])->toBe('test');
+    }
+    $this->postJson($url, workFolderPayload())->assertOk();
+    $status = $work->fresh()->status;
+    $this->postJson($url, $payload)->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+})->with(['evaluations', 'tasks', 'results', 'empty']);
+
+test('folder errors leave grades entries original files and notification history intact', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $payload = workFolderPayload();
+    $documents = json_decode($payload['documents'], true);
+    if ($case === 'unmapped result') {
+        $documents[4]['text'] = str_replace('ada@example.test', 'other@example.test', $documents[4]['text']);
+    }
+    if ($case === 'type contradiction') {
+        $documents[4]['path'] = str_replace('/Ergebnisse/', '/Aufgaben/', $documents[4]['path']);
+    }
+    if ($case === 'wrong work') {
+        $documents[0]['text'] = str_replace('E-Mails', 'Other work', $documents[0]['text']);
+    }
+    if ($case === 'unknown assessment person') {
+        $payload = workFolderPayload(TeachingWorkEvaluationFixture::reports());
+        $documents = json_decode($payload['documents'], true);
+    }
+    if ($case === 'duplicate work') {
+        TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => $work->title, 'date_for_all_groups' => '2026-10-02']);
+    }
+    if ($case === 'different roots') {
+        $documents[4]['path'] = 'Other/'.$documents[4]['path'];
+    }
+    if ($case === 'duplicate source') {
+        $documents[] = $documents[4];
+    }
+    if ($case === 'traversal') {
+        $documents[4]['path'] = str_replace('/Ergebnisse/', '/../Ergebnisse/', $documents[4]['path']);
+    }
+    if ($case === 'partial assessment') {
+        unset($documents[2]);
+        $documents = array_values($documents);
+    }
+    $payload['documents'] = json_encode($documents, JSON_THROW_ON_ERROR);
+    $before = $work->fresh()->getAttributes();
+    $entries = TeachingCourseStudentEntry::where('teaching_course_id', $this->course->id)->get()->toArray();
+    $this->postJson($url, $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before)
+        ->and(TeachingCourseStudentEntry::where('teaching_course_id', $this->course->id)->get()->toArray())->toBe($entries)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['unmapped result', 'type contradiction', 'wrong work', 'unknown assessment person', 'duplicate work', 'different roots', 'duplicate source', 'traversal', 'partial assessment']);
+
+test('folder import preserves old files and state when a later protocol fails after new PDF storage', function () {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $this->postJson($url, workFolderPayload())->assertOk();
+    $before = $work->fresh()->getAttributes();
+    $files = Storage::disk('local')->allFiles();
+    $payload = workFolderPayload();
+    $payload['pdfs'][1] = UploadedFile::fake()->createWithContent('Beurteilung_Van Alpha_Ada.pdf', "%PDF-1.4\n% Changed source\n%%EOF\n");
+    $documents = json_decode($payload['documents'], true);
+    $documents[] = ['path' => $payload['folder'].'/Versand/Ergebnisse/Versand_2026-10-05_03-15-00/Versandprotokoll.txt',
+        'text' => str_replace('ada@example.test', 'other@example.test', TeachingWorkDispatchFixture::text())];
+    $payload['documents'] = json_encode($documents, JSON_THROW_ON_ERROR);
+    $this->postJson($url, $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before)->and(Storage::disk('local')->allFiles())->toBe($files);
+});
+
+test('folder import blocks unauthorized roles and foreign school access before mutation', function (string $actor) {
+    $work = prepareWorkDispatchImport($this);
+    $user = $actor === 'foreign school'
+        ? User::factory()->create(['school_id' => $this->otherSchool->id, 'schoolyear_id' => $this->otherSchoolyear->id])->assignRole('teacher')
+        : $this->{$actor};
+    $this->actingAs($user, 'sanctum')->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", workFolderPayload())->assertForbidden();
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep'])->and(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['student', 'regularUser', 'foreign school']);
+
+test('tasks and results remain separate across previews reimports and normal work updates', function (bool $legacy) {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $file = fn (): UploadedFile => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', TeachingWorkDispatchFixture::tasksText($legacy));
+    $this->postJson($url, ['protocol' => $file(), 'purpose' => 'results'])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'purpose' => 'tasks'])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    $preview = $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks'])->assertOk()->json('preview');
+    expect($preview['purpose'])->toBe('tasks')->and($preview['can_import'])->toBeTrue();
+    $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks', 'apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'][0]['purpose'])->toBe('tasks');
+    if ($legacy) {
+        expect($status['dispatch_notifications'])->toBe([])->and($status['dispatch_attempts'])->toHaveCount(2)
+            ->and($status['dispatch_attempts'][0]['mode'])->toBe('test')
+            ->and($status['dispatch_attempts'][0]['sent_at'])->toBe('2026-10-02T15:02:40Z');
+    } else {
+        expect($status['dispatch_notifications'])->toHaveCount(1)
+            ->and($status['dispatch_notifications'][0]['purpose'])->toBe('tasks')
+            ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-01T15:02:40Z');
+    }
+    $again = $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks'])->assertOk()->json('preview');
+    expect($again['already_imported'])->toBeTrue();
+    $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks', 'apply' => true, 'hash' => $again['hash']])->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    $result = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'purpose' => 'results'])->assertOk()->json('preview');
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'purpose' => 'results', 'apply' => true, 'hash' => $result['hash']])->assertOk();
+    $combined = $work->fresh()->status;
+    expect(array_column($combined['dispatch_logs'], 'purpose'))->toBe(['tasks', 'results'])
+        ->and(collect($combined['dispatch_notifications'])->where('purpose', 'results')->count())->toBe(1);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/{$combined['dispatch_logs'][0]['sha256']}")->assertOk()->assertStreamedContent(TeachingWorkDispatchFixture::tasksText($legacy));
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['dispatch_attempts' => [], 'dispatch_notifications' => []]])->assertOk();
+    expect($work->fresh()->status['dispatch_attempts'])->toBe($combined['dispatch_attempts'])
+        ->and($work->fresh()->status['dispatch_notifications'])->toBe($combined['dispatch_notifications']);
+})->with(['historical Mailpit' => true, 'structured live tasks' => false]);
+
+test('historical task preview enforces the same participant and work assignment checks', function () {
+    $work = prepareWorkDispatchImport($this);
+    $text = str_replace('ada@example.test', 'other@example.test', TeachingWorkDispatchFixture::tasksText(true));
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $file = fn (): UploadedFile => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $text);
+    $preview = $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks'])->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeFalse();
+    $this->postJson($url, ['protocol' => $file(), 'purpose' => 'tasks', 'apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+});
+
+test('teacher only result logs can be archived without implying any student notification', function () {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $file = fn (): UploadedFile => TeachingWorkDispatchFixture::upload([TeachingWorkDispatchFixture::recipients()[2]]);
+    $preview = $this->postJson($url, ['protocol' => $file(), 'purpose' => 'results'])->assertOk()->json('preview');
+    expect($preview['rows'][0]['accepted'])->toBeFalse()->and($preview['rows'][0]['student_id'])->toBeNull();
+    $this->postJson($url, ['protocol' => $file(), 'purpose' => 'results', 'apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['dispatch_notifications'])->toBe([])->and($work->fresh()->status['dispatch_attempts'])->toBe([]);
+});
+
+test('dispatch preview imports provider time and private original once while preserving grades and failed recipients', function () {
+    $work = prepareWorkDispatchImport($this);
+    Mail::fake();
+    Notification::fake();
+    $before = $work->groups;
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $preview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertOk()->json('preview');
+    expect($preview['rows'][0]['sent_at'])->toBe('2026-10-04T00:15:39Z')
+        ->and($preview['rows'][1]['accepted'])->toBeFalse()
+        ->and($preview['rows'][2]['student_id'])->toBeNull()
+        ->and($work->fresh()->status)->toBe(['manual' => 'Keep']);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
+        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T00:15:39Z')
+        ->and($work->fresh()->groups)->toEqual($before);
+    expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe(TeachingWorkDispatchFixture::text());
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/{$status['dispatch_logs'][0]['sha256']}")
+        ->assertOk()->assertHeader('Content-Type', 'text/plain; charset=UTF-8')->assertStreamedContent(TeachingWorkDispatchFixture::text());
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/".str_repeat('f', 64))->assertNotFound();
+
+    $second = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertOk()->json('preview');
+    expect($second['already_imported'])->toBeTrue();
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'apply' => true, 'hash' => $second['hash']])->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['dispatch_logs' => [], 'dispatch_notifications' => []]])->assertOk();
+    expect($work->fresh()->status['dispatch_notifications'])->toBe($status['dispatch_notifications'])
+        ->and($work->fresh()->status['dispatch_logs'])->toBe($status['dispatch_logs']);
+    $failed = TeachingWorkDispatchFixture::recipients();
+    $failed[0]['HTTPStatus'] = '500';
+    $failedPreview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($failed)])->assertOk()->json('preview');
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($failed), 'apply' => true, 'hash' => $failedPreview['hash']])->assertOk();
+    expect($work->fresh()->status['dispatch_notifications'])->toBe($status['dispatch_notifications'])
+        ->and($work->fresh()->status['dispatch_logs'])->toHaveCount(2);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('dispatch archives unsuccessful and test sends without creating successful notification markers', function (array $recipient, array $metadata) {
+    $work = prepareWorkDispatchImport($this);
+    $recipients = TeachingWorkDispatchFixture::recipients();
+    $recipients[0] = array_replace($recipients[0], $recipient);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $preview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($recipients, $metadata)])->assertOk()->json('preview');
+
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($recipients, $metadata), 'apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    expect($work->fresh()->status['dispatch_notifications'])->toBe([])
+        ->and($work->fresh()->status['dispatch_logs'])->toHaveCount(1);
+})->with([
+    'mailpit recipient' => [['Modus' => 'Testversand (Mailpit)'], []],
+    'test metadata' => [[], ['Modus' => 'Testversand (Mailpit)']],
+    'sandbox server' => [[], ['AktuelleServerpruefung' => ['DeliveryType' => 'Sandbox']]],
+    'rejected status' => [['Status' => 'Fehlgeschlagen'], []],
+    'queued provider' => [['Providerstatus' => 'Queued'], []],
+    'http failure' => [['HTTPStatus' => 422], []],
+    'provider failure' => [['PostmarkFehlercode' => 10], []],
+    'error text' => [['Fehler' => 'Failed'], []],
+    'missing provider identifier' => [['Providerkennung' => ''], []],
+    'missing provider time' => [['Providerzeit' => ''], []],
+    'timezone missing' => [['Providerzeit' => '2026-10-04T02:15:39'], []],
+    'invalid calendar date' => [['Providerzeit' => '2026-02-30T02:15:39+01:00'], []],
+    'before assessment' => [['Providerzeit' => '2026-10-01T02:15:39+02:00'], []],
+]);
+
+test('dispatch preview blocks unknown ambiguous canceled foreign course and wrong email recipients without writing', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $recipients = TeachingWorkDispatchFixture::recipients();
+    if ($case === 'unknown') {
+        $recipients[0]['Nachname'] = 'Unknown';
+    }
+    if ($case === 'wrong email') {
+        $recipients[0]['To'] = 'other@example.test';
+    }
+    if ($case === 'wrong course') {
+        $recipients[0]['Kurs'] = 'INF 2';
+    }
+    if ($case === 'canceled') {
+        $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]);
+    }
+    if ($case === 'no work assignment') {
+        $work->update(['groups' => [$work->groups[1]]]);
+        app(TeachingCourseWorkEntrySyncService::class)->syncGroupStudentIndex($work->fresh());
+    }
+    if ($case === 'ambiguous') {
+        $duplicate = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'schoolclass' => '1A']);
+        $this->course->teachingCourseStudents()->create(['user_id' => $duplicate->id]);
+    }
+    if ($case === 'provider collision') {
+        $recipients[1] = array_replace($recipients[0], ['Vorname' => 'Bea', 'Nachname' => 'Beta', 'To' => 'bea@example.test']);
+    }
+    if ($case === 'teacher provider collision') {
+        $recipients[2]['Providerkennung'] = $recipients[0]['Providerkennung'];
+    }
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $preview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($recipients)])->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeFalse();
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload($recipients), 'apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep'])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['unknown', 'wrong email', 'wrong course', 'canceled', 'no work assignment', 'ambiguous', 'provider collision', 'teacher provider collision']);
+
+test('dispatch rejects malformed uploads and ambiguous work titles without changing the database', function () {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $this->postJson($url, [])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    $this->postJson($url, ['protocol' => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', 'Invalid protocol')])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => 'E-Mails', 'date_for_all_groups' => '2026-10-02']);
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep'])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('a test dispatch heading never creates live markers even with inconsistent live metadata', function () {
+    $work = prepareWorkDispatchImport($this);
+    $text = str_replace('LIVE-VERSAND (POSTMARK)', 'TESTVERSAND (MAILPIT)', TeachingWorkDispatchFixture::text());
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $file = fn (): UploadedFile => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $text);
+    $preview = $this->postJson($url, ['protocol' => $file()])->assertOk()->json('preview');
+
+    $this->postJson($url, ['protocol' => $file(), 'apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    expect($work->fresh()->status['dispatch_notifications'])->toBe([]);
+});
+
+test('dispatch apply rejects a stale preview and mismatched work identity without files or notification writes', function () {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-dispatch";
+    $preview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertOk()->json('preview');
+    $work->update(['description' => 'Changed']);
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(null, ['Leistungsfeststellung' => 'C:/source/2026-10-03_wrong'])])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    $work->update(['title' => 'Other assignment']);
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep'])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('dispatch rejects import and download for unauthorized users and foreign schools', function (string $actor) {
+    $work = prepareWorkDispatchImport($this);
+    $user = $actor === 'foreign school'
+        ? User::factory()->create(['school_id' => $this->otherSchool->id, 'schoolyear_id' => $this->otherSchoolyear->id])->assignRole('teacher')
+        : $this->{$actor};
+    $this->actingAs($user, 'sanctum');
+
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", ['protocol' => TeachingWorkDispatchFixture::upload()])->assertForbidden();
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/".str_repeat('a', 64))->assertForbidden();
+    expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+})->with(['student', 'regularUser', 'foreign school']);
 
 function prepareWorkEvaluationImport(object $context): TeachingCourseWork
 {

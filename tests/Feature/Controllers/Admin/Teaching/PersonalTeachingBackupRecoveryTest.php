@@ -61,6 +61,23 @@ test('admin can approve a deleted student and restore grades attendance work gro
     $id = $this->student->id;
     $date = TeachingCourseDate::query()->create(['teaching_course_id' => $this->course->id, 'date' => '2026-09-10', 'hours' => [1], 'attendance' => ['s_'.$id => true], 'status' => ['att:'.$id.':1']]);
     $work = TeachingCourseWork::query()->create(['teaching_course_id' => $this->course->id, 'title' => 'Test', 'type' => 'M', 'groups' => [['student_ids' => [$id], 'grades' => [['student_id' => $id, 'grade' => '2']], 'comments' => [['student_id' => $id, 'comment' => 'Gut']], 'points' => [['student_id' => $id, 'points' => 7]]]]]);
+    $logs = [];
+    $notices = [];
+    foreach (['tasks', 'results'] as $purpose) {
+        $path = "teaching/work_dispatches/{$this->school->id}/{$work->id}/{$purpose}.txt";
+        Storage::disk('local')->put($path, $purpose.' original');
+        $logs[] = ['file_path' => $path, 'storage_disk' => 'local', 'sha256' => hash('sha256', $purpose.' original'), 'purpose' => $purpose, 'origin' => 'dispatch_import'];
+        $notices[] = ['student_id' => $id, 'purpose' => $purpose, 'sent_at' => '2026-09-10T10:00:00Z', 'origin' => 'dispatch_import', 'log_sha256' => hash('sha256', $purpose.' original')];
+    }
+    $pdfs = [];
+    foreach ([null, $id] as $index => $studentId) {
+        $path = "teaching/work_evaluations/{$this->school->id}/{$work->id}/{$index}.pdf";
+        Storage::disk('local')->put($path, "%PDF-1.4\nOriginal {$index}");
+        $pdfs[] = ['student_id' => $studentId, 'file_path' => $path, 'storage_disk' => 'local', 'name' => "{$index}.pdf", 'origin' => 'evaluation_import'];
+    }
+    $work->update(['status' => ['evaluation_pdfs' => $pdfs,
+        'dispatch_logs' => $logs, 'dispatch_notifications' => $notices,
+        'dispatch_attempts' => [['student_id' => $id, 'purpose' => 'tasks', 'mode' => 'test', 'log_sha256' => $logs[0]['sha256'], 'origin' => 'dispatch_import']]]]);
     $entry = TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $id, 'teaching_course_work_id' => $work->id, 'date' => '2026-09-10', 'type' => 'M', 'grade' => '2']);
     $group = UserGroup::query()->create(['school_id' => $this->school->id, 'type' => 'own', 'name' => 'Kurs', 'created_by_user_id' => $this->owner->id, 'teaching_course_id' => $this->course->id, 'teaching_course_group_type' => 'students']);
     $member = UserGroupMember::query()->create(['user_group_id' => $group->id, 'school_id' => $this->school->id, 'member_provider' => 'user', 'member_ref' => 'user:'.$id, 'linked_user_id' => $id, 'added_by_user_id' => $this->owner->id, 'meta' => ['user_id' => $id]]);
@@ -82,6 +99,13 @@ test('admin can approve a deleted student and restore grades attendance work gro
         ->and($date->fresh()->status)->toContain('att:'.$this->target->id.':1')
         ->and($work->fresh()->groups[0]['student_ids'])->toBe([$this->target->id])
         ->and($work->fresh()->groups[0]['grades'][0]['student_id'])->toBe($this->target->id)
+        ->and($work->fresh()->status['evaluation_pdfs'][0]['student_id'])->toBeNull()
+        ->and($work->fresh()->status['evaluation_pdfs'][1]['student_id'])->toBe($this->target->id)
+        ->and(array_column($work->fresh()->status['dispatch_notifications'], 'student_id'))->toBe([$this->target->id, $this->target->id])
+        ->and(array_column($work->fresh()->status['dispatch_notifications'], 'purpose'))->toBe(['tasks', 'results'])
+        ->and($work->fresh()->status['dispatch_attempts'][0]['student_id'])->toBe($this->target->id)
+        ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][0]['file_path']))->toBe('tasks original')
+        ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][1]['file_path']))->toBe('results original')
         ->and($member->fresh()->member_ref)->toBe('user:'.$this->target->id)
         ->and($member->fresh()->meta['user_id'])->toBe($this->target->id)
         ->and($backup->fresh()->recovery_requested_at)->toBeNull()

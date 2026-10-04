@@ -1,5 +1,12 @@
 # UPDATES
 
+## 3.50.1
+
+### Unterricht
+
+- E-Mail-Versand importieren
+- UI Anpassungen
+
 ## 3.50.0
 
 ### Unterricht

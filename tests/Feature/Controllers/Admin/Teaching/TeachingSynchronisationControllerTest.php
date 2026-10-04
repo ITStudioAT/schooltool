@@ -8,18 +8,38 @@ use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\User;
+use App\Services\RestaurantSynchronisationService;
 use App\Services\TeachingLiveSource;
 use App\Services\TeachingSynchronisationGraph;
+use App\Services\TeachingSynchronisationService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(RefreshDatabase::class);
 
+class TeachingSynchronisationWindowsTargetTestService extends RestaurantSynchronisationService
+{
+    protected static function operatingSystemFamily(): string
+    {
+        return 'Windows';
+    }
+}
+
+class TeachingSynchronisationLinuxTargetTestService extends RestaurantSynchronisationService
+{
+    protected static function operatingSystemFamily(): string
+    {
+        return 'Linux';
+    }
+}
+
 beforeEach(function () {
+    app()->bind(RestaurantSynchronisationService::class, TeachingSynchronisationWindowsTargetTestService::class);
     $this->app['env'] = 'local';
     config(['schooltool.preview.instance' => false]);
     Storage::fake('local');
@@ -48,6 +68,21 @@ function teachingSyncApplyPayload(string $token): array
 {
     return ['token' => $token, 'replace_confirmed' => true, 'contacts_confirmed' => true];
 }
+
+test('teaching sync rejects Linux at HTTP and service boundaries', function (): void {
+    app()->bind(RestaurantSynchronisationService::class, TeachingSynchronisationLinuxTargetTestService::class);
+    $service = app(TeachingSynchronisationService::class);
+
+    expect($service::available())->toBeFalse();
+    $this->actingAs($this->actor, 'sanctum')->getJson('/api/admin/teaching/synchronisation/status')
+        ->assertSuccessful()->assertJsonPath('available', false);
+    $this->postJson('/api/admin/teaching/synchronisation/preview')->assertForbidden();
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload(str_repeat('a', 64)))
+        ->assertForbidden();
+    expect(fn () => $service->preview($this->actor))->toThrow(HttpException::class)
+        ->and(fn () => $service->apply($this->actor, str_repeat('a', 64)))->toThrow(HttpException::class)
+        ->and($this->course->fresh()->title)->toBe('Local');
+});
 
 test('teaching sync requires authentication superadmin local target and explicit replacement confirmation', function () {
     $this->postJson('/api/admin/teaching/synchronisation/preview')->assertUnauthorized();

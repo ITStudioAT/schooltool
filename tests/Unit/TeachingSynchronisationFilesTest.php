@@ -9,6 +9,14 @@ test('teaching file paths reject traversal absolute paths and Windows separators
     expect(fn () => TeachingSynchronisationFiles::assertPath($path))->toThrow(RuntimeException::class);
 })->with(['../secret', '/etc/passwd', 'teaching/../secret', 'C:/secret', 'teaching\\secret', 'teaching//secret']);
 
+test('plain import statuses survive file capture and rewriting', function (): void {
+    $service = new TeachingSynchronisationFiles;
+    $tables = ['import116_runs' => [['id' => 1, 'status' => 'finished']]];
+
+    expect($service->capture($tables, ['default' => 'local', 'disks' => []]))->toBe([])
+        ->and($service->rewrite($tables, [], 1)['tables'])->toBe($tables);
+});
+
 test('teaching S3 reads use conditional requests and rewrite documents into private local storage', function () {
     $client = Mockery::mock(S3ClientInterface::class);
     $head = new Result(['ETag' => '"v1"', 'ContentLength' => 3, 'VersionId' => 'v1']);
@@ -16,7 +24,12 @@ test('teaching S3 reads use conditional requests and rewrite documents into priv
     $client->shouldReceive('getObject')->once()->with(['Bucket' => 'fixture', 'Key' => 'teaching/file.pdf', 'IfMatch' => '"v1"'])
         ->andReturn(new Result(['Body' => Utils::streamFor('PDF')]));
     $service = new TeachingSynchronisationFiles($client);
-    $tables = ['teaching_curriculum_documents' => [['id' => 1, 'file_path' => 'teaching/file.pdf', 'storage_disk' => 's3']]];
+    $tables = [
+        'teaching_curriculum_documents' => [['id' => 1, 'file_path' => 'teaching/file.pdf', 'storage_disk' => 's3']],
+        'teaching_course_works' => [['id' => 2, 'status' => json_encode(['evaluation_pdfs' => [
+            ['file_path' => 'teaching/file.pdf', 'storage_disk' => 's3'],
+        ]], JSON_THROW_ON_ERROR)]],
+    ];
     $config = ['default' => 'local', 'disks' => ['s3' => ['driver' => 's3', 'region' => 'eu-central-1',
         'bucket' => 'fixture', 'key' => 'fixture', 'secret' => 'fixture']]];
     $files = $service->capture($tables, $config, true);
@@ -24,6 +37,9 @@ test('teaching S3 reads use conditional requests and rewrite documents into priv
     expect($rewritten['tables']['teaching_curriculum_documents'][0]['storage_disk'])->toBe('local')
         ->and($rewritten['files'][0]['path'])->toStartWith('teaching/synchronisation/1/')
         ->and(base64_decode($rewritten['files'][0]['content']))->toBe('PDF');
+    $status = json_decode($rewritten['tables']['teaching_course_works'][0]['status'], true, flags: JSON_THROW_ON_ERROR);
+    expect($status['evaluation_pdfs'][0]['storage_disk'])->toBe('local')
+        ->and($status['evaluation_pdfs'][0]['file_path'])->toBe($rewritten['files'][0]['path']);
     expect(fn () => $service->capture($tables, $config))->toThrow(RuntimeException::class, 'S3');
 });
 

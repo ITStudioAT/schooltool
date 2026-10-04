@@ -170,6 +170,17 @@ class PersonalTeachingBackupRecoveryService
                     unset($group);
                     $row['groups'] = json_encode($groups, JSON_THROW_ON_ERROR);
                 }
+                if ($users !== [] && $table === 'teaching_course_works' && isset($row['status'])) {
+                    $status = $this->decode($row['status']);
+                    foreach (['evaluation_pdfs', 'dispatch_notifications', 'dispatch_attempts'] as $key) {
+                        foreach ($status[$key] ?? [] as $index => $record) {
+                            if (isset($users[$record['student_id'] ?? null])) {
+                                $status[$key][$index]['student_id'] = (int) $users[$record['student_id']];
+                            }
+                        }
+                    }
+                    $row['status'] = json_encode($status, JSON_THROW_ON_ERROR);
+                }
             }
             unset($row);
         }

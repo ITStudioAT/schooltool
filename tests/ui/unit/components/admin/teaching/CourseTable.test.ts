@@ -17,6 +17,42 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 
 describe('CourseTable evaluation PDF links', () => {
+    it('shows independent task and result symbols on each work including gray task tests and refreshes after import', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-02' }
+        useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }], course_dates: [date] } as never
+        const logs = ['tasks', 'results'].map((purpose, index) => ({ purpose, origin: 'dispatch_import', sha256: String(index).repeat(64) }))
+        const notice = (purpose: string, studentId: number | null = 12) => ({ purpose, student_id: studentId, origin: 'dispatch_import', sent_at: '2026-10-04T00:15:39Z', log_sha256: logs.find(log => log.purpose === purpose)!.sha256 })
+        const works = [[], ['tasks'], ['results'], ['tasks', 'results'], [], []].map((purposes, index) => ({
+            id: 65 + index, teaching_course_id: 18, type: 'EM', title: `E-Mails ${index + 1}`,
+            date_for_all_groups: date.date, finish_until_date: date.date, is_group_work: false, groups: [{ student_ids: [12] }],
+            status: { dispatch_logs: logs, dispatch_notifications: purposes.map(purpose => notice(purpose)), dispatch_attempts: [] as any[] },
+        }))
+        works[4].status.dispatch_attempts = [{ ...notice('tasks'), mode: 'test' }]
+        works[5].status.dispatch_notifications = [notice('results', null)]
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: { WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true } } })
+        try {
+            await flushPromises()
+            useCourseWorkStore(pinia).courseWorks = works as never
+            await flushPromises()
+            for (const [index, purposes] of [[], ['Aufgabenversand'], ['Ergebnisbenachrichtigung'], ['Aufgabenversand', 'Ergebnisbenachrichtigung'], ['Aufgabenversand'], []].entries()) {
+                const card = wrapper.get(`[data-testid="work-dispatch-${65 + index}"]`)
+                const icons = card.findAll('[aria-label]')
+                expect(icons.map(icon => icon.attributes('aria-label').startsWith('Aufgabenversand') ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung')).toEqual(purposes)
+                expect(icons.every(icon => icon.attributes('aria-label').includes('04.10.2026 um 02:15'))).toBe(true)
+                expect(icons.every(icon => icon.attributes('color') === (index === 4 ? 'grey-darken-1' : 'success'))).toBe(true)
+                if (index === 4) expect(icons[0].attributes('aria-label')).toContain('Aufgabenversand · Test')
+                expect(card.text()).toBe('')
+            }
+            expect(wrapper.findAll('.course-table-work-summary')).toHaveLength(6)
+            await (wrapper.vm as any).evaluationImported({ ...works[0], status: { ...works[0].status, dispatch_notifications: [notice('tasks'), notice('results')] } })
+            await flushPromises()
+            expect(wrapper.get('[data-testid="work-dispatch-65"]').findAll('[aria-label]')).toHaveLength(2)
+            expect(wrapper.get('[data-testid="work-dispatch-66"]').findAll('[aria-label]')).toHaveLength(1)
+            expect(wrapper.get('[data-testid="work-dispatch-70"]').findAll('[aria-label]')).toHaveLength(0)
+        } finally { wrapper.unmount() }
+    })
+
     it('shows the overall report in the work dialog and only the selected student report in the entry dialog', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const courseDate = { id: 1, date: '2026-10-02' }
@@ -27,18 +63,26 @@ describe('CourseTable evaluation PDF links', () => {
         const overall = { student_id: null, name: 'Gesamtübersicht.pdf', sha256: 'a'.repeat(64), origin: 'evaluation_import' }
         const personal = { student_id: 12, name: 'Beurteilung_Alpha_Ada.pdf', sha256: 'b'.repeat(64), origin: 'evaluation_import' }
         const foreign = { ...personal, student_id: 13, sha256: 'c'.repeat(64) }
+        const dispatchLog = { name: 'Versandprotokoll.txt', sha256: 'e'.repeat(64), origin: 'dispatch_import' }
+        const taskLog = { ...dispatchLog, sha256: 'f'.repeat(64), purpose: 'tasks' }
+        const openImport = vi.fn()
         const work = {
             id: 65, teaching_course_id: '18', title: 'Übung: E-Mails', type: 'EM',
             date_for_all_groups: courseDate.date, finish_until_date: courseDate.date,
             is_group_work: false, groups: [{ student_ids: [12], points: 4.5 }],
-            status: { evaluation_pdfs: [overall, personal, foreign] },
+            status: {
+                evaluation_pdfs: [overall, personal, foreign], dispatch_logs: [dispatchLog, taskLog],
+                dispatch_notifications: [{ student_id: 12, origin: 'dispatch_import', sent_at: '2026-10-04T00:15:39Z', log_sha256: dispatchLog.sha256 }],
+                dispatch_attempts: [{ student_id: 12, origin: 'dispatch_import', sent_at: '2026-10-02T15:02:40Z', log_sha256: taskLog.sha256, purpose: 'tasks', mode: 'test' }],
+            },
         }
         const wrapper = mount(CourseTable, {
             props: { view: 'entries' },
             global: {
                 plugins: [pinia],
                 stubs: {
-                    WorkEvaluationImport: true, 'v-tab': true, 'v-tabs': true,
+                    WorkEvaluationImport: { template: '<div />', methods: { openImport } },
+                    'v-tab': true, 'v-tabs': true,
                     'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true,
                     'v-divider': true, 'v-checkbox': true,
                     CourseStudentNotes: true, CourseStudentIndicators: true,
@@ -59,10 +103,26 @@ describe('CourseTable evaluation PDF links', () => {
             vm.openWorkDialog(courseDate)
             await flushPromises()
             expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
+            const card = wrapper.get('.course-table-date-work-item')
+            expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
+            expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
+            const imports = card.findAll('v-btn').filter(button => button.text() === 'Importieren')
+            expect(imports).toHaveLength(1)
+            await imports[0].trigger('click')
+            expect(openImport).toHaveBeenLastCalledWith(work)
+            expect(vm.workDialogFormOpen).toBe(false)
+            expect(card.findAll('[href]').some(link => link.attributes('href').includes('/dispatch/'))).toBe(false)
+            expect(card.text()).not.toContain('Download Aufgabenversand')
+            expect(card.text()).not.toContain('Download Ergebnisbenachrichtigung')
+            expect(card.text()).toContain('Ergebnisbenachrichtigung zuletzt versandt am 04.10.2026 um 02:15 Uhr.')
+            expect(vm.cellEntryHoverItems(student, courseDate)[0].notification).toBe('Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr.\nÜber die Korrektur per E-Mail verständigt am 04.10.2026 um 02:15 Uhr.')
             vm.startEditingDateWork(work)
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
+            expect(form.findAll('v-btn').filter(button => button.text() === 'Importieren')).toHaveLength(1)
             const overallLink = form.findAll('[href]').find(link => link.text() === 'Gesamtauswertung (PDF)')!
+            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Aufgabenversand')
+            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Ergebnisbenachrichtigung')
             expect(overallLink.attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${overall.sha256}?inline=1`)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 
@@ -70,6 +130,7 @@ describe('CourseTable evaluation PDF links', () => {
             vm.openEntryDialog(student, courseDate)
             await flushPromises()
             const entry = wrapper.get('[data-testid="course-table-cell-entry-card-assessment-77"]')
+            expect(entry.text()).toContain('Ergebnisbenachrichtigung versandt am 04.10.2026 um 02:15 Uhr.')
             expect(entry.findAll('[href]')).toHaveLength(1)
             expect(entry.get('[href]').text()).toBe('Auswertung (PDF)')
             expect(entry.get('[href]').attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${personal.sha256}?inline=1`)
@@ -86,6 +147,10 @@ describe('CourseTable evaluation PDF links', () => {
             workStore.courseWorks = [{ ...work, status: { evaluation_pdfs: [overall, foreign] } }] as never
             await flushPromises()
             expect(entry.find('[href]').exists()).toBe(false)
+            vm.closeEntryDialog()
+            vm.openWorkDialog(courseDate)
+            await flushPromises()
+            expect(wrapper.get('.course-table-date-work-item').find('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(false)
         } finally {
             wrapper.unmount()
         }
@@ -93,31 +158,43 @@ describe('CourseTable evaluation PDF links', () => {
 })
 
 describe('CourseTable evaluation import', () => {
+    it('keeps distinct works of the same type separate so their individual dispatch state cannot be confused', () => {
+        const methods = (CourseTable as any).methods
+        const entries = [
+            { uid: 'assessment-1', type: 'EM', source: 'course_work', teaching_course_work_id: 65, grade: '4.5' },
+            { uid: 'assessment-2', type: 'EM', source: 'course_work', teaching_course_work_id: 66, grade: '3' },
+        ]
+        const context = { ...methods, performanceEntriesForCell: () => entries, courseWorkStudentComment: () => '' }
+        const chips = methods.compactPerformanceEntriesForCell.call(context, { id: 12 }, { date: '2026-10-02' })
+        expect(chips.map(entry => entry.teaching_course_work_id)).toEqual([65, 66])
+        expect(chips.map(entry => entry.effective_grade)).toEqual(['4.5', '3'])
+    })
+
     it('opens an import when the API work and selected course use different ID representations', () => {
         const savedWork = { id: 12, teaching_course_id: '2' }
-        const openEvaluationImport = vi.fn()
+        const openImport = vi.fn()
         const ctx = {
             courseWorks: [savedWork], selected_course: { id: 2 },
-            $refs: { evaluationImport: { openEvaluationImport } },
+            $refs: { evaluationImport: { openImport } },
         }
-        ;(CourseTable as any).methods.openEvaluationImport.call(ctx, { id: '12' })
-        expect(openEvaluationImport).toHaveBeenCalledWith(savedWork)
+        ;(CourseTable as any).methods.openImport.call(ctx, { id: '12' })
+        expect(openImport).toHaveBeenCalledWith(savedWork)
     })
 
     it('imports the saved selected work and refreshes table values and the open editor', async () => {
         const savedWork = { id: 12, teaching_course_id: 2, title: 'Saved' }
-        const openEvaluationImport = vi.fn()
+        const openImport = vi.fn()
         const ctx: any = {
             courseWorks: [savedWork], selected_course: { id: 2 },
-            $refs: { evaluationImport: { openEvaluationImport } },
+            $refs: { evaluationImport: { openImport } },
             workDialogForm: { id: 12 }, applySavedCourseWork: vi.fn(),
             loadCourseTableData: vi.fn(), resetCourseWorkEntryDrafts: vi.fn(), startEditingDateWork: vi.fn(),
         }
         const methods = (CourseTable as any).methods
-        methods.openEvaluationImport.call(ctx, { ...savedWork, title: 'Unsaved' })
-        expect(openEvaluationImport).toHaveBeenCalledWith(savedWork)
-        methods.openEvaluationImport.call(ctx, { id: 99 })
-        expect(openEvaluationImport).toHaveBeenCalledTimes(1)
+        methods.openImport.call(ctx, { ...savedWork, title: 'Unsaved' })
+        expect(openImport).toHaveBeenCalledWith(savedWork)
+        methods.openImport.call(ctx, { id: 99 })
+        expect(openImport).toHaveBeenCalledTimes(1)
         const importedWork = { ...savedWork, groups: [{ points: 4.5 }] }
         await methods.evaluationImported.call(ctx, importedWork)
         expect(ctx.applySavedCourseWork).toHaveBeenCalledWith({ data: importedWork })
@@ -3336,6 +3413,8 @@ describe('CourseTable', () => {
         expect(methods.cellEntryHoverItems.call(ctx, { id: 10 }, { id: 7 })).toEqual([
             {
                 comment: 'Super gemacht',
+                isWork: true,
+                notification: '',
                 description: 'Bitte sehr genau arbeiten!',
                 grade: '+',
                 kind: 'Bewertung',
@@ -3345,6 +3424,8 @@ describe('CourseTable', () => {
             },
             {
                 comment: 'Ruhig mitgearbeitet',
+                isWork: false,
+                notification: '',
                 description: '',
                 grade: '',
                 kind: 'Verhalten',
@@ -4393,6 +4474,14 @@ describe('CourseTable', () => {
         expect(methods.targetInitialScrollCourseDate.call(ctx, new Date(2026, 2, 20))).toEqual({ id: 3, date: '2026-03-16' })
     })
 
+    it('centers the initial date in the visible area beside the fixed student column on a narrow table', () => {
+        const targetColumn = { dataset: { courseDateKey: 'course-date-1' }, offsetLeft: 120, offsetWidth: 620 }
+        const scrollContainer = { clientWidth: 328, scrollLeft: 0, querySelectorAll: () => [targetColumn], querySelector: () => ({ offsetWidth: 120 }) }
+        const context = { $nextTick: (callback: () => void) => callback(), $refs: { courseTableScroll: scrollContainer }, targetInitialScrollCourseDate: () => ({ id: 1 }), courseDateScrollKey: () => 'course-date-1' }
+        ;(CourseTable as any).methods.scrollToInitialCourseDate.call(context)
+        expect(scrollContainer.scrollLeft).toBe(206)
+    })
+
     it('opens the course overview pdf in a new tab', () => {
         const methods = (CourseTable as any).methods
         const open = vi.spyOn(window, 'open').mockImplementation(() => null)
@@ -4743,7 +4832,7 @@ describe('CourseTable', () => {
         expect(source).not.toContain('{{ entry.description }}')
         expect(source).toContain('content-class="course-table-entry-tooltip"')
         expect(source).toContain('v-for="detail in cellEntryHoverItems(student, courseDate)"')
-        expect(source).toContain('Note: {{ detail.grade }}')
+        expect(source).toContain("{{ detail.isWork ? 'Bewertung' : 'Note' }}: {{ detail.grade }}")
         expect(source).toContain('<span>Kommentar:</span> {{ detail.comment }}')
         expect(source.indexOf('data-testid="course-table-entry-cell-supplementary-row"'))
             .toBeLessThan(source.indexOf('data-testid="course-table-entry-cell-performance-row"'))
