@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { fork, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -12,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const launcher = path.join(root, 'scripts/local-dev.mjs');
 const helpers = path.join(root, 'scripts/git_helpers.ps1');
 const temporaryRoot = os.tmpdir();
-const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\n';
+const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\nSESSION_COOKIE=owned-shared-session\nREDIS_PREFIX=owned_shared_\n';
 
 function git(project, ...argumentsList) {
     const result = spawnSync('git', argumentsList, { cwd: project, encoding: 'utf8', windowsHide: true });
@@ -42,8 +43,8 @@ test('derives only missing feature configuration and preserves existing private 
         const contents = fs.readFileSync(path.join(feature, '.env'), 'utf8');
         assert.match(contents, /DB_PASSWORD=fixture-secret-do-not-log/);
         assert.match(contents, new RegExp(`APP_URL=http://localhost:${ports.server}`));
-        assert.match(contents, /SESSION_COOKIE=schooltool_[a-f0-9]+_session/);
-        assert.match(contents, /REDIS_PREFIX=schooltool_[a-f0-9]+_/);
+        assert.match(contents, /SESSION_COOKIE=owned-shared-session/);
+        assert.match(contents, /REDIS_PREFIX=owned_shared_/);
         fs.appendFileSync(path.join(feature, '.env'), '\nPRIVATE_SETTING=preserve\n');
         const existing = fs.readFileSync(path.join(feature, '.env'), 'utf8');
         prepareWorkspaceEnvironment(feature, fixture.project, ports);
@@ -60,11 +61,37 @@ test('rejects nonlocal, preview and incomplete configurations', () => {
     }
 });
 
-test('uses stable distinct workspace ports and never accepts a foreign listener', () => {
+test('migrates only the previously generated worktree session settings to the shared browser origin', () => {
+    const fixture = ownedFixture();
+    const feature = path.join(fixture.directory, 'feature');
+    fs.mkdirSync(feature);
+    fs.writeFileSync(path.join(fixture.project, '.env'), localEnvironment);
+    const suffix = createHash('sha256').update(path.resolve(feature).replaceAll('\\', '/').toLowerCase())
+        .digest('hex').slice(0, 12);
+    const target = path.join(feature, '.env');
+    fs.writeFileSync(target, localEnvironment.replace('SESSION_COOKIE=owned-shared-session', `SESSION_COOKIE=schooltool_${suffix}_session`)
+        .replace('REDIS_PREFIX=owned_shared_', `REDIS_PREFIX=schooltool_${suffix}_`)
+        + '\nAPP_URL=http://localhost:8343\nPRIVATE_SETTING=preserved\n');
+    try {
+        const values = prepareWorkspaceEnvironment(feature, fixture.project, workspacePorts(feature, fixture.project));
+        assert.equal(values.APP_URL, 'http://localhost:8000');
+        assert.equal(values.SESSION_COOKIE, 'owned-shared-session');
+        assert.equal(values.REDIS_PREFIX, 'owned_shared_');
+        assert.equal(values.PRIVATE_SETTING, 'preserved');
+        assert.equal(values.DB_PASSWORD, 'fixture-secret-do-not-log');
+        assert.equal(fs.readFileSync(path.join(fixture.project, '.env'), 'utf8'), localEnvironment);
+        const contents = fs.readFileSync(target, 'utf8');
+        prepareWorkspaceEnvironment(feature, fixture.project, workspacePorts(feature, fixture.project));
+        assert.equal(fs.readFileSync(target, 'utf8'), contents);
+    } finally { fixture.cleanup(); }
+});
+
+test('keeps the same browser address between workspaces and never accepts a foreign listener', () => {
     const main = 'C:/owned/main';
     const feature = 'C:/owned/main-features/helpers';
     const ports = workspacePorts(feature, main);
     assert.deepEqual(workspacePorts(main, main), { server: 8000, vite: 5173 });
+    assert.deepEqual(ports, workspacePorts(main, main));
     assert.deepEqual(workspacePorts(feature.toUpperCase(), main), ports);
     const foreign = { pid: 11, name: 'php.exe', command: 'php -S 127.0.0.1:8000 C:/foreign/server.php' };
     assert.equal(ownsDevListener(foreign, main, 'server', 8000), false);
@@ -148,7 +175,7 @@ test('a persistent launcher follows gitmain and gitwork without jobs, duplicate 
     fs.writeFileSync(path.join(fixture.project, '.env'), localEnvironment);
     workflow(fixture.project, 'gitstart helpers');
     const feature = `${fixture.project}-features/helpers`;
-    const controller = fork(launcher, ['--project', feature, '--web-only', '--no-open', '--check-seconds=75', '--check-port-offset=20000'], { cwd: feature, silent: true, windowsHide: true });
+    const controller = fork(launcher, ['--project', fixture.project, '--web-only', '--no-open', '--check-seconds=75', '--check-port-offset=20000'], { cwd: fixture.project, silent: true, windowsHide: true });
     let output = '';
     controller.stdout.on('data', data => { output += data; });
     controller.stderr.on('data', data => { output += data; });
@@ -157,10 +184,11 @@ test('a persistent launcher follows gitmain and gitwork without jobs, duplicate 
         await waitForProject(feature, fixture.project, () => output);
         const receiptPath = path.join(fixture.project, '.git/schooltool-dev/controller.json');
         const initialOwner = JSON.parse(fs.readFileSync(receiptPath, 'utf8')).owner;
-        const repeated = spawnSync(process.execPath, [launcher, '--project', feature, '--web-only', '--no-open', '--check-port-offset=20000'], { cwd: feature, encoding: 'utf8', timeout: 15000, windowsHide: true });
+        const repeated = spawnSync(process.execPath, [launcher, '--project', fixture.project, '--web-only', '--no-open', '--check-port-offset=20000'], { cwd: fixture.project, encoding: 'utf8', timeout: 15000, windowsHide: true });
         assert.equal(repeated.status, 0, repeated.stderr);
         assert.match(repeated.stdout, /no second session/);
         assert.deepEqual(JSON.parse(fs.readFileSync(receiptPath, 'utf8')).owner, initialOwner);
+        assert.equal(path.resolve(JSON.parse(fs.readFileSync(path.join(fixture.project, '.git/schooltool-dev/selection.json'), 'utf8')).project), path.resolve(feature));
         workflow(feature, 'gitmain');
         await waitForProject(fixture.project, fixture.project, () => output);
         workflow(fixture.project, 'gitwork helpers');

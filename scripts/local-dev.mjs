@@ -12,11 +12,7 @@ function canonical(filename) {
 }
 
 export function workspacePorts(project, main, portOffset = 0) {
-    if (canonical(project) === canonical(main)) {
-        return { server: 8000 + portOffset, vite: 5173 + portOffset };
-    }
-    const offset = createHash('sha256').update(canonical(project)).digest().readUInt16BE() % 2000;
-    return { server: 8100 + offset + portOffset, vite: 12100 + offset + portOffset };
+    return { server: 8000 + portOffset, vite: 5173 + portOffset };
 }
 
 function assertOrdinaryPath(filename) {
@@ -50,11 +46,8 @@ export function prepareWorkspaceEnvironment(project, main, ports) {
         const contents = fs.readFileSync(source, 'utf8');
         const values = parseEnv(contents);
         assertLocalEnvironment(values);
-        const suffix = createHash('sha256').update(canonical(project)).digest('hex').slice(0, 12);
         const overrides = {
             APP_URL: `http://localhost:${ports.server}`,
-            SESSION_COOKIE: `schooltool_${suffix}_session`,
-            REDIS_PREFIX: `schooltool_${suffix}_`,
         };
         let derived = contents;
         for (const [key, value] of Object.entries(overrides)) {
@@ -64,7 +57,34 @@ export function prepareWorkspaceEnvironment(project, main, ports) {
         fs.writeFileSync(target, derived, { flag: 'wx', mode: 0o600 });
         console.log('Local worktree configuration prepared; no database was copied or changed.');
     }
-    const values = parseEnv(fs.readFileSync(target, 'utf8'));
+    let contents = fs.readFileSync(target, 'utf8');
+    let values = parseEnv(contents);
+    const legacySuffix = createHash('sha256').update(canonical(project)).digest('hex').slice(0, 12);
+    if (canonical(project) !== canonical(main) && values.SESSION_COOKIE === `schooltool_${legacySuffix}_session`
+        && values.REDIS_PREFIX === `schooltool_${legacySuffix}_`) {
+        const source = path.join(main, '.env');
+        assertOrdinaryPath(source);
+        const sourceContents = fs.readFileSync(source, 'utf8');
+        const sourceValues = parseEnv(sourceContents);
+        assertLocalEnvironment(sourceValues);
+        if (values.APP_KEY !== sourceValues.APP_KEY || values.DB_DATABASE !== sourceValues.DB_DATABASE) {
+            throw new Error('The previously derived configuration has changed its session or database identity; it was preserved.');
+        }
+        for (const key of ['SESSION_COOKIE', 'REDIS_PREFIX', 'APP_URL']) {
+            const pattern = new RegExp(`^\\s*${key}\\s*=.*(?:\\r?\\n|$)`, 'gm');
+            contents = contents.replace(pattern, '');
+            if (key !== 'APP_URL') {
+                const original = sourceContents.match(new RegExp(`^\\s*${key}\\s*=.*$`, 'm'));
+                if (original) {
+                    contents += `\n${original[0].trim()}\n`;
+                }
+            }
+        }
+        contents += `\nAPP_URL=http://localhost:${ports.server}\n`;
+        fs.writeFileSync(target, contents, { mode: 0o600 });
+        values = parseEnv(contents);
+        console.log('Previously derived worktree configuration now uses the shared local address and session.');
+    }
     assertLocalEnvironment(values);
     return values;
 }
@@ -338,9 +358,14 @@ export async function watchLocalDev(project, options) {
         throw new Error('Run composer dev in the local checkout or its feature worktree.');
     }
     const common = git.stdout.trim();
+    const selectionPath = path.join(common, 'schooltool-dev/selection.json');
+    if (fs.existsSync(selectionPath)) {
+        project = selectedProject(common, project);
+    } else {
+        publishDevSelection(common, project);
+    }
     const ports = workspacePorts(project, path.dirname(common), options.portOffset);
     const receiptPath = path.join(common, 'schooltool-dev/controller.json');
-    publishDevSelection(common, project);
     if (fs.existsSync(receiptPath)) {
         const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
         const actual = processInventory(ports).processes.find(candidate => candidate.pid === receipt.owner?.pid);
