@@ -33,6 +33,7 @@ export default defineConfig({
                 'resources/js/apps/homepage.js',
                 'resources/js/apps/admin.js',
                 'resources/js/apps/application.js',
+                'resources/js/apps/matura.js',
 
             ],
             refresh: true,

@@ -41,12 +41,13 @@
                     :color="activeSelection === selection ? 'primary' : undefined"
                     :aria-pressed="activeSelection === selection"
                     @click="selectSelection(selection)">
-                    {{ selection === 1 ? 'Überblick' : 'Auswahl 2' }}
+                    {{ selection === 1 ? (activePanel === 'matura' ? '00-Manager' : 'Überblick') : 'Auswahl 2' }}
                 </v-btn>
             </div>
         </v-sheet>
 
         <v-sheet class="helpers-content">
+            <MaturaManager v-if="activePanel === 'matura' && activeSelection === 1" />
             <template v-if="activePanel === 'klassensprecherwahl' && activeSelection === 1">
                 <h2 class="text-h6 mb-3">Klassen · {{ selectedSchoolyearLabel }}</h2>
                 <p v-if="!overviewSchoolyearId" class="mb-0">Bitte zuerst ein Schuljahr auswählen.</p>
@@ -133,9 +134,10 @@ import { mapState } from 'pinia'
 import { classes as helperClasses } from '@/actions/App/Http/Controllers/Admin/SchoolyearController'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
+import MaturaManager from './matura/MaturaManager.vue'
 
 export default {
-    components: { AdminPageHeader },
+    components: { AdminPageHeader, MaturaManager },
 
     data() {
         return {

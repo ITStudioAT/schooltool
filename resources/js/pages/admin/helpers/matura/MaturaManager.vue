@@ -1,0 +1,129 @@
+<template>
+    <div class="zero-manager">
+        <header class="zero-hero">
+            <div><div class="zero-eyebrow">MATURA · GEMEINSAM KOORDINIERT</div><h1>00-Manager<span class="zero-hero-dot">.</span></h1><p>Ruhiger Ablauf. Klare Wege. Alles im Blick.</p></div>
+            <div class="zero-live" :class="{ 'zero-live--offline': stale }"><span></span>{{ state ? (stale ? 'Verbindung unterbrochen' : 'Gemeinsamer Stand') : 'Bereit für die Prüfung' }}<small v-if="state">Aktualisiert {{ time(lastUpdated) }}</small></div>
+        </header>
+        <div v-if="error" class="zero-error" role="alert">{{ error }} <button class="zero-link" @click="refresh">Erneut laden</button></div>
+        <div v-if="!ready" class="zero-empty"><h2>Der 00-Manager ist vorbereitet.</h2><p>Die einmalige Freischaltung durch die Administration steht noch aus.</p></div>
+        <template v-else>
+            <div class="zero-toolbar">
+                <label class="zero-grow">Matura auswählen<select v-model="selectedId"><option :value="null">Alle Maturen</option><option v-for="session in sessions" :key="session.id" :value="session.id">{{ session.name }} · {{ date(session.exam_date) }} · {{ lifecycleLabels[session.status] }}</option></select></label>
+                <button class="zero-button" :disabled="!schoolyearId || busy" @click="newSession">+ Neue Matura</button>
+                <button v-if="state" class="zero-button zero-button--secondary" @click="selectedId = null">Übersicht</button>
+            </div>
+            <p v-if="loading && !state" class="zero-loading" role="status">Koordination wird geladen …</p>
+            <MaturaSetup v-if="setupOpen" :roster="roster.students" :schoolyear-id="setupYear" :existing="editing ? state : null" :busy="busy" @save="saveSetup" @cancel="setupOpen = false" />
+            <template v-else-if="state">
+                <div class="zero-section-title"><div><h2>{{ state.session.name }}</h2><p class="zero-help">{{ date(state.session.exam_date) }} · {{ lifecycleLabels[state.session.status] }}</p></div><span class="zero-badge">{{ state.actor.manager ? 'Leitung' : state.actor.name }}</span></div>
+                <nav class="zero-tabs" aria-label="00-Manager Ansichten"><button :class="{ active: tab === 'live' }" @click="tab = 'live'">Koordination</button><button v-if="state.actor.manager" :class="{ active: tab === 'access' }" @click="openAccess">Aufsichten & Einrichtung</button><button v-if="state.actor.manager" :class="{ active: tab === 'report' }" @click="tab = 'report'">Protokoll & PDF</button></nav>
+                <MaturaBoard v-if="tab === 'live'" :key="state.session.id" :state="state" :disabled="busy || stale" @action="runAction" />
+                <MaturaReport v-if="tab === 'report'" :key="state.session.id" :state="state" :busy="busy" @action="runAction" />
+                <section v-if="tab === 'access'" class="zero-panel">
+                    <div class="zero-section-title"><div><span class="zero-eyebrow">PRÜFUNGSLEITUNG</span><h2>Einrichtung & Betrieb</h2></div><button v-if="state.session.status === 'draft' && !state.accesses.length" class="zero-link" @click="editSetup">Räume und Schüler bearbeiten</button></div>
+                    <p class="zero-help mb-4">Nach Vergabe der Zugänge bleiben die Räume fest zugeordnet. Zugänge sind persönlich, auf eine Station begrenzt und jederzeit widerrufbar.</p>
+                    <div class="zero-actions">
+                        <label>Warteplätze<input v-model.number="waitingPlaces" type="number" min="0" max="10"></label>
+                        <button v-if="state.session.status !== 'closed'" class="zero-button" :disabled="busy" @click="changeLifecycle('active')">{{ state.session.status === 'draft' ? 'Matura starten' : 'Kapazität speichern' }}</button>
+                        <button v-if="state.session.status === 'active'" class="zero-button zero-button--secondary" :disabled="busy || state.visits.length > 0" @click="closeDialog = true">Matura abschließen</button>
+                    </div>
+                    <p v-if="state.visits.length" class="zero-help mt-2">Abschluss möglich, sobald alle offenen Gänge beendet sind.</p>
+                    <template v-if="state.session.status !== 'closed'">
+                        <hr class="zero-divider"><h2>Aufsicht zuordnen</h2>
+                        <form class="zero-form-grid mt-4" @submit.prevent="inviteAccess">
+                            <label>Station<select v-model="invitation.room_id"><option :value="null">Zwischenstation / Toilette</option><option v-for="room in state.rooms" :key="room.id" :value="room.id">{{ room.name }}</option></select></label>
+                            <label>Bestehendes Konto<select v-model="invitation.user_id"><option :value="null">Gast ohne Lehrerkonto</option><option v-for="person in roster.supervisors" :key="person.id" :value="person.id">{{ person.name }}</option></select></label>
+                            <label v-if="!invitation.user_id">Name der Aufsicht<input v-model="invitation.name" required maxlength="180" placeholder="Vorname Nachname"></label>
+                            <label>Gültig ab jetzt (Stunden)<input v-model.number="invitation.hours" type="number" min="1" max="72" required></label>
+                            <div class="zero-actions"><button class="zero-button" :disabled="busy">Zugang erstellen</button></div>
+                        </form>
+                    </template>
+                    <div v-if="invitationUrl" class="zero-share" role="status"><h3>Persönlicher Stationszugang</h3><p>Diesen Link an die zugeordnete Aufsicht weitergeben. Er wird nur jetzt angezeigt.</p><input :value="invitationUrl" readonly aria-label="Persönlicher Zugangslink" @focus="$event.target.select()"><div class="zero-actions mt-3"><button class="zero-button" @click="copyLink">{{ copied ? 'Kopiert ✓' : 'Link kopieren' }}</button><a class="zero-link" :href="invitationUrl" target="_blank" rel="noreferrer">Zugang öffnen</a></div><small>Am Handy eine im Schulnetz erreichbare Adresse verwenden. localhost ist nur auf diesem Computer erreichbar.</small></div>
+                    <h3 class="mt-6 mb-3">Zugeordnete Aufsichten</h3>
+                    <div v-if="!state.accesses.length" class="zero-help">Noch keine Aufsichten zugeordnet.</div>
+                    <article v-for="access in state.accesses" :key="access.id" class="zero-access-row"><div><strong>{{ access.name }}</strong><small>{{ roomName(access.matura_room_id) }} · {{ access.user_id ? 'Schulkonto' : 'Gastzugang' }} · gültig bis {{ time(access.expires_at, true) }}</small></div><span class="zero-badge">{{ access.valid ? 'Gültig' : 'Abgelaufen / widerrufen' }}</span><button v-if="access.valid" class="zero-link" :disabled="busy" @click="revokeAccess(access.id)">Widerrufen</button></article>
+                </section>
+            </template>
+            <div v-else-if="!loading && !setupOpen" class="zero-session-grid">
+                <button v-for="session in sessions" :key="session.id" class="zero-session-card" @click="selectedId = session.id"><span class="zero-eyebrow">{{ date(session.exam_date) }}</span><h2>{{ session.name }}</h2><p>{{ session.rooms_count }} Räume · {{ session.students_count }} Schüler</p><div><span class="zero-badge">{{ lifecycleLabels[session.status] }}</span><span aria-hidden="true">↗</span></div></button>
+                <div v-if="!sessions.length" class="zero-empty"><span class="zero-empty-symbol">00</span><h2>Die nächste Matura kann kommen.</h2><p>Räume, Schüler und Aufsichten einmal einrichten — danach gemeinsam koordinieren.</p><button class="zero-button mt-4" :disabled="!schoolyearId" @click="newSession">Erste Matura einrichten</button><p v-if="!schoolyearId" class="zero-help mt-3">Bitte zuerst ein Schuljahr auswählen.</p></div>
+            </div>
+        </template>
+        <v-dialog v-model="closeDialog" max-width="480"><v-card class="pa-5"><h2>Matura abschließen?</h2><p class="my-4">Alle Stationszugänge werden beendet. Das Protokoll und die PDF-Auswertung bleiben für die Leitung verfügbar.</p><div class="zero-actions"><button class="zero-button zero-button--secondary" @click="closeDialog = false">Abbrechen</button><button class="zero-button" :disabled="busy" @click="changeLifecycle('closed')">Abschließen</button></div></v-card></v-dialog>
+    </div>
+</template>
+<script setup>
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import axios from 'axios'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { index, roster as rosterRoute, show, store, update, action, lifecycle, invite, revoke } from '@/actions/App/Http/Controllers/Admin/MaturaController'
+import MaturaBoard from './MaturaBoard.vue'
+import MaturaSetup from './MaturaSetup.vue'
+import MaturaReport from './MaturaReport.vue'
+import { errorMessage, operationKey, time } from './maturaFormat'
+import '../../../../../css/matura-manager.css'
+const adminStore = useAdminStore()
+const route = useRoute()
+const router = useRouter()
+const schoolyearId = computed(() => (adminStore.selected_schoolyear || adminStore.config?.selected_schoolyear)?.id ?? null)
+const selectedId = ref(Number(route.query.matura) || null)
+const sessions = ref([])
+const state = ref(null)
+const roster = ref({ students: [], supervisors: [] })
+const ready = ref(true)
+const loading = ref(false)
+const busy = ref(false)
+const stale = ref(false)
+const error = ref('')
+const lastUpdated = ref(null)
+const tab = ref('live')
+const setupOpen = ref(false)
+const editing = ref(false)
+const setupYear = ref(null)
+const waitingPlaces = ref(1)
+const invitation = reactive({ room_id: null, user_id: null, name: '', hours: 24 })
+const invitationUrl = ref('')
+const copied = ref(false)
+const closeDialog = ref(false)
+const lifecycleLabels = { draft: 'Vorbereitung', active: 'Läuft', closed: 'Abgeschlossen' }
+let timer
+let destroyed = false
+let loadingState = false
+function date(value) { return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value)) }
+function roomName(id) { return id === null ? 'Zwischenstation' : state.value.rooms.find((room) => room.id === id)?.name }
+async function list() { const response = await axios.get(index.url()); sessions.value = response.data.sessions; ready.value = response.data.ready }
+async function loadState() {
+    if (!selectedId.value || loadingState) return
+    const id = selectedId.value
+    loadingState = true
+    try {
+        const response = await axios.get(show.url(id), { timeout: 12000 })
+        if (id === selectedId.value && !destroyed) { if (stale.value) error.value = ''; state.value = response.data; stale.value = false; lastUpdated.value = response.data.server_time }
+    } catch (failure) { if (id === selectedId.value) { stale.value = true; error.value = errorMessage(failure); if ([401, 403, 404].includes(failure.response?.status)) state.value = null } }
+    finally { loadingState = false }
+}
+async function refresh() { error.value = ''; try { await list(); await loadState() } catch (failure) { error.value = errorMessage(failure) } }
+async function loadRoster(year) { roster.value = (await axios.get(rosterRoute.url(), { params: { schoolyear_id: year } })).data }
+async function newSession() { error.value = ''; try { await loadRoster(schoolyearId.value); setupYear.value = schoolyearId.value; editing.value = false; setupOpen.value = true } catch (failure) { error.value = errorMessage(failure) } }
+async function editSetup() { try { await loadRoster(state.value.session.schoolyear_id); setupYear.value = state.value.session.schoolyear_id; editing.value = true; setupOpen.value = true } catch (failure) { error.value = errorMessage(failure) } }
+async function mutate(callback) {
+    if (busy.value) return
+    busy.value = true
+    error.value = ''
+    try { await callback() } catch (failure) { error.value = errorMessage(failure) }
+    finally { await loadState(); busy.value = false }
+}
+async function saveSetup(data) { await mutate(async () => { const response = editing.value ? await axios.put(update.url(selectedId.value), data) : await axios.post(store.url(), data); setupOpen.value = false; selectedId.value = response.data.id; await list() }) }
+async function runAction(data) { await mutate(async () => { await axios.post(action.url(selectedId.value), { ...data, operation_key: operationKey() }) }) }
+async function changeLifecycle(status) { await mutate(async () => { await axios.put(lifecycle.url(selectedId.value), { status, waiting_places: waitingPlaces.value }); closeDialog.value = false; await list() }) }
+async function openAccess() { tab.value = 'access'; waitingPlaces.value = state.value.session.waiting_places; try { await loadRoster(state.value.session.schoolyear_id) } catch (failure) { error.value = errorMessage(failure) } }
+async function inviteAccess() { await mutate(async () => { const response = await axios.post(invite.url(selectedId.value), invitation); invitationUrl.value = response.data.url || ''; copied.value = false; invitation.name = '' }) }
+async function revokeAccess(id) { await mutate(async () => { await axios.delete(revoke.url({ matura: selectedId.value, access: id })) }) }
+async function copyLink() { try { await navigator.clipboard.writeText(invitationUrl.value); copied.value = true } catch { error.value = 'Bitte den Link im Feld markieren und kopieren.' } }
+watch(selectedId, async (id) => { state.value = null; tab.value = 'live'; setupOpen.value = false; invitationUrl.value = ''; error.value = ''; await router.replace({ query: { ...route.query, matura: id || undefined } }); await loadState(); if (state.value) waitingPlaces.value = state.value.session.waiting_places })
+watch(() => route.query.matura, (id) => { selectedId.value = Number(id) || null })
+async function poll() { if (destroyed) return; if (!document.hidden && !busy.value) await loadState(); timer = setTimeout(poll, 3000) }
+onMounted(async () => { loading.value = true; await refresh(); loading.value = false; poll() })
+onBeforeUnmount(() => { destroyed = true; clearTimeout(timer) })
+</script>

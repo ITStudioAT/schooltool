@@ -67,6 +67,14 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(config('spa.web_throttle', 60))->by($request->user()?->id ?: $request->ip());
         });
 
+        RateLimiter::for('matura', function (Request $request) {
+            $actor = $request->user()?->id
+                ? 'user:'.$request->user()->id
+                : 'station:'.($request->session()->get('matura_access.id') ?? $request->ip());
+
+            return Limit::perMinute(120)->by($actor);
+        });
+
         RateLimiter::for('global', function (Request $request) {
             return Limit::perMinute(config('spa.global_throttle', 1000))->by($request->ip());
         });

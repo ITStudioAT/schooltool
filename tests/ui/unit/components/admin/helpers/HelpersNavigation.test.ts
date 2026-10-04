@@ -34,6 +34,7 @@ async function renderPage(path = '/admin/helpers') {
                 router,
             ],
             stubs: {
+                MaturaManager: { template: '<section>Koordination der Matura</section>' },
                 VContainer: { template: '<div><slot /></div>' },
                 VSheet: { template: '<div><slot /></div>' },
                 VBtn: { template: '<button type="button"><slot /></button>' },
@@ -176,7 +177,7 @@ describe('Helpers navigation', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: 'Matura' }))
         await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/admin/helpers?panel=matura'))
-        expect(screen.getByRole('button', { name: 'Überblick' })).toHaveAttribute('aria-pressed', 'true')
+        expect(screen.getByRole('button', { name: '00-Manager' })).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('reloads the class overview when the personal schoolyear changes', async () => {
