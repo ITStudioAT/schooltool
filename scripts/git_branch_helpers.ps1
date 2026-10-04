@@ -341,15 +341,96 @@ function Invoke-SchooltoolLocalPreparation {
     Invoke-SchooltoolCommand 'Preparing dependencies for the selected branch...' {
         php scripts/update.php --target=local --prepare
     }
-    Invoke-SchooltoolCommand 'Clearing local configuration cache...' {
-        php artisan config:clear --no-interaction
-    }
-    Invoke-SchooltoolCommand 'Clearing compiled views...' {
-        php artisan view:clear --no-interaction
+    if (Test-Path -LiteralPath '.env' -PathType Leaf) {
+        Invoke-SchooltoolCommand 'Clearing local configuration cache...' {
+            php artisan config:clear --no-interaction
+        }
+        Invoke-SchooltoolCommand 'Clearing compiled views...' {
+            php artisan view:clear --no-interaction
+        }
     }
     Invoke-SchooltoolCommand 'Building the selected branch...' { npm run build }
     Write-Host 'Local files are ready. No migrations or seeders were run. Restart running development servers/workers.' -ForegroundColor Green
     Write-Host 'Database schema changes require a separate feature database; Git does not switch databases.' -ForegroundColor Yellow
+    if (-not (Test-Path -LiteralPath '.env' -PathType Leaf)) {
+        Write-Host 'This worktree has no .env. Configure its local environment separately before starting the application; no environment or database was copied.' -ForegroundColor Yellow
+    }
+}
+
+function Get-SchooltoolMainWorkspace {
+    $common = Invoke-SchooltoolGit rev-parse --path-format=absolute --git-common-dir
+    if ([System.IO.Path]::GetFileName($common) -cne '.git') { throw 'The workflow requires an ordinary main checkout with a shared .git directory.' }
+    $root = Split-Path -Parent $common
+    if (-not (Test-Path -LiteralPath (Join-Path $root '.git') -PathType Container)) { throw 'Cannot identify the main project folder.' }
+    $root
+}
+
+function Get-SchooltoolWorkspaces {
+    $workspace = $null
+    foreach ($line in @(Invoke-SchooltoolGit worktree list --porcelain)) {
+        if ($line.StartsWith('worktree ')) {
+            if ($workspace) { $workspace }
+            $workspace = [pscustomobject]@{ Path = $line.Substring(9); Branch = ''; Head = '' }
+        }
+        elseif ($workspace -and $line.StartsWith('branch ')) { $workspace.Branch = $line.Substring(7) }
+        elseif ($workspace -and $line.StartsWith('HEAD ')) { $workspace.Head = $line.Substring(5) }
+    }
+    if ($workspace) { $workspace }
+}
+
+function Get-SchooltoolFeatureWorkspace {
+    param([string]$Branch)
+    $branchName = Get-SchooltoolFeatureBranch $Branch
+    $main = Get-SchooltoolMainWorkspace
+    if ((Invoke-SchooltoolGit -C $main branch --show-current) -cne 'main') { throw 'The main project folder is on another branch. Finish that work and use gitmain before opening a feature workspace.' }
+    $path = Join-Path ($main + '-features') $branchName.Substring('feature/'.Length)
+    $expectedPath = [System.IO.Path]::GetFullPath($path)
+    $occupied = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$branchName" })
+    if ($occupied.Count -gt 1 -or ($occupied.Count -eq 1 -and [System.IO.Path]::GetFullPath($occupied[0].Path) -ine $expectedPath)) {
+        throw "Feature $branchName is already checked out elsewhere: $($occupied.Path -join ', '). Preserve that worktree and resolve its checkout explicitly."
+    }
+    $parent = $expectedPath
+    while ($parent) {
+        if ((Test-Path -LiteralPath $parent) -and ((Get-Item -LiteralPath $parent -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "Feature workspaces cannot use junctions or symbolic links: $parent"
+        }
+        $parent = Split-Path -Parent $parent
+    }
+    if ((Test-Path -LiteralPath $expectedPath) -and $occupied.Count -ne 1) { throw "Feature folder already exists without the expected branch checkout: $expectedPath. Its files are preserved." }
+    $expectedPath
+}
+
+function Enter-SchooltoolWorkspace {
+    param([string]$Branch)
+    $source = (Get-Location).Path
+    $target = if ($Branch -ceq 'main') { Get-SchooltoolMainWorkspace } else { Get-SchooltoolFeatureWorkspace $Branch }
+    if ($Branch -ceq 'main') {
+        $mainCheckout = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq 'refs/heads/main' })
+        if ($mainCheckout.Count -gt 0 -and [System.IO.Path]::GetFullPath($mainCheckout[0].Path) -ine [System.IO.Path]::GetFullPath($target)) { throw 'main is checked out outside its main folder; preserve that checkout and resolve it explicitly.' }
+    }
+    elseif (-not (Test-Path -LiteralPath $target)) {
+        if (Test-SchooltoolRef "refs/heads/$Branch") {
+            if (-not (Test-SchooltoolAncestor "refs/heads/$Branch" "refs/remotes/origin/$Branch")) { throw "Local $Branch has unpublished or divergent commits. Synchronize it before opening." }
+            Invoke-SchooltoolGit worktree add $target $Branch | Out-Host
+        }
+        else { Invoke-SchooltoolGit worktree add --track -b $Branch $target "refs/remotes/origin/$Branch" | Out-Host }
+    }
+    Set-Location -LiteralPath $target
+    try {
+        if ((Get-SchooltoolMainWorkspace) -ine (Split-Path -Parent (Invoke-SchooltoolGit -C $source rev-parse --path-format=absolute --git-common-dir))) { throw 'The target workspace belongs to another repository; its files are preserved.' }
+        Assert-SchooltoolRepository
+        Assert-SchooltoolClean
+        Assert-SchooltoolSaved
+        if ($Branch -ceq 'main' -and (Invoke-SchooltoolGit branch --show-current) -cne 'main') {
+            if (Test-SchooltoolRef refs/heads/main) { Invoke-SchooltoolGit switch main | Out-Host }
+            else { Invoke-SchooltoolGit switch --track -c main refs/remotes/origin/main | Out-Host }
+        }
+        if ((Invoke-SchooltoolGit branch --show-current) -cne $Branch) { throw 'The target workspace branch changed.' }
+        if (-not (Test-SchooltoolAncestor HEAD "refs/remotes/origin/$Branch")) { throw "Local $Branch has unpublished or divergent commits. Synchronize it before opening." }
+        Invoke-SchooltoolGit merge --ff-only "refs/remotes/origin/$Branch" | Out-Host
+    }
+    catch { Set-Location -LiteralPath $source; throw }
+    Write-Host "Working folder: $target" -ForegroundColor Cyan
 }
 
 function Switch-SchooltoolBranch {
@@ -364,17 +445,7 @@ function Switch-SchooltoolBranch {
     if (-not (Test-SchooltoolRef "refs/remotes/origin/$Branch")) {
         throw "Branch $Branch does not exist on origin."
     }
-    if (Test-SchooltoolRef "refs/heads/$Branch") {
-        & git merge-base --is-ancestor "refs/heads/$Branch" "refs/remotes/origin/$Branch"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Local $Branch has unpublished or divergent commits. Synchronize it before switching."
-        }
-        Invoke-SchooltoolGit switch $Branch
-    }
-    else {
-        Invoke-SchooltoolGit switch --track -c $Branch "refs/remotes/origin/$Branch"
-    }
-    Invoke-SchooltoolGit merge --ff-only "refs/remotes/origin/$Branch"
+    Enter-SchooltoolWorkspace $Branch
     Invoke-SchooltoolLocalPreparation
     if ($Branch -ceq 'main') {
         Invoke-SchooltoolCommand 'Clearing cached admin environment versions...' {
@@ -391,6 +462,7 @@ function gitstart {
     Assert-SchooltoolClean
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
+    Get-SchooltoolFeatureWorkspace $branch | Out-Null
     $active = Get-SchooltoolActiveFeature -Branch $branch -AllowMissing
     if ($active) { throw "Feature $branch already exists. Use gitwork NAME." }
     if ((Test-SchooltoolRef "refs/heads/$branch") -or (Test-SchooltoolRef "refs/remotes/origin/$branch")) {
@@ -400,7 +472,7 @@ function gitstart {
     $reservation = New-SchooltoolFeatureReservation $branch
     Invoke-SchooltoolGit push --atomic "--force-with-lease=$($reservation.ReservationRef):" "--force-with-lease=refs/heads/${branch}:" origin "$($reservation.ReservationCommit):$($reservation.ReservationRef)" "${mainHead}:refs/heads/$branch"
     Update-SchooltoolRemote
-    Invoke-SchooltoolGit switch --track -c $branch "refs/remotes/origin/$branch"
+    Enter-SchooltoolWorkspace $branch
     Invoke-SchooltoolLocalPreparation
     Write-SchooltoolCompletionTime
 }
@@ -419,6 +491,7 @@ function gitwork {
     }
     $branch = Get-SchooltoolFeatureBranch $Name
     if ($branch -cnotin $features) { throw "Feature $branch does not exist on origin. Use gitstart NAME." }
+    Get-SchooltoolFeatureWorkspace $branch | Out-Null
     $active = Get-SchooltoolActiveFeature -Branch $branch -AllowMissing
     if (-not $active) {
         $head = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$branch"
@@ -587,8 +660,16 @@ function Assert-SchooltoolDiscardCheckout {
     if ((Invoke-SchooltoolGit branch --show-current) -cne 'main' -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $MainCommit) {
         throw 'Run gitdiscard from clean main. Use gitmain first; no checkout is switched automatically.'
     }
-    if (@(Invoke-SchooltoolGit worktree list --porcelain) -ccontains "branch refs/heads/$Branch") {
-        throw 'The feature is checked out in a worktree. Leave that worktree intact and switch it away from the feature first.'
+    $workspaces = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$Branch" })
+    if ($workspaces.Count -gt 0) {
+        $expectedPath = Get-SchooltoolFeatureWorkspace $Branch
+        Push-Location -LiteralPath $expectedPath
+        try {
+            Assert-SchooltoolRepository
+            Assert-SchooltoolClean
+            if ((Invoke-SchooltoolGit rev-parse HEAD) -cne $FeatureCommit) { throw 'The feature workspace contains unpublished commits; its files are preserved.' }
+        }
+        finally { Pop-Location }
     }
     $localExists = Test-SchooltoolRef "refs/heads/$Branch"
     if ($localExists -ne (-not [string]::IsNullOrEmpty($LocalCommit))) { throw 'The local feature changed. Nothing was discarded locally.' }
@@ -634,6 +715,10 @@ function gitdiscard {
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
         Write-Host "Recovery: $recovery/feature and $recovery/reservation" -ForegroundColor Cyan
+        $workspaces = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$branch" })
+        if ($workspaces.Count -eq 1) {
+            Invoke-SchooltoolGit -C $workspaces[0].Path switch --detach $remote | Out-Host
+        }
         Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${branch}:$remote" "--force-with-lease=$($feature.ReservationRef):$($feature.ReservationCommit)" $operation.Origin ":refs/heads/$branch" ":$($feature.ReservationRef)"
         try {
             Assert-SchooltoolDiscardCheckout $branch $remote $local $main
@@ -680,6 +765,16 @@ function gitrelease {
         throw 'The feature contains no new commits to release.'
     }
     Assert-SchooltoolVersion $Version
+    $mainWorkspace = Get-SchooltoolMainWorkspace
+    if ([System.IO.Path]::GetFullPath((Get-Location).Path) -ine [System.IO.Path]::GetFullPath($mainWorkspace)) {
+        Push-Location -LiteralPath $mainWorkspace
+        try {
+            Assert-SchooltoolRepository
+            Assert-SchooltoolClean
+            if ((Invoke-SchooltoolGit branch --show-current) -cne 'main') { throw 'The main folder is being used by another branch. Its files are preserved; finish that work before releasing.' }
+        }
+        finally { Pop-Location }
+    }
     $candidate = New-SchooltoolCandidateWorktree -Kind release -SourceCommit $mainHead
     $candidateEnvironment = Enter-SchooltoolCandidateEnvironment -Candidate $candidate
     try {
@@ -709,13 +804,11 @@ function gitrelease {
         if ((Invoke-SchooltoolGit branch --show-current) -cne $feature -or (Invoke-SchooltoolGit rev-parse HEAD) -ne $featureHead) {
             throw 'Your working branch changed during release checks; it will be preserved.'
         }
-        if (Test-SchooltoolRef refs/heads/main) {
-            if (-not (Test-SchooltoolAncestor refs/heads/main $publishedHead)) { throw 'Local main contains unpublished work.' }
-            Invoke-SchooltoolGit switch main
-            Invoke-SchooltoolGit merge --ff-only $publishedHead
-        } else {
-            Invoke-SchooltoolGit switch --track -c main refs/remotes/origin/main
+        $mainWorkspace = Get-SchooltoolMainWorkspace
+        if ([System.IO.Path]::GetFullPath((Get-Location).Path) -ine [System.IO.Path]::GetFullPath($mainWorkspace)) {
+            Invoke-SchooltoolGit switch --detach $featureHead | Out-Host
         }
+        Enter-SchooltoolWorkspace main
         try { Invoke-SchooltoolLocalPreparation }
         catch {
             Write-Host "Release is already published. Local main preparation failed: $($_.Exception.Message)" -ForegroundColor Yellow

@@ -1,12 +1,28 @@
 param(
-    [string]$DocumentsDirectory = [Environment]::GetFolderPath('MyDocuments')
+    [string]$DocumentsDirectory = [Environment]::GetFolderPath('MyDocuments'),
+    [string]$WorkflowDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+$workflowOverride = ''
+$workflowOverrideRoot = ''
+if ($WorkflowDirectory) {
+    $workflowOverride = (Resolve-Path -LiteralPath $WorkflowDirectory).Path
+    if (-not (Test-Path -LiteralPath (Join-Path $workflowOverride 'git_workflow.ps1') -PathType Leaf)) { throw 'The workflow directory must contain git_workflow.ps1.' }
+    $commonDirectory = git -C $workflowOverride rev-parse --path-format=absolute --git-common-dir
+    if ($LASTEXITCODE -ne 0 -or [System.IO.Path]::GetFileName($commonDirectory.Trim()) -cne '.git') { throw 'The workflow directory must belong to an ordinary Schooltool checkout.' }
+    $workflowOverrideRoot = Split-Path -Parent $commonDirectory.Trim()
+}
+$workflowOverrideLiteral = $workflowOverride.Replace("'", "''")
+$workflowOverrideRootLiteral = $workflowOverrideRoot.Replace("'", "''")
 $profilePaths = @(
     $PROFILE.CurrentUserCurrentHost
     (Join-Path $DocumentsDirectory 'WindowsPowerShell/Microsoft.PowerShell_profile.ps1')
     (Join-Path $DocumentsDirectory 'PowerShell/Microsoft.PowerShell_profile.ps1')
+    foreach ($edition in @('WindowsPowerShell', 'PowerShell')) {
+        $hostProfile = Join-Path $DocumentsDirectory "$edition/Microsoft.VSCode_profile.ps1"
+        if (Test-Path -LiteralPath $hostProfile -PathType Leaf) { $hostProfile }
+    }
 ) | Select-Object -Unique
 $legacyStartMarker = '# >>> schooltool managed helpers >>>'
 $legacyEndMarker = '# <<< schooltool managed helpers <<<'
@@ -101,16 +117,34 @@ function Invoke-ProjectGitWorkflow {
             throw 'The branch workflow only trusts ITStudioAT/schooltool on GitHub.'
         }
     }
-    `$workflow = Join-Path `$repositoryRoot 'scripts/git_workflow.ps1'
+    `$commonDirectory = git -C `$repositoryRoot rev-parse --path-format=absolute --git-common-dir 2>`$null
+    if (`$LASTEXITCODE -ne 0 -or -not `$commonDirectory -or [System.IO.Path]::GetFileName(`$commonDirectory.Trim()) -cne '.git') {
+        throw 'Cannot identify the shared main workflow helpers.'
+    }
+    `$workflowRoot = Split-Path -Parent `$commonDirectory.Trim()
+    `$workflow = Join-Path `$workflowRoot 'scripts/git_workflow.ps1'
+    `$localWorkflowDirectory = '$workflowOverrideLiteral'
+    if (`$localWorkflowDirectory -and `$workflowRoot -ieq '$workflowOverrideRootLiteral') {
+        `$localCommonDirectory = git -C `$localWorkflowDirectory rev-parse --path-format=absolute --git-common-dir 2>`$null
+        if (`$LASTEXITCODE -ne 0 -or `$localCommonDirectory.Trim() -ine `$commonDirectory.Trim()) { throw 'The installed local workflow no longer belongs to this repository.' }
+        `$workflow = Join-Path `$localWorkflowDirectory 'git_workflow.ps1'
+    }
     if (-not (Test-Path -LiteralPath `$workflow -PathType Leaf)) {
         throw 'This branch does not contain the workflow helpers yet. Update main and incorporate it into the feature.'
     }
     Push-Location -LiteralPath `$repositoryRoot
+    `$completed = `$false
+    `$selectedLocation = `$null
     try {
         & `$workflow -Command `$Command -CommandArguments `$CommandArguments
+        `$selectedLocation = (Get-Location).Path
+        `$completed = `$true
     }
     finally {
         Pop-Location
+        if (`$completed -and `$Command -cin @('gitstart', 'gitwork', 'gitmain', 'gitrelease')) {
+            Set-Location -LiteralPath `$selectedLocation
+        }
     }
 }
 function gitstart { Invoke-ProjectGitWorkflow 'gitstart' `$args }
