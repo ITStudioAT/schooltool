@@ -317,8 +317,15 @@ function Get-SchooltoolSourceTree {
 
 function Assert-SchooltoolCheckedSource {
     param([Parameter(Position = 0)][string]$Tree, [string]$Branch, [string]$Head)
-    if (($Branch -and (Invoke-SchooltoolGit branch --show-current) -cne $Branch) -or ($Head -and (Invoke-SchooltoolGit rev-parse HEAD) -ne $Head) -or (Get-SchooltoolSourceTree) -ne $Tree) {
+    if (($Branch -and (Invoke-SchooltoolGit branch --show-current) -cne $Branch) -or ($Head -and (Invoke-SchooltoolGit rev-parse HEAD) -ne $Head)) {
         throw 'Source files or the active branch changed during checks. Nothing was published; all edits are preserved.'
+    }
+    if ((Get-SchooltoolSourceTree) -ne $Tree) {
+        $exception = New-Object System.InvalidOperationException 'Source files or the active branch changed during checks. Nothing was published; all edits are preserved.'
+        $exception.Data['SchooltoolSourceChanged'] = $true
+        $exception.Data['Branch'] = $Branch
+        $exception.Data['Head'] = $Head
+        throw $exception
     }
 }
 
@@ -388,6 +395,9 @@ function Get-SchooltoolFeatureWorkspace {
     $occupied = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$branchName" })
     if ($occupied.Count -gt 1 -or ($occupied.Count -eq 1 -and [System.IO.Path]::GetFullPath($occupied[0].Path) -ine $expectedPath)) {
         throw "Feature $branchName is already checked out elsewhere: $($occupied.Path -join ', '). Preserve that worktree and resolve its checkout explicitly."
+    }
+    if ($occupied.Count -eq 1 -and -not (Test-Path -LiteralPath $expectedPath -PathType Container)) {
+        throw "The registered feature workspace is missing: $expectedPath. Restore it or use git worktree repair for its relocated folder; its registration and branch are preserved."
     }
     $parent = $expectedPath
     while ($parent) {
@@ -514,7 +524,26 @@ function gitsave {
     Assert-SchooltoolRepository
     $currentBranch = Invoke-SchooltoolGit branch --show-current
     if ($currentBranch -eq 'main') {
-        Invoke-SchooltoolPublish -message $Message -version $Version -Full:$Full
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                Invoke-SchooltoolPublish -message $Message -version $Version -Full:$Full
+                return
+            }
+            catch {
+                $exception = $_.Exception
+                if (-not $exception.Data['SchooltoolSourceChanged'] -or
+                    (Invoke-SchooltoolGit branch --show-current) -cne $exception.Data['Branch'] -or
+                    (Invoke-SchooltoolGit rev-parse HEAD) -ne $exception.Data['Head']) {
+                    throw
+                }
+                Invoke-SchooltoolGit status --short | Out-Host
+                if ($attempt -eq 3) {
+                    Write-Host 'Source files kept changing across 3 save attempts. Finish editing, then run gitsave again. Nothing was pushed; all edits and commits are preserved.' -ForegroundColor Yellow
+                    throw
+                }
+                Write-Host "Source files changed concurrently. Rechecking and rebuilding the current edits (attempt $($attempt + 1)/3)..." -ForegroundColor Yellow
+            }
+        }
         return
     }
     $branch = Assert-SchooltoolFeature
@@ -715,13 +744,13 @@ function gitdiscard {
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
         Write-Host "Recovery: $recovery/feature and $recovery/reservation" -ForegroundColor Cyan
-        $workspaces = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$branch" })
-        if ($workspaces.Count -eq 1) {
-            Invoke-SchooltoolGit -C $workspaces[0].Path switch --detach $remote | Out-Host
-        }
         Invoke-SchooltoolGit push --atomic "--force-with-lease=refs/heads/${branch}:$remote" "--force-with-lease=$($feature.ReservationRef):$($feature.ReservationCommit)" $operation.Origin ":refs/heads/$branch" ":$($feature.ReservationRef)"
         try {
             Assert-SchooltoolDiscardCheckout $branch $remote $local $main
+            $workspaces = @(Get-SchooltoolWorkspaces | Where-Object { $_.Branch -ceq "refs/heads/$branch" })
+            if ($workspaces.Count -eq 1) {
+                Invoke-SchooltoolGit -C $workspaces[0].Path switch --detach $remote | Out-Host
+            }
             if ($local) { Invoke-SchooltoolGit update-ref --no-deref -d "refs/heads/$branch" $local }
             $trackingReservation = $feature.ReservationRef.Replace('refs/heads/', 'refs/remotes/origin/')
             foreach ($tracking in @(@{ Ref = "refs/remotes/origin/$branch"; Commit = $remote }, @{ Ref = $trackingReservation; Commit = $feature.ReservationCommit })) {
@@ -805,10 +834,20 @@ function gitrelease {
             throw 'Your working branch changed during release checks; it will be preserved.'
         }
         $mainWorkspace = Get-SchooltoolMainWorkspace
-        if ([System.IO.Path]::GetFullPath((Get-Location).Path) -ine [System.IO.Path]::GetFullPath($mainWorkspace)) {
-            Invoke-SchooltoolGit switch --detach $featureHead | Out-Host
+        $featureWorkspace = (Get-Location).Path
+        $separateWorkspace = [System.IO.Path]::GetFullPath($featureWorkspace) -ine [System.IO.Path]::GetFullPath($mainWorkspace)
+        if ($separateWorkspace -and (Invoke-SchooltoolGit -C $mainWorkspace branch --show-current) -cne 'main') {
+            throw 'The main workspace branch changed during publication; both checkouts are preserved.'
         }
         Enter-SchooltoolWorkspace main
+        if ($separateWorkspace) {
+            if ((Invoke-SchooltoolGit -C $featureWorkspace status --porcelain --untracked-files=all) -or
+                (Invoke-SchooltoolGit -C $featureWorkspace branch --show-current) -cne $feature -or
+                (Invoke-SchooltoolGit -C $featureWorkspace rev-parse HEAD) -ne $featureHead) {
+                throw 'The feature workspace changed during local cleanup; its branch and files are preserved.'
+            }
+            Invoke-SchooltoolGit -C $featureWorkspace switch --detach $featureHead | Out-Host
+        }
         try { Invoke-SchooltoolLocalPreparation }
         catch {
             Write-Host "Release is already published. Local main preparation failed: $($_.Exception.Message)" -ForegroundColor Yellow

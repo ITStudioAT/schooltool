@@ -1,13 +1,53 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VFileInput } from 'vuetify/components/VFileInput'
+import { VMenu, VBtn, VList, VListItem, VIcon } from 'vuetify/components'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
+import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
+
+describe('Grouped original dispatch downloads', () => {
+    it('shows one action per purpose and lists all five protocols with meaningful time and test recipient labels', async () => {
+        vi.stubGlobal('visualViewport', { width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, addEventListener: vi.fn(), removeEventListener: vi.fn() })
+        const logs = [
+            { purpose: 'tasks', mode: 'test', recipient_scope: 'students', dispatch_at: '2026-10-02T15:02:40Z' },
+            { purpose: 'results', mode: 'live', recipient_scope: 'students', dispatch_at: '2026-10-04T00:15:39Z' },
+            ...['00:20:16', '00:47:41', '00:51:15'].map(time => ({ purpose: 'results', mode: 'teacher_test', recipient_scope: 'teacher', dispatch_at: `2026-10-04T${time}Z` })),
+        ].map((log, index) => ({ ...log, origin: 'dispatch_import', sha256: String(index).repeat(64), name: 'Versandprotokoll.txt' }))
+        const work = { id: 65, status: { dispatch_logs: logs, dispatch_notifications: [{ student_id: 12, log_sha256: logs[1].sha256 }] } }
+        const wrapper = mount(WorkDispatchLog, { props: { work }, attachTo: document.body, global: {
+            plugins: [createVuetify({ components: { VMenu, VBtn, VList, VListItem, VIcon } })],
+            components: { 'v-menu': VMenu, 'v-btn': VBtn, 'v-list': VList, 'v-list-item': VListItem, 'v-icon': VIcon },
+            stubs: { 'v-menu': false, VMenu: false, 'v-btn': false, VBtn: false, 'v-list': false, VList: false, 'v-list-item': false, VListItem: false, 'v-icon': false, VIcon: false },
+        } })
+        try {
+            expect(wrapper.findAll('.v-btn').map(button => button.text())).toEqual(['Download Aufgabenversand', 'Download Ergebnisbenachrichtigung'])
+            expect(wrapper.get('a[href]').attributes('href')).toContain(`/65/dispatch/${logs[0].sha256}`)
+            await wrapper.findAll('.v-btn')[1].trigger('click')
+            await flushPromises()
+            const menu = new DOMWrapper(document.body).get('.v-overlay--active .v-list')
+            const links = menu.findAll('a[href]')
+            expect(links).toHaveLength(4)
+            expect(links[0].text()).toContain('02:51').toContain('Live-Test · nur Lehrperson')
+            expect(links[3].text()).toContain('02:15').toContain('Bestätigter Live-Versand · Schüler:innen')
+            expect(links.map(link => link.attributes('href'))).toEqual([4, 3, 2, 1].map(index => `/api/admin/teaching/course_works/65/dispatch/${logs[index].sha256}`))
+            expect(links.every(link => !link.text().includes('Download Ergebnisbenachrichtigung'))).toBe(true)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('keeps a single legacy result protocol directly downloadable', () => {
+        const wrapper = mount(WorkDispatchLog, { props: { work: { id: 65, status: { dispatch_logs: [{ origin: 'dispatch_import', sha256: 'a'.repeat(64), name: 'Versandprotokoll.txt' }] } } } })
+        try {
+            expect(wrapper.findAll('[href]')).toHaveLength(1)
+            expect(wrapper.get('[href]').text()).toBe('Download Ergebnisbenachrichtigung')
+        } finally { wrapper.unmount() }
+    })
+})
 
 describe('Work evaluation PDF links', () => {
     const overall = { student_id: null, name: 'Gesamtübersicht.pdf', sha256: 'a'.repeat(64), origin: 'evaluation_import' }
@@ -41,87 +81,133 @@ describe('Work evaluation PDF links', () => {
     })
 })
 
-describe('CourseWorks evaluation folder import', () => {
-    it('opens with a text course ID and previews a directory through the selected folder field', async () => {
-        const post = vi.fn().mockResolvedValue({ data: { preview: { can_import: true, rows: [] } } })
+describe('CourseWorks automatic folder import', () => {
+    const fileAt = (path: string, text = 'fixture', type = 'text/plain') => {
+        const file = new File([text], path.split('/').at(-1)!, { type })
+        Object.defineProperty(file, 'webkitRelativePath', { value: path })
+        return file
+    }
+    const work = { id: 65, teaching_course_id: '2', title: 'E-Mails' }
+    const summary = { messages: ['Auswertungen übernommen.', 'Aufgabenversand: lokaler Test.', 'Ergebnisbenachrichtigung: Live-Versand.'], missing: [] }
+
+    it('automatically imports all supported parts through one folder field and rescans subsequent selections', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { data: work, summary } })
         vi.stubGlobal('axios', { post })
-        const wrapper = mount(WorkEvaluationImport, {
-            global: {
-                plugins: [
-                    createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }),
-                    createVuetify({ components: { VFileInput } }),
-                ],
-                components: { 'v-file-input': VFileInput },
-                stubs: { 'v-file-input': false, VFileInput: false },
-            },
-        })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
+            components: { 'v-file-input': VFileInput }, stubs: { 'v-file-input': false, VFileInput: false },
+        } })
         try {
-            const component: any = wrapper.vm
-            component.openEvaluationImport({ id: 1, teaching_course_id: '2' })
+            const vm = wrapper.vm as any
+            vm.openImport(work)
             await wrapper.vm.$nextTick()
-            const report = new File(['report'], 'Beurteilung_Alpha_Ada.md')
-            Object.defineProperty(report, 'webkitRelativePath', { value: 'Auswertung/Beurteilungen/Beurteilung_Alpha_Ada.md' })
-            Object.defineProperty(report, 'text', { value: vi.fn().mockResolvedValue('report') })
+            const protocolText = '\uFEFFVERSANDPROTOKOLL\r\noriginal'
+            const selected = [
+                fileAt('Test/Beurteilungen/Beurteilung_Alpha_Ada.md'),
+                fileAt('Test/Beurteilungen/Gesamtübersicht.md'),
+                fileAt('Test/Beurteilungen/Gesamtübersicht.pdf', '%PDF-1.4', 'application/pdf'),
+                fileAt('Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt', protocolText),
+                fileAt('Test/Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt'),
+                fileAt('Test/Abgaben/Gesamtübersicht.md', 'not imported'),
+                fileAt('Test/Material.pdf', 'not imported', 'application/pdf'),
+            ]
             const input = wrapper.get('input[type="file"]')
             expect(input.attributes()).toHaveProperty('webkitdirectory')
-            Object.defineProperty(input.element, 'files', { value: [report], configurable: true })
+            Object.defineProperty(input.element, 'files', { value: selected, configurable: true })
             await input.trigger('change')
             await flushPromises()
             expect(post).toHaveBeenCalledTimes(1)
-            expect(wrapper.text()).toContain('Auswertung · 1 Dateien')
-            expect(component.evaluation_import_preview.can_import).toBe(true)
-        } finally {
-            wrapper.unmount()
-            vi.unstubAllGlobals()
-        }
+            expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/65/import-folder')
+            const payload = post.mock.calls[0][1] as FormData
+            expect(payload.get('folder')).toBe('Test')
+            const docs = JSON.parse(payload.get('documents') as string)
+            expect(docs).toHaveLength(4)
+            expect(docs.find((doc: any) => doc.path.includes('/Aufgaben/')).text).toBe(protocolText)
+            expect(docs.some((doc: any) => doc.path.includes('/Abgaben/'))).toBe(false)
+            expect(JSON.parse(payload.get('pdf_paths') as string)).toEqual(['Test/Beurteilungen/Gesamtübersicht.pdf'])
+            expect(payload.getAll('pdfs[]')).toHaveLength(1)
+            expect(payload.has('apply')).toBe(false)
+            expect(payload.has('hash')).toBe(false)
+            expect(wrapper.text()).toContain('Auswertungen übernommen.')
+            expect(wrapper.text()).toContain('Test · 5 Importdateien')
+            expect(wrapper.text()).not.toContain('Beurteilung_Alpha_Ada.md')
+            expect(wrapper.text()).not.toContain('Versandprotokoll.txt')
+            expect(wrapper.text()).not.toContain('Angezeigte Änderungen importieren')
+            expect(wrapper.emitted('imported')?.[0]).toEqual([work])
+            expect((input.element as HTMLInputElement).value).toBe('')
+
+            const added = fileAt('Test/Versand/Ergebnisse/Versand_2026-10-05_03-15-00/Versandprotokoll.txt', 'new run')
+            Object.defineProperty(input.element, 'files', { value: [...selected, added], configurable: true })
+            await input.trigger('change')
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(2)
+            expect(JSON.parse(post.mock.calls[1][1].get('documents'))).toHaveLength(5)
+            expect(wrapper.emitted('imported')).toHaveLength(2)
+            expect(wrapper.text()).toContain('Test · 6 Importdateien')
+            vm.import_open = false
+            vm.openImport(work)
+            await wrapper.vm.$nextTick()
+            expect(wrapper.text()).not.toContain('Test · 6 Importdateien')
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 
-    it('applies only the reviewed snapshot and opens the imported points', async () => {
-        const importedWork = { id: 1, teaching_course_id: 2, groups: [{ points: 4.5 }] }
-        const post = vi.fn().mockResolvedValue({ data: { data: importedWork } })
+    it('shows optional missing parts and forwards updated work to the normal parent refresh', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { data: work, summary: { messages: ['Aufgabenversand geprüft.'], missing: ['Auswertungen', 'Ergebnisbenachrichtigung'] } } })
         vi.stubGlobal('axios', { post })
-        const payload = new FormData()
-        const ctx: any = { ...((WorkEvaluationImport as any).methods), evaluation_import_work: { id: 1, teaching_course_id: 2 }, selected_course: { id: 2 },
-            evaluation_import_preview: { can_import: true, hash: 'reviewed' }, evaluation_import_payload: payload,
-            $emit: vi.fn(), evaluation_import_open: true }
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 }, $emit: vi.fn() }
+        const event = { target: { files: [fileAt('Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt')], value: 'folder' } }
         try {
-            await (WorkEvaluationImport as any).methods.applyEvaluationImport.call(ctx)
-            expect(payload.get('apply')).toBe('1')
-            expect(payload.get('hash')).toBe('reviewed')
-            expect(ctx.$emit).toHaveBeenCalledWith('imported', importedWork)
-            expect(ctx.evaluation_import_open).toBe(false)
+            await ctx.selectFolder(event)
+            expect(ctx.import_summary.missing).toEqual(['Auswertungen', 'Ergebnisbenachrichtigung'])
+            expect(ctx.$emit).toHaveBeenCalledWith('imported', work)
             const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 } }
-            await (CourseWorks as any).methods.evaluationImported.call(parent, importedWork)
-            expect(parent.editWork).toHaveBeenCalledWith(importedWork)
-            expect(parent.show_points_grading_view).toBe(true)
+            await (CourseWorks as any).methods.evaluationImported.call(parent, work)
+            expect(parent.refreshWorks).toHaveBeenCalled()
+            expect(parent.editWork).toHaveBeenCalledWith(work)
+            expect(event.target.value).toBe('')
         } finally { vi.unstubAllGlobals() }
     })
 
-    it.each(['Test/Beurteilungen', 'Beurteilungen'])('reads matching reports including the overall Markdown and PDF from %s and resets the picker', async (folder) => {
-        const createFile = (name: string, relative: string, text = 'report') => ({ name, webkitRelativePath: relative, size: 6, text: vi.fn().mockResolvedValue(text) })
-        const report = createFile('Beurteilung_Alpha_Ada.md', `${folder}/Beurteilung_Alpha_Ada.md`)
-        const overview = createFile('Gesamtübersicht.md', `${folder}/Gesamtübersicht.md`)
-        const unrelated = createFile('Abgabe.md', 'Test/Abgaben/Abgabe.md')
-        const unrelatedOverview = createFile('Gesamtübersicht.md', 'Test/Abgaben/Gesamtübersicht.md')
-        const pdf = new File(['%PDF-1.4'], 'Beurteilung_Alpha_Ada.pdf', { type: 'application/pdf' })
-        Object.defineProperty(pdf, 'webkitRelativePath', { value: `${folder}/Beurteilung_Alpha_Ada.pdf` })
-        const overviewPdf = new File(['%PDF-1.4'], 'Gesamtübersicht.pdf', { type: 'application/pdf' })
-        Object.defineProperty(overviewPdf, 'webkitRelativePath', { value: `${folder}/Gesamtübersicht.pdf` })
-        const post = vi.fn().mockResolvedValue({ data: { preview: { can_import: true, rows: [] } } })
+    it('reports a concrete atomic failure without announcing a successful import', async () => {
+        const post = vi.fn().mockRejectedValue({ response: { data: { errors: { folder: ['Ada / 1A: Zuordnung ungeklärt. Keine Dateien wurden übernommen.'] } } } })
         vi.stubGlobal('axios', { post })
-        const ctx: any = { ...((WorkEvaluationImport as any).methods), evaluation_import_work: { id: 1, teaching_course_id: 2 }, selected_course: { id: 2 }, evaluation_import_open: true }
-        const selectedFiles = [report, overview, unrelated, unrelatedOverview, pdf, overviewPdf]
-        const event = { target: { files: selectedFiles, value: 'folder' } }
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 }, $emit: vi.fn() }
+        const event = { target: { files: [fileAt('Test/Beurteilungen/Gesamtübersicht.md')], value: 'folder' } }
         try {
-            await (WorkEvaluationImport as any).methods.selectEvaluationFolder.call(ctx, event)
-            expect(post).toHaveBeenCalledTimes(1)
-            expect(JSON.parse(post.mock.calls[0][1].get('reports'))).toEqual([{ name: report.name, text: 'report' }, { name: overview.name, text: 'report' }])
-            expect(post.mock.calls[0][1].getAll('pdfs[]').map((file: File) => file.name)).toEqual([pdf.name, overviewPdf.name])
-            expect(unrelated.text).not.toHaveBeenCalled()
-            expect(unrelatedOverview.text).not.toHaveBeenCalled()
-            expect(ctx.evaluation_import_preview.can_import).toBe(true)
-            expect(ctx.evaluation_import_files).toEqual(selectedFiles)
+            await ctx.selectFolder(event)
+            expect(ctx.import_error).toContain('Ada / 1A: Zuordnung ungeklärt.')
+            expect(ctx.import_summary).toBeNull()
+            expect(ctx.$emit).not.toHaveBeenCalled()
             expect(event.target.value).toBe('')
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it.each(['multiple roots', 'invalid encoding'])('rejects %s before uploading', async (scenario) => {
+        const post = vi.fn()
+        vi.stubGlobal('axios', { post })
+        const bad = fileAt('Test/Beurteilungen/Gesamtübersicht.md')
+        if (scenario === 'invalid encoding') Object.defineProperty(bad, 'arrayBuffer', { value: async () => new Uint8Array([255]).buffer })
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 }, $emit: vi.fn() }
+        try {
+            await ctx.selectFolder({ target: { files: scenario === 'multiple roots' ? [bad, fileAt('Other/Beurteilungen/Gesamtübersicht.md')] : [bad], value: 'folder' } })
+            expect(post).not.toHaveBeenCalled()
+            expect(ctx.import_error).toContain(scenario === 'multiple roots' ? 'Genau einen' : 'UTF-8')
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('does not refresh a newly selected course with an old response', async () => {
+        let finish: any
+        const post = vi.fn().mockReturnValue(new Promise(resolve => { finish = resolve }))
+        vi.stubGlobal('axios', { post })
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 }, $emit: vi.fn() }
+        try {
+            const request = ctx.selectFolder({ target: { files: [fileAt('Test/Beurteilungen/Gesamtübersicht.md')], value: 'folder' } })
+            await flushPromises()
+            ctx.selected_course = { id: 3 }
+            finish({ data: { data: work, summary } })
+            await request
+            expect(ctx.$emit).not.toHaveBeenCalled()
+            expect(ctx.import_summary).toBeNull()
         } finally { vi.unstubAllGlobals() }
     })
 
@@ -208,7 +294,7 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('class="work-grade-distribution d-flex flex-wrap ga-1"')
         expect(source).toContain('v-for="item in workGradeDistribution(work)"')
         expect(source).toContain('{{ item.grade }}: {{ item.count }}')
-        expect(source).toContain('class="work-actions d-flex align-center ga-1"')
+        expect(source).toContain('class="work-actions work-import-actions d-flex align-center flex-wrap ga-2"')
     })
 
     it('renders and edits the finish-until date', () => {

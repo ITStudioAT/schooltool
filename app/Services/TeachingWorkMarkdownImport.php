@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Support\PrivateImportSourceFile;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\HeaderUtils;
@@ -17,6 +19,32 @@ class TeachingWorkMarkdownImport
     public static function identity(string $name, string $class): string
     {
         return mb_strtolower(preg_replace('/\s+/u', ' ', trim($name.' / '.$class)));
+    }
+
+    /** @return array<string, list<array{student_id: int, email: string}>> */
+    public function courseIdentities(TeachingCourse $course): array
+    {
+        $identities = [];
+        $students = $course->teachingCourseStudents()->whereNull('canceled_at')->with(['user', 'import116'])->get();
+        foreach ($students as $student) {
+            $user = $student->user;
+            if (! $user || (int) $user->school_id !== (int) $course->school_id) {
+                continue;
+            }
+            $import = $student->import116;
+            $usesCurrentImport = $import
+                && (int) $import->school_id === (int) $course->school_id
+                && (int) $import->schoolyear_id === (int) $course->schoolyear_id
+                && ((int) $import->user_id === (int) $user->id || (int) $user->import116_id === (int) $import->id);
+            $name = $usesCurrentImport ? $import->first_name.' '.$import->last_name : $user->first_name.' '.$user->last_name;
+            $class = $usesCurrentImport ? $import->class : $user->schoolclass;
+            $identities[self::identity($name, (string) $class)][] = [
+                'student_id' => (int) $user->id,
+                'email' => mb_strtolower(trim((string) ($usesCurrentImport && $import->email ? $import->email : $user->email))),
+            ];
+        }
+
+        return $identities;
     }
 
     private function reject(string $message): never
@@ -162,21 +190,7 @@ class TeachingWorkMarkdownImport
         if (! $date || ($work->date_for_all_groups && $work->date_for_all_groups->format('Y-m-d') !== $date->format('Y-m-d'))) {
             $this->reject('Das Datum der Auswertung passt nicht zum Datum dieser Arbeit.');
         }
-        $students = $course->teachingCourseStudents()->whereNull('canceled_at')->with(['user', 'import116'])->get();
-        $identities = [];
-        foreach ($students as $student) {
-            $user = $student->user;
-            if ($user && (int) $user->school_id === (int) $course->school_id) {
-                $import = $student->import116;
-                $usesCurrentImport = $import
-                    && (int) $import->school_id === (int) $course->school_id
-                    && (int) $import->schoolyear_id === (int) $course->schoolyear_id
-                    && ((int) $import->user_id === (int) $user->id || (int) $user->import116_id === (int) $import->id);
-                $name = $usesCurrentImport ? $import->first_name.' '.$import->last_name : $user->first_name.' '.$user->last_name;
-                $class = $usesCurrentImport ? $import->class : $user->schoolclass;
-                $identities[self::identity($name, (string) $class)][] = (int) $user->id;
-            }
-        }
+        $identities = array_map(fn (array $matches): array => array_column($matches, 'student_id'), $this->courseIdentities($course));
         $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
         $rows = [];
         $blocked = false;
@@ -251,6 +265,43 @@ class TeachingWorkMarkdownImport
         $work->groups = $groups;
         $work->save();
         app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    }
+
+    /** @param array<string, mixed> $preview
+     * @param  list<UploadedFile>  $uploads
+     * @param  list<array{name: string, sha256: string}>  $pdfs
+     * @param  list<string>  $createdPaths
+     */
+    public function storePdfs(TeachingCourseWork $work, array $preview, array $uploads, array $pdfs, array &$createdPaths): void
+    {
+        $status = $work->status ?? [];
+        $attachments = $status['evaluation_pdfs'] ?? [];
+        $targets = [['student_id' => null, 'pdf' => $preview['pdf']]];
+        foreach ($preview['rows'] as $row) {
+            if ($row['student_id']) {
+                $targets[] = ['student_id' => $row['student_id'], 'pdf' => $row['pdf']];
+            }
+        }
+        foreach ($targets as $target) {
+            $pdf = $target['pdf'];
+            if (! $pdf || collect($attachments)->contains(fn (array $attachment): bool => $attachment['sha256'] === $pdf['sha256'] && $attachment['student_id'] === $target['student_id'])) {
+                continue;
+            }
+            $directory = "teaching/work_evaluations/{$work->teachingCourse->school_id}/{$work->id}";
+            $path = $directory.'/'.$pdf['sha256'].'.pdf';
+            if (! Storage::disk('local')->exists($path)) {
+                $createdPaths[] = $path;
+                $index = array_search($pdf, $pdfs, true);
+                if ($uploads[$index]->storeAs($directory, $pdf['sha256'].'.pdf', 'local') !== $path) {
+                    $this->reject('Auswertungs-PDF konnte nicht gespeichert werden.');
+                }
+            }
+            $attachments = array_values(array_filter($attachments, fn (array $attachment): bool => ($attachment['origin'] ?? null) !== 'evaluation_import' || $attachment['student_id'] !== $target['student_id']));
+            $attachments[] = $pdf + ['student_id' => $target['student_id'], 'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'evaluation_import'];
+        }
+        $status['evaluation_pdfs'] = $attachments;
+        $work->status = $status;
+        $work->save();
     }
 
     /** Call only after authorizing the owning course; studentId additionally restricts the personal report. */

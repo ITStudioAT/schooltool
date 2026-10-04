@@ -27,3 +27,6 @@ A TeachingCourseStudent may have user, Import116 and linked-import-user identity
 
 ## Keep S3 snapshot support exclusive to main exports
 Main exports may read configured S3 objects into private snapshot records using conditional streamed reads and complete collision-checked inventory. Retain strict local-only validation for preview import, restore and activation; never enable preview access to live S3 credentials. Abort export on changed fingerprints or failed conditional reads. S3 copying is checked for concurrent changes, not an atomic S3 transaction.
+
+## Remap saved work recipients during personal recovery
+Administrator-approved student account remapping must also update user student_id references in work status.evaluation_pdfs, dispatch_notifications and dispatch_attempts, preserving null overall-PDF recipients. These keys contain registered user IDs; use the users mapping, not the mixed user/import116 course mapping. Preserve dispatch purpose, timestamps and restored private file bytes.

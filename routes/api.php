@@ -683,6 +683,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
+        Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
+        Route::post('/admin/teaching/course_works/{course_work}/import-dispatch', [CourseWorkController::class, 'importDispatch'])->name('teaching.course-works.import-dispatch');
+        Route::get('/admin/teaching/course_works/{course_work}/dispatch/{sha256}', [CourseWorkController::class, 'downloadDispatch'])->name('teaching.course-works.download-dispatch');
         Route::get('/admin/teaching/course_works/{course_work}/evaluations/{sha256}', [CourseWorkController::class, 'downloadEvaluation'])->name('teaching.course-works.download-evaluation');
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
         Route::get('/admin/teaching/courses/{course}/evaluations', [CourseEvaluationController::class, 'show'])->name('admin.teaching.courses.evaluations');

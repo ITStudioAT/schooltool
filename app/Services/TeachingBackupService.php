@@ -2588,7 +2588,11 @@ class TeachingBackupService
 
         return $curriculumFiles
             ->merge(collect($tables['teaching_course_works'] ?? [])
-                ->flatMap(fn (array $row): array => $this->arrayValue($row['status'] ?? [])['evaluation_pdfs'] ?? [])
+                ->flatMap(function (array $row): array {
+                    $status = $this->arrayValue($row['status'] ?? []);
+
+                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? []);
+                })
                 ->map(fn (array $pdf): array => $this->filePayload($pdf['file_path'], 'local', true)))
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
                 ->pluck('file_path')
@@ -3800,6 +3804,17 @@ class TeachingBackupService
             $status['evaluation_pdfs'][$index]['storage_disk'] = 'local';
             if ($pdf['student_id'] !== null && $userIdMap !== []) {
                 $status['evaluation_pdfs'][$index]['student_id'] = $userIdMap[$pdf['student_id']] ?? throw new RuntimeException('Schülerzuordnung der Auswertungs-PDF fehlt.');
+            }
+        }
+        foreach ($status['dispatch_logs'] ?? [] as $index => $log) {
+            $status['dispatch_logs'][$index]['file_path'] = $this->restoreFilePath($log['file_path'], $files, "teaching/work_dispatches/{$schoolId}/restored");
+            $status['dispatch_logs'][$index]['storage_disk'] = 'local';
+        }
+        foreach (['dispatch_notifications', 'dispatch_attempts'] as $key) {
+            foreach ($status[$key] ?? [] as $index => $notification) {
+                if ($userIdMap !== []) {
+                    $status[$key][$index]['student_id'] = $userIdMap[$notification['student_id']] ?? throw new RuntimeException('Schülerzuordnung des Versandnachweises fehlt.');
+                }
             }
         }
 

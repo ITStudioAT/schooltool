@@ -217,6 +217,9 @@
                                                     <v-icon size="12">mdi-account-multiple</v-icon>
                                                     {{ work.affectedStudentCount }}
                                                 </span>
+                                                <span class="d-inline-flex align-center ga-1" :data-testid="`work-dispatch-${work.work.id}`">
+                                                    <WorkDispatchStatus :work="work.work" aggregate compact />
+                                                </span>
                                             </div>
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
@@ -535,6 +538,10 @@
                                                                 </span>
                                                             </template>
                                                         </v-chip>
+                                                        <WorkDispatchStatus
+                                                            v-if="entry.source === 'course_work'"
+                                                            :work="courseWorkForCellEntry(entry)"
+                                                            :student-id="registeredStudentUserId(student)" />
                                                     </div>
                                                 </div>
                                             </div>
@@ -570,10 +577,13 @@
                                                 <div class="course-table-entry-tooltip-meta">
                                                     <span>{{ detail.kind }}</span>
                                                     <strong>{{ detail.type }}</strong>
-                                                    <span v-if="detail.grade">Note: {{ detail.grade }}</span>
+                                                    <span v-if="detail.grade">{{ detail.isWork ? 'Bewertung' : 'Note' }}: {{ detail.grade }}</span>
                                                 </div>
                                                 <div v-if="detail.title" class="course-table-entry-tooltip-title">
                                                     {{ detail.title }}
+                                                </div>
+                                                <div v-if="detail.notification" class="course-table-entry-tooltip-text">
+                                                    {{ detail.notification }}
                                                 </div>
                                                 <div v-if="detail.description" class="course-table-entry-tooltip-text">
                                                     <span>Aufgabe:</span> {{ detail.description }}
@@ -879,7 +889,7 @@
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
-                <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
+                <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
                     <v-icon size="20">mdi-clipboard-text</v-icon>
                     Arbeiten
                     <v-date-input
@@ -1025,7 +1035,13 @@
                                     <div v-if="assignment.work.description" class="text-caption mt-1">
                                         {{ assignment.work.description }}
                                     </div>
-                                    <WorkEvaluationPdf :work="assignment.work" class="mt-2" />
+                                    <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="assignment.work" aggregate /></div>
+                                    <div class="work-import-actions d-flex flex-wrap align-center ga-2 mt-2">
+                                        <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openImport(assignment.work)">
+                                            Importieren
+                                        </v-btn>
+                                        <WorkEvaluationPdf :work="assignment.work" />
+                                    </div>
                                 </div>
                                 <div class="d-flex ga-1">
                                     <v-btn
@@ -1426,17 +1442,21 @@
                                     </v-alert>
                                 </div>
                             </div>
-                            <div class="d-flex flex-wrap justify-end ga-2 mt-4">
-                                <WorkEvaluationPdf :work="savedWorkDialogWork" />
+                            <div v-if="workDialogForm.id" class="mt-2"><WorkDispatchStatus :work="savedWorkDialogWork" aggregate /></div>
+                            <div v-if="workDialogForm.id" class="work-import-actions d-flex flex-wrap align-center ga-2 mt-4">
                                 <v-btn
                                     v-if="workDialogForm.id"
+                                    size="small"
                                     prepend-icon="mdi-folder-upload-outline"
                                     variant="tonal"
                                     :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
-                                    @click="openEvaluationImport(workDialogForm)">
-                                    Auswertung importieren
+                                    @click="openImport(workDialogForm)">
+                                    Importieren
                                 </v-btn>
-                                <v-spacer />
+                                <WorkEvaluationPdf :work="savedWorkDialogWork" />
+                                <WorkDispatchLog :work="savedWorkDialogWork" />
+                            </div>
+                            <div class="d-flex flex-wrap justify-end ga-2 mt-4">
                                 <v-btn
                                     variant="text"
                                     :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
@@ -1752,7 +1772,8 @@
                                     <strong class="text-body-2">{{ cellEntryTypeLabel(entry) }}</strong>
                                     <v-chip
                                         v-if="entryExpectsProperty(entry)"
-                                        size="x-small"
+                                        class="course-table-cell-entry-main-grade"
+                                        size="large"
                                         color="success"
                                         variant="tonal">
                                         {{ entry.effective_grade || entry.grade || 'offen' }}
@@ -1824,6 +1845,9 @@
                                     :work="courseWorkForCellEntry(entry)"
                                     :student-id="registeredEntryStudentId || ''"
                                     class="mt-2" />
+                                <div v-if="entry.source === 'course_work'" class="mt-2">
+                                    <WorkDispatchStatus :work="courseWorkForCellEntry(entry)" :student-id="registeredEntryStudentId || ''" show-result-time />
+                                </div>
                                 <div
                                     v-if="isCellEntryExpanded(entry) && entry.source === 'course_work' && courseWorkForCellEntry(entry)"
                                     class="course-table-cell-work-entry mt-3"
@@ -1976,8 +2000,8 @@
                                             prepend-icon="mdi-folder-upload-outline"
                                             variant="tonal"
                                             :disabled="Boolean(courseWorkEntrySavingUid)"
-                                            @click="openEvaluationImport(courseWorkForCellEntry(entry))">
-                                            Auswertung importieren
+                                            @click="openImport(courseWorkForCellEntry(entry))">
+                                            Importieren
                                         </v-btn>
                                         <v-spacer />
                                         <v-btn
@@ -2403,6 +2427,9 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
+import WorkDispatchLog from './WorkDispatchLog.vue'
+import WorkDispatchStatus from './WorkDispatchStatus.vue'
+import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
@@ -2417,7 +2444,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkEvaluationPdf },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -3416,10 +3443,10 @@ export default {
                 student: null,
             }
         },
-        openEvaluationImport(work) {
+        openImport(work) {
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
             if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
-            this.$refs.evaluationImport.openEvaluationImport(savedWork)
+            this.$refs.evaluationImport.openImport(savedWork)
         },
         async evaluationImported(work) {
             if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
@@ -4730,6 +4757,11 @@ export default {
                 const workDescription = String(work?.description || '').trim()
 
                 return {
+                    isWork: Boolean(work),
+                    notification: ['tasks', 'results'].map(purpose => {
+                        const record = workDispatchRecord(work, studentId, purpose)
+                        return record ? dispatchNotificationText(record.sent_at, purpose, record.mode) : ''
+                    }).filter(Boolean).join('\n'),
                     comment,
                     description: workDescription && workDescription !== comment ? workDescription : '',
                     grade: work
@@ -4748,7 +4780,10 @@ export default {
 
             this.performanceEntriesForCell(student, courseDate).forEach((entry) => {
                 const type = String(entry?.type || '').trim()
-                const typeKey = type ? type.toLocaleLowerCase('de-AT') : entry.uid
+                const normalizedType = type ? type.toLocaleLowerCase('de-AT') : entry.uid
+                const typeKey = entry?.source === 'course_work' && entry.teaching_course_work_id
+                    ? `${normalizedType}-work-${entry.teaching_course_work_id}`
+                    : normalizedType
                 const grade = String(entry?.effective_grade || entry?.grade || '').trim()
                 const comment = entry?.source === 'course_work'
                     ? this.courseWorkStudentComment(entry, studentId)
@@ -5937,9 +5972,10 @@ export default {
                 const targetColumn = Array.from(scrollContainer.querySelectorAll('[data-course-date-key]'))
                     .find((element) => element.dataset.courseDateKey === targetKey)
                 if (!targetColumn) return
+                const studentColumnWidth = scrollContainer.querySelector('.course-table-student-col')?.offsetWidth || 0
 
                 scrollContainer.scrollLeft = Math.max(
-                    targetColumn.offsetLeft - (scrollContainer.clientWidth / 2) + (targetColumn.offsetWidth / 2),
+                    targetColumn.offsetLeft - ((scrollContainer.clientWidth + studentColumnWidth) / 2) + (targetColumn.offsetWidth / 2),
                     0,
                 )
             })
@@ -6739,6 +6775,7 @@ export default {
     flex-direction: column;
     gap: 3px;
     justify-content: center;
+    margin-inline: auto;
     max-width: 118px;
     min-height: 40px;
     width: 100%;
@@ -6893,6 +6930,28 @@ export default {
     line-height: 1.25;
     overflow: hidden;
     overflow-wrap: anywhere;
+}
+
+.course-table-cell-entry-main-grade {
+    font-size: 1.35rem;
+    font-weight: 800;
+    justify-content: center;
+    min-width: 64px;
+}
+
+.work-import-actions :deep(.v-btn) {
+    height: auto;
+    max-width: 100%;
+    min-height: 32px;
+    min-width: 0;
+    padding-block: 6px;
+}
+
+.work-import-actions :deep(.v-btn__content) {
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-align: left;
+    white-space: normal;
 }
 
 .course-table-date-work-list {

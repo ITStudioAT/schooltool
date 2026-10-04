@@ -115,6 +115,21 @@ it('preserves unsaved or unpublished work in an existing target feature workspac
     expect(file_get_contents($feature.'/keep.txt'))->toBe('Target work');
 })->with([false, true]);
 
+it('refuses a missing registered feature workspace without recreating or pruning it', function (): void {
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart missing-workspace'));
+    $feature = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitmain'));
+    (new Filesystem)->deleteDirectory($feature);
+
+    $result = runBranchWorkflowCommand($this->workflowPc, 'gitwork missing-workspace');
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect($result->getOutput())->toContain('registered feature workspace is missing');
+    expect(is_dir($feature))->toBeFalse();
+    expect(runBranchWorkflowGit($this->workflowPc, 'worktree', 'list', '--porcelain'))->toContain('branch refs/heads/feature/missing-workspace');
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+});
+
 it('refuses occupied feature folders and foreign branch checkouts without discarding files', function (string $condition): void {
     if ($condition === 'folder') {
         $folder = $this->workflowPc.'-features/occupied';
@@ -467,6 +482,7 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/discard-me'))->toBe($commit)
         ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('');
+    expect(runBranchWorkflowGit($this->workflowPc.'-features/discard-me', 'branch', '--show-current'))->toBe('feature/discard-me');
 });
 
 it('shares unfinished development between two devices without changing main', function (): void {
@@ -833,7 +849,10 @@ it('keeps profile navigation in the selected folder and uses main helpers from o
     file_put_contents($main.'/scripts/git_workflow.ps1', <<<'POWERSHELL'
 param([string]$Command, [string[]]$CommandArguments)
 . $env:SCHOOLTOOL_TEST_HELPERS
-function Invoke-SchooltoolLocalPreparation { Write-Host 'TEST_WORKSPACE_PREPARATION' }
+function Invoke-SchooltoolLocalPreparation {
+    if ($env:SCHOOLTOOL_TEST_FAIL_PREPARATION) { throw 'EXPECTED_WORKSPACE_PREPARATION_FAILURE' }
+    Write-Host 'TEST_WORKSPACE_PREPARATION'
+}
 if ($CommandArguments.Count -gt 0) { & $Command -Name $CommandArguments[0] }
 else { & $Command }
 POWERSHELL);
@@ -880,6 +899,12 @@ if ((Get-Command gitwork).ScriptBlock.File -ne $PROFILE.CurrentUserCurrentHost) 
 gitwork profile-feature
 if ((Get-Location).Path -ne $featureFolder) { throw 'Profile did not reuse the feature folder.' }
 gitmain
+try {
+    $env:SCHOOLTOOL_TEST_FAIL_PREPARATION = '1'
+    try { gitwork profile-feature; throw 'PREPARATION_FAILURE_WAS_IGNORED' }
+    catch { if ($_.Exception.Message -ne 'EXPECTED_WORKSPACE_PREPARATION_FAILURE') { throw } }
+    if ((Get-Location).Path -ne $mainFolder) { throw 'Failed profile navigation changed the caller folder.' }
+} finally { Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION }
 Write-Host 'PROFILE_NAVIGATION_VERIFIED'
 POWERSHELL, $shell);
 
@@ -1378,6 +1403,31 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Ready work');
 });
 
+it('keeps the feature checkout attached when main changes during release checks', function (): void {
+    $main = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart protected-main'));
+    $feature = $this->workflowPc;
+    file_put_contents($feature.'/feature.txt', 'Ready work');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
+    $mainLiteral = str_replace("'", "''", $main);
+    $command = branchWorkflowReleaseMocks()."\n".'$mainWorkspace = \''.$mainLiteral."'\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    [System.IO.File]::WriteAllText((Join-Path $mainWorkspace 'keep.txt'), 'New main work')
+}
+gitrelease 'Release completed work'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('Release succeeded, but local cleanup stopped');
+    expect($this->workflowPc)->toBe($feature);
+    expect(runBranchWorkflowGit($feature, 'branch', '--show-current'))->toBe('feature/protected-main');
+    expect(file_get_contents($main.'/keep.txt'))->toBe('New main work');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:feature.txt'))->toBe('Ready work');
+});
+
 it('lets the other device leave a safely merged deleted feature but preserves unpublished work', function (bool $unpublished): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
@@ -1426,20 +1476,86 @@ POWERSHELL;
         ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('');
 });
 
-it('does not publish files edited while main release checks are running', function (): void {
+it('rechecks concurrent source edits before saving main', function (string $stage, string $shell): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
+    $command = branchWorkflowReleaseMocks()."\n".'$editStage = \''.$stage."'\n".<<<'POWERSHELL'
+$script:checks = 0
+$script:edited = $false
+$script:gitExecutable = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    $script:checks++
+    Write-Host "SOURCE_CHECK_$script:checks"
+    if ($editStage -eq 'checks' -and -not $script:edited) {
+        $script:edited = $true
+        [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed concurrently')
+    }
+}
+function git {
+    & $script:gitExecutable @args
+    if ($LASTEXITCODE -eq 0 -and $editStage -eq 'commit' -and $args[0] -eq 'commit' -and $args[2] -eq 'Save correction' -and -not $script:edited) {
+        $script:edited = $true
+        [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed concurrently')
+    }
+}
+gitsave 'Save correction'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('attempt 2/3', 'SOURCE_CHECK_2', 'SAVED ON GITHUB.');
+    expect($result->getOutput())->not->toContain('SOURCE_CHECK_3');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:fix.txt'))->toBe('Changed concurrently');
+    expect(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'show', 'main:deployment/source-commit'))
+        ->toBe(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main^'));
+})->with([
+    'edit during checks on Windows PowerShell' => ['checks', 'powershell'],
+    'edit during commit on Windows PowerShell' => ['commit', 'powershell'],
+    'edit during checks on PowerShell 7' => ['checks', 'pwsh'],
+    'edit during commit on PowerShell 7' => ['commit', 'pwsh'],
+]);
+
+it('does not retry a main save after Git identity changes or a failed build', function (string $failure): void {
+    file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
+    $command = branchWorkflowReleaseMocks()."\n".'$failure = \''.$failure."'\n".<<<'POWERSHELL'
+function Invoke-SchooltoolReleaseChecks {
+    param([switch]$Full)
+    Write-Host 'SOURCE_CHECK_STARTED'
+    if ($failure -eq 'build') { throw 'BUILD_FAILED' }
+    if ($failure -eq 'branch') { Invoke-SchooltoolGit switch -c unrelated | Out-Host }
+    if ($failure -eq 'head') { Invoke-SchooltoolGit commit --allow-empty -m 'Concurrent Git operation' | Out-Host }
+}
+gitsave 'Save correction'
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect(substr_count($result->getOutput(), 'SOURCE_CHECK_STARTED'))->toBe(1);
+    expect($result->getOutput())->not->toContain('attempt 2/3');
+    expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
+    expect(file_get_contents($this->workflowPc.'/fix.txt'))->toBe("Original correction\n");
+})->with(['build', 'branch', 'head']);
+
+it('stops without publishing when source edits continue across all main save attempts', function (): void {
     file_put_contents($this->workflowPc.'/fix.txt', "Original correction\n");
     $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
+$script:checks = 0
 function Invoke-SchooltoolReleaseChecks {
-    [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), 'Changed during tests')
+    param([switch]$Full)
+    $script:checks++
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'fix.txt'), "Changed during tests $script:checks")
 }
 gitsave 'Save correction'
 POWERSHELL;
     $result = runBranchWorkflowCommand($this->workflowPc, $command);
 
     expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('changed during checks')
+        ->and($result->getOutput())->toContain('changed during checks', '3 save attempts', 'fix.txt')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe('Changed during tests');
+        ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe('Changed during tests 3');
 });
 
 it('runs main full checks in an isolated staged-source worktree and restores the original environment', function (bool $failChecks): void {

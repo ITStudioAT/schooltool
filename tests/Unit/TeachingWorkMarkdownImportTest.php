@@ -79,7 +79,7 @@ test('work evaluation Markdown refuses conflicts missing reports and unknown for
     expect(fn () => app(TeachingWorkMarkdownImport::class)->parse($reports))->toThrow(ValidationException::class);
 })->with(['conflict', 'missing', 'unknown', 'duplicate', 'wrong person']);
 
-test('work evaluation PDF references survive both backups and synchronisation with private paths', function () {
+test('work evaluation PDFs and dispatch logs survive both backups and synchronisation with private references', function () {
     Storage::fake('local');
     $disk = Storage::disk('local');
     $attachments = [];
@@ -89,32 +89,46 @@ test('work evaluation PDF references survive both backups and synchronisation wi
         $disk->put($path, $content);
         $attachments[] = ['file_path' => $path, 'storage_disk' => 'local', 'student_id' => $studentId, 'sha256' => hash('sha256', $content)];
     }
+    $logPath = 'teaching/work_dispatches/1/9/log.txt';
+    $disk->put($logPath, 'Dispatch');
+    $workStatus = ['evaluation_pdfs' => $attachments,
+        'dispatch_logs' => [['file_path' => $logPath, 'storage_disk' => 'local', 'sha256' => hash('sha256', 'Dispatch')]],
+        'dispatch_notifications' => [['student_id' => 1, 'sent_at' => '2026-10-04T00:15:39Z']],
+        'dispatch_attempts' => [['student_id' => 1, 'purpose' => 'tasks', 'mode' => 'test']]];
     $tables = ['teaching_courses' => [['id' => 2, 'school_id' => 1]],
-        'teaching_course_works' => [['id' => 9, 'teaching_course_id' => 2, 'status' => json_encode(['evaluation_pdfs' => $attachments])]],
+        'teaching_course_works' => [['id' => 9, 'teaching_course_id' => 2, 'status' => json_encode($workStatus)]],
         'teaching_curriculum_documents' => [], 'teaching_course_date_material_attachments' => [], 'teaching_imported_curricula' => []];
     $sync = new TeachingSynchronisationFiles;
     $files = $sync->capture($tables, ['default' => 'local', 'disks' => ['local' => ['driver' => 'local', 'root' => rtrim($disk->path(''), '/\\')]]]);
-    expect($files)->toHaveCount(2);
+    expect($files)->toHaveCount(3);
     $result = $sync->rewrite($tables, $files, 1);
     $status = json_decode($result['tables']['teaching_course_works'][0]['status'], true);
     expect($status['evaluation_pdfs'][1]['file_path'])->toStartWith('teaching/synchronisation/1/')
-        ->and($result['files'])->toHaveCount(2);
+        ->and($status['dispatch_logs'][0]['file_path'])->toStartWith('teaching/synchronisation/1/')
+        ->and($result['files'])->toHaveCount(3);
     $graph = new TeachingSynchronisationGraph;
-    $remapped = (new ReflectionMethod($graph, 'remapJson'))->invoke($graph, ['evaluation_pdfs' => $attachments], ['users' => [1 => 11]], 'status', [1 => 11]);
-    expect($remapped['evaluation_pdfs'][0]['student_id'])->toBeNull()->and($remapped['evaluation_pdfs'][1]['student_id'])->toBe(11);
+    $remapped = (new ReflectionMethod($graph, 'remapJson'))->invoke($graph, $workStatus, ['users' => [1 => 11]], 'status', [1 => 11]);
+    expect($remapped['evaluation_pdfs'][0]['student_id'])->toBeNull()->and($remapped['evaluation_pdfs'][1]['student_id'])->toBe(11)
+        ->and($remapped['dispatch_notifications'][0]['student_id'])->toBe(11)
+        ->and($remapped['dispatch_attempts'][0]['student_id'])->toBe(11);
     $backup = app(TeachingBackupService::class);
     $backedUp = (new ReflectionMethod($backup, 'filesForTables'))->invoke($backup, $tables);
-    expect($backedUp)->toHaveCount(2)->and($backedUp[0]['exists'])->toBeTrue();
+    expect($backedUp)->toHaveCount(3)->and($backedUp[0]['exists'])->toBeTrue();
     $archiveFiles = [];
     foreach ($attachments as $pdf) {
         $archiveFiles[$pdf['file_path']] = ['exists' => true, 'base64' => base64_encode($disk->get($pdf['file_path']))];
     }
+    $archiveFiles[$logPath] = ['exists' => true, 'base64' => base64_encode('Dispatch')];
     $restoredSchool = json_decode((new ReflectionMethod($backup, 'restoreWorkEvaluationFiles'))->invoke($backup, $tables['teaching_course_works'][0]['status'], $archiveFiles, 1, [1 => 11]), true);
     expect($restoredSchool['evaluation_pdfs'][1]['student_id'])->toBe(11)
         ->and($disk->get($restoredSchool['evaluation_pdfs'][1]['file_path']))->toBe('PDF 1');
+    expect($restoredSchool['dispatch_notifications'][0]['student_id'])->toBe(11)
+        ->and($restoredSchool['dispatch_attempts'][0]['student_id'])->toBe(11)
+        ->and($disk->get($restoredSchool['dispatch_logs'][0]['file_path']))->toBe('Dispatch');
     $personal = app(PersonalTeachingBackupService::class);
     $references = (new ReflectionMethod($personal, 'fileReferences'))->invoke($personal, $tables);
-    expect($references)->toHaveCount(2)->and($references[1]['column'])->toBe('status.evaluation_pdfs.1.file_path');
+    expect($references)->toHaveCount(3)->and($references[1]['column'])->toBe('status.evaluation_pdfs.1.file_path')
+        ->and($references[2]['column'])->toBe('status.dispatch_logs.0.file_path');
     foreach ($references as &$reference) {
         $reference['content'] = base64_encode($disk->get($reference['path']));
     }
@@ -124,4 +138,6 @@ test('work evaluation PDF references survive both backups and synchronisation wi
     $restored = json_decode($tables['teaching_course_works'][0]['status'], true);
     expect($restored['evaluation_pdfs'][0]['file_path'])->toStartWith('teaching/personal_restores/')
         ->and($disk->get($restored['evaluation_pdfs'][1]['file_path']))->toBe('PDF 1');
+    expect($restored['dispatch_logs'][0]['file_path'])->toStartWith('teaching/personal_restores/')
+        ->and($disk->get($restored['dispatch_logs'][0]['file_path']))->toBe('Dispatch');
 });

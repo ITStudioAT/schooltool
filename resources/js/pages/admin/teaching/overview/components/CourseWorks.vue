@@ -77,6 +77,7 @@
                             <div v-if="work.description" class="text-caption work-description-line">
                                 {{ work.description }}
                             </div>
+                            <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="work" aggregate /></div>
                             <div class="work-bottom-row">
                                 <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1">
                                     <v-chip
@@ -90,9 +91,9 @@
                                     </v-chip>
                                 </div>
                                 <div v-else class="work-grade-distribution-placeholder"></div>
-                                <div class="work-actions d-flex align-center ga-1">
+                                <div class="work-actions work-import-actions d-flex align-center flex-wrap ga-2">
+                                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openImport(work)">Importieren</v-btn>
                                     <WorkEvaluationPdf :work="work" />
-                                    <v-btn size="x-small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openEvaluationImport(work)">Importieren</v-btn>
                                     <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
                                     <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
                                     <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
@@ -116,10 +117,12 @@
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
-                <div v-if="work_form.id" class="d-flex flex-wrap ga-2 mt-3">
-                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click="openEvaluationImport(courseWorks.find(work => work.id === work_form.id))">Auswertung importieren</v-btn>
+                <div v-if="work_form.id" class="work-import-actions d-flex align-center flex-wrap ga-2 mt-3">
+                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click="openImport(courseWorks.find(work => work.id === work_form.id))">Importieren</v-btn>
                     <WorkEvaluationPdf :work="work_form" />
+                    <WorkDispatchLog :work="work_form" />
                 </div>
+                <div v-if="work_form.id" class="mt-2"><WorkDispatchStatus :work="work_form" aggregate /></div>
                 <v-card-text class="pt-2">
                     <v-card variant="outlined" class="pa-3 mb-4">
                         <div :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
@@ -537,6 +540,7 @@
                                                     {{ studentNameById(studentId) }}
                                                 </div>
                                                 <WorkEvaluationPdf :work="work_form" :student-id="studentId" />
+                                                <WorkDispatchStatus :work="work_form" :student-id="studentId" show-result-time />
                                                     <v-spacer />
                                                     <v-btn
                                                         size="x-small"
@@ -671,6 +675,7 @@
                                             {{ row.studentLabel }}
                                         </div>
                                         <WorkEvaluationPdf :work="work_form" :student-id="row.studentId" />
+                                        <WorkDispatchStatus :work="work_form" :student-id="row.studentId" show-result-time />
                                         <v-spacer />
                                         <v-chip
                                             size="x-small"
@@ -724,6 +729,7 @@
                                             {{ row.studentLabel }}
                                         </div>
                                         <WorkEvaluationPdf :work="work_form" :student-id="row.studentId" />
+                                        <WorkDispatchStatus :work="work_form" :student-id="row.studentId" show-result-time />
                                         <v-spacer />
                                         <v-btn
                                             size="x-small"
@@ -814,9 +820,11 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
+import WorkDispatchLog from './WorkDispatchLog.vue'
+import WorkDispatchStatus from './WorkDispatchStatus.vue'
 
 export default {
-    components: { ItsGridBox, WorkEvaluationImport, WorkEvaluationPdf },
+    components: { ItsGridBox, WorkEvaluationImport, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -1157,8 +1165,8 @@ export default {
     },
 
     methods: {
-        openEvaluationImport(work) {
-            this.$refs.evaluationImport.openEvaluationImport(work)
+        openImport(work) {
+            this.$refs.evaluationImport.openImport(work)
         },
         async evaluationImported(work) {
             await this.refreshWorks()
@@ -2534,8 +2542,9 @@ export default {
 }
 
 .work-bottom-row {
-    align-items: flex-end;
+    align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: space-between;
     margin-top: auto;
@@ -2546,8 +2555,24 @@ export default {
 }
 
 .work-actions {
-    flex: 0 0 auto;
-    margin-left: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+}
+
+.work-import-actions :deep(.v-btn) {
+    height: auto;
+    max-width: 100%;
+    min-height: 32px;
+    min-width: 0;
+    padding-block: 6px;
+}
+
+.work-import-actions :deep(.v-btn__content) {
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-align: left;
+    white-space: normal;
 }
 
 @media (min-width: 900px) {
