@@ -1051,7 +1051,7 @@ it('saves and resumes three independent features and releases only the selected 
     foreach (array_keys($heads) as $name) {
         $selected = runBranchWorkflowCommand($this->workflowLaptop, 'gitwork "'.$name.'"');
         assertBranchWorkflowSucceeded($selected);
-        expect($selected->getOutput())->toContain('database untouched')
+        expect($selected->getOutput())->toContain('Working folder:')
             ->and(runBranchWorkflowGit($this->workflowLaptop, 'rev-parse', 'HEAD'))->toBe($heads[$name])
             ->and(file_get_contents($this->workflowLaptop.'/'.$name.'.txt'))->toBe($name." work\n");
     }
@@ -1424,22 +1424,24 @@ it('lets the other device leave a safely merged deleted feature but preserves un
     file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork'));
+    $feature = $this->workflowLaptop;
     if ($unpublished) {
         commitBranchWorkflowFile($this->workflowLaptop, 'laptop.txt', "Unpublished laptop work\n");
     }
+    $head = runBranchWorkflowGit($feature, 'rev-parse', 'HEAD');
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitrelease "Release feature"'));
     $result = runBranchWorkflowCommand($this->workflowLaptop, 'gitmain');
 
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
+    expect(runBranchWorkflowGit($feature, 'rev-parse', 'HEAD'))->toBe($head);
     if ($unpublished) {
-        expect($result->isSuccessful())->toBeFalse()
-            ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('feature/new-function')
-            ->and(file_get_contents($this->workflowLaptop.'/laptop.txt'))->toBe("Unpublished laptop work\n");
+        expect(runBranchWorkflowGit($feature, 'branch', '--show-current'))->toBe('feature/new-function');
+        expect(file_get_contents($feature.'/laptop.txt'))->toBe("Unpublished laptop work\n");
 
         return;
     }
 
-    assertBranchWorkflowSucceeded($result);
-    expect(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
 })->with(['fully merged' => false, 'additional local commits' => true]);
 
 it('atomically preserves newer feature commits and the reservation during release confirmation', function (): void {

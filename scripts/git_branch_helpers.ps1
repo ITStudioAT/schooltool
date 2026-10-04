@@ -589,7 +589,7 @@ function gitsave {
     if ($active.Branch -cne $branch) { throw 'This feature is no longer active. Nothing was published.' }
     $remoteHead = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$branch"
     if (-not (Test-SchooltoolAncestor $remoteHead HEAD)) {
-        throw 'Origin contains feature commits missing locally. Use gitwork for a fast-forward, or resolve divergent commits explicitly. Nothing was merged or committed.'
+        throw 'Origin contains feature commits missing locally. Use gitpull --ff-only, or resolve divergent commits explicitly. Nothing was merged or committed.'
     }
     if (Invoke-SchooltoolGit status --porcelain --untracked-files=all) {
         Invoke-SchooltoolCommand 'Checking UTF-8 source files...' { php scripts/check-encoding.php }
@@ -816,7 +816,7 @@ function gitrelease {
     $featureHead = Invoke-SchooltoolGit rev-parse HEAD
     $remoteFeature = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$feature"
     if ($featureHead -ne $remoteFeature) {
-        throw 'New feature commits exist on origin. Run gitwork and test them first.'
+        throw 'New feature commits exist on origin. Run gitpull --ff-only and test them first.'
     }
     $mainHead = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
     if (Test-SchooltoolRef refs/heads/main) {

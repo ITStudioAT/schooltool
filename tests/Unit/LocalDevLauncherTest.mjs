@@ -194,7 +194,7 @@ test('PowerShell profiles route composer dev to the selected folder and preserve
     try {
         for (const shell of ['powershell.exe', 'pwsh.exe']) {
             for (const override of [false, true]) {
-            const script = `$ErrorActionPreference='Stop'
+                const script = `$ErrorActionPreference='Stop'
 $PROFILE=[pscustomobject]@{CurrentUserCurrentHost=(Join-Path (Get-Location) '.git/profile.ps1')}
 & '${quote(installer)}' -DocumentsDirectory (Join-Path (Get-Location) '.git/documents') ${override ? '-WorkflowDirectory (Join-Path (Get-Location) \'scripts\')' : ''}
 . $PROFILE.CurrentUserCurrentHost
@@ -206,10 +206,10 @@ git remote set-url origin https://example.invalid/foreign.git
 try { composer dev; throw 'FOREIGN_START_ALLOWED' } catch { if($_.Exception.Message -eq 'FOREIGN_START_ALLOWED') { throw } }
 git remote set-url origin https://github.com/ITStudioAT/schooltool.git
 `;
-            const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-                { cwd: fixture.project, encoding: 'utf8', timeout: 30000, windowsHide: true });
-            assert.equal(result.status, 0, result.stdout + result.stderr);
-            assert.match(result.stdout, /Composer version/);
+                const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+                    { cwd: fixture.project, encoding: 'utf8', timeout: 30000, windowsHide: true });
+                assert.equal(result.status, 0, result.stdout + result.stderr);
+                assert.match(result.stdout, /Composer version/);
             }
         }
         const lines = fs.readFileSync(log, 'utf8').trim().split(/\r?\n/);
