@@ -1,5 +1,5 @@
 <template>
-    <div class="zero-board">
+    <div class="zero-board" :class="{ 'zero-board--station': isStation }">
         <div v-if="state.session.status !== 'active'" class="zero-notice">
             {{ state.session.status === 'draft' ? 'Vorbereitung · Die Leitung startet die Koordination, sobald alles bereit ist.' : 'Diese Matura ist abgeschlossen. Das Protokoll bleibt verfügbar.' }}
         </div>
@@ -48,7 +48,7 @@
                 </label>
                 <button class="zero-button" :disabled="!selectedStudent || cannotAct">Gang anmelden</button>
             </form>
-            <p class="zero-help">Erst nach der Freigabe losschicken. Die Freigabe reserviert den Platz bis zur Ankunft.</p>
+            <p class="zero-help">Erst nach der Freigabe losschicken. Bereits freigegebene Schüler zählen zur Belegung.</p>
         </section>
 
         <div class="zero-section-title"><div><span class="zero-eyebrow">GEMEINSAMER STAND</span><h2>{{ state.actor.room_id !== null && !state.actor.manager ? 'Gänge in meinem Raum' : 'Aktuelle Gänge' }}</h2></div><span class="zero-count">{{ visibleVisits.length }}</span></div>
@@ -95,8 +95,15 @@ const claimOpen = ref(false)
 const toilet = computed(() => props.state.visits.find((visit) => visit.status === 'toilet'))
 const requested = computed(() => props.state.visits.filter((visit) => visit.status === 'requested'))
 const cannotAct = computed(() => props.disabled || !props.state.actor.owns_station || props.state.session.status !== 'active')
+const isStation = computed(() => !props.state.actor.manager && props.state.actor.room_id === null)
 const ownStation = computed(() => props.state.actor.room_id === null ? 'Zwischenstation' : props.state.rooms.find((room) => room.id === props.state.actor.room_id)?.name)
-const visibleVisits = computed(() => props.state.visits.filter((visit) => props.state.actor.manager || props.state.actor.room_id === null || visit.room_id === props.state.actor.room_id))
+const visibleVisits = computed(() => {
+    const visits = props.state.visits.filter((visit) => props.state.actor.manager || props.state.actor.room_id === null || visit.room_id === props.state.actor.room_id)
+    if (!isStation.value) return visits
+    const priority = { toilet: 0, arrived: 1, departed: 2, approved: 3, returning: 4, requested: 5 }
+    return visits.sort((first, second) => priority[first.status] - priority[second.status]
+        || (first.arrived_at || '').localeCompare(second.arrived_at || '') || first.id - second.id)
+})
 const availableStudents = computed(() => props.state.students.filter((student) => student.matura_room_id === selectedRoom.value && !props.state.visits.some((visit) => visit.student_id === student.id)))
 watch(selectedRoom, () => { selectedStudent.value = null })
 function roomAllowed(visit) { return props.state.actor.manager || props.state.actor.room_id === visit.room_id }

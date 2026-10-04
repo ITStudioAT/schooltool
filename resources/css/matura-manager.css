@@ -123,4 +123,14 @@
     .zero-tabs button { padding: 13px 12px; }
     .zero-visit { padding: 20px; }
     .zero-visits { grid-template-columns: 1fr; }
+    .zero-manager--station .zero-hero { padding: 16px 18px; gap: 10px; margin-bottom: 12px; }
+    .zero-manager--station .zero-hero h1 { font-size: 2rem; margin: 0 0 4px; }
+    .zero-manager--station .zero-hero p { font-size: .85rem; }
+    .zero-manager--station .zero-hero .zero-eyebrow { margin-bottom: 4px; font-size: .6rem; }
+    .zero-board--station { display: flex; flex-direction: column; }
+    .zero-board--station > .zero-metrics { order: 1; margin: 18px 0 0; }
+    .zero-board--station .zero-duty { padding: 14px 18px; gap: 10px; margin-bottom: 18px; }
+    .zero-board--station .zero-duty .zero-eyebrow { margin-bottom: 4px; }
+    .zero-board--station .zero-duty h2 { font-size: 1.1rem; }
+    .zero-board--station .zero-duty p { margin-top: 4px; }
 }

@@ -1,5 +1,5 @@
 <template>
-    <v-app><v-main class="zero-guest"><div class="zero-manager">
+    <v-app><v-main class="zero-guest"><div class="zero-manager" :class="{ 'zero-manager--station': state && !state.actor.manager && state.actor.room_id === null }">
         <header class="zero-hero"><div><span class="zero-eyebrow">SCHOOLTOOL · MATURA</span><h1>00-Manager<span class="zero-hero-dot">.</span></h1><p>{{ state?.session.name || 'Ihr Zugang zur gemeinsamen Koordination' }}</p></div><div v-if="state" class="zero-live" :class="{ 'zero-live--offline': stale }"><span></span>{{ stale ? 'Verbindung unterbrochen' : 'Gemeinsamer Stand' }}<small>Aktualisiert {{ time(state.server_time) }}</small></div></header>
         <p v-if="error" class="zero-error" role="alert">{{ error }}</p>
         <section v-if="!state && !loading" class="zero-panel">

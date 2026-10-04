@@ -70,4 +70,28 @@ describe('00-Manager station actions', () => {
         expect(screen.queryByText('Andere Person')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Toilette betreten' })).not.toBeInTheDocument()
     })
+
+    it('prioritizes the occupied toilet and then the arrival queue at the station', async () => {
+        const view = renderBoard(state({
+            actor: { manager: false, room_id: null, owns_station: true },
+            visits: [
+                requested,
+                { ...requested, id: 10, status: 'departed', student_name: 'Unterwegs' },
+                { ...requested, id: 11, status: 'arrived', student_name: 'Später angekommen', arrived_at: '2026-10-04T09:03:00+02:00' },
+                { ...requested, id: 12, status: 'toilet', student_name: 'Auf Toilette' },
+                { ...requested, id: 13, status: 'arrived', student_name: 'Zuerst angekommen', arrived_at: '2026-10-04T09:02:00+02:00' },
+            ],
+        }))
+        expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+            'Auf Toilette', 'Zuerst angekommen', 'Später angekommen', 'Unterwegs', 'Müller Änne',
+        ])
+        await fireEvent.click(screen.getByRole('button', { name: 'Toilette verlassen' }))
+        expect(view.emitted().action).toEqual([[{ action: 'exit', visit_id: 12, expected_status: 'toilet' }]])
+        expect(screen.queryByRole('button', { name: 'Platz freigeben' })).not.toBeInTheDocument()
+    })
+
+    it.each([{ ownsStation: false, disabled: false }, { ownsStation: true, disabled: true }])('keeps prioritized station actions locked when unavailable: %j', ({ ownsStation, disabled }) => {
+        renderBoard(state({ actor: { manager: false, room_id: null, owns_station: ownsStation }, visits: [{ ...requested, status: 'toilet' }] }), disabled)
+        expect(screen.getByRole('button', { name: 'Toilette verlassen' })).toBeDisabled()
+    })
 })
