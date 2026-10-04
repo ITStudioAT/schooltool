@@ -90,7 +90,7 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
-        if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht)\.(?:md|pdf))\z/iu', $source, $matches)) {
+        if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^\/_]+_[^\/_]+)\.(?:md|pdf))\z/iu', $source, $matches)) {
             return ['source' => mb_strtolower($source), 'name' => $matches[1], 'kind' => 'evaluation', 'run' => ''];
         }
         if (preg_match('/\AVersand\/(Aufgaben|Ergebnisse)\/(Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\/Versandprotokoll\.txt\z/iu', $source, $matches)) {
@@ -120,8 +120,6 @@ class TeachingWorkFolderImport
         $previous = $work->status['folder_import_sources'] ?? [];
         if ($bundle['evaluation']) {
             $report = $bundle['evaluation'];
-            $date = \DateTimeImmutable::createFromFormat('!d.m.Y', $report['date']);
-            $this->assertIdentity($work, $report['title'], $date && $date->format('d.m.Y') === $report['date'] ? $date->format('Y-m-d') : '');
             $preview = $this->evaluations->preview($work, $actor, $report, $bundle['pdfs']);
             foreach ($preview['rows'] as &$row) {
                 if (! $row['student_id'] || str_contains($row['status'], 'gesperrt')) {
@@ -161,7 +159,7 @@ class TeachingWorkFolderImport
             $tests = [];
             foreach ($protocols as $file) {
                 try {
-                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256']);
+                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
                 } catch (ValidationException $exception) {
                     $this->reject($file['path'].': '.implode(' ', collect($exception->errors())->flatten()->all()));
                 }
@@ -199,18 +197,6 @@ class TeachingWorkFolderImport
         }
 
         return ['messages' => $messages, 'missing' => $missing];
-    }
-
-    private function assertIdentity(TeachingCourseWork $work, string $title, string $date): void
-    {
-        $normalize = fn (string $value): string => mb_strtolower(preg_replace('/\s+/u', ' ', trim(preg_replace('/\A(?:Übung|Leistungsfeststellung|Arbeit):\s*/iu', '', trim($value)))));
-        if ($date === '' || $work->date_for_all_groups?->format('Y-m-d') !== $date || $normalize((string) $work->title) !== $normalize($title)) {
-            $this->reject('Titel oder Datum der Auswertungen passt nicht zur gespeicherten Arbeit.');
-        }
-        if ($work->teachingCourse->teachingCourseWorks()->whereDate('date_for_all_groups', $date)->get(['id', 'title'])
-            ->filter(fn (TeachingCourseWork $candidate): bool => $normalize((string) $candidate->title) === $normalize($title))->count() !== 1) {
-            $this->reject('Mehrere Arbeiten mit diesem Titel und Datum – Zuordnung nicht eindeutig.');
-        }
     }
 
     private function reject(string $message): never

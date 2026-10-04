@@ -90,6 +90,33 @@ describe('CourseWorks automatic folder import', () => {
     const work = { id: 65, teaching_course_id: '2', title: 'E-Mails' }
     const summary = { messages: ['Auswertungen übernommen.', 'Aufgabenversand: lokaler Test.', 'Ergebnisbenachrichtigung: Live-Versand.'], missing: [] }
 
+    it('includes compact surname-first personal reports and matching PDFs in the folder request', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { data: work, summary } })
+        vi.stubGlobal('axios', { post })
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 }, $emit: vi.fn() }
+        const selected = [
+            fileAt('Test/Beurteilungen/Gesamtübersicht.md'),
+            fileAt('Test/Beurteilungen/Gesamtübersicht.pdf', '%PDF-1.4', 'application/pdf'),
+            fileAt('Test/Beurteilungen/Van Alpha_Ada.md', 'personal result'),
+            fileAt('Test/Beurteilungen/Van Alpha_Ada.pdf', '%PDF-1.4', 'application/pdf'),
+            fileAt('Test/Beurteilungen/Beta_Bea.md', 'open result'),
+            fileAt('Test/Beurteilungen/Beta_Bea.pdf', '%PDF-1.4', 'application/pdf'),
+            fileAt('Test/Abgaben/Van Alpha_Ada.md', 'submission'),
+            fileAt('Test/Beurteilungen/Belege/Van Alpha_Ada.md', 'evidence'),
+        ]
+        try {
+            await ctx.selectFolder({ target: { files: selected, value: 'folder' } })
+            expect(post).toHaveBeenCalledTimes(1)
+            const payload = post.mock.calls[0][1] as FormData
+            const documents = JSON.parse(payload.get('documents') as string)
+            expect(documents).toHaveLength(3)
+            expect(documents.find((document: any) => document.path.endsWith('/Van Alpha_Ada.md')).text).toBe('personal result')
+            expect(JSON.parse(payload.get('pdf_paths') as string)).toHaveLength(3)
+            expect(payload.getAll('pdfs[]')).toHaveLength(3)
+            expect(ctx.import_selection).toBe('Test · 6 Importdateien')
+        } finally { vi.unstubAllGlobals() }
+    })
+
     it('automatically imports all supported parts through one folder field and rescans subsequent selections', async () => {
         const post = vi.fn().mockResolvedValue({ data: { data: work, summary } })
         vi.stubGlobal('axios', { post })
