@@ -144,14 +144,14 @@ class TeachingWorkDispatchImport
     /** @param array<string, mixed> $report
      * @return array<string, mixed>
      */
-    public function preview(TeachingCourseWork $work, array $report, string $sha256): array
+    public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true): array
     {
         $course = $work->teachingCourse;
-        if ($this->assignment((string) $work->title) !== $report['title']) {
+        if ($requireMatchingTitle && $this->assignment((string) $work->title) !== $report['title']) {
             $this->reject('Titel des Versandprotokolls passt nicht zur gespeicherten Arbeit.');
         }
         $candidates = $course->teachingCourseWorks()->where('date_for_all_groups', $work->date_for_all_groups?->format('Y-m-d'))->get(['id', 'title']);
-        if ($candidates->filter(fn (TeachingCourseWork $candidate): bool => $this->assignment((string) $candidate->title) === $report['title'])->count() !== 1) {
+        if ($requireMatchingTitle && $candidates->filter(fn (TeachingCourseWork $candidate): bool => $this->assignment((string) $candidate->title) === $report['title'])->count() !== 1) {
             $this->reject('Mehrere Arbeiten mit diesem Titel und Datum – Zuordnung nicht eindeutig.');
         }
         $identities = $this->evaluations->courseIdentities($course);

@@ -74,16 +74,13 @@ test('teacher test folder logs are archived without grades or student dispatch f
     expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
     $this->postJson($url, workFolderPayload([], [$path => $text], false))->assertOk();
     expect($work->fresh()->status['dispatch_logs'])->toHaveCount(1);
-    foreach (['invalid subject' => 'Andere Nachricht: E-Mails', 'wrong work' => 'Test der Ergebnisbenachrichtigung: Different'] as $case => $invalidSubject) {
-        $response = $this->postJson($url, workFolderPayload([], [$path => TeachingWorkDispatchFixture::teacherTestText($invalidSubject)], false))->assertUnprocessable();
-        if ($case === 'invalid subject') {
-            expect(implode(' ', array_merge(...array_values($response->json('errors')))))->toContain($path)->toContain($invalidSubject);
-        }
-        expect($work->fresh()->status)->toBe($status);
-    }
+    $invalidSubject = 'Andere Nachricht: E-Mails';
+    $response = $this->postJson($url, workFolderPayload([], [$path => TeachingWorkDispatchFixture::teacherTestText($invalidSubject)], false))->assertUnprocessable();
+    expect(implode(' ', array_merge(...array_values($response->json('errors')))))->toContain($path)->toContain($invalidSubject);
+    expect($work->fresh()->status)->toBe($status);
     Mail::assertNothingSent();
     Notification::assertNothingSent();
-})->with(['Test der Ergebnisbenachrichtigung: E-Mails', 'Formatierungstest der Ergebnisbenachrichtigung: E-Mails']);
+})->with(['Test der Ergebnisbenachrichtigung: E-Mails', 'Formatierungstest der Ergebnisbenachrichtigung: E-Mails', 'Test der Ergebnisbenachrichtigung: Abweichender Titel']);
 
 test('one folder imports evaluations task tests and result notifications atomically and rescans new or changed contents', function () {
     $work = prepareWorkDispatchImport($this);
@@ -189,6 +186,30 @@ test('folder imports accept different source dates while preserving work group d
         ->and($otherWork->fresh()->status)->toBe(['other' => 'Keep']);
 });
 
+test('folder import uses the explicitly selected work despite different titles and another matching work', function (string $title) {
+    $work = prepareWorkDispatchImport($this);
+    $work->update(['title' => $title]);
+    $otherWork = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => 'Übung: E-Mails',
+        'date_for_all_groups' => '2026-10-02', 'groups' => [], 'status' => ['other' => 'Keep']]);
+    $otherBefore = $otherWork->fresh()->getAttributes();
+    Mail::fake();
+    Notification::fake();
+
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", workFolderPayload())->assertOk();
+
+    $work->refresh();
+    expect($work->title)->toBe($title)
+        ->and($work->groups[0]['points'][0]['points'])->toBe(4.5)
+        ->and($work->status['evaluation_pdfs'])->toHaveCount(2)
+        ->and($work->status['dispatch_logs'])->toHaveCount(2)
+        ->and($work->status['dispatch_notifications'])->toHaveCount(1)
+        ->and($work->status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
+        ->and($work->status['dispatch_attempts'][0]['mode'])->toBe('test')
+        ->and($otherWork->fresh()->getAttributes())->toBe($otherBefore);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['E-Mail', 'Übung: E-Mail schreiben', 'Übung: E-Mails']);
+
 test('folder errors leave grades entries original files and notification history intact', function (string $case) {
     $work = prepareWorkDispatchImport($this);
     $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
@@ -206,9 +227,6 @@ test('folder errors leave grades entries original files and notification history
     if ($case === 'unknown assessment person') {
         $payload = workFolderPayload(TeachingWorkEvaluationFixture::reports());
         $documents = json_decode($payload['documents'], true);
-    }
-    if ($case === 'duplicate work') {
-        TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => $work->title, 'date_for_all_groups' => '2026-10-02']);
     }
     if ($case === 'different roots') {
         $documents[4]['path'] = 'Other/'.$documents[4]['path'];
@@ -230,7 +248,7 @@ test('folder errors leave grades entries original files and notification history
     expect($work->fresh()->getAttributes())->toBe($before)
         ->and(TeachingCourseStudentEntry::where('teaching_course_id', $this->course->id)->get()->toArray())->toBe($entries)
         ->and(Storage::disk('local')->allFiles())->toBe([]);
-})->with(['unmapped result', 'type contradiction', 'wrong work', 'unknown assessment person', 'duplicate work', 'different roots', 'duplicate source', 'traversal', 'partial assessment']);
+})->with(['unmapped result', 'type contradiction', 'wrong work', 'unknown assessment person', 'different roots', 'duplicate source', 'traversal', 'partial assessment']);
 
 test('folder import preserves old files and state when a later protocol fails after new PDF storage', function () {
     $work = prepareWorkDispatchImport($this);
@@ -502,7 +520,7 @@ test('dispatch apply rejects a stale preview and mismatched work identity withou
     $preview = $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertOk()->json('preview');
     $work->update(['description' => 'Changed']);
     $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(), 'apply' => true, 'hash' => $preview['hash']])->assertConflict();
-    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(null, ['Leistungsfeststellung' => 'C:/source/2026-10-03_wrong'])])->assertUnprocessable()->assertJsonValidationErrors('protocol');
+    $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload(null, ['Leistungsfeststellung' => 'C:/source/2026-02-30_wrong'])])->assertUnprocessable()->assertJsonValidationErrors('protocol');
     $work->update(['title' => 'Other assignment']);
     $this->postJson($url, ['protocol' => TeachingWorkDispatchFixture::upload()])->assertUnprocessable()->assertJsonValidationErrors('protocol');
     expect($work->fresh()->status)->toBe(['manual' => 'Keep'])
