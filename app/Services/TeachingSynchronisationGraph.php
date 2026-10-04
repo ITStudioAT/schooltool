@@ -304,7 +304,12 @@ class TeachingSynchronisationGraph
             }
             $userLinks[$user['id']] = $link === -1 ? null : $link;
             if ($matches !== [] && $link !== $matches[0]['import116_id'] && $matches[0]['import116_id'] !== null) {
-                $conflicts[] = "Gemeinsame Schülerverknüpfung des Kontos #{$matches[0]['id']} würde entfernt oder gewechselt.";
+                $linkedAccount = $this->linkedStudentAccount($user, $source, $local, $maps);
+                if ($linkedAccount && $linkedAccount['id'] === $matches[0]['id']) {
+                    $userLinks[$user['id']] = $matches[0]['import116_id'];
+                } else {
+                    $conflicts[] = "Gemeinsame Schülerverknüpfung des Kontos #{$matches[0]['id']} würde entfernt oder gewechselt.";
+                }
             }
         }
         foreach (self::TABLES as $table => $scope) {
@@ -443,15 +448,15 @@ class TeachingSynchronisationGraph
             }
             $student = $students[0];
             $accounts = array_values(array_filter($local['users'], fn (array $row): bool => $row['id'] === $student['user_id']));
-            if (count($accounts) !== 1 || ! $this->sameStudent($import, $student, $user, $accounts[0])
+            if (count($accounts) !== 1 || ! $this->sameLinkedStudent($import, $student, $user, $accounts[0])
                 || array_diff($local['user_roles'][$accounts[0]['id']] ?? [], ['student', 'lunch_user', 'lunch_candidate', 'studentstimetables_user']) !== []) {
                 return null;
             }
             $candidate = $accounts[0];
             if ($candidate['import116_id'] !== null) {
                 $reverse = array_values(array_filter($local['import116'], fn (array $row): bool => $row['id'] === $candidate['import116_id']
-                    && $row['user_id'] === $candidate['id'] && $row['student_code'] === $import['student_code']));
-                if (count($reverse) !== 1 || ! $this->sameStudent($import, $reverse[0], $user, $candidate)) {
+                    && ($row['user_id'] === null || $row['user_id'] === $candidate['id']) && $row['student_code'] === $import['student_code']));
+                if (count($reverse) !== 1 || ! $this->sameLinkedStudent($import, $reverse[0], $user, $candidate)) {
                     return null;
                 }
             }
@@ -460,6 +465,26 @@ class TeachingSynchronisationGraph
 
         // Every existing year must point to the same account; never merge competing accounts.
         return count($candidates) === 1 ? array_values($candidates)[0] : null;
+    }
+
+    private function sameLinkedStudent(array $sourceStudent, array $localStudent, array $sourceUser, array $localUser): bool
+    {
+        if ($this->sameStudent($sourceStudent, $localStudent, $sourceUser, $localUser)) {
+            return true;
+        }
+        // Surname corrections need stable student identity and consistent names within each account link.
+        if (trim((string) ($sourceStudent['student_code'] ?? '')) === ''
+            || $sourceStudent['student_code'] !== ($localStudent['student_code'] ?? null)
+            || empty($sourceStudent['birth_date']) || $sourceStudent['birth_date'] !== ($localStudent['birth_date'] ?? null)) {
+            return false;
+        }
+        $firstName = mb_strtolower(trim((string) ($sourceStudent['first_name'] ?? '')));
+        if ($firstName === '' || $firstName !== mb_strtolower(trim((string) ($localStudent['first_name'] ?? '')))) {
+            return false;
+        }
+
+        return $this->sameStudent($sourceStudent, $sourceStudent, $sourceUser, $sourceUser)
+            && $this->sameStudent($localStudent, $localStudent, $localUser, $localUser);
     }
 
     private function sameStudent(array $sourceStudent, array $localStudent, array $sourceUser, array $localUser): bool

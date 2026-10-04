@@ -70,6 +70,82 @@ test('changed student email reuses the proven existing account across years with
         ->and($local['users'][0]['email'])->toBe('local@example.test');
 });
 
+test('surname corrections reuse the reciprocal student account without changing login identity', function () {
+    [$source, $local] = teachingLinkedStudentFixture();
+    $local['users'][0]['import116_id'] = 60;
+    $local['users'][0]['last_name'] = 'Byron';
+    $local['users'][0]['email'] = 'import116.60@schooltool.noemail';
+    $local['import116'][0]['last_name'] = 'Byron';
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->toBe([])->and($plan['maps']['users'][20])->toBe(40)
+        ->and($plan['new_users'])->toBe([])->and($plan['updated_imports'][0]['user_id'])->toBe(40)
+        ->and($plan['updated_imports'][0]['last_name'])->toBe('Lovelace')
+        ->and(array_keys($plan['users'][40]))->not->toContain('email', 'last_name');
+});
+
+test('surname corrections cannot bridge students without matching birthdates and first names', function (string $conflict) {
+    [$source, $local] = teachingLinkedStudentFixture();
+    $local['users'][0]['last_name'] = 'Byron';
+    $local['import116'][0]['last_name'] = 'Byron';
+    if ($conflict === 'missing birthdate') {
+        $source['import116'][0]['birth_date'] = null;
+        $local['import116'][0]['birth_date'] = null;
+    } elseif ($conflict === 'different birthdate') {
+        $local['import116'][0]['birth_date'] = '2001-08-03';
+    } else {
+        $local['import116'][0]['first_name'] = 'Other';
+        $local['users'][0]['first_name'] = 'Other';
+    }
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->not->toBe([])->and($plan['maps']['users'][20])->not->toBe(40);
+})->with(['missing birthdate', 'different birthdate', 'different first name']);
+
+test('student account links to a previous schoolyear are preserved when LIVE points to the same student in a new year', function () {
+    [$source, $local] = teachingLinkedStudentFixture();
+    $local['users'][0]['email'] = $source['users'][0]['email'];
+    $local['users'][0]['import116_id'] = 60;
+    $source['schoolyears'][] = ['id' => 11, 'school_id' => 1, 'from' => '2026-09-01', 'until' => '2027-08-31'];
+    $source['import116'][] = [...$source['import116'][0], 'id' => 51, 'schoolyear_id' => 11];
+    $source['users'][0]['import116_id'] = 51;
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->toBe([])->and($plan['users'][40]['import116_id'])->toBe(60)
+        ->and($plan['new_imports'][0]['user_id'])->toBe(40)
+        ->and($source['users'][0]['import116_id'])->toBe(51);
+});
+
+test('student accounts retain their new-year link when its reciprocal association is missing locally', function () {
+    [$source, $local] = teachingLinkedStudentFixture();
+    $year = ['id' => 11, 'school_id' => 1, 'from' => '2026-09-01', 'until' => '2027-08-31'];
+    $source['schoolyears'][] = $year;
+    $local['schoolyears'][] = $year;
+    $source['import116'][] = [...$source['import116'][0], 'id' => 51, 'schoolyear_id' => 11];
+    $source['users'][0]['import116_id'] = 51;
+    $local['import116'][] = [...$local['import116'][0], 'id' => 61, 'schoolyear_id' => 11, 'user_id' => null];
+    $local['users'][0]['import116_id'] = 61;
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->toBe([])->and($plan['maps']['users'][20])->toBe(40)
+        ->and($plan['new_users'])->toBe([])->and($plan['users'][40]['import116_id'])->toBe(61)
+        ->and($plan['updated_imports'][1]['user_id'])->toBe(40);
+});
+
+test('student bridge refuses a reverse link owned by another account even for the same student', function () {
+    [$source, $local] = teachingLinkedStudentFixture();
+    $local['users'][0]['import116_id'] = 61;
+    $local['import116'][] = [...$local['import116'][0], 'id' => 61, 'user_id' => 41];
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->not->toBe([])->and($plan['maps']['users'][20])->not->toBe(40);
+});
+
 test('student bridge refuses conflicting names dates privileged accounts and reverse links', function (string $conflict) {
     [$source, $local] = teachingLinkedStudentFixture();
     if ($conflict === 'name') {

@@ -167,6 +167,28 @@ test('folder import accepts absent optional types and retains existing history',
     expect($work->fresh()->status)->toBe($status);
 })->with(['evaluations', 'tasks', 'results', 'empty']);
 
+test('folder imports accept different source dates while preserving work group dates and deadlines', function () {
+    $work = prepareWorkDispatchImport($this);
+    $groups = array_map(fn (array $group): array => [...$group, 'date' => '2026-09-29'], $work->groups);
+    $work->update(['date_for_all_groups' => '2026-09-29', 'finish_until_date' => '2026-10-10', 'groups' => $groups]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    $otherWork = TeachingCourseWork::create(['teaching_course_id' => $work->teaching_course_id, 'type' => $work->type,
+        'title' => $work->title, 'date_for_all_groups' => '2026-10-02', 'groups' => [], 'status' => ['other' => 'Keep']]);
+    $payload = workFolderPayload();
+    $payload['documents'] = str_replace('2026-10-02_IT-Grundlagen_INF1', '2026-10-05_IT-Grundlagen_INF1', $payload['documents']);
+
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertSuccessful();
+
+    $work->refresh();
+    expect($work->date_for_all_groups->format('Y-m-d'))->toBe('2026-09-29')
+        ->and($work->finish_until_date->format('Y-m-d'))->toBe('2026-10-10')
+        ->and(array_column($work->groups, 'date'))->toBe(['2026-09-29', '2026-09-29'])
+        ->and($work->groups[0]['points'][0]['points'])->toBe(4.5)
+        ->and($work->status['dispatch_notifications'])->toHaveCount(1)
+        ->and($work->status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T00:15:39Z')
+        ->and($otherWork->fresh()->status)->toBe(['other' => 'Keep']);
+});
+
 test('folder errors leave grades entries original files and notification history intact', function (string $case) {
     $work = prepareWorkDispatchImport($this);
     $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
@@ -269,6 +291,59 @@ test('tasks and results remain separate across previews reimports and normal wor
     expect($work->fresh()->status['dispatch_attempts'])->toBe($combined['dispatch_attempts'])
         ->and($work->fresh()->status['dispatch_notifications'])->toBe($combined['dispatch_notifications']);
 })->with(['historical Mailpit' => true, 'structured live tasks' => false]);
+
+test('folder import archives stopped Postmark and confirmed Outlook tasks without changing grades or sending mail', function () {
+    $work = prepareWorkDispatchImport($this);
+    $before = $work->groups;
+    Mail::fake();
+    Notification::fake();
+    $stopped = TeachingWorkDispatchFixture::combinedTasksText('Postmark', true);
+    $outlook = TeachingWorkDispatchFixture::combinedTasksText();
+    $payload = workFolderPayload([], [
+        'Versand/Aufgaben/Versand_2026-10-04_16-41-31/Versandprotokoll.txt' => $stopped,
+        'Versand/Aufgaben/Versand_2026-10-04_16-56-40/Versandprotokoll.txt' => $outlook,
+    ], false);
+
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertSuccessful();
+
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'])->toHaveCount(2)->and($status['dispatch_notifications'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
+        ->and($status['dispatch_notifications'][0]['purpose'])->toBe('tasks')
+        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T14:59:41Z')
+        ->and($status['dispatch_attempts'])->toHaveCount(1)->and($work->fresh()->groups)->toEqual($before);
+    expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($stopped);
+    expect(Storage::disk('local')->get($status['dispatch_logs'][1]['file_path']))->toBe($outlook);
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertSuccessful();
+    expect($work->fresh()->status)->toBe($status);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('Outlook preview requires consistent sent-folder evidence for a live task marker', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $text = TeachingWorkDispatchFixture::combinedTasksText();
+    $jsonStart = strpos($text, '{');
+    $metadata = json_decode(substr($text, $jsonStart), true, 32, JSON_THROW_ON_ERROR);
+    $field = ['not confirmed' => 'SentConfirmed', 'attachments not verified' => 'AttachmentsVerified',
+        'different recipient' => 'To', 'different subject' => 'Subject', 'different account' => 'Account',
+        'different message' => 'InternetMessageID', 'different entry' => 'SentEntryID', 'different store' => 'SentStoreID',
+        'different time' => 'SentOn', 'different attachment' => 'Attachments'][$case];
+    $metadata['Empfaenger'][0]['Office_Zustand'][$field] = match ($field) {
+        'SentConfirmed', 'AttachmentsVerified' => false,
+        'Attachments' => [['Name' => 'Tasks.pdf', 'SHA256' => str_repeat('b', 64)]],
+        default => 'different',
+    };
+    $text = substr($text, 0, $jsonStart).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", [
+        'protocol' => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $text), 'purpose' => 'tasks',
+    ])->assertSuccessful()->json('preview');
+
+    expect($preview['rows'][0]['accepted'])->toBeFalse()->and($preview['rows'][0]['sent_at'])->toBeNull()
+        ->and($work->fresh()->status)->toBe(['manual' => 'Keep']);
+})->with(['not confirmed', 'attachments not verified', 'different recipient', 'different subject', 'different account',
+    'different message', 'different entry', 'different store', 'different time', 'different attachment']);
 
 test('historical task preview enforces the same participant and work assignment checks', function () {
     $work = prepareWorkDispatchImport($this);

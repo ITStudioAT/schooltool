@@ -187,8 +187,8 @@ class TeachingWorkMarkdownImport
             $this->reject('Für diese Arbeit einen Eintragstyp mit Punkte-Bewertung und '.$report['maximum'].' maximalen Punkten wählen. Es erfolgt keine Umrechnung in Schulnoten.');
         }
         $date = \DateTimeImmutable::createFromFormat('!d.m.Y', $report['date']);
-        if (! $date || ($work->date_for_all_groups && $work->date_for_all_groups->format('Y-m-d') !== $date->format('Y-m-d'))) {
-            $this->reject('Das Datum der Auswertung passt nicht zum Datum dieser Arbeit.');
+        if (! $date || $date->format('d.m.Y') !== $report['date']) {
+            $this->reject('Das Datum der Auswertung ist ungültig.');
         }
         $identities = array_map(fn (array $matches): array => array_column($matches, 'student_id'), $this->courseIdentities($course));
         $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
