@@ -53,6 +53,93 @@ test('derives only missing feature configuration and preserves existing private 
     } finally { fixture.cleanup(); }
 });
 
+test('profile navigation shows the chosen VS Code worktree and preserves Git/dev when the editor is unavailable', { skip: process.platform !== 'win32' }, () => {
+    const fixture = ownedFixture();
+    const originalProject = fixture.project;
+    fixture.project = path.join(fixture.directory, 'main with spaces');
+    fs.renameSync(originalProject, fixture.project);
+    const scripts = path.join(fixture.project, 'scripts');
+    fs.mkdirSync(scripts);
+    const quote = filename => filename.replaceAll("'", "''");
+    fs.copyFileSync(path.join(root, 'scripts/install_powershell_helpers.ps1'), path.join(scripts, 'install_powershell_helpers.ps1'));
+    fs.writeFileSync(path.join(scripts, 'git_workflow.ps1'), [
+        'param([string]$Command, [string[]]$CommandArguments)',
+        ". '" + quote(helpers) + "'",
+        'if ($CommandArguments.Count -gt 0) { & $Command -Name $CommandArguments[0] } else { & $Command }',
+    ].join('\n'));
+    fs.writeFileSync(path.join(fixture.project, 'composer.json'), '{}');
+    git(fixture.project, 'init', '--initial-branch=main');
+    git(fixture.project, 'config', 'user.email', 'owned@example.test');
+    git(fixture.project, 'config', 'user.name', 'Owned Test');
+    git(fixture.project, 'config', 'commit.gpgsign', 'false');
+    git(fixture.project, 'add', '.');
+    git(fixture.project, 'commit', '-m', 'Owned editor fixture');
+    git(fixture.project, 'remote', 'add', 'origin', 'https://github.com/ITStudioAT/schooltool.git');
+    const feature = path.resolve(fixture.project + '-features/helpers');
+    git(fixture.project, 'worktree', 'add', '-b', 'feature/helpers', feature);
+    const head = git(fixture.project, 'rev-parse', 'HEAD');
+    const fakeBin = path.join(fixture.project, '.git/fake code');
+    fs.mkdirSync(fakeBin);
+    const log = path.join(fixture.project, '.git/editor-calls.jsonl');
+    const capture = path.join(fakeBin, 'capture.mjs');
+    fs.writeFileSync(capture, "import fs from 'node:fs';\nfs.appendFileSync(" + JSON.stringify(log)
+        + ", JSON.stringify(process.argv.slice(2))+'\\n');\nprocess.exit(Number(process.env.OWNED_EDITOR_EXIT ?? 0));\n");
+    fs.writeFileSync(path.join(fakeBin, 'code.cmd'), '@echo off\n"' + process.execPath + '" "' + capture + '" %*\nexit /b %errorlevel%\n');
+    fs.mkdirSync(path.join(fixture.project, '.git/schooltool-dev'));
+    const controllerPath = path.join(fixture.project, '.git/schooltool-dev/controller.json');
+    fs.writeFileSync(controllerPath, 'owned-controller-preserved');
+    try {
+        for (const shell of ['powershell.exe', 'pwsh.exe']) {
+            for (const scenario of ['vscode', 'outside', 'no-cli', 'cli-failed']) {
+                fs.writeFileSync(log, '');
+                const script = [
+                    "$ErrorActionPreference='Stop'",
+                    "$PROFILE=[pscustomobject]@{CurrentUserCurrentHost=(Join-Path (Get-Location) '.git/editor-profile.ps1')}",
+                    "& './scripts/install_powershell_helpers.ps1' -DocumentsDirectory (Join-Path (Get-Location) '.git/documents')",
+                    '. $PROFILE.CurrentUserCurrentHost',
+                    "$env:PATH='" + quote(fakeBin) + "'+[IO.Path]::PathSeparator+$env:PATH",
+                    "$env:TERM_PROGRAM='" + (scenario === 'outside' ? 'ordinary-shell' : 'vscode') + "'",
+                    '$env:VSCODE_IPC_HOOK_CLI=$null',
+                    "$env:OWNED_EDITOR_EXIT='" + (scenario === 'cli-failed' ? '7' : '0') + "'",
+                    scenario === 'no-cli'
+                        ? "function Get-Command { param($Name, $CommandType, $ErrorAction); if ($Name -ceq 'code') { return }; Microsoft.PowerShell.Core\\Get-Command @PSBoundParameters }"
+                        : '',
+                    "try { gitwork '../invalid'; throw 'INVALID_SELECTION_ALLOWED' } catch { if ($_.Exception.Message -eq 'INVALID_SELECTION_ALLOWED') { throw } }",
+                    'gitwork helpers',
+                    "if ((Get-Location).Path -ine '" + quote(feature) + "') { throw 'Feature navigation failed.' }",
+                    'gitmain',
+                    "if ((Get-Location).Path -ine '" + quote(fixture.project) + "') { throw 'Main navigation failed.' }",
+                    "Write-Host 'EDITOR_NAVIGATION_COMPLETED'",
+                ].join('\n');
+                const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+                    { cwd: fixture.project, encoding: 'utf8', timeout: 30000, windowsHide: true });
+                assert.equal(result.status, 0, result.stdout + result.stderr);
+                assert.match(result.stdout, /EDITOR_NAVIGATION_COMPLETED/);
+                const calls = fs.readFileSync(log, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+                if (scenario === 'vscode') {
+                    assert.deepEqual(calls, [
+                        ['--add', feature],
+                        ['--reuse-window', '--goto', path.join(feature, 'composer.json')],
+                        ['--add', fixture.project],
+                        ['--reuse-window', '--goto', path.join(fixture.project, 'composer.json')],
+                    ]);
+                } else if (scenario === 'cli-failed') {
+                    assert.deepEqual(calls, [['--add', feature], ['--add', fixture.project]]);
+                    assert.match(result.stdout, /Git\/dev selection succeeded/);
+                } else {
+                    assert.deepEqual(calls, []);
+                    if (scenario === 'no-cli') { assert.match(result.stdout, /CLI is unavailable/); }
+                }
+                assert.equal(git(fixture.project, 'rev-parse', 'HEAD'), head);
+                assert.equal(git(feature, 'rev-parse', 'HEAD'), head);
+                assert.equal(fs.readFileSync(controllerPath, 'utf8'), 'owned-controller-preserved');
+                const selection = JSON.parse(fs.readFileSync(path.join(fixture.project, '.git/schooltool-dev/selection.json'), 'utf8'));
+                assert.equal(path.resolve(selection.project), fixture.project);
+            }
+        }
+    } finally { fixture.cleanup(); }
+});
+
 test('rejects nonlocal, preview and incomplete configurations', () => {
     const values = { APP_ENV: 'local', APP_KEY: 'private', DB_CONNECTION: 'mysql', DB_HOST: '127.0.0.1', DB_DATABASE: 'owned' };
     for (const invalid of [{ APP_ENV: 'production' }, { DB_HOST: 'remote.example' }, { DB_URL: 'mysql://remote.example' },

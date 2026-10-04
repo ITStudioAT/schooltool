@@ -121,6 +121,26 @@ function gitpush {
         Pop-Location
     }
 }
+function Show-ProjectGitWorkspace {
+    param([string]`$Directory)
+    if (`$env:TERM_PROGRAM -cne 'vscode') { return }
+    `$editor = Get-Command code -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not `$editor) {
+        Write-Warning "Working folder selected: `$Directory. VS Code CLI is unavailable; Git/dev selection succeeded."
+        return
+    }
+    try {
+        & `$editor.Source --add `$Directory
+        if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not add the working folder.' }
+        `$entry = Join-Path `$Directory 'composer.json'
+        if (Test-Path -LiteralPath `$entry -PathType Leaf) {
+            & `$editor.Source --reuse-window --goto `$entry
+            if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not show the selected checkout.' }
+        }
+        Write-Host "Editor working folder: `$Directory" -ForegroundColor Cyan
+    }
+    catch { Write-Warning "Git/dev selection succeeded. `$(`$_.Exception.Message) Working folder: `$Directory" }
+}
 function Invoke-ProjectGitWorkflow {
     param([string]`$Command, [string[]]`$CommandArguments)
     `$repositoryRoot = git rev-parse --show-toplevel 2>`$null
@@ -168,6 +188,7 @@ function Invoke-ProjectGitWorkflow {
         Pop-Location
         if (`$completed -and `$Command -cin @('gitstart', 'gitwork', 'gitmain', 'gitrelease')) {
             Set-Location -LiteralPath `$selectedLocation
+            if (`$Command -cin @('gitwork', 'gitmain')) { Show-ProjectGitWorkspace `$selectedLocation }
         }
     }
 }
