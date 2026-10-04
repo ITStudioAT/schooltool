@@ -12,6 +12,45 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('compact evaluation reports preserve original basenames result lines and open values', function () {
+    $report = app(TeachingWorkMarkdownImport::class)->parse(TeachingWorkEvaluationFixture::compactReports());
+
+    expect($report['maximum'])->toBe(5.0);
+    expect($report['date'])->toBe('04.10.2026');
+    expect($report['rows']['ada van alpha / 1a']['points'])->toBe(4.6);
+    expect($report['rows']['ada van alpha / 1a']['source'])->toBe('Van Alpha_Ada.md');
+    expect($report['rows']['ada van alpha / 1a']['comment'])->toBe('**Ergebnis der vorliegenden Abgabe: 4,6 von 5,0 Punkten.** E-Mail: 3,0/3,0; MC-PDF: 1,6/2,0.');
+    expect($report['rows']['bea beta / 1a']['points'])->toBeNull();
+    expect($report['rows']['bea beta / 1a']['comment'])->toBe('');
+});
+
+test('compact evaluation reports reject inconsistent identities totals criteria statuses and incomplete bundles', function (string $case) {
+    $reports = TeachingWorkEvaluationFixture::compactReports();
+    if ($case === 'missing detail') {
+        unset($reports['Beta_Bea.md']);
+    } elseif ($case === 'unknown file') {
+        $reports['Unknown_Person.md'] = '# Unsupported';
+    } else {
+        [$file, $from, $to] = match ($case) {
+            'identity' => ['Van Alpha_Ada.md', 'Van Alpha Ada /', 'Ada Van Alpha /'],
+            'class' => ['Van Alpha_Ada.md', ' / 1A', ' / 1F'],
+            'title' => ['Van Alpha_Ada.md', 'Auswertung: E-Mails', 'Auswertung: Andere Arbeit'],
+            'result total' => ['Van Alpha_Ada.md', 'Abgabe: 4,6 von', 'Abgabe: 4,5 von'],
+            'criteria total' => ['Van Alpha_Ada.md', '| **4,6** |', '| **4,5** |'],
+            'criterion points' => ['Van Alpha_Ada.md', '| 2,0 | 1,6 |', '| 2,0 | 2,1 |'],
+            'component points' => ['Van Alpha_Ada.md', 'MC-PDF: 1,6/2,0', 'MC-PDF: 1,5/2,0'],
+            'overview points' => ['Gesamtübersicht.md', '| 4,6 | 5,0 |', '| 4,5 | 5,0 |'],
+            'maximum' => ['Gesamtübersicht.md', '| offen | 5,0 |', '| offen | 6,0 |'],
+            'open numeric' => ['Beta_Bea.md', '| 2,0 | offen |', '| 2,0 | 0 |'],
+            'open status' => ['Gesamtübersicht.md', '| Bewertung offen |', '| vorliegende Abgabe beurteilt |'],
+            'date' => ['Gesamtübersicht.md', '04.10.2026', '31.02.2026'],
+        };
+        $reports[$file] = str_replace($from, $to, $reports[$file]);
+    }
+
+    expect(fn () => app(TeachingWorkMarkdownImport::class)->parse($reports))->toThrow(ValidationException::class);
+})->with(['missing detail', 'unknown file', 'identity', 'class', 'title', 'result total', 'criteria total', 'criterion points', 'component points', 'overview points', 'maximum', 'open numeric', 'open status', 'date']);
+
 test('surname first evaluation reports preserve verified name boundaries decimal points and open submissions', function () {
     $report = app(TeachingWorkMarkdownImport::class)->parse(TeachingWorkEvaluationFixture::surnameFirstReports());
 

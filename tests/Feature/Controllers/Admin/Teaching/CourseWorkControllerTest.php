@@ -60,6 +60,48 @@ function workFolderPayload(?array $reports = null, ?array $protocols = null, boo
         'pdf_paths' => json_encode(array_map(fn (UploadedFile $file): string => $folder.'/Beurteilungen/'.$file->getClientOriginalName(), $pdfs), JSON_THROW_ON_ERROR), 'pdfs' => $pdfs];
 }
 
+test('compact folder evaluations import points and personal PDFs while retaining open grades and comments', function () {
+    $work = prepareWorkDispatchImport($this);
+    $payload = workFolderPayload(TeachingWorkEvaluationFixture::compactReports(), [], false);
+    $payload['pdfs'] = [workEvaluationPdf('Gesamtübersicht.pdf'), workEvaluationPdf('Van Alpha_Ada.pdf'), workEvaluationPdf('Beta_Bea.pdf')];
+    $payload['pdf_paths'] = json_encode(array_map(fn (UploadedFile $pdf): string => $payload['folder'].'/Beurteilungen/'.$pdf->getClientOriginalName(), $payload['pdfs']), JSON_THROW_ON_ERROR);
+
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertOk();
+    $work->refresh();
+    expect($work->groups[0]['points'][0]['points'])->toBe(4.6);
+    expect($work->groups[0]['comments'][0]['comment'])->toBe('**Ergebnis der vorliegenden Abgabe: 4,6 von 5,0 Punkten.** E-Mail: 3,0/3,0; MC-PDF: 1,6/2,0.');
+    expect($work->groups[1]['points'][0]['points'])->toBe(3);
+    expect($work->groups[1]['comments'][0]['comment'])->toBe('Offen vorher');
+    expect($work->status['evaluation_pdfs'])->toHaveCount(3);
+    expect(collect($work->status['evaluation_pdfs'])->firstWhere('student_id', $this->student->id)['name'])->toBe('Van Alpha_Ada.pdf');
+});
+
+test('single teacher task test folder logs retain original bytes without grades student flags or mail', function (string $provider) {
+    $work = prepareWorkDispatchImport($this);
+    $before = $work->groups;
+    Mail::fake();
+    Notification::fake();
+    $text = TeachingWorkDispatchFixture::teacherTaskTestText($provider);
+    $path = 'Versand/Aufgaben/Versand_2026-10-04_16-35-22/Versandprotokoll.txt';
+    $payload = workFolderPayload([], [$path => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+
+    $this->postJson($url, $payload)->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'])->toHaveCount(1);
+    expect($status['dispatch_logs'][0]['purpose'])->toBe('tasks');
+    expect($status['dispatch_logs'][0]['mode'])->toBe('teacher_test');
+    expect($status['dispatch_logs'][0]['recipient_scope'])->toBe('teacher');
+    expect($status['dispatch_notifications'] ?? [])->toBe([]);
+    expect($status['dispatch_attempts'] ?? [])->toBe([]);
+    expect($work->fresh()->groups)->toEqual($before);
+    expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
+    $this->postJson($url, $payload)->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['Postmark', 'Office']);
+
 test('teacher test folder logs are archived without grades or student dispatch flags', function (string $subject) {
     $work = prepareWorkDispatchImport($this);
     Mail::fake();

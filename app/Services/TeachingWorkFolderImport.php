@@ -90,7 +90,7 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
-        if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht)\.(?:md|pdf))\z/iu', $source, $matches)) {
+        if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^\/_]+_[^\/_]+)\.(?:md|pdf))\z/iu', $source, $matches)) {
             return ['source' => mb_strtolower($source), 'name' => $matches[1], 'kind' => 'evaluation', 'run' => ''];
         }
         if (preg_match('/\AVersand\/(Aufgaben|Ergebnisse)\/(Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\/Versandprotokoll\.txt\z/iu', $source, $matches)) {

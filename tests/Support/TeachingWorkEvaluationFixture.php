@@ -40,6 +40,24 @@ class TeachingWorkEvaluationFixture
         ];
     }
 
+    public static function compactReports(): array
+    {
+        $front = fn (string $title, string $subject): string => "---\ntitle: \"{$title}: E-Mails\"\nfach: \"{$subject}\"\nlehrperson: \"Test\"\n---\n\n";
+        $header = "| Kriterium / Aufgabenteil | Maximale Punkte laut Kriterien | Erreichte Punkte | Konkrete Begründung anhand der Abgabe |\n| --- | --- | --- | --- |\n";
+
+        return [
+            'Gesamtübersicht.md' => $front('Gesamtübersicht', 'INF 1 · Leistungsfeststellung vom 04.10.2026')
+                ."| Person / Klasse | Abgabestatus | Erreichte Punkte | Maximale Punkte | Bewertungsstatus |\n| --- | --- | --- | --- | --- |\n"
+                ."| Van Alpha Ada / 1A | E-Mail und MC-PDF vorhanden | 4,6 | 5,0 | vorliegende Abgabe beurteilt |\n"
+                ."| Beta Bea / 1A | im Prüfstand offen | offen | 5,0 | Bewertung offen |\n",
+            'Van Alpha_Ada.md' => $front('Auswertung', 'Van Alpha Ada / 1A')
+                ."**Ergebnis der vorliegenden Abgabe: 4,6 von 5,0 Punkten.** E-Mail: 3,0/3,0; MC-PDF: 1,6/2,0.\n\n"
+                .$header."| MC-PDF | 2,0 | 1,6 | Acht Fragen richtig. |\n| Nachrichtentext | 3,0 | 3,0 | Erfüllt. |\n| **Gesamt** | **5,0** | **4,6** | **Abgabe vollständig prüfbar.** |\n",
+            'Beta_Bea.md' => $front('Auswertung', 'Beta Bea / 1A')."**Bewertung offen.** Es wird kein Punktwert vergeben.\n\n"
+                .$header."| MC-PDF | 2,0 | offen | Keine zugeordnete PDF. |\n| Nachrichtentext | 3,0 | offen | Keine zugeordnete E-Mail. |\n| **Gesamt** | **5,0** | **offen** | **Keine abschließende Summe.** |\n",
+        ];
+    }
+
     public static function payload(?array $reports = null): string
     {
         $documents = [];

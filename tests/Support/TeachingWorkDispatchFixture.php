@@ -105,6 +105,33 @@ class TeachingWorkDispatchFixture
     }
 
     /** @param array<string, mixed> $metadata */
+    public static function teacherTaskTestText(string $provider = 'Postmark', array $metadata = []): string
+    {
+        $row = array_replace(self::recipients()[2], [
+            'Rolle' => 'Lehrperson; einzelner echter Nachrichtentest', 'Datensatzposition' => 1,
+            'Betreff' => 'Leistungsfeststellung E-Mails – INF 1',
+        ]);
+        $values = [
+            'Versandzweck' => 'Aufgabenversand', 'Schueleranzahl' => 0, 'Lehreranzahl' => 1,
+            'Leistungsfeststellung' => 'C:/source/2026-10-04_E-Mail_INF1',
+        ];
+        if ($provider === 'Office') {
+            return json_encode(array_replace($values, [
+                'Testart' => 'Einzeltest über vorhandenes Office-/Exchange-Konto', 'Modus' => 'Office/Microsoft 365',
+                'From' => 'teacher@example.test', 'To' => 'teacher@example.test', 'Betreff' => $row['Betreff'],
+                'Status' => 'Office-Versand in Gesendete Elemente bestätigt',
+                'Gesendetzeit' => '2026-10-04T16:47:22.2670000+02:00', 'InternetMessageID' => '<test@example.test>',
+            ], $metadata), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        }
+
+        return "Aufgabenversand – Einzelnachrichtentest – Live-Versand (Postmark)\nVersandzweck: Aufgabenversand\n"
+            .json_encode(array_replace($values, [
+                'Testart' => 'Einzelnachrichtentest an Lehrperson über Postmark', 'Modus' => 'Live-Versand (Postmark)',
+                'Erstellt' => '2026-10-04T16:35:23.117595+02:00', 'Empfaenger' => [$row],
+            ], $metadata), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    }
+
+    /** @param array<string, mixed> $metadata */
     public static function teacherTestText(string $subject = 'Test der Ergebnisbenachrichtigung: E-Mails', array $metadata = []): string
     {
         $text = self::text([array_replace(self::recipients()[2], ['Betreff' => $subject])], array_replace([

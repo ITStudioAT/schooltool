@@ -7,6 +7,44 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('single teacher task tests recognize Postmark and raw Office protocols without student live status', function (string $provider) {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::teacherTaskTestText($provider));
+
+    expect($report['purpose'])->toBe('tasks');
+    expect($report['title'])->toBe('e-mails');
+    expect($report['date'])->toBe('2026-10-04');
+    expect($report['metadata']['Zeitzone'])->toBe('Europe/Vienna');
+    expect($report['mode'])->toBe('teacher_test');
+    expect($report['live'])->toBeFalse();
+    expect($report['recipients'])->toHaveCount(1);
+    expect($report['recipients'][0]['Rolle'])->toBe('Lehrperson');
+})->with(['Postmark', 'Office']);
+
+test('single teacher task tests reject contradictory purpose counts test kind mode timezone and subject', function (string $provider, string $case) {
+    $metadata = match ($case) {
+        'purpose' => ['Versandzweck' => 'Ergebnisbenachrichtigung'],
+        'student count' => ['Schueleranzahl' => 1],
+        'teacher count' => ['Lehreranzahl' => 2],
+        'test kind' => ['Testart' => ''],
+        'mode' => ['Modus' => 'unknown'],
+        'timezone' => ['Zeitzone' => 'UTC'],
+        default => [],
+    };
+    $text = TeachingWorkDispatchFixture::teacherTaskTestText($provider, $metadata);
+    $text = match ($case) {
+        'subject' => str_replace('Leistungsfeststellung E-Mails – INF 1', 'Andere Nachricht: E-Mails', $text),
+        default => $text,
+    };
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['Postmark', 'Office'])->with(['purpose', 'student count', 'teacher count', 'test kind', 'mode', 'timezone', 'subject']);
+
+test('single Postmark teacher task tests reject student recipients', function () {
+    $text = str_replace('Lehrperson; einzelner echter Nachrichtentest', 'Schülerempfänger', TeachingWorkDispatchFixture::teacherTaskTestText());
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+});
+
 test('combined task protocols recognize Outlook and stopped Postmark runs with embedded recipients', function (string $provider, bool $stopped) {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::combinedTasksText($provider, $stopped));
 

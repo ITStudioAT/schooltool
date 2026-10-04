@@ -83,7 +83,7 @@ export default {
                 }
                 const files = selected.filter(file => {
                     const source = relativePath(file).slice(folder.length + 1)
-                    return /^Beurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht)\.(?:md|pdf))$/i.test(source)
+                    return /^Beurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^/_]+_[^/_]+)\.(?:md|pdf))$/i.test(source)
                         || /^Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(source)
                 }).sort((first, second) => relativePath(first).localeCompare(relativePath(second)))
                 const pdfs = files.filter(file => /\.pdf$/i.test(file.name))
