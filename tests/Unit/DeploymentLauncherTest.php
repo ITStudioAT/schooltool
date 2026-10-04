@@ -715,15 +715,35 @@ it('prints a Vienna timestamp only after successful PowerShell pulls', function 
 
     $command = <<<'POWERSHELL'
 . ./scripts/git_helpers.ps1
-function git { $global:LASTEXITCODE = 0 }
+$script:pullExitCode = 0
+function git {
+    $global:LASTEXITCODE = 0
+    switch ($args -join ' ') {
+        'rev-parse --show-toplevel' { return (Get-Location).Path }
+        'branch --show-current' { return 'main' }
+        'pull' { $global:LASTEXITCODE = $script:pullExitCode; return }
+    }
+    if ($args[0] -eq 'rev-parse' -and $args[1] -eq '--git-path') {
+        return Join-Path (Get-Location).Path ('storage/framework/testing/pull-fixture-' + $args[2])
+    }
+    throw "Unexpected Git fixture command: $($args -join ' ')"
+}
+function php {
+    if (($args -join ' ') -ne 'scripts/update.php --target=local --prepare') {
+        throw "Unexpected PHP fixture command: $($args -join ' ')"
+    }
+    Write-Output 'Preparation mocked'
+    $global:LASTEXITCODE = 0
+}
 gitpull
-function git { $global:LASTEXITCODE = 1 }
+$script:pullExitCode = 1
 try { gitpull; exit 2 } catch { Write-Output 'Failure preserved' }
 POWERSHELL;
     $process = new Process(['powershell', '-NoProfile', '-Command', $command], deploymentProjectPath());
     $process->run();
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and(substr_count($process->getOutput(), 'Abgeschlossen:'))->toBe(1)
+        ->and(substr_count($process->getOutput(), 'Preparation mocked'))->toBe(1)
         ->and($process->getOutput())->toContain('(Europe/Vienna)', 'Failure preserved');
 });
 
