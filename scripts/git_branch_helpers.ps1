@@ -886,8 +886,8 @@ function gitrelease {
         try { Invoke-SchooltoolLocalPreparation }
         catch {
             Write-Host "Release is already published. Local main preparation failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host 'The integrated local feature branch is preserved. Fix the local preparation problem, then run gitmain to retry. Do not publish the release again.' -ForegroundColor Yellow
-            Write-Host "After gitmain succeeds, remove the integrated local branch if still present: git branch -d $feature" -ForegroundColor Yellow
+            Write-Host 'The integrated local feature branch is preserved. Fix the local preparation problem, then run . ./scripts/git_helpers.ps1; Invoke-SchooltoolLocalPreparation on main to retry. Do not publish the release again.' -ForegroundColor Yellow
+            Write-Host "After local preparation succeeds, remove the integrated local branch if still present: git branch -d $feature" -ForegroundColor Yellow
             return
         }
         Publish-SchooltoolDevSelection

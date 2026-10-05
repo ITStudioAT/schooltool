@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
+import { toRaw } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Holidays from '@/pages/admin/teaching/admin/holidays/Holidays.vue'
 import { useHolidayStore } from '@/stores/admin/teaching/HolidayStore'
@@ -97,7 +98,7 @@ describe('Holiday file transfer', () => {
         await flushPromises()
 
         expect(wrapper.get('[role="alert"]').text()).toContain('Termin 1: Das Datum ist ungültig.')
-        expect(wrapper.vm.import_file).toBe(file)
+        expect(toRaw(wrapper.vm.import_file)).toBe(file)
         expect(button('Datei importieren').attributes('disabled')).toBeUndefined()
         expect(store.index).not.toHaveBeenCalled()
         expect(useCourseStore().index).not.toHaveBeenCalled()

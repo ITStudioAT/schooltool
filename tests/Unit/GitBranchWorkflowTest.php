@@ -251,6 +251,13 @@ beforeEach(function (): void {
     runBranchWorkflowGit($this->workflowDirectory, 'init', '--bare', '--initial-branch=main', $this->workflowRemote);
     runBranchWorkflowGit($this->workflowDirectory, 'clone', $this->workflowRemote, $this->workflowPc);
 
+    $this->workflowPc = runBranchWorkflowGit($this->workflowPc, 'rev-parse', '--show-toplevel');
+    $this->workflowDirectory = dirname($this->workflowPc);
+    $this->workflowRemote = $this->workflowDirectory.'/origin.git';
+    $this->workflowLaptop = $this->workflowDirectory.'/laptop';
+    $this->workflowPcMain = $this->workflowPc;
+    $this->workflowLaptopMain = $this->workflowLaptop;
+
     configureBranchWorkflowClone($this->workflowPc);
 
     mkdir($this->workflowPc.'/scripts');
@@ -772,12 +779,12 @@ POWERSHELL;
 
     if ($failPreparation) {
         expect($result->getOutput())->toContain('Release is already published. Local main preparation failed: LOCAL_DEPENDENCY_FAILURE')
-            ->toContain('run gitmain to retry. Do not publish the release again.')
-            ->toContain('After gitmain succeeds, remove the integrated local branch if still present: git branch -d feature/new-function')
+            ->toContain('run . ./scripts/git_helpers.ps1; Invoke-SchooltoolLocalPreparation on main to retry. Do not publish the release again.')
+            ->toContain('After local preparation succeeds, remove the integrated local branch if still present: git branch -d feature/new-function')
             ->not->toContain('Release stopped.');
         expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->toBe($feature);
         $published = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main');
-        $retry = runBranchWorkflowCommand($this->workflowPc, 'gitmain', $powershell);
+        $retry = runBranchWorkflowCommand($this->workflowPc, 'Invoke-SchooltoolLocalPreparation', $powershell);
         assertBranchWorkflowSucceeded($retry);
         expect($retry->getOutput())->toContain('Local preparation mocked; database untouched.')
             ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($published)
@@ -1200,7 +1207,7 @@ it('requires refresh consent when switching the shared preview in either directi
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitstart second-feature'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork '.$selected));
     $previous = $selected === 'first-feature' ? 'second-feature' : 'first-feature';
-    $command = branchWorkflowPreviewMocks()."\n".'$previousFeature = (Get-SchooltoolActiveFeature -Branch "feature/'.$previous.'").Id'."\n".'$approveRefresh = '.($approved ? '$true' : '$false')."\n".<<<'POWERSHELL'
+    $command = branchWorkflowPreviewMocks()."\nUpdate-SchooltoolRemote\n".'$previousFeature = (Get-SchooltoolActiveFeature -Branch "feature/'.$previous.'").Id'."\n".'$approveRefresh = '.($approved ? '$true' : '$false')."\n".<<<'POWERSHELL'
 function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $true; state_token = ('b' * 64); feature_id = $previousFeature } }
 function Read-Host {
     param([string]$Prompt)

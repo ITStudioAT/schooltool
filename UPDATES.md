@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.50.2
+
+### System
+
+- CI-Runs fixed
+
 ## 3.50.1
 
 ### Unterricht
