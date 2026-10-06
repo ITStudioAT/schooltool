@@ -380,6 +380,17 @@ function Get-SchooltoolMainWorkspace {
     $root
 }
 
+function Publish-SchooltoolDevSelection {
+    $directory = Join-Path (Join-Path (Get-SchooltoolMainWorkspace) '.git') 'schooltool-dev'
+    [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $selection = @{ format = 'schooltool-dev-selection-v1'; project = (Get-Location).Path; branch = (Invoke-SchooltoolGit branch --show-current) } | ConvertTo-Json -Compress
+    $target = Join-Path $directory 'selection.json'
+    $temporary = Join-Path $directory ([guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($temporary, $selection, (New-Object Text.UTF8Encoding($false)))
+    if (Test-Path -LiteralPath $target) { [IO.File]::Replace($temporary, $target, [NullString]::Value) }
+    else { [IO.File]::Move($temporary, $target) }
+}
+
 function Get-SchooltoolWorkspaces {
     $workspace = $null
     foreach ($line in @(Invoke-SchooltoolGit worktree list --porcelain)) {
@@ -451,9 +462,28 @@ function Enter-SchooltoolWorkspace {
     Write-Host "Working folder: $target" -ForegroundColor Cyan
 }
 
+function Select-SchooltoolExistingWorkspace {
+    param([string]$Branch)
+    $source = (Get-Location).Path
+    $target = if ($Branch -ceq 'main') { Get-SchooltoolMainWorkspace } else { Get-SchooltoolFeatureWorkspace $Branch }
+    if (-not (Test-Path -LiteralPath $target -PathType Container)) { return $false }
+    $common = Invoke-SchooltoolGit rev-parse --path-format=absolute --git-common-dir
+    Set-Location -LiteralPath $target
+    try {
+        Assert-SchooltoolRepository
+        if ((Invoke-SchooltoolGit rev-parse --path-format=absolute --git-common-dir) -ine $common -or (Invoke-SchooltoolGit branch --show-current) -cne $Branch) { throw 'The existing folder has a different repository or branch; its files were preserved.' }
+        Publish-SchooltoolDevSelection
+    }
+    catch { Set-Location -LiteralPath $source; throw }
+    Write-Host "Working folder: $target. Existing files and local commits were preserved; no fetch, merge or publication was performed." -ForegroundColor Cyan
+    Write-SchooltoolCompletionTime
+    $true
+}
+
 function Switch-SchooltoolBranch {
     param([string]$Branch)
     Assert-SchooltoolRepository
+    if (Select-SchooltoolExistingWorkspace $Branch) { return }
     Assert-SchooltoolClean
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
@@ -470,6 +500,7 @@ function Switch-SchooltoolBranch {
             php artisan cache:forget admin.environment_versions.v13 --no-interaction
         }
     }
+    Publish-SchooltoolDevSelection
     Write-SchooltoolCompletionTime
 }
 
@@ -492,12 +523,16 @@ function gitstart {
     Update-SchooltoolRemote
     Enter-SchooltoolWorkspace $branch
     Invoke-SchooltoolLocalPreparation
+    Publish-SchooltoolDevSelection
     Write-SchooltoolCompletionTime
 }
 
 function gitwork {
     param([string]$Name)
     Assert-SchooltoolRepository
+    $cachedFeatures = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
+    if (-not $Name -and $cachedFeatures.Count -eq 1) { $Name = $cachedFeatures[0] }
+    if ($Name -and (Select-SchooltoolExistingWorkspace (Get-SchooltoolFeatureBranch $Name))) { return }
     Assert-SchooltoolClean
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
@@ -562,7 +597,7 @@ function gitsave {
     if ($active.Branch -cne $branch) { throw 'This feature is no longer active. Nothing was published.' }
     $remoteHead = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$branch"
     if (-not (Test-SchooltoolAncestor $remoteHead HEAD)) {
-        throw 'Origin contains feature commits missing locally. Use gitwork for a fast-forward, or resolve divergent commits explicitly. Nothing was merged or committed.'
+        throw 'Origin contains feature commits missing locally. Use gitpull --ff-only, or resolve divergent commits explicitly. Nothing was merged or committed.'
     }
     if (Invoke-SchooltoolGit status --porcelain --untracked-files=all) {
         Invoke-SchooltoolCommand 'Checking UTF-8 source files...' { php scripts/check-encoding.php }
@@ -790,7 +825,7 @@ function gitrelease {
     $featureHead = Invoke-SchooltoolGit rev-parse HEAD
     $remoteFeature = Invoke-SchooltoolGit rev-parse "refs/remotes/origin/$feature"
     if ($featureHead -ne $remoteFeature) {
-        throw 'New feature commits exist on origin. Run gitwork and test them first.'
+        throw 'New feature commits exist on origin. Run gitpull --ff-only and test them first.'
     }
     $mainHead = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
     if (Test-SchooltoolRef refs/heads/main) {
@@ -860,10 +895,11 @@ function gitrelease {
         try { Invoke-SchooltoolLocalPreparation }
         catch {
             Write-Host "Release is already published. Local main preparation failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host 'The integrated local feature branch is preserved. Fix the local preparation problem, then run gitmain to retry. Do not publish the release again.' -ForegroundColor Yellow
-            Write-Host "After gitmain succeeds, remove the integrated local branch if still present: git branch -d $feature" -ForegroundColor Yellow
+            Write-Host 'The integrated local feature branch is preserved. Fix the local preparation problem, then run . ./scripts/git_helpers.ps1; Invoke-SchooltoolLocalPreparation on main to retry. Do not publish the release again.' -ForegroundColor Yellow
+            Write-Host "After local preparation succeeds, remove the integrated local branch if still present: git branch -d $feature" -ForegroundColor Yellow
             return
         }
+        Publish-SchooltoolDevSelection
         $worktrees = @(Invoke-SchooltoolGit worktree list --porcelain)
         if ($worktrees -ccontains "branch refs/heads/$feature") { throw 'The feature is used by another worktree and will be preserved locally.' }
         if (-not (Test-SchooltoolAncestor $featureHead HEAD)) { throw 'The feature is not fully included in local main.' }

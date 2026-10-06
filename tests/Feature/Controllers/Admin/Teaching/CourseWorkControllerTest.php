@@ -24,6 +24,40 @@ use Tests\Support\TeachingWorkEvaluationFixture;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function () {
+    $this->freezeTime();
+});
+
+test('folder import records the latest successful import time and protects it from manual edits', function () {
+    $work = prepareWorkDispatchImport($this);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $updateUrl = "/api/admin/teaching/course_works/{$work->id}";
+    $this->putJson($updateUrl, ['status' => ['folder_imported_at' => '2000-01-01T00:00:00Z']])->assertOk();
+    expect($work->fresh()->status)->not->toHaveKey('folder_imported_at');
+
+    $this->travelTo(now()->setDate(2026, 10, 6)->setTime(8, 30));
+    $firstImport = now()->toISOString();
+    $this->postJson($url, workFolderPayload())->assertOk()->assertJsonPath('data.status.folder_imported_at', $firstImport);
+    expect($work->fresh()->status['folder_imported_at'])->toBe($firstImport);
+
+    $this->travel(1)->hour();
+    $lastImport = now()->toISOString();
+    $this->postJson($url, workFolderPayload())->assertOk()->assertJsonPath('data.status.folder_imported_at', $lastImport);
+    expect($lastImport)->not->toBe($firstImport);
+    expect($work->fresh()->status['folder_imported_at'])->toBe($lastImport);
+
+    $this->putJson($updateUrl, ['status' => ['folder_imported_at' => '2000-01-01T00:00:00Z']])->assertOk();
+    expect($work->fresh()->status['folder_imported_at'])->toBe($lastImport);
+
+    $this->travel(1)->hour();
+    $this->postJson($url, workFolderPayload([], [], false))->assertOk();
+    expect($work->fresh()->status['folder_imported_at'])->toBe($lastImport);
+    $invalid = workFolderPayload();
+    $invalid['documents'] = str_replace('title:', 'unknown:', $invalid['documents']);
+    $this->postJson($url, $invalid)->assertUnprocessable();
+    expect($work->fresh()->status['folder_imported_at'])->toBe($lastImport);
+});
+
 function prepareWorkDispatchImport(object $context): TeachingCourseWork
 {
     $work = prepareWorkEvaluationImport($context);

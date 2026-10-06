@@ -17,6 +17,33 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 
 describe('CourseTable evaluation PDF links', () => {
+    it('shows the last successful import directly in work summary cards and distinguishes older imports from no import', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-06' }
+        useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }], course_dates: [date] } as never
+        const statuses = [
+            { folder_imported_at: '2026-10-06T06:30:00Z', folder_import_sources: { 'beurteilungen/test.md': 'hash' } },
+            { folder_import_sources: { 'beurteilungen/test.md': 'hash' } },
+            {},
+        ]
+        const works = statuses.map((status, index) => ({
+            id: 65 + index, teaching_course_id: 18, type: 'A5', title: `E-Mail ${index + 1}`,
+            date_for_all_groups: date.date, is_group_work: false, groups: [{ student_ids: [12] }], status,
+        }))
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: { WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true } } })
+        try {
+            await flushPromises()
+            useCourseWorkStore(pinia).courseWorks = works as never
+            await flushPromises()
+            const cards = wrapper.findAll('.course-table-work-summary')
+            expect(cards).toHaveLength(3)
+            expect(cards[0].text()).toContain('6.10. 08:30 Uhr')
+            expect(cards[0].get('.course-table-work-summary-import').attributes('title')).toBe('Zuletzt importiert: 06.10.2026 um 08:30 Uhr')
+            expect(cards[1].text()).toContain('Datum unbekannt')
+            expect(cards[2].find('.course-table-work-summary-import').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
     it('shows independent task and result symbols on each work including gray task tests and refreshes after import', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-02' }

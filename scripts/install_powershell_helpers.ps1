@@ -5,7 +5,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $workflowOverride = ''
-$workflowOverrideRoot = ''
+$installedCommon = git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir
+if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFileName($installedCommon.Trim()) -cne '.git') { throw 'Install the development helpers from an ordinary Schooltool checkout.' }
+$workflowOverrideRoot = Split-Path -Parent $installedCommon.Trim()
 if ($WorkflowDirectory) {
     $workflowOverride = (Resolve-Path -LiteralPath $WorkflowDirectory).Path
     if (-not (Test-Path -LiteralPath (Join-Path $workflowOverride 'git_workflow.ps1') -PathType Leaf)) { throw 'The workflow directory must contain git_workflow.ps1.' }
@@ -30,6 +32,28 @@ $startMarker = '# >>> project git dispatcher >>>'
 $endMarker = '# <<< project git dispatcher <<<'
 $managedBlock = @"
 $startMarker
+function composer {
+    `$isDev = `$args.Count -gt 0 -and (`$args[0] -ceq 'dev' -or (`$args.Count -gt 1 -and `$args[0] -cin @('run', 'run-script') -and `$args[1] -ceq 'dev'))
+    `$localStarter = '$workflowOverrideLiteral'
+    if (`$isDev) {
+        `$root = git rev-parse --show-toplevel 2>`$null
+        if (`$LASTEXITCODE -eq 0 -and `$root) {
+            `$common = git rev-parse --path-format=absolute --git-common-dir 2>`$null
+            if (`$LASTEXITCODE -eq 0 -and (Split-Path -Parent `$common.Trim()) -ieq '$workflowOverrideRootLiteral') {
+                if (-not `$localStarter) { `$localStarter = Join-Path (Split-Path -Parent `$common.Trim()) 'scripts' }
+                `$remoteUrls = @(git remote get-url origin 2>`$null) + @(git remote get-url --all --push origin 2>`$null)
+                if (`$LASTEXITCODE -ne 0 -or `$remoteUrls.Count -ne 2 -or @(`$remoteUrls | Where-Object { `$_.Trim() -notmatch '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)ITStudioAT/schooltool(?:\.git)?/?$' }).Count -ne 0) { throw 'Local development requires the trusted Schooltool repository.' }
+                `$localCommon = git -C `$localStarter rev-parse --path-format=absolute --git-common-dir 2>`$null
+                if (`$LASTEXITCODE -ne 0 -or `$localCommon.Trim() -ine `$common.Trim()) { throw 'The local development starter belongs to another repository.' }
+                `$remaining = if (`$args[0] -ceq 'dev') { @(`$args | Select-Object -Skip 1) } else { @(`$args | Select-Object -Skip 2) }
+                & node (Join-Path `$localStarter 'local-dev.mjs') --project `$root.Trim() @remaining
+                return
+            }
+        }
+    }
+    `$nativeComposer = Get-Command composer -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    & `$nativeComposer.Source @args
+}
 function gitpush {
     [CmdletBinding()]
     param(
@@ -97,6 +121,26 @@ function gitpush {
         Pop-Location
     }
 }
+function Show-ProjectGitWorkspace {
+    param([string]`$Directory)
+    if (`$env:TERM_PROGRAM -cne 'vscode') { return }
+    `$editor = Get-Command code -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not `$editor) {
+        Write-Warning "Working folder selected: `$Directory. VS Code CLI is unavailable; Git/dev selection succeeded."
+        return
+    }
+    try {
+        & `$editor.Source --add `$Directory
+        if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not add the working folder.' }
+        `$entry = Join-Path `$Directory 'composer.json'
+        if (Test-Path -LiteralPath `$entry -PathType Leaf) {
+            & `$editor.Source --reuse-window --goto `$entry
+            if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not show the selected checkout.' }
+        }
+        Write-Host "Editor working folder: `$Directory" -ForegroundColor Cyan
+    }
+    catch { Write-Warning "Git/dev selection succeeded. `$(`$_.Exception.Message) Working folder: `$Directory" }
+}
 function Invoke-ProjectGitWorkflow {
     param([string]`$Command, [string[]]`$CommandArguments)
     `$repositoryRoot = git rev-parse --show-toplevel 2>`$null
@@ -144,6 +188,7 @@ function Invoke-ProjectGitWorkflow {
         Pop-Location
         if (`$completed -and `$Command -cin @('gitstart', 'gitwork', 'gitmain', 'gitrelease')) {
             Set-Location -LiteralPath `$selectedLocation
+            if (`$Command -cin @('gitwork', 'gitmain')) { Show-ProjectGitWorkspace `$selectedLocation }
         }
     }
 }

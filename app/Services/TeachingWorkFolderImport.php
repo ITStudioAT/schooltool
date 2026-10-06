@@ -190,6 +190,7 @@ class TeachingWorkFolderImport
         if ($bundle['sources'] !== []) {
             $status = $work->status ?? [];
             $status['folder_import_sources'] = array_replace($previous, $bundle['sources']);
+            $status['folder_imported_at'] = now()->toISOString();
             $work->status = $status;
             $work->save();
         } else {

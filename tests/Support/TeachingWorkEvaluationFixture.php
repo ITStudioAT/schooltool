@@ -58,6 +58,26 @@ class TeachingWorkEvaluationFixture
         ];
     }
 
+    public static function statusReports(): array
+    {
+        $front = fn (string $title): string => "---\ntitle: \"{$title}\"\nfach: \"E-Mails · DGB · 3B · Gruppe 2 · 04.10.2026\"\n---\n\n";
+        $status = fn (string $person, string $evaluation, string $result, string $submission): string => "| Status / Prüfstand | Angabe |\n| --- | --- |\n| Person | {$person} / 3B |\n| Bewertungsstatus | {$evaluation} |\n| Ergebnis | {$result} |\n| Abgabestatus | {$submission} |\n";
+
+        return [
+            'Gesamtübersicht.md' => $front('Gesamtübersicht')."**Maximale Punkte:** 5,0\n\n"
+                ."| Person / Klasse | Abgabestatus | Erreicht | Max. | Bewertungsstatus |\n| --- | --- | --- | --- | --- |\n"
+                ."| Van Alpha Ada / 3B | E-Mail und PDF vorhanden | 4,75 | 5,0 | Abgeschlossen |\n"
+                ."| Beta Bea / 3B | Offen | offen | 5,0 | Bewertung offen: keine Abgabe zugeordnet |\n",
+            'Van Alpha_Ada.md' => $front('Beurteilung').$status('Van Alpha Ada', 'Abgeschlossen', '4,75 von 5,0 Punkten', 'E-Mail und PDF vorhanden')
+                ."\n| Kriterium / Aufgabenteil | Max. | Erreicht | Begründung |\n| --- | --- | --- | --- |\n"
+                ."| Multiple-Choice-PDF | 2,0 | 2,0 | Vollständig richtig. |\n| Nachrichtentext | 3,0 | 2,75 | Wenige Fehler. |\n"
+                ."\n**Teilbereiche:** Multiple Choice: 2,0 / 2,0; E-Mail: 2,75 / 3,0.\n",
+            'Beta_Bea.md' => $front('Beurteilung').$status('Beta Bea', 'Bewertung offen: keine Abgabe zugeordnet', 'Keine abschließende Gesamtsumme', 'Offen')
+                ."\n| Kriterium / Aufgabenteil | Max. | Erreicht |\n| --- | --- | --- |\n"
+                ."| Multiple-Choice-PDF | 2,0 | offen |\n| Nachrichtentext | 3,0 | offen |\n",
+        ];
+    }
+
     public static function payload(?array $reports = null): string
     {
         $documents = [];

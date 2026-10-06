@@ -12,6 +12,59 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('status table evaluation reports preserve decimal points names and open submissions', function () {
+    $reports = array_map(fn (string $text): string => "\xEF\xBB\xBF".str_replace("\n", "\r\n", $text), TeachingWorkEvaluationFixture::statusReports());
+    $report = app(TeachingWorkMarkdownImport::class)->parse($reports);
+
+    expect($report['title'])->toBe('E-Mails · DGB · 3B · Gruppe 2');
+    expect($report['date'])->toBe('04.10.2026');
+    expect($report['maximum'])->toBe(5.0);
+    expect($report['rows']['ada van alpha / 3b']['points'])->toBe(4.75);
+    expect($report['rows']['ada van alpha / 3b']['source'])->toBe('Van Alpha_Ada.md');
+    expect($report['rows']['ada van alpha / 3b']['comment'])->toBe('4,75 von 5,0 Punkten; **Teilbereiche:** Multiple Choice: 2,0 / 2,0; E-Mail: 2,75 / 3,0.');
+    expect($report['rows']['bea beta / 3b']['points'])->toBeNull();
+    expect($report['rows']['bea beta / 3b']['comment'])->toBe('');
+});
+
+test('status table evaluation reports reject inconsistent metadata statuses and points', function (string $file, string $from, string $to) {
+    $reports = TeachingWorkEvaluationFixture::statusReports();
+    $reports[$file] = str_replace($from, $to, $reports[$file]);
+
+    expect(fn () => app(TeachingWorkMarkdownImport::class)->parse($reports))->toThrow(ValidationException::class);
+})->with([
+    'overview maximum' => ['Gesamtübersicht.md', '**Maximale Punkte:** 5,0', '**Maximale Punkte:** 6,0'],
+    'invalid date' => ['Gesamtübersicht.md', '04.10.2026', '31.02.2026'],
+    'different assignment' => ['Van Alpha_Ada.md', 'Gruppe 2', 'Gruppe 1'],
+    'different date' => ['Van Alpha_Ada.md', '04.10.2026', '05.10.2026'],
+    'identity' => ['Van Alpha_Ada.md', 'Van Alpha Ada /', 'Ada Van Alpha /'],
+    'class' => ['Van Alpha_Ada.md', '/ 3B', '/ 3A'],
+    'duplicate status' => ['Van Alpha_Ada.md', '| Person |', "| Ergebnis | 4,75 von 5,0 Punkten |\n| Person |"],
+    'submission status' => ['Van Alpha_Ada.md', '| E-Mail und PDF vorhanden |', '| Offen |'],
+    'evaluation status' => ['Van Alpha_Ada.md', '| Abgeschlossen |', '| Bewertung offen |'],
+    'overview status' => ['Gesamtübersicht.md', '| Abgeschlossen |', '| Bewertung offen |'],
+    'overview points' => ['Gesamtübersicht.md', '| 4,75 |', '| 4,5 |'],
+    'result total' => ['Van Alpha_Ada.md', '4,75 von', '4,5 von'],
+    'result maximum' => ['Van Alpha_Ada.md', 'von 5,0 Punkten', 'von 6,0 Punkten'],
+    'criterion points' => ['Van Alpha_Ada.md', '| 3,0 | 2,75 |', '| 3,0 | 3,1 |'],
+    'criterion sum' => ['Van Alpha_Ada.md', '| 3,0 | 2,75 |', '| 3,0 | 2,5 |'],
+    'duplicate criterion' => ['Van Alpha_Ada.md', '| Nachrichtentext |', '| Multiple-Choice-PDF |'],
+    'component points' => ['Van Alpha_Ada.md', 'E-Mail: 2,75', 'E-Mail: 2,5'],
+    'component maximum' => ['Van Alpha_Ada.md', '2,75 / 3,0', '2,75 / 4,0'],
+    'open numeric criterion' => ['Beta_Bea.md', '| 2,0 | offen |', '| 2,0 | 0 |'],
+    'open numeric overview' => ['Gesamtübersicht.md', '| offen | 5,0 |', '| 0 | 5,0 |'],
+    'open result' => ['Beta_Bea.md', 'Keine abschließende Gesamtsumme', '0 von 5,0 Punkten'],
+]);
+
+test('status table evaluation reports require complete unique overview and detail files', function () {
+    $reports = TeachingWorkEvaluationFixture::statusReports();
+    unset($reports['Beta_Bea.md']);
+    expect(fn () => app(TeachingWorkMarkdownImport::class)->parse($reports))->toThrow(ValidationException::class);
+
+    $reports = TeachingWorkEvaluationFixture::statusReports();
+    $reports['Kopie.md'] = $reports['Gesamtübersicht.md'];
+    expect(fn () => app(TeachingWorkMarkdownImport::class)->parse($reports))->toThrow(ValidationException::class);
+});
+
 test('compact evaluation reports preserve original basenames result lines and open values', function () {
     $report = app(TeachingWorkMarkdownImport::class)->parse(TeachingWorkEvaluationFixture::compactReports());
 

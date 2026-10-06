@@ -110,8 +110,9 @@ it('preserves unsaved or unpublished work in an existing target feature workspac
 
     $result = runBranchWorkflowCommand($this->workflowPc, 'gitwork guarded-feature');
 
-    expect($result->isSuccessful())->toBeFalse();
-    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+    assertBranchWorkflowSucceeded($result);
+    expect($this->workflowPc)->toBe($feature);
+    expect(runBranchWorkflowGit($this->workflowPcMain, 'branch', '--show-current'))->toBe('main');
     expect(runBranchWorkflowGit($feature, 'rev-parse', 'HEAD'))->toBe($head);
     expect(file_get_contents($feature.'/keep.txt'))->toBe('Target work');
 })->with([false, true]);
@@ -250,6 +251,13 @@ beforeEach(function (): void {
     mkdir($this->workflowDirectory);
     runBranchWorkflowGit($this->workflowDirectory, 'init', '--bare', '--initial-branch=main', $this->workflowRemote);
     runBranchWorkflowGit($this->workflowDirectory, 'clone', $this->workflowRemote, $this->workflowPc);
+
+    $this->workflowPc = runBranchWorkflowGit($this->workflowPc, 'rev-parse', '--show-toplevel');
+    $this->workflowDirectory = dirname($this->workflowPc);
+    $this->workflowRemote = $this->workflowDirectory.'/origin.git';
+    $this->workflowLaptop = $this->workflowDirectory.'/laptop';
+    $this->workflowPcMain = $this->workflowPc;
+    $this->workflowLaptopMain = $this->workflowLaptop;
 
     configureBranchWorkflowClone($this->workflowPc);
 
@@ -495,6 +503,8 @@ it('shares unfinished development between two devices without changing main', fu
     file_put_contents($this->workflowLaptop.'/laptop.txt', "Laptop work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitsave "Add laptop work"'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork'));
+    expect(file_exists($this->workflowPc.'/laptop.txt'))->toBeFalse();
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitupdate'));
 
     expect(file_get_contents($this->workflowPc.'/laptop.txt'))->toBe("Laptop work\n")
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
@@ -505,38 +515,21 @@ it('shares unfinished development between two devices without changing main', fu
         ->and(file_exists($this->workflowPc.'/pc.txt'))->toBeFalse();
 });
 
-it('forgets the admin version cache only after gitmain preparation succeeds', function (): void {
-    $successfulCommand = <<<'POWERSHELL'
-function Invoke-SchooltoolLocalPreparation { Write-Output 'LOCAL_PREPARATION_SUCCEEDED' }
-function php {
-    if (($args -join ' ') -cne 'artisan cache:forget admin.environment_versions.v13 --no-interaction') {
-        throw 'Unexpected cache command.'
-    }
-    Write-Output 'ADMIN_VERSION_CACHE_FORGOTTEN'
-    $global:LASTEXITCODE = 0
-}
+it('navigates existing main without preparation, cache writes or history mutation', function (): void {
+    $head = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    file_put_contents($this->workflowPc.'/keep.txt', 'Preserved local work');
+    $command = <<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation { throw 'UNEXPECTED_PREPARATION' }
+function Update-SchooltoolRemote { throw 'UNEXPECTED_FETCH' }
+function php { throw 'UNEXPECTED_CACHE_WRITE' }
 gitmain
 POWERSHELL;
-    $success = runBranchWorkflowCommand($this->workflowPc, $successfulCommand);
-
-    assertBranchWorkflowSucceeded($success);
-    expect($success->getOutput())->toContain('LOCAL_PREPARATION_SUCCEEDED', 'ADMIN_VERSION_CACHE_FORGOTTEN')
-        ->and(strpos($success->getOutput(), 'LOCAL_PREPARATION_SUCCEEDED'))
-        ->toBeLessThan(strpos($success->getOutput(), 'ADMIN_VERSION_CACHE_FORGOTTEN'));
-
-    $failedCommand = <<<'POWERSHELL'
-function Invoke-SchooltoolLocalPreparation { throw 'LOCAL_PREPARATION_FAILED' }
-function php { Write-Output 'ADMIN_VERSION_CACHE_FORGOTTEN'; $global:LASTEXITCODE = 0 }
-gitmain
-POWERSHELL;
-    $failure = runBranchWorkflowCommand($this->workflowPc, $failedCommand);
-
-    expect($failure->isSuccessful())->toBeFalse()
-        ->and($failure->getOutput())->toContain('LOCAL_PREPARATION_FAILED')
-        ->not->toContain('ADMIN_VERSION_CACHE_FORGOTTEN');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, $command));
+    expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(file_get_contents($this->workflowPc.'/keep.txt'))->toBe('Preserved local work');
 });
 
-it('refuses branch switches with unsaved work', function (bool $committed): void {
+it('preserves unsaved work while navigating between existing workspaces', function (bool $committed): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/unfinished.txt', "Keep this work\n");
 
@@ -545,13 +538,15 @@ it('refuses branch switches with unsaved work', function (bool $committed): void
         runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Keep unpushed work');
     }
 
-    $head = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $feature = $this->workflowPc;
+    $head = runBranchWorkflowGit($feature, 'rev-parse', 'HEAD');
     $result = runBranchWorkflowCommand($this->workflowPc, 'gitmain');
 
-    expect($result->isSuccessful())->toBeFalse()
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($head)
-        ->and(file_get_contents($this->workflowPc.'/unfinished.txt'))->toBe("Keep this work\n");
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main');
+    expect(runBranchWorkflowGit($feature, 'branch', '--show-current'))->toBe('feature/new-function');
+    expect(runBranchWorkflowGit($feature, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(file_get_contents($feature.'/unfinished.txt'))->toBe("Keep this work\n");
 })->with(['uncommitted changes' => false, 'unpushed commit' => true]);
 
 it('rejects feature-only commands on main and unsafe branch names', function (): void {
@@ -821,12 +816,12 @@ POWERSHELL;
 
     if ($failPreparation) {
         expect($result->getOutput())->toContain('Release is already published. Local main preparation failed: LOCAL_DEPENDENCY_FAILURE')
-            ->toContain('run gitmain to retry. Do not publish the release again.')
-            ->toContain('After gitmain succeeds, remove the integrated local branch if still present: git branch -d feature/new-function')
+            ->toContain('run . ./scripts/git_helpers.ps1; Invoke-SchooltoolLocalPreparation on main to retry. Do not publish the release again.')
+            ->toContain('After local preparation succeeds, remove the integrated local branch if still present: git branch -d feature/new-function')
             ->not->toContain('Release stopped.');
         expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'feature/new-function'))->toBe($feature);
         $published = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main');
-        $retry = runBranchWorkflowCommand($this->workflowPc, 'gitmain', $powershell);
+        $retry = runBranchWorkflowCommand($this->workflowPc, 'Invoke-SchooltoolLocalPreparation', $powershell);
         assertBranchWorkflowSucceeded($retry);
         expect($retry->getOutput())->toContain('Local preparation mocked; database untouched.')
             ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($published)
@@ -938,9 +933,9 @@ if ((Get-Location).Path -ne $featureFolder) { throw 'Profile did not reuse the f
 gitmain
 try {
     $env:SCHOOLTOOL_TEST_FAIL_PREPARATION = '1'
-    try { gitwork profile-feature; throw 'PREPARATION_FAILURE_WAS_IGNORED' }
-    catch { if ($_.Exception.Message -ne 'EXPECTED_WORKSPACE_PREPARATION_FAILURE') { throw } }
-    if ((Get-Location).Path -ne $mainFolder) { throw 'Failed profile navigation changed the caller folder.' }
+    gitwork profile-feature
+    if ((Get-Location).Path -ne $featureFolder) { throw 'Existing workspace navigation invoked preparation.' }
+    gitmain
 } finally { Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION }
 Write-Host 'PROFILE_NAVIGATION_VERIFIED'
 POWERSHELL, $shell);
@@ -949,6 +944,9 @@ POWERSHELL, $shell);
     expect($this->workflowPc)->toBe($main);
     expect($result->getOutput())->toContain('PROFILE_NAVIGATION_VERIFIED');
     expect(runBranchWorkflowGit($main, 'branch', '--show-current'))->toBe('main');
+    $selection = json_decode(file_get_contents($main.'/.git/schooltool-dev/selection.json'), true, flags: JSON_THROW_ON_ERROR);
+    expect(str_replace('\\', '/', $selection['project']))->toBe($main);
+    expect($selection['branch'])->toBe('main');
 })->with([
     'Windows PowerShell main helpers' => ['powershell', false],
     'PowerShell 7 main helpers' => ['pwsh', false],
@@ -1097,7 +1095,7 @@ it('saves and resumes three independent features and releases only the selected 
     foreach (array_keys($heads) as $name) {
         $selected = runBranchWorkflowCommand($this->workflowLaptop, 'gitwork "'.$name.'"');
         assertBranchWorkflowSucceeded($selected);
-        expect($selected->getOutput())->toContain('database untouched')
+        expect($selected->getOutput())->toContain('Working folder:')
             ->and(runBranchWorkflowGit($this->workflowLaptop, 'rev-parse', 'HEAD'))->toBe($heads[$name])
             ->and(file_get_contents($this->workflowLaptop.'/'.$name.'.txt'))->toBe($name." work\n");
     }
@@ -1246,7 +1244,7 @@ it('requires refresh consent when switching the shared preview in either directi
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitstart second-feature'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork '.$selected));
     $previous = $selected === 'first-feature' ? 'second-feature' : 'first-feature';
-    $command = branchWorkflowPreviewMocks()."\n".'$previousFeature = (Get-SchooltoolActiveFeature -Branch "feature/'.$previous.'").Id'."\n".'$approveRefresh = '.($approved ? '$true' : '$false')."\n".<<<'POWERSHELL'
+    $command = branchWorkflowPreviewMocks()."\nUpdate-SchooltoolRemote\n".'$previousFeature = (Get-SchooltoolActiveFeature -Branch "feature/'.$previous.'").Id'."\n".'$approveRefresh = '.($approved ? '$true' : '$false')."\n".<<<'POWERSHELL'
 function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $true; state_token = ('b' * 64); feature_id = $previousFeature } }
 function Read-Host {
     param([string]$Prompt)
@@ -1470,22 +1468,24 @@ it('lets the other device leave a safely merged deleted feature but preserves un
     file_put_contents($this->workflowPc.'/feature.txt', "Ready work\n");
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save feature"'));
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitwork'));
+    $feature = $this->workflowLaptop;
     if ($unpublished) {
         commitBranchWorkflowFile($this->workflowLaptop, 'laptop.txt', "Unpublished laptop work\n");
     }
+    $head = runBranchWorkflowGit($feature, 'rev-parse', 'HEAD');
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitrelease "Release feature"'));
     $result = runBranchWorkflowCommand($this->workflowLaptop, 'gitmain');
 
+    assertBranchWorkflowSucceeded($result);
+    expect(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
+    expect(runBranchWorkflowGit($feature, 'rev-parse', 'HEAD'))->toBe($head);
     if ($unpublished) {
-        expect($result->isSuccessful())->toBeFalse()
-            ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('feature/new-function')
-            ->and(file_get_contents($this->workflowLaptop.'/laptop.txt'))->toBe("Unpublished laptop work\n");
+        expect(runBranchWorkflowGit($feature, 'branch', '--show-current'))->toBe('feature/new-function');
+        expect(file_get_contents($feature.'/laptop.txt'))->toBe("Unpublished laptop work\n");
 
         return;
     }
 
-    assertBranchWorkflowSucceeded($result);
-    expect(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
 })->with(['fully merged' => false, 'additional local commits' => true]);
 
 it('atomically preserves newer feature commits and the reservation during release confirmation', function (): void {

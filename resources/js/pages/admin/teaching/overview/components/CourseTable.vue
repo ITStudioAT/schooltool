@@ -164,7 +164,10 @@
                                     @mouseleave="clearHoveredCourseWorkTimelines">
                                     <div
                                         class="course-table-work-list"
-                                        :class="{ 'course-table-work-list--has-work': courseWorksForDate(courseDate).length > 0 }">
+                                        :class="{
+                                            'course-table-work-list--has-work': courseWorksForDate(courseDate).length > 0,
+                                            'course-table-work-list--has-import': courseWorksForDate(courseDate).some(assignment => workImportLabel(assignment.work)),
+                                        }">
                                         <div
                                             v-if="courseWorkTimelinesForDate(courseDate).length"
                                             class="course-table-work-timelines"
@@ -206,7 +209,10 @@
                                             v-for="work in courseWorksForDate(courseDate)"
                                             :key="work.key"
                                             class="course-table-work-summary"
-                                            :class="{ 'course-table-work-summary--group': work.isGroupWork }"
+                                            :class="{
+                                                'course-table-work-summary--group': work.isGroupWork,
+                                                'course-table-work-summary--import': workImportLabel(work.work),
+                                            }"
                                             :title="work.title">
                                             <div class="course-table-work-summary-meta">
                                                 <v-icon size="13">mdi-clipboard-text</v-icon>
@@ -223,6 +229,11 @@
                                             </div>
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
+                                            </span>
+                                            <span v-if="workImportLabel(work.work)" class="course-table-work-summary-import"
+                                                :title="formatImportDate(work.work.status?.folder_imported_at) ? `Zuletzt importiert: ${formatImportDate(work.work.status.folder_imported_at)}` : 'Importdatum unbekannt'">
+                                                <v-icon size="11" class="mr-1">mdi-folder-upload-outline</v-icon>
+                                                {{ workImportLabel(work.work) }}
                                             </span>
                                         </div>
                                     </div>
@@ -989,6 +1000,9 @@
                                             {{ assignment.work.type || 'Arbeit' }}
                                         </v-chip>
                                         <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
+                                        <span v-if="formatImportDate(assignment.work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
+                                            Zuletzt importiert: {{ formatImportDate(assignment.work.status.folder_imported_at) }}
+                                        </span>
                                         <v-chip
                                             :data-testid="`course-table-date-work-mode-${assignment.work.id}`"
                                             size="x-small"
@@ -2415,7 +2429,7 @@ import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
-import { parseLocalDate } from '@/helpers/date'
+import { parseLocalDate, formatViennaDateTime } from '@/helpers/date'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -3112,6 +3126,21 @@ export default {
     },
 
     methods: {
+        formatImportDate: formatViennaDateTime,
+        workImportLabel(work) {
+            const importedAt = formatViennaDateTime(work?.status?.folder_imported_at)
+            if (importedAt) {
+                const parts = new Intl.DateTimeFormat('de-AT', {
+                    timeZone: 'Europe/Vienna', day: 'numeric', month: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+                }).formatToParts(new Date(work.status.folder_imported_at))
+                const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+
+                return `${values.day}.${values.month}. ${values.hour}:${values.minute} Uhr`
+            }
+
+            return Object.keys(work?.status?.folder_import_sources || {}).length ? 'Datum unbekannt' : ''
+        },
         openCourseOverviewPdf() {
             if (!this.selected_course?.id) return
 
@@ -6930,6 +6959,27 @@ export default {
     line-height: 1.25;
     overflow: hidden;
     overflow-wrap: anywhere;
+}
+
+.course-table-work-list--has-import {
+    --course-table-work-card-height: 96px;
+}
+
+.course-table-work-summary-import {
+    align-items: center;
+    display: flex;
+    font-size: 0.62rem;
+    line-height: 1.25;
+    margin-top: 4px;
+    white-space: nowrap;
+}
+
+.course-table-work-summary--import .course-table-work-summary-title {
+    -webkit-line-clamp: 2;
+}
+
+.course-table-work-summary--import {
+    height: auto;
 }
 
 .course-table-cell-entry-main-grade {

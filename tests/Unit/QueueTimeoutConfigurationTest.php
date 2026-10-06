@@ -111,13 +111,23 @@ it('starts segmented queue workers and the scheduler in the local development wo
     );
     $developmentCommand = implode(' ', $composer['scripts']['dev']);
     $localQueueCommand = implode(' ', $composer['scripts']['queues:local']);
+    $developmentLauncher = file_get_contents(base_path('scripts/local-dev.mjs'));
 
     expect($developmentCommand)
-        ->toContain('composer run queues:local')
-        ->toContain('php artisan schedule:work')
+        ->toContain('node scripts/local-dev.mjs')
         ->not->toContain('php artisan horizon')
+        ->not->toContain('queue:listen');
+
+    expect($developmentLauncher)
+        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=critical,notifications'")
+        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=default'")
+        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=imports'")
+        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=materials,maintenance'")
+        ->toContain("startJob(['artisan', 'schedule:run'])")
         ->not->toContain('queue:listen')
-        ->and($localQueueCommand)
+        ->not->toContain('horizon');
+
+    expect($localQueueCommand)
         ->toContain('--queue=critical,notifications')
         ->toContain('--queue=default')
         ->toContain('queue:listen redis --queue=imports --sleep=1 --tries=1 --timeout=1830')

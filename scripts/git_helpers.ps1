@@ -296,7 +296,7 @@ function Invoke-SchooltoolPublish {
         }
         $mainBeforeChecks = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
         if (-not (Test-SchooltoolAncestor $mainBeforeChecks HEAD)) {
-            throw 'main contains remote changes missing locally. Use gitmain before editing, or resolve divergent commits explicitly. Nothing was merged.'
+            throw 'main contains remote changes missing locally. Run gitmain then gitpull --ff-only, or resolve divergent commits explicitly. Nothing was merged.'
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {

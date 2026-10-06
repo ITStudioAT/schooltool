@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.50.2
+
+### System
+
+- CI-Runs fixed
+
+### Unterricht
+
+- Import Ergebnisse der Arbeiten
+
 ## 3.50.1
 
 ### Unterricht
