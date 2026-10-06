@@ -74,6 +74,9 @@
                             <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                 {{ work.title || '—' }}
                             </div>
+                            <div v-if="formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
+                                Zuletzt importiert: {{ formatImportDate(work.status.folder_imported_at) }}
+                            </div>
                             <div v-if="work.description" class="text-caption work-description-line">
                                 {{ work.description }}
                             </div>
@@ -810,7 +813,7 @@
 
 <script>
 import { mapWritableState } from 'pinia'
-import { parseLocalDate } from '@/helpers/date'
+import { parseLocalDate, formatViennaDateTime } from '@/helpers/date'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
@@ -1165,6 +1168,7 @@ export default {
     },
 
     methods: {
+        formatImportDate: formatViennaDateTime,
         openImport(work) {
             this.$refs.evaluationImport.openImport(work)
         },

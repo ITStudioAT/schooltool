@@ -7,9 +7,21 @@ import { createVuetify } from 'vuetify'
 import { VFileInput } from 'vuetify/components/VFileInput'
 import { VMenu, VBtn, VList, VListItem, VIcon } from 'vuetify/components'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
+import { formatViennaDateTime } from '@/helpers/date'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
+
+describe('Last work import time', () => {
+    it('formats import timestamps in Vienna including summer and winter time', () => {
+        expect(formatViennaDateTime('2026-10-06T06:30:00Z')).toBe('06.10.2026 um 08:30 Uhr')
+        expect(formatViennaDateTime('2026-12-06T23:30:00Z')).toBe('07.12.2026 um 00:30 Uhr')
+    })
+
+    it.each([undefined, null, '', 'invalid'])('leaves missing or invalid import times blank: %s', timestamp => {
+        expect(formatViennaDateTime(timestamp)).toBe('')
+    })
+})
 
 describe('Grouped original dispatch downloads', () => {
     it('shows one action per purpose and lists all five protocols with meaningful time and test recipient labels', async () => {

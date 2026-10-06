@@ -235,7 +235,7 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
-            unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources']);
+            unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at']);
         }
         $validated['maximum_plus'] = $maximumPlus;
         $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
@@ -302,6 +302,11 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
+            if (isset($course_work->status['folder_imported_at'])) {
+                $validated['status']['folder_imported_at'] = $course_work->status['folder_imported_at'];
+            } else {
+                unset($validated['status']['folder_imported_at']);
+            }
         }
         $validated['maximum_plus'] = $maximumPlus;
 

@@ -18,3 +18,15 @@ export function parseLocalDate(date) {
 export function applicationDate(date = new Date()) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna' }).format(date)
 }
+
+export function formatViennaDateTime(timestamp) {
+    if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return ''
+
+    const parts = new Intl.DateTimeFormat('de-AT', {
+        timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(timestamp))
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+
+    return `${values.day}.${values.month}.${values.year} um ${values.hour}:${values.minute} Uhr`
+}
