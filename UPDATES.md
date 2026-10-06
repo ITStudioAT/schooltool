@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.50.3
+
+### Unterricht
+
+- Import der Arbeiten neu vereinbart und deutlich verbessert
+
 ## 3.50.2
 
 ### System

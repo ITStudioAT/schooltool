@@ -15,10 +15,12 @@ class TeachingCourseWorkEntrySyncService
 
     public function __construct(private TeachingCourseService $courseService) {}
 
-    public function syncWork(TeachingCourseWork $work): void
+    public function syncWork(TeachingCourseWork $work, bool $useStoredGroups = false): void
     {
         $normalizedGroups = null;
-        $rows = $this->buildRowsFromWork($work, $normalizedGroups);
+        $rows = $useStoredGroups
+            ? $this->buildRowsFromGroups($work, is_array($work->groups) ? $work->groups : [])
+            : $this->buildRowsFromWork($work, $normalizedGroups);
 
         DB::transaction(function () use ($work, $rows, $normalizedGroups) {
             if ($normalizedGroups !== null) {

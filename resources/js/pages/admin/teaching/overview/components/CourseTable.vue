@@ -235,6 +235,12 @@
                                                 <v-icon size="11" class="mr-1">mdi-folder-upload-outline</v-icon>
                                                 {{ workImportLabel(work.work) }}
                                             </span>
+                                            <span class="course-table-work-summary-progress"
+                                                :class="{ 'text-success font-weight-bold': work.completion.open === 0 && work.completion.completed > 0 }"
+                                                :aria-label="`${work.completion.completed} Leistungen erledigt, ${work.completion.open} offen`">
+                                                <v-icon v-if="work.completion.open === 0 && work.completion.completed > 0" size="11">mdi-check</v-icon>
+                                                <span>{{ work.completion.completed }} erledigt<span v-if="work.completion.open > 0"> · <span class="text-error">{{ work.completion.open }} offen</span></span></span>
+                                            </span>
                                         </div>
                                     </div>
                                     <v-tooltip
@@ -493,6 +499,8 @@
                                         :aria-pressed="entryTransfer ? isEntryTransferCellSelected(student, courseDate) : undefined"
                                         :aria-disabled="entryTransfer ? entryTransferSaving || !isEntryTransferTarget(student, courseDate) : tableView === 'attendance' && isAttendanceCellSaving(student, courseDate)"
                                         @click="activateStudentCell(student, courseDate)"
+                                        @mouseenter="loadAssessmentQuestionsForCell(student, courseDate)"
+                                        @focus="loadAssessmentQuestionsForCell(student, courseDate)"
                                         @keydown.enter.self.prevent="activateStudentCell(student, courseDate)"
                                         @keydown.space.self.prevent="activateStudentCell(student, courseDate)">
                                         <span v-if="isEntryTransferCellSelected(student, courseDate)" class="course-table-transfer-marker">✓ Ausgewählt</span>
@@ -520,8 +528,7 @@
                                                         class="course-table-entry-cell-badge"
                                                         size="x-small"
                                                         :color="cellEntryColor(entry)"
-                                                        variant="tonal"
-                                                        :title="entry.description || cellEntryTypeLabel(entry)">
+                                                        variant="tonal">
                                                         {{ compactCellEntryType(entry) }}
                                                     </v-chip>
                                                 </div>
@@ -537,8 +544,7 @@
                                                             class="course-table-entry-cell-badge"
                                                             size="x-small"
                                                             :color="cellEntryColor(entry)"
-                                                            variant="tonal"
-                                                            :title="entry.description || cellEntryTypeLabel(entry)">
+                                                            variant="tonal">
                                                             {{ compactCellEntryType(entry) }}<template v-if="entryTypeHasProperties(entry)">:&nbsp;
                                                                 <span
                                                                     :class="{
@@ -552,6 +558,7 @@
                                                         <WorkDispatchStatus
                                                             v-if="entry.source === 'course_work'"
                                                             :work="courseWorkForCellEntry(entry)"
+                                                            :native-title="false"
                                                             :student-id="registeredStudentUserId(student)" />
                                                     </div>
                                                 </div>
@@ -593,14 +600,14 @@
                                                 <div v-if="detail.title" class="course-table-entry-tooltip-title">
                                                     {{ detail.title }}
                                                 </div>
-                                                <div v-if="detail.notification" class="course-table-entry-tooltip-text">
+                                                <div v-if="detail.notification && !detail.isWork" class="course-table-entry-tooltip-text">
                                                     {{ detail.notification }}
                                                 </div>
                                                 <div v-if="detail.description" class="course-table-entry-tooltip-text">
                                                     <span>Aufgabe:</span> {{ detail.description }}
                                                 </div>
                                                 <div v-if="detail.comment" class="course-table-entry-tooltip-text">
-                                                    <span>Kommentar:</span> {{ detail.comment }}
+                                                    {{ detail.comment }}
                                                 </div>
                                             </div>
                                         </v-tooltip>
@@ -1050,6 +1057,10 @@
                                         {{ assignment.work.description }}
                                     </div>
                                     <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="assignment.work" aggregate /></div>
+                                    <div class="d-flex align-center ga-1 mt-2 text-caption" data-testid="work-detail-progress">
+                                        <v-icon size="14">mdi-check</v-icon>
+                                        {{ assignment.completion.completed }} erledigt · {{ assignment.completion.open }} offen
+                                    </div>
                                     <div class="work-import-actions d-flex flex-wrap align-center ga-2 mt-2">
                                         <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openImport(assignment.work)">
                                             Importieren
@@ -1457,6 +1468,10 @@
                                 </div>
                             </div>
                             <div v-if="workDialogForm.id" class="mt-2"><WorkDispatchStatus :work="savedWorkDialogWork" aggregate /></div>
+                            <div v-if="savedWorkDialogWork" class="d-flex align-center ga-1 mt-2 text-caption" data-testid="work-detail-progress">
+                                <v-icon size="14">mdi-check</v-icon>
+                                {{ savedWorkDialogCompletion.completed }} erledigt · {{ savedWorkDialogCompletion.open }} offen
+                            </div>
                             <div v-if="workDialogForm.id" class="work-import-actions d-flex flex-wrap align-center ga-2 mt-4">
                                 <v-btn
                                     v-if="workDialogForm.id"
@@ -2423,6 +2438,8 @@
 
 <script>
 import { defineAsyncComponent } from 'vue'
+import { assessmentDeductionComment, assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
+import { downloadEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import axios from 'axios'
@@ -2481,6 +2498,8 @@ export default {
 
     data() {
         return {
+            assessmentQuestionDetails: {},
+            assessmentQuestionRequests: {},
             bulkAttendanceDialog: {
                 courseDate: null,
                 open: false,
@@ -2704,6 +2723,9 @@ export default {
                 return Number(first?.id || 0) - Number(second?.id || 0)
             })
             return sortedDates.filter((courseDate) => isInTeachingSemester(courseDate?.date, this.activeSemester, this.semesterTwoStartDate))
+        },
+        outlinedCourseDateKey() {
+            return this.normalizeDateKey(this.targetOutlinedCourseDate()?.date)
         },
         hasAssignedCurriculum() {
             return this.assignedCurriculumId !== null
@@ -2942,6 +2964,9 @@ export default {
                 String(work.id) === String(this.workDialogForm.id)
                 && String(work.teaching_course_id) === String(this.selected_course?.id)
             )) || null
+        },
+        savedWorkDialogCompletion() {
+            return this.savedWorkDialogWork ? this.workCompletionCounts(this.savedWorkDialogWork) : { completed: 0, open: 0 }
         },
         workDialogGroups() {
             return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []
@@ -3459,6 +3484,7 @@ export default {
                 student,
             }
             this.resetCourseWorkEntryDrafts()
+            this.loadAssessmentQuestionsForCell?.(student, courseDate)
         },
         closeEntryDialog() {
             if (this.entrySaving || this.courseWorkEntrySavingUid) return
@@ -3750,6 +3776,7 @@ export default {
 
             return {
                 affectedStudentCount,
+                completion: this.workCompletionCounts(work),
                 id: work.id,
                 isGroupWork,
                 key: `${work.id}-${suffix || 'work'}`,
@@ -3758,6 +3785,29 @@ export default {
                 title: label,
                 work,
             }
+        },
+        workCompletionCounts(work) {
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            const activeIds = (this.sortedSelectedStudents || [])
+                .map(student => this.registeredStudentUserId(student))
+                .filter(Boolean).map(String)
+            const assignedIds = new Set(groups.flatMap(group => (group.student_ids || []).map(String)))
+            const expectedIds = [...new Set(activeIds)].filter(id => !work.is_group_work || assignedIds.has(id))
+            const hasGrade = value => value !== null && value !== undefined
+                && String(value).trim() !== '' && !['NA', 'VL', 'F'].includes(String(value).trim())
+            const completed = expectedIds.filter(studentId => groups.some(group => {
+                if (!(group.student_ids || []).some(id => String(id) === studentId)) return false
+                const points = Array.isArray(group.points)
+                    ? group.points.find(item => String(item.student_id) === studentId)?.points
+                    : group.points?.[studentId]?.points ?? group.points?.[studentId]
+                if (hasGrade(points)) return true
+                const grades = Array.isArray(group.grades)
+                    ? group.grades.find(item => String(item.student_id) === studentId)?.grade
+                    : group.grades?.[studentId]?.grade ?? group.grades?.[studentId]
+                return hasGrade(grades) || (!group.use_individual_grades && hasGrade(group.grade))
+            })).length
+
+            return { completed, open: expectedIds.length - completed }
         },
         courseDateColumnMarkingColor(courseDate) {
             if (!this.uses_entry_areas_for_grading_schema) return null
@@ -3785,7 +3835,9 @@ export default {
         courseDateColumnMarkingClass(courseDate) {
             const color = this.courseDateColumnMarkingColor(courseDate)
 
-            return color ? `course-table-column--marked-${color}` : null
+            const outlined = this.outlinedCourseDateKey && this.normalizeDateKey(courseDate?.date) === this.outlinedCourseDateKey
+
+            return [color ? `course-table-column--marked-${color}` : null, outlined ? 'course-table-column--current' : null].filter(Boolean).join(' ') || null
         },
         courseDateContentPreview(courseDate) {
             const content = String(courseDate?.content || '').trim()
@@ -4783,7 +4835,6 @@ export default {
                 const comment = work
                     ? this.courseWorkStudentComment(entry, studentId)
                     : String(entry?.description || '').trim()
-                const workDescription = String(work?.description || '').trim()
 
                 return {
                     isWork: Boolean(work),
@@ -4791,8 +4842,8 @@ export default {
                         const record = workDispatchRecord(work, studentId, purpose)
                         return record ? dispatchNotificationText(record.sent_at, purpose, record.mode) : ''
                     }).filter(Boolean).join('\n'),
-                    comment,
-                    description: workDescription && workDescription !== comment ? workDescription : '',
+                    comment: work ? this.compactWorkAssessmentComment(work, studentId, comment, this.courseWorkStudentGrade(entry, studentId)) : comment,
+                    description: '',
                     grade: work
                         ? this.courseWorkStudentGrade(entry, studentId)
                         : String(entry?.effective_grade || entry?.grade || '').trim(),
@@ -5065,10 +5116,64 @@ export default {
         },
         cellEntryListComment(entry) {
             if (entry?.source === 'course_work') {
-                return String(this.courseWorkEntryStudentComment(entry) || '').trim()
+                const comment = String(this.courseWorkEntryStudentComment(entry) || '').trim()
+                const work = this.courseWorkForCellEntry?.(entry)
+                return this.compactWorkAssessmentComment(work, this.registeredEntryStudentId, comment, this.courseWorkEntryStudentGrade?.(entry) ?? entry.grade)
             }
 
             return String(entry?.description || '').trim()
+        },
+        compactWorkAssessmentComment(work, studentId, comment, grade) {
+            const receipt = (work?.status?.assessment_json_imports || []).find(item => (
+                String(item.student_id) === String(studentId) && item.record?.comment?.trim() === comment.trim()
+            ))
+            const pdf = (work?.status?.evaluation_pdfs || []).filter(item => item.origin === 'evaluation_import'
+                && item.student_id !== null && String(item.student_id) === String(studentId)).at(-1)
+            const key = `${work?.id}:${studentId}:${pdf?.sha256}`
+
+            return assessmentDeductionComment(comment, receipt?.record, grade, this.assessmentQuestionDetails?.[key])
+        },
+        loadAssessmentQuestionsForCell(student, courseDate) {
+            if (this.tableView !== 'entries') return
+            const studentId = this.registeredStudentUserId(student)
+            for (const entry of this.entriesForCell(student, courseDate)) {
+                if (entry.source !== 'course_work') continue
+                const work = this.courseWorkForCellEntry(entry)
+                if (/multiple.choice/i.test(this.courseWorkStudentComment(entry, studentId))) {
+                    this.loadAssessmentQuestionDetails(work, studentId)
+                }
+            }
+        },
+        async loadAssessmentQuestionDetails(work, studentId) {
+            const pdf = (work?.status?.evaluation_pdfs || []).filter(item => item.origin === 'evaluation_import'
+                && item.student_id !== null && String(item.student_id) === String(studentId)).at(-1)
+            if (!work?.id || !pdf?.sha256) return
+            const key = `${work.id}:${studentId}:${pdf.sha256}`
+            if (this.assessmentQuestionRequests[key]) return
+            this.assessmentQuestionRequests[key] = true
+            try {
+                const response = await axios.get(downloadEvaluation.url({ course_work: work.id, sha256: pdf.sha256 }), { responseType: 'arraybuffer' })
+                const bytes = new Uint8Array(response.data)
+                if (bytes.length > 6 * 1024 * 1024) return
+                const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('')
+                if (digest !== pdf.sha256) return
+                const pdfjs = await import('pdfjs-dist')
+                pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+                const document = await pdfjs.getDocument({ data: bytes, disableFontFace: true, isEvalSupported: false }).promise
+                try {
+                    let text = ''
+                    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+                        const page = await document.getPage(pageNumber)
+                        const content = await page.getTextContent()
+                        text += content.items.map(item => item.str || '').join(' ') + '\n'
+                    }
+                    this.assessmentQuestionDetails[key] = assessmentWrongQuestions(text)
+                } finally {
+                    await document.destroy()
+                }
+            } catch {
+                this.assessmentQuestionDetails[key] = null
+            }
         },
         compactCellEntryLabel(entry) {
             const type = String(entry?.type || '').trim() || 'Eintrag'
@@ -5980,6 +6085,16 @@ export default {
                 this.savingAttendanceCells = remainingCells
             }
         },
+        targetOutlinedCourseDate(referenceDate = new Date()) {
+            const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(referenceDate)
+            const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+            const todayKey = `${values.year}-${values.month}-${values.day}`
+            const dates = this.sortedCourseDates.filter(courseDate => this.normalizeDateKey(courseDate?.date))
+
+            return dates.find(courseDate => this.normalizeDateKey(courseDate.date) === todayKey)
+                || dates.filter(courseDate => this.normalizeDateKey(courseDate.date) < todayKey).at(-1)
+                || dates[0] || null
+        },
         targetInitialScrollCourseDate(referenceDate = new Date()) {
             const todayKey = this.dateKey(referenceDate)
             const datedCourseDates = this.sortedCourseDates.filter((courseDate) => this.normalizeDateKey(courseDate?.date))
@@ -6339,7 +6454,7 @@ export default {
 .course-table-content-label,
 .course-table-content-cell {
     background: #f8fafc;
-    height: 44px;
+    height: 60px;
 }
 
 .course-table-curriculum-label,
@@ -6653,11 +6768,11 @@ export default {
 
 .course-table-content-cell-preview {
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
     display: -webkit-box;
     font-size: 0.68rem;
     line-height: 13px;
-    max-height: 39px;
+    max-height: 52px;
     overflow: hidden;
     padding: 0 5px;
     text-align: left;
@@ -6955,7 +7070,7 @@ export default {
     font-size: 0.7rem;
     font-weight: 400;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 2;
     line-height: 1.25;
     overflow: hidden;
     overflow-wrap: anywhere;
@@ -6972,6 +7087,15 @@ export default {
     line-height: 1.25;
     margin-top: 4px;
     white-space: nowrap;
+}
+
+.course-table-work-summary-progress {
+    align-items: center;
+    display: flex;
+    font-size: 0.58rem;
+    gap: 2px;
+    line-height: 1.25;
+    margin-top: 3px;
 }
 
 .course-table-work-summary--import .course-table-work-summary-title {
@@ -7345,6 +7469,19 @@ export default {
     .course-table-entry-type-category {
         justify-self: start;
     }
+}
+
+.course-table-column--current {
+    border-left: 2px solid #64748b !important;
+    border-right: 2px solid #64748b !important;
+}
+
+.course-table-title-row .course-table-column--current {
+    border-top: 2px solid #64748b !important;
+}
+
+.course-table tbody tr:last-child .course-table-column--current {
+    border-bottom: 2px solid #64748b !important;
 }
 
 .course-table-column--marked-blue {

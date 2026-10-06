@@ -1,0 +1,217 @@
+<?php
+
+namespace App\Support;
+
+use Brick\Math\BigInteger;
+use Illuminate\Validation\ValidationException;
+use JsonException;
+use stdClass;
+
+class SchooltoolAssessmentJson
+{
+    public const MAX_INTEGER = 9007199254740991;
+
+    public function parse(string $text): array
+    {
+        $this->check(strlen($text) <= 262144 && ! str_starts_with($text, "\xEF\xBB\xBF"), 'JSON höchstens 256 KiB, UTF-8 ohne BOM.');
+        try {
+            $object = json_decode($text, false, 32, JSON_THROW_ON_ERROR);
+            $offset = 0;
+            $this->scan($text, $offset);
+        } catch (JsonException) {
+            $this->check(false, 'Ungültiges UTF-8-JSON.');
+        }
+        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->structure($object, $schema, $schema, '$');
+        $package = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $rubric = $package['rubric'];
+        $this->check(count(array_unique(array_column($rubric, 'criterion'))) === count($rubric), 'Doppelte Kriterien.');
+        $this->check($this->sum(array_column($rubric, 'maximum_minor')) === (string) $package['maximum_minor'], 'Falsches Gesamtmaximum.');
+        $ids = $identities = $personIds = $pdfs = [];
+        $this->pdf($package['overview_pdf'], $pdfs);
+        foreach ($package['records'] as $record) {
+            foreach (['email_collected_at', 'evaluation_completed_at'] as $field) {
+                $time = $record[$field] ?? null;
+                if ($time !== null) {
+                    $this->check(preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z\z/', $time) === 1
+                        && checkdate((int) substr($time, 5, 2), (int) substr($time, 8, 2), (int) substr($time, 0, 4))
+                        && (int) substr($time, 11, 2) < 24 && (int) substr($time, 14, 2) < 60 && (int) substr($time, 17, 2) < 60, $field.': ungültiger UTC-Zeitpunkt.');
+                    $this->check($field === 'email_collected_at' ? $record['submission_state'] === 'received' : $record['evaluation_state'] === 'complete', $field.': Zeitpunkt widerspricht Status.');
+                }
+            }
+            $this->check(! in_array($record['participant_id'], $ids, true), 'Doppelte Teilnehmerkennung.');
+            $ids[] = $record['participant_id'];
+            foreach ($record['identity'] as $value) {
+                $this->check($value === null || ($value === trim($value) && $value !== '' && ! preg_match('/[\x00-\x1f]/u', $value)), 'Ungültige Identität.');
+            }
+            $identity = array_map(fn (string $field): string => self::normalize($record['identity'][$field]), ['first_name', 'last_name', 'class_name', 'group_name']);
+            $this->check(! in_array($identity, $identities, true), 'Doppelte Personenidentität.');
+            $identities[] = $identity;
+            $personId = $record['identity']['schooltool_person_id'];
+            if ($personId !== null) {
+                $this->check(! in_array($personId, $personIds, true), 'Doppelte Schooltool-Personenkennung.');
+                $personIds[] = $personId;
+            }
+            $criteria = $record['criteria'];
+            $this->check(array_map(fn (array $c): array => [$c['criterion'], $c['maximum_minor']], $criteria) === array_map(fn (array $c): array => [$c['criterion'], $c['maximum_minor']], $rubric), 'Kriterien/Maxima widersprechen Raster.');
+            foreach ($criteria as $criterion) {
+                $value = $criterion['earned_minor'];
+                $this->check($value === null || $value <= $criterion['maximum_minor'], 'Kriterium über Maximum.');
+                $this->check($criterion['checkability'] !== 'unresolved' || $value === null, 'Ungeklärtes Kriterium mit Punkten.');
+                $this->check($criterion['checkability'] !== 'uncheckable' || in_array($value, [null, 0], true), 'Nicht prüfbares Kriterium mit positiven Punkten.');
+            }
+            $values = array_column($criteria, 'earned_minor');
+            $numeric = count(array_filter($values, fn (?int $value): bool => $value !== null));
+            $this->check($record['submission_state'] === 'received' || $record['evaluation_state'] === 'open', 'Abschluss/Teilpunkte ohne Eingang.');
+            if ($record['evaluation_state'] === 'complete') {
+                $this->check($numeric === count($values) && $record['total_minor'] !== null, 'Abschluss mit offenen Punkten.');
+                $this->check($this->sum([...$values, ...array_column($record['adjustments'], 'amount_minor')]) === (string) $record['total_minor'] && $record['total_minor'] <= $package['maximum_minor'], 'Falsche Gesamtsumme.');
+            } else {
+                $this->check($record['total_minor'] === null, 'Vorläufige Bewertung mit Gesamtsumme.');
+                $this->check($record['evaluation_state'] === 'open' ? $numeric === 0 && $record['adjustments'] === [] : $numeric > 0 && $numeric < count($values), 'Offene/partielle Kriterien widersprechen Bewertungsstatus.');
+            }
+            $this->pdf($record['pdf'], $pdfs);
+            $this->checksum($record, 'record_checksum');
+        }
+        $this->check(count($pdfs) <= 20 && count(array_unique($pdfs)) === count($pdfs), 'PDF-Limit oder mehrdeutige PDF-Zuordnung.');
+        $this->checksum($package, 'package_checksum');
+
+        return $package;
+    }
+
+    public static function normalize(string $value): string
+    {
+        return mb_convert_case(preg_replace('/\s+/u', ' ', trim($value)), MB_CASE_FOLD, 'UTF-8');
+    }
+
+    public static function digest(array|stdClass $value): string
+    {
+        return hash('sha256', self::canonical($value));
+    }
+
+    public static function canonical(mixed $value): string
+    {
+        if ($value instanceof stdClass || (is_array($value) && ! array_is_list($value))) {
+            $properties = (array) $value;
+            uksort($properties, fn (string $left, string $right): int => strcmp($left, $right));
+            $parts = [];
+            foreach ($properties as $key => $item) {
+                $parts[] = self::canonical((string) $key).':'.self::canonical($item);
+            }
+
+            return '{'.implode(',', $parts).'}';
+        }
+        if (is_array($value)) {
+            return '['.implode(',', array_map(self::canonical(...), $value)).']';
+        }
+
+        return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_LINE_TERMINATORS);
+    }
+
+    /** Validate the exact subset of Draft 2020-12 used by the pinned v1 schema. */
+    private function structure(mixed $value, array $schema, array $root, string $path): void
+    {
+        if (isset($schema['$ref'])) {
+            $this->structure($value, $root['$defs'][basename($schema['$ref'])], $root, $path);
+
+            return;
+        }
+        $types = (array) $schema['type'];
+        $type = match (true) {
+            $value instanceof stdClass => 'object', is_array($value) => 'array', is_int($value) => 'integer', is_string($value) => 'string', $value === null => 'null', default => 'invalid',
+        };
+        $this->check(in_array($type, $types, true), $path.': falscher Datentyp (Punkte nur als Integer-Hundertstel).');
+        $this->check(! array_key_exists('const', $schema) || $value === $schema['const'], $path.': unbekannte Version/Art.');
+        $this->check(! isset($schema['enum']) || in_array($value, $schema['enum'], true), $path.': ungültiger Zustand.');
+        if ($type === 'object') {
+            $actual = array_keys(get_object_vars($value));
+            $this->check(array_diff($schema['required'], $actual) === [] && array_diff($actual, array_keys($schema['properties'])) === [], $path.': fehlende oder unbekannte Objektfelder.');
+            foreach (get_object_vars($value) as $key => $item) {
+                $this->structure($item, $schema['properties'][$key], $root, $path.'.'.$key);
+            }
+        } elseif ($type === 'array') {
+            $this->check(count($value) >= ($schema['minItems'] ?? 0) && count($value) <= ($schema['maxItems'] ?? PHP_INT_MAX), $path.': Listenumfang.');
+            foreach ($value as $index => $item) {
+                $this->structure($item, $schema['items'], $root, $path.'['.$index.']');
+            }
+        } elseif ($type === 'string') {
+            $this->check(mb_strlen($value) >= ($schema['minLength'] ?? 0), $path.': leerer Text.');
+            $this->check(! isset($schema['pattern']) || preg_match('~\A'.substr($schema['pattern'], 1, -1).'\z~u', $value) === 1, $path.': ungültiges Muster.');
+        } elseif ($type === 'integer') {
+            $this->check($value >= ($schema['minimum'] ?? -self::MAX_INTEGER) && $value <= ($schema['maximum'] ?? self::MAX_INTEGER), $path.': Zahl außerhalb Wertebereich.');
+        }
+    }
+
+    private function checksum(array $value, string $field): void
+    {
+        $expected = $value[$field];
+        unset($value[$field]);
+        $this->check(hash_equals($expected, self::digest($value)), $field.': Prüfsumme falsch.');
+    }
+
+    private function pdf(?array $pdf, array &$filenames): void
+    {
+        if ($pdf === null) {
+            return;
+        }
+        $name = $pdf['filename'];
+        $this->check(! preg_match('/[\x00-\x1f]/u', $name) && ! preg_match('/\A(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|\z)/i', $name) && trim($name) === $name, 'Unsicherer PDF-Basisname.');
+        $filenames[] = mb_convert_case($name, MB_CASE_FOLD, 'UTF-8');
+    }
+
+    private function sum(array $values): string
+    {
+        $sum = BigInteger::of(0);
+        foreach ($values as $value) {
+            $sum = $sum->plus($value);
+        }
+
+        return (string) $sum;
+    }
+
+    /** Scan already valid JSON while retaining duplicate object keys, including escaped keys. */
+    private function scan(string $text, int &$offset): void
+    {
+        $offset += strspn($text, " \t\r\n", $offset);
+        $opening = $text[$offset];
+        if ($opening === '{' || $opening === '[') {
+            $offset++;
+            $closing = $opening === '{' ? '}' : ']';
+            $seen = [];
+            $offset += strspn($text, " \t\r\n", $offset);
+            while ($text[$offset] !== $closing) {
+                if ($opening === '{') {
+                    $key = $this->token($text, $offset);
+                    $this->check(! in_array($key, $seen, true), 'Doppelter JSON-Schlüssel: '.$key);
+                    $seen[] = $key;
+                    $offset += strspn($text, " \t\r\n", $offset) + 1;
+                }
+                $this->scan($text, $offset);
+                $offset += strspn($text, " \t\r\n", $offset);
+                if ($text[$offset] === ',') {
+                    $offset++;
+                    $offset += strspn($text, " \t\r\n", $offset);
+                }
+            }
+            $offset++;
+
+            return;
+        }
+        $this->token($text, $offset);
+    }
+
+    private function token(string $text, int &$offset): mixed
+    {
+        preg_match('/\G(?:"(?:[^"\\\\]|\\\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/s', $text, $match, 0, $offset);
+        $offset += strlen($match[0]);
+
+        return json_decode($match[0], flags: JSON_THROW_ON_ERROR);
+    }
+
+    public function check(bool $condition, string $message): void
+    {
+        if (! $condition) {
+            throw ValidationException::withMessages(['package' => $message]);
+        }
+    }
+}

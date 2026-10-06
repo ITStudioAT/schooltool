@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createHash, webcrypto } from 'node:crypto'
+import { assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
+import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
+import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestingPinia } from '@pinia/testing'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
@@ -17,6 +21,76 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 
 describe('CourseTable evaluation PDF links', () => {
+    it('outlines todays Vienna date or the most recent past date across the full column', () => {
+        const methods = (CourseTable as any).methods
+        const dates = [{ id: 1, date: '2026-10-06' }, { id: 2, date: '2026-10-07' }, { id: 3, date: '2026-10-14' }]
+        const context: any = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey, dateKey: methods.dateKey }
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-06T22:30:00Z'))).toEqual(dates[1])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-08T10:00:00Z'))).toEqual(dates[1])
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [dates[0], dates[2]] }, new Date('2026-10-07T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-01T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [] }, new Date('2026-10-08T10:00:00Z'))).toBeNull()
+        context.outlinedCourseDateKey = dates[1].date
+        context.courseDateColumnMarkingColor = () => 'red'
+        expect(methods.courseDateColumnMarkingClass.call(context, dates[1])).toBe('course-table-column--marked-red course-table-column--current')
+        expect(methods.courseDateColumnMarkingClass.call(context, dates[0])).toBe('course-table-column--marked-red')
+    })
+    it('shows collected and completed times beside independent dispatch rows in Vienna summer and winter time', async () => {
+        expect(assessmentTimeText('2026-07-01T22:30:00Z')).toBe('02.07.2026, 00:30 Uhr')
+        expect(assessmentTimeText('2026-12-01T22:30:00.123456Z')).toBe('01.12.2026, 23:30 Uhr')
+        expect(assessmentTimeText(null)).toBe('Zeitpunkt unbekannt')
+        expect(assessmentCompletionText('2026-07-01T22:30:00Z', 'open')).toBe('noch offen')
+        expect(assessmentCompletionText(null, 'partial')).toBe('noch nicht abgeschlossen (teilweise beurteilt)')
+        const old = { evaluation_state: 'complete', evaluation_completed_at: '2026-07-01T22:30:00Z' }
+        const work = { id: 65, status: { assessment_json_imports: [{ student_id: 12, record: {
+            evaluation_state: 'open', email_collected_at: '2026-07-01T22:30:00Z', evaluation_completed_at: null,
+        }, history: [{ record: old }] }, { student_id: 99, record: old }] } }
+        expect(currentAssessmentRecord(work, 12)?.evaluation_state).toBe('open')
+        const wrapper = mount(WorkDispatchStatus, { props: { work, studentId: 12, showResultTime: true }, global: { stubs: { 'v-icon': true } } })
+        expect(wrapper.text()).toContain('Kein bestätigter Aufgabenversand.')
+        expect(wrapper.text()).toContain('Keine bestätigte Ergebnisbenachrichtigung.')
+        expect(wrapper.text()).toContain('Abgabe eingesammelt: 02.07.2026, 00:30 Uhr')
+        expect(wrapper.text()).toContain('Beurteilung abgeschlossen: noch offen')
+        expect(wrapper.text()).not.toContain('Beurteilung abgeschlossen: 02.07.')
+        await wrapper.setProps({ compact: true })
+        expect(wrapper.text()).not.toContain('Abgabe eingesammelt')
+        wrapper.unmount()
+    })
+    it('extracts only verified incorrect question rows and rejects incomplete or unrelated PDF text', () => {
+        expect(assessmentWrongQuestions('Multiple-Choice-Korrektur Ergebnis: 8 richtig; 2 falsch. 8 · Katalog 40 Fehler 10 · Katalog 37 Fehler')).toEqual([8, 10])
+        expect(assessmentWrongQuestions('Multiple-Choice-Korrektur Ergebnis: 2 falsch. 8 · Katalog 40 Fehler')).toBeNull()
+        expect(assessmentWrongQuestions('Katalog 40 Frage 8')).toBeNull()
+    })
+
+    it('reads the matching personal PDF once and shares exact MC questions between list and hover without changing comments', async () => {
+        const methods = (CourseTable as any).methods
+        const bytes = new TextEncoder().encode('owned fake PDF')
+        const sha256 = createHash('sha256').update(bytes).digest('hex')
+        const get = vi.spyOn(axios, 'get').mockResolvedValue({ data: bytes.buffer })
+        const destroy = vi.fn()
+        const getDocument = vi.fn().mockReturnValue({ promise: Promise.resolve({ numPages: 1, destroy,
+            getPage: vi.fn().mockResolvedValue({ getTextContent: vi.fn().mockResolvedValue({ items: [{ str: 'Multiple-Choice-Korrektur Ergebnis: 8 richtig; 2 falsch. 8 · Katalog 40 Fehler 10 · Katalog 37 Fehler' }] }) }) }) })
+        vi.doMock('pdfjs-dist', () => ({ getDocument, GlobalWorkerOptions: {} }))
+        vi.stubGlobal('crypto', webcrypto)
+        const comment = 'Multiple-Choice-PDF: 1,6 / 2,0 Punkte. Falsche Antworten unten erläutert.'
+        const work = { id: 65, status: { evaluation_pdfs: [{ student_id: 12, origin: 'evaluation_import', sha256 }] } }
+        const ctx: any = { ...methods, assessmentQuestionDetails: {}, assessmentQuestionRequests: {}, registeredEntryStudentId: 12,
+            courseWorkForCellEntry: () => work, courseWorkEntryStudentComment: () => comment, courseWorkEntryStudentGrade: () => '1.6' }
+        try {
+            await ctx.loadAssessmentQuestionDetails(work, 12)
+            await ctx.loadAssessmentQuestionDetails(work, 12)
+            expect(get).toHaveBeenCalledTimes(1)
+            expect(get.mock.calls[0][0]).toContain(`/65/evaluations/${sha256}`)
+            expect(ctx.cellEntryListComment({ source: 'course_work' })).toBe('Multiple-Choice-PDF −0,40 Punkte: Fragen 8, 10 falsch')
+            expect(ctx.compactWorkAssessmentComment(work, 12, comment, '1.6')).toBe(ctx.cellEntryListComment({ source: 'course_work' }))
+            expect(ctx.compactWorkAssessmentComment(work, 99, comment, '1.6')).not.toContain('Fragen 8, 10')
+            await ctx.loadAssessmentQuestionDetails({ ...work, status: { evaluation_pdfs: [{ student_id: 12, origin: 'evaluation_import', sha256: 'b'.repeat(64) }] } }, 12)
+            expect(getDocument).toHaveBeenCalledTimes(1)
+            expect(destroy).toHaveBeenCalledTimes(1)
+            expect(ctx.courseWorkEntryStudentComment()).toBe(comment)
+        } finally { get.mockRestore(); vi.doUnmock('pdfjs-dist'); vi.unstubAllGlobals() }
+    })
+
     it('shows the last successful import directly in work summary cards and distinguishes older imports from no import', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-06' }
@@ -41,7 +115,24 @@ describe('CourseTable evaluation PDF links', () => {
             expect(cards[0].get('.course-table-work-summary-import').attributes('title')).toBe('Zuletzt importiert: 06.10.2026 um 08:30 Uhr')
             expect(cards[1].text()).toContain('Datum unbekannt')
             expect(cards[2].find('.course-table-work-summary-import').exists()).toBe(false)
+            expect(cards[0].get('.course-table-work-summary-progress').text()).toContain('0 erledigt · 1 offen')
+            useCourseWorkStore(pinia).courseWorks = [{ ...works[0], groups: [{ student_ids: [12], points: [{ student_id: 12, points: 0 }] }] }] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary-progress').text()).toContain('1 erledigt')
+            expect(wrapper.get('.course-table-work-summary-progress').text()).not.toContain('0 offen')
         } finally { wrapper.unmount() }
+    })
+
+    it('counts current active expected students and completed saved grades independently of import receipts', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = { ...methods, sortedSelectedStudents: [{ id: 999, user_id: 12 }, { id: 998, user_id: 13 }, { id: 997, user_id: 14 }] }
+        const work = { is_group_work: false, status: { assessment_json_imports: [{ student_id: 14, record: { evaluation_state: 'complete' } }] }, groups: [
+            { student_ids: [12, 13, 90], grades: [{ student_id: 12, grade: '4.75' }, { student_id: 13, grade: 'NA' }, { student_id: 90, grade: '5' }] },
+        ] }
+        expect(ctx.workCompletionCounts(work)).toEqual({ completed: 1, open: 2 })
+        expect(ctx.workCompletionCounts({ is_group_work: false, groups: [] })).toEqual({ completed: 0, open: 3 })
+        expect(ctx.workCompletionCounts({ is_group_work: true, groups: [{ student_ids: [12, 13], grade: '2' }] })).toEqual({ completed: 2, open: 0 })
+        expect(ctx.workCompletionCounts({ is_group_work: true, groups: [{ student_ids: [12, 13], grade: '2', use_individual_grades: true, grades: { 12: '1', 13: '' } }] })).toEqual({ completed: 1, open: 1 })
     })
 
     it('shows independent task and result symbols on each work including gray task tests and refreshes after import', async () => {
@@ -127,10 +218,16 @@ describe('CourseTable evaluation PDF links', () => {
                 id: 77, user_id: 12, date: courseDate.date, type: 'EM',
                 source: 'course_work', teaching_course_work_id: 65, grade: '4.5',
             }] as never
+            await flushPromises()
+            const cell = wrapper.get('.course-table-entry-cell')
+            expect(cell.findAll('v-tooltip')).toHaveLength(1)
+            expect(cell.findAll('.course-table-entry-cell-badge[title]')).toHaveLength(0)
+            expect(cell.findAll('[aria-label][title]')).toHaveLength(0)
             vm.openWorkDialog(courseDate)
             await flushPromises()
             expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
             const card = wrapper.get('.course-table-date-work-item')
+            expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
             const imports = card.findAll('v-btn').filter(button => button.text() === 'Importieren')
@@ -146,6 +243,7 @@ describe('CourseTable evaluation PDF links', () => {
             vm.startEditingDateWork(work)
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
+            expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(form.findAll('v-btn').filter(button => button.text() === 'Importieren')).toHaveLength(1)
             const overallLink = form.findAll('[href]').find(link => link.text() === 'Gesamtauswertung (PDF)')!
             expect(form.findAll('[href]').map(link => link.text())).toContain('Download Aufgabenversand')
@@ -3410,7 +3508,7 @@ describe('CourseTable', () => {
             .toEqual([entries[0]])
     })
 
-    it('builds complete hover information for entries in a student date cell', () => {
+    it('builds one compact hover summary without the full work description', () => {
         const methods = (CourseTable as any).methods
         const workEntry = {
             uid: 'assessment-1',
@@ -3425,6 +3523,7 @@ describe('CourseTable', () => {
             description: 'Ruhig mitgearbeitet',
         }
         const ctx = {
+            compactWorkAssessmentComment: methods.compactWorkAssessmentComment,
             cellEntryKindLabel: methods.cellEntryKindLabel,
             cellEntryTypeLabel: vi.fn((entry) => entry.type),
             courseWorkForCellEntry: vi.fn((entry) => entry === workEntry ? {
@@ -3442,7 +3541,7 @@ describe('CourseTable', () => {
                 comment: 'Super gemacht',
                 isWork: true,
                 notification: '',
-                description: 'Bitte sehr genau arbeiten!',
+                description: '',
                 grade: '+',
                 kind: 'Bewertung',
                 title: 'Schreibübungen bis Lektion 40',
@@ -3567,6 +3666,7 @@ describe('CourseTable', () => {
     it('shows available comments in the entry card list', () => {
         const methods = (CourseTable as any).methods
         const context = {
+            compactWorkAssessmentComment: methods.compactWorkAssessmentComment,
             courseWorkEntryStudentComment: vi.fn().mockReturnValue('  Sehr gute Ausarbeitung  '),
         }
 
@@ -3578,6 +3678,46 @@ describe('CourseTable', () => {
             source: 'course_work',
         })).toBe('Sehr gute Ausarbeitung')
         expect(methods.cellEntryListComment.call(context, {})).toBe('')
+    })
+
+    it('shows only exact deductions beneath the entry period while retaining the full work comment', () => {
+        const methods = (CourseTable as any).methods
+        const criteria = [
+            { criterion: 'Multiple-Choice-PDF', maximum_minor: 200, earned_minor: 200, reason: 'Alles richtig.' },
+            { criterion: 'Betreff', maximum_minor: 50, earned_minor: 50, reason: 'Passender Betreff.' },
+            { criterion: 'Anrede', maximum_minor: 50, earned_minor: 40, reason: 'Höfliche Anrede vorhanden; nach dem Beistrich muss die Fortsetzung klein beginnen (0,2 + 0,1 + 0,1). Dieser Fehler wird nicht nochmals abgezogen.' },
+            { criterion: 'Nachrichtentext', maximum_minor: 100, earned_minor: 75, reason: 'Aufgabe klar genannt. Fehler: „ihnen“ statt „Ihnen“ und „sie“ statt „Sie“ (Sprache 0,25). Link-Abzug getrennt.' },
+            { criterion: 'Verabschiedung', maximum_minor: 50, earned_minor: 50, reason: 'Passende Grußformel.' },
+            { criterion: 'Signatur', maximum_minor: 50, earned_minor: 0, reason: 'Name und Schule enthalten; Klasse fehlt. Keine Teilpunkte vereinbart.' },
+        ]
+        const adjustments = [{ label: 'Anhang', amount_minor: -50, reason: 'PDF-Anhang verlangt; E-Mail enthält stattdessen einen SharePoint-Link. Datei zugänglich.' }]
+        const comment = 'Ausführlicher Bewertungskommentar bleibt gespeichert.'
+        const record = { comment, evaluation_state: 'complete', total_minor: 365, criteria, adjustments }
+        const work = { status: { assessment_json_imports: [{ student_id: 12, record }] } }
+        const ctx = { compactWorkAssessmentComment: methods.compactWorkAssessmentComment, registeredEntryStudentId: 12, courseWorkForCellEntry: () => work,
+            courseWorkEntryStudentComment: () => comment, courseWorkEntryStudentGrade: () => '3.65' }
+        expect(methods.cellEntryListComment.call(ctx, { source: 'course_work' })).toBe([
+            'Anrede −0,10: nach dem Beistrich muss die Fortsetzung klein beginnen',
+            'Nachrichtentext −0,25: Fehler: „ihnen“ statt „Ihnen“ und „sie“ statt „Sie“',
+            'Signatur −0,50: Klasse fehlt',
+            'Anhang −0,50: E-Mail enthält stattdessen einen SharePoint-Link',
+        ].join('\n'))
+        expect(record.comment).toBe(comment)
+        expect(record.criteria).toHaveLength(6)
+        expect(methods.cellEntryListComment.call({ ...ctx, courseWorkEntryStudentGrade: () => '4' }, { source: 'course_work' })).toBe(comment)
+        expect(methods.cellEntryListComment.call({ ...ctx, registeredEntryStudentId: 99 }, { source: 'course_work' })).toBe(comment)
+    })
+
+    it('compacts existing numeric assessment comments without a receipt and preserves unrecognized or partial text', () => {
+        const methods = (CourseTable as any).methods
+        const comment = 'Betreff: 0,5 / 0,5 Punkte. Passend.\nSignatur: 0,0 / 0,5 Punkte. Name enthalten; Klasse fehlt.\nAnhang: -0,5 Punkte. Link statt PDF.'
+        const ctx = { compactWorkAssessmentComment: methods.compactWorkAssessmentComment, courseWorkEntryStudentComment: () => comment, courseWorkEntryStudentGrade: () => '0' }
+        expect(methods.cellEntryListComment.call(ctx, { source: 'course_work' })).toBe('Signatur −0,50: Klasse fehlt\nAnhang −0,50: Link statt PDF')
+        expect(methods.cellEntryListComment.call({ ...ctx, courseWorkEntryStudentComment: () => 'Betreff: 0,5 / 0,5 Punkte. Passend.', courseWorkEntryStudentGrade: () => '0.5' }, { source: 'course_work' })).toBe('')
+        expect(methods.cellEntryListComment.call({ ...ctx, courseWorkEntryStudentComment: () => 'Noch offen: Punkte nicht abschließend geprüft.' }, { source: 'course_work' })).toBe('Noch offen: Punkte nicht abschließend geprüft.')
+        const record = { comment, evaluation_state: 'partial', total_minor: null, criteria: [], adjustments: [] }
+        expect(methods.cellEntryListComment.call({ ...ctx, registeredEntryStudentId: 12,
+            courseWorkForCellEntry: () => ({ status: { assessment_json_imports: [{ student_id: 12, record }] } }) }, { source: 'course_work' })).toBe(comment)
     })
 
     it('saves a new entry for the selected student and date', async () => {
@@ -4860,7 +5000,7 @@ describe('CourseTable', () => {
         expect(source).toContain('content-class="course-table-entry-tooltip"')
         expect(source).toContain('v-for="detail in cellEntryHoverItems(student, courseDate)"')
         expect(source).toContain("{{ detail.isWork ? 'Bewertung' : 'Note' }}: {{ detail.grade }}")
-        expect(source).toContain('<span>Kommentar:</span> {{ detail.comment }}')
+        expect(source).toContain('{{ detail.comment }}')
         expect(source.indexOf('data-testid="course-table-entry-cell-supplementary-row"'))
             .toBeLessThan(source.indexOf('data-testid="course-table-entry-cell-performance-row"'))
         expect(source).not.toContain('{{ compactCellEntryLabel(entry) }}')

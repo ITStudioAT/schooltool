@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Models\Import116;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
@@ -11,6 +12,7 @@ use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
+use App\Services\TeachingWorkJsonImport;
 use App\Services\TeachingWorkMarkdownImport;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +27,56 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function importJson(Request $request, TeachingCourseWork $course_work, TeachingWorkJsonImport $importer): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_if((int) $request->server('CONTENT_LENGTH', 0) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
+        $data = $request->validate([
+            'package' => ['required', 'file', 'extensions:json', 'max:256'],
+            'pdfs' => ['sometimes', 'array', 'max:20'],
+            'pdfs.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:6144'],
+            'apply' => ['sometimes', 'boolean'],
+            'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64'],
+        ]);
+        $uploads = $request->file('pdfs', []);
+        $text = $request->file('package')->get();
+        $payloadSize = strlen($text) + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
+        $transportSize = (int) $request->server('CONTENT_LENGTH', 0);
+        if ($transportSize === 0) {
+            $transportSize = $payloadSize + strlen(http_build_query($request->except(['package', 'pdfs']))) + (count($uploads) + 3) * 256;
+        }
+        abort_if(max($transportSize, $payloadSize, strlen($request->getContent())) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
+        $bundle = $importer->parse($text, $uploads);
+        $createdPaths = [];
+        try {
+            $result = DB::transaction(function () use ($course_work, $actor, $importer, $bundle, $uploads, $data, &$createdPaths): array {
+                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
+                $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                $enrollments = $work->teachingCourse->teachingCourseStudents()->lockForUpdate()->get();
+                $users = User::query()->whereIn('id', $enrollments->pluck('user_id'))->lockForUpdate()->get();
+                Import116::query()->whereIn('id', $enrollments->pluck('import116_id')->merge($users->pluck('import116_id'))->filter())->lockForUpdate()->get();
+                $work->teachingCourseWorkGroupStudents()->lockForUpdate()->get();
+                $preview = $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle);
+                if (! ($data['apply'] ?? false)) {
+                    return ['preview' => $preview];
+                }
+                abort_unless($preview['can_import'], 422, 'JSON-Paket enthält ungeklärte Zuordnungen.');
+                abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
+                $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
+
+                return ['data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh())];
+            });
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($createdPaths);
+            throw $exception;
+        }
+
+        return response()->json($result);
+    }
+
     public function importFolder(Request $request, TeachingCourseWork $course_work, TeachingWorkFolderImport $importer): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
@@ -235,7 +287,7 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
-            unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at']);
+            unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
         }
         $validated['maximum_plus'] = $maximumPlus;
         $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
@@ -302,6 +354,13 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
+            foreach (['assessment_json_imports', 'assessment_json_packages'] as $field) {
+                if (isset($course_work->status[$field])) {
+                    $validated['status'][$field] = $course_work->status[$field];
+                } else {
+                    unset($validated['status'][$field]);
+                }
+            }
             if (isset($course_work->status['folder_imported_at'])) {
                 $validated['status']['folder_imported_at'] = $course_work->status['folder_imported_at'];
             } else {

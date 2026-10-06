@@ -21,8 +21,307 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\Support\TeachingWorkEvaluationFixture;
+use Tests\Support\TeachingWorkJsonFixture;
 
 uses(RefreshDatabase::class);
+
+function jsonAssessmentForWork(object $context, TeachingCourseWork $work): array
+{
+    $package = TeachingWorkJsonFixture::package();
+    $package['records'][0]['identity']['class_name'] = '1A';
+    $groups = $work->groups;
+    $groups[0]['name'] = 'Gruppe 1';
+    $groups[1]['name'] = 'Gruppe 1';
+    $groups[0]['use_individual_grades'] = true;
+    $groups[1]['use_individual_grades'] = true;
+    $work->update(['groups' => $groups, 'is_group_work' => true]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+    return $package;
+}
+
+test('JSON assessment event times retain version history and preserve open grades with idempotent receipts', function (string $nextState) {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $package['records'][0]['email_collected_at'] = '2026-10-06T21:50:00Z';
+    $package['records'][0]['evaluation_completed_at'] = '2026-10-07T00:10:00Z';
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['rows'][0]['event_times']['email_collected_at'])->toBe('2026-10-06T21:50:00Z')
+        ->and($work->fresh()->status['assessment_json_imports'] ?? [])->toBe([]);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $grades = $work->fresh()->groups;
+    $previous = $work->fresh()->status['assessment_json_imports'][0];
+    $record = &$package['records'][0];
+    $record['evaluation_completed_at'] = null;
+    unset($record['email_collected_at']);
+    $record['evaluation_state'] = $nextState;
+    if ($nextState !== 'complete') {
+        $record['total_minor'] = null;
+        $record['criteria'][0]['earned_minor'] = null;
+    }
+    if ($nextState === 'partial') {
+        $package['rubric'][0]['maximum_minor'] = 300;
+        $package['rubric'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200];
+        $record['criteria'][0]['maximum_minor'] = 300;
+        $record['criteria'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200, 'earned_minor' => 100, 'checkability' => 'checkable', 'reason' => 'Vorläufig'];
+    }
+    unset($record);
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['rows'][0]['previous_event_times']['evaluation_completed_at'])->toBe('2026-10-07T00:10:00Z')
+        ->and($preview['rows'][0]['event_times']['evaluation_completed_at'])->toBeNull();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $receipt = $work->fresh()->status['assessment_json_imports'][0];
+    expect($receipt['record']['evaluation_completed_at'])->toBeNull()
+        ->and($receipt['history'][0]['record']['evaluation_completed_at'])->toBe('2026-10-07T00:10:00Z')
+        ->and($receipt['history'][0]['record']['email_collected_at'])->toBe('2026-10-06T21:50:00Z')
+        ->and($receipt['history'][0]['record_checksum'])->toBe($previous['record_checksum'])
+        ->and($work->fresh()->groups)->toBe($grades);
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['assessment_json_imports'][0])->toBe($receipt);
+    $package['records'][0]['email_collected_at'] = '2026-10-07T02:00:00Z';
+    $changed = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $this->postJson($url, $changed + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $preview = $this->postJson($url, $changed)->assertOk()->json('preview');
+    $this->postJson($url, $changed + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['assessment_json_imports'][0]['record']['email_collected_at'])->toBe('2026-10-07T02:00:00Z')
+        ->and($work->fresh()->status['assessment_json_imports'][0]['history'])->toHaveCount(2)
+        ->and($work->fresh()->groups)->toBe($grades);
+})->with(['open', 'partial', 'complete']);
+
+test('JSON assessment previews separately applies 475 hundredths and preserves manually corrected repeats', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $before = $work->fresh()->groups;
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($work->fresh()->groups)->toBe($before)
+        ->and($preview['rows'][0]['total_minor'])->toBe(475)
+        ->and($preview['rows'][0]['status'])->toBe('Neu');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect((float) $work->fresh()->groups[0]['points'][0]['points'])->toBe(4.75)
+        ->and($work->fresh()->groups[0]['comments'][0]['comment'])->toBe($package['records'][0]['comment']);
+    $groups = $work->fresh()->groups;
+    $groups[0]['points'][0]['points'] = 3.5;
+    $groups[0]['grades'][0]['grade'] = '3.5';
+    $work->update(['groups' => $groups]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    $repeat = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($repeat['rows'][0]['status'])->toBe('Unverändert');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $repeat['hash']])->assertOk();
+    expect($work->fresh()->groups[0]['points'][0]['points'])->toBe(3.5)
+        ->and($work->fresh()->status['assessment_json_packages'])->toHaveCount(1);
+    $package['records'][0]['total_minor'] = 450;
+    $package['records'][0]['criteria'][0]['earned_minor'] = 450;
+    $changed = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $next = $this->postJson($url, $changed)->assertOk()->json('preview');
+    expect($next['rows'][0]['status'])->toBe('Aktualisierung');
+    $this->postJson($url, $changed + ['apply' => true, 'hash' => $next['hash']])->assertOk();
+    expect((float) $work->fresh()->groups[0]['points'][0]['points'])->toBe(4.50);
+});
+
+test('JSON assessment open and partial preserve points comments and personal PDFs', function (string $state) {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $pdf = workEvaluationPdf('frei benannter Bericht.pdf');
+    $package['records'][0]['pdf'] = ['filename' => $pdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $pdf->getRealPath())];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$pdf]];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $previous = $work->fresh()->groups;
+    $previousPdfs = $work->fresh()->status['evaluation_pdfs'];
+    $package['records'][0]['evaluation_state'] = $state;
+    $package['records'][0]['total_minor'] = null;
+    $package['records'][0]['comment'] = 'Vorläufiger Kommentar';
+    $newPdf = workEvaluationPdf('vorlaeufig.pdf');
+    $package['records'][0]['pdf'] = ['filename' => 'vorlaeufig.pdf', 'sha256' => hash_file('sha256', $newPdf->getRealPath())];
+    $package['records'][0]['criteria'][0]['earned_minor'] = null;
+    if ($state === 'partial') {
+        $package['rubric'][0]['maximum_minor'] = 300;
+        $package['rubric'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200];
+        $package['records'][0]['criteria'][0]['maximum_minor'] = 300;
+        $package['records'][0]['criteria'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200, 'earned_minor' => 100, 'checkability' => 'checkable', 'reason' => 'Vorläufig'];
+    }
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$newPdf]];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['rows'][0]['will_replace'])->toBeFalse();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->groups)->toBe($previous)
+        ->and($work->fresh()->status['evaluation_pdfs'])->toBe($previousPdfs)
+        ->and($work->fresh()->status['assessment_json_imports'][0]['record']['evaluation_state'])->toBe($state);
+})->with(['open', 'partial']);
+
+test('JSON assessment matches verified current Import116 fields without changing accounts', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $this->student->update(['first_name' => 'Registered name', 'schoolclass' => null]);
+    $import = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A', 'import_user_id' => $this->admin->id,
+    ]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['import116_id' => $import->id]);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($this->student->fresh()->schoolclass)->toBeNull()->and($this->student->fresh()->first_name)->toBe('Registered name');
+    $import->update(['schoolyear_id' => $this->otherSchoolyear->id]);
+    $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', false);
+});
+
+test('JSON assessment blocks incorrect identities groups IDs and duplicate targets atomically', function (string $case) {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    if ($case === 'class') {
+        $package['records'][0]['identity']['class_name'] = '3B';
+    }
+    if ($case === 'group') {
+        $package['records'][0]['identity']['group_name'] = 'Andere Gruppe';
+    }
+    if ($case === 'id') {
+        $package['records'][0]['identity']['schooltool_person_id'] = (string) $this->openStudent->id;
+    }
+    if ($case === 'canceled') {
+        $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]);
+    }
+    if ($case === 'ambiguous') {
+        $duplicate = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'schoolclass' => '1A']);
+        $this->course->teachingCourseStudents()->create(['user_id' => $duplicate->id]);
+    }
+    if ($case === 'group work') {
+        $groups = $work->groups;
+        $groups[0]['use_individual_grades'] = false;
+        $work->update(['groups' => $groups]);
+    }
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $before = $work->fresh()->toArray();
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeFalse();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->toArray())->toBe($before);
+})->with(['class', 'group', 'id', 'canceled', 'ambiguous', 'group work']);
+
+test('JSON assessment rejects stale previews and wrong target maxima', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $work->update(['title' => 'Manuell geändert']);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $this->course->teachingEntryArea->entryDefinitions()->update(['maximum_points' => 10]);
+    $this->postJson($url, $payload)->assertUnprocessable();
+});
+
+test('JSON assessment checks PDF presence hash MIME and upload transport limits', function (string $case) {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $pdf = workEvaluationPdf('report.pdf');
+    $package['records'][0]['pdf'] = ['filename' => 'report.pdf', 'sha256' => hash_file('sha256', $pdf->getRealPath())];
+    $uploads = [$pdf];
+    if ($case === 'missing') {
+        $uploads = [];
+    }
+    if ($case === 'hash') {
+        $package['records'][0]['pdf']['sha256'] = str_repeat('a', 64);
+    }
+    if ($case === 'mime') {
+        $uploads = [UploadedFile::fake()->createWithContent('report.pdf', 'not a PDF')];
+    }
+    if ($case === 'transport') {
+        $this->withServerVariables(['CONTENT_LENGTH' => 6291457]);
+    }
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => $uploads])->assertUnprocessable();
+    expect($work->fresh()->status['assessment_json_imports'] ?? [])->toBe([])
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['missing', 'hash', 'mime', 'transport']);
+
+test('JSON assessment PDF failure rolls back all evaluations receipts and newly stored files', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $package['records'][0]['email_collected_at'] = '2026-10-06T21:50:00Z';
+    $package['records'][0]['evaluation_completed_at'] = '2026-10-07T00:10:00Z';
+    $pdfs = [workEvaluationPdf('overview.pdf'), workEvaluationPdf('personal.pdf')];
+    $package['overview_pdf'] = ['filename' => 'overview.pdf', 'sha256' => hash_file('sha256', $pdfs[0]->getRealPath())];
+    $package['records'][0]['pdf'] = ['filename' => 'personal.pdf', 'sha256' => hash_file('sha256', $pdfs[1]->getRealPath())];
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => $pdfs];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $before = $work->fresh()->toArray();
+    $entries = TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)->get()->toArray();
+    $disk = Storage::disk('local');
+    Storage::shouldReceive('disk')->with('local')->andReturn($mock = Mockery::mock($disk)->makePartial());
+    $mock->shouldReceive('putFileAs')->once()->passthru()->ordered();
+    $mock->shouldReceive('putFileAs')->once()->andReturn(false)->ordered();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->toArray())->toBe($before)
+        ->and(TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)->get()->toArray())->toBe($entries)
+        ->and($disk->allFiles())->toBe([]);
+});
+
+test('JSON assessment preserves immutable participant binding and protects receipts from manual updates', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $receipts = $work->fresh()->status['assessment_json_imports'];
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['assessment_json_imports' => [], 'assessment_json_packages' => []]])->assertOk();
+    expect($work->fresh()->status['assessment_json_imports'])->toBe($receipts);
+    $package['records'][0]['identity']['first_name'] = 'Bea';
+    $package['records'][0]['identity']['last_name'] = 'Beta';
+    $next = $this->postJson($url, ['package' => TeachingWorkJsonFixture::upload($package)])->assertOk()->json('preview');
+    expect($next['can_import'])->toBeFalse()->and($next['rows'][0]['status'])->toContain('umgehängt');
+});
+
+test('JSON assessment rejects unauthorized or foreign school access before any changes', function (string $actor) {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $user = $actor === 'student' ? $this->student : User::factory()->create(['school_id' => $this->otherSchool->id, 'schoolyear_id' => $this->otherSchoolyear->id])->assignRole('teacher');
+    $this->actingAs($user, 'sanctum');
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", ['package' => TeachingWorkJsonFixture::upload($package)])->assertForbidden();
+    expect($work->fresh()->status['assessment_json_imports'] ?? [])->toBe([]);
+})->with(['student', 'foreign school']);
+
+test('JSON assessment detects concurrent participant changes and does not create missing accounts', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->openStudent->update(['first_name' => 'Verändert']);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $users = User::count();
+    $this->course->teachingCourseStudents()->create(['user_id' => null]);
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect(User::count())->toBe($users);
+});
+
+test('JSON assessment individual work binds group name to the course and uses only existing users', function () {
+    $work = prepareWorkEvaluationImport($this);
+    $package = TeachingWorkJsonFixture::package();
+    $package['records'][0]['identity']['class_name'] = '1A';
+    $package['records'][0]['identity']['group_name'] = $this->course->title;
+    $package['records'][0]['identity']['schooltool_person_id'] = (string) $this->student->id;
+    $this->course->teachingCourseStudents()->create(['user_id' => null]);
+    $users = User::count();
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue()->and($preview['rows'][0]['target']['group_name'])->toBe($this->course->title);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect((float) $work->fresh()->groups[0]['points'][0]['points'])->toBe(4.75)
+        ->and(User::count())->toBe($users);
+});
 
 beforeEach(function () {
     $this->freezeTime();
