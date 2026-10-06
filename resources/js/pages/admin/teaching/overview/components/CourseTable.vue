@@ -7472,16 +7472,18 @@ export default {
 }
 
 .course-table-column--current {
-    border-left: 2px solid #64748b !important;
-    border-right: 2px solid #64748b !important;
+    border-left: 1px solid #94a3b8 !important;
+    border-right: 1px solid #94a3b8 !important;
 }
 
 .course-table-title-row .course-table-column--current {
-    border-top: 2px solid #64748b !important;
+    background: #f1f5f9;
+    border-top: 1px solid #94a3b8 !important;
+    box-shadow: inset 0 3px 0 #94a3b8;
 }
 
 .course-table tbody tr:last-child .course-table-column--current {
-    border-bottom: 2px solid #64748b !important;
+    border-bottom: 1px solid #94a3b8 !important;
 }
 
 .course-table-column--marked-blue {
