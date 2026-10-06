@@ -65,6 +65,9 @@ class TeachingWorkMarkdownImport
     public function parse(array $files): array
     {
         foreach ($files as $text) {
+            if (str_contains($text, '| Person / Klasse | Abgabestatus | Erreicht | Max. | Bewertungsstatus |')) {
+                return $this->parseStatusReports($files);
+            }
             if (str_contains($text, '| Person / Klasse | Abgabestatus | Erreichte Punkte | Maximale Punkte | Bewertungsstatus |')) {
                 return $this->parseCompactReports($files);
             }
@@ -308,6 +311,135 @@ class TeachingWorkMarkdownImport
         }
 
         return $overview + ['maximum' => $maximum, 'rows' => $courseRows];
+    }
+
+    /** @param array<string, string> $files */
+    private function parseStatusReports(array $files): array
+    {
+        $documents = [];
+        $overview = null;
+        foreach ($files as $filename => $text) {
+            $text = str_replace(["\r\n", "\r"], "\n", preg_replace('/\A\xEF\xBB\xBF/', '', $text));
+            if (! mb_check_encoding($text, 'UTF-8') || str_contains($text, "\0")
+                || ! preg_match('/\A---\n(.*?)\n---\n(.*)\z/su', $text, $document)
+                || ! preg_match('/^title: "(Gesamtübersicht|Beurteilung)"$/m', $document[1], $title)
+                || ! preg_match('/^fach: "(.+) · (\d{2}\.\d{2}\.\d{4})"$/mu', $document[1], $subject)) {
+                $this->reject("{$filename}: Unbekanntes Markdown-Auswertungsformat.");
+            }
+            $documents[$filename] = ['title' => $subject[1], 'date' => $subject[2], 'body' => $document[2]];
+            if ($title[1] === 'Gesamtübersicht') {
+                $date = \DateTimeImmutable::createFromFormat('!d.m.Y', $subject[2]);
+                if ($overview !== null || ! $date || $date->format('d.m.Y') !== $subject[2]
+                    || ! preg_match('/^\*\*Maximale Punkte:\*\* ([\d,.]+)$/m', $document[2], $maximum)) {
+                    $this->reject('Genau eine Gesamtübersicht mit eindeutigem Arbeitsdatum und maximaler Punktzahl auswählen.');
+                }
+                $overview = ['title' => $subject[1], 'date' => $subject[2], 'source' => $filename, 'maximum' => $this->number($maximum[1])];
+            }
+        }
+        if (! $overview || $overview['maximum'] <= 0) {
+            $this->reject('Gesamtübersicht mit positiver maximaler Punktzahl auswählen.');
+        }
+        $rows = [];
+        foreach ($this->compactTableRows($documents[$overview['source']]['body'], '| Person / Klasse | Abgabestatus | Erreicht | Max. | Bewertungsstatus |') as $cells) {
+            if (count($cells) !== 5 || ! preg_match('/\A(.+) \/ ([^\/]+)\z/u', $cells[0], $identity)) {
+                $this->reject('Ungültige Person oder Zeile in der Gesamtübersicht.');
+            }
+            $points = $cells[2] === 'offen' ? null : $this->number($cells[2]);
+            if ($this->number($cells[3]) !== $overview['maximum']
+                || ($points === null && ($cells[1] !== 'Offen' || $cells[4] !== 'Bewertung offen: keine Abgabe zugeordnet'))
+                || ($points !== null && ($points > $overview['maximum'] || $cells[1] !== 'E-Mail und PDF vorhanden' || $cells[4] !== 'Abgeschlossen'))) {
+                $this->reject('Punkte, Abgabestatus oder Bewertungsstatus der Übersicht widersprechen einander.');
+            }
+            $key = self::identity($identity[1], $identity[2]);
+            if (isset($rows[$key])) {
+                $this->reject('Eine Person/Klasse steht mehrfach in der Übersicht.');
+            }
+            $rows[$key] = ['person' => $identity[1], 'class' => $identity[2], 'points' => $points,
+                'submission' => $cells[1], 'evaluation' => $cells[4]];
+        }
+        $courseRows = [];
+        $seen = [];
+        foreach ($documents as $filename => $document) {
+            if ($filename === $overview['source']) {
+                continue;
+            }
+            $status = [];
+            foreach ($this->compactTableRows($document['body'], '| Status / Prüfstand | Angabe |') as $cells) {
+                if (count($cells) !== 2 || isset($status[$cells[0]])) {
+                    $this->reject("{$filename}: Ungültige oder doppelte Statuszeile.");
+                }
+                $status[$cells[0]] = $cells[1];
+            }
+            $filenameParts = explode('_', pathinfo($filename, PATHINFO_FILENAME));
+            if ($document['title'] !== $overview['title'] || $document['date'] !== $overview['date']
+                || count($filenameParts) !== 2 || trim($filenameParts[0]) === '' || trim($filenameParts[1]) === ''
+                || ! preg_match('/\A(.+) \/ ([^\/]+)\z/u', $status['Person'] ?? '', $identity)
+                || self::identity($filenameParts[0].' '.$filenameParts[1], '') !== self::identity($identity[1], '')) {
+                $this->reject("{$filename}: Dateiname, Person oder Arbeitsmetadaten im Bericht passen nicht zusammen.");
+            }
+            $key = self::identity($identity[1], $identity[2]);
+            $row = $rows[$key] ?? null;
+            if (! $row || isset($seen[$key]) || ($status['Abgabestatus'] ?? null) !== $row['submission']
+                || ($status['Bewertungsstatus'] ?? null) !== $row['evaluation']) {
+                $this->reject("{$filename}: Person oder Status widerspricht der Übersicht.");
+            }
+            $isOpen = $row['points'] === null;
+            $criteria = $this->compactTableRows($document['body'], $isOpen
+                ? '| Kriterium / Aufgabenteil | Max. | Erreicht |'
+                : '| Kriterium / Aufgabenteil | Max. | Erreicht | Begründung |');
+            $sumMaximum = 0.0;
+            $sumPoints = 0.0;
+            $labels = [];
+            $mc = null;
+            foreach ($criteria as $cells) {
+                if (count($cells) !== ($isOpen ? 3 : 4) || isset($labels[$cells[0]])) {
+                    $this->reject("{$filename}: Ungültige oder doppelte Kriterienzeile.");
+                }
+                $labels[$cells[0]] = true;
+                $criterionMaximum = $this->number($cells[1]);
+                $criterionPoints = $cells[2] === 'offen' ? null : $this->number($cells[2]);
+                if ($criterionMaximum <= 0 || ($isOpen !== ($criterionPoints === null)) || $criterionPoints > $criterionMaximum) {
+                    $this->reject("{$filename}: Kriterienpunkte widersprechen dem Bewertungsstatus.");
+                }
+                $sumMaximum += $criterionMaximum;
+                $sumPoints += $criterionPoints ?? 0;
+                if ($cells[0] === 'Multiple-Choice-PDF') {
+                    $mc = ['maximum' => $criterionMaximum, 'points' => $criterionPoints];
+                }
+            }
+            if (! $mc || abs($sumMaximum - $overview['maximum']) > 0.001
+                || (! $isOpen && abs($sumPoints - $row['points']) > 0.001)) {
+                $this->reject("{$filename}: Übersicht und Kriterienpunkte widersprechen einander.");
+            }
+            $comment = '';
+            if ($isOpen) {
+                if (($status['Ergebnis'] ?? null) !== 'Keine abschließende Gesamtsumme') {
+                    $this->reject("{$filename}: Eindeutiger Hinweis auf offene Bewertung fehlt.");
+                }
+            } else {
+                if (! preg_match('/\A([\d,.]+) von ([\d,.]+) Punkten\z/', $status['Ergebnis'] ?? '', $total)
+                    || $this->number($total[1]) !== $row['points'] || $this->number($total[2]) !== $overview['maximum']
+                    || ! preg_match('/^\*\*Teilbereiche:\*\* Multiple Choice: ([\d,.]+) \/ ([\d,.]+); E-Mail: ([\d,.]+) \/ ([\d,.]+)\.$/m', $document['body'], $parts)
+                    || $this->number($parts[1]) !== $mc['points'] || $this->number($parts[2]) !== $mc['maximum']
+                    || abs($this->number($parts[3]) - ($sumPoints - $mc['points'])) > 0.001
+                    || abs($this->number($parts[4]) - ($sumMaximum - $mc['maximum'])) > 0.001) {
+                    $this->reject("{$filename}: Ergebnis und Teilbereiche widersprechen den Kriterienpunkten.");
+                }
+                $comment = $status['Ergebnis'].'; '.$parts[0];
+            }
+            $courseKey = self::identity($filenameParts[1].' '.$filenameParts[0], $identity[2]);
+            if (isset($courseRows[$courseKey])) {
+                $this->reject('Mehrere Einzelbeurteilungen für dieselbe Person/Klasse.');
+            }
+            unset($row['submission'], $row['evaluation']);
+            $courseRows[$courseKey] = $row + ['comment' => $comment, 'source' => $filename];
+            $seen[$key] = true;
+        }
+        if ($rows === [] || count($seen) !== count($rows)) {
+            $this->reject('Gesamtübersicht und zugehörige Einzelbeurteilungen vollständig auswählen.');
+        }
+
+        return $overview + ['rows' => $courseRows];
     }
 
     /** @return list<list<string>> */
