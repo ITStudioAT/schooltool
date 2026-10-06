@@ -72,9 +72,7 @@ export function assessmentDeductionComment(comment, record = null, grade = null,
         const multipleChoice = /multiple.choice/i.test(deduction.label)
         const reason = multipleChoice && wrongQuestions?.length
             ? `Fragen ${wrongQuestions.join(', ')} falsch`
-            : multipleChoice && !/Fragen?\s+\d+(?:\s*(?:,|und)\s*\d+)*\s+(?:falsch|nicht beantwortet)/i.test(deduction.reason)
-                ? 'Fragennummern in Bewertungsdaten nicht verfügbar'
-                : shortReason(deduction.reason)
+            : shortReason(deduction.reason)
 
         return `${deduction.label} −${amount}${multipleChoice ? ' Punkte' : ''}: ${reason}`
     }).join('\n')
