@@ -36,7 +36,11 @@ class MaturaController extends Controller
         if (! Schema::hasTable('matura_sessions')) {
             return response()->json(['ready' => false, 'sessions' => []]);
         }
+        $data = $request->validate(['schoolyear_id' => ['required', 'integer']]);
+        Schoolyear::query()->where('school_id', $user->school_id)->findOrFail($data['schoolyear_id']);
+
         $sessions = MaturaSession::query()->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $data['schoolyear_id'])
             ->when(! $user->hasAnyRole(['admin', 'super_admin']), fn ($query) => $query->where(fn ($query) => $query
                 ->where('created_by', $user->id)->orWhereHas('accesses', fn ($access) => $access
                 ->where('user_id', $user->id)->whereNull('revoked_at')->where('expires_at', '>', now()))))

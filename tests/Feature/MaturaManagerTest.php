@@ -52,16 +52,40 @@ function maturaRequest(object $test, MaturaSession $session, int $studentIndex =
 }
 
 test('00-manager requires authentication and preserves school and ownership boundaries', function () {
-    [$owner, $session] = maturaFixture();
+    [$owner, $session, $year] = maturaFixture();
     $this->getJson(route('admin.matura.index'))->assertUnauthorized();
     $this->actingAs($owner)->getJson(route('admin.matura.show', $session))->assertOk()->assertJsonPath('actor.manager', true);
     $outsider = User::factory()->create(['school_id' => $owner->school_id, 'is_active' => true]);
     $outsider->assignRole('teacher');
     $this->actingAs($outsider)->getJson(route('admin.matura.show', $session))->assertForbidden();
-    $this->getJson(route('admin.matura.index'))->assertJsonCount(0, 'sessions');
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => $year->id]))->assertOk()->assertJsonCount(0, 'sessions');
     [$other] = maturaFixture();
     $this->actingAs($other)->getJson(route('admin.matura.show', $session))->assertNotFound();
     $this->getJson(route('admin.matura.pdf', $session))->assertNotFound();
+});
+
+test('matura selection requires an own-school year and only lists accessible sessions in that year', function () {
+    [$owner, $session, $year] = maturaFixture();
+    $otherYear = Schoolyear::factory()->create(['school_id' => $owner->school_id]);
+    $otherSession = app(MaturaSetupService::class)->save($owner, [
+        'name' => 'Anderes Schuljahr', 'exam_date' => $session->exam_date->toDateString(),
+        'schoolyear_id' => $otherYear->id, 'waiting_places' => 1,
+        'rooms' => [['name' => 'A', 'student_ids' => [], 'manual_students' => []]],
+    ]);
+    [$foreignOwner, $foreignSession, $foreignYear] = maturaFixture();
+    $foreignSession->update(['schoolyear_id' => $year->id]);
+    $this->actingAs($owner);
+    $this->getJson(route('admin.matura.index'))->assertUnprocessable()->assertJsonValidationErrors('schoolyear_id');
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => 'invalid']))->assertUnprocessable();
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => $foreignYear->id]))->assertNotFound();
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => $year->id]))
+        ->assertOk()->assertJsonCount(1, 'sessions')->assertJsonPath('sessions.0.id', $session->id);
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => $otherYear->id]))
+        ->assertOk()->assertJsonCount(1, 'sessions')->assertJsonPath('sessions.0.id', $otherSession->id);
+    Role::findOrCreate('admin', 'web');
+    $owner->assignRole('admin');
+    $this->getJson(route('admin.matura.index', ['schoolyear_id' => $year->id]))
+        ->assertOk()->assertJsonCount(1, 'sessions')->assertJsonPath('sessions.0.id', $session->id);
 });
 
 test('setup snapshots current imported students and rejects cross-school and duplicate assignments', function () {
