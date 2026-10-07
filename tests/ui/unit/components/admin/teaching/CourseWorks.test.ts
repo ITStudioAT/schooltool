@@ -52,6 +52,35 @@ describe('JSON assessment preview and separate apply', () => {
         } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 
+    it('shows the evidenced deadline and local absence reason while retaining an open server search', async () => {
+        const localPreview = {
+            ...preview,
+            exercise: { ...preview.exercise, deadline: '05.10.2026, 17:00:00 Europe/Vienna' },
+            final_download: { deadline_at: '2026-10-05T15:00:00Z', download_completed_at: '2026-10-07T20:49:54Z', scope: 'Lokaler Outlook-Bestand; Serversuche nicht vollständig belegt.' },
+            submission_check: { state: 'open', checked_at: '2026-10-07T20:49:54Z' },
+            rows: [{ ...preview.rows[0], submission_state: 'not_received', evaluation_state: 'complete', total_minor: 0,
+                submission_note: 'Innerhalb der Frist nicht abgegeben', will_replace: true }],
+        }
+        const post = vi.fn().mockResolvedValue({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
+            components: { 'v-file-input': VFileInput }, stubs: { 'v-file-input': false, VFileInput: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+
+            expect(wrapper.text()).toContain('Abgabefrist: 05.10.2026, 17:00:00 Europe/Vienna')
+                .toContain('Lokaler Abschlussdownload:').toContain('Serversuche nicht vollständig belegt.')
+                .toContain('Innerhalb der Frist nicht abgegeben').toContain('Abgabeprüfung: noch offen')
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('apply')).toBe(false)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
     it('clears a stale preview on conflict and never falls back to Markdown', async () => {
         const post = vi.fn().mockRejectedValue({ response: { status: 409, data: { message: 'Bitte Vorschau erneut laden.' } } })
         vi.stubGlobal('axios', { post })

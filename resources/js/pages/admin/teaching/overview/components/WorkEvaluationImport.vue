@@ -29,6 +29,12 @@
                     <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
                     <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
                     <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
+                    <p v-if="json_preview.exercise.deadline"><strong>Abgabefrist:</strong> {{ json_preview.exercise.deadline }}</p>
+                    <div v-if="json_preview.final_download" class="mt-3">
+                        <p><strong>Lokaler Abschlussdownload:</strong> {{ assessmentTimeText(json_preview.final_download.download_completed_at) }} · Frist: {{ assessmentTimeText(json_preview.final_download.deadline_at) }}</p>
+                        <p>{{ json_preview.final_download.scope }}</p>
+                        <p>Ein leerer zugeordneter Bestand wird mit 0 Punkten bewertet: Innerhalb der Frist nicht abgegeben.</p>
+                    </div>
                     <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
                     <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
                     <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Ungeklärte Zuordnungen sperren das gesamte Paket.</v-alert>

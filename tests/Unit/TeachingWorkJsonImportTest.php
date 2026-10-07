@@ -7,6 +7,73 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('JSON final download permits a missing local submission zero assessment without claiming a server search', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::package()));
+
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+
+    expect($parsed)->toBe($package)
+        ->and($parsed['records'][0]['total_minor'])->toBe(0)
+        ->and($parsed)->not->toHaveKey('submission_check');
+});
+
+test('JSON final download leaves an incomplete server checkpoint open while authorizing only missing local submissions', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package(), 'open'));
+    $package['submission_check']['participants'][0]['email_result'] = 'unresolved';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $package = TeachingWorkJsonFixture::sign($package);
+
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+
+    expect($parsed)->toBe($package)
+        ->and($parsed['submission_check']['state'])->toBe('open')
+        ->and($parsed['submission_check']['completed_at'])->toBeNull();
+});
+
+test('JSON final download rejects missing inconsistent or insufficient local completion evidence', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::package());
+    $proof = &$package['final_download'];
+    match ($case) {
+        'wrong exercise' => $proof['exercise_id'] = 'OTHER',
+        'before deadline' => $proof['download_completed_at'] = $proof['deadline_at'],
+        'future' => $proof['download_completed_at'] = '2026-10-07T11:00:01Z',
+        'invalid date' => $proof['deadline_at'] = '2026-02-30T10:00:00Z',
+        'non UTC' => $proof['deadline_at'] = '2026-10-07T12:00:00+02:00',
+        'unknown timezone' => $proof['deadline_timezone'] = 'Unknown/Zone',
+        'missing deadline evidence' => $proof['deadline_evidence_sha256'] = '',
+        'missing download evidence' => $proof['download_evidence_sha256'] = [],
+        'invalid download hash' => $proof['download_evidence_sha256'] = ['not-a-hash'],
+        'blank scope' => $proof['scope'] = ' ',
+        'multiline scope' => $proof['scope'] = "local\ncache",
+        'unknown person' => $proof['participants'][0]['participant_id'] = 'OTHER',
+        'duplicate person' => $proof['participants'][] = $proof['participants'][0],
+        'missing person' => $proof['participants'] = [],
+        'existing submission' => $proof['participants'][0]['submission_sha256'] = [str_repeat('c', 64)],
+        'duplicate files' => $proof['participants'][0]['submission_sha256'] = [str_repeat('c', 64), str_repeat('c', 64)],
+        'invalid file hash' => $proof['participants'][0]['submission_sha256'] = ['not-a-hash'],
+        'positive points' => $package['records'][0]['total_minor'] = $package['records'][0]['criteria'][0]['earned_minor'] = 1,
+        'wrong reason' => $package['records'][0]['comment'] = 'Nicht gefunden',
+        'not completed' => $package['records'][0]['evaluation_state'] = 'open',
+        'checksum' => $proof['download_checksum'] = str_repeat('f', 64),
+        'missing proof' => null,
+    };
+    if ($case !== 'checksum') {
+        unset($proof['download_checksum']);
+        $proof['download_checksum'] = SchooltoolAssessmentJson::digest($proof);
+    }
+    unset($proof);
+    if ($case === 'missing proof') {
+        unset($package['final_download']);
+    }
+
+    expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['wrong exercise', 'before deadline', 'future', 'invalid date', 'non UTC', 'unknown timezone', 'missing deadline evidence', 'missing download evidence', 'invalid download hash', 'blank scope', 'multiline scope', 'unknown person', 'duplicate person', 'missing person', 'existing submission', 'duplicate files', 'invalid file hash', 'positive points', 'wrong reason', 'not completed', 'checksum', 'missing proof']);
+
 test('JSON accepts explicit teacher absence zero assessments without claiming completed mailbox search', function () {
     $this->travelTo('2026-10-07T11:00:00Z');
     $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::package()));
@@ -108,7 +175,7 @@ test('JSON teacher decision does not authorize an unnamed second absence assessm
     $package['records'][] = $other;
 
     expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))
-        ->toThrow(ValidationException::class, 'Nichtabgabe-Nullwertung ohne Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
+        ->toThrow(ValidationException::class, 'Nichtabgabe-Nullwertung ohne Abschlussdownload, Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
 });
 
 test('JSON submission checks preserve complete and open checkpoints separately from assessment completion', function (string $state) {

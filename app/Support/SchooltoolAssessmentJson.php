@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Brick\Math\BigInteger;
 use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use stdClass;
@@ -25,6 +26,10 @@ class SchooltoolAssessmentJson
         $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->structure($object, $schema, $schema, '$');
         $package = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $download = $package['final_download'] ?? null;
+        if ($download !== null) {
+            $this->finalDownload($download, $package['exercise_id'], $package['records']);
+        }
         $decision = $package['teacher_absence_decision'] ?? null;
         if ($decision !== null) {
             $this->teacherAbsenceDecision($decision, $package['exercise_id'], $package['records']);
@@ -73,8 +78,8 @@ class SchooltoolAssessmentJson
                 $authorized = $decision !== null && in_array($record['participant_id'], $decision['participant_ids'], true);
                 $check = $package['submission_check'] ?? null;
                 $person = collect($check['participants'] ?? [])->firstWhere('participant_id', $record['participant_id']);
-                $this->check($authorized || ($check !== null && $check['state'] === 'complete' && $person
-                    && $person['email_result'] === 'not_found' && $person['other_result'] === 'not_received'), 'Nichtabgabe-Nullwertung ohne Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
+                $this->check($authorized || $download !== null || ($check !== null && $check['state'] === 'complete' && $person
+                    && $person['email_result'] === 'not_found' && $person['other_result'] === 'not_received'), 'Nichtabgabe-Nullwertung ohne Abschlussdownload, Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
                 $reason = 'Innerhalb der Frist nicht abgegeben';
                 $this->check($record['total_minor'] === 0 && $record['adjustments'] === []
                     && count(array_filter($criteria, fn (array $criterion): bool => $criterion['earned_minor'] === 0 && $criterion['checkability'] === 'uncheckable' && $criterion['reason'] === $reason)) === count($criteria), 'Ungültige Nichtabgabe-Nullwertung.');
@@ -93,7 +98,11 @@ class SchooltoolAssessmentJson
         $this->check(count($pdfs) <= 20 && count(array_unique($pdfs)) === count($pdfs), 'PDF-Limit oder mehrdeutige PDF-Zuordnung.');
         $this->checksum($package, 'package_checksum');
         if (isset($package['submission_check'])) {
-            $this->submissionCheck($package['submission_check'], $package['exercise_id'], $package['records'], $decision['participant_ids'] ?? []);
+            $absenceIds = $decision['participant_ids'] ?? [];
+            if ($download !== null) {
+                $absenceIds = array_merge($absenceIds, array_column(array_filter($download['participants'], fn (array $person): bool => $person['submission_sha256'] === []), 'participant_id'));
+            }
+            $this->submissionCheck($package['submission_check'], $package['exercise_id'], $package['records'], $absenceIds);
         }
 
         return $package;
@@ -102,6 +111,32 @@ class SchooltoolAssessmentJson
     public static function normalize(string $value): string
     {
         return mb_convert_case(preg_replace('/\s+/u', ' ', trim($value)), MB_CASE_FOLD, 'UTF-8');
+    }
+
+    /** @param list<array<string, mixed>> $records */
+    public function finalDownload(array $download, string $exerciseId, array $records): void
+    {
+        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->structure(json_decode(json_encode($download, JSON_THROW_ON_ERROR)), $schema['properties']['final_download'], $schema, '$.final_download');
+        $this->check($download['exercise_id'] === $exerciseId, 'Abschlussdownload gehört zu einer anderen Arbeit.');
+        $deadline = $this->instant($download['deadline_at']);
+        $completed = $this->instant($download['download_completed_at']);
+        $this->check($deadline < $completed && $completed <= new DateTimeImmutable(now()->toISOString()), 'Abschlussdownload muss nach Fristablauf und darf nicht in der Zukunft liegen.');
+        $this->check(in_array($download['deadline_timezone'], DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true), 'Abschlussdownload: unbekannte Fristzeitzone.');
+        $this->check(trim($download['scope']) !== '' && ! preg_match('/[\r\n]/', $download['scope']), 'Abschlussdownload: tatsächlicher Downloadbestand fehlt.');
+        $ids = array_column($download['participants'], 'participant_id');
+        $recordIds = array_column($records, 'participant_id');
+        sort($ids, SORT_STRING);
+        sort($recordIds, SORT_STRING);
+        $this->check($ids === $recordIds && count(array_unique($ids)) === count($ids), 'Abschlussdownload: Teilnehmerbestand widerspricht dem Paket.');
+        foreach ($download['participants'] as $person) {
+            $hashes = $person['submission_sha256'];
+            $this->check(count(array_unique($hashes)) === count($hashes), 'Abschlussdownload: doppelte Abgabeprüfsummen.');
+            $record = collect($records)->firstWhere('participant_id', $person['participant_id']);
+            $this->check($record['submission_state'] === ($hashes === [] ? 'not_received' : 'received'), 'Abgabestatus widerspricht Abschlussbestand.');
+            $this->check($hashes !== [] || $record['evaluation_state'] === 'complete', 'Fehlende Abgabe nach Abschlussdownload muss nullbewertet sein.');
+        }
+        $this->checksum($download, 'download_checksum');
     }
 
     /** @param list<array<string, mixed>> $records */
@@ -124,7 +159,7 @@ class SchooltoolAssessmentJson
     }
 
     /** @param list<array<string, mixed>> $records */
-    public function submissionCheck(array $check, string $exerciseId, array $records, array $teacherAbsenceIds = []): void
+    public function submissionCheck(array $check, string $exerciseId, array $records, array $absenceIds = []): void
     {
         $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->structure(json_decode(json_encode($check, JSON_THROW_ON_ERROR)), $schema['$defs']['submission_check'], $schema, '$.submission_check');
@@ -165,7 +200,7 @@ class SchooltoolAssessmentJson
             $outcome = in_array('received', [$person['email_result'], $person['other_result']], true) ? 'received'
                 : ($person['email_result'] === 'not_found' && $person['other_result'] === 'not_received' && $checked > $deadline ? 'not_received' : 'unresolved');
             $record = collect($records)->firstWhere('participant_id', $person['participant_id']);
-            $overridden = $outcome === 'unresolved' && $check['state'] === 'open' && in_array($record['participant_id'], $teacherAbsenceIds, true);
+            $overridden = $outcome === 'unresolved' && $check['state'] === 'open' && in_array($record['participant_id'], $absenceIds, true);
             $this->check($record['submission_state'] === $outcome || $overridden, 'Abgabestatus widerspricht Gesamtprüfnachweis.');
         }
         if ($check['unresolved_candidates'] !== []) {

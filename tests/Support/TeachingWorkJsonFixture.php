@@ -55,6 +55,23 @@ class TeachingWorkJsonFixture
         return $package;
     }
 
+    public static function withFinalDownload(array $package): array
+    {
+        $package = self::withTeacherAbsenceDecision($package);
+        unset($package['teacher_absence_decision']);
+        $proof = ['schema_version' => 1, 'kind' => 'schooltool.final-download', 'exercise_id' => $package['exercise_id'],
+            'deadline_at' => '2026-10-07T10:00:00Z', 'deadline_timezone' => 'Europe/Vienna',
+            'deadline_evidence_sha256' => str_repeat('a', 64), 'download_completed_at' => '2026-10-07T10:01:00Z',
+            'download_evidence_sha256' => [str_repeat('b', 64)], 'scope' => 'Lokaler Outlook-Bestand; Serversuche nicht vollständig belegt.',
+            'participants' => array_map(fn (array $record): array => ['participant_id' => $record['participant_id'],
+                'submission_sha256' => $record['submission_state'] === 'received' ? [str_repeat('c', 64)] : []], $package['records'])];
+        $proof['download_checksum'] = SchooltoolAssessmentJson::digest($proof);
+        $package['final_download'] = $proof;
+        $package['exercise']['deadline'] = '07.10.2026, 12:00:00 Europe/Vienna';
+
+        return $package;
+    }
+
     public static function withSubmissionCheck(array $package, string $state = 'complete'): array
     {
         if (count($package['records']) === 1) {

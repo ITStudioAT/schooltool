@@ -41,6 +41,102 @@ function jsonAssessmentForWork(object $context, TeachingCourseWork $work): array
     return $package;
 }
 
+test('JSON final download previews absence zeros preserves unfinished points and retains an open server checkpoint', function (string $state) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work), 'open'));
+    $package['submission_check']['deadline_at'] = $package['final_download']['deadline_at'];
+    $package['submission_check']['checked_at'] = $package['final_download']['download_completed_at'];
+    $package['submission_check']['participants'][0]['email_result'] = 'unresolved';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    if ($state === 'partial') {
+        $package['rubric'][0]['maximum_minor'] = 300;
+        $package['rubric'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200];
+        foreach ($package['records'] as $index => &$record) {
+            $record['criteria'][0]['maximum_minor'] = 300;
+            $record['criteria'][] = ['criterion' => 'Weitere Prüfung', 'maximum_minor' => 200, 'earned_minor' => $index === 0 ? 0 : 100,
+                'checkability' => $index === 0 ? 'uncheckable' : 'checkable', 'reason' => $index === 0 ? 'Innerhalb der Frist nicht abgegeben' : 'Vorläufig'];
+        }
+        unset($record);
+        $package['records'][1]['evaluation_state'] = 'partial';
+    }
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $before = $work->fresh()->getAttributes();
+    $previousGroup = $work->groups[1];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeTrue()
+        ->and($preview['final_download'])->toBe($package['final_download'])
+        ->and($preview['rows'][0]['total_minor'])->toBe(0)
+        ->and($preview['rows'][1]['will_replace'])->toBeFalse()
+        ->and($preview['submission_check']['state'])->toBe('open')
+        ->and($work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $work->refresh();
+    expect($work->groups[0]['points'][0]['points'])->toBe('0.00')
+        ->and($work->groups[0]['comments'][0]['comment'])->toBe('Innerhalb der Frist nicht abgegeben')
+        ->and($work->groups[1])->toEqual($previousGroup)
+        ->and($work->status['assessment_json_packages'][0]['final_download'])->toEqual($package['final_download']);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()
+        ->assertJsonPath('data.submission_check_status.complete', false)
+        ->assertJsonPath('data.submission_check_status.checked_at', $package['submission_check']['checked_at']);
+})->with(['open', 'partial']);
+
+test('JSON final download rejects target deadline roster changes and stale apply before any writes', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work), 'open'));
+    unset($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    if ($case === 'deadline') {
+        $work->update(['finish_until_time' => '12:01']);
+    } elseif ($case === 'roster') {
+        $this->course->teachingCourseStudents()->where('user_id', $this->openStudent->id)->update(['canceled_at' => now()]);
+    } else {
+        $work->update(['title' => 'Changed']);
+    }
+    $before = $work->fresh()->getAttributes();
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertStatus($case === 'stale' ? 409 : 422);
+
+    expect($work->fresh()->getAttributes())->toBe($before);
+})->with(['deadline', 'roster', 'stale']);
+
+test('JSON final download rejects older or contradictory local inventories and keeps repeats idempotent', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work), 'open'));
+    unset($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $before = $work->fresh()->getAttributes();
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    if ($case === 'older') {
+        $package['final_download']['download_completed_at'] = '2026-10-07T10:00:59Z';
+    } else {
+        $package['final_download']['download_evidence_sha256'] = [str_repeat('f', 64)];
+    }
+    unset($package['final_download']['download_checksum']);
+    $package['final_download']['download_checksum'] = SchooltoolAssessmentJson::digest($package['final_download']);
+
+    $this->postJson($url, ['package' => TeachingWorkJsonFixture::upload($package)])->assertUnprocessable();
+
+    expect($work->fresh()->getAttributes())->toBe($before);
+})->with(['older', 'contradictory']);
+
 test('JSON teacher absence zero assessment previews without writes and applies only after fresh confirmation', function () {
     $this->travelTo('2026-10-07T11:00:00Z');
     $work = prepareWorkDispatchImport($this);

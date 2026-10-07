@@ -69,6 +69,16 @@ class TeachingWorkJsonImport
         if (isset($package['teacher_absence_decision'])) {
             $this->checkDeadline($work, $package['teacher_absence_decision']);
         }
+        if (isset($package['final_download'])) {
+            $this->checkDeadline($work, $package['final_download']);
+            $previousPackage = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $item): bool => $item['exercise_id'] === $package['exercise_id'] && isset($item['final_download']));
+            if ($previousPackage) {
+                $previousDownload = $previousPackage['final_download'];
+                $previousTime = $this->parser->instant($previousDownload['download_completed_at']);
+                $nextTime = $this->parser->instant($package['final_download']['download_completed_at']);
+                $this->parser->check($nextTime > $previousTime || ($nextTime == $previousTime && $previousDownload['download_checksum'] === $package['final_download']['download_checksum']), 'Abschlussdownload ist älter oder widerspricht dem gespeicherten Bestand.');
+            }
+        }
         $definition = $this->entries->entryDefinitionsForCourse($actor, $course)->firstWhere('short_name', $work->type);
         if ($definition) {
             $definition = $definition->newQuery()->lockForUpdate()->find($definition->getKey());
@@ -138,6 +148,9 @@ class TeachingWorkJsonImport
                 'pdf' => $record['pdf'], 'will_replace' => $error === null && ! $unchanged && $record['evaluation_state'] === 'complete'];
         }
 
+        if (isset($package['final_download'])) {
+            $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abschlussdownload benötigt genau alle erwarteten Zielpersonen.');
+        }
         $submissionCheck = $package['submission_check'] ?? null;
         if ($submissionCheck !== null) {
             $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abgabeprüfung benötigt genau alle erwarteten Zielpersonen.');
@@ -163,6 +176,7 @@ class TeachingWorkJsonImport
         return ['target_work' => ['id' => $work->id, 'title' => $work->title, 'course_id' => $course->id, 'course_title' => $course->title],
             'submission_check' => $submissionCheck,
             'teacher_absence_decision' => $package['teacher_absence_decision'] ?? null,
+            'final_download' => $package['final_download'] ?? null,
             'exercise' => $package['exercise'], 'exercise_id' => $package['exercise_id'], 'maximum_minor' => $package['maximum_minor'],
             'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked,
             'previous_overview_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', null),
@@ -236,7 +250,8 @@ class TeachingWorkJsonImport
         $packages = $status['assessment_json_packages'] ?? [];
         if (! collect($packages)->contains('package_checksum', $package['package_checksum'])) {
             $packages[] = ['exercise_id' => $package['exercise_id'], 'package_checksum' => $package['package_checksum'], 'exercise' => $package['exercise'], 'imported_at' => now()->toISOString(),
-                ...(isset($package['teacher_absence_decision']) ? ['teacher_absence_decision' => $package['teacher_absence_decision']] : [])];
+                ...(isset($package['teacher_absence_decision']) ? ['teacher_absence_decision' => $package['teacher_absence_decision']] : []),
+                ...(isset($package['final_download']) ? ['final_download' => $package['final_download']] : [])];
             $status['folder_imported_at'] = now()->toISOString();
         }
         $status['assessment_json_packages'] = $packages;
@@ -325,7 +340,15 @@ class TeachingWorkJsonImport
             $this->parser->check($receipt['work_id'] === (int) $work->id && $receipt['course_id'] === (int) $work->teaching_course_id
                 && $receipt['roster'] === $this->rosterBinding($work) && $receipt['bindings'] === $this->recordBindings($imports), 'Abgabeprüfung: Zielbasis geändert.');
             $records = array_column(array_values(array_filter($imports, fn (array $item): bool => $item['exercise_id'] === $check['exercise_id'])), 'record');
-            $this->parser->submissionCheck($check, $check['exercise_id'], $records);
+            $package = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $item): bool => $item['exercise_id'] === $check['exercise_id']);
+            $absenceIds = $package['teacher_absence_decision']['participant_ids'] ?? [];
+            if (isset($package['final_download'])) {
+                $download = $package['final_download'];
+                $this->parser->finalDownload($download, $check['exercise_id'], $records);
+                $this->checkDeadline($work, $download);
+                $absenceIds = array_merge($absenceIds, array_column(array_filter($download['participants'], fn (array $person): bool => $person['submission_sha256'] === []), 'participant_id'));
+            }
+            $this->parser->submissionCheck($check, $check['exercise_id'], $records, $absenceIds);
             $this->checkDeadline($work, $check);
 
             return ['complete' => $check['state'] === 'complete', 'checked_at' => $check['checked_at'], 'student_ids' => $this->expectedStudentIds($work),
