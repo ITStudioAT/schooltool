@@ -41,6 +41,48 @@ function jsonAssessmentForWork(object $context, TeachingCourseWork $work): array
     return $package;
 }
 
+test('JSON teacher absence zero assessment previews without writes and applies only after fresh confirmation', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(jsonAssessmentForWork($this, $work));
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $before = $work->fresh()->getAttributes();
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeTrue()
+        ->and($preview['rows'][0]['total_minor'])->toBe(0)
+        ->and($preview['rows'][0]['will_replace'])->toBeTrue()
+        ->and($preview['submission_check'])->toBeNull()
+        ->and($preview['teacher_absence_decision'])->toBe($package['teacher_absence_decision'])
+        ->and($work->fresh()->getAttributes())->toBe($before);
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work = $work->fresh();
+    expect($work->groups[0]['points'][0]['points'])->toBe('0.00')
+        ->and($work->groups[0]['comments'][0]['comment'])->toBe('Innerhalb der Frist nicht abgegeben')
+        ->and($work->status['assessment_json_packages'][0]['teacher_absence_decision'])->toEqual($package['teacher_absence_decision'])
+        ->and($work->status)->not->toHaveKey('submission_checks');
+});
+
+test('JSON teacher absence decision rejects target deadline changes and stale confirmation without writes', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(jsonAssessmentForWork($this, $work));
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $work->update($case === 'deadline' ? ['finish_until_time' => '12:01'] : ['title' => 'Changed']);
+    $before = $work->fresh()->getAttributes();
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertStatus($case === 'deadline' ? 422 : 409);
+
+    expect($work->fresh()->getAttributes())->toBe($before);
+})->with(['deadline', 'stale confirmation']);
+
 test('JSON submission checkpoint is previewed applied idempotently and invalidated by changed target boundaries', function () {
     $work = prepareWorkDispatchImport($this);
     $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));

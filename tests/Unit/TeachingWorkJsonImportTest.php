@@ -7,6 +7,110 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('JSON accepts explicit teacher absence zero assessments without claiming completed mailbox search', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::package()));
+
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+
+    expect($parsed)->toBe($package)
+        ->and($parsed['records'][0]['total_minor'])->toBe(0)
+        ->and($parsed['teacher_absence_decision']['search_state'])->toBe('incomplete');
+});
+
+test('JSON rejects invalid teacher decisions and absence zero assessment boundaries', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::package());
+    $decision = &$package['teacher_absence_decision'];
+    $record = &$package['records'][0];
+    match ($case) {
+        'wrong exercise' => $decision['exercise_id'] = 'OTHER',
+        'unknown person' => $decision['participant_ids'] = ['OTHER'],
+        'duplicate person' => $decision['participant_ids'][] = $decision['participant_ids'][0],
+        'blank instruction' => $decision['instruction'] = ' ',
+        'no deadline evidence' => $decision['deadline_evidence_sha256'] = '',
+        'before deadline' => $decision['decided_at'] = $decision['deadline_at'],
+        'future decision' => $decision['decided_at'] = '2026-10-07T11:00:01Z',
+        'invalid date' => $decision['deadline_at'] = '2026-02-30T10:00:00Z',
+        'false search completion' => $decision['search_state'] = 'complete',
+        'decision checksum' => $decision['decision_checksum'] = str_repeat('b', 64),
+        'received' => $record['submission_state'] = 'received',
+        'unresolved' => $record['submission_state'] = 'unresolved',
+        'partial' => $record['evaluation_state'] = 'partial',
+        'open' => $record['evaluation_state'] = 'open',
+        'positive points' => $record['total_minor'] = $record['criteria'][0]['earned_minor'] = 1,
+        'checkable' => $record['criteria'][0]['checkability'] = 'checkable',
+        'missing criterion points' => $record['criteria'][0]['earned_minor'] = null,
+        'adjustment' => $record['adjustments'][] = ['label' => 'Anpassung', 'amount_minor' => 0, 'reason' => 'Belegt'],
+        'criterion wording' => $record['criteria'][0]['reason'] = 'Anderer Grund',
+        'comment wording' => $record['comment'] = 'Anderer Grund',
+        'submission wording' => $record['submission_note'] = 'Anderer Grund',
+        'evaluation wording' => $record['evaluation_note'] = 'Anderer Grund',
+        'collection time' => $record['email_collected_at'] = '2026-10-07T10:02:00Z',
+        'missing decision' => null,
+    };
+    if ($case !== 'decision checksum') {
+        unset($decision['decision_checksum']);
+        $decision['decision_checksum'] = SchooltoolAssessmentJson::digest($decision);
+    }
+    unset($decision, $record);
+    if ($case === 'missing decision') {
+        unset($package['teacher_absence_decision']);
+    }
+
+    expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
+})->with(['wrong exercise', 'unknown person', 'duplicate person', 'blank instruction', 'no deadline evidence', 'before deadline', 'future decision', 'invalid date', 'false search completion', 'decision checksum', 'received', 'unresolved', 'partial', 'open', 'positive points', 'checkable', 'missing criterion points', 'adjustment', 'criterion wording', 'comment wording', 'submission wording', 'evaluation wording', 'collection time', 'missing decision']);
+
+test('JSON absence zero assessment requires a complete negative server checkpoint without a teacher decision', function (bool $complete) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package()));
+    unset($package['teacher_absence_decision']);
+    $package['records'][0]['evaluation_completed_at'] = null;
+    $package['submission_check']['participants'][0]['email_result'] = 'not_found';
+    if (! $complete) {
+        $package['submission_check']['state'] = 'open';
+        $package['submission_check']['completed_at'] = null;
+        $package['submission_check']['gaps'] = ['mailbox_incomplete'];
+    }
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $package = TeachingWorkJsonFixture::sign($package);
+
+    if (! $complete) {
+        expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
+
+        return;
+    }
+    expect((new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR)))->toBe($package);
+})->with([true, false]);
+
+test('JSON teacher decision keeps an incomplete submission checkpoint open', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package(), 'open'));
+    $package['submission_check']['participants'][0]['email_result'] = 'unresolved';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $package = TeachingWorkJsonFixture::sign($package);
+
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+
+    expect($parsed['submission_check']['state'])->toBe('open')
+        ->and($parsed['submission_check']['completed_at'])->toBeNull();
+});
+
+test('JSON teacher decision does not authorize an unnamed second absence assessment', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withTeacherAbsenceDecision(TeachingWorkJsonFixture::package());
+    $other = $package['records'][0];
+    $other['participant_id'] = 'FICTION-002';
+    $other['identity']['first_name'] = 'Bea';
+    $other['identity']['last_name'] = 'Beta';
+    $package['records'][] = $other;
+
+    expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class, 'Nichtabgabe-Nullwertung ohne Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
+});
+
 test('JSON submission checks preserve complete and open checkpoints separately from assessment completion', function (string $state) {
     $this->travelTo(now()->setDate(2026, 10, 7)->setTime(12, 0));
     $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package(), $state));

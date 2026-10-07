@@ -25,6 +25,10 @@ class SchooltoolAssessmentJson
         $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->structure($object, $schema, $schema, '$');
         $package = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $decision = $package['teacher_absence_decision'] ?? null;
+        if ($decision !== null) {
+            $this->teacherAbsenceDecision($decision, $package['exercise_id'], $package['records']);
+        }
         $rubric = $package['rubric'];
         $this->check(count(array_unique(array_column($rubric, 'criterion'))) === count($rubric), 'Doppelte Kriterien.');
         $this->check($this->sum(array_column($rubric, 'maximum_minor')) === (string) $package['maximum_minor'], 'Falsches Gesamtmaximum.');
@@ -63,7 +67,19 @@ class SchooltoolAssessmentJson
             }
             $values = array_column($criteria, 'earned_minor');
             $numeric = count(array_filter($values, fn (?int $value): bool => $value !== null));
-            $this->check($record['submission_state'] === 'received' || $record['evaluation_state'] === 'open', 'Abschluss/Teilpunkte ohne Eingang.');
+            $absence = $record['submission_state'] === 'not_received' && $record['evaluation_state'] === 'complete';
+            $this->check($record['submission_state'] === 'received' || $record['evaluation_state'] === 'open' || $absence, 'Abschluss/Teilpunkte ohne Eingang.');
+            if ($absence) {
+                $authorized = $decision !== null && in_array($record['participant_id'], $decision['participant_ids'], true);
+                $check = $package['submission_check'] ?? null;
+                $person = collect($check['participants'] ?? [])->firstWhere('participant_id', $record['participant_id']);
+                $this->check($authorized || ($check !== null && $check['state'] === 'complete' && $person
+                    && $person['email_result'] === 'not_found' && $person['other_result'] === 'not_received'), 'Nichtabgabe-Nullwertung ohne Gesamtprüfnachweis oder ausdrückliche Lehrerentscheidung.');
+                $reason = 'Innerhalb der Frist nicht abgegeben';
+                $this->check($record['total_minor'] === 0 && $record['adjustments'] === []
+                    && count(array_filter($criteria, fn (array $criterion): bool => $criterion['earned_minor'] === 0 && $criterion['checkability'] === 'uncheckable' && $criterion['reason'] === $reason)) === count($criteria), 'Ungültige Nichtabgabe-Nullwertung.');
+                $this->check($record['comment'] === $reason && $record['evaluation_note'] === $reason && $record['submission_note'] === $reason, 'Nichtabgabe-Wortlaut muss exakt erhalten bleiben.');
+            }
             if ($record['evaluation_state'] === 'complete') {
                 $this->check($numeric === count($values) && $record['total_minor'] !== null, 'Abschluss mit offenen Punkten.');
                 $this->check($this->sum([...$values, ...array_column($record['adjustments'], 'amount_minor')]) === (string) $record['total_minor'] && $record['total_minor'] <= $package['maximum_minor'], 'Falsche Gesamtsumme.');
@@ -77,7 +93,7 @@ class SchooltoolAssessmentJson
         $this->check(count($pdfs) <= 20 && count(array_unique($pdfs)) === count($pdfs), 'PDF-Limit oder mehrdeutige PDF-Zuordnung.');
         $this->checksum($package, 'package_checksum');
         if (isset($package['submission_check'])) {
-            $this->submissionCheck($package['submission_check'], $package['exercise_id'], $package['records']);
+            $this->submissionCheck($package['submission_check'], $package['exercise_id'], $package['records'], $decision['participant_ids'] ?? []);
         }
 
         return $package;
@@ -89,7 +105,26 @@ class SchooltoolAssessmentJson
     }
 
     /** @param list<array<string, mixed>> $records */
-    public function submissionCheck(array $check, string $exerciseId, array $records): void
+    private function teacherAbsenceDecision(array $decision, string $exerciseId, array $records): void
+    {
+        $this->check($decision['exercise_id'] === $exerciseId, 'Lehrerentscheidung gehört zu einer anderen Arbeit.');
+        $ids = $decision['participant_ids'];
+        $this->check(count(array_unique($ids)) === count($ids) && array_diff($ids, array_column($records, 'participant_id')) === []
+            && count(array_filter($ids, fn (string $id): bool => trim($id) === $id && $id !== '')) === count($ids), 'Lehrerentscheidung ohne eindeutige benannte Teilnehmer.');
+        $this->check(trim($decision['instruction']) !== '', 'Ausdrücklicher Nutzerauftrag fehlt.');
+        $deadline = $this->instant($decision['deadline_at']);
+        $decided = $this->instant($decision['decided_at']);
+        $this->check($deadline < $decided && $decided <= new DateTimeImmutable(now()->toISOString()), 'Lehrerentscheidung vor Fristablauf oder in Zukunft.');
+        foreach ($records as $record) {
+            if (in_array($record['participant_id'], $ids, true)) {
+                $this->check($record['submission_state'] === 'not_received' && $record['evaluation_state'] === 'complete', 'Lehrerentscheidung widerspricht benannten Nullfällen.');
+            }
+        }
+        $this->checksum($decision, 'decision_checksum');
+    }
+
+    /** @param list<array<string, mixed>> $records */
+    public function submissionCheck(array $check, string $exerciseId, array $records, array $teacherAbsenceIds = []): void
     {
         $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
         $this->structure(json_decode(json_encode($check, JSON_THROW_ON_ERROR)), $schema['$defs']['submission_check'], $schema, '$.submission_check');
@@ -130,7 +165,8 @@ class SchooltoolAssessmentJson
             $outcome = in_array('received', [$person['email_result'], $person['other_result']], true) ? 'received'
                 : ($person['email_result'] === 'not_found' && $person['other_result'] === 'not_received' && $checked > $deadline ? 'not_received' : 'unresolved');
             $record = collect($records)->firstWhere('participant_id', $person['participant_id']);
-            $this->check($record['submission_state'] === $outcome, 'Abgabestatus widerspricht Gesamtprüfnachweis.');
+            $overridden = $outcome === 'unresolved' && $check['state'] === 'open' && in_array($record['participant_id'], $teacherAbsenceIds, true);
+            $this->check($record['submission_state'] === $outcome || $overridden, 'Abgabestatus widerspricht Gesamtprüfnachweis.');
             if (isset($record['email_collected_at'])) {
                 $this->check($this->instant($record['email_collected_at']) <= $checked, 'Abgabefassung wurde erst nach dem Prüfstand gesichert.');
             }

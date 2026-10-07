@@ -66,6 +66,9 @@ class TeachingWorkJsonImport
     {
         $package = $bundle['package'];
         $course = $work->teachingCourse;
+        if (isset($package['teacher_absence_decision'])) {
+            $this->checkDeadline($work, $package['teacher_absence_decision']);
+        }
         $definition = $this->entries->entryDefinitionsForCourse($actor, $course)->firstWhere('short_name', $work->type);
         if ($definition) {
             $definition = $definition->newQuery()->lockForUpdate()->find($definition->getKey());
@@ -159,6 +162,7 @@ class TeachingWorkJsonImport
 
         return ['target_work' => ['id' => $work->id, 'title' => $work->title, 'course_id' => $course->id, 'course_title' => $course->title],
             'submission_check' => $submissionCheck,
+            'teacher_absence_decision' => $package['teacher_absence_decision'] ?? null,
             'exercise' => $package['exercise'], 'exercise_id' => $package['exercise_id'], 'maximum_minor' => $package['maximum_minor'],
             'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked,
             'previous_overview_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', null),
@@ -231,7 +235,8 @@ class TeachingWorkJsonImport
         }
         $packages = $status['assessment_json_packages'] ?? [];
         if (! collect($packages)->contains('package_checksum', $package['package_checksum'])) {
-            $packages[] = ['exercise_id' => $package['exercise_id'], 'package_checksum' => $package['package_checksum'], 'exercise' => $package['exercise'], 'imported_at' => now()->toISOString()];
+            $packages[] = ['exercise_id' => $package['exercise_id'], 'package_checksum' => $package['package_checksum'], 'exercise' => $package['exercise'], 'imported_at' => now()->toISOString(),
+                ...(isset($package['teacher_absence_decision']) ? ['teacher_absence_decision' => $package['teacher_absence_decision']] : [])];
             $status['folder_imported_at'] = now()->toISOString();
         }
         $status['assessment_json_packages'] = $packages;

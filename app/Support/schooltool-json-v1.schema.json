@@ -75,6 +75,9 @@
     },
     "submission_check": {
       "$ref": "#/$defs/submission_check"
+    },
+    "teacher_absence_decision": {
+      "$ref": "#/$defs/teacher_absence_decision"
     }
   },
   "required": [
@@ -92,6 +95,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Schooltool assessment v1",
   "$defs": {
+    "teacher_absence_decision": {
+      "type": "object",
+      "properties": {
+        "schema_version": {"type": "integer", "const": 1},
+        "kind": {"type": "string", "const": "schooltool.teacher-absence-decision"},
+        "exercise_id": {"type": "string", "minLength": 1},
+        "participant_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+        "deadline_at": {"type": "string"},
+        "decided_at": {"type": "string"},
+        "deadline_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "instruction": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "const": "Innerhalb der Frist nicht abgegeben"},
+        "search_state": {"type": "string", "const": "incomplete"},
+        "decision_checksum": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": ["schema_version", "kind", "exercise_id", "participant_ids", "deadline_at", "decided_at", "deadline_evidence_sha256", "instruction", "reason", "search_state", "decision_checksum"],
+      "additionalProperties": false
+    },
     "identity": {
       "type": "object",
       "properties": {

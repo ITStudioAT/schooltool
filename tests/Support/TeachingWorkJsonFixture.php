@@ -29,6 +29,32 @@ class TeachingWorkJsonFixture
         return UploadedFile::fake()->createWithContent('Schooltool-Bewertungen.json', json_encode(self::sign($package), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
     }
 
+    public static function withTeacherAbsenceDecision(array $package): array
+    {
+        $reason = 'Innerhalb der Frist nicht abgegeben';
+        $record = &$package['records'][0];
+        $record['submission_state'] = 'not_received';
+        $record['evaluation_state'] = 'complete';
+        $record['submission_note'] = $record['evaluation_note'] = $record['comment'] = $reason;
+        $record['total_minor'] = 0;
+        $record['adjustments'] = [];
+        $record['email_collected_at'] = null;
+        $record['evaluation_completed_at'] = '2026-10-07T10:02:00Z';
+        foreach ($record['criteria'] as &$criterion) {
+            $criterion['earned_minor'] = 0;
+            $criterion['checkability'] = 'uncheckable';
+            $criterion['reason'] = $reason;
+        }
+        unset($criterion, $record);
+        $decision = ['schema_version' => 1, 'kind' => 'schooltool.teacher-absence-decision', 'exercise_id' => $package['exercise_id'],
+            'participant_ids' => [$package['records'][0]['participant_id']], 'deadline_at' => '2026-10-07T10:00:00Z', 'decided_at' => '2026-10-07T10:01:00Z',
+            'deadline_evidence_sha256' => str_repeat('a', 64), 'instruction' => 'Diese Person erhält wegen Nichtabgabe null Punkte.', 'reason' => $reason, 'search_state' => 'incomplete'];
+        $decision['decision_checksum'] = SchooltoolAssessmentJson::digest($decision);
+        $package['teacher_absence_decision'] = $decision;
+
+        return $package;
+    }
+
     public static function withSubmissionCheck(array $package, string $state = 'complete'): array
     {
         if (count($package['records']) === 1) {
