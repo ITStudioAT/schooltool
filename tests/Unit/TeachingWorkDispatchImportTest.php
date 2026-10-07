@@ -7,6 +7,30 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('embedded Mailpit task protocols retain recipients and remain local tests', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::mailpitTasksText());
+
+    expect($report['purpose'])->toBe('tasks')->and($report['title'])->toBe('e-mails')
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['recipients'][0]['To'])->toBe('ada@example.test')
+        ->and($report['recipients'][0]['Rolle'])->toBe('Schülerempfänger')
+        ->and($report['mode'])->toBe('test')->and($report['live'])->toBeFalse();
+});
+
+test('embedded Mailpit task protocols reject contradictory or missing evidence', function (string $case) {
+    $text = TeachingWorkDispatchFixture::mailpitTasksText();
+    $text = match ($case) {
+        'purpose' => str_replace('"Versandzweck": "Aufgabenversand"', '"Versandzweck": "Ergebnisbenachrichtigung"', $text),
+        'mode' => str_replace('"Modus": "Mailpit-Test"', '"Modus": "Live-Versand (Postmark)"', $text),
+        'recipient order' => str_replace('"Datensatzposition": 1', '"Datensatzposition": 2', $text),
+        'recipients' => str_replace('"Empfaenger":', '"Andere":', $text),
+        'timezone' => str_replace('16:56:41.095637+02:00', '16:56:41.095637+09:00', $text),
+        'subject' => str_replace('Leistungsfeststellung E-Mails – INF 1', 'Ergebnisse zur Leistungsfeststellung: E-Mails', $text),
+    };
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['purpose', 'mode', 'recipient order', 'recipients', 'timezone', 'subject']);
+
 test('Office result protocols recognize numbered student aliases and completion timezone', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::officeResultsText());
     expect($report['purpose'])->toBe('results')->and($report['live'])->toBeTrue()

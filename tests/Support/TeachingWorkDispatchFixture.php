@@ -124,6 +124,21 @@ class TeachingWorkDispatchFixture
             ."\nVersandzweck: Aufgabenversand\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
     }
 
+    public static function mailpitTasksText(): string
+    {
+        $text = self::combinedTasksText('Postmark');
+
+        return str_replace([
+            'Aufgabenversand – produktiver Live-Versand (Postmark)',
+            'Live-Versand (Postmark)',
+            'Postmark-API-Annahme bestätigt',
+        ], [
+            'Aufgabenversand – Mailpit-Test',
+            'Mailpit-Test',
+            'lokaler Eingang in Mailpit bestätigt',
+        ], $text);
+    }
+
     /** @param array<string, mixed> $metadata */
     public static function teacherTaskTestText(string $provider = 'Postmark', array $metadata = []): string
     {

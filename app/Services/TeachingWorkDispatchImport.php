@@ -27,17 +27,19 @@ class TeachingWorkDispatchImport
         $officeTeacherTest = str_starts_with(ltrim($text), '{');
         $teacherTaskTest = $postmarkTeacherTest || $officeTeacherTest;
         $combined = preg_match('/\A(Aufgabenversand|Ergebnisbenachrichtigung) – produktiver Live-Versand \((Postmark|Office\/Outlook)\)( – GESTOPPT)?\nVersandzweck: (Aufgabenversand|Ergebnisbenachrichtigung)\n(\{.*\})\s*\z/su', $text, $combinedSections);
-        if (! $combined && ! $teacherTaskTest && ! preg_match('/\AVERSANDPROTOKOLL[^\n]*\n+(.+?)\n(EMPFÄNGERSTATUS|EMPFÄNGER 1)\s*\n(.*)\z/su', $text, $sections)) {
+        $mailpitTest = preg_match('/\AAufgabenversand – Mailpit-Test\nVersandzweck: Aufgabenversand\n(\{.*\})\s*\z/su', $text, $mailpitSections);
+        $embeddedRecipients = $combined || $mailpitTest;
+        if (! $embeddedRecipients && ! $teacherTaskTest && ! preg_match('/\AVERSANDPROTOKOLL[^\n]*\n+(.+?)\n(EMPFÄNGERSTATUS|EMPFÄNGER 1)\s*\n(.*)\z/su', $text, $sections)) {
             $this->reject('Versandprotokoll mit Metadaten und Empfängereinträgen erwartet.');
         }
         try {
-            $sourceJson = $teacherTaskTest ? ($officeTeacherTest ? $text : $teacherSections[1]) : ($combined ? $combinedSections[5] : $sections[1]);
+            $sourceJson = $teacherTaskTest ? ($officeTeacherTest ? $text : $teacherSections[1]) : ($mailpitTest ? $mailpitSections[1] : ($combined ? $combinedSections[5] : $sections[1]));
             $metadata = json_decode($sourceJson, true, 32, JSON_THROW_ON_ERROR);
-            $legacy = ! $combined && ! $teacherTaskTest && $sections[2] === 'EMPFÄNGER 1';
+            $legacy = ! $embeddedRecipients && ! $teacherTaskTest && $sections[2] === 'EMPFÄNGER 1';
             $recipients = $officeTeacherTest && is_array($metadata) ? [array_replace($metadata, [
                 'Rolle' => 'Lehrperson', 'Providerzeit' => $metadata['Gesendetzeit'] ?? null,
                 'Providerkennung' => $metadata['InternetMessageID'] ?? null,
-            ])] : ($combined || $postmarkTeacherTest ? ($metadata['Empfaenger'] ?? null)
+            ])] : ($embeddedRecipients || $postmarkTeacherTest ? ($metadata['Empfaenger'] ?? null)
                 : ($legacy ? $this->legacyRecipients($sections[3]) : json_decode($sections[3], true, 32, JSON_THROW_ON_ERROR)));
         } catch (JsonException) {
             $this->reject('Das Versandprotokoll enthält ungültiges JSON.');
@@ -61,13 +63,14 @@ class TeachingWorkDispatchImport
             $recipients[0]['Rolle'] = 'Lehrperson';
             unset($metadata['Empfaenger']);
         }
-        if ($combined) {
-            if ($combinedSections[1] !== $combinedSections[4] || $this->value($metadata, 'Versandzweck') !== $combinedSections[1]
-                || $this->value($metadata, 'Modus') !== "Live-Versand ({$combinedSections[2]})") {
+        if ($embeddedRecipients) {
+            if ($mailpitTest ? ($this->value($metadata, 'Versandzweck') !== 'Aufgabenversand' || $this->value($metadata, 'Modus') !== 'Mailpit-Test')
+                : ($combinedSections[1] !== $combinedSections[4] || $this->value($metadata, 'Versandzweck') !== $combinedSections[1]
+                    || $this->value($metadata, 'Modus') !== "Live-Versand ({$combinedSections[2]})")) {
                 $this->reject('Protokollüberschrift, Versandzweck und Modus widersprechen einander.');
             }
             foreach ($recipients as $index => &$recipient) {
-                $officeResults = $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook';
+                $officeResults = $combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook';
                 $position = is_array($recipient) ? ($recipient['Datensatzposition'] ?? ($officeResults ? ($recipient['Datensatz'] ?? null) : null)) : null;
                 if (! is_array($recipient) || $position !== $index + 1
                     || (isset($recipient['Datensatz'], $recipient['Datensatzposition']) && $recipient['Datensatz'] !== $recipient['Datensatzposition'])) {
@@ -80,7 +83,7 @@ class TeachingWorkDispatchImport
             }
             unset($recipient, $metadata['Empfaenger']);
         }
-        if ($combined || $teacherTaskTest) {
+        if ($embeddedRecipients || $teacherTaskTest) {
             $createdValue = $this->value($metadata, $officeTeacherTest ? 'Gesendetzeit' : 'Erstellt');
             if ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook' && $createdValue === '') {
                 $createdValue = $this->value($metadata, 'Abgeschlossen');

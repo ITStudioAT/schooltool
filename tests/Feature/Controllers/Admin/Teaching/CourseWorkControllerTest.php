@@ -644,23 +644,22 @@ test('teacher test folder logs are archived without grades or student dispatch f
     Notification::assertNothingSent();
 })->with(['Test der Ergebnisbenachrichtigung: E-Mails', 'Formatierungstest der Ergebnisbenachrichtigung: E-Mails', 'Test der Ergebnisbenachrichtigung: Abweichender Titel']);
 
-test('one folder imports evaluations task tests and result notifications atomically and rescans new or changed contents', function () {
+test('one folder imports evaluations and result notifications atomically while excluding task tests and rescans changed contents', function () {
     $work = prepareWorkDispatchImport($this);
     Mail::fake();
     Notification::fake();
     $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
     $payload = workFolderPayload();
     $response = $this->postJson($url, $payload)->assertOk();
-    expect($response->json('summary.messages'))->toHaveCount(3)
+    expect($response->json('summary.messages'))->toHaveCount(2)
         ->and($work->fresh()->groups[0]['grades'][0]['grade'])->toBe('4.5')
         ->and($work->fresh()->groups[1]['points'][0]['points'])->toBe(3);
     $status = $work->fresh()->status;
-    expect($status['evaluation_pdfs'])->toHaveCount(2)->and($status['dispatch_logs'])->toHaveCount(2)
+    expect($status['evaluation_pdfs'])->toHaveCount(2)->and($status['dispatch_logs'])->toHaveCount(1)
         ->and($status['dispatch_notifications'])->toHaveCount(1)
         ->and($status['dispatch_notifications'][0]['purpose'])->toBe('results')
-        ->and($status['folder_import_sources'])->toHaveCount(7);
-    $taskLog = collect($status['dispatch_logs'])->firstWhere('purpose', 'tasks');
-    expect(Storage::disk('local')->get($taskLog['file_path']))->toBe(TeachingWorkDispatchFixture::tasksText(true));
+        ->and($status['folder_import_sources'])->toHaveCount(6)
+        ->and($status['dispatch_attempts'])->toHaveCount(1);
     $this->postJson($url, workFolderPayload())->assertOk();
     expect($work->fresh()->status)->toBe($status);
     $groups = $work->fresh()->groups;
@@ -687,7 +686,7 @@ test('one folder imports evaluations task tests and result notifications atomica
     $this->postJson($url, $changed)->assertOk();
     $fresh = $work->fresh();
     expect($fresh->groups[0]['grades'][0]['grade'])->toBe('4')
-        ->and($fresh->status['dispatch_logs'])->toHaveCount(3)
+        ->and($fresh->status['dispatch_logs'])->toHaveCount(2)
         ->and($fresh->status['dispatch_notifications'])->toHaveCount(2)
         ->and($fresh->status['evaluation_pdfs'])->toHaveCount(2)
         ->and($fresh->status['evaluation_pdfs'][1]['sha256'])->not->toBe($status['evaluation_pdfs'][1]['sha256']);
@@ -717,8 +716,7 @@ test('folder import accepts absent optional types and retains existing history',
         expect($work->fresh()->groups)->toEqual($before);
     }
     if ($part === 'tasks') {
-        expect($work->fresh()->status['dispatch_notifications'])->toBe([])
-            ->and($work->fresh()->status['dispatch_attempts'][0]['mode'])->toBe('test');
+        expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
     }
     $this->postJson($url, workFolderPayload())->assertOk();
     $status = $work->fresh()->status;
@@ -763,10 +761,10 @@ test('folder import uses the explicitly selected work despite different titles a
     expect($work->title)->toBe($title)
         ->and($work->groups[0]['points'][0]['points'])->toBe(4.5)
         ->and($work->status['evaluation_pdfs'])->toHaveCount(2)
-        ->and($work->status['dispatch_logs'])->toHaveCount(2)
+        ->and($work->status['dispatch_logs'])->toHaveCount(1)
         ->and($work->status['dispatch_notifications'])->toHaveCount(1)
         ->and($work->status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
-        ->and($work->status['dispatch_attempts'][0]['mode'])->toBe('test')
+        ->and($work->status['dispatch_attempts'])->toHaveCount(1)
         ->and($otherWork->fresh()->getAttributes())->toBe($otherBefore);
     Mail::assertNothingSent();
     Notification::assertNothingSent();
@@ -871,6 +869,40 @@ test('tasks and results remain separate across previews reimports and normal wor
     expect($work->fresh()->status['dispatch_attempts'])->toBe($combined['dispatch_attempts'])
         ->and($work->fresh()->status['dispatch_notifications'])->toBe($combined['dispatch_notifications']);
 })->with(['historical Mailpit' => true, 'structured live tasks' => false]);
+
+test('JSON folder excludes Mailpit tasks while preserving assessments and confirmed Office dispatches', function (bool $withOffice) {
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    Mail::fake();
+    Notification::fake();
+    $text = TeachingWorkDispatchFixture::mailpitTasksText();
+    $folder = '2026-10-04_Test';
+    $documents = [['path' => $folder.'/Versand/Aufgaben/Versand_2026-10-04_16-27-31/Versandprotokoll.txt', 'text' => $text]];
+    if ($withOffice) {
+        $documents[] = ['path' => $folder.'/Versand/Aufgaben/Versand_2026-10-05_14-43-06/Versandprotokoll.txt', 'text' => TeachingWorkDispatchFixture::combinedTasksText()];
+    }
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder, 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeTrue()
+        ->and($preview['dispatches'])->toHaveCount($withOffice ? 1 : 0)
+        ->and($work->fresh()->status['dispatch_logs'] ?? [])->toBe([]);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $status = $work->fresh()->status;
+    expect($status['dispatch_logs'] ?? [])->toHaveCount($withOffice ? 1 : 0)
+        ->and($status['dispatch_notifications'] ?? [])->toHaveCount($withOffice ? 1 : 0)
+        ->and($status['dispatch_attempts'] ?? [])->toBe([])
+        ->and($status['assessment_json_imports'])->toHaveCount(1)
+        ->and(array_keys($status['folder_import_sources'] ?? []))->not->toContain('versand/aufgaben/versand_2026-10-04_16-27-31/versandprotokoll.txt');
+    if ($withOffice) {
+        expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe(TeachingWorkDispatchFixture::combinedTasksText());
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with([true, false]);
 
 test('folder import archives stopped Postmark and confirmed Outlook tasks without changing grades or sending mail', function () {
     $work = prepareWorkDispatchImport($this);

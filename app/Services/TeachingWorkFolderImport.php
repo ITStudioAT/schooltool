@@ -38,7 +38,6 @@ class TeachingWorkFolderImport
                 $this->reject('Ungültige Textdatei im Ordnerimport.');
             }
             $file = $this->classify($folder, $document['path']);
-            $this->register($sources, $file['source'], hash('sha256', $document['text']));
             if ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
                 if (strlen($document['text']) > 262144) {
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
@@ -53,10 +52,14 @@ class TeachingWorkFolderImport
                 if ($report['purpose'] !== $file['kind']) {
                     $this->reject($document['path'].': Ordnerbereich und Versandzweck widersprechen einander.');
                 }
+                if ($report['mode'] === 'test') {
+                    continue;
+                }
                 $protocols[] = $file + ['path' => $document['path'], 'report' => $report, 'text' => $document['text'], 'sha256' => hash('sha256', $document['text'])];
             } else {
                 $this->reject($document['path'].': Dateityp passt nicht zum Inhalt.');
             }
+            $this->register($sources, $file['source'], hash('sha256', $document['text']));
         }
         foreach ($uploads as $index => $upload) {
             if (! is_string($paths[$index])) {
