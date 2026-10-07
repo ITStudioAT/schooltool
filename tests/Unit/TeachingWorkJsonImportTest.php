@@ -117,6 +117,17 @@ test('JSON submission checks preserve complete and open checkpoints separately f
     expect((new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR)))->toBe($package);
 })->with(['complete', 'open']);
 
+test('JSON submission checks accept a local email backup after the checkpoint without changing its outcome', function (string $state) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package(), $state);
+    $package['records'][0]['email_collected_at'] = '2026-10-07T00:00:00.552136Z';
+    $package = TeachingWorkJsonFixture::sign($package);
+
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+
+    expect($parsed)->toBe($package);
+})->with(['complete', 'open']);
+
 test('JSON submission checks reject unproven inconsistent or corrupted checkpoints', function (string $case) {
     $this->travelTo(now()->setDate(2026, 10, 7)->setTime(12, 0));
     $package = TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package());
@@ -141,7 +152,6 @@ test('JSON submission checks reject unproven inconsistent or corrupted checkpoin
         'late dispatch' => $check['participants'][0]['dispatched_at'] = $check['checked_at'],
         'candidate unresolved' => $check['unresolved_candidates'] = [['candidate_fingerprint' => str_repeat('c', 64), 'evidence_sha256' => [str_repeat('a', 64)]]],
         'record contradiction' => $package['records'][1]['submission_state'] = 'unresolved',
-        'later collected' => $package['records'][0]['email_collected_at'] = '2026-10-06T10:02:00Z',
         'wrong completion' => $check['completed_at'] = '2026-10-06T10:02:00Z',
         'checksum' => $check['check_checksum'] = str_repeat('b', 64),
     };
@@ -151,7 +161,7 @@ test('JSON submission checks reject unproven inconsistent or corrupted checkpoin
     }
     unset($check);
     expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
-})->with(['cache', 'missing mailbox', 'duplicate mailbox', 'late search', 'short search', 'unverified', 'fake boolean', 'missing evidence', 'future', 'invalid date', 'before deadline', 'wrong exercise', 'wrong roster', 'missing person', 'person gap', 'other route unresolved', 'late dispatch', 'candidate unresolved', 'record contradiction', 'later collected', 'wrong completion', 'checksum']);
+})->with(['cache', 'missing mailbox', 'duplicate mailbox', 'late search', 'short search', 'unverified', 'fake boolean', 'missing evidence', 'future', 'invalid date', 'before deadline', 'wrong exercise', 'wrong roster', 'missing person', 'person gap', 'other route unresolved', 'late dispatch', 'candidate unresolved', 'record contradiction', 'wrong completion', 'checksum']);
 
 test('JSON submission check permits evidenced non submission while keeping its assessment open', function () {
     $package = TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package());

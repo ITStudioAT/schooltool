@@ -167,9 +167,6 @@ class SchooltoolAssessmentJson
             $record = collect($records)->firstWhere('participant_id', $person['participant_id']);
             $overridden = $outcome === 'unresolved' && $check['state'] === 'open' && in_array($record['participant_id'], $teacherAbsenceIds, true);
             $this->check($record['submission_state'] === $outcome || $overridden, 'Abgabestatus widerspricht Gesamtprüfnachweis.');
-            if (isset($record['email_collected_at'])) {
-                $this->check($this->instant($record['email_collected_at']) <= $checked, 'Abgabefassung wurde erst nach dem Prüfstand gesichert.');
-            }
         }
         if ($check['unresolved_candidates'] !== []) {
             $gaps[] = 'unresolved_candidates';
