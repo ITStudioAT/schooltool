@@ -99,7 +99,12 @@ describe('Imported work dispatch notifications', () => {
         const wrapper = mount(WorkDispatchStatus, { props: { work: mixed, studentId: 12, showResultTime: true } })
         try {
             const rows = wrapper.findAll('.text-caption')
-            expect(rows.map(row => row.text())).toEqual(['Aufgabenversand · Test am 02.10.2026 um 17:02 Uhr.', 'Ergebnisbenachrichtigung versandt am 04.10.2026 um 02:15 Uhr.'])
+            expect(rows.map(row => row.text())).toEqual([
+                'Aufgabenversand · Test am 02.10.2026 um 17:02 Uhr.',
+                'Abgabe eingesammelt: Zeitpunkt unbekannt',
+                'Beurteilung abgeschlossen: Zeitpunkt unbekannt',
+                'Ergebnisbenachrichtigung versandt am 04.10.2026 um 02:15 Uhr.',
+            ])
             await wrapper.setProps({ showResultTime: false })
             expect(wrapper.findAll('[aria-label]')).toHaveLength(2)
             expect(wrapper.findAll('.text-caption')).toHaveLength(0)
