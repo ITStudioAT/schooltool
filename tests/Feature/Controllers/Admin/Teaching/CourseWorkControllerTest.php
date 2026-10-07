@@ -286,6 +286,31 @@ test('JSON folder previews and imports original dispatch evidence atomically and
     Notification::assertNothingSent();
 });
 
+test('JSON folder Office results archive a separate teacher without marking a student notification', function () {
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $folder = '2026-10-04_Test';
+    $text = TeachingWorkDispatchFixture::officeResultsWithTeacherText(1);
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder,
+        'documents' => json_encode([['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-04_23-15-48/Versandprotokoll.txt', 'text' => $text]], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue()
+        ->and($preview['dispatches'][0]['rows'])->toHaveCount(2)
+        ->and($preview['dispatches'][0]['rows'][1]['student_id'])->toBeNull()
+        ->and($preview['dispatches'][0]['rows'][1]['accepted'])->toBeFalse();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_notifications'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
+        ->and($status['dispatch_logs'])->toHaveCount(1)
+        ->and(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
 test('JSON folder Office results require confirmed send state and explicit verified attachment lists', function (string $case) {
     $work = prepareWorkDispatchImport($this);
     $package = jsonAssessmentForWork($this, $work);

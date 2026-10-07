@@ -70,6 +70,41 @@ class TeachingWorkDispatchFixture
         return "Ergebnisbenachrichtigung – produktiver Live-Versand (Office/Outlook)\nVersandzweck: Ergebnisbenachrichtigung\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
     }
 
+    public static function officeResultsWithTeacherText(int $studentCount = 14): string
+    {
+        $text = self::officeResultsText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $template = $metadata['Empfaenger'][0];
+        $metadata['Aktualisiert_am'] = $metadata['Abgeschlossen'];
+        unset($metadata['Abgeschlossen']);
+        $metadata['Bestaetigte_Schuelernachrichten'] = $studentCount;
+        $metadata['Bestaetigte_Lehrernachrichten'] = 1;
+        $metadata['Empfaenger'] = [];
+        for ($index = 0; $index <= $studentCount; $index++) {
+            $teacher = $index === $studentCount;
+            $identity = self::recipients()[$teacher ? 2 : min($index, 1)];
+            if (! $teacher && $index > 1) {
+                $identity = array_replace($identity, ['Vorname' => 'Student', 'Nachname' => (string) $index, 'To' => "student{$index}@example.test"]);
+            }
+            $row = array_replace($template, array_intersect_key($identity, array_flip(['Vorname', 'Nachname', 'To'])));
+            unset($row['Datensatz'], $row['Anhaenge']);
+            $row['Rolle'] = $teacher ? 'Lehrperson' : 'Schüler';
+            if (! $teacher) {
+                $row['Datensatzposition'] = $index + 1;
+            }
+            $row['Allgemeine_Anhaenge'] = [];
+            $row['Persoenliche_Anhaenge'] = [];
+            $row['InternetMessageID'] = $row['Providerkennung'] = "<message{$index}@example.test>";
+            $row['SentEntryID'] = "SENT{$index}";
+            $row['Office_Zustand'] = array_replace($row['Office_Zustand'], [
+                'To' => $row['To'], 'InternetMessageID' => $row['InternetMessageID'], 'SentEntryID' => $row['SentEntryID'],
+            ]);
+            $metadata['Empfaenger'][] = $row;
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
     public static function tasksText(bool $legacy = false): string
     {
         $rows = array_map(fn (array $row): array => array_replace($row, [

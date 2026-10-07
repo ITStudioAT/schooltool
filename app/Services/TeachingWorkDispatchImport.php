@@ -72,21 +72,36 @@ class TeachingWorkDispatchImport
             foreach ($recipients as $index => &$recipient) {
                 $officeResults = $combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook';
                 $position = is_array($recipient) ? ($recipient['Datensatzposition'] ?? ($officeResults ? ($recipient['Datensatz'] ?? null) : null)) : null;
-                if (! is_array($recipient) || $position !== $index + 1
+                $separateTeacher = $officeResults && is_array($recipient) && ($recipient['Rolle'] ?? null) === 'Lehrperson' && $position === null
+                    && $index === count($recipients) - 1 && count(array_filter($recipients, fn (mixed $row): bool => is_array($row) && ($row['Rolle'] ?? null) === 'Lehrperson')) === 1;
+                if (! is_array($recipient) || (! $separateTeacher && $position !== $index + 1)
                     || (isset($recipient['Datensatz'], $recipient['Datensatzposition']) && $recipient['Datensatz'] !== $recipient['Datensatzposition'])) {
                     $this->reject('Empfängerfolge im Versandprotokoll nicht erkannt.');
                 }
-                if ($officeResults && ($recipient['Rolle'] ?? null) === 'Schüler/in') {
+                if ($separateTeacher && ! $this->confirmedOfficeSend($recipient, $metadata)) {
+                    $this->reject('Separate Lehrermail benötigt vollständige Office-Versandbelege.');
+                }
+                if ($officeResults && in_array($recipient['Rolle'] ?? null, ['Schüler/in', 'Schüler'], true)) {
                     $recipient['Rolle'] = 'Schülerempfänger';
                 }
                 $recipient['Rolle'] ??= 'Schülerempfänger';
+                if ($officeResults && ! in_array($recipient['Rolle'], ['Schülerempfänger', 'Lehrperson'], true)) {
+                    $this->reject('Empfängerrolle im Office-Ergebnisprotokoll nicht erkannt.');
+                }
             }
             unset($recipient, $metadata['Empfaenger']);
+            if ($officeResults) {
+                foreach (['Bestaetigte_Schuelernachrichten' => 'Schülerempfänger', 'Bestaetigte_Lehrernachrichten' => 'Lehrperson'] as $field => $role) {
+                    if (isset($metadata[$field]) && $metadata[$field] !== count(array_filter($recipients, fn (array $row): bool => $row['Rolle'] === $role && $this->confirmedOfficeSend($row, $metadata)))) {
+                        $this->reject('Office-Ergebnisprotokoll: bestätigte Empfängeranzahl widerspricht den Versandbelegen.');
+                    }
+                }
+            }
         }
         if ($embeddedRecipients || $teacherTaskTest) {
             $createdValue = $this->value($metadata, $officeTeacherTest ? 'Gesendetzeit' : 'Erstellt');
             if ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook' && $createdValue === '') {
-                $createdValue = $this->value($metadata, 'Abgeschlossen');
+                $createdValue = $this->value($metadata, 'Abgeschlossen') ?: $this->value($metadata, 'Aktualisiert_am');
             }
             $created = $this->providerTime($createdValue);
             if (! isset($metadata['Zeitzone']) && $created !== null
@@ -409,6 +424,14 @@ class TeachingWorkDispatchImport
         }
         $results = $this->value($metadata, 'Versandzweck') === 'Ergebnisbenachrichtigung';
         $attachments = $recipient['TatsaechlicheAnhaenge'] ?? ($results ? ($recipient['Anhaenge'] ?? null) : null);
+        if ($attachments === null && $results && isset($recipient['Allgemeine_Anhaenge'], $recipient['Persoenliche_Anhaenge'])) {
+            $general = $recipient['Allgemeine_Anhaenge'];
+            $personal = $recipient['Persoenliche_Anhaenge'];
+            if (! is_array($general) || ! array_is_list($general) || ! is_array($personal) || ! array_is_list($personal)) {
+                return false;
+            }
+            $attachments = array_merge($general, $personal);
+        }
         $sentAttachments = $state['Attachments'] ?? null;
         if (! is_array($attachments) || ! array_is_list($attachments) || (! $results && $attachments === [])
             || ! is_array($sentAttachments) || ! array_is_list($sentAttachments)
