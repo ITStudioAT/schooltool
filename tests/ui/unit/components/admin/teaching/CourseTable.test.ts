@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
+import { workDeadlineExpired } from '@/helpers/date'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,6 +22,62 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 
 describe('CourseTable evaluation PDF links', () => {
+    it.each([
+        ['2026-07-01', '12:00', '2026-07-01T10:00:00Z', false],
+        ['2026-07-01', '12:00', '2026-07-01T10:00:01Z', true],
+        ['2026-12-01', '12:00', '2026-12-01T10:59:59Z', false],
+        ['2026-12-01', '12:00', '2026-12-01T11:00:01Z', true],
+        ['2026-10-25', '02:30', '2026-10-25T00:45:00Z', false],
+        ['2026-10-25', '02:30', '2026-10-25T01:30:01Z', true],
+        ['2026-03-29', '02:30', '2026-03-29T02:00:00Z', false],
+        ['2026-07-01', null, '2026-07-01T21:59:59Z', false],
+        ['2026-07-01', null, '2026-07-01T22:00:00Z', true],
+        ['2026-02-30', '12:00', '2026-03-01T12:00:00Z', false],
+        [null, '12:00', '2026-07-01T12:00:00Z', false],
+        ['2026-07-01', '25:00', '2026-07-01T12:00:00Z', false],
+    ])('checks Vienna deadline %s %s at %s without inventing missing times', (date, time, now, expired) => {
+        expect(workDeadlineExpired({ finish_until_date: date, finish_until_time: time }, Date.parse(now as string))).toBe(expired)
+    })
+
+    it('refreshes the actual card when the deadline passes and never infers a submission review from receipts or dispatch', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+        vi.setSystemTime(new Date('2026-10-07T09:59:59Z'))
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-06' }
+        useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12 }], course_dates: [date] } as never
+        const work = { id: 65, teaching_course_id: 18, type: 'A5', title: 'E-Mail', date_for_all_groups: date.date,
+            finish_until_date: '2026-10-07', finish_until_time: '12:00', is_group_work: false,
+            groups: [{ student_ids: [12], points: [{ student_id: 12, points: 5 }] }],
+            status: { assessment_json_imports: [{ student_id: 12, record: { evaluation_state: 'complete', email_collected_at: '2026-10-07T10:01:00Z' } }],
+                folder_imported_at: '2026-10-07T10:02:00Z' } }
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: { WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true } } })
+        try {
+            await flushPromises()
+            useCourseWorkStore(pinia).courseWorks = [work] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('abgelaufen')
+            vi.advanceTimersByTime(15000)
+            await wrapper.vm.$nextTick()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain('abgelaufen').toContain('Beurteilung abgeschlossen')
+            expect(card.text()).not.toContain('Arbeit abgeschlossen')
+            expect(card.text()).not.toContain('Abgabeprüfung nicht bestätigt').not.toContain('Abgabeprüfung abgeschlossen')
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, checked_at: '2026-10-07T10:00:01Z', student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:00' } }] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').toContain('Arbeit abgeschlossen')
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:01' } }] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Abgabeprüfung abgeschlossen')
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, student_ids: [12, 99], deadline_date: '2026-10-07', deadline_time: '12:00' } }] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Abgabeprüfung abgeschlossen')
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, checked_at: '2026-10-07T10:00:01Z', student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:00' }, status: { assessment_json_imports: [{ student_id: 12, record: { evaluation_state: 'open' } }] } }] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Beurteilung abgeschlossen')
+            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
+        } finally { wrapper.unmount(); vi.useRealTimers() }
+    })
+
     it('outlines todays Vienna date or the most recent past date across the full column', () => {
         const methods = (CourseTable as any).methods
         const dates = [{ id: 1, date: '2026-10-06' }, { id: 2, date: '2026-10-07' }, { id: 3, date: '2026-10-14' }]
@@ -1316,7 +1373,7 @@ describe('CourseTable', () => {
         expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
     })
 
-    it('moves a work to its later finish date and draws its timeline', () => {
+    it('shows a multi-day work exclusively at its start without a timeline', () => {
         const methods = (CourseTable as any).methods
         const work = {
             id: 12,
@@ -1338,13 +1395,14 @@ describe('CourseTable', () => {
         }
         Object.assign(ctx, methods)
 
-        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-16' })).toEqual([])
-        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-20' }))
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-16' }))
             .toMatchObject([{ id: 12, affectedStudentCount: 2 }])
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-20' })).toEqual([])
         expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-16' }))
-            .toMatchObject([{ isStart: true, isMiddle: false, isArrow: false }])
+            .toEqual([])
         expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-18' }))
-            .toMatchObject([{ isStart: false, isMiddle: false, isArrow: true }])
+            .toEqual([])
         expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-20' }))
             .toEqual([])
     })
@@ -1383,16 +1441,13 @@ describe('CourseTable', () => {
         ctx.courseWorkTimelineDestinationIndexes = computed.courseWorkTimelineDestinationIndexes.call(ctx)
 
         expect([...ctx.courseWorkTimelineDestinationIndexes.entries()]).toEqual([
+            ['16', 0],
             ['15', 0],
-            ['16', 1],
         ])
         expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-09-21' }))
-            .toMatchObject([{ destinationIndex: 1, isStart: true, work: { id: 16 } }])
+            .toEqual([])
         expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-10-05' }))
-            .toMatchObject([
-                { destinationIndex: 0, isStart: true, work: { id: 15 } },
-                { destinationIndex: 1, isArrow: true, work: { id: 16 } },
-            ])
+            .toEqual([])
     })
 
     it('shows a work timeline only while its start or finish cell is active', () => {
@@ -2339,6 +2394,7 @@ describe('CourseTable', () => {
                 date_for_all_groups: '',
                 description: 'Kapitel 4',
                 finish_until_date: new Date(2026, 4, 20),
+                finish_until_time: '14:30',
                 groups: [],
                 group_size: null,
                 id: null,
@@ -2360,6 +2416,7 @@ describe('CourseTable', () => {
             date_for_all_groups: '2026-05-16',
             description: 'Kapitel 4',
             finish_until_date: '2026-05-20',
+            finish_until_time: '14:30',
             groups: [],
             group_size: null,
             id: null,
@@ -2406,6 +2463,7 @@ describe('CourseTable', () => {
             id: 12,
             date_for_all_groups: '2026-05-16',
             finish_until_date: '2026-05-20T00:00:00.000000Z',
+            finish_until_time: '16:45',
             groups: [],
             is_group_work: false,
             status: [],
@@ -2414,6 +2472,7 @@ describe('CourseTable', () => {
         })
 
         expect(ctx.workDialogForm.finish_until_date).toBe('2026-05-20')
+        expect(ctx.workDialogForm.finish_until_time).toBe('16:45')
     })
 
     it('updates a work while preserving its group assignments', async () => {
@@ -3361,6 +3420,7 @@ describe('CourseTable', () => {
         const work = {
             date_for_all_groups: '2026-10-10',
             finish_until_date: '2026-10-12',
+            finish_until_time: '14:30',
             id: 16,
             title: 'Projektarbeit',
         }
@@ -3377,7 +3437,7 @@ describe('CourseTable', () => {
 
         expect(period).toEqual({
             durationLabel: '3 Tage',
-            finishDateTitle: '2026-10-12',
+            finishDateTitle: '2026-10-12 · 14:30',
             isSameDate: false,
             startDateTitle: '2026-10-09',
         })
@@ -3408,7 +3468,7 @@ describe('CourseTable', () => {
             teaching_course_work_id: 16,
         })).toEqual({
             durationLabel: '',
-            finishDateTitle: '2026-10-05',
+            finishDateTitle: '2026-10-05 · ohne Uhrzeit',
             isSameDate: true,
             startDateTitle: '2026-10-05',
         })
@@ -3449,11 +3509,11 @@ describe('CourseTable', () => {
         ])
     })
 
-    it('shows work-derived student entries on the end date and falls back to their stored date', () => {
+    it('shows legacy work-derived student entries on the start date despite their stored end date', () => {
         const methods = (CourseTable as any).methods
         const workEntry = {
             id: 1,
-            date: '2026-03-09',
+            date: '2026-03-10',
             source: 'course_work',
             teaching_course_work_id: 12,
             type: 'A',
@@ -3470,20 +3530,22 @@ describe('CourseTable', () => {
             entryStore: { courseEntries: [workEntry] },
             sortedCourseDates: [{ date: '2026-03-09' }, { date: '2026-03-10' }],
             courseWorkForCellEntry: methods.courseWorkForCellEntry,
+            courseWorkGroupForCellEntry: vi.fn().mockReturnValue(null),
             dateKey: methods.dateKey,
             normalizeDateKey: methods.normalizeDateKey,
             registeredStudentUserId: methods.registeredStudentUserId,
             studentCellEntryDateKey: methods.studentCellEntryDateKey,
         }
 
-        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-09' })).toEqual([])
-        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-10' }))
+        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-10' })).toEqual([])
+        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-09' }))
             .toEqual([expect.objectContaining({ id: 1, uid: 'assessment-1' })])
 
         work.finish_until_date = null
 
         expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-09' }))
             .toEqual([expect.objectContaining({ id: 1, uid: 'assessment-1' })])
+        expect(context.courseWorkGroupForCellEntry).toHaveBeenCalledWith(workEntry, 10)
     })
 
     it('separates behaviour and other entries from performance entries in table cells', () => {
@@ -4913,7 +4975,7 @@ describe('CourseTable', () => {
         expect(source).toContain("workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color")
         expect(source).toContain('data-testid="course-table-date-edit-work-finish-until"')
         expect(source).toMatch(/<v-chip\s+v-else-if="workDialogFormOpen"\s+data-testid="course-table-date-edit-work-finish-until"/)
-        expect(source).toContain('Fertig bis {{ workDialogFinishDateTitle }}')
+        expect(source).toContain('Abgabefrist {{ workDialogFinishDateTitle }}')
         expect(source).toContain('data-testid="course-table-date-work-duration"')
         expect(source).toContain('prepend-icon="mdi-timer-sand"')
         expect(source).toContain('{{ workDialogDurationLabel }}')
@@ -5038,9 +5100,9 @@ describe('CourseTable', () => {
         expect(source).toContain("courseWorkForCellEntry(entry).is_group_work ? 'deep-purple' : 'primary'")
         expect(source).toContain("courseWorkForCellEntry(entry).is_group_work ? 'mdi-account-group' : 'mdi-account-outline'")
         expect(source).toContain('{{ courseWorkEntryModeTitle(entry) }}')
-        expect(source).toContain('<strong>Beginn/Ende:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}')
+        expect(source).toContain('<strong>Beginn/Abgabefrist:</strong> {{ courseWorkEntryPeriod(entry).finishDateTitle }}')
         expect(source).toContain('<strong>Beginn:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}')
-        expect(source).toContain('<strong>Ende:</strong> {{ courseWorkEntryPeriod(entry).finishDateTitle }}')
+        expect(source).toContain('<strong>Abgabefrist:</strong> {{ courseWorkEntryPeriod(entry).finishDateTitle }}')
         expect(source).toContain('<strong>Dauer:</strong> {{ courseWorkEntryPeriod(entry).durationLabel }}')
         expect(source).toContain('data-testid="course-table-cell-entry-list"')
         expect(source).toContain('course-table-cell-work-entry-${entry.uid}')

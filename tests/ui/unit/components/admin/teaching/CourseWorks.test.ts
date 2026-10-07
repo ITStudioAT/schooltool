@@ -246,11 +246,15 @@ describe('CourseWorks automatic folder import', () => {
             expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/65/import-json')
             const payload = post.mock.calls[0][1] as FormData
             expect((payload.get('package') as File).name).toBe('Schooltool-Bewertungen.json')
-            expect(payload.has('documents')).toBe(false)
+            expect(JSON.parse(payload.get('documents') as string).map((document: any) => document.path)).toEqual([
+                'Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt',
+                'Test/Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt',
+            ])
+            expect(payload.get('folder')).toBe('Test')
             expect(payload.getAll('pdfs[]').map(file => (file as File).name)).toEqual(['Gesamtübersicht.pdf', 'Alpha_Ada.pdf'])
             expect(payload.has('apply')).toBe(false)
             expect(payload.has('hash')).toBe(false)
-            expect(wrapper.text()).toContain('Ziel: Kurs').toContain('Test · 3 Importdateien')
+            expect(wrapper.text()).toContain('Ziel: Kurs').toContain('Test · 5 Importdateien')
             expect(wrapper.text()).not.toContain('Beurteilung_Alpha_Ada.md')
             expect(wrapper.text()).not.toContain('Versandprotokoll.txt')
             expect(wrapper.text()).toContain('Angezeigte Änderungen übernehmen')

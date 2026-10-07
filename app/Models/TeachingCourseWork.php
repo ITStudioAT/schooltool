@@ -23,6 +23,7 @@ class TeachingCourseWork extends Model
         'is_random_groups',
         'date_for_all_groups',
         'finish_until_date',
+        'finish_until_time',
         'maximum_plus',
         'groups',
         'status',

@@ -50,6 +50,26 @@ class TeachingWorkDispatchFixture
         return UploadedFile::fake()->createWithContent('Versandprotokoll.txt', self::text($recipients, $metadata));
     }
 
+    public static function officeResultsText(): string
+    {
+        $tasks = self::combinedTasksText();
+        $metadata = json_decode(substr($tasks, strpos($tasks, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Versandzweck'] = 'Ergebnisbenachrichtigung';
+        $metadata['Abgeschlossen'] = $metadata['Erstellt'];
+        unset($metadata['Erstellt']);
+        $recipient = &$metadata['Empfaenger'][0];
+        $recipient['Datensatz'] = $recipient['Datensatzposition'];
+        $recipient['Rolle'] = 'Schüler/in';
+        $recipient['Betreff'] = 'Ergebnisse zur Leistungsfeststellung: E-Mails – INF 1';
+        $recipient['Office_Zustand']['Subject'] = $recipient['Betreff'];
+        $recipient['Anhaenge'] = [];
+        $recipient['Office_Zustand']['Attachments'] = [];
+        $recipient['Office_Zustand']['AttachmentsVerified'] = 0;
+        unset($recipient['Datensatzposition'], $recipient['TatsaechlicheAnhaenge'], $recipient);
+
+        return "Ergebnisbenachrichtigung – produktiver Live-Versand (Office/Outlook)\nVersandzweck: Ergebnisbenachrichtigung\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
     public static function tasksText(bool $legacy = false): string
     {
         $rows = array_map(fn (array $row): array => array_replace($row, [

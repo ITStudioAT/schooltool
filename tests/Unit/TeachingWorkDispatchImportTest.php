@@ -7,6 +7,20 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('Office result protocols recognize numbered student aliases and completion timezone', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::officeResultsText());
+    expect($report['purpose'])->toBe('results')->and($report['live'])->toBeTrue()
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['recipients'][0]['Rolle'])->toBe('Schülerempfänger');
+});
+
+test('Office result protocols reject conflicting numbering and completion offsets', function (string $case) {
+    $text = TeachingWorkDispatchFixture::officeResultsText();
+    $text = $case === 'numbering' ? str_replace('"Datensatz": 1', '"Datensatz": 2', $text)
+        : str_replace('16:56:41.095637+02:00', '16:56:41.095637+09:00', $text);
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['numbering', 'offset']);
+
 test('single teacher task tests recognize Postmark and raw Office protocols without student live status', function (string $provider) {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::teacherTaskTestText($provider));
 

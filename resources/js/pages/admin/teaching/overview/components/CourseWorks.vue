@@ -67,7 +67,7 @@
                                     </v-chip>
                                     <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
                                     <v-chip v-if="work.finish_until_date" size="x-small" variant="tonal" color="warning">
-                                        Fertig bis {{ formatDate(work.finish_until_date) }}
+                                        Fertig bis {{ formatDate(work.finish_until_date) }} · {{ work.finish_until_time || 'ohne Uhrzeit' }}
                                     </v-chip>
                                 </div>
                             </div>
@@ -208,7 +208,10 @@
                                     {{ formatDateWithWeekday(date.date) }}
                                 </v-chip>
                             </div>
-                            <v-date-input v-model="work_form.finish_until_date" clearable label="Fertig bis" class="mt-4" />
+                            <div class="course-works-deadline-fields d-flex ga-3">
+                                <v-date-input v-model="work_form.finish_until_date" clearable label="Fertig bis" class="mt-4" style="flex: 1 1 180px; min-width: 180px" />
+                                <v-text-field v-model="work_form.finish_until_time" type="time" clearable label="Fertig bis (Uhrzeit)" class="mt-4" style="flex: 1 1 150px; min-width: 150px" />
+                            </div>
                             <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" class="mt-4" />
                         </template>
 
@@ -230,7 +233,7 @@
                                 <div class="details-readonly__label">Fertig bis</div>
                                 <div class="details-readonly__value d-flex align-center ga-2">
                                     <v-icon size="18" color="warning">mdi-calendar-check</v-icon>
-                                    <span>{{ work_form.finish_until_date ? formatDateWithWeekday(work_form.finish_until_date) : '—' }}</span>
+                                    <span>{{ work_form.finish_until_date ? formatDateWithWeekday(work_form.finish_until_date) : '—' }} · {{ work_form.finish_until_time || 'ohne Uhrzeit' }}</span>
                                 </div>
                             </div>
                             <div class="details-readonly__row details-readonly__row--block">
@@ -522,8 +525,8 @@
                                             v-model="work_form.groups[group_dialog_index].comment"
                                             :label="work_form.groups[group_dialog_index].use_individual_grades ? 'Kommentar (Gruppe)' : 'Kommentar (für alle)'"
                                             rows="2"
-                                            :counter="1024"
-                                            :maxlength="1024" />
+                                            :counter="2048"
+                                            :maxlength="2048" />
                                         <div v-if="work_form.groups[group_dialog_index].use_individual_grades" class="d-flex flex-column ga-2">
                                             <v-card
                                                 v-for="studentId in sortedGroupStudentIds(work_form.groups[group_dialog_index])"
@@ -645,7 +648,7 @@
                                         density="compact"
                                         hide-details
                                         rows="2"
-                                        :maxlength="1024" />
+                                        :maxlength="2048" />
                                     <div class="d-flex align-center justify-space-between mt-2">
                                         <div class="d-flex align-center ga-2">
                                             <v-btn size="small" variant="text" @click="selectAllStudents">Alle auswählen</v-btn>
@@ -703,7 +706,7 @@
                                             hide-details
                                             rows="2"
                                             auto-grow
-                                            :maxlength="1024"
+                                            :maxlength="2048"
                                             style="min-width: 240px; flex: 1 1 240px"
                                             @update:model-value="setStudentComment(row.groupIndex, row.studentId, $event)" />
                                     </div>
@@ -797,8 +800,8 @@
                         label="Kommentar"
                         rows="4"
                         auto-grow
-                        :counter="1024"
-                        :maxlength="1024" />
+                        :counter="2048"
+                        :maxlength="2048" />
                 </v-card-text>
                 <v-divider />
                 <v-card-actions>
@@ -1196,6 +1199,7 @@ export default {
                 title: this.work_form.title,
                 date_for_all_groups: this.work_form.date_for_all_groups,
                 finish_until_date: this.work_form.finish_until_date,
+                finish_until_time: this.work_form.finish_until_time,
                 description: this.work_form.description,
             }
             this.details_editable = true
@@ -1205,6 +1209,7 @@ export default {
                 this.work_form.title = this.details_snapshot.title
                 this.work_form.date_for_all_groups = this.details_snapshot.date_for_all_groups
                 this.work_form.finish_until_date = this.details_snapshot.finish_until_date
+                this.work_form.finish_until_time = this.details_snapshot.finish_until_time
                 this.work_form.description = this.details_snapshot.description
             }
             this.details_snapshot = null
@@ -1537,6 +1542,7 @@ export default {
                 is_random_groups: false,
                 date_for_all_groups: '',
                 finish_until_date: '',
+                finish_until_time: '',
                 groups: [],
                 status: [],
             }
@@ -1801,6 +1807,7 @@ export default {
                     type: this.work_form.type || null,
                     date_for_all_groups: dateForAllGroups || null,
                     finish_until_date: finishUntilDate || null,
+                    finish_until_time: this.work_form.finish_until_time || null,
                     teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
                 }
 
@@ -2419,6 +2426,16 @@ export default {
 </script>
 
 <style scoped>
+.course-works-deadline-fields {
+    flex-wrap: nowrap;
+}
+
+@media (max-width: 480px) {
+    .course-works-deadline-fields {
+        flex-wrap: wrap;
+    }
+}
+
 
 .work-row {
     border: 1px solid transparent;

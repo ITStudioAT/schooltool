@@ -8,7 +8,10 @@ use App\Models\User;
 use App\Support\SchooltoolAssessmentJson;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\ValidationException;
 
 class TeachingWorkJsonImport
 {
@@ -132,7 +135,30 @@ class TeachingWorkJsonImport
                 'pdf' => $record['pdf'], 'will_replace' => $error === null && ! $unchanged && $record['evaluation_state'] === 'complete'];
         }
 
+        $submissionCheck = $package['submission_check'] ?? null;
+        if ($submissionCheck !== null) {
+            $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abgabeprüfung benötigt genau alle erwarteten Zielpersonen.');
+            $this->checkDeadline($work, $submissionCheck);
+            $previousCheck = collect($work->status['submission_checks'] ?? [])->last();
+            if ($previousCheck) {
+                $previousTime = $this->parser->instant($previousCheck['check']['checked_at']);
+                $nextTime = $this->parser->instant($submissionCheck['checked_at']);
+                $this->parser->check($nextTime > $previousTime || ($nextTime == $previousTime && $submissionCheck['check_checksum'] === $previousCheck['check']['check_checksum']), 'Abgabeprüfung ist älter oder widerspricht dem gespeicherten Prüfstand.');
+                if ($nextTime == $previousTime) {
+                    $this->parser->check($previousCheck['work_id'] === (int) $work->id && $previousCheck['course_id'] === (int) $course->id
+                        && $previousCheck['roster'] === $this->rosterBinding($work), 'Geänderte Zielbasis benötigt einen neuen Prüfstand.');
+                    $incoming = $receipts;
+                    foreach ($package['records'] as $index => $record) {
+                        $incoming = array_values(array_filter($incoming, fn (array $receipt): bool => $receipt['exercise_id'] !== $package['exercise_id'] || $receipt['participant_id'] !== $record['participant_id']));
+                        $incoming[] = ['exercise_id' => $package['exercise_id'], 'participant_id' => $record['participant_id'], 'student_id' => $rows[$index]['student_id'], 'record' => $record];
+                    }
+                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($incoming), 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
+                }
+            }
+        }
+
         return ['target_work' => ['id' => $work->id, 'title' => $work->title, 'course_id' => $course->id, 'course_title' => $course->title],
+            'submission_check' => $submissionCheck,
             'exercise' => $package['exercise'], 'exercise_id' => $package['exercise_id'], 'maximum_minor' => $package['maximum_minor'],
             'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked,
             'previous_overview_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', null),
@@ -193,6 +219,16 @@ class TeachingWorkJsonImport
                 'record_checksum' => $record['record_checksum'], 'record' => $record, 'history' => $history, 'imported_at' => now()->toISOString()];
         }
         $status['assessment_json_imports'] = $receipts;
+        if (isset($package['submission_check'])) {
+            $checks = $status['submission_checks'] ?? [];
+            $bindings = $this->recordBindings($receipts);
+            $last = collect($checks)->last();
+            if (! $last || $last['check']['check_checksum'] !== $package['submission_check']['check_checksum'] || $last['bindings'] !== $bindings) {
+                $checks[] = ['check' => $package['submission_check'], 'work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id,
+                    'roster' => $this->rosterBinding($work), 'bindings' => $bindings, 'imported_at' => now()->toISOString()];
+            }
+            $status['submission_checks'] = $checks;
+        }
         $packages = $status['assessment_json_packages'] ?? [];
         if (! collect($packages)->contains('package_checksum', $package['package_checksum'])) {
             $packages[] = ['exercise_id' => $package['exercise_id'], 'package_checksum' => $package['package_checksum'], 'exercise' => $package['exercise'], 'imported_at' => now()->toISOString()];
@@ -208,5 +244,89 @@ class TeachingWorkJsonImport
     public static function points(int $minor): string
     {
         return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    /** @return list<int> */
+    private function sortedIds(array $ids): array
+    {
+        $ids = array_map('intval', $ids);
+        sort($ids, SORT_NUMERIC);
+
+        return $ids;
+    }
+
+    /** @return list<int> */
+    private function expectedStudentIds(TeachingCourseWork $work): array
+    {
+        $ids = array_column($this->participants($work->teachingCourse), 'student_id');
+        if ($work->is_group_work) {
+            $assigned = array_merge([], ...array_column($this->sync->groupsForWork($work), 'student_ids'));
+            $ids = array_values(array_intersect($ids, $assigned));
+        }
+
+        return $this->sortedIds($ids);
+    }
+
+    private function rosterBinding(TeachingCourseWork $work): string
+    {
+        $ids = $this->expectedStudentIds($work);
+        $people = array_values(array_filter($this->participants($work->teachingCourse), fn (array $person): bool => in_array($person['student_id'], $ids, true)));
+        usort($people, fn (array $left, array $right): int => $left['student_id'] <=> $right['student_id']);
+        $groups = array_map(fn (array $group): array => ['name' => $group['name'] ?? '', 'student_ids' => $this->sortedIds($group['student_ids'] ?? [])], $this->sync->groupsForWork($work));
+
+        return SchooltoolAssessmentJson::digest([$people, (string) $work->teachingCourse->title, (bool) $work->is_group_work, $groups]);
+    }
+
+    /** @return array<int, string> */
+    private function recordBindings(array $receipts): array
+    {
+        $bindings = [];
+        foreach ($receipts as $receipt) {
+            $record = $receipt['record'];
+            $bindings[(int) $receipt['student_id']] = SchooltoolAssessmentJson::digest([$receipt['exercise_id'], $receipt['participant_id'], $record['identity'] ?? [],
+                $record['submission_state'] ?? null, $record['source_fingerprint'] ?? null, $record['email_collected_at'] ?? null]);
+        }
+        ksort($bindings, SORT_NUMERIC);
+
+        return $bindings;
+    }
+
+    private function checkDeadline(TeachingCourseWork $work, array $check): void
+    {
+        $date = $work->finish_until_date?->format('Y-m-d') ?? '';
+        $time = (string) $work->finish_until_time;
+        $this->parser->check($date !== '' && preg_match('/\A[0-9]{2}:[0-9]{2}\z/', $time) === 1, 'Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.');
+        $instant = $this->parser->instant($check['deadline_at']);
+        $zone = new DateTimeZone('Europe/Vienna');
+        $wallTime = $date.' '.$time.':00';
+        $this->parser->check($instant->setTimezone($zone)->format('Y-m-d H:i:s.u') === $wallTime.'.000000', 'Abgabeprüfung widerspricht der aktuellen Frist.');
+        $wall = new DateTimeImmutable($wallTime, new DateTimeZone('UTC'));
+        $offsets = array_unique(array_column($zone->getTransitions($wall->getTimestamp() - 86400, $wall->getTimestamp() + 86400), 'offset'));
+        $matches = array_filter($offsets, fn (int $offset): bool => (new DateTimeImmutable('@'.($wall->getTimestamp() - $offset)))->setTimezone($zone)->format('Y-m-d H:i:s') === $wallTime);
+        $this->parser->check(count($matches) === 1, 'Mehrdeutige Ziel-Frist muss vor dem Import geklärt werden.');
+    }
+
+    /** @return array<string, mixed> */
+    public function submissionCheckStatus(TeachingCourseWork $work): array
+    {
+        $unknown = ['complete' => false, 'checked_at' => null];
+        $receipt = collect($work->status['submission_checks'] ?? [])->last();
+        if (! $receipt) {
+            return $unknown;
+        }
+        try {
+            $check = $receipt['check'];
+            $imports = $work->status['assessment_json_imports'] ?? [];
+            $this->parser->check($receipt['work_id'] === (int) $work->id && $receipt['course_id'] === (int) $work->teaching_course_id
+                && $receipt['roster'] === $this->rosterBinding($work) && $receipt['bindings'] === $this->recordBindings($imports), 'Abgabeprüfung: Zielbasis geändert.');
+            $records = array_column(array_values(array_filter($imports, fn (array $item): bool => $item['exercise_id'] === $check['exercise_id'])), 'record');
+            $this->parser->submissionCheck($check, $check['exercise_id'], $records);
+            $this->checkDeadline($work, $check);
+
+            return ['complete' => $check['state'] === 'complete', 'checked_at' => $check['checked_at'], 'student_ids' => $this->expectedStudentIds($work),
+                'deadline_date' => $work->finish_until_date->format('Y-m-d'), 'deadline_time' => $work->finish_until_time];
+        } catch (ValidationException) {
+            return $unknown;
+        }
     }
 }

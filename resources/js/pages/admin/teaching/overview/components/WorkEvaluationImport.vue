@@ -3,7 +3,7 @@
         <v-card>
             <v-card-title class="text-wrap">Importieren · {{ import_work?.title }}</v-card-title>
             <v-card-text>
-                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Darin werden Schooltool-Bewertungen.json und die referenzierten PDFs geprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
+                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Darin werden Schooltool-Bewertungen.json, die referenzierten PDFs und Versandprotokolle geprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
                 <p class="text-caption mb-3">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
                 <v-file-input
                     v-model="import_files"
@@ -30,7 +30,14 @@
                     <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
                     <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
                     <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
+                    <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
                     <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Ungeklärte Zuordnungen sperren das gesamte Paket.</v-alert>
+                    <div v-for="dispatch in json_preview.dispatches || []" :key="dispatch.source" class="border rounded pa-3 mt-3">
+                        <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
+                        <p>{{ dispatch.source }}</p>
+                        <p>{{ dispatch.rows.filter(row => row.accepted).length }} Personen mit bestätigtem Live-Versand</p>
+                        <p v-for="row in dispatch.rows" :key="row.person + row.student_id">{{ row.person }} · {{ row.status }}</p>
+                    </div>
                     <div v-for="row in json_preview.rows" :key="row.participant_id" class="border rounded pa-3 mt-3">
                         <p><strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }} · {{ row.identity.group_name }}</strong></p>
                         <p v-if="row.target">Zugeordnet: {{ row.target.first_name }} {{ row.target.last_name }} / {{ row.target.class_name }} · {{ row.target.group_name }}</p>
@@ -169,9 +176,16 @@ export default {
                     }
                     return matches[0]
                 })
-                this.import_selection = folder + ' · ' + (1 + pdfs.length) + ' Importdateien'
+                const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file)))
+                if (protocols.length > 30 || protocols.some(file => file.size > 1048576)
+                    || [packageFile, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
+                    throw new Error('Maximal 30 Versandprotokolle und insgesamt 6 MiB pro Ordnerimport auswählen.')
+                }
+                const documents = await Promise.all(protocols.map(async file => ({ path: relativePath(file), text: new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) })))
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                this.import_selection = folder + ' · ' + (1 + pdfs.length + protocols.length) + ' Importdateien'
                 this.import_busy = false
-                await this.selectJson({ target: { files: [packageFile, ...pdfs] } })
+                await this.selectJson({ target: { files: [packageFile, ...pdfs] } }, { folder, documents })
             } catch (error) {
                 if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
                     this.import_error = error.message || 'JSON-Paket im Ordner konnte nicht gelesen werden.'
@@ -181,7 +195,7 @@ export default {
                 event.target.value = ''
             }
         },
-        async selectJson(event) {
+        async selectJson(event, dispatch = {}) {
             const selected = Array.from(event.target.files || [])
             if (!selected.length || this.import_busy || !this.isSelectedCourseWork(this.import_work)) return
             this.json_preview = null
@@ -194,7 +208,7 @@ export default {
                 this.import_error = 'Genau eine JSON-Datei (maximal 256 KiB) und höchstens 20 referenzierte PDFs auswählen; insgesamt höchstens 6 MiB.'
                 return
             }
-            this.json_uploads = { package: packages[0], pdfs }
+            this.json_uploads = { package: packages[0], pdfs, ...dispatch }
             await this.sendJson(false)
         },
         async applyJson() {
@@ -209,6 +223,10 @@ export default {
                 const payload = new FormData()
                 payload.append('package', this.json_uploads.package, this.json_uploads.package.name)
                 for (const pdf of this.json_uploads.pdfs) payload.append('pdfs[]', pdf, pdf.name)
+                if (this.json_uploads.documents?.length) {
+                    payload.append('folder', this.json_uploads.folder)
+                    payload.append('documents', JSON.stringify(this.json_uploads.documents))
+                }
                 if (apply) {
                     payload.append('apply', '1')
                     payload.append('hash', this.json_preview.hash)
@@ -218,7 +236,7 @@ export default {
                 if (apply) {
                     this.json_preview = null
                     this.json_uploads = null
-                    this.import_summary = { messages: ['JSON-Paket übernommen. Offene und teilweise bewertete Fälle erhalten ihre bisherige Bewertung.'] }
+                    this.import_summary = { messages: ['JSON-Paket übernommen. Offene und teilweise bewertete Fälle erhalten ihre bisherige Bewertung.', ...(response.data.messages || [])] }
                     this.$emit('imported', response.data.data)
                 } else {
                     this.json_preview = response.data.preview

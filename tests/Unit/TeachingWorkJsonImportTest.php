@@ -7,6 +7,59 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('JSON submission checks preserve complete and open checkpoints separately from assessment completion', function (string $state) {
+    $this->travelTo(now()->setDate(2026, 10, 7)->setTime(12, 0));
+    $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package(), $state));
+    expect((new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR)))->toBe($package);
+})->with(['complete', 'open']);
+
+test('JSON submission checks reject unproven inconsistent or corrupted checkpoints', function (string $case) {
+    $this->travelTo(now()->setDate(2026, 10, 7)->setTime(12, 0));
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package());
+    $check = &$package['submission_check'];
+    match ($case) {
+        'cache' => $check['coverage'][0]['scope'] = 'local_cache',
+        'missing mailbox' => array_pop($check['coverage']),
+        'duplicate mailbox' => $check['coverage'][1]['mailbox'] = $check['coverage'][0]['mailbox'],
+        'late search' => $check['coverage'][0]['start_at'] = '2026-10-04T08:00:01Z',
+        'short search' => $check['coverage'][0]['end_at'] = '2026-10-06T10:00:59Z',
+        'unverified' => $check['coverage'][0]['verified'] = false,
+        'fake boolean' => $check['coverage'][0]['verified'] = 1,
+        'missing evidence' => $check['coverage'][0]['evidence_sha256'] = [],
+        'future' => $check['checked_at'] = '2099-10-06T10:01:00Z',
+        'invalid date' => $check['checked_at'] = '2026-02-30T10:01:00Z',
+        'before deadline' => $check['deadline_at'] = $check['checked_at'],
+        'wrong exercise' => $check['exercise_id'] = 'OTHER',
+        'wrong roster' => $check['roster_fingerprint'] = str_repeat('b', 64),
+        'missing person' => array_pop($check['participants']),
+        'person gap' => $check['participants'][0]['gaps'] = ['missing attachment'],
+        'other route unresolved' => $check['participants'][0]['other_result'] = 'unresolved',
+        'late dispatch' => $check['participants'][0]['dispatched_at'] = $check['checked_at'],
+        'candidate unresolved' => $check['unresolved_candidates'] = [['candidate_fingerprint' => str_repeat('c', 64), 'evidence_sha256' => [str_repeat('a', 64)]]],
+        'record contradiction' => $package['records'][1]['submission_state'] = 'unresolved',
+        'later collected' => $package['records'][0]['email_collected_at'] = '2026-10-06T10:02:00Z',
+        'wrong completion' => $check['completed_at'] = '2026-10-06T10:02:00Z',
+        'checksum' => $check['check_checksum'] = str_repeat('b', 64),
+    };
+    if ($case !== 'checksum') {
+        unset($check['check_checksum']);
+        $check['check_checksum'] = SchooltoolAssessmentJson::digest($check);
+    }
+    unset($check);
+    expect(fn () => (new SchooltoolAssessmentJson)->parse(json_encode(TeachingWorkJsonFixture::sign($package), JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
+})->with(['cache', 'missing mailbox', 'duplicate mailbox', 'late search', 'short search', 'unverified', 'fake boolean', 'missing evidence', 'future', 'invalid date', 'before deadline', 'wrong exercise', 'wrong roster', 'missing person', 'person gap', 'other route unresolved', 'late dispatch', 'candidate unresolved', 'record contradiction', 'later collected', 'wrong completion', 'checksum']);
+
+test('JSON submission check permits evidenced non submission while keeping its assessment open', function () {
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package());
+    $package['submission_check']['participants'][1]['email_result'] = 'not_found';
+    $package['records'][1]['submission_state'] = 'not_received';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $package = TeachingWorkJsonFixture::sign($package);
+    $parsed = (new SchooltoolAssessmentJson)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+    expect($parsed['records'][1]['evaluation_state'])->toBe('open');
+});
+
 test('JSON v1 accepts optional nullable UTC event times without changing old checksums', function (?string $value) {
     $package = TeachingWorkJsonFixture::package();
     $package['records'][0]['email_collected_at'] = $value;

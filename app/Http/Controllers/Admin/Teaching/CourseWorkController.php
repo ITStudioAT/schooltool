@@ -27,7 +27,7 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
-    public function importJson(Request $request, TeachingCourseWork $course_work, TeachingWorkJsonImport $importer): JsonResponse
+    public function importJson(Request $request, TeachingCourseWork $course_work, TeachingWorkJsonImport $importer, TeachingWorkFolderImport $folderImporter, TeachingWorkDispatchImport $dispatchImporter): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
@@ -37,21 +37,27 @@ class CourseWorkController extends Controller
             'package' => ['required', 'file', 'extensions:json', 'max:256'],
             'pdfs' => ['sometimes', 'array', 'max:20'],
             'pdfs.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:6144'],
+            'folder' => ['required_with:documents', 'nullable', 'string', 'max:255'],
+            'documents' => ['sometimes', 'string', 'max:6291456'],
             'apply' => ['sometimes', 'boolean'],
             'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64'],
         ]);
         $uploads = $request->file('pdfs', []);
         $text = $request->file('package')->get();
-        $payloadSize = strlen($text) + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
+        $payloadSize = strlen($text) + strlen($data['documents'] ?? '') + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
         $transportSize = (int) $request->server('CONTENT_LENGTH', 0);
         if ($transportSize === 0) {
             $transportSize = $payloadSize + strlen(http_build_query($request->except(['package', 'pdfs']))) + (count($uploads) + 3) * 256;
         }
         abort_if(max($transportSize, $payloadSize, strlen($request->getContent())) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
         $bundle = $importer->parse($text, $uploads);
+        $dispatchBundle = isset($data['documents']) ? $folderImporter->parse($data['folder'], $data['documents'], '[]', []) : null;
+        if ($dispatchBundle !== null && $dispatchBundle['evaluation'] !== null) {
+            throw ValidationException::withMessages(['documents' => 'Im JSON-Import sind nur Versandprotokolle als zusätzliche Textdateien erlaubt.']);
+        }
         $createdPaths = [];
         try {
-            $result = DB::transaction(function () use ($course_work, $actor, $importer, $bundle, $uploads, $data, &$createdPaths): array {
+            $result = DB::transaction(function () use ($course_work, $actor, $importer, $folderImporter, $dispatchImporter, $bundle, $dispatchBundle, $uploads, $data, &$createdPaths): array {
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
@@ -60,14 +66,27 @@ class CourseWorkController extends Controller
                 Import116::query()->whereIn('id', $enrollments->pluck('import116_id')->merge($users->pluck('import116_id'))->filter())->lockForUpdate()->get();
                 $work->teachingCourseWorkGroupStudents()->lockForUpdate()->get();
                 $preview = $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle);
+                $preview['dispatches'] = [];
+                foreach ($dispatchBundle['protocols'] ?? [] as $file) {
+                    $dispatchPreview = $dispatchImporter->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
+                    $preview['dispatches'][] = ['source' => $file['source']] + $dispatchPreview;
+                    $preview['can_import'] = $preview['can_import'] && $dispatchPreview['can_import'];
+                }
+                if ($dispatchBundle !== null) {
+                    $preview['hash'] = hash('sha256', json_encode([$preview['hash'], $dispatchBundle['sources'], $preview['dispatches']], JSON_THROW_ON_ERROR));
+                }
                 if (! ($data['apply'] ?? false)) {
                     return ['preview' => $preview];
                 }
                 abort_unless($preview['can_import'], 422, 'JSON-Paket enthält ungeklärte Zuordnungen.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
                 $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
+                $messages = [];
+                if ($dispatchBundle !== null && $dispatchBundle['protocols'] !== []) {
+                    $messages = $folderImporter->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $dispatchBundle, $createdPaths)['messages'];
+                }
 
-                return ['data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh())];
+                return ['data' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->fresh()), 'messages' => $messages];
             });
         } catch (Throwable $exception) {
             Storage::disk('local')->delete($createdPaths);
@@ -287,6 +306,7 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
+            unset($validated['status']['submission_checks']);
             unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
         }
         $validated['maximum_plus'] = $maximumPlus;
@@ -354,7 +374,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages'] as $field) {
+            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks'] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -422,11 +442,12 @@ class CourseWorkController extends Controller
             'is_random_groups' => 'sometimes|boolean',
             'date_for_all_groups' => 'nullable|date',
             'finish_until_date' => 'nullable|date',
+            'finish_until_time' => 'nullable|date_format:H:i',
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
             'groups.*.student_ids.*' => 'integer',
             'groups.*.date' => 'nullable|date',
-            'groups.*.comment' => 'nullable|string|max:1024',
+            'groups.*.comment' => 'nullable|string|max:2048',
             'groups.*.grade' => $gradeRules,
             'groups.*.grades' => 'nullable|array',
             'groups.*.grades.*.student_id' => 'required|integer',
@@ -436,7 +457,7 @@ class CourseWorkController extends Controller
             'groups.*.points.*.points' => 'nullable|numeric',
             'groups.*.comments' => 'nullable|array',
             'groups.*.comments.*.student_id' => 'required|integer',
-            'groups.*.comments.*.comment' => 'nullable|string|max:1024',
+            'groups.*.comments.*.comment' => 'nullable|string|max:2048',
             'groups.*.name' => 'nullable|string|max:255',
             'status' => 'nullable|array',
         ];

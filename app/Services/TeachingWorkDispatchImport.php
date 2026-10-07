@@ -67,8 +67,14 @@ class TeachingWorkDispatchImport
                 $this->reject('Protokollüberschrift, Versandzweck und Modus widersprechen einander.');
             }
             foreach ($recipients as $index => &$recipient) {
-                if (! is_array($recipient) || ($recipient['Datensatzposition'] ?? null) !== $index + 1) {
+                $officeResults = $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook';
+                $position = is_array($recipient) ? ($recipient['Datensatzposition'] ?? ($officeResults ? ($recipient['Datensatz'] ?? null) : null)) : null;
+                if (! is_array($recipient) || $position !== $index + 1
+                    || (isset($recipient['Datensatz'], $recipient['Datensatzposition']) && $recipient['Datensatz'] !== $recipient['Datensatzposition'])) {
                     $this->reject('Empfängerfolge im Versandprotokoll nicht erkannt.');
+                }
+                if ($officeResults && ($recipient['Rolle'] ?? null) === 'Schüler/in') {
+                    $recipient['Rolle'] = 'Schülerempfänger';
                 }
                 $recipient['Rolle'] ??= 'Schülerempfänger';
             }
@@ -76,6 +82,9 @@ class TeachingWorkDispatchImport
         }
         if ($combined || $teacherTaskTest) {
             $createdValue = $this->value($metadata, $officeTeacherTest ? 'Gesendetzeit' : 'Erstellt');
+            if ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook' && $createdValue === '') {
+                $createdValue = $this->value($metadata, 'Abgeschlossen');
+            }
             $created = $this->providerTime($createdValue);
             if (! isset($metadata['Zeitzone']) && $created !== null
                 && (new DateTimeImmutable($created))->setTimezone(new DateTimeZone('Europe/Vienna'))->format('P') === substr($createdValue, -6)) {
@@ -395,9 +404,10 @@ class TeachingWorkDispatchImport
             || ($state['SentConfirmed'] ?? null) !== true) {
             return false;
         }
-        $attachments = $recipient['TatsaechlicheAnhaenge'] ?? null;
+        $results = $this->value($metadata, 'Versandzweck') === 'Ergebnisbenachrichtigung';
+        $attachments = $recipient['TatsaechlicheAnhaenge'] ?? ($results ? ($recipient['Anhaenge'] ?? null) : null);
         $sentAttachments = $state['Attachments'] ?? null;
-        if (! is_array($attachments) || ! array_is_list($attachments) || $attachments === []
+        if (! is_array($attachments) || ! array_is_list($attachments) || (! $results && $attachments === [])
             || ! is_array($sentAttachments) || ! array_is_list($sentAttachments)
             || ($state['AttachmentsVerified'] ?? null) !== count($attachments) || count($sentAttachments) !== count($attachments)) {
             return false;

@@ -79,6 +79,7 @@ class TeachingCourseWorkEntrySyncService
     {
         $payload = $work->toArray();
         $payload['groups'] = $this->groupsForWork($work);
+        $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
 
         return $payload;
     }
@@ -626,7 +627,7 @@ class TeachingCourseWorkEntrySyncService
 
     private function studentEntryDate(TeachingCourseWork $work, ?string $fallbackDate): ?string
     {
-        return $work->finish_until_date?->format('Y-m-d') ?? $fallbackDate;
+        return $fallbackDate;
     }
 
     private function toNullableString(mixed $value): ?string

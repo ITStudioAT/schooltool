@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Brick\Math\BigInteger;
+use DateTimeImmutable;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use stdClass;
@@ -75,6 +76,9 @@ class SchooltoolAssessmentJson
         }
         $this->check(count($pdfs) <= 20 && count(array_unique($pdfs)) === count($pdfs), 'PDF-Limit oder mehrdeutige PDF-Zuordnung.');
         $this->checksum($package, 'package_checksum');
+        if (isset($package['submission_check'])) {
+            $this->submissionCheck($package['submission_check'], $package['exercise_id'], $package['records']);
+        }
 
         return $package;
     }
@@ -82,6 +86,70 @@ class SchooltoolAssessmentJson
     public static function normalize(string $value): string
     {
         return mb_convert_case(preg_replace('/\s+/u', ' ', trim($value)), MB_CASE_FOLD, 'UTF-8');
+    }
+
+    /** @param list<array<string, mixed>> $records */
+    public function submissionCheck(array $check, string $exerciseId, array $records): void
+    {
+        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->structure(json_decode(json_encode($check, JSON_THROW_ON_ERROR)), $schema['$defs']['submission_check'], $schema, '$.submission_check');
+        $this->check($check['exercise_id'] === $exerciseId, 'Abgabeprüfung gehört zu einer anderen Arbeit.');
+        $deadline = $this->instant($check['deadline_at']);
+        $checked = $this->instant($check['checked_at']);
+        $this->check($checked <= new DateTimeImmutable(now()->toISOString()), 'Abgabeprüfung liegt in der Zukunft.');
+        $ids = array_column($check['participants'], 'participant_id');
+        $recordIds = array_column($records, 'participant_id');
+        sort($ids, SORT_STRING);
+        sort($recordIds, SORT_STRING);
+        $this->check($ids === $recordIds && count(array_unique($ids)) === count($ids)
+            && hash_equals($check['roster_fingerprint'], self::digest($ids)), 'Abgabeprüfung: Teilnehmerbasis widerspricht dem Paket.');
+        $gaps = $check['gaps'];
+        if ($checked <= $deadline) {
+            $gaps[] = 'deadline_not_passed';
+        }
+        $dispatches = array_map(fn (array $person): DateTimeImmutable => $this->instant($person['dispatched_at']), $check['participants']);
+        $earliest = min($dispatches);
+        $mailboxes = array_column($check['coverage'], 'mailbox');
+        sort($mailboxes, SORT_STRING);
+        $expectedMailboxes = ['guenther.kron@bildung.gv.at', 'guenther.kron@cdgym.at'];
+        $fullSearch = $mailboxes === $expectedMailboxes;
+        foreach ($check['coverage'] as $coverage) {
+            $start = $this->instant($coverage['start_at']);
+            $end = $this->instant($coverage['end_at']);
+            $this->check($start <= $end && ($coverage['evidence_sha256'] !== [] || ($coverage['scope'] === 'unavailable' && ! $coverage['verified'])), 'Abgabeprüfung: ungültige Postfachbelege.');
+            $fullSearch = $fullSearch && $coverage['scope'] === 'server_all_folders' && $coverage['verified'] && $coverage['gaps'] === [] && $start <= $earliest && $end >= $checked;
+        }
+        if (! $fullSearch) {
+            $gaps[] = 'mailbox_incomplete';
+        }
+        foreach ($check['participants'] as $index => $person) {
+            if ($dispatches[$index] >= $checked || $person['gaps'] !== [] || $person['email_result'] === 'unresolved' || $person['other_result'] === 'unresolved') {
+                $gaps[] = 'person_unresolved';
+            }
+            $this->check($fullSearch || $person['email_result'] !== 'not_found', 'Negative E-Mail-Feststellung ohne vollständige Serversuche.');
+            $outcome = in_array('received', [$person['email_result'], $person['other_result']], true) ? 'received'
+                : ($person['email_result'] === 'not_found' && $person['other_result'] === 'not_received' && $checked > $deadline ? 'not_received' : 'unresolved');
+            $record = collect($records)->firstWhere('participant_id', $person['participant_id']);
+            $this->check($record['submission_state'] === $outcome, 'Abgabestatus widerspricht Gesamtprüfnachweis.');
+            if (isset($record['email_collected_at'])) {
+                $this->check($this->instant($record['email_collected_at']) <= $checked, 'Abgabefassung wurde erst nach dem Prüfstand gesichert.');
+            }
+        }
+        if ($check['unresolved_candidates'] !== []) {
+            $gaps[] = 'unresolved_candidates';
+        }
+        $this->check($check['state'] === ($gaps === [] ? 'complete' : 'open')
+            && $check['completed_at'] === ($gaps === [] ? $check['checked_at'] : null), 'Abgabeprüfung: unbelegter Gesamtabschluss.');
+        $this->checksum($check, 'check_checksum');
+    }
+
+    public function instant(string $value): DateTimeImmutable
+    {
+        $this->check(preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z\z/', $value) === 1
+            && checkdate((int) substr($value, 5, 2), (int) substr($value, 8, 2), (int) substr($value, 0, 4))
+            && (int) substr($value, 11, 2) < 24 && (int) substr($value, 14, 2) < 60 && (int) substr($value, 17, 2) < 60, 'Abgabeprüfung: ungültiger UTC-Zeitpunkt.');
+
+        return new DateTimeImmutable($value);
     }
 
     public static function digest(array|stdClass $value): string
@@ -118,7 +186,7 @@ class SchooltoolAssessmentJson
         }
         $types = (array) $schema['type'];
         $type = match (true) {
-            $value instanceof stdClass => 'object', is_array($value) => 'array', is_int($value) => 'integer', is_string($value) => 'string', $value === null => 'null', default => 'invalid',
+            $value instanceof stdClass => 'object', is_array($value) => 'array', is_int($value) => 'integer', is_string($value) => 'string', is_bool($value) => 'boolean', $value === null => 'null', default => 'invalid',
         };
         $this->check(in_array($type, $types, true), $path.': falscher Datentyp (Punkte nur als Integer-Hundertstel).');
         $this->check(! array_key_exists('const', $schema) || $value === $schema['const'], $path.': unbekannte Version/Art.');

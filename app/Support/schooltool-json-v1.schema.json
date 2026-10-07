@@ -72,6 +72,9 @@
     "package_checksum": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "submission_check": {
+      "$ref": "#/$defs/submission_check"
     }
   },
   "required": [
@@ -276,17 +279,23 @@
         "pdf": {
           "$ref": "#/$defs/pdf"
         },
-        "email_collected_at": {
-          "type": ["string", "null"],
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
-        },
-        "evaluation_completed_at": {
-          "type": ["string", "null"],
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
-        },
         "record_checksum": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "email_collected_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+        },
+        "evaluation_completed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
         }
       },
       "required": [
@@ -324,6 +333,245 @@
       "required": [
         "filename",
         "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "submission_check": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "type": "string",
+          "const": "schooltool.submission-check"
+        },
+        "exercise_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "const": "Europe/Vienna"
+        },
+        "deadline_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+        },
+        "checked_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+        },
+        "roster_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "roster_evidence_sha256": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "minItems": 1
+        },
+        "deadline_evidence_sha256": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "minItems": 1
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "participant_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dispatched_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+              },
+              "email_result": {
+                "type": "string",
+                "enum": [
+                  "received",
+                  "not_found",
+                  "unresolved"
+                ]
+              },
+              "other_result": {
+                "type": "string",
+                "enum": [
+                  "received",
+                  "not_received",
+                  "unresolved"
+                ]
+              },
+              "evidence_sha256": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "minItems": 1
+              },
+              "gaps": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 0
+              }
+            },
+            "required": [
+              "participant_id",
+              "dispatched_at",
+              "email_result",
+              "other_result",
+              "evidence_sha256",
+              "gaps"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "mailbox": {
+                "type": "string",
+                "enum": [
+                  "guenther.kron@cdgym.at",
+                  "guenther.kron@bildung.gv.at"
+                ]
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "local_cache",
+                  "server_all_folders",
+                  "unavailable"
+                ]
+              },
+              "verified": {
+                "type": "boolean"
+              },
+              "start_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+              },
+              "end_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+              },
+              "evidence_sha256": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "minItems": 0
+              },
+              "gaps": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 0
+              }
+            },
+            "required": [
+              "mailbox",
+              "scope",
+              "verified",
+              "start_at",
+              "end_at",
+              "evidence_sha256",
+              "gaps"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0
+        },
+        "unresolved_candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "candidate_fingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "evidence_sha256": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "candidate_fingerprint",
+              "evidence_sha256"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "complete"
+          ]
+        },
+        "completed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+        },
+        "check_checksum": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "exercise_id",
+        "timezone",
+        "deadline_at",
+        "checked_at",
+        "roster_fingerprint",
+        "roster_evidence_sha256",
+        "deadline_evidence_sha256",
+        "participants",
+        "coverage",
+        "unresolved_candidates",
+        "gaps",
+        "state",
+        "completed_at",
+        "check_checksum"
       ],
       "additionalProperties": false
     }
