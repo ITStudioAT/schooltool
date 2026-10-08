@@ -73,11 +73,68 @@ describe('JSON assessment preview and separate apply', () => {
             await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
             await flushPromises()
 
-            expect(wrapper.text()).toContain('Abgabefrist: 05.10.2026, 17:00:00 Europe/Vienna')
+            expect(wrapper.text()).toContain('Paketfrist: 05.10.2026, 17:00:00 Europe/Vienna')
                 .toContain('Lokaler Abschlussdownload:').toContain('Serversuche nicht vollständig belegt.')
                 .toContain('Innerhalb der Frist nicht abgegeben').toContain('Abgabeprüfung: noch offen')
             expect(post).toHaveBeenCalledTimes(1)
             expect(post.mock.calls[0][1].has('apply')).toBe(false)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('shows the current teacher deadline and blocks applying historical deadline judgments', async () => {
+        const localPreview = { ...preview, can_import: false,
+            exercise: { ...preview.exercise, deadline: '08.10.2026, 16:00 Europe/Vienna' },
+            deadline_context: { state: 'changed', current_at: '2026-10-08T12:50:00Z', requires_review: true,
+                message: 'Die aktuelle Lehrkraftfrist bleibt erhalten. Fristabhängige Bewertungen erneut prüfen und exportieren.' },
+            rows: [{ ...preview.rows[0], deadline_requires_review: true, will_replace: false }] }
+        const post = vi.fn().mockResolvedValue({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
+            components: { 'v-file-input': VFileInput }, stubs: { 'v-file-input': false, VFileInput: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Aktuelle Lehrkraftfrist').toContain('14:50')
+                .toContain('Paketfrist: 08.10.2026, 16:00 Europe/Vienna').toContain('erneut prüfen und exportieren')
+                .toContain('Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.')
+            await vm.applyJson()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('apply')).toBe(false)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('reloads the selected package after an old missing-deadline error without applying grades', async () => {
+        const localPreview = { ...preview, can_import: false,
+            deadline_context: { current_at: '2026-10-08T12:50:00Z', requires_review: true,
+                message: 'Historische Paketfrist: 16:00. Aktuelle Lehrkraftfrist bleibt erhalten.' } }
+        const post = vi.fn().mockRejectedValueOnce({ response: { status: 422, data: {
+            errors: { package: ['Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.'] } } } })
+            .mockResolvedValueOnce({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput, VBtn } })],
+            components: { 'v-file-input': VFileInput, 'v-btn': VBtn }, stubs: { 'v-file-input': false, VFileInput: false, 'v-btn': false, VBtn: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.')
+            const retry = wrapper.findAll('button').find(button => button.text().includes('Vorschau erneut laden'))!
+            await retry.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(2)
+            expect(post.mock.calls[1][1].has('apply')).toBe(false)
+            expect(post.mock.calls[1][1].get('package').name).toBe('Schooltool-Bewertungen.json')
+            expect(wrapper.text()).not.toContain('Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.')
+            expect(wrapper.text()).toContain('14:50').toContain('Historische Paketfrist: 16:00')
+            expect(wrapper.emitted('imported')).toBeUndefined()
         } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 
@@ -208,6 +265,10 @@ describe('CourseWorks automatic folder import', () => {
             expect(ctx.json_preview).toBeNull()
             expect(ctx.json_uploads).toBeNull()
             expect(ctx.import_error).not.toBe('')
+            if (scenario === 'missing package' || scenario === 'duplicate package') {
+                expect(ctx.import_selection).toBe('Test')
+                expect(ctx.import_error).toContain('direkt oder unter Beurteilungen')
+            }
             expect(event.target.value).toBe('')
             expect(ctx.$emit).not.toHaveBeenCalled()
         } finally { vi.unstubAllGlobals() }

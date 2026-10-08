@@ -66,11 +66,17 @@ class TeachingWorkJsonImport
     {
         $package = $bundle['package'];
         $course = $work->teachingCourse;
+        $deadlineContext = $this->deadlineContext($work, $package);
+        $deadlineNeedsReview = $deadlineContext['requires_review'] ?? false;
         if (isset($package['teacher_absence_decision'])) {
-            $this->checkDeadline($work, $package['teacher_absence_decision']);
+            if (! $deadlineNeedsReview) {
+                $this->checkDeadline($work, $package['teacher_absence_decision']);
+            }
         }
         if (isset($package['final_download'])) {
-            $this->checkDeadline($work, $package['final_download']);
+            if (! $deadlineNeedsReview) {
+                $this->checkDeadline($work, $package['final_download']);
+            }
             $previousPackage = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $item): bool => $item['exercise_id'] === $package['exercise_id'] && isset($item['final_download']));
             if ($previousPackage) {
                 $previousDownload = $previousPackage['final_download'];
@@ -145,7 +151,8 @@ class TeachingWorkJsonImport
                 'previous_evaluation_state' => $previousReceipt['record']['evaluation_state'] ?? null,
                 'total_minor' => $record['total_minor'], 'comment' => $record['comment'], 'criteria' => $record['criteria'], 'adjustments' => $record['adjustments'],
                 'previous' => $previous, 'previous_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', $studentId),
-                'pdf' => $record['pdf'], 'will_replace' => $error === null && ! $unchanged && $record['evaluation_state'] === 'complete'];
+                'pdf' => $record['pdf'], 'deadline_requires_review' => $deadlineNeedsReview,
+                'will_replace' => ! $deadlineNeedsReview && $error === null && ! $unchanged && $record['evaluation_state'] === 'complete'];
         }
 
         if (isset($package['final_download'])) {
@@ -154,7 +161,9 @@ class TeachingWorkJsonImport
         $submissionCheck = $package['submission_check'] ?? null;
         if ($submissionCheck !== null) {
             $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abgabeprüfung benötigt genau alle erwarteten Zielpersonen.');
-            $this->checkDeadline($work, $submissionCheck);
+            if (! $deadlineNeedsReview) {
+                $this->checkDeadline($work, $submissionCheck);
+            }
             $previousCheck = collect($work->status['submission_checks'] ?? [])->last();
             if ($previousCheck) {
                 $previousTime = $this->parser->instant($previousCheck['check']['checked_at']);
@@ -174,13 +183,14 @@ class TeachingWorkJsonImport
         }
 
         return ['target_work' => ['id' => $work->id, 'title' => $work->title, 'course_id' => $course->id, 'course_title' => $course->title],
+            'deadline_context' => $deadlineContext,
             'submission_check' => $submissionCheck,
             'teacher_absence_decision' => $package['teacher_absence_decision'] ?? null,
             'final_download' => $package['final_download'] ?? null,
             'exercise' => $package['exercise'], 'exercise_id' => $package['exercise_id'], 'maximum_minor' => $package['maximum_minor'],
-            'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked,
+            'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked && ! $deadlineNeedsReview,
             'previous_overview_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', null),
-            'overview_will_replace' => $package['overview_pdf'] !== null && ! collect($work->status['assessment_json_packages'] ?? [])->contains('package_checksum', $package['package_checksum']),
+            'overview_will_replace' => ! $deadlineNeedsReview && $package['overview_pdf'] !== null && ! collect($work->status['assessment_json_packages'] ?? [])->contains('package_checksum', $package['package_checksum']),
             'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $participants, $groups, $definition->toArray(), $bundle], JSON_THROW_ON_ERROR))];
     }
 
@@ -190,6 +200,8 @@ class TeachingWorkJsonImport
     public function apply(TeachingCourseWork $work, array $bundle, array $preview, array $uploads, array &$createdPaths): void
     {
         $package = $bundle['package'];
+        $deadlineContext = $this->deadlineContext($work, $package);
+        $this->parser->check(! ($deadlineContext['requires_review'] ?? false), $deadlineContext['message'] ?? 'Fristbezug benötigt erneute Prüfung.');
         $groups = $this->sync->groupsForWork($work);
         foreach ($groups as $index => &$group) {
             $group['use_individual_grades'] = (bool) ($work->groups[$index]['use_individual_grades'] ?? false);
@@ -309,6 +321,41 @@ class TeachingWorkJsonImport
         ksort($bindings, SORT_NUMERIC);
 
         return $bindings;
+    }
+
+    /** @param array<string, mixed> $package
+     * @return array{state: string, current_at: ?string, current_date: ?string, current_time: ?string, source_at: string, requires_review: bool, message: string}|null
+     */
+    private function deadlineContext(TeachingCourseWork $work, array $package): ?array
+    {
+        $deadlines = [];
+        foreach (['submission_check', 'final_download', 'teacher_absence_decision'] as $field) {
+            if (isset($package[$field])) {
+                $deadlines[] = $this->parser->instant($package[$field]['deadline_at']);
+            }
+        }
+        if ($deadlines === []) {
+            return null;
+        }
+        $date = $work->finish_until_date?->format('Y-m-d');
+        $time = $work->finish_until_time === null || $work->finish_until_time === '' ? null : (string) $work->finish_until_time;
+        $zone = new DateTimeZone('Europe/Vienna');
+        $source = $deadlines[0];
+        $current = null;
+        $state = 'missing_target';
+        $message = 'Aktuelle Lehrkraftfrist mit Datum und Uhrzeit in der Zielarbeit einstellen und speichern. Die Paketfrist wird nicht automatisch übernommen.';
+        if ($date !== null && $time !== null) {
+            $this->parser->check(preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/', $time) === 1, 'Ungültige Ziel-Fristuhrzeit. Zielarbeit prüfen und speichern.');
+            $current = (new DateTimeImmutable($date.' '.$time.':00', $zone))->setTimezone(new DateTimeZone('UTC'));
+            $this->checkDeadline($work, ['deadline_at' => $current->format('Y-m-d\TH:i:s\Z')]);
+            $matches = collect($deadlines)->every(fn (DateTimeImmutable $deadline): bool => $deadline == $current);
+            $state = $matches ? 'matched' : 'changed';
+            $message = $matches ? 'Paketbelege entsprechen der aktuellen Lehrkraftfrist.'
+                : 'Aktuelle Lehrkraftfrist: '.$current->setTimezone($zone)->format('d.m.Y H:i').' Uhr. Historische Paketfrist: '.$source->setTimezone($zone)->format('d.m.Y H:i').' Uhr (Europe/Vienna). Abgabeprüfnachweis und fristabhängige Bewertungen mit der aktuellen Frist erneut prüfen und aktualisiert exportieren. Die Lehrkraftfrist bleibt unverändert.';
+        }
+
+        return ['state' => $state, 'current_at' => $current?->format('Y-m-d\TH:i:s\Z'), 'current_date' => $date, 'current_time' => $time,
+            'source_at' => $source->format('Y-m-d\TH:i:s\Z'), 'requires_review' => $state !== 'matched', 'message' => $message];
     }
 
     private function checkDeadline(TeachingCourseWork $work, array $check): void

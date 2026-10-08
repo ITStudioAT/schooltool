@@ -78,7 +78,8 @@ class CourseWorkController extends Controller
                 if (! ($data['apply'] ?? false)) {
                     return ['preview' => $preview];
                 }
-                abort_unless($preview['can_import'], 422, 'JSON-Paket enthält ungeklärte Zuordnungen.');
+                abort_unless($preview['can_import'], 422, $preview['deadline_context']['requires_review'] ?? false
+                    ? $preview['deadline_context']['message'] : 'JSON-Paket enthält ungeklärte Zuordnungen.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
                 $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
                 $messages = [];

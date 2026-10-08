@@ -21,6 +21,10 @@
                 </v-file-input>
                 <p v-if="import_busy" class="text-caption mt-3">Dateien prüfen und importieren …</p>
                 <v-alert v-if="import_error" type="error" variant="tonal" class="mt-3">{{ import_error }}</v-alert>
+                <v-btn v-if="import_error && json_uploads" class="mt-3" variant="outlined"
+                    :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
+                    Vorschau erneut laden
+                </v-btn>
                 <v-alert v-if="import_summary" type="success" variant="tonal" class="mt-3">
                     <div v-for="message in import_summary.messages" :key="message">{{ message }}</div>
                     <div v-if="import_summary.missing?.length" class="text-caption mt-2">Nicht vorhanden (optional): {{ import_summary.missing.join(', ') }}.</div>
@@ -29,7 +33,13 @@
                     <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
                     <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
                     <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
-                    <p v-if="json_preview.exercise.deadline"><strong>Abgabefrist:</strong> {{ json_preview.exercise.deadline }}</p>
+                    <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
+                    <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" class="mt-3 mb-3">
+                        <strong>Aktuelle Lehrkraftfrist</strong>
+                        <p v-if="json_preview.deadline_context.current_at">{{ assessmentTimeText(json_preview.deadline_context.current_at) }} (Europe/Vienna).</p>
+                        <p v-else>{{ json_preview.deadline_context.current_date ?? 'Datum fehlt' }} · {{ json_preview.deadline_context.current_time ?? 'Uhrzeit fehlt' }}.</p>
+                        <p>{{ json_preview.deadline_context.message }}</p>
+                    </v-alert>
                     <div v-if="json_preview.final_download" class="mt-3">
                         <p><strong>Lokaler Abschlussdownload:</strong> {{ assessmentTimeText(json_preview.final_download.download_completed_at) }} · Frist: {{ assessmentTimeText(json_preview.final_download.deadline_at) }}</p>
                         <p>{{ json_preview.final_download.scope }}</p>
@@ -37,7 +47,7 @@
                     </div>
                     <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
                     <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
-                    <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Ungeklärte Zuordnungen sperren das gesamte Paket.</v-alert>
+                    <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Das Paket kann noch nicht übernommen werden. Hinweise zu Frist und Zuordnungen prüfen.</v-alert>
                     <div v-for="dispatch in json_preview.dispatches || []" :key="dispatch.source" class="border rounded pa-3 mt-3">
                         <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
                         <p>{{ dispatch.source }}</p>
@@ -48,6 +58,7 @@
                         <p><strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }} · {{ row.identity.group_name }}</strong></p>
                         <p v-if="row.target">Zugeordnet: {{ row.target.first_name }} {{ row.target.last_name }} / {{ row.target.class_name }} · {{ row.target.group_name }}</p>
                         <p>{{ row.status }} · {{ changeLabel(row.change) }}</p>
+                        <p v-if="row.deadline_requires_review">Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.</p>
                         <p>Abgabe: {{ stateLabel(row.submission_state) }} · {{ row.submission_note }}</p>
                         <p>Bewertung: {{ stateLabel(row.evaluation_state) }} · {{ row.evaluation_note }}</p>
                         <p>Abgabe eingesammelt · bisher: {{ assessmentTimeText(row.previous_event_times?.email_collected_at) }} · neu: {{ assessmentTimeText(row.event_times?.email_collected_at) }}</p>
@@ -155,9 +166,10 @@ export default {
                 if (!folder || selected.some(file => relativePath(file).split('/')[0] !== folder)) {
                     throw new Error('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.')
                 }
+                this.import_selection = folder
                 const packages = selected.filter(file => /^[^/]+\/(?:Beurteilungen\/)?Schooltool-Bewertungen\.json$/.test(relativePath(file)))
                 if (packages.length !== 1) {
-                    throw new Error('Der Ordner muss genau eine Schooltool-Bewertungen.json enthalten. Markdown-Dateien werden nicht als Bewertungsquelle importiert.')
+                    throw new Error('Der ausgewählte Ordner muss genau eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten. Den einzelnen Leistungsfeststellungs- oder Übungsordner auswählen; Markdown-Dateien werden nicht als Bewertungsquelle importiert.')
                 }
                 const [packageFile] = packages
                 if (packageFile.size > 262144) {
