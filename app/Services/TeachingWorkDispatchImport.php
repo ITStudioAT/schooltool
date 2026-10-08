@@ -144,6 +144,10 @@ class TeachingWorkDispatchImport
             $subject = $this->value($recipient, 'Betreff');
             if (preg_match('/\AErgebnisse zur Leistungsfeststellung:\s*(.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'results';
+            } elseif ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook'
+                && preg_match('/\ABeurteilung zur Leistungsfeststellung (?:„([^„“\r\n]+)“|"([^"\r\n]+)"|([^„“"\r\n]+)) auf Schooltool\z/u', $subject, $resultSubject)) {
+                $matches = [null, ($resultSubject[1] ?? '') ?: (($resultSubject[2] ?? '') ?: ($resultSubject[3] ?? ''))];
+                $rowPurpose = 'results';
             } elseif ($teacherTest && preg_match('/\A(?:Test|Formatierungstest) der Ergebnisbenachrichtigung:\s*(.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'results';
             } elseif (preg_match('/\A(?:Aufgaben zur Leistungsfeststellung:\s*(.+)|Leistungsfeststellung\s+(.+?)\s+–\s+.+)\z/u', $subject, $matches)) {

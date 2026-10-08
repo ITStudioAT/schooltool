@@ -105,6 +105,25 @@ class TeachingWorkDispatchFixture
         return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
     }
 
+    public static function officeSchooltoolResultsText(int $studentCount = 11, string $subject = 'Beurteilung zur Leistungsfeststellung „E-Mails“ auf Schooltool'): string
+    {
+        $text = self::officeResultsWithTeacherText($studentCount);
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        array_pop($metadata['Empfaenger']);
+        $metadata['Bestaetigte_Lehrernachrichten'] = 0;
+        $metadata['FreigegebenerBetreff'] = $subject;
+        foreach ($metadata['Empfaenger'] as $index => &$row) {
+            $row['Rolle'] = 'Schülerempfänger';
+            $row['Betreff'] = $row['Office_Zustand']['Subject'] = $subject;
+            $row['Providerzeit'] = $row['Office_Zustand']['SentOn'] = sprintf('2026-10-08T20:10:%02d.3380000+02:00', 5 + $index * 3);
+            $row['TatsaechlicheAnhaenge'] = [];
+            unset($row['Allgemeine_Anhaenge'], $row['Persoenliche_Anhaenge']);
+        }
+        unset($row);
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
     public static function nativeOfficeTasksText(int $studentCount = 11): string
     {
         $text = self::combinedTasksText();

@@ -424,6 +424,153 @@ test('JSON folder native Office task evidence requires actual attachments and ma
     Notification::assertNothingSent();
 })->with(['confirmed', 'explicit no attachments', 'planned only', 'wrong hash', 'wrong sender', 'missing store', 'unconfirmed', 'contradictory entry']);
 
+test('JSON folder Office Schooltool results preserve eleven individual notification times without a teacher mail', function () {
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $groups = $work->groups;
+    $students = [$this->student, $this->openStudent];
+    for ($index = 2; $index < 11; $index++) {
+        $student = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Student', 'last_name' => (string) $index,
+            'schoolclass' => '1A', 'email' => "student{$index}@example.test"]);
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+        $groups[] = ['student_ids' => [$student->id], 'name' => 'Gruppe 1'];
+        $students[] = $student;
+    }
+    $work->update(['groups' => $groups]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    $text = TeachingWorkDispatchFixture::officeSchooltoolResultsText();
+    $folder = '2026-10-08_Test';
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder,
+        'documents' => json_encode([['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-08_20-08-00/Versandprotokoll.txt', 'text' => $text]], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue()->and($preview['dispatches'][0]['rows'])->toHaveCount(11);
+    foreach ($preview['dispatches'][0]['rows'] as $index => $row) {
+        expect($row['student_id'])->toBe($students[$index]->id)->and($row['accepted'])->toBeTrue()
+            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02dZ', 5 + $index * 3));
+    }
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_notifications'])->toHaveCount(11)->and($status['dispatch_attempts'])->toBe([])
+        ->and(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
+    foreach ($status['dispatch_notifications'] as $index => $row) {
+        expect($row['student_id'])->toBe($students[$index]->id)->and($row['purpose'])->toBe('results')
+            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02dZ', 5 + $index * 3));
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('JSON folder accepted late submission replaces an absence zero and preserves other grades and original Office notifications', function () {
+    $this->travelTo('2026-10-08T22:00:00Z');
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $received = $package['records'][0];
+    $other = $received;
+    $other['participant_id'] = 'FICTION-002';
+    $other['identity']['first_name'] = 'Bea';
+    $other['identity']['last_name'] = 'Beta';
+    $other['total_minor'] = $other['criteria'][0]['earned_minor'] = 300;
+    $other['source_fingerprint'] = str_repeat('c', 64);
+    $package['records'][] = $other;
+    $package = TeachingWorkJsonFixture::withFinalDownload($package);
+    $work->update(['finish_until_date' => '2026-10-07', 'finish_until_time' => '12:00']);
+    $text = TeachingWorkDispatchFixture::officeSchooltoolResultsText(2);
+    $folder = '2026-10-08_Test';
+    $payload = ['folder' => $folder, 'documents' => json_encode([
+        ['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-08_20-08-00/Versandprotokoll.txt', 'text' => $text],
+    ], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $initial = $payload + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $initial)->assertOk()->json('preview');
+    $this->postJson($url, $initial + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->refresh();
+    expect($work->groups[0]['points'][0]['points'])->toBe('0.00');
+    $otherGroup = $work->groups[1];
+    $notifications = $work->status['dispatch_notifications'];
+
+    $received['total_minor'] = $received['criteria'][0]['earned_minor'] = 440;
+    $received['email_collected_at'] = '2026-10-08T19:39:28Z';
+    $received['evaluation_completed_at'] = '2026-10-08T20:00:00Z';
+    $received['submission_note'] = 'Nachreichung akzeptiert';
+    $received['comment'] = '4,4 / 5 Punkte; kein Verspätungsabzug.';
+    $received['source_fingerprint'] = str_repeat('d', 64);
+    $package['records'][0] = $received;
+    $package['final_download']['download_completed_at'] = '2026-10-08T19:40:00Z';
+    $package['final_download']['participants'][0]['submission_sha256'] = [str_repeat('d', 64)];
+    unset($package['final_download']['download_checksum']);
+    $package['final_download']['download_checksum'] = SchooltoolAssessmentJson::digest($package['final_download']);
+    $updated = $payload + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $updated)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue()->and($preview['rows'][0]['total_minor'])->toBe(440)
+        ->and($preview['rows'][0]['will_replace'])->toBeTrue()->and($preview['rows'][1]['will_replace'])->toBeFalse();
+    $this->postJson($url, $updated + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->refresh();
+    expect((float) $work->groups[0]['points'][0]['points'])->toBe(4.4)
+        ->and($work->groups[1])->toEqual($otherGroup)
+        ->and($work->status['dispatch_notifications'])->toEqual($notifications)
+        ->and(Storage::disk('local')->get($work->status['dispatch_logs'][0]['file_path']))->toBe($text);
+    $repeat = $this->postJson($url, $updated)->assertOk()->json('preview');
+    expect(collect($repeat['rows'])->every(fn (array $row): bool => ! $row['will_replace']))->toBeTrue();
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('JSON folder Office Schooltool result subjects retain provider purpose and evidence boundaries', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $text = TeachingWorkDispatchFixture::officeSchooltoolResultsText(1);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $heading = substr($text, 0, strpos($text, '{'));
+    unset($metadata['Bestaetigte_Schuelernachrichten'], $metadata['Bestaetigte_Lehrernachrichten']);
+    $row = &$metadata['Empfaenger'][0];
+    switch ($case) {
+        case 'unquoted': $row['Betreff'] = $row['Office_Zustand']['Subject'] = 'Beurteilung zur Leistungsfeststellung E-Mails auf Schooltool';
+            break;
+        case 'straight quotes': $row['Betreff'] = $row['Office_Zustand']['Subject'] = 'Beurteilung zur Leistungsfeststellung "E-Mails" auf Schooltool';
+            break;
+        case 'malformed quotes': $row['Betreff'] = 'Beurteilung zur Leistungsfeststellung „E-Mails" auf Schooltool';
+            break;
+        case 'unknown subject': $row['Betreff'] = 'Die Beurteilung ist auf Schooltool verfügbar';
+            break;
+        case 'wrong purpose': $heading = str_replace('Ergebnisbenachrichtigung', 'Aufgabenversand', $heading);
+            $metadata['Versandzweck'] = 'Aufgabenversand';
+            break;
+        case 'wrong provider': $heading = str_replace('Office/Outlook', 'Postmark', $heading);
+            $metadata['Modus'] = 'Live-Versand (Postmark)';
+            break;
+        case 'wrong recipient': $row['To'] = $row['Office_Zustand']['To'] = 'other@example.test';
+            break;
+        case 'different time': $row['Office_Zustand']['SentOn'] = '2026-10-08T20:11:00+02:00';
+            break;
+        case 'missing state': unset($row['Office_Zustand']);
+            break;
+    }
+    unset($row);
+    $text = $heading.json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $folder = '2026-10-08_Test';
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder,
+        'documents' => json_encode([['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-08_20-08-00/Versandprotokoll.txt', 'text' => $text]], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    if (in_array($case, ['malformed quotes', 'unknown subject', 'wrong purpose', 'wrong provider'], true)) {
+        $this->postJson($url, $payload)->assertUnprocessable();
+        expect($work->fresh()->status['dispatch_notifications'] ?? [])->toBe([]);
+
+        return;
+    }
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBe($case !== 'wrong recipient')
+        ->and($preview['dispatches'][0]['rows'][0]['accepted'])->toBe(in_array($case, ['unquoted', 'straight quotes'], true));
+    if ($case === 'wrong recipient') {
+        $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    }
+    expect($work->fresh()->status['dispatch_notifications'] ?? [])->toBe([]);
+})->with(['unquoted', 'straight quotes', 'malformed quotes', 'unknown subject', 'wrong purpose', 'wrong provider', 'wrong recipient', 'different time', 'missing state']);
+
 test('JSON folder Office results archive a separate teacher without marking a student notification', function () {
     Mail::fake();
     Notification::fake();
