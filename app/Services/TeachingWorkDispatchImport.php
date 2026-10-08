@@ -69,6 +69,13 @@ class TeachingWorkDispatchImport
                     || $this->value($metadata, 'Modus') !== "Live-Versand ({$combinedSections[2]})")) {
                 $this->reject('Protokollüberschrift, Versandzweck und Modus widersprechen einander.');
             }
+            $officeProtocol = $combined && $combinedSections[2] === 'Office/Outlook';
+            if ($officeProtocol && isset($metadata['Leistungsfeststellungsordner'])) {
+                if (isset($metadata['Leistungsfeststellung']) && $metadata['Leistungsfeststellung'] !== $metadata['Leistungsfeststellungsordner']) {
+                    $this->reject('Widersprüchliche Leistungsfeststellungsordner im Office-Protokoll.');
+                }
+                $metadata['Leistungsfeststellung'] ??= $metadata['Leistungsfeststellungsordner'];
+            }
             foreach ($recipients as $index => &$recipient) {
                 $officeResults = $combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook';
                 $position = is_array($recipient) ? ($recipient['Datensatzposition'] ?? ($officeResults ? ($recipient['Datensatz'] ?? null) : null)) : null;
@@ -90,10 +97,10 @@ class TeachingWorkDispatchImport
                 }
             }
             unset($recipient, $metadata['Empfaenger']);
-            if ($officeResults) {
-                foreach (['Bestaetigte_Schuelernachrichten' => 'Schülerempfänger', 'Bestaetigte_Lehrernachrichten' => 'Lehrperson'] as $field => $role) {
-                    if (isset($metadata[$field]) && $metadata[$field] !== count(array_filter($recipients, fn (array $row): bool => $row['Rolle'] === $role && $this->confirmedOfficeSend($row, $metadata)))) {
-                        $this->reject('Office-Ergebnisprotokoll: bestätigte Empfängeranzahl widerspricht den Versandbelegen.');
+            if ($officeProtocol) {
+                foreach (['Bestaetigte_Schuelernachrichten' => 'Schülerempfänger', 'Bestaetigte_Lehrernachrichten' => 'Lehrperson', 'BestaetigteNachrichten' => null] as $field => $role) {
+                    if (isset($metadata[$field]) && $metadata[$field] !== count(array_filter($recipients, fn (array $row): bool => ($role === null || $row['Rolle'] === $role) && $this->confirmedOfficeSend($row, $metadata)))) {
+                        $this->reject('Office-Versandprotokoll: bestätigte Empfängeranzahl widerspricht den Versandbelegen.');
                     }
                 }
             }
@@ -102,6 +109,9 @@ class TeachingWorkDispatchImport
             $createdValue = $this->value($metadata, $officeTeacherTest ? 'Gesendetzeit' : 'Erstellt');
             if ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook' && $createdValue === '') {
                 $createdValue = $this->value($metadata, 'Abgeschlossen') ?: $this->value($metadata, 'Aktualisiert_am');
+            }
+            if ($combined && $combinedSections[2] === 'Office/Outlook' && $createdValue === '') {
+                $createdValue = $this->value($metadata, 'VorbereitungAm') ?: $this->value($metadata, 'AbgeschlossenAm');
             }
             $created = $this->providerTime($createdValue);
             if (! isset($metadata['Zeitzone']) && $created !== null
@@ -423,7 +433,11 @@ class TeachingWorkDispatchImport
             return false;
         }
         $results = $this->value($metadata, 'Versandzweck') === 'Ergebnisbenachrichtigung';
-        $attachments = $recipient['TatsaechlicheAnhaenge'] ?? ($results ? ($recipient['Anhaenge'] ?? null) : null);
+        $officeAttachments = $recipient['Tatsaechliche_Anhaenge'] ?? null;
+        $attachments = $recipient['TatsaechlicheAnhaenge'] ?? $officeAttachments ?? ($results ? ($recipient['Anhaenge'] ?? null) : null);
+        if (isset($recipient['TatsaechlicheAnhaenge'], $recipient['Tatsaechliche_Anhaenge'])) {
+            return false;
+        }
         if ($attachments === null && $results && isset($recipient['Allgemeine_Anhaenge'], $recipient['Persoenliche_Anhaenge'])) {
             $general = $recipient['Allgemeine_Anhaenge'];
             $personal = $recipient['Persoenliche_Anhaenge'];
@@ -433,15 +447,16 @@ class TeachingWorkDispatchImport
             $attachments = array_merge($general, $personal);
         }
         $sentAttachments = $state['Attachments'] ?? null;
-        if (! is_array($attachments) || ! array_is_list($attachments) || (! $results && $attachments === [])
+        if (! is_array($attachments) || ! array_is_list($attachments)
             || ! is_array($sentAttachments) || ! array_is_list($sentAttachments)
             || ($state['AttachmentsVerified'] ?? null) !== count($attachments) || count($sentAttachments) !== count($attachments)) {
             return false;
         }
         foreach ($attachments as $index => $attachment) {
             $sentAttachment = $sentAttachments[$index];
+            $nameKey = $officeAttachments !== null ? 'Name' : 'Dateiname';
             if (! is_array($attachment) || ! is_array($sentAttachment)
-                || $this->value($attachment, 'Dateiname') === '' || $this->value($attachment, 'Dateiname') !== $this->value($sentAttachment, 'Name')
+                || $this->value($attachment, $nameKey) === '' || $this->value($attachment, $nameKey) !== $this->value($sentAttachment, 'Name')
                 || ! preg_match('/\A[0-9a-f]{64}\z/i', $this->value($attachment, 'SHA256'))
                 || mb_strtolower($this->value($attachment, 'SHA256')) !== mb_strtolower($this->value($sentAttachment, 'SHA256'))) {
                 return false;
@@ -450,15 +465,20 @@ class TeachingWorkDispatchImport
         $account = mb_strtolower($this->value($metadata, 'Account'));
         $messageId = $this->value($recipient, 'InternetMessageID');
         $sentAt = $this->providerTime($this->value($recipient, 'Providerzeit'));
+        $nativeEvidence = isset($metadata['Leistungsfeststellungsordner']) && $officeAttachments !== null;
+        $recipientAccount = $this->value($recipient, 'Account') ?: ($nativeEvidence ? $this->value($recipient, 'From') : '');
+        $sentEntry = $this->value($recipient, 'SentEntryID') ?: ($nativeEvidence ? $this->value($state, 'SentEntryID') : '');
+        $sentStore = $this->value($recipient, 'StoreID') ?: ($nativeEvidence ? $this->value($state, 'SentStoreID') : '');
 
         return filter_var($account, FILTER_VALIDATE_EMAIL) !== false
-            && $account === mb_strtolower($this->value($recipient, 'Account')) && $account === mb_strtolower($this->value($state, 'Account'))
+            && $account === mb_strtolower($recipientAccount) && $account === mb_strtolower($this->value($state, 'Account'))
+            && (! isset($recipient['From']) || $account === mb_strtolower($this->value($recipient, 'From')))
             && mb_strtolower($this->value($state, 'To')) === mb_strtolower($this->value($recipient, 'To'))
             && $this->value($state, 'Subject') === $this->value($recipient, 'Betreff')
             && (bool) preg_match('/\A<[^\s<>@]+@[^\s<>@]+>\z/', $messageId)
             && $messageId === $this->value($recipient, 'Providerkennung') && $messageId === $this->value($state, 'InternetMessageID')
-            && $this->value($recipient, 'SentEntryID') !== '' && $this->value($recipient, 'SentEntryID') === $this->value($state, 'SentEntryID')
-            && $this->value($recipient, 'StoreID') !== '' && $this->value($recipient, 'StoreID') === $this->value($state, 'SentStoreID')
+            && $sentEntry !== '' && $sentEntry === $this->value($state, 'SentEntryID')
+            && $sentStore !== '' && $sentStore === $this->value($state, 'SentStoreID')
             && $sentAt !== null && $sentAt === $this->providerTime($this->value($state, 'SentOn'));
     }
 

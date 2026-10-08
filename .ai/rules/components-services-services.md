@@ -22,3 +22,6 @@ The normal UI uses one Importieren action and a complete standard work folder. T
 
 ## Use the explicitly selected work for complete folder imports
 Importieren in a saved work's detail targets that authorized work ID. Differences between its title and source titles, or another work with the same title/date, must not block or redirect the complete-folder import. Keep titles consistent within each source report and preserve course/person/class/email/work membership, points scale, source validity and provider evidence checks. Legacy preview/hash dispatch APIs retain their title matching.
+
+## Shared school-skill dispatch contract
+New school-skill journals follow C:/Dropbox/AI/.agents/skills/schule/send-exercise-via-email/references/schooltool-dispatch-v1.md and its read-only canonical Office checker. Preserve historical source bytes and accept only documented aliases with matching actual Office evidence; planned attachments and Mailpit never prove live sends. Keep tasks/results purposes, separate teacher rows, and preview/apply distinct; explicit verified empty attachment lists are valid.

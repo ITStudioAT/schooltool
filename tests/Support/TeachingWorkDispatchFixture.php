@@ -105,6 +105,39 @@ class TeachingWorkDispatchFixture
         return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
     }
 
+    public static function nativeOfficeTasksText(int $studentCount = 11): string
+    {
+        $text = self::combinedTasksText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Leistungsfeststellungsordner'] = $metadata['Leistungsfeststellung'];
+        $metadata['VorbereitungAm'] = $metadata['Erstellt'];
+        unset($metadata['Leistungsfeststellung'], $metadata['Erstellt']);
+        $row = $metadata['Empfaenger'][0];
+        $row['From'] = $row['Account'];
+        $row['Betreff'] = 'Leistungsfeststellung E-Mails – INF 1 – Abgabe heute, 16:00 Uhr';
+        $row['Office_Zustand']['Subject'] = $row['Betreff'];
+        $row['Office_Zustand']['Attachments'][] = ['Name' => 'Personal_MC.pdf', 'SHA256' => str_repeat('b', 64)];
+        $row['Office_Zustand']['AttachmentsVerified'] = 2;
+        $row['Tatsaechliche_Anhaenge'] = $row['Office_Zustand']['Attachments'];
+        $row['Geplante_Anhaenge'] = $row['Tatsaechliche_Anhaenge'];
+        unset($row['Account'], $row['SentEntryID'], $row['StoreID'], $row['TatsaechlicheAnhaenge']);
+        $metadata['Empfaenger'] = [];
+        for ($index = 0; $index < $studentCount; $index++) {
+            $recipient = $row;
+            $recipient['Datensatzposition'] = $index + 1;
+            if ($index > 0) {
+                $recipient['Vorname'] = 'Student';
+                $recipient['Nachname'] = (string) $index;
+                $recipient['To'] = $recipient['Office_Zustand']['To'] = "student{$index}@example.test";
+            }
+            $recipient['InternetMessageID'] = $recipient['Providerkennung'] = $recipient['Office_Zustand']['InternetMessageID'] = "<task{$index}@example.test>";
+            $recipient['Office_Zustand']['SentEntryID'] = "SENT{$index}";
+            $metadata['Empfaenger'][] = $recipient;
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
     public static function tasksText(bool $legacy = false): string
     {
         $rows = array_map(fn (array $row): array => array_replace($row, [

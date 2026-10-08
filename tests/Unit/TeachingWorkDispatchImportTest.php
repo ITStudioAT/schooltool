@@ -176,6 +176,32 @@ test('dispatch parser rejects malformed incomplete or inconsistent source docume
     expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
 })->with(['missing header', 'invalid json', 'invalid encoding', 'oversized source', 'invalid work date', 'unknown timezone', 'different assignments', 'no recognized recipients']);
 
+test('native Office task metadata retains eleven recipients and derives Vienna timezone from preparation', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::nativeOfficeTasksText());
+    expect($report['recipients'])->toHaveCount(11)
+        ->and($report['metadata']['Leistungsfeststellung'])->toBe($report['metadata']['Leistungsfeststellungsordner'])
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['title'])->toBe('e-mails')->and($report['purpose'])->toBe('tasks')->and($report['live'])->toBeTrue();
+});
+
+test('native Office task aliases reject missing or contradictory source and timezone', function (string $case) {
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText();
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    if ($case === 'conflicting source') {
+        $metadata['Leistungsfeststellung'] = 'C:/other/2026-10-03_Other';
+    } elseif ($case === 'missing source') {
+        unset($metadata['Leistungsfeststellungsordner']);
+    } elseif ($case === 'explicit wrong timezone') {
+        $metadata['Zeitzone'] = 'UTC';
+    } elseif ($case === 'wrong offset') {
+        $metadata['VorbereitungAm'] = '2026-10-04T16:56:41+00:00';
+    } else {
+        $metadata['BestaetigteNachrichten'] = 12;
+    }
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['conflicting source', 'missing source', 'explicit wrong timezone', 'wrong offset', 'wrong confirmation count']);
+
 test('Office results accept fourteen numbered students and a separate confirmed teacher message', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::officeResultsWithTeacherText());
 

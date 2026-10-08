@@ -174,6 +174,11 @@ function openWorkspace(url) {
     opener.unref();
 }
 
+export function shouldOpenLocalDev(argumentsList) {
+    return !argumentsList.includes('--no-open')
+        && (!argumentsList.includes('--session') || argumentsList.includes('--open'));
+}
+
 export async function startLocalDev(project, { webOnly = false, open = true, checkSeconds = 0, portOffset = 0 } = {}) {
     if (process.platform !== 'win32') {
         throw new Error('This workstation launcher supports Windows only.');
@@ -385,6 +390,7 @@ export async function watchLocalDev(project, options) {
     let stopping = false;
     let child = null;
     let identity = '';
+    let firstSession = true;
     let ready = false;
     let reused = false;
     let nextProbe = 0;
@@ -417,9 +423,12 @@ export async function watchLocalDev(project, options) {
                 if (options.webOnly) {
                     argumentsList.push('--web-only');
                 }
-                if (!options.open) {
+                if (options.open && firstSession) {
+                    argumentsList.push('--open');
+                } else {
                     argumentsList.push('--no-open');
                 }
+                firstSession = false;
                 if (options.portOffset) {
                     argumentsList.push(`--check-port-offset=${options.portOffset}`);
                 }
@@ -470,7 +479,7 @@ if (process.argv[1] && canonical(process.argv[1]) === canonical(fileURLToPath(im
     if (!Number.isInteger(portOffset) || portOffset < 0 || portOffset > 20000 || portOffset && !process.argv.includes('--web-only')) {
         throw new Error('Port offsets are limited to isolated web-only checks.');
     }
-    const options = { webOnly: process.argv.includes('--web-only'), open: !process.argv.includes('--no-open'), checkSeconds, portOffset };
+    const options = { webOnly: process.argv.includes('--web-only'), open: shouldOpenLocalDev(process.argv), checkSeconds, portOffset };
     const start = process.argv.includes('--session') ? startLocalDev : watchLocalDev;
     start(project, options)
         .catch(error => { console.error(error.message); process.exitCode = 1; });

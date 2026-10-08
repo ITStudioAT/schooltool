@@ -286,6 +286,53 @@ test('JSON folder previews and imports original dispatch evidence atomically and
     Notification::assertNothingSent();
 });
 
+test('JSON folder native Office task evidence requires actual attachments and matching send state', function (string $case) {
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $package = jsonAssessmentForWork($this, $work);
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText(1);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $row = &$metadata['Empfaenger'][0];
+    switch ($case) {
+        case 'explicit no attachments':
+            $row['Tatsaechliche_Anhaenge'] = $row['Office_Zustand']['Attachments'] = [];
+            $row['Office_Zustand']['AttachmentsVerified'] = 0;
+            break;
+        case 'planned only': unset($row['Tatsaechliche_Anhaenge']);
+            break;
+        case 'wrong hash': $row['Tatsaechliche_Anhaenge'][0]['SHA256'] = str_repeat('c', 64);
+            break;
+        case 'wrong sender': $row['From'] = 'other@example.test';
+            break;
+        case 'missing store': unset($row['Office_Zustand']['SentStoreID']);
+            break;
+        case 'unconfirmed': $row['Office_Zustand']['SentConfirmed'] = false;
+            break;
+        case 'contradictory entry': $row['SentEntryID'] = 'OTHER';
+            break;
+    }
+    unset($row);
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $folder = '2026-10-04_Test';
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder,
+        'documents' => json_encode([['path' => $folder.'/Versand/Aufgaben/Versand_2026-10-04_14-24-08/Versandprotokoll.txt', 'text' => $text]], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue()
+        ->and($preview['dispatches'][0]['purpose'])->toBe('tasks')
+        ->and($preview['dispatches'][0]['rows'][0]['accepted'])->toBe(in_array($case, ['confirmed', 'explicit no attachments'], true));
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_notifications'])->toHaveCount(in_array($case, ['confirmed', 'explicit no attachments'], true) ? 1 : 0)
+        ->and(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
+    if ($case === 'confirmed') {
+        expect($status['dispatch_notifications'][0]['purpose'])->toBe('tasks');
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['confirmed', 'explicit no attachments', 'planned only', 'wrong hash', 'wrong sender', 'missing store', 'unconfirmed', 'contradictory entry']);
+
 test('JSON folder Office results archive a separate teacher without marking a student notification', function () {
     Mail::fake();
     Notification::fake();
