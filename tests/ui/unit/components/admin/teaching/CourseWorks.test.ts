@@ -12,6 +12,148 @@ import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/Wor
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
 
+describe('JSON assessment preview and separate apply', () => {
+    const work = { id: 65, teaching_course_id: 2, title: 'Gespeicherte Arbeit' }
+    const preview = {
+        target_work: { id: 65, title: 'Gespeicherte Arbeit', course_title: 'Kurs' },
+        exercise: { title: 'Quellarbeit', subject: 'Fach', group: 'Gruppe 1', date: '06.10.2026', checkpoint: 'Prüfstand' },
+        maximum_minor: 500, hash: 'a'.repeat(64), can_import: true, overview_pdf: null,
+        rows: [{ participant_id: 'A', identity: { first_name: 'Ada', last_name: 'Van Alpha', class_name: '3B', group_name: 'Gruppe 1' },
+            target: { first_name: 'Ada', last_name: 'Van Alpha', class_name: '3B', group_name: 'Gruppe 1' },
+            status: 'Bewertung erhalten', change: 'new', submission_state: 'received', submission_note: 'Eingang belegt',
+            evaluation_state: 'partial', evaluation_note: 'Teilprüfung', total_minor: null, comment: 'Vorläufig',
+            previous: { points: 4.75, comments: 'Abgeschlossen' }, criteria: [], adjustments: [], pdf: null, will_replace: false }],
+    }
+
+    it('renders separate statuses and previews before submitting the explicit apply hash', async () => {
+        const post = vi.fn().mockResolvedValueOnce({ data: { preview } }).mockResolvedValueOnce({ data: { data: work } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput, VBtn } })],
+            components: { 'v-file-input': VFileInput, 'v-btn': VBtn }, stubs: { 'v-file-input': false, VFileInput: false, 'v-btn': false, VBtn: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            vm.changeMode('json')
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/65/import-json')
+            expect(post.mock.calls[0][1].has('apply')).toBe(false)
+            expect(wrapper.text()).toContain('Abgabe: Eingegangen').toContain('Bewertung: Teilweise bewertet').toContain('Bestehende Bewertung bleibt erhalten.')
+            expect(wrapper.emitted('imported')).toBeUndefined()
+            const button = wrapper.findAll('button').find(button => button.text().includes('Angezeigte Änderungen übernehmen'))!
+            await button.trigger('click')
+            await flushPromises()
+            expect(post.mock.calls[1][1].get('apply')).toBe('1')
+            expect(post.mock.calls[1][1].get('hash')).toBe(preview.hash)
+            expect(wrapper.emitted('imported')?.[0]).toEqual([work])
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('shows the evidenced deadline and local absence reason while retaining an open server search', async () => {
+        const localPreview = {
+            ...preview,
+            exercise: { ...preview.exercise, deadline: '05.10.2026, 17:00:00 Europe/Vienna' },
+            final_download: { deadline_at: '2026-10-05T15:00:00Z', download_completed_at: '2026-10-07T20:49:54Z', scope: 'Lokaler Outlook-Bestand; Serversuche nicht vollständig belegt.' },
+            submission_check: { state: 'open', checked_at: '2026-10-07T20:49:54Z' },
+            rows: [{ ...preview.rows[0], submission_state: 'not_received', evaluation_state: 'complete', total_minor: 0,
+                submission_note: 'Innerhalb der Frist nicht abgegeben', will_replace: true }],
+        }
+        const post = vi.fn().mockResolvedValue({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
+            components: { 'v-file-input': VFileInput }, stubs: { 'v-file-input': false, VFileInput: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+
+            expect(wrapper.text()).toContain('Paketfrist: 05.10.2026, 17:00:00 Europe/Vienna')
+                .toContain('Lokaler Abschlussdownload:').toContain('Serversuche nicht vollständig belegt.')
+                .toContain('Innerhalb der Frist nicht abgegeben').toContain('Abgabeprüfung: noch offen')
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('apply')).toBe(false)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('shows the current teacher deadline and blocks applying historical deadline judgments', async () => {
+        const localPreview = { ...preview, can_import: false,
+            exercise: { ...preview.exercise, deadline: '08.10.2026, 16:00 Europe/Vienna' },
+            deadline_context: { state: 'changed', current_at: '2026-10-08T12:50:00Z', requires_review: true,
+                message: 'Die aktuelle Lehrkraftfrist bleibt erhalten. Fristabhängige Bewertungen erneut prüfen und exportieren.' },
+            rows: [{ ...preview.rows[0], deadline_requires_review: true, will_replace: false }] }
+        const post = vi.fn().mockResolvedValue({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
+            components: { 'v-file-input': VFileInput }, stubs: { 'v-file-input': false, VFileInput: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Aktuelle Lehrkraftfrist').toContain('14:50')
+                .toContain('Paketfrist: 08.10.2026, 16:00 Europe/Vienna').toContain('erneut prüfen und exportieren')
+                .toContain('Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.')
+            await vm.applyJson()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('apply')).toBe(false)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('reloads the selected package after an old missing-deadline error without applying grades', async () => {
+        const localPreview = { ...preview, can_import: false,
+            deadline_context: { current_at: '2026-10-08T12:50:00Z', requires_review: true,
+                message: 'Historische Paketfrist: 16:00. Aktuelle Lehrkraftfrist bleibt erhalten.' } }
+        const post = vi.fn().mockRejectedValueOnce({ response: { status: 422, data: {
+            errors: { package: ['Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.'] } } } })
+            .mockResolvedValueOnce({ data: { preview: localPreview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mount(WorkEvaluationImport, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput, VBtn } })],
+            components: { 'v-file-input': VFileInput, 'v-btn': VBtn }, stubs: { 'v-file-input': false, VFileInput: false, 'v-btn': false, VBtn: false },
+        } })
+        try {
+            const vm = wrapper.vm as any
+            vm.openImport(work)
+            await vm.selectJson({ target: { files: [new File(['{}'], 'Schooltool-Bewertungen.json')] } })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.')
+            const retry = wrapper.findAll('button').find(button => button.text().includes('Vorschau erneut laden'))!
+            await retry.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(2)
+            expect(post.mock.calls[1][1].has('apply')).toBe(false)
+            expect(post.mock.calls[1][1].get('package').name).toBe('Schooltool-Bewertungen.json')
+            expect(wrapper.text()).not.toContain('Abgabeprüfung benötigt eine belegte Ziel-Frist mit Uhrzeit.')
+            expect(wrapper.text()).toContain('14:50').toContain('Historische Paketfrist: 16:00')
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('clears a stale preview on conflict and never falls back to Markdown', async () => {
+        const post = vi.fn().mockRejectedValue({ response: { status: 409, data: { message: 'Bitte Vorschau erneut laden.' } } })
+        vi.stubGlobal('axios', { post })
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 },
+            json_preview: preview, json_uploads: { package: new File(['{}'], 'Schooltool-Bewertungen.json'), pdfs: [] }, $emit: vi.fn() }
+        try {
+            await ctx.applyJson()
+            expect(ctx.json_preview).toBeNull()
+            expect(ctx.import_error).toContain('Vorschau erneut laden')
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][0]).toContain('/import-json')
+            expect(ctx.$emit).not.toHaveBeenCalled()
+        } finally { vi.unstubAllGlobals() }
+    })
+})
+
 describe('Last work import time', () => {
     it('formats import timestamps in Vienna including summer and winter time', () => {
         expect(formatViennaDateTime('2026-10-06T06:30:00Z')).toBe('06.10.2026 um 08:30 Uhr')
@@ -102,6 +244,36 @@ describe('CourseWorks automatic folder import', () => {
     const work = { id: 65, teaching_course_id: '2', title: 'E-Mails' }
     const summary = { messages: ['Auswertungen übernommen.', 'Aufgabenversand: lokaler Test.', 'Ergebnisbenachrichtigung: Live-Versand.'], missing: [] }
 
+    it.each(['missing package', 'duplicate package', 'invalid JSON', 'missing PDF', 'duplicate PDF', 'multiple roots', 'oversized package'])('rejects %s without a request or Markdown fallback', async scenario => {
+        const post = vi.fn()
+        vi.stubGlobal('axios', { post })
+        const packageText = JSON.stringify({ overview_pdf: { filename: 'Report.pdf' }, records: [] })
+        const packageFile = fileAt('Test/Schooltool-Bewertungen.json', scenario === 'invalid JSON' ? '{' : packageText)
+        const selected = [packageFile, fileAt('Test/Report.pdf')]
+        if (scenario === 'missing package') selected.splice(0, 1, fileAt('Test/Beurteilungen/Gesamtübersicht.md'))
+        if (scenario === 'duplicate package') selected.push(fileAt('Test/Beurteilungen/Schooltool-Bewertungen.json', packageText))
+        if (scenario === 'missing PDF') selected.pop()
+        if (scenario === 'duplicate PDF') selected.push(fileAt('Test/Report.pdf'))
+        if (scenario === 'multiple roots') selected.push(fileAt('Other/Unrelated.txt'))
+        if (scenario === 'oversized package') Object.defineProperty(packageFile, 'size', { value: 262145 })
+        const ctx: any = { ...(WorkEvaluationImport as any).methods, import_work: work, import_open: true, selected_course: { id: 2 },
+            json_preview: { hash: 'old' }, json_uploads: { package: packageFile }, $emit: vi.fn() }
+        const event = { target: { files: selected, value: 'folder' } }
+        try {
+            await ctx.selectJsonFolder(event)
+            expect(post).not.toHaveBeenCalled()
+            expect(ctx.json_preview).toBeNull()
+            expect(ctx.json_uploads).toBeNull()
+            expect(ctx.import_error).not.toBe('')
+            if (scenario === 'missing package' || scenario === 'duplicate package') {
+                expect(ctx.import_selection).toBe('Test')
+                expect(ctx.import_error).toContain('direkt oder unter Beurteilungen')
+            }
+            expect(event.target.value).toBe('')
+            expect(ctx.$emit).not.toHaveBeenCalled()
+        } finally { vi.unstubAllGlobals() }
+    })
+
     it('includes compact surname-first personal reports and matching PDFs in the folder request', async () => {
         const post = vi.fn().mockResolvedValue({ data: { data: work, summary } })
         vi.stubGlobal('axios', { post })
@@ -129,8 +301,9 @@ describe('CourseWorks automatic folder import', () => {
         } finally { vi.unstubAllGlobals() }
     })
 
-    it('automatically imports all supported parts through one folder field and rescans subsequent selections', async () => {
-        const post = vi.fn().mockResolvedValue({ data: { data: work, summary } })
+    it('previews the JSON package through the existing folder field and rescans subsequent selections', async () => {
+        const preview = { target_work: { course_title: 'Kurs', title: work.title }, exercise: { title: 'Quelle' }, maximum_minor: 500, rows: [], can_import: true, hash: 'a'.repeat(64) }
+        const post = vi.fn().mockResolvedValue({ data: { preview } })
         vi.stubGlobal('axios', { post })
         const wrapper = mount(WorkEvaluationImport, { global: {
             plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VFileInput } })],
@@ -140,15 +313,19 @@ describe('CourseWorks automatic folder import', () => {
             const vm = wrapper.vm as any
             vm.openImport(work)
             await wrapper.vm.$nextTick()
-            const protocolText = '\uFEFFVERSANDPROTOKOLL\r\noriginal'
+            const packageText = JSON.stringify({ overview_pdf: { filename: 'Gesamtübersicht.pdf' }, records: [{ pdf: { filename: 'Alpha_Ada.pdf' } }] })
             const selected = [
+                fileAt('Test/Beurteilungen/Schooltool-Bewertungen.json', packageText, 'application/json'),
+                fileAt('Test/Beurteilungen/Alpha_Ada.pdf', '%PDF-1.4', 'application/pdf'),
                 fileAt('Test/Beurteilungen/Beurteilung_Alpha_Ada.md'),
                 fileAt('Test/Beurteilungen/Gesamtübersicht.md'),
                 fileAt('Test/Beurteilungen/Gesamtübersicht.pdf', '%PDF-1.4', 'application/pdf'),
-                fileAt('Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt', protocolText),
+                fileAt('Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt'),
                 fileAt('Test/Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt'),
                 fileAt('Test/Abgaben/Gesamtübersicht.md', 'not imported'),
                 fileAt('Test/Material.pdf', 'not imported', 'application/pdf'),
+                fileAt('Test/Beurteilungen/Archiv_2026-10-06/Schooltool-Bewertungen.json', 'not imported'),
+                fileAt('Test/Beurteilungen/Archiv_2026-10-06/Gesamtübersicht.pdf', 'not imported', 'application/pdf'),
             ]
             const input = wrapper.get('input[type="file"]')
             expect(input.attributes()).toHaveProperty('webkitdirectory')
@@ -156,37 +333,36 @@ describe('CourseWorks automatic folder import', () => {
             await input.trigger('change')
             await flushPromises()
             expect(post).toHaveBeenCalledTimes(1)
-            expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/65/import-folder')
+            expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/65/import-json')
             const payload = post.mock.calls[0][1] as FormData
+            expect((payload.get('package') as File).name).toBe('Schooltool-Bewertungen.json')
+            expect(JSON.parse(payload.get('documents') as string).map((document: any) => document.path)).toEqual([
+                'Test/Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt',
+                'Test/Versand/Ergebnisse/Versand_2026-10-04_02-12-33/Versandprotokoll.txt',
+            ])
             expect(payload.get('folder')).toBe('Test')
-            const docs = JSON.parse(payload.get('documents') as string)
-            expect(docs).toHaveLength(4)
-            expect(docs.find((doc: any) => doc.path.includes('/Aufgaben/')).text).toBe(protocolText)
-            expect(docs.some((doc: any) => doc.path.includes('/Abgaben/'))).toBe(false)
-            expect(JSON.parse(payload.get('pdf_paths') as string)).toEqual(['Test/Beurteilungen/Gesamtübersicht.pdf'])
-            expect(payload.getAll('pdfs[]')).toHaveLength(1)
+            expect(payload.getAll('pdfs[]').map(file => (file as File).name)).toEqual(['Gesamtübersicht.pdf', 'Alpha_Ada.pdf'])
             expect(payload.has('apply')).toBe(false)
             expect(payload.has('hash')).toBe(false)
-            expect(wrapper.text()).toContain('Auswertungen übernommen.')
-            expect(wrapper.text()).toContain('Test · 5 Importdateien')
+            expect(wrapper.text()).toContain('Ziel: Kurs').toContain('Test · 5 Importdateien')
             expect(wrapper.text()).not.toContain('Beurteilung_Alpha_Ada.md')
             expect(wrapper.text()).not.toContain('Versandprotokoll.txt')
-            expect(wrapper.text()).not.toContain('Angezeigte Änderungen importieren')
-            expect(wrapper.emitted('imported')?.[0]).toEqual([work])
+            expect(wrapper.text()).toContain('Angezeigte Änderungen übernehmen')
+            expect(wrapper.emitted('imported')).toBeUndefined()
             expect((input.element as HTMLInputElement).value).toBe('')
 
-            const added = fileAt('Test/Versand/Ergebnisse/Versand_2026-10-05_03-15-00/Versandprotokoll.txt', 'new run')
-            Object.defineProperty(input.element, 'files', { value: [...selected, added], configurable: true })
+            const updated = fileAt('Test/Schooltool-Bewertungen.json', JSON.stringify({ overview_pdf: null, records: [] }), 'application/json')
+            Object.defineProperty(input.element, 'files', { value: [updated], configurable: true })
             await input.trigger('change')
             await flushPromises()
             expect(post).toHaveBeenCalledTimes(2)
-            expect(JSON.parse(post.mock.calls[1][1].get('documents'))).toHaveLength(5)
-            expect(wrapper.emitted('imported')).toHaveLength(2)
-            expect(wrapper.text()).toContain('Test · 6 Importdateien')
+            expect(post.mock.calls[1][1].getAll('pdfs[]')).toHaveLength(0)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+            expect(wrapper.text()).toContain('Test · 1 Importdateien')
             vm.import_open = false
             vm.openImport(work)
             await wrapper.vm.$nextTick()
-            expect(wrapper.text()).not.toContain('Test · 6 Importdateien')
+            expect(wrapper.text()).not.toContain('Test · 1 Importdateien')
         } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 

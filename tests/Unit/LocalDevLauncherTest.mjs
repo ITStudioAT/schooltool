@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { assertLocalEnvironment, existingWorkspaceSession, ownsDevListener, prepareWorkspaceEnvironment,
+import { assertLocalEnvironment, existingWorkspaceSession, ownsDevListener, prepareWorkspaceEnvironment, shouldOpenLocalDev,
     workspacePorts } from '../../scripts/local-dev.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -14,6 +14,14 @@ const launcher = path.join(root, 'scripts/local-dev.mjs');
 const helpers = path.join(root, 'scripts/git_helpers.ps1');
 const temporaryRoot = os.tmpdir();
 const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\nSESSION_COOKIE=owned-shared-session\nREDIS_PREFIX=owned_shared_\n';
+
+test('opens an explicit development launch but keeps automatic sessions silent', () => {
+    assert.equal(shouldOpenLocalDev([]), true);
+    assert.equal(shouldOpenLocalDev(['--no-open']), false);
+    assert.equal(shouldOpenLocalDev(['--session']), false);
+    assert.equal(shouldOpenLocalDev(['--session', '--open']), true);
+    assert.equal(shouldOpenLocalDev(['--session', '--open', '--no-open']), false);
+});
 
 function git(project, ...argumentsList) {
     const result = spawnSync('git', argumentsList, { cwd: project, encoding: 'utf8', windowsHide: true });

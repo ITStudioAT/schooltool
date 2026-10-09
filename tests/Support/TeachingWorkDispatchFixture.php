@@ -50,6 +50,113 @@ class TeachingWorkDispatchFixture
         return UploadedFile::fake()->createWithContent('Versandprotokoll.txt', self::text($recipients, $metadata));
     }
 
+    public static function officeResultsText(): string
+    {
+        $tasks = self::combinedTasksText();
+        $metadata = json_decode(substr($tasks, strpos($tasks, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Versandzweck'] = 'Ergebnisbenachrichtigung';
+        $metadata['Abgeschlossen'] = $metadata['Erstellt'];
+        unset($metadata['Erstellt']);
+        $recipient = &$metadata['Empfaenger'][0];
+        $recipient['Datensatz'] = $recipient['Datensatzposition'];
+        $recipient['Rolle'] = 'Schüler/in';
+        $recipient['Betreff'] = 'Ergebnisse zur Leistungsfeststellung: E-Mails – INF 1';
+        $recipient['Office_Zustand']['Subject'] = $recipient['Betreff'];
+        $recipient['Anhaenge'] = [];
+        $recipient['Office_Zustand']['Attachments'] = [];
+        $recipient['Office_Zustand']['AttachmentsVerified'] = 0;
+        unset($recipient['Datensatzposition'], $recipient['TatsaechlicheAnhaenge'], $recipient);
+
+        return "Ergebnisbenachrichtigung – produktiver Live-Versand (Office/Outlook)\nVersandzweck: Ergebnisbenachrichtigung\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
+    public static function officeResultsWithTeacherText(int $studentCount = 14): string
+    {
+        $text = self::officeResultsText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $template = $metadata['Empfaenger'][0];
+        $metadata['Aktualisiert_am'] = $metadata['Abgeschlossen'];
+        unset($metadata['Abgeschlossen']);
+        $metadata['Bestaetigte_Schuelernachrichten'] = $studentCount;
+        $metadata['Bestaetigte_Lehrernachrichten'] = 1;
+        $metadata['Empfaenger'] = [];
+        for ($index = 0; $index <= $studentCount; $index++) {
+            $teacher = $index === $studentCount;
+            $identity = self::recipients()[$teacher ? 2 : min($index, 1)];
+            if (! $teacher && $index > 1) {
+                $identity = array_replace($identity, ['Vorname' => 'Student', 'Nachname' => (string) $index, 'To' => "student{$index}@example.test"]);
+            }
+            $row = array_replace($template, array_intersect_key($identity, array_flip(['Vorname', 'Nachname', 'To'])));
+            unset($row['Datensatz'], $row['Anhaenge']);
+            $row['Rolle'] = $teacher ? 'Lehrperson' : 'Schüler';
+            if (! $teacher) {
+                $row['Datensatzposition'] = $index + 1;
+            }
+            $row['Allgemeine_Anhaenge'] = [];
+            $row['Persoenliche_Anhaenge'] = [];
+            $row['InternetMessageID'] = $row['Providerkennung'] = "<message{$index}@example.test>";
+            $row['SentEntryID'] = "SENT{$index}";
+            $row['Office_Zustand'] = array_replace($row['Office_Zustand'], [
+                'To' => $row['To'], 'InternetMessageID' => $row['InternetMessageID'], 'SentEntryID' => $row['SentEntryID'],
+            ]);
+            $metadata['Empfaenger'][] = $row;
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
+    public static function officeSchooltoolResultsText(int $studentCount = 11, string $subject = 'Beurteilung zur Leistungsfeststellung „E-Mails“ auf Schooltool'): string
+    {
+        $text = self::officeResultsWithTeacherText($studentCount);
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        array_pop($metadata['Empfaenger']);
+        $metadata['Bestaetigte_Lehrernachrichten'] = 0;
+        $metadata['FreigegebenerBetreff'] = $subject;
+        foreach ($metadata['Empfaenger'] as $index => &$row) {
+            $row['Rolle'] = 'Schülerempfänger';
+            $row['Betreff'] = $row['Office_Zustand']['Subject'] = $subject;
+            $row['Providerzeit'] = $row['Office_Zustand']['SentOn'] = sprintf('2026-10-08T20:10:%02d.3380000+02:00', 5 + $index * 3);
+            $row['TatsaechlicheAnhaenge'] = [];
+            unset($row['Allgemeine_Anhaenge'], $row['Persoenliche_Anhaenge']);
+        }
+        unset($row);
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
+    public static function nativeOfficeTasksText(int $studentCount = 11): string
+    {
+        $text = self::combinedTasksText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Leistungsfeststellungsordner'] = $metadata['Leistungsfeststellung'];
+        $metadata['VorbereitungAm'] = $metadata['Erstellt'];
+        unset($metadata['Leistungsfeststellung'], $metadata['Erstellt']);
+        $row = $metadata['Empfaenger'][0];
+        $row['From'] = $row['Account'];
+        $row['Betreff'] = 'Leistungsfeststellung E-Mails – INF 1 – Abgabe heute, 16:00 Uhr';
+        $row['Office_Zustand']['Subject'] = $row['Betreff'];
+        $row['Office_Zustand']['Attachments'][] = ['Name' => 'Personal_MC.pdf', 'SHA256' => str_repeat('b', 64)];
+        $row['Office_Zustand']['AttachmentsVerified'] = 2;
+        $row['Tatsaechliche_Anhaenge'] = $row['Office_Zustand']['Attachments'];
+        $row['Geplante_Anhaenge'] = $row['Tatsaechliche_Anhaenge'];
+        unset($row['Account'], $row['SentEntryID'], $row['StoreID'], $row['TatsaechlicheAnhaenge']);
+        $metadata['Empfaenger'] = [];
+        for ($index = 0; $index < $studentCount; $index++) {
+            $recipient = $row;
+            $recipient['Datensatzposition'] = $index + 1;
+            if ($index > 0) {
+                $recipient['Vorname'] = 'Student';
+                $recipient['Nachname'] = (string) $index;
+                $recipient['To'] = $recipient['Office_Zustand']['To'] = "student{$index}@example.test";
+            }
+            $recipient['InternetMessageID'] = $recipient['Providerkennung'] = $recipient['Office_Zustand']['InternetMessageID'] = "<task{$index}@example.test>";
+            $recipient['Office_Zustand']['SentEntryID'] = "SENT{$index}";
+            $metadata['Empfaenger'][] = $recipient;
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
     public static function tasksText(bool $legacy = false): string
     {
         $rows = array_map(fn (array $row): array => array_replace($row, [
@@ -102,6 +209,21 @@ class TeachingWorkDispatchFixture
 
         return "Aufgabenversand – produktiver Live-Versand ({$provider})".($stopped ? ' – GESTOPPT' : '')
             ."\nVersandzweck: Aufgabenversand\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
+    public static function mailpitTasksText(): string
+    {
+        $text = self::combinedTasksText('Postmark');
+
+        return str_replace([
+            'Aufgabenversand – produktiver Live-Versand (Postmark)',
+            'Live-Versand (Postmark)',
+            'Postmark-API-Annahme bestätigt',
+        ], [
+            'Aufgabenversand – Mailpit-Test',
+            'Mailpit-Test',
+            'lokaler Eingang in Mailpit bestätigt',
+        ], $text);
     }
 
     /** @param array<string, mixed> $metadata */

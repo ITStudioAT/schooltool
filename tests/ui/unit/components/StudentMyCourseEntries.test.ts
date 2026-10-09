@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 import MyCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 
 describe('Student personal work evaluation PDFs', () => {
+    it('shortens work assessment comments to deductions and preserves unrelated or mismatched comments', () => {
+        const methods = (MyCourse as any).methods
+        const comment = [
+            'Multiple-Choice-PDF: 1,6 / 2,0 Punkte. 8 von 10 Fragen vollständig richtig; je richtige Frage 0,2 Punkte. Nicht vollständig richtige Antworten unten erläutert.',
+            'Betreff: 0,5 / 0,5 Punkte. Der Betreff ist sinnvoll.',
+            'Anrede: 0,5 / 0,5 Punkte. Die Anrede ist höflich und passend.',
+            'Nachrichtentext: 1,0 / 1,0 Punkte. Die Abgabe ist verständlich beschrieben.',
+            'Verabschiedung: 0,5 / 0,5 Punkte. Freundliche Grußformel.',
+            'Signatur: 0,5 / 0,5 Punkte. Vollständig vorhanden.',
+        ].join('\n')
+        const entry = { work: { id: 8, evaluation_pdf: { sha256: 'a'.repeat(64) } }, grade: '4.60', comment }
+        expect(methods.entryComment(entry)).toBe('Multiple-Choice-PDF −0,40 Punkte: 8 von 10 Fragen vollständig richtig')
+        expect(methods.entryComment({ ...entry, grade: '3.00' })).toBe(comment)
+        expect(methods.entryComment({ comment, grade: '4.60' })).toBe(comment)
+        expect(methods.entryComment({ ...entry, comment: 'Individuelles Feedback bleibt erhalten.' })).toBe('Individuelles Feedback bleibt erhalten.')
+        expect(methods.entryComment({ ...entry, grade: '5', comment: 'Inhalt: 5 / 5 Punkte. Vollständig richtig.' })).toBe('')
+        expect(entry.comment).toBe(comment)
+        expect(methods.evaluationPdfUrl.call({ courseId: 3 }, entry)).toContain('/works/8/evaluations/')
+    })
     it('links the personal report in its owning course and work only when provided', () => {
         const methods = (MyCourse as any).methods
         const entry = { work: { id: 8, evaluation_pdf: { sha256: 'a'.repeat(64) } } }

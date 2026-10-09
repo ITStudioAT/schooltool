@@ -7,6 +7,44 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('embedded Mailpit task protocols retain recipients and remain local tests', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::mailpitTasksText());
+
+    expect($report['purpose'])->toBe('tasks')->and($report['title'])->toBe('e-mails')
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['recipients'][0]['To'])->toBe('ada@example.test')
+        ->and($report['recipients'][0]['Rolle'])->toBe('Schülerempfänger')
+        ->and($report['mode'])->toBe('test')->and($report['live'])->toBeFalse();
+});
+
+test('embedded Mailpit task protocols reject contradictory or missing evidence', function (string $case) {
+    $text = TeachingWorkDispatchFixture::mailpitTasksText();
+    $text = match ($case) {
+        'purpose' => str_replace('"Versandzweck": "Aufgabenversand"', '"Versandzweck": "Ergebnisbenachrichtigung"', $text),
+        'mode' => str_replace('"Modus": "Mailpit-Test"', '"Modus": "Live-Versand (Postmark)"', $text),
+        'recipient order' => str_replace('"Datensatzposition": 1', '"Datensatzposition": 2', $text),
+        'recipients' => str_replace('"Empfaenger":', '"Andere":', $text),
+        'timezone' => str_replace('16:56:41.095637+02:00', '16:56:41.095637+09:00', $text),
+        'subject' => str_replace('Leistungsfeststellung E-Mails – INF 1', 'Ergebnisse zur Leistungsfeststellung: E-Mails', $text),
+    };
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['purpose', 'mode', 'recipient order', 'recipients', 'timezone', 'subject']);
+
+test('Office result protocols recognize numbered student aliases and completion timezone', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::officeResultsText());
+    expect($report['purpose'])->toBe('results')->and($report['live'])->toBeTrue()
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['recipients'][0]['Rolle'])->toBe('Schülerempfänger');
+});
+
+test('Office result protocols reject conflicting numbering and completion offsets', function (string $case) {
+    $text = TeachingWorkDispatchFixture::officeResultsText();
+    $text = $case === 'numbering' ? str_replace('"Datensatz": 1', '"Datensatz": 2', $text)
+        : str_replace('16:56:41.095637+02:00', '16:56:41.095637+09:00', $text);
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['numbering', 'offset']);
+
 test('single teacher task tests recognize Postmark and raw Office protocols without student live status', function (string $provider) {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::teacherTaskTestText($provider));
 
@@ -137,6 +175,77 @@ test('dispatch parser rejects malformed incomplete or inconsistent source docume
 
     expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
 })->with(['missing header', 'invalid json', 'invalid encoding', 'oversized source', 'invalid work date', 'unknown timezone', 'different assignments', 'no recognized recipients']);
+
+test('native Office task metadata retains eleven recipients and derives Vienna timezone from preparation', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::nativeOfficeTasksText());
+    expect($report['recipients'])->toHaveCount(11)
+        ->and($report['metadata']['Leistungsfeststellung'])->toBe($report['metadata']['Leistungsfeststellungsordner'])
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['title'])->toBe('e-mails')->and($report['purpose'])->toBe('tasks')->and($report['live'])->toBeTrue();
+});
+
+test('native Office task aliases reject missing or contradictory source and timezone', function (string $case) {
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText();
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    if ($case === 'conflicting source') {
+        $metadata['Leistungsfeststellung'] = 'C:/other/2026-10-03_Other';
+    } elseif ($case === 'missing source') {
+        unset($metadata['Leistungsfeststellungsordner']);
+    } elseif ($case === 'explicit wrong timezone') {
+        $metadata['Zeitzone'] = 'UTC';
+    } elseif ($case === 'wrong offset') {
+        $metadata['VorbereitungAm'] = '2026-10-04T16:56:41+00:00';
+    } else {
+        $metadata['BestaetigteNachrichten'] = 12;
+    }
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['conflicting source', 'missing source', 'explicit wrong timezone', 'wrong offset', 'wrong confirmation count']);
+
+test('Office results accept fourteen numbered students and a separate confirmed teacher message', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::officeResultsWithTeacherText());
+
+    expect($report['recipients'])->toHaveCount(15)
+        ->and(array_column(array_slice($report['recipients'], 0, 14), 'Rolle'))->toBe(array_fill(0, 14, 'Schülerempfänger'))
+        ->and(array_column(array_slice($report['recipients'], 0, 14), 'Datensatzposition'))->toBe(range(1, 14))
+        ->and($report['recipients'][14]['Rolle'])->toBe('Lehrperson')
+        ->and($report['metadata']['Zeitzone'])->toBe('Europe/Vienna')
+        ->and($report['purpose'])->toBe('results')->and($report['live'])->toBeTrue();
+});
+
+test('Office results reject invalid roles order counts and incomplete confirmation evidence', function (string $case) {
+    $text = TeachingWorkDispatchFixture::officeResultsWithTeacherText();
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    switch ($case) {
+        case 'unknown role': $metadata['Empfaenger'][0]['Rolle'] = 'Unknown';
+            break;
+        case 'duplicate position': $metadata['Empfaenger'][1]['Datensatzposition'] = 1;
+            break;
+        case 'missing student position': unset($metadata['Empfaenger'][0]['Datensatzposition']);
+            break;
+        case 'teacher before students': array_unshift($metadata['Empfaenger'], array_pop($metadata['Empfaenger']));
+            break;
+        case 'duplicate teacher': $metadata['Empfaenger'][] = $metadata['Empfaenger'][14];
+            break;
+        case 'missing teacher proof': unset($metadata['Empfaenger'][14]['Office_Zustand']['SentEntryID']);
+            break;
+        case 'unconfirmed student': $metadata['Empfaenger'][0]['Office_Zustand']['SentConfirmed'] = false;
+            break;
+        case 'missing attachment lists': unset($metadata['Empfaenger'][0]['Persoenliche_Anhaenge']);
+            break;
+        case 'unverified attachments': $metadata['Empfaenger'][0]['Office_Zustand']['AttachmentsVerified'] = 1;
+            break;
+        case 'wrong student count': $metadata['Bestaetigte_Schuelernachrichten'] = 13;
+            break;
+        case 'wrong teacher count': $metadata['Bestaetigte_Lehrernachrichten'] = 0;
+            break;
+        case 'wrong timezone': $metadata['Aktualisiert_am'] = '2026-10-04T16:56:41+00:00';
+            break;
+    }
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['unknown role', 'duplicate position', 'missing student position', 'teacher before students', 'duplicate teacher', 'missing teacher proof', 'unconfirmed student', 'missing attachment lists', 'unverified attachments', 'wrong student count', 'wrong teacher count', 'wrong timezone']);
 
 test('dispatch parser treats embedded instructions and source paths as inert metadata', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::text(null, [

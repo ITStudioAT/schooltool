@@ -1,5 +1,19 @@
 # UPDATES
 
+## 3.50.4
+
+### Unterricht
+
+- Änderung der Anzeige von Leistungen in Zellen der Tabelle
+- Arbeiten: Endedatum und Uhrzeit, Anzeige nur beim Starttag
+- Arbeiten: Berücksichtigung der Abgabefristen
+
+## 3.50.3
+
+### Unterricht
+
+- Import der Arbeiten neu vereinbart und deutlich verbessert
+
 ## 3.50.2
 
 ### System

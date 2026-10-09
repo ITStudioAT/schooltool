@@ -15,10 +15,12 @@ class TeachingCourseWorkEntrySyncService
 
     public function __construct(private TeachingCourseService $courseService) {}
 
-    public function syncWork(TeachingCourseWork $work): void
+    public function syncWork(TeachingCourseWork $work, bool $useStoredGroups = false): void
     {
         $normalizedGroups = null;
-        $rows = $this->buildRowsFromWork($work, $normalizedGroups);
+        $rows = $useStoredGroups
+            ? $this->buildRowsFromGroups($work, is_array($work->groups) ? $work->groups : [])
+            : $this->buildRowsFromWork($work, $normalizedGroups);
 
         DB::transaction(function () use ($work, $rows, $normalizedGroups) {
             if ($normalizedGroups !== null) {
@@ -77,6 +79,7 @@ class TeachingCourseWorkEntrySyncService
     {
         $payload = $work->toArray();
         $payload['groups'] = $this->groupsForWork($work);
+        $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
 
         return $payload;
     }
@@ -624,7 +627,7 @@ class TeachingCourseWorkEntrySyncService
 
     private function studentEntryDate(TeachingCourseWork $work, ?string $fallbackDate): ?string
     {
-        return $work->finish_until_date?->format('Y-m-d') ?? $fallbackDate;
+        return $fallbackDate;
     }
 
     private function toNullableString(mixed $value): ?string

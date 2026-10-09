@@ -532,6 +532,7 @@ import {
 } from '@/helpers/teachingCategoryEvaluation'
 import ParentAccessPanel from '../../components/ParentAccessPanel.vue'
 import { evaluationPdf } from '@/actions/App/Http/Controllers/Student/CourseStudentEntryController'
+import { assessmentDeductionComment } from '@/helpers/assessmentDeductions'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import StudentFeedbackEntries from '../../components/StudentFeedbackEntries.vue'
 import '../../../../../../css/student.css'
@@ -1335,7 +1336,7 @@ export default {
 
         entryComment(entry) {
             const comment = String(entry?.comment || '').trim()
-            return comment
+            return entry?.work?.id ? assessmentDeductionComment(comment, null, entry.grade) : comment
         },
 
         isEntryOpen(entry) {

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "kind": "schooltool.assessment",
+  "exercise_id": "FICTION-2026-001",
+  "exercise": {
+    "title": "Fiktive Leistungsfeststellung",
+    "subject": "Testfach",
+    "group": "Gruppe 1",
+    "date": "06.10.2026",
+    "checkpoint": "06.10.2026, fiktiver Prüfstand"
+  },
+  "maximum_minor": 500,
+  "rubric": [
+    {
+      "criterion": "Fachlicher Inhalt",
+      "maximum_minor": 500
+    }
+  ],
+  "records": [
+    {
+      "participant_id": "FICTION-001",
+      "identity": {
+        "first_name": "Ada",
+        "last_name": "Van Alpha",
+        "class_name": "3B",
+        "group_name": "Gruppe 1",
+        "schooltool_person_id": null
+      },
+      "submission_state": "received",
+      "submission_note": "Fiktive Abgabe vorhanden",
+      "evaluation_state": "complete",
+      "evaluation_note": "Abgeschlossen",
+      "total_minor": 475,
+      "criteria": [
+        {
+          "criterion": "Fachlicher Inhalt",
+          "maximum_minor": 500,
+          "earned_minor": 475,
+          "checkability": "checkable",
+          "reason": "Fiktiv: Anforderungen weitgehend erfüllt."
+        }
+      ],
+      "adjustments": [],
+      "comment": "Fachlicher Inhalt: 4,75 / 5,00 Punkte. Fiktiv: Anforderungen weitgehend erfüllt.",
+      "source_fingerprint": "5adb8c3d42601f14dc3c467830d23dcc75ffae17236d02c6bb26c6e31b1c3c8e",
+      "pdf": null,
+      "record_checksum": "1e00056934a5d2d6d7f2f9e856fd2122ff176508b1378c588e463d165c8c8e46"
+    }
+  ],
+  "overview_pdf": null,
+  "package_checksum": "00322662fdee1fb7e3d22200fa7c42516af4f2363c7bf4dde1283acbf6105044"
+}
