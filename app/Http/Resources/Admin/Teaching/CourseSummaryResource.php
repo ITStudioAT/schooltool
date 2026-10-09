@@ -44,6 +44,7 @@ class CourseSummaryResource extends JsonResource
                     'id' => (int) $courseDate->id,
                     'date' => $courseDate->date?->format('Y-m-d'),
                     'hours' => $courseDate->hours ?? [],
+                    'cancelled_hours' => $courseDate->cancelledHours(),
                     'content' => $courseDate->content,
                     'status' => $courseDate->status ?? [],
                     'free_reason' => null,

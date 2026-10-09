@@ -63,8 +63,103 @@ describe('MyTimetable automatic week selection', () => {
             expect((wrapper.vm as any).filteredItems.map((item: any) => item.date)).toEqual(date ? [date] : [])
             if (range === 'week' && !now.startsWith('2026-03-04')) {
                 expect(wrapper.find('.day-today').exists()).toBe(true)
-                expect(wrapper.find('.timetable-item--today').exists()).toBe(true)
+                expect(wrapper.find('.timetable-item--upcoming').exists()).toBe(false)
             }
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it.each([
+        { now: '2026-03-04T12:00:00Z', date: '2026-03-06', label: 'Nächster Unterrichtstag: 06.03.' },
+        { now: '2026-03-06T22:59:59Z', date: '2026-03-06', label: 'Heutiger Unterrichtstag: 06.03.' },
+        { now: '2026-03-06T23:00:00Z', date: '2026-04-10', label: 'Nächster Unterrichtstag: 10.04.' },
+        { now: '2026-03-13T12:00:00Z', date: '2026-04-10', label: 'Nächster Unterrichtstag: 10.04.' },
+        { now: '2026-04-10T22:00:00Z', date: null, label: null },
+    ])('marks the actual teaching day $date at $now', async ({ now, date, label }) => {
+        const { mountTimetable } = prepareTimetable(now)
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect((wrapper.vm as any).highlightedTeachingDate).toBe(date)
+            const markedHeaders = wrapper.findAll('th[aria-label]')
+            expect(markedHeaders.map((header) => header.attributes('aria-label'))).toEqual(label ? [label] : [])
+            await wrapper.setData({ offset: -1 })
+            expect(wrapper.findAll('th[aria-label]')).toHaveLength(0)
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    describe.each(['table', 'list'])('lesson time marking in %s view', (viewMode) => {
+        it.each([
+            { now: '2026-03-04T12:00:00Z', remaining: 2 },
+            { now: '2026-03-06T10:29:59Z', remaining: 2 },
+            { now: '2026-03-06T10:30:00Z', remaining: 2 },
+            { now: '2026-03-06T11:19:59Z', remaining: 2 },
+            { now: '2026-03-06T11:20:00Z', remaining: 1 },
+            { now: '2026-03-06T11:24:59Z', remaining: 1 },
+            { now: '2026-03-06T11:25:00Z', remaining: 1 },
+            { now: '2026-03-06T12:14:59Z', remaining: 1 },
+            { now: '2026-03-06T12:15:00Z', remaining: 0 },
+            { now: '2026-04-10T09:30:00Z', remaining: 2 },
+            { now: '2026-04-10T11:15:00Z', remaining: 0 },
+        ])('marks only unfinished lessons at $now in Vienna time', async ({ now, remaining }) => {
+            const { courseStore, mountTimetable } = prepareTimetable(now)
+            courseStore.timetable_view_mode = viewMode
+            const wrapper = mountTimetable()
+            try {
+                await flushPromises()
+                expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(
+                    viewMode === 'table' ? remaining : Number(remaining > 0),
+                )
+            } finally {
+                wrapper.unmount()
+                sessionStorage.clear()
+            }
+        })
+    })
+
+    it('removes the final lesson marker at its end while the overview remains open', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-06T12:14:59Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(1)
+            await vi.advanceTimersByTimeAsync(1000)
+            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(0)
+            expect(wrapper.get('th[aria-label]').attributes('aria-label')).toBe('Heutiger Unterrichtstag: 06.03.')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it.each([[[5]], [[6]], [[5, 6]]])('displays cancelled hours %j individually and selects only actual teaching days', async (cancelledHours) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-06T10:29:59Z')
+        ;(courseStore.courses[0] as any).course_dates[0].cancelled_hours = cancelledHours
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.findAll('.timetable-grid-item.timetable-item--free')).toHaveLength(cancelledHours.length)
+            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(2 - cancelledHours.length)
+            expect((wrapper.vm as any).highlightedTeachingDate).toBe(cancelledHours.length === 2 ? '2026-04-10' : '2026-03-06')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it('does not invent lesson times when school hours are missing', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-06T10:29:59Z')
+        useSchoolHourStore().school_hours = [{ hour: 5 }, { hour: 6 }] as any
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(0)
         } finally {
             wrapper.unmount()
             sessionStorage.clear()
@@ -79,9 +174,11 @@ describe('MyTimetable automatic week selection', () => {
             await flushPromises()
             expect((wrapper.vm as any).range).toBe('next_week')
             expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-04-10')
+            expect(wrapper.get('th[aria-label]').attributes('aria-label')).toBe('Nächster Unterrichtstag: 10.04.')
             await wrapper.setData({ range: 'week' })
             expect((wrapper.vm as any).filteredItems[0].date).toBe('2026-03-06')
             expect(wrapper.find('.timetable-item--free').exists()).toBe(true)
+            expect(wrapper.find('.timetable-item--upcoming').exists()).toBe(false)
         } finally {
             wrapper.unmount()
             sessionStorage.clear()

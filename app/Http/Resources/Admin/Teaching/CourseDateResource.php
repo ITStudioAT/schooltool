@@ -29,6 +29,7 @@ class CourseDateResource extends JsonResource
         $supportsAttendanceColumns = $service->supportsAttendanceColumns();
         $rawStatus = is_array($this->status) ? $this->status : [];
         $status = $service->stripAttendanceMetaFromStatus($rawStatus);
+        $status = array_values(array_filter($status, fn (string $value): bool => ! str_starts_with($value, 'cancelled_hour:')));
         $attendanceFromStatus = $service->attendanceFromStatus($rawStatus);
         $attendanceFromColumn = is_array($this->attendance) ? $this->attendance : null;
         $attendance = $supportsAttendanceColumns
@@ -61,6 +62,7 @@ class CourseDateResource extends JsonResource
             'id' => $this->id,
             'date' => $this->date?->format('Y-m-d'),
             'hours' => $this->hours,
+            'cancelled_hours' => $this->resource->cancelledHours(),
             'content' => $this->content,
             'status' => $status,
             'free_reason' => $freeReason,

@@ -22,6 +22,8 @@ class CloudwaysSchoolSynchronizationService
     private const int LOCK_SECONDS = 1800;
 
     private const array EXCLUDED_TABLES = [
+        'dropbox_connections',
+        'teaching_work_dropbox_folders',
         'cache',
         'cache_locks',
         'failed_jobs',

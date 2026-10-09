@@ -5,7 +5,9 @@
             <v-card-text>
                 <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Darin werden Schooltool-Bewertungen.json, die referenzierten PDFs und Versandprotokolle geprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
                 <p class="text-caption mb-3">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
+                <WorkDropboxSource :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
                 <v-file-input
+                    v-if="!directory_access_supported"
                     v-model="import_files"
                     webkitdirectory
                     multiple
@@ -19,9 +21,13 @@
                     @change="selectJsonFolder">
                     <template #selection><span class="work-import-selection">{{ import_selection }}</span></template>
                 </v-file-input>
+                <div v-else>
+                    <v-btn class="work-import-folder-button" variant="outlined" prepend-icon="mdi-folder-open-outline" :disabled="import_busy" @click="chooseDirectory">Ordner auswählen</v-btn>
+                    <p v-if="import_selection" class="work-import-selection mt-2">{{ import_selection }}</p>
+                </div>
                 <p v-if="import_busy" class="text-caption mt-3">Dateien prüfen und importieren …</p>
                 <v-alert v-if="import_error" type="error" variant="tonal" class="mt-3">{{ import_error }}</v-alert>
-                <v-btn v-if="import_error && json_uploads" class="mt-3" variant="outlined"
+                <v-btn v-if="import_error && (json_uploads || import_source === 'dropbox')" class="mt-3" variant="outlined"
                     :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
                     Vorschau erneut laden
                 </v-btn>
@@ -89,14 +95,21 @@
 
 <script>
 import { mapState } from 'pinia'
+import { markRaw } from 'vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { readWorkImportDirectory, saveWorkImportDirectory, supportsWorkImportDirectory, workImportDirectories, workImportDirectoryKey } from '@/helpers/workImportDirectory'
 import { assessmentTimeText, assessmentCompletionText } from '@/helpers/workAssessmentTimes'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { importFolder, importJson } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { importMethod as importDropbox } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
+import { loadWorkDropbox, workDropboxKey } from '@/helpers/workDropbox'
+import WorkDropboxSource from './WorkDropboxSource.vue'
 
 export default {
+    components: { WorkDropboxSource },
     emits: ['imported'],
     data() {
-        return { import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', json_files: [], json_preview: null, json_uploads: null }
+        return { import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null }
     },
     computed: {
         ...mapState(useCourseStore, ['selected_course']),
@@ -117,7 +130,7 @@ export default {
             return Boolean(work?.id && this.selected_course?.id
                 && String(work.teaching_course_id) === String(this.selected_course.id))
         },
-        openImport(work) {
+        openImport(work, quick = false) {
             if (!this.isSelectedCourseWork(work) || this.import_busy) return
             this.import_work = work
             this.import_error = ''
@@ -128,7 +141,95 @@ export default {
             this.json_files = []
             this.json_preview = null
             this.json_uploads = null
+            this.pending_directory = null
+            this.import_source = 'upload'
             this.import_open = true
+            if (quick) return this.previewDropbox(false)
+        },
+        async previewDropbox(apply = false) {
+            const work = this.import_work
+            if (this.import_busy || !this.isSelectedCourseWork(work)) return
+            const hash = this.json_preview?.hash
+            if (apply && !this.json_preview?.can_import) return
+            this.import_source = 'dropbox'
+            this.import_busy = true
+            this.import_error = ''
+            this.import_summary = null
+            this.json_preview = null
+            this.json_uploads = null
+            this.pending_directory = null
+            try {
+                const state = await loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true)
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                if (!state?.can_quick_import) throw new Error(state?.message || 'Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.')
+                this.import_selection = 'Dropbox · ' + state.folder.name
+                const response = await axios.post(importDropbox.url(work.id), apply ? { apply: true, hash } : {})
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                if (apply) {
+                    this.import_summary = { messages: ['Dropbox-Paket übernommen.', ...(response.data.messages || [])] }
+                    this.$emit('imported', response.data.data)
+                } else {
+                    this.json_preview = response.data.preview
+                }
+            } catch (error) {
+                if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
+                    this.import_error = Object.values(error.response?.data?.errors || {}).flat().join(' ') || error.response?.data?.message || error.message || 'Dropbox-Import fehlgeschlagen. Bitte den normalen Ordnerupload verwenden.'
+                }
+            } finally {
+                this.import_busy = false
+            }
+        },
+        directoryKey(work = this.import_work) {
+            return workImportDirectoryKey(useAdminStore().config?.user?.id, work)
+        },
+        async chooseDirectory() {
+            if (this.import_busy || !this.isSelectedCourseWork(this.import_work)) return
+            const work = this.import_work
+            try {
+                const handle = await window.showDirectoryPicker({ mode: 'read', id: 'schooltool-work-import' })
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                await this.previewDirectory(handle, work)
+            } catch (error) {
+                if (error.name !== 'AbortError' && this.import_work === work) {
+                    this.import_error = 'Ordnerzugriff fehlgeschlagen. Bitte den Ordner erneut auswählen.'
+                }
+            }
+        },
+        async reuseDirectory() {
+            const work = this.import_work
+            const handle = workImportDirectories.get(this.directoryKey(work))
+            if (!handle) {
+                this.import_error = 'Für diese Arbeit ist noch kein Ordner gespeichert. Bitte den Ordner auswählen.'
+                return
+            }
+            this.import_busy = true
+            try {
+                const permission = await handle.queryPermission({ mode: 'read' })
+                if (permission !== 'granted' && await handle.requestPermission({ mode: 'read' }) !== 'granted') {
+                    throw new Error('Ordnerzugriff nicht freigegeben')
+                }
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                await this.previewDirectory(handle, work)
+            } catch {
+                if (this.import_work === work) this.import_error = 'Der gespeicherte Ordner ist nicht verfügbar oder nicht freigegeben. Bitte den Ordner erneut auswählen.'
+            } finally { this.import_busy = false }
+        },
+        async previewDirectory(handle, work) {
+            this.import_busy = true
+            try {
+                const files = await readWorkImportDirectory(handle)
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                this.pending_directory = markRaw(handle)
+                this.import_busy = false
+                if (!files.length) throw new Error('Der gespeicherte Ordner enthält keine Importdateien. Bitte den Ordner erneut auswählen.')
+                await this.selectJsonFolder({ target: { files, value: '' } })
+            } catch (error) {
+                if (this.import_work === work && this.import_open) {
+                    this.import_error = ['NotFoundError', 'NotAllowedError'].includes(error.name)
+                        ? 'Der gespeicherte Ordner ist nicht verfügbar oder nicht freigegeben. Bitte den Ordner erneut auswählen.'
+                        : (error.message || 'Der Ordner konnte nicht gelesen werden. Bitte erneut auswählen.')
+                }
+            } finally { this.import_busy = false }
         },
         changeMode(mode) {
             this.import_mode = mode
@@ -154,6 +255,7 @@ export default {
             const work = this.import_work
             const selected = Array.from(event.target.files || [])
             if (!selected.length || this.import_busy || !this.isSelectedCourseWork(work)) return
+            this.import_source = 'upload'
             this.json_preview = null
             this.json_uploads = null
             this.import_summary = null
@@ -233,6 +335,7 @@ export default {
             if (this.json_preview?.can_import) await this.sendJson(true)
         },
         async sendJson(apply) {
+            if (this.import_source === 'dropbox') return this.previewDropbox(apply)
             const work = this.import_work
             if (this.import_busy || !this.json_uploads || !this.isSelectedCourseWork(work)) return
             this.import_busy = true
@@ -252,6 +355,11 @@ export default {
                 const response = await axios.post(importJson.url(work.id), payload)
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                 if (apply) {
+                    if (this.pending_directory) {
+                        try { await saveWorkImportDirectory(this.directoryKey(work), this.pending_directory) }
+                        catch { this.import_error = 'Import erfolgreich; der Ordnerzugriff konnte nicht für Quick-Import gespeichert werden.' }
+                    }
+                    if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                     this.json_preview = null
                     this.json_uploads = null
                     this.import_summary = { messages: ['JSON-Paket übernommen. Offene und teilweise bewertete Fälle erhalten ihre bisherige Bewertung.', ...(response.data.messages || [])] }
@@ -333,6 +441,8 @@ export default {
 .json-comment { white-space: pre-wrap; }
 .work-import-actions { flex-wrap: wrap; }
 .work-import-actions :deep(.v-btn__content) { white-space: normal; }
+.work-import-folder-button { max-width: 100%; height: auto; min-height: 40px; padding-block: 8px; }
+.work-import-folder-button :deep(.v-btn__content) { white-space: normal; }
 @media (max-width: 600px) {
     .work-import-actions .v-btn { width: 100%; margin-inline: 0; height: auto; min-height: 40px; padding-block: 8px; }
 }

@@ -40,6 +40,12 @@ return [
         'worker_ping_url' => env('HEALTHCHECK_WORKER_PING_URL'),
     ],
 
+    'dropbox' => [
+        'client_id' => env('DROPBOX_CLIENT_ID'),
+        'client_secret' => env('DROPBOX_CLIENT_SECRET'),
+        'redirect_uri' => env('DROPBOX_REDIRECT_URI'),
+    ],
+
     'cloudways' => [
         'deployment' => [
             'base_url' => env('CLOUDWAYS_API_BASE_URL', 'https://api.cloudways.com/api/v2'),

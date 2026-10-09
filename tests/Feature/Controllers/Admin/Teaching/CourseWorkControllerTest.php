@@ -520,6 +520,72 @@ test('JSON folder accepted late submission replaces an absence zero and preserve
     Notification::assertNothingSent();
 });
 
+test('personal corrected Office results preserve strict target and evidence checks', function (string $case) {
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $this->course->update(['title' => 'DGB - 1A - 2']);
+    $work->update(['title' => $case === 'wrong work' ? 'Datenschutz' : ($case === 'singular title' ? 'E-Mail' : 'E-Mails')]);
+    $package = jsonAssessmentForWork($this, $work);
+    $text = TeachingWorkDispatchFixture::officeSchooltoolResultsText(1, 'Deine korrigierte Leistungsfeststellung E-Mails – 1A, Gruppe 2');
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $heading = substr($text, 0, strpos($text, '{'));
+    unset($metadata['Bestaetigte_Schuelernachrichten'], $metadata['Bestaetigte_Lehrernachrichten']);
+    $row = &$metadata['Empfaenger'][0];
+    $row['Kurs'] = 'DGB - 1A - 2';
+    $row['TatsaechlicheAnhaenge'] = [['Dateiname' => 'Ada.pdf', 'SHA256' => str_repeat('a', 64)]];
+    $row['Office_Zustand']['Attachments'] = [['Name' => 'Ada.pdf', 'SHA256' => str_repeat('a', 64)]];
+    $row['Office_Zustand']['AttachmentsVerified'] = 1;
+    if ($case === 'wrong class' || $case === 'wrong group') {
+        $row['Betreff'] = str_replace($case === 'wrong class' ? '1A' : 'Gruppe 2', $case === 'wrong class' ? '3B' : 'Gruppe 1', $row['Betreff']);
+    } elseif ($case === 'wrong purpose') {
+        $heading = str_replace('Ergebnisbenachrichtigung', 'Aufgabenversand', $heading);
+        $metadata['Versandzweck'] = 'Aufgabenversand';
+    } elseif ($case === 'wrong provider') {
+        $heading = str_replace('Office/Outlook', 'Postmark', $heading);
+        $metadata['Modus'] = 'Live-Versand (Postmark)';
+    } elseif ($case === 'wrong recipient') {
+        $row['To'] = $row['Office_Zustand']['To'] = 'other@example.test';
+    } elseif ($case === 'different subject') {
+        $row['Office_Zustand']['Subject'] = 'Another result';
+    } elseif ($case === 'attachment mismatch') {
+        $row['Office_Zustand']['Attachments'][0]['SHA256'] = str_repeat('b', 64);
+    } elseif ($case === 'missing state') {
+        unset($row['Office_Zustand']);
+    } elseif ($case === 'Mailpit') {
+        $row['Modus'] = 'Mailpit-Test';
+    }
+    unset($row);
+    $text = $heading.json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $folder = '2026-10-04_Test';
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder, 'documents' => json_encode([
+        ['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-09_09-18-24/Versandprotokoll.txt', 'text' => $text],
+    ], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    if (in_array($case, ['wrong work', 'wrong class', 'wrong group', 'wrong purpose', 'wrong provider'], true)) {
+        $this->postJson($url, $payload)->assertUnprocessable();
+    } else {
+        $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+        $accepted = in_array($case, ['valid', 'singular title'], true);
+        expect($preview['dispatches'][0]['rows'][0]['accepted'])->toBe($accepted)
+            ->and($preview['can_import'])->toBe($case !== 'wrong recipient');
+        if ($accepted) {
+            expect($preview['dispatches'][0]['rows'][0]['student_id'])->toBe($this->student->id);
+            $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+            expect($work->fresh()->status['dispatch_notifications'])->toHaveCount(1)
+                ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][0]['file_path']))->toBe($text);
+            $repeat = $this->postJson($url, $payload)->assertOk()->json('preview');
+            expect($repeat['dispatches'][0]['already_imported'])->toBeTrue();
+        }
+    }
+    if (! in_array($case, ['valid', 'singular title'], true)) {
+        expect($work->fresh()->getAttributes())->toBe($before);
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['valid', 'singular title', 'wrong work', 'wrong class', 'wrong group', 'wrong purpose', 'wrong provider', 'wrong recipient', 'different subject', 'attachment mismatch', 'missing state', 'Mailpit']);
+
 test('JSON folder Office Schooltool result subjects retain provider purpose and evidence boundaries', function (string $case) {
     $work = prepareWorkDispatchImport($this);
     $package = jsonAssessmentForWork($this, $work);

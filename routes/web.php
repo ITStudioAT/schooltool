@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
 use Illuminate\Contracts\View\View;
@@ -46,6 +47,10 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'web-allowed:scope:teaching_administration_access',
         'tool-licensed:Lehrertool,auth,scope:teaching_administration_access',
     ])->name('admin.teaching.administration');
+
+    Route::get('/admin/teaching/dropbox/callback', [WorkDropboxController::class, 'callback'])
+        ->middleware(['auth:sanctum', 'web-allowed:scope:tool_web_access', 'tool-licensed:Lehrertool,auth,scope:tool_web_access'])
+        ->name('teaching.dropbox.callback');
 
     Route::get('/admin/teaching/{any?}', function () {
         return view('spa::admin');

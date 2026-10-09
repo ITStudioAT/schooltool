@@ -1,5 +1,21 @@
 # UPDATES
 
+## 3.51.0
+
+### Unterricht
+
+- Stundenplan: verfügbare Breite nutzen und Spaltenaufteilung für Firefox korrigieren
+- Aktuellen bzw. nächsten Unterrichtstag mit einem dunkelgrauen Rahmen hervorheben
+- Laufende bzw. nächste Unterrichtsstunde links bei der Stundenanzeige markieren
+- Einzelne Stunden als entfallen markieren und in der Datenbank speichern; vorhandene Anwesenheitsdaten erhalten
+- Quick-Import aus einem pro Benutzer und Arbeit zugeordneten Dropbox-Ordner: aktuellen Cloudstand lesen, Vorschau und Übernahme getrennt bestätigen
+- Dropbox-Anbindung lokal mit simulierten API-Antworten geprüft; Datenbankmigration, OAuth-Freigabe und echter Kontozugriff stehen noch aus
+
+### System
+
+- Main und Feature-Kopien beim Git-Workflow in eigenen VS-Code-Fenstern öffnen; laufende Terminals erhalten und Ordnerverwechslungen vermeiden
+- Main-Workspace-Datei korrigiert und Projektordner als „Schooltool MAIN“ bezeichnet
+
 ## 3.50.4
 
 ### Unterricht

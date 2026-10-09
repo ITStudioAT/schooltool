@@ -3,6 +3,35 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import MyInfos from '@/pages/admin/teaching/overview/components/MyInfos.vue'
 
+describe('MyInfos cancelled teaching hours', () => {
+    it.each([
+        { cancelledHours: [5], expectedStartHour: 12, expectedEnd: null },
+        { cancelledHours: [6], expectedStartHour: 11, expectedEnd: '12:25:00' },
+        { cancelledHours: [5, 6], expectedStartHour: null, expectedEnd: null },
+    ])('uses only active hours for countdowns when $cancelledHours are cancelled', ({ cancelledHours, expectedStartHour, expectedEnd }) => {
+        const computed = (MyInfos as any).computed
+        const methods = (MyInfos as any).methods
+        const context: Record<string, any> = {
+            nowTs: new Date(2026, 9, 12, 10, 0).getTime(),
+            myCourses: [{ course_dates: [{ date: '2026-10-12', hours: [5, 6], status: [], cancelled_hours: cancelledHours }] }],
+            school_hours: [
+                { hour: 5, from: '11:35:00', until: '12:25:00' },
+                { hour: 6, from: '12:30:00', until: '13:20:00' },
+            ],
+            isFreeCourseDate: methods.isFreeCourseDate,
+            lessonStartFromHour: methods.lessonStartFromHour,
+            lessonEndFromHour: methods.lessonEndFromHour,
+        }
+        context.schoolHoursByHour = computed.schoolHoursByHour.call(context)
+        const start = computed.nextLessonStartAt.call(context)
+        expect(start?.getHours() ?? null).toBe(expectedStartHour)
+
+        context.nowTs = new Date(2026, 9, 12, 11, 40).getTime()
+        const end = computed.activeLessonEndAt.call(context)
+        expect(end?.toTimeString().slice(0, 8) ?? null).toBe(expectedEnd)
+    })
+})
+
 describe('MyInfos counts', () => {
     it('excludes canceled students from myStudentCount', () => {
         const ctx = {

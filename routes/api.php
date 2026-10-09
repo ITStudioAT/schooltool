@@ -105,6 +105,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
 use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
+use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -685,6 +686,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
         Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
         Route::post('/admin/teaching/course_works/{course_work}/import-json', [CourseWorkController::class, 'importJson'])->name('teaching.course-works.import-json');
+        Route::prefix('/admin/teaching/course_works/{course_work}/dropbox')->name('teaching.work-dropbox.')->group(function (): void {
+            Route::get('/', [WorkDropboxController::class, 'show'])->name('show');
+            Route::post('/connect', [WorkDropboxController::class, 'connect'])->middleware(StartSession::class)->name('connect');
+            Route::get('/folders', [WorkDropboxController::class, 'folders'])->name('folders');
+            Route::post('/folder', [WorkDropboxController::class, 'storeFolder'])->name('store-folder');
+            Route::delete('/connection', [WorkDropboxController::class, 'disconnect'])->name('disconnect');
+            Route::post('/import', [WorkDropboxController::class, 'import'])->name('import');
+        });
         Route::post('/admin/teaching/course_works/{course_work}/import-dispatch', [CourseWorkController::class, 'importDispatch'])->name('teaching.course-works.import-dispatch');
         Route::get('/admin/teaching/course_works/{course_work}/dispatch/{sha256}', [CourseWorkController::class, 'downloadDispatch'])->name('teaching.course-works.download-dispatch');
         Route::get('/admin/teaching/course_works/{course_work}/evaluations/{sha256}', [CourseWorkController::class, 'downloadEvaluation'])->name('teaching.course-works.download-evaluation');

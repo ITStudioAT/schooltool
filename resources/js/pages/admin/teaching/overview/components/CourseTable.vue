@@ -94,11 +94,18 @@
                                         courseDateColumnMarkingClass(courseDate),
                                     ]">
                                     <div class="course-table-date-header">
+                                        <button type="button" class="course-table-date-trigger"
+                                            :data-testid="`course-date-cancellation-${courseDate.id}`"
+                                            aria-label="Unterrichtsentfall bearbeiten"
+                                            @click.stop="openCancellationDialog(courseDate)">
                                         <div class="course-table-date-weekday">{{ courseDateWeekday(courseDate) }}</div>
                                         <div class="course-table-date-title">{{ courseDateDateLabel(courseDate) }}</div>
                                         <div v-if="courseDateHoursLabel(courseDate)" class="course-table-date-hours">
-                                            {{ courseDateHoursLabel(courseDate) }}
+                                            <span v-for="hour in cancellationHours(courseDate)" :key="hour"
+                                                :class="{ 'course-table-hour--cancelled': isHourCancelled(courseDate, hour) }"
+                                                :title="isHourCancelled(courseDate, hour) ? 'Entfällt' : undefined">{{ hour }}. </span>Std
                                         </div>
+                                        </button>
                                         <div
                                             v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
                                             class="course-table-date-attendance-actions">
@@ -1086,9 +1093,7 @@
                                         {{ assignment.completion.completed }} erledigt · {{ assignment.completion.open }} offen
                                     </div>
                                     <div class="work-import-actions d-flex flex-wrap align-center ga-2 mt-2">
-                                        <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openImport(assignment.work)">
-                                            Importieren
-                                        </v-btn>
+                                        <WorkImportActions :work="assignment.work" @open="openImport" />
                                         <WorkEvaluationPdf :work="assignment.work" />
                                     </div>
                                 </div>
@@ -1497,15 +1502,7 @@
                                 {{ savedWorkDialogCompletion.completed }} erledigt · {{ savedWorkDialogCompletion.open }} offen
                             </div>
                             <div v-if="workDialogForm.id" class="work-import-actions d-flex flex-wrap align-center ga-2 mt-4">
-                                <v-btn
-                                    v-if="workDialogForm.id"
-                                    size="small"
-                                    prepend-icon="mdi-folder-upload-outline"
-                                    variant="tonal"
-                                    :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
-                                    @click="openImport(workDialogForm)">
-                                    Importieren
-                                </v-btn>
+                                <WorkImportActions :work="savedWorkDialogWork" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" />
                                 <WorkEvaluationPdf :work="savedWorkDialogWork" />
                                 <WorkDispatchLog :work="savedWorkDialogWork" />
                             </div>
@@ -2049,13 +2046,7 @@
                                             @click="openCourseWorkFromCellEntry(entry)">
                                             Zur Arbeit
                                         </v-btn>
-                                        <v-btn
-                                            prepend-icon="mdi-folder-upload-outline"
-                                            variant="tonal"
-                                            :disabled="Boolean(courseWorkEntrySavingUid)"
-                                            @click="openImport(courseWorkForCellEntry(entry))">
-                                            Importieren
-                                        </v-btn>
+                                        <WorkImportActions :work="courseWorkForCellEntry(entry)" :disabled="Boolean(courseWorkEntrySavingUid)" @open="openImport" />
                                         <v-spacer />
                                         <v-btn
                                             variant="text"
@@ -2456,6 +2447,26 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+        <v-dialog v-model="cancellationDialog.open" persistent max-width="440" data-testid="course-date-cancellation-dialog">
+            <v-card>
+                <v-card-title>Unterricht entfällt</v-card-title>
+                <div class="px-4 text-body-2 text-medium-emphasis">{{ compactCourseDateTitle(cancellationDialog.courseDate) }}</div>
+                <v-card-text>
+                    <v-checkbox v-for="hour in cancellationHours(cancellationDialog.courseDate)" :key="hour"
+                        v-model="cancellationDialog.hours" :value="hour"
+                        :label="cancellationHourLabel(hour)"
+                        :disabled="cancellationSaving || cancellationDialog.courseDate?.status?.includes('free')"
+                        hide-details :data-testid="`cancelled-hour-${hour}`" />
+                    <div v-if="cancellationError" role="alert" class="text-error mt-2">{{ cancellationError }}</div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn :disabled="cancellationSaving" @click="cancellationDialog.open = false">Abbrechen</v-btn>
+                    <v-btn color="primary" :loading="cancellationSaving" :disabled="cancellationSaving"
+                        data-testid="course-date-cancellation-save" @click="saveCancellation">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <CourseStudentNotes ref="studentNotes" :course="selected_course" />
     </ItsGridBox>
 </template>
@@ -2477,11 +2488,14 @@ import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachin
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { courseDateHours, cancelledCourseDateHours, isCourseDateHourCancelled } from '@/helpers/courseDateHours'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
+import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
@@ -2500,7 +2514,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2533,6 +2547,9 @@ export default {
                 present: true,
             },
             bulkAttendanceSaving: false,
+            cancellationDialog: { open: false, courseDate: null, hours: [] },
+            cancellationSaving: false,
+            cancellationError: '',
             behaviourEntryStore: null,
             courseDateStore: null,
             courseStore: null,
@@ -3183,6 +3200,38 @@ export default {
     },
 
     methods: {
+        cancellationHours: courseDateHours,
+        isHourCancelled: isCourseDateHourCancelled,
+        openCancellationDialog(courseDate) {
+            this.cancellationError = ''
+            this.cancellationDialog = {
+                open: true, courseDate, hours: [...cancelledCourseDateHours(courseDate)],
+            }
+        },
+        cancellationHourLabel(hour) {
+            const schoolHour = useSchoolHourStore().school_hours.find((entry) => Number(entry.hour) === hour)
+            const from = (schoolHour?.from || '').slice(0, 5)
+            const until = (schoolHour?.until || '').slice(0, 5)
+            return `${hour}. Stunde${from && until ? ` · ${from}–${until}` : ''}`
+        },
+        async saveCancellation() {
+            if (this.cancellationSaving || !this.cancellationDialog.courseDate?.id) return
+            this.cancellationSaving = true
+            this.cancellationError = ''
+            try {
+                const saved = await this.courseDateStore.updateStatus(this.cancellationDialog.courseDate.id, {
+                    cancelled_hours: [...this.cancellationDialog.hours],
+                })
+                if (!saved?.id) {
+                    this.cancellationError = 'Der Unterrichtsentfall konnte nicht gespeichert werden.'
+                    return
+                }
+                this.applyUpdatedCourseDate(saved)
+                this.cancellationDialog.open = false
+            } finally {
+                this.cancellationSaving = false
+            }
+        },
         formatImportDate: formatViennaDateTime,
         workImportLabel(work) {
             const importedAt = formatViennaDateTime(work?.status?.folder_imported_at)
@@ -3530,10 +3579,11 @@ export default {
                 student: null,
             }
         },
-        openImport(work) {
+        openImport(work, quick = false) {
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
             if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
-            this.$refs.evaluationImport.openImport(savedWork)
+            if (quick) this.$refs.evaluationImport.openImport(savedWork, true)
+            else this.$refs.evaluationImport.openImport(savedWork)
         },
         async evaluationImported(work) {
             if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
@@ -6066,6 +6116,18 @@ export default {
             }
             this.selected_course.course_dates = dates
 
+            const summaryCourse = this.courseStore?.courses?.find((course) => String(course.id) === String(this.selected_course.id))
+            if (summaryCourse && summaryCourse !== this.selected_course) {
+                summaryCourse.course_dates = (summaryCourse.course_dates || []).map((date) =>
+                    String(date.id) === String(updatedDate.id) ? { ...date, ...updatedDate } : date
+                )
+            }
+            if (Array.isArray(this.courseDateStore?.courseDates)) {
+                this.courseDateStore.courseDates = this.courseDateStore.courseDates.map((date) =>
+                    String(date.id) === String(updatedDate.id) ? { ...date, ...updatedDate } : date
+                )
+            }
+
             if (String(this.selected_courseDate?.id) === String(updatedDate.id)) {
                 this.selected_courseDate = { ...this.selected_courseDate, ...updatedDate }
             }
@@ -6331,6 +6393,20 @@ export default {
 </script>
 
 <style scoped>
+.course-table-date-trigger {
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+}
+
+.course-table-hour--cancelled {
+    background: var(--course-table-free-cell-background);
+    color: #1b5e20;
+    text-decoration: line-through;
+}
+
 .course-table-card {
     border: 1px solid rgba(37, 99, 235, 0.16);
     overflow: hidden;

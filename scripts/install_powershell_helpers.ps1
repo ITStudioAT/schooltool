@@ -130,13 +130,13 @@ function Show-ProjectGitWorkspace {
         return
     }
     try {
-        & `$editor.Source --add `$Directory
-        if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not add the working folder.' }
         `$entry = Join-Path `$Directory 'composer.json'
+        `$editorArguments = @('--new-window', `$Directory)
         if (Test-Path -LiteralPath `$entry -PathType Leaf) {
-            & `$editor.Source --reuse-window --goto `$entry
-            if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not show the selected checkout.' }
+            `$editorArguments += @('--goto', `$entry)
         }
+        & `$editor.Source @editorArguments
+        if (`$LASTEXITCODE -ne 0) { throw 'VS Code could not open the working folder.' }
         Write-Host "Editor working folder: `$Directory" -ForegroundColor Cyan
     }
     catch { Write-Warning "Git/dev selection succeeded. `$(`$_.Exception.Message) Working folder: `$Directory" }

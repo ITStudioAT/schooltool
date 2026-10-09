@@ -16,7 +16,7 @@ class TeachingWorkDispatchImport
 {
     public function __construct(private TeachingWorkMarkdownImport $evaluations) {}
 
-    /** @return array{metadata: array<string, mixed>, recipients: list<array<string, mixed>>, date: string, title: string, live: bool, purpose: string, mode: string} */
+    /** @return array{metadata: array<string, mixed>, recipients: list<array<string, mixed>>, date: string, title: string, personal_results: bool, live: bool, purpose: string, mode: string} */
     public function parse(string $text): array
     {
         if (strlen($text) > 1048576 || ! preg_match('//u', $text) || str_contains($text, "\0")) {
@@ -127,6 +127,7 @@ class TeachingWorkDispatchImport
         }
         $title = null;
         $purpose = null;
+        $personalResults = false;
         $heading = trim(strtok($text, "\n"));
         $teacherTest = $teacherTaskTest || ($heading === 'VERSANDPROTOKOLL – ERGEBNISBENACHRICHTIGUNG – LIVE-TEST NUR AN LEHRPERSON (POSTMARK)'
             && $this->value($metadata, 'Versandzweck') === 'Ergebnisbenachrichtigung'
@@ -147,6 +148,17 @@ class TeachingWorkDispatchImport
             } elseif ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook'
                 && preg_match('/\ABeurteilung zur Leistungsfeststellung (?:„([^„“\r\n]+)“|"([^"\r\n]+)"|([^„“"\r\n]+)) auf Schooltool\z/u', $subject, $resultSubject)) {
                 $matches = [null, ($resultSubject[1] ?? '') ?: (($resultSubject[2] ?? '') ?: ($resultSubject[3] ?? ''))];
+                $rowPurpose = 'results';
+            } elseif ($combined && $combinedSections[1] === 'Ergebnisbenachrichtigung' && $combinedSections[2] === 'Office/Outlook'
+                && $this->value($recipient, 'Rolle') === 'Schülerempfänger'
+                && preg_match('/\ADeine korrigierte Leistungsfeststellung ([^\r\n]+?) – ([\p{L}\p{N}]+), Gruppe ([1-9]\d*)\z/u', $subject, $matches)) {
+                $subjectClass = $this->normalize($matches[2]);
+                $subjectGroup = $matches[3];
+                if ($subjectClass !== $this->normalize($this->value($recipient, 'Klasse'))
+                    || ! preg_match('/\A.+? [-–] '.preg_quote($subjectClass, '/').' [-–] '.preg_quote($subjectGroup, '/').'\z/u', $this->normalize($this->value($recipient, 'Kurs')))) {
+                    $this->reject('Klasse oder Gruppe im persönlichen Ergebnisbetreff widerspricht dem Empfänger-Kurs.');
+                }
+                $personalResults = true;
                 $rowPurpose = 'results';
             } elseif ($teacherTest && preg_match('/\A(?:Test|Formatierungstest) der Ergebnisbenachrichtigung:\s*(.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'results';
@@ -180,7 +192,7 @@ class TeachingWorkDispatchImport
             $this->reject('Dieses historische Format wird als lokaler Aufgabenversand-Test unterstützt.');
         }
 
-        return ['metadata' => $metadata, 'recipients' => $recipients, 'date' => $date[1], 'title' => $title,
+        return ['metadata' => $metadata, 'recipients' => $recipients, 'date' => $date[1], 'title' => $title, 'personal_results' => $personalResults,
             'purpose' => $purpose, 'mode' => $teacherTest ? 'teacher_test' : ($legacy || str_contains(mb_strtolower(strtok($text, "\n").' '.$this->value($metadata, 'Modus')), 'mailpit') ? 'test' : 'unconfirmed'),
             'live' => $combined ? ($combinedSections[3] ?? '') === ''
                 : (bool) preg_match('/\AVERSANDPROTOKOLL – (?:(?:AUFGABENVERSAND|ERGEBNISBENACHRICHTIGUNG) – )?LIVE-VERSAND \(POSTMARK\)\z/u', $heading)];
@@ -217,6 +229,13 @@ class TeachingWorkDispatchImport
     public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true): array
     {
         $course = $work->teachingCourse;
+        if (($report['personal_results'] ?? false)
+            && $this->personalResultAssignment((string) $work->title) !== $this->personalResultAssignment($report['title'])) {
+            $this->reject('Persönliches Ergebnisanschreiben passt nicht zur gespeicherten Arbeit.');
+        }
+        if ($report['personal_results'] ?? false) {
+            $report['title'] = $this->assignment((string) $work->title);
+        }
         if ($requireMatchingTitle && $this->assignment((string) $work->title) !== $report['title']) {
             $this->reject('Titel des Versandprotokolls passt nicht zur gespeicherten Arbeit.');
         }
@@ -400,6 +419,13 @@ class TeachingWorkDispatchImport
     private function assignment(string $value): string
     {
         return $this->normalize(preg_replace('/\A(?:Übung|Leistungsfeststellung|Arbeit):\s*/iu', '', trim($value)));
+    }
+
+    private function personalResultAssignment(string $value): string
+    {
+        $title = $this->assignment($value);
+
+        return in_array($title, ['e-mail', 'e-mails'], true) ? 'e-mail' : $title;
     }
 
     private function validDate(string $value): bool

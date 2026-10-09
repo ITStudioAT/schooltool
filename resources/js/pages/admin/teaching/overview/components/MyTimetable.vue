@@ -48,7 +48,7 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]" :style="getDateBackgroundStyle(item)">
+                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--upcoming': isUpcomingLesson(item) }]" :style="getDateBackgroundStyle(item)">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
                                         <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
                                         <v-icon
@@ -59,7 +59,9 @@
                                             mdi-check-circle
                                         </v-icon>
                                         <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
-                                        <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
+                                        <v-chip v-for="hour in item.hours" :key="hour" size="x-small" variant="outlined"
+                                            :color="hasFreeStatus(item, hour) ? 'success' : 'primary'"
+                                            :class="{ 'timetable-item--free': hasFreeStatus(item, hour) }">{{ hour }}. Std</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
@@ -106,7 +108,7 @@
                 </v-card>
 
                 <!-- Table View -->
-                <v-card v-else variant="outlined" class="mt-2">
+                <v-card v-else variant="outlined" class="mt-2 timetable-table-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
                         <v-icon size="18">mdi-table</v-icon>
                         Stundenplan
@@ -115,14 +117,20 @@
                     <v-divider />
                     <v-card-text class="pa-1">
                         <div class="timetable-table-wrapper">
+                            <div class="timetable-grid-width" :style="{ minWidth: `${44 + tableWeekDays.length * 130}px` }">
                             <table class="timetable-grid-table">
+                                <colgroup>
+                                    <col style="width: 44px">
+                                    <col v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th class="timetable-hour-header-cell"></th>
                                         <th
                                             v-for="day in tableWeekDays"
                                             :key="normalizeDateToString(day)"
-                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day) }]">
+                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day) }]"
+                                            :aria-label="isHighlightedTeachingDay(day) ? `${isDayToday(day) ? 'Heutiger Unterrichtstag' : 'Nächster Unterrichtstag'}: ${formatDayDate(day)}` : undefined">
                                             <div>{{ formatDayOfWeek(day) }}</div>
                                             <div class="timetable-day-date">{{ formatDayDate(day) }}</div>
                                         </th>
@@ -136,11 +144,12 @@
                                                 {{ formatTimeValue(schoolHoursByHour[hour]?.from) }}<br>{{ formatTimeValue(schoolHoursByHour[hour]?.until) }}
                                             </div>
                                         </td>
-                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell">
+                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)"
+                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day) }]">
                                             <div
                                                 v-for="item in getTableCellItems(day, hour)"
                                                 :key="item.key"
-                                                :class="['timetable-grid-item', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
+                                                :class="['timetable-grid-item', ...getStatusClass(item, hour), { 'timetable-item--upcoming': isUpcomingLesson(item, hour) }]"
                                                 @click="openCourse(item)">
                                                 <div class="d-flex align-center ga-1">
                                                     <v-icon
@@ -175,10 +184,11 @@
                                         </td>
                                     </tr>
                                     <tr v-if="!tableHours.length">
-                                        <td colspan="99" class="text-caption text-medium-emphasis pa-3">Keine Termine im gewählten Zeitraum.</td>
+                                        <td :colspan="tableWeekDays.length + 1" class="text-caption text-medium-emphasis pa-3">Keine Termine im gewählten Zeitraum.</td>
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     </v-card-text>
                 </v-card>
@@ -189,6 +199,7 @@
 
 <script>
 import { applicationDate, parseLocalDate } from '@/helpers/date'
+import { cancelledCourseDateHours, activeCourseDateHours, isCourseDateHourCancelled } from '@/helpers/courseDateHours'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
@@ -268,6 +279,9 @@ export default {
     },
 
     async mounted() {
+        this.nowTimer = setInterval(() => {
+            this.nowTs = Date.now()
+        }, 1000)
         const courseStore = useCourseStore()
         const returnState = this.pendingTimetableRestore
         const initialRange = this.range
@@ -296,6 +310,7 @@ export default {
     },
 
     beforeUnmount() {
+        clearInterval(this.nowTimer)
         this.timetableDisposed = true
         window.removeEventListener('scroll', this.persistTimetableView, true)
         window.removeEventListener('pagehide', this.persistTimetableView)
@@ -315,6 +330,8 @@ export default {
             pendingTimetableRestore: null,
             timetableReady: false,
             timetableDisposed: false,
+            nowTs: Date.now(),
+            nowTimer: null,
         }
     },
 
@@ -389,6 +406,7 @@ export default {
                             date,
                             dateObj,
                             hours,
+                            cancelled_hours: cancelledCourseDateHours(courseDate),
                             hoursLabel,
                             timeRangeLabel,
                             classLabel: classLabel || '-',
@@ -413,6 +431,17 @@ export default {
                     if (hourA !== hourB) return hourA - hourB
                     return a.courseTitle.localeCompare(b.courseTitle, 'de', { sensitivity: 'base' })
                 })
+        },
+        viennaNow() {
+            const now = new Date(this.nowTs)
+            return {
+                date: applicationDate(now),
+                time: now.toLocaleTimeString('en-GB', { timeZone: 'Europe/Vienna', hourCycle: 'h23' }),
+            }
+        },
+        highlightedTeachingDate() {
+            const today = parseLocalDate(this.viennaNow.date)
+            return this.timetableItems.find((item) => !this.hasFreeStatus(item) && item.dateObj >= today)?.date || null
         },
         filteredItems() {
             const [from, until] = this.currentRangeBounds()
@@ -766,7 +795,10 @@ export default {
             return `${y}-${m}-${d}`
         },
         isDayToday(day) {
-            return this.normalizeDay(day).getTime() === parseLocalDate(applicationDate()).getTime()
+            return this.normalizeDateToString(day) === this.viennaNow.date
+        },
+        isHighlightedTeachingDay(day) {
+            return this.normalizeDateToString(day) === this.highlightedTeachingDate
         },
         formatDayOfWeek(day) {
             return day.toLocaleDateString('de-DE', { weekday: 'short' })
@@ -789,12 +821,12 @@ export default {
         resetOffset() {
             this.offset = 0
         },
-        getStatusClass(item) {
+        getStatusClass(item, hour) {
             const classes = []
             if (this.hasExamStatus(item)) {
                 classes.push('timetable-item--exam')
             }
-            if (this.hasFreeStatus(item)) {
+            if (this.hasFreeStatus(item, hour)) {
                 classes.push('timetable-item--free')
             }
             return classes
@@ -812,7 +844,9 @@ export default {
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('pruefung') || statusStr.includes('prüfung')
         },
-        hasFreeStatus(item) {
+        hasFreeStatus(item, hour) {
+            if (hour !== undefined && isCourseDateHourCancelled(item, hour)) return true
+            if (item?.hours?.length && activeCourseDateHours(item).length === 0) return true
             const status = Array.isArray(item?.status) ? item.status : []
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('frei')
@@ -822,8 +856,25 @@ export default {
                 || statusStr.includes('entfallen')
         },
         isToday(item) {
-            const today = parseLocalDate(applicationDate())
-            return item.dateObj.getTime() === today.getTime()
+            return item.date === this.viennaNow.date
+        },
+        isUpcomingLesson(item, hour) {
+            if (this.hasFreeStatus(item) || item.date !== this.highlightedTeachingDate) return false
+            const hours = hour === undefined ? item.hours : [hour]
+            return hours.some((lessonHour) => {
+                if (isCourseDateHourCancelled(item, lessonHour)) return false
+                const schoolHour = this.schoolHoursByHour[lessonHour]
+                const from = this.lessonTime(schoolHour?.from)
+                const until = this.lessonTime(schoolHour?.until)
+                if (!from || !until || from >= until) return false
+                return item.date > this.viennaNow.date
+                    || (item.date === this.viennaNow.date && this.viennaNow.time < until)
+            })
+        },
+        lessonTime(value) {
+            const time = (value || '').toString().trim()
+            if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time)) return null
+            return time.length === 5 ? `${time}:00` : time
         },
         isAttendanceChecked(item) {
             if (!item) return false
@@ -892,7 +943,7 @@ export default {
     border-left-color: #ff5722;
 }
 
-.timetable-item--today {
+.timetable-item--upcoming {
     border-left: 4px solid #ff9800 !important;
 }
 
@@ -904,11 +955,20 @@ export default {
     overflow-x: auto;
 }
 
+.timetable-table-card {
+    width: 100%;
+    max-width: 100%;
+}
+
 .timetable-grid-table {
-    /* Size each day from its widest entry without distributing unused container space. */
-    width: max-content;
+    width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.8rem;
+}
+
+.timetable-grid-width {
+    width: 100%;
 }
 
 .timetable-grid-table th,
@@ -935,6 +995,29 @@ export default {
 .timetable-day-header-cell.day-today {
     background-color: #fff3e0;
     color: #e65100;
+}
+
+.timetable-grid-table .day-highlighted {
+    --frame-top: 0px;
+    --frame-bottom: 0px;
+    position: relative;
+}
+
+.timetable-grid-table .day-highlighted::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: solid #4b5563;
+    border-width: var(--frame-top) 2px var(--frame-bottom);
+    pointer-events: none;
+}
+
+.timetable-grid-table th.day-highlighted {
+    --frame-top: 2px;
+}
+
+.timetable-grid-table tbody tr:last-child .day-highlighted {
+    --frame-bottom: 2px;
 }
 
 .timetable-day-date {
@@ -984,13 +1067,19 @@ export default {
 .timetable-grid-course {
     font-weight: 600;
     font-size: 0.75rem;
-    white-space: nowrap;
-    flex-shrink: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    flex-shrink: 1;
 }
 
 .timetable-grid-class {
     font-size: 0.7rem;
     opacity: 0.7;
+    overflow-wrap: anywhere;
+}
+
+.timetable-grid-item > .d-flex {
+    flex-wrap: wrap;
 }
 
 .timetable-grid-content {
@@ -1020,7 +1109,7 @@ export default {
     border-left-color: #ff5722;
 }
 
-.timetable-grid-item.timetable-item--today {
+.timetable-grid-item.timetable-item--upcoming {
     border-left-color: #ff9800;
 }
 

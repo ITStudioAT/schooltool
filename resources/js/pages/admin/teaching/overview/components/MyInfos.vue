@@ -116,6 +116,7 @@
 </template>
 
 <script>
+import { isCourseDateHourCancelled } from '@/helpers/courseDateHours'
 import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -239,7 +240,7 @@ export default {
                     const hours = Array.isArray(courseDate?.hours)
                         ? [...courseDate.hours]
                             .map((hour) => Number(hour))
-                            .filter((hour) => Number.isFinite(hour))
+                            .filter((hour) => Number.isFinite(hour) && !isCourseDateHourCancelled(courseDate, hour))
                             .sort((a, b) => a - b)
                         : []
                     if (!hours.length) {
@@ -274,7 +275,7 @@ export default {
                     const hours = Array.isArray(courseDate?.hours)
                         ? [...courseDate.hours]
                             .map((hour) => Number(hour))
-                            .filter((hour) => Number.isFinite(hour))
+                            .filter((hour) => Number.isFinite(hour) && !isCourseDateHourCancelled(courseDate, hour))
                             .sort((a, b) => a - b)
                         : []
                     if (!hours.length) {

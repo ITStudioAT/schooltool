@@ -981,6 +981,22 @@ gitcheck
 gitpreview -RefreshData
 gitpreview resume '0123456789abcdef0123456789abcdef' -RefreshData
 gitdeploy
+$editorFolder = Join-Path (Get-Location) '.git/editor folder'
+[System.IO.Directory]::CreateDirectory($editorFolder) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $editorFolder 'composer.json'), '{}')
+$env:SCHOOLTOOL_TEST_EDITOR_LOG = Join-Path (Get-Location) '.git/editor-calls.jsonl'
+$env:SCHOOLTOOL_TEST_EDITOR = Join-Path (Get-Location) '.git/editor-mock.ps1'
+[System.IO.File]::WriteAllText($env:SCHOOLTOOL_TEST_EDITOR, '[System.IO.File]::AppendAllText($env:SCHOOLTOOL_TEST_EDITOR_LOG, (ConvertTo-Json -InputObject @($args) -Compress) + [Environment]::NewLine); $global:LASTEXITCODE = 0')
+function Get-Command {
+    param($Name, $CommandType, $ErrorAction)
+    if ($Name -eq 'code') { return [pscustomobject]@{ Source = $env:SCHOOLTOOL_TEST_EDITOR } }
+    Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
+}
+$previousTermProgram = $env:TERM_PROGRAM
+$env:TERM_PROGRAM = 'vscode'
+Show-ProjectGitWorkspace $editorFolder
+Show-ProjectGitWorkspace (Get-Location).Path
+$env:TERM_PROGRAM = $previousTermProgram
 git remote set-url --push origin https://example.invalid/other.git
 try { gitsave 'Must be blocked'; throw 'UNTRUSTED_DISPATCH_ALLOWED' } catch {
     if ($_.Exception.Message -eq 'UNTRUSTED_DISPATCH_ALLOWED') { throw }
@@ -988,6 +1004,12 @@ try { gitsave 'Must be blocked'; throw 'UNTRUSTED_DISPATCH_ALLOWED' } catch {
 }
 POWERSHELL);
     assertBranchWorkflowSucceeded($result);
+    $editorCalls = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
+        file($this->workflowPc.'/.git/editor-calls.jsonl', FILE_IGNORE_NEW_LINES));
+    expect($editorCalls)->toHaveCount(2)
+        ->and(array_slice($editorCalls[0], 0, 2))->toBe(['--new-window', str_replace('/', DIRECTORY_SEPARATOR, $this->workflowPc.'/.git/editor folder')])
+        ->and(array_slice($editorCalls[1], 0, 2))->toBe(['--new-window', str_replace('/', DIRECTORY_SEPARATOR, $this->workflowPc)])
+        ->and($editorCalls[0][2])->toBe('--goto');
     $profile = file_get_contents($this->workflowPc.'/.git/test-profile.ps1');
     foreach (['WindowsPowerShell', 'PowerShell'] as $edition) {
         $editionProfile = file_get_contents($this->workflowPc.'/.git/test-documents/'.$edition.'/Microsoft.PowerShell_profile.ps1');

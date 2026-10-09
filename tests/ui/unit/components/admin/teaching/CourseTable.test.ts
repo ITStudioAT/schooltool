@@ -20,6 +20,83 @@ import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+
+describe('CourseTable hourly cancellation dialog', () => {
+    function mountCancellationTable(cancelledHours: number[] = []) {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-12', hours: [5, 6], status: [], cancelled_hours: cancelledHours }
+        const courses = useCourseStore(pinia)
+        courses.selected_course = { id: 18, students_info: [], course_dates: [date] } as never
+        courses.courses = [{ id: 18, course_dates: [{ ...date }] }] as never
+        useSchoolHourStore(pinia).school_hours = [
+            { hour: 5, from: '11:35:00', until: '12:25:00' },
+            { hour: 6, from: '12:30:00', until: '13:20:00' },
+        ] as never
+        const dates = useCourseDateStore(pinia)
+        const wrapper = mount(CourseTable, { props: { view: 'attendance' }, global: {
+            plugins: [pinia], stubs: {
+                ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true,
+                WorkEvaluationImport: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+                'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true,
+                'v-divider': true, 'v-card-subtitle': true,
+                'v-dialog': { props: ['modelValue', 'persistent'], template: '<div v-if="modelValue"><slot /></div>' },
+                'v-checkbox': { props: ['modelValue', 'value', 'label', 'disabled'], emits: ['update:modelValue'],
+                    template: `<label><input type="checkbox" :disabled="disabled" :checked="modelValue.includes(value)"
+                        @change="$emit('update:modelValue', $event.target.checked ? [...modelValue, value] : modelValue.filter(hour => hour !== value))">{{ label }}</label>` },
+            },
+        } })
+        return { wrapper, dates, courses, date }
+    }
+
+    it.each([[[5]], [[6]], [[5, 6]]])('saves only the selected cancelled hours %j and updates the overview', async (hours) => {
+        const { wrapper, dates, courses, date } = mountCancellationTable()
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect(wrapper.get('[data-testid="course-date-cancellation-dialog"]').text()).toContain('11:35–12:25').toContain('12:30–13:20')
+            for (const hour of hours) await wrapper.get(`[data-testid="cancelled-hour-${hour}"] input`).setValue(true)
+            expect(date.cancelled_hours).toEqual([])
+            vi.mocked(dates.updateStatus).mockResolvedValue({ ...date, cancelled_hours: hours, status: hours.length === 2 ? ['entfaellt'] : [] } as never)
+            await wrapper.get('[data-testid="course-date-cancellation-save"]').trigger('click')
+            await flushPromises()
+            expect(dates.updateStatus).toHaveBeenCalledWith(1, { cancelled_hours: hours })
+            expect((courses.selected_course as any).course_dates[0].cancelled_hours).toEqual(hours)
+            expect((courses.courses[0] as any).course_dates[0].cancelled_hours).toEqual(hours)
+            expect(wrapper.find('[data-testid="course-date-cancellation-dialog"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows the saved selection and discards changes on cancel without writing', async () => {
+        const { wrapper, dates, date } = mountCancellationTable([5])
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect((wrapper.get('[data-testid="cancelled-hour-5"] input').element as HTMLInputElement).checked).toBe(true)
+            await wrapper.get('[data-testid="cancelled-hour-6"] input').setValue(true)
+            const cancel = wrapper.findAll('v-btn').find((button) => button.text() === 'Abbrechen')!
+            await cancel.trigger('click')
+            expect(dates.updateStatus).not.toHaveBeenCalled()
+            expect(date.cancelled_hours).toEqual([5])
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect((wrapper.get('[data-testid="cancelled-hour-6"] input').element as HTMLInputElement).checked).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the selection open when saving fails', async () => {
+        const { wrapper, dates } = mountCancellationTable()
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            await wrapper.get('[data-testid="cancelled-hour-5"] input').setValue(true)
+            vi.mocked(dates.updateStatus).mockResolvedValue(false)
+            await wrapper.get('[data-testid="course-date-cancellation-save"]').trigger('click')
+            await flushPromises()
+            expect(wrapper.get('[role="alert"]').text()).toContain('nicht gespeichert')
+            expect((wrapper.get('[data-testid="cancelled-hour-5"] input').element as HTMLInputElement).checked).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+})
 
 describe('CourseTable evaluation PDF links', () => {
     it.each([
@@ -1326,7 +1403,7 @@ describe('CourseTable', () => {
         )
 
         expect(source).toContain('--course-table-free-cell-background: #e8f5e9;')
-        expect(source.match(/background: var\(--course-table-free-cell-background\);/gu)).toHaveLength(4)
+        expect(source.match(/background: var\(--course-table-free-cell-background\);/gu)).toHaveLength(5)
         expect(source).not.toContain('background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);')
     })
 

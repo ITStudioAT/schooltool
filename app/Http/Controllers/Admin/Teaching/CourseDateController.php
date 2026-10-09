@@ -14,6 +14,7 @@ use App\Services\TeachingCourseDateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class CourseDateController extends Controller
 {
@@ -217,6 +218,8 @@ class CourseDateController extends Controller
             'toggle_student_id' => 'nullable|integer',
             'attendance_state' => 'nullable|boolean',
             'client_toggle_version' => 'nullable|string|max:32',
+            'cancelled_hours' => ['sometimes', 'array'],
+            'cancelled_hours.*' => ['integer', 'distinct', Rule::in($course_date->hours ?? [])],
         ]);
 
         $service->updateCourseDateStatus($course_date, $validated, $course);

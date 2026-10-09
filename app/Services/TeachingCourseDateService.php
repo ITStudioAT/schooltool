@@ -201,6 +201,11 @@ class TeachingCourseDateService
      */
     public function updateCourseDateStatus(TeachingCourseDate $courseDate, array $validated, TeachingCourse $course): void
     {
+        if (array_key_exists('cancelled_hours', $validated)) {
+            $this->setCancelledHours($courseDate, $validated['cancelled_hours']);
+
+            return;
+        }
         $updateData = [];
         $supportsAttendanceColumns = $this->supportsAttendanceColumns();
         $statusProvided = array_key_exists('status', $validated);
@@ -255,6 +260,43 @@ class TeachingCourseDateService
     // ------------------------------------------------------------------
     // Public helper methods (also used by CourseDateResource)
     // ------------------------------------------------------------------
+
+    /** @param list<int> $cancelledHours */
+    private function setCancelledHours(TeachingCourseDate $courseDate, array $cancelledHours): void
+    {
+        DB::transaction(function () use ($courseDate, $cancelledHours): void {
+            $lockedDate = TeachingCourseDate::query()->lockForUpdate()->findOrFail($courseDate->id);
+            $hours = array_values(array_unique(array_map('intval', $lockedDate->hours ?? [])));
+            $cancelledHours = array_values(array_unique(array_map('intval', $cancelledHours)));
+            if (array_diff($cancelledHours, $hours) !== []) {
+                throw ValidationException::withMessages(['cancelled_hours' => 'Die gewählte Stunde gehört nicht zu diesem Unterricht.']);
+            }
+            $status = array_values(array_filter($lockedDate->status ?? [], fn ($value): bool => $value !== 'entfaellt' && (! is_string($value) || ! str_starts_with($value, 'cancelled_hour:'))
+            ));
+            foreach ($cancelledHours as $hour) {
+                $status[] = 'cancelled_hour:'.$hour;
+            }
+            if ($hours !== [] && count($cancelledHours) === count($hours)) {
+                $status[] = 'entfaellt';
+            }
+            $lockedDate->update(['status' => $status]);
+        });
+        $courseDate->refresh();
+    }
+
+    private function statusWithCancelledHours(TeachingCourseDate $courseDate, mixed $requestedStatus): array
+    {
+        $status = $this->normalizePublicStatus($requestedStatus);
+        if (! in_array('entfaellt', $courseDate->status ?? [], true) && ! in_array('entfaellt', $status, true)) {
+            foreach ($courseDate->hours ?? [] as $hour) {
+                if (in_array('cancelled_hour:'.(int) $hour, $courseDate->status ?? [], true)) {
+                    $status[] = 'cancelled_hour:'.(int) $hour;
+                }
+            }
+        }
+
+        return $status;
+    }
 
     public function supportsAttendanceColumns(): bool
     {
@@ -517,7 +559,7 @@ class TeachingCourseDateService
         array $validated
     ): void {
         if ($statusProvided) {
-            $updateData['status'] = $this->normalizePublicStatus($validated['status'] ?? []);
+            $updateData['status'] = $this->statusWithCancelledHours($courseDate, $validated['status'] ?? []);
         } elseif ($attendanceProvided || $attendanceCheckedProvided || $toggleStudentProvided) {
             $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
             $cleanStatus = $this->stripAttendanceMetaFromStatus($currentStatus);
@@ -550,7 +592,7 @@ class TeachingCourseDateService
     ): void {
         $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
         $publicStatus = $statusProvided
-            ? $this->normalizePublicStatus($validated['status'] ?? [])
+            ? $this->statusWithCancelledHours($courseDate, $validated['status'] ?? [])
             : $this->stripAttendanceMetaFromStatus($currentStatus);
         $attendance = $attendanceProvided
             ? ($toggleStudentProvided
@@ -619,7 +661,7 @@ class TeachingCourseDateService
             }
             $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
             $publicStatus = $statusProvided
-                ? $this->normalizePublicStatus($validated['status'] ?? [])
+                ? $this->statusWithCancelledHours($courseDate, $validated['status'] ?? [])
                 : $this->stripAttendanceMetaFromStatus($currentStatus);
             $attendance = $attendanceProvided
                 ? ($validated['attendance'] ?? [])

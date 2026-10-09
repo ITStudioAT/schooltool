@@ -19,7 +19,7 @@ class FeaturePreviewSnapshotService
     /** Reserved snapshot identity for main; never a registered feature lifecycle. */
     public const string MAIN_SNAPSHOT_ID = '00000000000000000000000000000000';
 
-    private const array EMPTY_TABLES = ['sessions', 'password_reset_tokens', 'personal_access_tokens', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks'];
+    private const array EMPTY_TABLES = ['sessions', 'password_reset_tokens', 'personal_access_tokens', 'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'dropbox_connections', 'teaching_work_dropbox_folders'];
 
     /** Historical ledger entries remain valid after the module's schema is retired. */
     private const array RETIRED_TUTORING_MIGRATIONS = [

@@ -95,7 +95,7 @@
                                 </div>
                                 <div v-else class="work-grade-distribution-placeholder"></div>
                                 <div class="work-actions work-import-actions d-flex align-center flex-wrap ga-2">
-                                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click.stop="openImport(work)">Importieren</v-btn>
+                                    <WorkImportActions :work="work" @open="openImport" />
                                     <WorkEvaluationPdf :work="work" />
                                     <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
                                     <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
@@ -121,7 +121,7 @@
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <div v-if="work_form.id" class="work-import-actions d-flex align-center flex-wrap ga-2 mt-3">
-                    <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" @click="openImport(courseWorks.find(work => work.id === work_form.id))">Importieren</v-btn>
+                    <WorkImportActions :work="courseWorks.find(work => work.id === work_form.id)" @open="openImport" />
                     <WorkEvaluationPdf :work="work_form" />
                     <WorkDispatchLog :work="work_form" />
                 </div>
@@ -825,12 +825,13 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
+import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 
 export default {
-    components: { ItsGridBox, WorkEvaluationImport, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
+    components: { ItsGridBox, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -1172,8 +1173,9 @@ export default {
 
     methods: {
         formatImportDate: formatViennaDateTime,
-        openImport(work) {
-            this.$refs.evaluationImport.openImport(work)
+        openImport(work, quick = false) {
+            if (quick) this.$refs.evaluationImport.openImport(work, true)
+            else this.$refs.evaluationImport.openImport(work)
         },
         async evaluationImported(work) {
             await this.refreshWorks()
