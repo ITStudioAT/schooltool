@@ -8,6 +8,7 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -161,17 +162,69 @@ class DropboxWorkImport
         } catch (ConnectionException) {
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
         }
+
+        return $this->checkResponse($connection, $response);
+    }
+
+    private function checkResponse(DropboxConnection $connection, Response $response): Response
+    {
         if ($response->status() === 401) {
             $connection->update(['revoked_at' => now()]);
             $this->fail('Dropbox hat die Freigabe abgelehnt. Bitte erneut verbinden.');
         }
         if (! $response->successful()) {
+            if ($response->status() === 429) {
+                $this->fail('Dropbox begrenzt momentan die Anfragen. Bitte kurz warten und die Vorschau erneut laden.');
+            }
             $this->fail($response->status() === 409
                 ? 'Der Dropbox-Ordner oder eine Importdatei ist nicht mehr verfügbar. Bitte den Ordner prüfen oder neu zuordnen.'
                 : 'Dropbox-Anfrage fehlgeschlagen. Bitte später erneut versuchen oder einen Ordner hochladen.');
         }
 
         return $response;
+    }
+
+    /**
+     * @param  array<string, array{entry: array<string, mixed>, name: string, limit: int, path?: string}>  $files
+     * @return array<string, Response>
+     */
+    private function downloadFiles(DropboxConnection $connection, array $files, int $total): array
+    {
+        if ($files === []) {
+            return [];
+        }
+        foreach ($files as $file) {
+            $total = $this->checkDownloadSize($file['entry'], $file['limit'], $total);
+        }
+        $token = $this->accessToken($connection);
+        $responses = Http::pool(function (Pool $pool) use ($files, $token): void {
+            foreach ($files as $key => $file) {
+                $pool->as($key)->withToken($token)->connectTimeout(5)->timeout(20)
+                    ->withOptions(['allow_redirects' => false])
+                    ->withHeaders(['Dropbox-API-Arg' => json_encode(['path' => 'rev:'.$file['entry']['rev']], JSON_THROW_ON_ERROR), 'Content-Type' => ''])
+                    ->withBody('', '')->post('https://content.dropboxapi.com/2/files/download');
+            }
+        }, concurrency: 4);
+        foreach ($files as $key => $file) {
+            $response = $responses[$key] ?? null;
+            if (! $response instanceof Response) {
+                $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
+            }
+            $this->checkResponse($connection, $response);
+        }
+
+        return $responses;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function checkDownloadSize(array $entry, int $limit, int $total): int
+    {
+        if (! is_int($entry['size'] ?? null) || $entry['size'] < 0 || $entry['size'] > $limit
+            || $total + $entry['size'] > self::MAX_BYTES || ! is_string($entry['rev'] ?? null)) {
+            $this->fail('Die Dropbox-Importdateien überschreiten die zulässige Größe.');
+        }
+
+        return $total + $entry['size'];
     }
 
     /** @param Closure(array<string, mixed>, array<string, mixed>): mixed $consume */
@@ -219,12 +272,8 @@ class DropboxWorkImport
         $temporaryPaths = [];
         $total = 0;
         try {
-            $download = function (array $entry, string $name, int $limit) use ($connection, &$temporaryPaths, &$total): UploadedFile {
-                if (($entry['size'] ?? -1) < 0 || $entry['size'] > $limit || $total + $entry['size'] > self::MAX_BYTES
-                    || ! is_string($entry['rev'] ?? null)) {
-                    $this->fail('Die Dropbox-Importdateien überschreiten die zulässige Größe.');
-                }
-                $contents = $this->api($connection, 'files/download', ['path' => 'rev:'.$entry['rev']], true)->body();
+            $saveDownload = function (array $entry, string $name, int $limit, string $contents) use (&$temporaryPaths, &$total): UploadedFile {
+                $this->checkDownloadSize($entry, $limit, $total);
                 $total += strlen($contents);
                 if (strlen($contents) !== $entry['size'] || strlen($contents) > $limit || $total > self::MAX_BYTES) {
                     $this->fail('Dropbox-Dateigröße hat sich geändert oder überschreitet die Importgrenze. Bitte Vorschau erneut laden.');
@@ -241,7 +290,9 @@ class DropboxWorkImport
                 return new UploadedFile($path, $name, null, null, true);
             };
             $packagePath = array_key_first($packages);
-            $package = $download($packages[$packagePath], 'Schooltool-Bewertungen.json', 262144);
+            $this->checkDownloadSize($packages[$packagePath], 262144, $total);
+            $package = $saveDownload($packages[$packagePath], 'Schooltool-Bewertungen.json', 262144,
+                $this->api($connection, 'files/download', ['path' => 'rev:'.$packages[$packagePath]['rev']], true)->body());
             try {
                 $payload = json_decode($package->get(), true, flags: JSON_THROW_ON_ERROR);
             } catch (JsonException) {
@@ -252,36 +303,48 @@ class DropboxWorkImport
             }
             $directory = str_starts_with($packagePath, 'beurteilungen/') ? 'beurteilungen/' : '';
             $references = array_filter([$payload['overview_pdf'] ?? null, ...array_column($payload['records'], 'pdf')]);
-            $pdfs = [];
+            $downloads = [];
+            $pdfNames = [];
             foreach ($references as $reference) {
                 $name = $reference['filename'] ?? null;
                 if (! is_string($name) || ! preg_match('/\A[^\/\\\\\x00-\x1f]+\.pdf\z/ui', $name)) {
                     $this->fail('Ungültige PDF-Referenz im Dropbox-Paket.');
                 }
-                if (isset($pdfs[$name])) {
+                if (isset($pdfNames[$name])) {
                     continue;
                 }
                 $entry = $files[$directory.mb_strtolower($name)] ?? null;
-                if (! $entry || count($pdfs) >= 20) {
+                if (! $entry || count($pdfNames) >= 20) {
                     $this->fail('Referenziertes PDF fehlt oder das Paket enthält mehr als 20 PDFs.');
                 }
-                $pdfs[$name] = $download($entry, $name, self::MAX_BYTES);
+                $pdfNames[$name] = true;
+                $downloads['pdf:'.$name] = ['entry' => $entry, 'name' => $name, 'limit' => self::MAX_BYTES];
             }
-            $documents = [];
+            $protocolCount = 0;
             foreach ($files as $relative => $entry) {
                 if (! preg_match('#\Aversand/(aufgaben|ergebnisse)/versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}/versandprotokoll\.txt\z#', $relative, $matches)) {
                     continue;
                 }
-                if (count($documents) >= 30) {
+                if ($protocolCount >= 30) {
                     $this->fail('Maximal 30 Versandprotokolle pro Ordnerimport.');
                 }
-                $file = $download($entry, 'Versandprotokoll.txt', 1048576);
                 $path = 'Versand/'.($matches[1] === 'aufgaben' ? 'Aufgaben' : 'Ergebnisse').'/'.ucfirst(basename(dirname($relative))).'/Versandprotokoll.txt';
-                $documents[] = ['path' => $root['name'].'/'.$path, 'text' => $file->get()];
+                $downloads['protocol:'.$protocolCount++] = ['entry' => $entry, 'name' => 'Versandprotokoll.txt', 'limit' => 1048576, 'path' => $root['name'].'/'.$path];
+            }
+            $responses = $this->downloadFiles($connection, $downloads, $total);
+            $pdfs = [];
+            $documents = [];
+            foreach ($downloads as $key => $file) {
+                $upload = $saveDownload($file['entry'], $file['name'], $file['limit'], $responses[$key]->body());
+                if (isset($file['path'])) {
+                    $documents[] = ['path' => $file['path'], 'text' => $upload->get()];
+                } else {
+                    $pdfs[] = $upload;
+                }
             }
 
             return $consume(['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
-                ['package' => $package, 'pdfs' => array_values($pdfs)]);
+                ['package' => $package, 'pdfs' => $pdfs]);
         } finally {
             foreach ($temporaryPaths as $path) {
                 if (is_file($path)) {

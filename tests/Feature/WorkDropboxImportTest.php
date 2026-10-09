@@ -11,6 +11,9 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use GuzzleHttp\Promise\Promise;
+use GuzzleHttp\Promise\Utils;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
@@ -53,11 +56,11 @@ function dropboxConnectionForWork(object $context): DropboxConnection
 }
 
 /** @param array<string, string> $contents */
-function fakeDropboxWorkFiles(array $contents): void
+function fakeDropboxWorkFiles(array $contents, ?Closure $downloadResponse = null, ?Factory $factory = null): void
 {
-    Http::swap(new Factory);
+    Http::swap($factory ?? new Factory);
     Http::preventStrayRequests();
-    Http::fake(function (Request $request) use ($contents) {
+    Http::fake(function (Request $request) use ($contents, $downloadResponse) {
         if (str_ends_with($request->url(), '/oauth2/token')) {
             return Http::response(['access_token' => 'test-access']);
         }
@@ -74,7 +77,7 @@ function fakeDropboxWorkFiles(array $contents): void
             $argument = json_decode($request->header('Dropbox-API-Arg')[0], true);
             foreach ($contents as $path => $content) {
                 if ($argument['path'] === 'rev:'.hash('sha256', $path)) {
-                    return Http::response($content);
+                    return $downloadResponse ? $downloadResponse($path, $content) : Http::response($content);
                 }
             }
         }
@@ -276,5 +279,105 @@ test('Dropbox includes recognized result dispatch protocols in the existing prev
     fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package),
         'Versand/Ergebnisse/Versand_2026-10-04_02-15-39/Versandprotokoll.txt' => TeachingWorkDispatchFixture::officeResultsText()]);
     $this->postJson($this->url.'/import')->assertOk()->assertJsonCount(1, 'preview.dispatches');
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('concurrent downloads keep PDF and protocol mappings when responses finish out of order and clean temporary files', function (): void {
+    dropboxConnectionForWork($this);
+    $package = TeachingWorkJsonFixture::package();
+    $contents = [];
+    $package['records'] = array_map(function (int $index) use (&$contents, $package): array {
+        $name = 'Person_'.$index.'.pdf';
+        $contents[$name] = '%PDF-1.4 unique '.$index;
+
+        return array_replace($package['records'][0], ['pdf' => ['filename' => $name]]);
+    }, range(1, 8));
+    $contents['Schooltool-Bewertungen.json'] = json_encode($package);
+    $contents['Versand/Aufgaben/Versand_2026-10-04_02-15-39/Versandprotokoll.txt'] = 'Task protocol';
+    $contents['Versand/Ergebnisse/Versand_2026-10-05_02-15-39/Versandprotokoll.txt'] = 'Result protocol';
+    $pending = [];
+    $active = 0;
+    $maximum = 0;
+    /** Keep deferred fake responses asynchronous instead of waiting for transfer statistics. */
+    $factory = new class extends Factory
+    {
+        public function fake($callback = null): static
+        {
+            $this->record();
+            $this->stubCallbacks = collect([$callback]);
+
+            return $this;
+        }
+    };
+    fakeDropboxWorkFiles($contents, function (string $path, string $content) use (&$pending, &$active, &$maximum) {
+        if (str_ends_with($path, '.json')) {
+            return Http::response($content);
+        }
+        $promise = new Promise(fn () => Utils::queue()->run());
+        $pending[] = [$promise, $content];
+        $maximum = max($maximum, ++$active);
+        Utils::queue()->add(function () use (&$pending, &$active): void {
+            [$promise, $content] = array_pop($pending);
+            $active--;
+            $promise->resolve(new Response(200, [], $content));
+        });
+
+        return $promise;
+    }, $factory);
+    $temporaryPaths = [];
+    app(DropboxWorkImport::class)->withImportFiles($this->user, $this->work, function (array $parameters, array $uploads) use ($contents, &$temporaryPaths): void {
+        foreach ($uploads['pdfs'] as $upload) {
+            expect($upload->get())->toBe($contents[$upload->getClientOriginalName()]);
+            $temporaryPaths[] = $upload->getRealPath();
+        }
+        $temporaryPaths[] = $uploads['package']->getRealPath();
+        expect($uploads['pdfs'])->toHaveCount(8);
+        $documents = json_decode($parameters['documents'], true);
+        expect(array_column($documents, 'text'))->toBe(['Task protocol', 'Result protocol'])
+            ->and($documents[0]['path'])->toContain('/Versand/Aufgaben/')
+            ->and($documents[1]['path'])->toContain('/Versand/Ergebnisse/');
+    });
+    expect($maximum)->toBeGreaterThan(1)->toBeLessThanOrEqual(4);
+    foreach ($temporaryPaths as $path) {
+        expect(is_file($path))->toBeFalse();
+    }
+});
+
+test('one failed parallel download prevents any partial preview or import and cleans temporary files', function (string $failure): void {
+    $package = dropboxAssessmentPackage($this);
+    dropboxConnectionForWork($this);
+    $pdf = "%PDF-1.4\n%%EOF\n";
+    $package['overview_pdf'] = ['filename' => 'Overview.pdf', 'sha256' => hash('sha256', $pdf)];
+    $package['records'][0]['pdf'] = ['filename' => 'Person.pdf', 'sha256' => hash('sha256', $pdf)];
+    $package = TeachingWorkJsonFixture::sign($package);
+    $before = $this->work->fresh()->getAttributes();
+    $temporaryBefore = glob(sys_get_temp_dir().'/schooltool-dropbox-*');
+    fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package), 'Overview.pdf' => $pdf, 'Person.pdf' => $pdf],
+        function (string $path, string $content) use ($failure) {
+            if ($path !== 'Person.pdf') {
+                return Http::response($content);
+            }
+
+            return $failure === 'connection' ? Http::failedConnection() : Http::response('Provider detail must stay private', (int) $failure);
+        });
+    $response = $this->postJson($this->url.'/import')->assertUnprocessable()->assertJsonValidationErrors('dropbox');
+    expect($response->getContent())->not->toContain('Provider detail must stay private');
+    if ($failure === '429') {
+        expect($response->getContent())->toContain('kurz warten');
+    }
+    expect($this->work->fresh()->getAttributes())->toBe($before)
+        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(array_diff(glob(sys_get_temp_dir().'/schooltool-dropbox-*'), $temporaryBefore))->toBe([]);
+})->with(['401', '409', '429', 'connection']);
+
+test('combined file size is rejected before any parallel download begins', function (): void {
+    dropboxConnectionForWork($this);
+    $package = TeachingWorkJsonFixture::package();
+    $package['overview_pdf'] = ['filename' => 'Overview.pdf'];
+    $package['records'][0]['pdf'] = ['filename' => 'Person.pdf'];
+    fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package), 'Overview.pdf' => str_repeat('x', 3 * 1024 * 1024),
+        'Person.pdf' => str_repeat('x', 3 * 1024 * 1024)]);
+    $this->postJson($this->url.'/import')->assertUnprocessable()->assertJsonValidationErrors('dropbox');
+    Http::assertSentCount(4);
     expect(Storage::disk('local')->allFiles())->toBe([]);
 });

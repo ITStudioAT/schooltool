@@ -9,7 +9,8 @@
 - Laufende bzw. nächste Unterrichtsstunde links bei der Stundenanzeige markieren
 - Einzelne Stunden als entfallen markieren und in der Datenbank speichern; vorhandene Anwesenheitsdaten erhalten
 - Quick-Import aus einem pro Benutzer und Arbeit zugeordneten Dropbox-Ordner: aktuellen Cloudstand lesen, Vorschau und Übernahme getrennt bestätigen
-- Dropbox-Anbindung lokal mit simulierten API-Antworten geprüft; Datenbankmigration, OAuth-Freigabe und echter Kontozugriff stehen noch aus
+- Dropbox-Quick-Import beschleunigt: PDFs und Versandprotokolle mit höchstens vier gleichzeitigen Downloads lesen; vollständige Prüfungen und frischer Cloudstand vor der Übernahme bleiben erhalten
+- Dropbox-Anbindung lokal mit simulierten API-Antworten und echtem Lesezugriff geprüft; Datei-Prüfsummen und Vorschau mit dem lokalen Import verglichen, noch nicht online veröffentlicht
 
 ### System
 
