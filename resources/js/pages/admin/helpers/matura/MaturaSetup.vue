@@ -1,18 +1,40 @@
 <template>
     <section class="zero-panel zero-setup">
-        <div class="zero-section-title"><div><span class="zero-eyebrow">VORBEREITUNG</span><h2>{{ existing ? 'Matura bearbeiten' : 'Neue Matura einrichten' }}</h2></div><button type="button" class="zero-link" :disabled="busy" @click="$emit('cancel')">Abbrechen</button></div>
-        <p class="zero-help mb-4">Öffne eine Aufgabe und bestätige sie mit „Übernehmen“. Gespeichert wird erst, wenn alles bereit ist.</p>
+        <div class="zero-section-title"><div><span class="zero-eyebrow">{{ viewOnly ? 'MATURA' : 'VORBEREITUNG' }}</span><h2>{{ viewOnly ? existing.session.name : roomOnly ? 'Raum bearbeiten' : existing ? 'Matura bearbeiten' : 'Neue Matura einrichten' }}</h2></div><button v-if="!viewOnly" type="button" class="zero-link" :disabled="busy" @click="$emit('cancel')">Abbrechen</button></div>
+        <p class="zero-help mb-4">{{ viewOnly ? 'Matura und Klassen, Räume und Schüler oder den Ablauf öffnen.' : existing ? 'Mit „Übernehmen“ speicherst du deine Änderungen und kehrst zur Matura zurück.' : 'Öffne eine Aufgabe und bestätige sie mit „Übernehmen“. Gespeichert wird erst, wenn alles bereit ist.' }}</p>
         <p v-if="assignmentNotice" class="zero-help mb-4" role="status">{{ assignmentNotice }}</p>
         <div class="zero-setup-tasks" aria-label="Aufgaben zur Einrichtung">
             <button v-for="(task, index) in tasks" :key="task.title" type="button" class="zero-setup-task" :class="{ active: activeStep === index, complete: completed[index] }" :disabled="busy || !canOpen(index)" :aria-expanded="activeStep === index" :aria-controls="'setup-task-' + index" @click="openStep(index)">
-                <span class="zero-setup-task-number">{{ completed[index] ? '✓' : index + 1 }}</span>
+                <span class="zero-setup-task-number">{{ !viewOnly && completed[index] ? '✓' : index + 1 }}</span>
                 <strong>{{ task.title }}</strong><span>{{ task.description }}</span>
-                <small>{{ activeStep === index ? 'In Bearbeitung' : completed[index] ? 'Erledigt' : 'Offen' }}</small>
-                <small v-if="!canOpen(index)">Zuerst „{{ tasks[index - 1].title }}“ erledigen</small>
+                <small>{{ viewOnly ? (activeStep === index ? 'Geöffnet' : 'Anzeigen') : activeStep === index ? 'In Bearbeitung' : completed[index] ? 'Erledigt' : 'Offen' }}</small>
+                <small v-if="!roomOnly && !canOpen(index)">Zuerst „{{ tasks[index - 1].title }}“ erledigen</small>
             </button>
         </div>
-        <p class="zero-help mt-3 mb-4" role="status">{{ completed.filter(Boolean).length }} von {{ tasks.length }} Aufgaben erledigt</p>
-        <form v-if="activeStep !== null" :id="'setup-task-' + activeStep" ref="stepForm" @submit.prevent @keydown.enter="preventInputSubmit">
+        <section v-if="viewOnly" :id="'setup-task-' + activeStep" class="mt-4">
+            <template v-if="activeStep === 0">
+                <h3>Matura & Klassen</h3>
+                <p class="zero-confirmed-value">{{ existing.session.name }} · {{ savedDate }}</p>
+                <p class="zero-help">Teilnehmende Klassen</p>
+                <p class="zero-confirmed-value">{{ savedClasses.join(', ') || 'Nur manuelle Schüler' }}</p>
+                <slot name="edit" />
+            </template>
+            <template v-else-if="activeStep === 1">
+                <h3>Räume & Schüler</h3>
+                <p class="zero-confirmed-value">{{ existing.rooms.length }} Räume · {{ existing.students?.length || 0 }} Schüler insgesamt</p>
+                <div class="zero-confirmed-rooms">
+                    <article v-for="savedRoom in existing.rooms" :key="savedRoom.id" class="zero-confirmed-room">
+                        <h4>{{ savedRoom.name }}</h4>
+                        <p class="zero-help">{{ savedRoomStudents(savedRoom.id).length }} Schüler</p>
+                        <ul><li v-for="student in savedRoomStudents(savedRoom.id)" :key="student.id">{{ student.name }}{{ student.class_name ? ` · ${student.class_name}` : '' }}</li></ul>
+                        <slot name="room-actions" :room="savedRoom" />
+                    </article>
+                </div>
+            </template>
+            <slot v-else name="flow" />
+        </section>
+        <p v-if="!viewOnly" class="zero-help mt-3 mb-4" role="status">{{ completed.filter(Boolean).length }} von {{ tasks.length }} Aufgaben erledigt</p>
+        <form v-if="!viewOnly && activeStep !== null" :id="'setup-task-' + activeStep" ref="stepForm" @submit.prevent @keydown.enter="preventInputSubmit">
             <p v-if="validationError" class="zero-error" role="alert">{{ validationError }}</p>
             <fieldset :disabled="busy" class="zero-setup-fields">
                 <section v-if="activeStep === 0" aria-labelledby="setup-basics">
@@ -34,12 +56,12 @@
                 <section v-else-if="activeStep === 1" aria-labelledby="setup-rooms">
                     <h3 id="setup-rooms">Welche Schüler gehören in welchen Raum?</h3>
                     <p class="zero-help mb-4">Alle Räume mit derselben Toilette gehören zu dieser Matura. Ordne jeden Schüler einem Raum zu.</p>
-                    <nav class="zero-setup-rooms" aria-label="Räume bearbeiten">
+                    <nav v-if="!roomOnly" class="zero-setup-rooms" aria-label="Räume bearbeiten">
                         <button v-for="(item, index) in form.rooms" :key="item.key" type="button" class="zero-button zero-button--secondary" :aria-current="roomIndex === index ? 'true' : undefined" @click="chooseRoom(index)">{{ item.name || `Raum ${index + 1}` }} <small>{{ studentCount(item) }} Schüler</small></button>
                         <button type="button" class="zero-link" :disabled="form.rooms.length >= 40" @click="addRoom">+ Raum hinzufügen</button>
                     </nav>
                     <div :key="room.key" class="zero-room-editor">
-                        <div class="zero-section-title"><label class="zero-grow">Name von Raum {{ roomIndex + 1 }}<input v-model="room.name" required maxlength="80" placeholder="z. B. 3.12"></label><button v-if="form.rooms.length > 1" type="button" class="zero-link" @click="removeRoom">Raum entfernen</button></div>
+                        <div class="zero-section-title"><label class="zero-grow">Name von Raum {{ roomIndex + 1 }}<input v-model="room.name" required maxlength="80" placeholder="z. B. 3.12"></label><button v-if="!roomOnly && form.rooms.length > 1" type="button" class="zero-link" @click="removeRoom">Raum entfernen</button></div>
                         <p class="zero-help">Raum {{ roomIndex + 1 }} von {{ form.rooms.length }} · {{ studentCount(room) }} Schüler zugeordnet</p>
                         <template v-if="room.name.trim()">
                         <h3 class="mt-4">Welche Schüler sitzen in diesem Raum?</h3>
@@ -63,7 +85,7 @@
                         <details class="mt-4"><summary>Weitere Schüler ohne Import hinzufügen</summary><label class="zero-field mt-3">Ein Name pro Zeile<textarea v-model="room.manualText" rows="3" placeholder="Nachname Vorname" /><small>Diese Namen werden nur in dieser Matura gespeichert.</small></label></details>
                         </template>
                         <p v-else class="zero-help mt-4">Gib zuerst den Raum an. Danach kannst du seine Schüler auswählen.</p>
-                        <div v-if="form.rooms.length > 1" class="zero-actions mt-4"><button type="button" class="zero-link" :disabled="roomIndex === 0" @click="chooseRoom(roomIndex - 1)">Vorheriger Raum</button><button type="button" class="zero-link" :disabled="roomIndex === form.rooms.length - 1" @click="chooseRoom(roomIndex + 1)">Nächster Raum</button></div>
+                        <div v-if="!roomOnly && form.rooms.length > 1" class="zero-actions mt-4"><button type="button" class="zero-link" :disabled="roomIndex === 0" @click="chooseRoom(roomIndex - 1)">Vorheriger Raum</button><button type="button" class="zero-link" :disabled="roomIndex === form.rooms.length - 1" @click="chooseRoom(roomIndex + 1)">Nächster Raum</button></div>
                     </div>
                 </section>
                 <section v-else aria-labelledby="setup-flow">
@@ -73,11 +95,11 @@
                 </section>
             </fieldset>
             <div class="zero-setup-footer">
-                <button type="button" class="zero-link" :disabled="busy" @click="activeStep = null">Zur Aufgabenübersicht</button>
+                <button v-if="!roomOnly" type="button" class="zero-link" :disabled="busy" @click="activeStep = null">Zur Aufgabenübersicht</button>
                 <button type="button" class="zero-button" :disabled="busy" @click="finishStep">Übernehmen</button>
             </div>
         </form>
-        <section v-else-if="completed.some(Boolean)" class="zero-setup-summary" aria-labelledby="setup-summary">
+        <section v-else-if="!viewOnly && completed.some(Boolean)" class="zero-setup-summary" aria-labelledby="setup-summary">
             <h3 id="setup-summary">{{ allCompleted ? 'Alles bereit?' : 'Übernommene Angaben' }}</h3>
             <section v-if="completed[0]" class="zero-confirmed-section" aria-label="Bestätigte Matura und Klassen">
                 <span class="zero-eyebrow">✓ MATURA & KLASSEN ÜBERNOMMEN</span>
@@ -115,24 +137,27 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { restoreSetupDraft, selectedSetupClasses } from './maturaSetupDraft'
-const props = defineProps({ roster: { type: Array, default: () => [] }, schoolyearId: Number, existing: Object, busy: Boolean, draft: Object })
-const emit = defineEmits(['save', 'cancel', 'draft'])
+const props = defineProps({ roster: { type: Array, default: () => [] }, schoolyearId: Number, existing: Object, busy: Boolean, draft: Object, viewOnly: Boolean, initialStep: { type: Number, default: null }, roomOnly: Boolean, initialRoomIndex: { type: Number, default: 0 } })
+const emit = defineEmits(['save', 'cancel', 'draft', 'step'])
 const restoredDraft = props.draft ? restoreSetupDraft(props.draft, props.roster) : null
 const tasks = [
-    { title: 'Matura & Klassen', description: 'Name, Datum und teilnehmende Klassen festlegen.' },
-    { title: 'Räume & Schüler', description: 'Räume anlegen und Schüler zuordnen.' },
-    { title: 'Ablauf', description: 'Warteplätze an der Zwischenstation festlegen.' },
+    { title: 'Matura & Klassen', description: props.viewOnly ? 'Name, Datum und teilnehmende Klassen ansehen.' : 'Name, Datum und teilnehmende Klassen festlegen.' },
+    { title: 'Räume & Schüler', description: props.viewOnly ? 'Räume und zugeordnete Schüler ansehen.' : 'Räume anlegen und Schüler zuordnen.' },
+    { title: 'Ablauf', description: props.viewOnly ? 'Aufsichten, Koordination und Protokoll öffnen.' : 'Warteplätze an der Zwischenstation festlegen.' },
 ]
-const activeStep = ref(restoredDraft?.activeStep ?? null)
-const completed = reactive(restoredDraft?.completed ?? [false, false, false])
-const roomIndex = ref(restoredDraft?.roomIndex ?? 0)
+const activeStep = ref(props.initialStep ?? (props.viewOnly ? 2 : restoredDraft?.activeStep ?? null))
+const savedDate = computed(() => new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(props.existing.session.exam_date)))
+const savedClasses = computed(() => [...new Set((props.existing?.students ?? []).map((student) => student.class_name).filter(Boolean))].sort((first, second) => first.localeCompare(second, 'de-AT', { numeric: true })))
+function savedRoomStudents(id) { return (props.existing.students ?? []).filter((student) => student.matura_room_id === id).sort((first, second) => first.name.localeCompare(second.name, 'de-AT')) }
+const completed = reactive(restoredDraft?.completed ?? (props.existing ? [true, true, true] : [false, false, false]))
+const roomIndex = ref(props.roomOnly ? props.initialRoomIndex : restoredDraft?.roomIndex ?? 0)
 const stepForm = ref(null)
 const validationError = ref('')
 const assignmentNotice = ref(restoredDraft?.removedStudents ? 'Einige Schüler sind nicht mehr im aktuellen Import oder Klassenpool verfügbar. Bitte prüfe die Raumzuordnung und übernimm sie erneut.' : '')
 let roomKey = 0
 function blankRoom() { return { key: ++roomKey, name: '', student_ids: [], classFilter: '', search: '', manualText: '' } }
 const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna' }).format(new Date())
-const form = reactive({ name: props.existing?.session.name || '', exam_date: props.existing?.session.exam_date?.slice(0, 10) || today, waiting_places: props.existing?.session.waiting_places ?? 1, rooms: props.existing ? props.existing.rooms.map((room) => ({ ...blankRoom(), name: room.name, student_ids: props.existing.students.filter((student) => student.matura_room_id === room.id && student.import116_id).map((student) => student.import116_id), manualText: props.existing.students.filter((student) => student.matura_room_id === room.id && !student.import116_id).map((student) => student.name).join('\n') })) : [blankRoom()] })
+const form = reactive({ name: props.existing?.session.name || '', exam_date: props.existing?.session.exam_date?.slice(0, 10) || today, waiting_places: props.existing?.session.waiting_places ?? 1, rooms: props.existing && !props.viewOnly ? props.existing.rooms.map((room) => ({ ...blankRoom(), name: room.name, student_ids: props.existing.students.filter((student) => student.matura_room_id === room.id && student.import116_id).map((student) => student.import116_id), manualText: props.existing.students.filter((student) => student.matura_room_id === room.id && !student.import116_id).map((student) => student.name).join('\n') })) : [blankRoom()] })
 if (restoredDraft) Object.assign(form, restoredDraft.form, { rooms: restoredDraft.form.rooms.map((item) => ({ ...item, key: ++roomKey })) })
 form.selected_classes = selectedSetupClasses(form, props.roster)
 pruneAssignments()
@@ -172,7 +197,8 @@ function toggleClass(schoolClass) {
 function pruneAssignments() {
     const ids = new Set(props.roster.filter((student) => form.selected_classes.includes(student.class)).map((student) => student.id))
     let removed = 0
-    for (const item of form.rooms) {
+    for (const [index, item] of form.rooms.entries()) {
+        if (props.roomOnly && index !== roomIndex.value) continue
         const retained = item.student_ids.filter((id) => ids.has(id))
         removed += item.student_ids.length - retained.length
         if (retained.length !== item.student_ids.length) item.student_ids = retained
@@ -183,20 +209,27 @@ function pruneAssignments() {
 function chooseRoom(index) { roomIndex.value = index; validationError.value = '' }
 function addRoom() { if (form.rooms.length < 40) { form.rooms.push(blankRoom()); chooseRoom(form.rooms.length - 1) } }
 function removeRoom() { if (form.rooms.length > 1) { form.rooms.splice(roomIndex.value, 1); chooseRoom(Math.min(roomIndex.value, form.rooms.length - 1)) } }
-function canOpen(index) { return index === 0 || completed.slice(0, index).every(Boolean) }
-function openStep(index) { if (!props.busy && canOpen(index)) { activeStep.value = index; validationError.value = '' } }
+function canOpen(index) { return props.roomOnly ? index === 1 : props.viewOnly || index === 0 || completed.slice(0, index).every(Boolean) }
+function openStep(index) {
+    if (!props.busy && canOpen(index)) {
+        activeStep.value = index
+        validationError.value = ''
+        if (props.viewOnly) emit('step', index)
+    }
+}
 function invalidate(index) { for (let current = index; current < completed.length; current++) completed[current] = false }
 watch(() => [form.name, form.exam_date, form.selected_classes], () => invalidate(0), { deep: true, flush: 'sync' })
 watch(() => form.selected_classes, pruneAssignments, { deep: true, flush: 'sync' })
 watch(() => JSON.stringify(form.rooms.map((item) => ({ name: item.name, student_ids: item.student_ids, manualText: item.manualText }))), () => invalidate(1), { flush: 'sync' })
 watch(() => form.waiting_places, () => invalidate(2), { flush: 'sync' })
-watch(() => ({ form: { ...form, rooms: form.rooms.map(({ key, ...item }) => item) }, completed, activeStep: activeStep.value, roomIndex: roomIndex.value }), (draft) => emit('draft', JSON.parse(JSON.stringify(draft))), { deep: true, immediate: true, flush: 'sync' })
+watch(() => ({ form: { ...form, rooms: form.rooms.map(({ key, ...item }) => item) }, completed, activeStep: activeStep.value, roomIndex: roomIndex.value }), (draft) => { if (!props.viewOnly) emit('draft', JSON.parse(JSON.stringify(draft))) }, { deep: true, immediate: true, flush: 'sync' })
 function preventInputSubmit(event) { if (event.target.tagName === 'INPUT' && event.target.type !== 'checkbox') event.preventDefault() }
 function validateStep() {
     validationError.value = ''
     if (activeStep.value === 0 && !form.name.trim()) { validationError.value = 'Bitte gib der Matura einen Namen.'; return false }
     if (activeStep.value === 1) {
-        const invalidRoom = form.rooms.findIndex((item) => {
+        const invalidRoom = form.rooms.findIndex((item, index) => {
+            if (props.roomOnly && index !== roomIndex.value) return false
             if (!item.name.trim() || item.name.length > 80) { validationError.value = 'Bitte gib jedem Raum einen Namen (höchstens 80 Zeichen).'; return true }
             if (form.rooms.some((other) => other !== item && other.name.trim() === item.name.trim())) { validationError.value = 'Bitte verwende für jeden Raum einen eigenen Namen.'; return true }
             if (item.student_ids.length > 500 || manualStudents(item).length > 200) { validationError.value = 'Pro Raum sind höchstens 500 Schüler aus dem Import und 200 weitere Schüler möglich.'; return true }
@@ -210,11 +243,18 @@ function validateStep() {
 }
 function finishStep() {
     if (props.busy || !validateStep()) return
+    if (props.existing) {
+        emitSave()
+        return
+    }
     completed[activeStep.value] = true
     activeStep.value = null
 }
 function save() {
     if (props.busy || !allCompleted.value || activeStep.value !== null) return
+    emitSave()
+}
+function emitSave() {
     emit('save', { schoolyear_id: props.schoolyearId, name: form.name.trim(), exam_date: form.exam_date, waiting_places: form.waiting_places, rooms: form.rooms.map((item) => ({ name: item.name.trim(), student_ids: [...item.student_ids], manual_students: manualStudents(item) })) })
 }
 </script>
@@ -235,9 +275,11 @@ function save() {
 .zero-setup-rooms button small { margin-left: 8px; font-weight: 400; }
 .zero-setup-rooms [aria-current=true] { border-color: var(--zero-teal); background: #dcefe9; }
 .zero-setup-classes { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
-.zero-setup-classes button { align-items: flex-start; flex-direction: column; gap: 5px; min-width: 160px; }
+.zero-setup-classes button { position: relative; align-items: flex-start; flex-direction: column; gap: 5px; min-width: 160px; padding-right: 42px; }
 .zero-setup-classes button small { font-size: .72rem; font-weight: 400; }
-.zero-setup-classes .zero-class-selected { border-color: var(--zero-teal); background: #dcefe9; }
+.zero-setup-classes .zero-class-selected { border-color: var(--zero-teal); background: var(--zero-teal); color: white !important; box-shadow: 0 0 0 2px var(--zero-teal); }
+.zero-setup-classes .zero-class-selected strong, .zero-setup-classes .zero-class-selected small, .zero-setup-classes .zero-class-selected::after { color: white !important; }
+.zero-setup-classes .zero-class-selected::after { content: '✓'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 1.3rem; font-weight: 750; }
 .zero-roster-class { grid-column: 1 / -1; text-align: left; padding: 10px 12px; background: #edf4f3; font-size: .8rem; color: var(--zero-teal); }
 .zero-roster--single-class { max-height: none; overflow: visible; }
 .zero-setup-capacity { max-width: 340px; }

@@ -12,6 +12,9 @@ export default defineConfig({
         host: 'localhost',
         port: 5173,
         strictPort: true,
+        watch: {
+            ignored: ['**/vendor/**', '**/storage/**', '**/.npm-cache/**', '**/tmp/**', '**/undefined/**'],
+        },
         hmr: {
             host: 'localhost',
         },
