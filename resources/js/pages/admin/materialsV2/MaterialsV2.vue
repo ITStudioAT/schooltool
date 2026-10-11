@@ -87,8 +87,13 @@
                 <Groups v-else :embedded="true" embedded-filter="materials" />
             </section>
 
-            <div v-else class="materials-v2-workspace">
-                <aside class="materials-v2-category-panel">
+            <div
+                v-else
+                ref="materialsWorkspace"
+                class="materials-v2-workspace"
+                :class="{ 'materials-v2-workspace--resizing': isCategoryPanelResizing }"
+                :style="{ '--materials-category-width': `${visibleCategoryPanelWidth}px` }">
+                <aside id="materials-v2-categories" class="materials-v2-category-panel">
                     <div class="materials-v2-category-panel-heading">
                         <span>{{ isClusterView ? 'Clusters' : 'Eigene Kategorien' }}</span>
                         <v-btn
@@ -186,6 +191,31 @@
                         </v-list-item>
                     </v-list>
                 </aside>
+
+                <div
+                    class="materials-v2-category-splitter"
+                    role="separator"
+                    tabindex="0"
+                    aria-label="Breite der Kategorien"
+                    aria-orientation="vertical"
+                    aria-controls="materials-v2-categories"
+                    :aria-valuemin="Math.round(categoryPanelBounds.minimum)"
+                    :aria-valuemax="Math.round(categoryPanelBounds.maximum)"
+                    :aria-valuenow="Math.round(visibleCategoryPanelWidth)"
+                    :aria-valuetext="`${Math.round(visibleCategoryPanelWidth)} Pixel`"
+                    title="Ziehen oder Pfeiltasten verwenden; Doppelklick setzt die Breite zurück"
+                    @pointerdown="startCategoryPanelResize"
+                    @pointermove="resizeCategoryPanel"
+                    @pointerup="finishCategoryPanelResize"
+                    @pointercancel="finishCategoryPanelResize"
+                    @lostpointercapture="finishCategoryPanelResize"
+                    @keydown.left.prevent="adjustCategoryPanelWidth(-10)"
+                    @keydown.right.prevent="adjustCategoryPanelWidth(10)"
+                    @keydown.home.prevent="setCategoryPanelWidth(categoryPanelBounds.minimum)"
+                    @keydown.end.prevent="setCategoryPanelWidth(categoryPanelBounds.maximum)"
+                    @dblclick="setCategoryPanelWidth(250)">
+                    <span aria-hidden="true" />
+                </div>
 
                 <main class="materials-v2-main">
                     <div class="materials-v2-toolbar">
@@ -1362,6 +1392,139 @@ const canManageAdministration = computed(() => ['super_admin', 'admin', 'materia
 const isAdminView = computed(() => canManageAdministration.value && route.query.section === 'admin')
 const selectedAdministrationPanel = computed(() => administrationPanels.some((panel) => panel.id === route.query.panel)
     ? route.query.panel : 'material_settings')
+const materialsWorkspace = ref(null)
+const categoryPanelWidth = ref(250)
+const workspaceWidth = ref(0)
+const isCategoryPanelResizing = ref(false)
+let categoryPanelResize = null
+let workspaceResizeObserver = null
+const categoryPanelStorageKey = computed(() => {
+    const userId = Number(adminStore.config?.user?.id)
+
+    return Number.isInteger(userId) && userId > 0 ? `materials-v2-category-width.${userId}` : null
+})
+const categoryPanelBounds = computed(() => {
+    const availableWidth = Math.max(0, workspaceWidth.value - 12)
+    const minimum = workspaceWidth.value > 0 ? Math.min(220, availableWidth / 2) : 220
+    const minimumContentWidth = Math.min(520, availableWidth - minimum)
+
+    return {
+        minimum,
+        maximum: workspaceWidth.value > 0 ? Math.min(480, availableWidth - minimumContentWidth) : 480,
+    }
+})
+const visibleCategoryPanelWidth = computed(() => clampCategoryPanelWidth(categoryPanelWidth.value))
+
+watch(categoryPanelStorageKey, (storageKey) => {
+    stopCategoryPanelResize(false)
+    categoryPanelWidth.value = 250
+
+    if (!storageKey) {
+        return
+    }
+
+    try {
+        const savedWidth = Number(window.localStorage.getItem(storageKey))
+        if (Number.isFinite(savedWidth) && savedWidth >= 220 && savedWidth <= 480) {
+            categoryPanelWidth.value = savedWidth
+        }
+    } catch {
+        // Keep the default width when browser storage is unavailable.
+    }
+}, { immediate: true, flush: 'sync' })
+
+watch(materialsWorkspace, (workspace) => {
+    workspaceResizeObserver?.disconnect()
+    stopCategoryPanelResize()
+    measureMaterialsWorkspace()
+
+    if (workspace && typeof ResizeObserver !== 'undefined') {
+        workspaceResizeObserver = new ResizeObserver(measureMaterialsWorkspace)
+        workspaceResizeObserver.observe(workspace)
+    }
+}, { flush: 'post' })
+
+function measureMaterialsWorkspace() {
+    workspaceWidth.value = materialsWorkspace.value?.getBoundingClientRect().width || 0
+}
+
+function clampCategoryPanelWidth(width) {
+    return Math.min(categoryPanelBounds.value.maximum, Math.max(categoryPanelBounds.value.minimum, width))
+}
+
+function persistCategoryPanelWidth() {
+    if (!categoryPanelStorageKey.value) {
+        return
+    }
+
+    try {
+        const savedWidth = Math.min(480, Math.max(220, Math.round(categoryPanelWidth.value)))
+        window.localStorage.setItem(categoryPanelStorageKey.value, String(savedWidth))
+    } catch {
+        // Resizing remains available when browser storage is unavailable.
+    }
+}
+
+function setCategoryPanelWidth(width) {
+    categoryPanelWidth.value = clampCategoryPanelWidth(width)
+    persistCategoryPanelWidth()
+}
+
+function adjustCategoryPanelWidth(change) {
+    measureMaterialsWorkspace()
+    setCategoryPanelWidth(visibleCategoryPanelWidth.value + change)
+}
+
+function startCategoryPanelResize(event) {
+    if (event.button !== 0 || categoryPanelResize) {
+        return
+    }
+
+    measureMaterialsWorkspace()
+    categoryPanelResize = {
+        pointerId: event.pointerId,
+        element: event.currentTarget,
+        startX: event.clientX,
+        startWidth: visibleCategoryPanelWidth.value,
+    }
+    isCategoryPanelResizing.value = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    event.preventDefault()
+}
+
+function resizeCategoryPanel(event) {
+    if (!categoryPanelResize || event.pointerId !== categoryPanelResize.pointerId) {
+        return
+    }
+
+    categoryPanelWidth.value = clampCategoryPanelWidth(
+        categoryPanelResize.startWidth + event.clientX - categoryPanelResize.startX,
+    )
+}
+
+function finishCategoryPanelResize(event) {
+    if (event.pointerId === categoryPanelResize?.pointerId) {
+        stopCategoryPanelResize()
+    }
+}
+
+function stopCategoryPanelResize(persist = true) {
+    const resize = categoryPanelResize
+    categoryPanelResize = null
+    isCategoryPanelResizing.value = false
+
+    if (!resize) {
+        return
+    }
+
+    if (resize.element.hasPointerCapture?.(resize.pointerId)) {
+        resize.element.releasePointerCapture(resize.pointerId)
+    }
+    if (persist) {
+        persistCategoryPanelWidth()
+    }
+}
+
 const {
     items,
     categoryDetails,
@@ -1878,6 +2041,7 @@ watch(hasProcessingItems, (isProcessing) => {
 })
 
 onMounted(async () => {
+    window.addEventListener('resize', measureMaterialsWorkspace)
     await loadConfig()
     ensureSelectedCluster()
     await loadItems()
@@ -1885,6 +2049,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+    stopCategoryPanelResize()
+    workspaceResizeObserver?.disconnect()
+    window.removeEventListener('resize', measureMaterialsWorkspace)
     window.clearTimeout(searchTimer)
     window.clearTimeout(linkPreviewTimer)
     linkPreviewRequestId += 1
@@ -3303,13 +3470,42 @@ function notify(message, type = 'success') {
 .materials-v2-workspace {
     display: grid;
     min-height: calc(100vh - 184px);
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: var(--materials-category-width, 250px) 12px minmax(0, 1fr);
 }
 
 .materials-v2-category-panel {
+    min-width: 0;
     padding: 1.25rem 0.85rem;
-    border-right: 1px solid rgba(23, 45, 59, 0.08);
     background: rgba(247, 249, 252, 0.78);
+}
+
+.materials-v2-workspace--resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.materials-v2-category-splitter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: col-resize;
+    touch-action: none;
+    background: rgba(247, 249, 252, 0.78);
+    border-inline: 1px solid rgba(23, 45, 59, 0.08);
+}
+
+.materials-v2-category-splitter span {
+    width: 3px;
+    height: 36px;
+    border-radius: 3px;
+    background: rgba(23, 45, 59, 0.25);
+}
+
+.materials-v2-category-splitter:hover,
+.materials-v2-category-splitter:focus-visible,
+.materials-v2-workspace--resizing .materials-v2-category-splitter {
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: -2px;
 }
 
 .materials-v2-category-panel-heading {
@@ -4150,12 +4346,6 @@ function notify(message, type = 'success') {
     min-width: 0;
 }
 
-@media (max-width: 900px) {
-    .materials-v2-workspace {
-        grid-template-columns: 220px minmax(0, 1fr);
-    }
-}
-
 @media (max-width: 700px) {
     .materials-v2-system-tabs {
         padding: 0 6px;
@@ -4167,6 +4357,10 @@ function notify(message, type = 'success') {
 
     .materials-v2-workspace {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .materials-v2-category-splitter {
+        display: none;
     }
 
     .materials-v2-category-panel {

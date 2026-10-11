@@ -131,10 +131,9 @@ export function simulationSignBalance(part, valuesByEntry) {
 }
 
 export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
-    const absentOptional = Symbol('absent optional standard grade')
+    const absentOptional = Symbol('absent optional part')
     const partResults = Object.fromEntries(parts.map((part) => [part.gradingPartId ?? part.id,
-        ['grade_each', 'grade_mean'].includes(part.points_assessment_mode) && !(part.is_required ?? false)
-            && part.entries?.length && part.entries.every((entry) => entry.has_properties && simulationPropertyMode(entry) === 'grades')
+        !(part.is_required ?? false)
             && (part.entries || []).every((entry) => !(valuesByEntry[entry.id] || []).length)
             ? absentOptional : parseResult(simulationPartGrade(part, valuesByEntry))]))
     const groupResults = {}
@@ -149,6 +148,13 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
         }
         const direct = parts.filter((part) => (groups.find((group) => group.part_ids.includes(part.gradingPartId ?? part.id))?.id ?? 'root') === context)
         for (const part of direct) children.set(`part:${part.gradingPartId ?? part.id}`, partResults[part.gradingPartId ?? part.id])
+        if (children.size && [...children.values()].every((value) => value === absentOptional)) {
+            if (context !== 'root') {
+                groupResults[context] = null
+                groupSteps[context] = ''
+            }
+            return absentOptional
+        }
         const adjustments = direct.filter((part) => part.points_assessment_mode === 'sign_adjust')
         let result = null
         let step = ''
@@ -177,6 +183,10 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
                     partResults[id] = result
                     step = `Basisnote ${display(base)}; Saldo ${display(balance)} × ${display(factor)} = ${display(amount)}${compare(amount, limited) !== 0 ? `; angewandt ${display(limited)}` : ''}. ${display(base)} ${positive ? '−' : '+'} ${display(limited)} = ${display(raw)}${compare(raw, result) !== 0 ? ` → Note ${display(result)}` : ''}`
                     partSteps[id] = step
+                } else if (base && base !== absentOptional && partResults[id] === absentOptional) {
+                    result = base
+                    partResults[id] = base
+                    partSteps[id] = `Basisnote ${display(base)}; Saldo 0 → Note ${display(base)}`
                 }
             }
         } else {
@@ -278,6 +288,9 @@ export function simulationEntryGrade(entry, part, valuesByEntry) {
     }
     if (simulationPropertyMode(entry) !== 'grades' || values.some((value) => !/^[1-5]$/.test(value))) return null
     const configuration = entry.standard_grade_occurrences
+    if (!configuration && part?.points_assessment_mode === 'individual') {
+        return display(fraction(values.reduce((total, value) => total + BigInt(value), 0n), BigInt(values.length)))
+    }
     if (configuration?.mode === 'single') return values.length === 1 ? values[0] : null
     if (part?.points_assessment_mode !== 'grade_mean' || configuration?.mode !== 'fixed'
         || !Number.isSafeInteger(configuration.count) || configuration.count < 2 || values.length !== configuration.count) return null

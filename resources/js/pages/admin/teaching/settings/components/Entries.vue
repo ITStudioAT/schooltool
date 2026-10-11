@@ -1488,6 +1488,10 @@ function entryPropertyMode(entry) {
     return properties.length === 5 && ['1', '2', '3', '4', '5'].every((grade) => properties.includes(grade)) ? 'grades' : 'free'
 }
 
+function hasOnlyStandardGradeEntries(entries) {
+    return entries.length > 0 && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')
+}
+
 function entryCalculationProperties(entry) {
     if (!entry.has_properties) return []
     if (entry.properties_mode === 'fixed') return entry.fixed_properties || []
@@ -2219,7 +2223,7 @@ export default {
             if (block.group) return block.group.name
             const name = block.parts[0]?.name || ''
             const label = /note$/i.test(name.trim()) ? name : `${name}-Note`
-            return block.parts[0]?.is_required === false && !/\(optional\)/i.test(name) ? `${label} (optional)` : label
+            return hasOnlyStandardGradeEntries(block.parts[0]?.entries || []) && block.parts[0]?.is_required === false && !/\(optional\)/i.test(name) ? `${label} (optional)` : label
         },
         openGradingLevelWeightDialog() {
             if (isAdjustmentContext(this)) return
@@ -2279,7 +2283,7 @@ export default {
             }
         },
         gradingPartDisplayName(part) {
-            return part.is_required === false && !/\(optional\)\s*$/i.test(part.name) ? `${part.name} (optional)` : part.name
+            return hasOnlyStandardGradeEntries(part.entries || []) && part.is_required === false && !/\(optional\)\s*$/i.test(part.name) ? `${part.name} (optional)` : part.name
         },
         gradingPartSummary(part, showWeights = true) {
             const entries = part.entries || []
@@ -2943,7 +2947,7 @@ export default {
             this.gradingPartSignThresholds = { 1: null, 2: null, 3: null, 4: null, ...gradingPartArea.sign_grade_thresholds }
             this.gradingPartSignAdjustment = { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null, ...gradingPartArea.sign_adjustment }
             this.gradingPartOnlyPoints = entries.length > 0 && entries.every((entry) => entryTypeGroup(entry) === 'points')
-            this.gradingPartOnlyStandardGrades = entries.length > 0 && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')
+            this.gradingPartOnlyStandardGrades = hasOnlyStandardGradeEntries(entries)
             this.gradingPartSingleStandardNote = this.gradingPartOnlyStandardGrades && entries.length === 1 && (entries[0].standard_grade_occurrences?.mode ?? 'single') === 'single'
             this.gradingPartStandardOccurrences = this.gradingPartOnlyStandardGrades ? entries.map((entry) => ({
                 entry_definition_id: entry.id, name: entry.name, mode: entry.standard_grade_occurrences?.mode ?? 'single', count: entry.standard_grade_occurrences?.count ?? null,

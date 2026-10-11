@@ -1,5 +1,16 @@
 # UPDATES
 
+## 3.51.2
+
+### Unterricht
+
+- Notenberechnung optional-verpflichtend gefixt
+
+### Materialien 2
+
+- Linkadresse nicht erreichbar gefixt
+- Breite der Kateorienanzeige veränderbar
+
 ## 3.51.1
 
 ### Unterricht

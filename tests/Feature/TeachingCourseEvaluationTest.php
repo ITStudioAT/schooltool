@@ -50,17 +50,19 @@ test('configured points basis remains calculable with an unused point type and e
     $adjustment->update(['is_required' => true]);
     expect(evaluationSemester($this)['result'])->toBeNull();
     $adjustment->update(['is_required' => false, 'sign_adjustment' => null]);
+    expect(evaluationSemester($this)['result'])->toBe(1);
+    evaluationEntry($this, $signs, '+');
     expect(evaluationSemester($this)['result'])->toBeNull();
     $adjustment->update(['sign_adjustment' => ['improvement_factor' => '0.25', 'max_improvement' => '1.25', 'deterioration_factor' => '0.25', 'max_deterioration' => '1']]);
     evaluationEntry($this, $signs, 'ungültig');
     expect(evaluationSemester($this)['result'])->toBeNull();
 });
 
-test('structured calculation omits only empty optional standard grades and preserves year weights', function (bool $nested) {
+test('structured calculation omits empty optional grades regardless of saved mode and preserves year weights', function (bool $nested, string $mode, ?array $occurrences) {
     $this->part->update(['points_assessment_mode' => 'grade_each', 'is_required' => true]);
     $base = evaluationDefinition($this, ['standard_grade_occurrences' => ['mode' => 'single', 'count' => null]]);
-    $optional = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'points_assessment_mode' => 'grade_each', 'is_required' => false]);
-    $exam = evaluationDefinition($this, ['short_name' => 'PX', 'teaching_entry_grading_part_id' => $optional->id, 'standard_grade_occurrences' => ['mode' => 'single', 'count' => null]]);
+    $optional = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'points_assessment_mode' => $mode, 'is_required' => false]);
+    $exam = evaluationDefinition($this, ['short_name' => 'PX', 'teaching_entry_grading_part_id' => $optional->id, 'standard_grade_occurrences' => $occurrences]);
     $group = '00000000-0000-4000-8000-000000000003';
     if ($nested) {
         $optional->update(['grading_group_id' => $group]);
@@ -83,7 +85,105 @@ test('structured calculation omits only empty optional standard grades and prese
     $invalid->update(['grade' => '5']);
     expect(evaluationSemester($this)['result'])->toBe(2)->and(evaluationSemester($this)['result_exact'])->toBe('7/3')
         ->and($this->roster->fresh()->sem_grade)->toBe('4');
+})->with([false, true])->with([
+    'DGB configured single exam' => ['grade_each', ['mode' => 'single', 'count' => null]],
+    'INF individual exam without count' => ['individual', null],
+]);
+
+test('optional exam never blocks a complete points and participation basis', function (string $mode, ?array $occurrences) {
+    $group = '00000000-0000-4000-8000-000000000005';
+    $this->area->update(['semester_count' => 1]);
+    $this->part->update(['points_assessment_mode' => 'sum_percent', 'grading_group_id' => $group]);
+    $points = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    evaluationDefinition($this, ['short_name' => 'PU', 'properties_mode' => 'points', 'maximum_points' => 15]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'grading_group_id' => $group, 'is_required' => false, 'points_assessment_mode' => 'sign_adjust',
+        'sign_adjustment' => ['improvement_factor' => '0.25', 'max_improvement' => '1.25', 'deterioration_factor' => '0.25', 'max_deterioration' => '1'],
+    ]);
+    $signs = evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    $optional = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'is_required' => false, 'points_assessment_mode' => $mode, 'allowed_entry_types' => $mode === 'individual' ? 'all' : 'grades',
+    ]);
+    $exam = evaluationDefinition($this, ['short_name' => 'PX', 'teaching_entry_grading_part_id' => $optional->id, 'standard_grade_occurrences' => $occurrences]);
+    $this->area->update(['grading_part_groups' => [['id' => $group, 'name' => 'Basisgruppe']],
+        'grading_level_weights' => [['group_id' => $group, 'weight' => 2], ['part_id' => $optional->id, 'weight' => 1]],
+    ]);
+    evaluationEntry($this, $points, '3.5');
+    evaluationEntry($this, $signs, '+');
+
+    $report = evaluationSemester($this);
+
+    expect($report['status'])->toBe('complete')->and($report['result_exact'])->toBe('11/4')->and($report['result'])->toBe(3);
+    expect(collect($report['parts'])->firstWhere('id', $optional->id)['types'][0]['entries'])->toBeEmpty();
+    $optional->update(['is_required' => true]);
+    expect(evaluationSemester($this)['result'])->toBeNull();
+    $optional->update(['is_required' => false]);
+    evaluationEntry($this, $exam, '5');
+    expect(evaluationSemester($this)['result_exact'])->toBe('7/2')->and(evaluationSemester($this)['result'])->toBe(4);
+    expect($this->roster->fresh()->sem_grade)->toBe('4');
+})->with([
+    'DGB configured single exam' => ['grade_each', ['mode' => 'single', 'count' => null]],
+    'INF individual exam without count' => ['individual', null],
+]);
+
+test('empty optional parts do not require calculation rules in grouped or ordinary reports', function (string $mode, bool $grouped) {
+    $base = evaluationDefinition($this);
+    $optional = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'is_required' => false, 'points_assessment_mode' => $mode,
+    ]);
+    evaluationDefinition($this, ['short_name' => 'PX', 'teaching_entry_grading_part_id' => $optional->id]);
+    if ($grouped) {
+        $this->area->update(['grading_level_weights' => [['part_id' => $this->part->id, 'weight' => 2], ['part_id' => $optional->id, 'weight' => 1]]]);
+    }
+    evaluationEntry($this, $base, '3');
+
+    $report = evaluationSemester($this);
+
+    expect($report['status'])->toBe('complete')->and($report['result_exact'])->toBe('3');
+    $optional->update(['is_required' => true]);
+    expect(evaluationSemester($this)['result'])->toBeNull();
+})->with(['individual', 'grade_each', 'grade_mean', 'overall', 'sign_grade'])->with([false, true]);
+
+test('ordinary weighting renormalizes only existing shares after omitting an optional part', function (bool $mixedWeights) {
+    $this->part->update(['fixed_percentage' => 20]);
+    $first = evaluationDefinition($this);
+    $secondPart = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'fixed_percentage' => $mixedWeights ? null : 50, 'weight' => 1,
+    ]);
+    $second = evaluationDefinition($this, ['short_name' => 'SA', 'teaching_entry_grading_part_id' => $secondPart->id]);
+    TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'is_required' => false, 'fixed_percentage' => 30,
+    ]);
+    evaluationEntry($this, $first, '1');
+    evaluationEntry($this, $second, '5');
+
+    $report = evaluationSemester($this);
+
+    expect($report['status'])->toBe('complete')->and($report['result_exact'])->toBe('27/7');
 })->with([false, true]);
+
+test('omits a completely absent optional points and adjustment group beside an existing exam', function () {
+    $group = '00000000-0000-4000-8000-000000000006';
+    $this->part->update(['grading_group_id' => $group, 'points_assessment_mode' => 'sum_percent', 'is_required' => false]);
+    evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'grading_group_id' => $group, 'is_required' => false, 'points_assessment_mode' => 'sign_adjust', 'sign_adjustment' => null,
+    ]);
+    evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    $examPart = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $exam = evaluationDefinition($this, ['short_name' => 'PX', 'teaching_entry_grading_part_id' => $examPart->id]);
+    $this->area->update(['grading_part_groups' => [['id' => $group, 'name' => 'Basisgruppe']],
+        'grading_level_weights' => [['group_id' => $group, 'weight' => 2], ['part_id' => $examPart->id, 'weight' => 1]],
+    ]);
+    evaluationEntry($this, $exam, '3');
+
+    $report = evaluationSemester($this);
+
+    expect($report['status'])->toBe('complete')->and($report['result_exact'])->toBe('3');
+    expect($report['groups'][0]['status'])->toBe('empty');
+    $this->part->update(['is_required' => true]);
+    expect(evaluationSemester($this)['result'])->toBeNull();
+});
 
 test('evaluates saved nested relative weights and adjustment without mutating real student grades', function () {
     $inner = '00000000-0000-4000-8000-000000000001';

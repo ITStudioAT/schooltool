@@ -4,13 +4,19 @@ namespace App\Services\MaterialsV2;
 
 use App\Support\RemoteUrlGuard;
 use DOMDocument;
+use GuzzleHttp\Handler\CurlHandler;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LengthException;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
 class MaterialV2LinkPreviewService
@@ -48,7 +54,7 @@ class MaterialV2LinkPreviewService
                 return $this->warning($currentUrl, $message);
             }
 
-            if (! defined('CURLOPT_RESOLVE')) {
+            if (! defined('CURLOPT_RESOLVE') || ! function_exists('curl_exec')) {
                 return $this->warning(
                     $remoteUrl['url'],
                     'Die sichere Zielprüfung ist auf diesem Server nicht verfügbar.',
@@ -60,7 +66,7 @@ class MaterialV2LinkPreviewService
             } catch (Throwable) {
                 return $this->warning(
                     $remoteUrl['url'],
-                    'Die Zieladresse ist derzeit nicht erreichbar.',
+                    'Die Zieladresse konnte vom Server derzeit nicht geprüft werden. Du kannst den Link im Browser öffnen und prüfen.',
                 );
             }
 
@@ -157,22 +163,58 @@ class MaterialV2LinkPreviewService
             ? "[{$remoteUrl['ip']}]"
             : $remoteUrl['ip'];
 
-        return Http::connectTimeout(3)
-            ->timeout(8)
-            ->withHeaders([
-                'Accept' => 'text/html,application/xhtml+xml;q=0.9',
-                'User-Agent' => 'Schooltool-Link-Pruefung/1.0',
-            ])
-            ->withOptions([
-                'allow_redirects' => false,
-                'stream' => true,
-                'curl' => [
-                    constant('CURLOPT_RESOLVE') => [
-                        "{$remoteUrl['host']}:{$remoteUrl['port']}:{$resolvedIp}",
+        $body = Utils::streamFor('');
+        $responseHeaders = null;
+        $previewComplete = false;
+        $html = '';
+        $sink = FnStream::decorate($body, [
+            'write' => function (string $chunk) use ($body, &$html, &$previewComplete): int {
+                $previewChunk = substr($chunk, 0, self::MaxHtmlBytes + 1 - strlen($html));
+                $html .= $previewChunk;
+                $body->write($previewChunk);
+
+                if (strlen($html) > self::MaxHtmlBytes || stripos($html, '</head>') !== false) {
+                    $previewComplete = true;
+
+                    // Abort the transfer after the bounded preview; recover only this intentional stop below.
+                    return 0;
+                }
+
+                return strlen($chunk);
+            },
+        ]);
+
+        try {
+            return Http::connectTimeout(3)
+                ->timeout(8)
+                ->setHandler(fn (RequestInterface $request, array $options): PromiseInterface => (new CurlHandler)(
+                    $request,
+                    ['sink' => $sink] + $options,
+                ))
+                ->withHeaders([
+                    'Accept' => 'text/html,application/xhtml+xml;q=0.9',
+                    'User-Agent' => 'Schooltool-Link-Pruefung/1.0',
+                ])
+                ->withOptions([
+                    'allow_redirects' => false,
+                    'proxy' => '',
+                    'on_headers' => function (ResponseInterface $response) use (&$responseHeaders): void {
+                        $responseHeaders = $response;
+                    },
+                    'curl' => [
+                        constant('CURLOPT_RESOLVE') => [
+                            "{$remoteUrl['host']}:{$remoteUrl['port']}:{$resolvedIp}",
+                        ],
                     ],
-                ],
-            ])
-            ->get($remoteUrl['url']);
+                ])
+                ->get($remoteUrl['url']);
+        } catch (Throwable $exception) {
+            if (! $previewComplete || $responseHeaders === null) {
+                throw $exception;
+            }
+
+            return new Response($responseHeaders->withBody(Utils::streamFor($html)));
+        }
     }
 
     private function resolveRedirectUrl(string $baseUrl, string $location): string

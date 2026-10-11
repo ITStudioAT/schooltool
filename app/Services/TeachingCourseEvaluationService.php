@@ -128,10 +128,17 @@ class TeachingCourseEvaluationService
             foreach ($direct as $part) {
                 $report = $reports[$byId[$part->id]];
                 $children['part:'.$part->id] = $report['result_exact'] !== null ? BigRational::of($report['result_exact']) : null;
-                if (! $part->is_required && in_array($part->points_assessment_mode, ['grade_each', 'grade_mean'], true)
-                    && $report['types'] !== [] && collect($report['types'])->every(fn (array $type): bool => $type['config']['calculation_mode'] === 'grades' && $type['entries'] === [])) {
+                if ($this->isEmptyOptionalPart($report)) {
                     $omitted['part:'.$part->id] = true;
                 }
+            }
+            if ($children !== [] && count($omitted) === count($children)) {
+                if ($context !== 'root') {
+                    $emptyOptionalGroups[$context] = true;
+                    $groupReports[$context] = ['id' => $context, 'result' => null, 'result_exact' => null, 'status' => 'empty', 'trace' => ['method' => 'omitted_optional_children']];
+                }
+
+                return null;
             }
             $result = null;
             $method = 'weighted_children';
@@ -147,6 +154,9 @@ class TeachingCourseEvaluationService
                         $balance = '0';
                     }
                     $calculation = $base !== null && $balance !== null ? TeachingSignAdjustment::calculate($base, BigRational::of($balance), $part->sign_adjustment) : null;
+                    if ($base !== null && isset($omitted['part:'.$part->id])) {
+                        $calculation = ['raw' => $base, 'delta' => BigRational::of(0), 'grade' => $base->toScale(0, RoundingMode::HalfUp)->toInt()];
+                    }
                     if ($calculation !== null) {
                         $raw = $calculation['raw'];
                         $result = $raw->compareTo(1) < 0 ? BigRational::of(1) : ($raw->compareTo(5) > 0 ? BigRational::of(5) : $raw);
@@ -526,14 +536,20 @@ class TeachingCourseEvaluationService
         return [$result, $trace, []];
     }
 
+    private function isEmptyOptionalPart(array $part): bool
+    {
+        return ! $part['config']['is_required']
+            && collect($part['types'])->every(fn (array $type): bool => $type['entries'] === []);
+    }
+
     private function total(array $parts): array
     {
-        $active = array_values(array_filter($parts, fn ($part): bool => $part['status'] !== 'empty'));
+        $active = array_values(array_filter($parts, fn ($part): bool => ! $this->isEmptyOptionalPart($part)));
         $issues = [];
         $values = [];
         $weights = [];
-        $fixed = $this->sum(array_map(fn ($part) => $part['config']['fixed_percentage'] ?? 0, $active));
-        $relative = $this->sum(array_map(fn ($part) => $part['config']['fixed_percentage'] === null ? $part['config']['weight'] : 0, $active));
+        $fixed = $this->sum(array_map(fn ($part) => $part['config']['fixed_percentage'] ?? 0, $parts));
+        $relative = $this->sum(array_map(fn ($part) => $part['config']['fixed_percentage'] === null ? $part['config']['weight'] : 0, $parts));
         foreach ($active as $part) {
             if ($part['status'] !== 'complete') {
                 $issues[] = $this->issue('incomplete_part', 'Ein Benotungsteil ist nicht vollständig auswertbar: '.$part['name']);

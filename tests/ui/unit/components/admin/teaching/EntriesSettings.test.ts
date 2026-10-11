@@ -37,9 +37,37 @@ function entryFixture(overrides = {}) {
 describe('Teaching entries settings', () => {
     it('labels optional grading parts without changing or duplicating their stored name', () => {
         const name = (Entries as any).methods.gradingPartDisplayName
-        expect(name({ name: 'Prüfung', is_required: false })).toBe('Prüfung (optional)')
-        expect(name({ name: 'Prüfung', is_required: true })).toBe('Prüfung')
-        expect(name({ name: 'Prüfung (optional)', is_required: false })).toBe('Prüfung (optional)')
+        const entries = [entryFixture({ fixed_properties: ['1', '2', '3', '4', '5'] })]
+        expect(name({ name: 'Prüfung', entries, is_required: false })).toBe('Prüfung (optional)')
+        expect(name({ name: 'Prüfung', entries, is_required: true })).toBe('Prüfung')
+        expect(name({ name: 'Prüfung (optional)', entries, is_required: false })).toBe('Prüfung (optional)')
+    })
+
+    it.each([
+        ['points', { properties_mode: 'points' }, false],
+        ['participation', { properties_mode: 'plus_minus' }, false],
+        ['free values', { properties_mode: 'free' }, true],
+        ['disabled properties', { has_properties: false, properties_mode: 'grades' }, false],
+        ['unassigned part', null, false],
+    ])('omits requirement labels for %s without a requirement selector', (_label, entry, required) => {
+        const methods = (Entries as any).methods
+        const part = { name: 'Benotungsteil', is_required: required, entries: entry ? [entryFixture(entry)] : [] }
+        expect(methods.gradingPartDisplayName(part)).toBe('Benotungsteil')
+        expect(methods.gradingLevelBlockName({ parts: [part] })).toBe('Benotungsteil-Note')
+        const context = { ...methods, calculationEntries: [], gradingPartFormErrors: {} }
+        methods.openEditGradingPartDialog.call(context, part)
+        expect((context as any).gradingPartOnlyStandardGrades).toBe(false)
+    })
+
+    it('retains the requirement label for standard grade parts at both calculation levels', () => {
+        const methods = (Entries as any).methods
+        const part = { name: 'Prüfung', is_required: false, entries: [entryFixture({ fixed_properties: ['1', '2', '3', '4', '5'] })] }
+        expect(methods.gradingLevelBlockName({ parts: [part] })).toBe('Prüfung-Note (optional)')
+        const context = { ...methods, calculationEntries: [], gradingPartFormErrors: {} }
+        methods.openEditGradingPartDialog.call(context, part)
+        expect((context as any).gradingPartOnlyStandardGrades).toBe(true)
+        part.is_required = true
+        expect(methods.gradingLevelBlockName({ parts: [part] })).toBe('Prüfung-Note')
     })
 
     it('keeps a configured optional adjustment neutral when no signs have been entered', () => {
@@ -48,6 +76,10 @@ describe('Teaching entries settings', () => {
         expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'] }).total).toBe('1')
         adjustment.is_required = true
         expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'] }).total).toBeNull()
+        adjustment.is_required = false
+        adjustment.sign_adjustment = null as any
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'] }).total).toBe('1')
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'], 2: ['+'] }).total).toBeNull()
     })
 
     it('shows points totals only for actual entered assessments and preserves invalid input', () => {
@@ -124,13 +156,55 @@ describe('Teaching entries settings', () => {
         expect(evaluate(undefined, [], [{ part_id: 2, weight: 1 }] as any).total).toBeNull()
     })
 
-    it('keeps missing points grades and adjustments of other calculation types blocking', () => {
+    it.each(['individual', 'grade_each'])('omits an empty optional %s exam beside the points and participation basis', (mode) => {
+        const points = { id: 1, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 5 })] }
+        const adjustment = { id: 2, is_required: false, points_assessment_mode: 'sign_adjust', entries: [entryFixture({ id: 2, properties_mode: 'plus_minus' })], sign_adjustment: { improvement_factor: '0.25', max_improvement: '1.25', deterioration_factor: '0.25', max_deterioration: '1' } }
+        const exam = { id: 3, is_required: false, points_assessment_mode: mode, entries: [entryFixture({ id: 3, fixed_properties: ['1', '2', '3', '4', '5'], standard_grade_occurrences: mode === 'individual' ? null : { mode: 'single', count: null } })] }
+        const groups = [{ id: 'basis', part_ids: [1, 2] }]
+        const weights = [{ group_id: 'basis', weight: 2 }, { part_id: 3, weight: 1 }]
+        const values = { 1: ['3.5'], 2: ['+'] }
+        const calculate = (input = values) => simulationStructure([points, adjustment, exam], groups, weights, input)
+
+        expect(calculate().total).toBe('3')
+        expect(calculate().groups.basis).toBe('2,75')
+        exam.is_required = true
+        expect(calculate().total).toBeNull()
+        exam.is_required = false
+        expect(calculate({ ...values, 3: ['5'] } as any).total).toBe('4')
+        expect(calculate({ ...values, 3: ['invalid'] } as any).total).toBeNull()
+    })
+
+    it('omits missing optional points but keeps missing required bases and adjustments blocking', () => {
         const points = { id: 1, points_assessment_mode: 'sum_percent', is_required: false, entries: [entryFixture({ properties_mode: 'points', maximum_points: 10 })] }
         const exam = { id: 2, points_assessment_mode: 'grade_each', is_required: false, entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        expect(simulationStructure([points, exam], [], [{ part_id: 1, weight: 1 }, { part_id: 2, weight: 1 }], { 2: ['3'] }).total).toBe('3')
+        points.is_required = true
         expect(simulationStructure([points, exam], [], [{ part_id: 1, weight: 1 }, { part_id: 2, weight: 1 }], { 2: ['3'] }).total).toBeNull()
+        points.is_required = false
         const adjustment = { id: 3, points_assessment_mode: 'sign_adjust', is_required: true, entries: [entryFixture({ id: 3 })], sign_adjustment: { improvement_factor: 0.25, max_improvement: 0.5, deterioration_factor: 0.25, max_deterioration: 0.5 } }
         expect(simulationStructure([points, adjustment], [], null, { 3: ['+'] }).total).toBeNull()
         expect(simulationStructure([exam, adjustment], [], null, { 2: ['3'] }).total).toBeNull()
+    })
+
+    it.each(['individual', 'grade_each', 'grade_mean', 'overall', 'sign_grade'])('omits an absent optional %s part without count or calculation rules in nested groups', (mode) => {
+        const optional = { id: 1, is_required: false, points_assessment_mode: mode, entries: [entryFixture({ properties_mode: 'grades' })] }
+        const base = { id: 2, is_required: true, points_assessment_mode: 'grade_each', entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const groups = [{ id: 'optional', part_ids: [1], weights: [{ part_id: 1, weight: 3 }] }]
+        const weights = [{ group_id: 'optional', weight: 2 }, { part_id: 2, weight: 1 }]
+        expect(simulationStructure([optional, base], groups, weights, { 2: ['3'] }).total).toBe('3')
+        optional.is_required = true
+        expect(simulationStructure([optional, base], groups, weights, { 2: ['3'] }).total).toBeNull()
+    })
+
+    it('omits a completely absent optional points and adjustment group beside an existing exam', () => {
+        const points = { id: 1, is_required: false, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 5 })] }
+        const adjustment = { id: 2, is_required: false, points_assessment_mode: 'sign_adjust', entries: [entryFixture({ id: 2, properties_mode: 'plus_minus' })] }
+        const exam = { id: 3, points_assessment_mode: 'individual', entries: [entryFixture({ id: 3, properties_mode: 'grades' })] }
+        const groups = [{ id: 'basis', part_ids: [1, 2] }]
+        const weights = [{ group_id: 'basis', weight: 2 }, { part_id: 3, weight: 1 }]
+        expect(simulationStructure([points, adjustment, exam], groups, weights, { 3: ['3'] }).total).toBe('3')
+        points.is_required = true
+        expect(simulationStructure([points, adjustment, exam], groups, weights, { 3: ['3'] }).total).toBeNull()
     })
 
     it('omits empty optional grade means but keeps partially entered means incomplete', () => {
@@ -160,7 +234,7 @@ describe('Teaching entries settings', () => {
 
     it.each([['+', '2'], ['~', '2'], ['-', '3'], ['0', '3']])('adjusts the unrounded nested basis with balance %s and half-up rounding', (sign, expected) => {
         const parts = [1, 2].map((id) => ({ id, points_assessment_mode: 'grade_each', entries: [entryFixture({ id, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }))
-        parts.push({ id: 3, points_assessment_mode: 'sign_adjust', sign_adjustment: { improvement_factor: '0.25', max_improvement: '0.5', deterioration_factor: '0.25', max_deterioration: '0.5' }, entries: [entryFixture({ id: 3 })] } as any)
+        parts.push({ id: 3, is_required: true, points_assessment_mode: 'sign_adjust', sign_adjustment: { improvement_factor: '0.25', max_improvement: '0.5', deterioration_factor: '0.25', max_deterioration: '0.5' }, entries: [entryFixture({ id: 3 })] } as any)
         const groups = [{ id: 'inner', parent_group_id: 'basis', part_ids: [1, 2], weights: [{ part_id: 1, weight: 1 }, { part_id: 2, weight: 1 }] }, { id: 'basis', part_ids: [], weights: [{ group_id: 'inner', weight: 40 }] }]
         expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['2'], 3: [sign] }).total).toBe(expected)
         expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['2'], 3: ['++++++'] }).total).toBe('2')
