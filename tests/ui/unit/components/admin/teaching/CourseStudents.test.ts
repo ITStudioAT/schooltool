@@ -1,7 +1,48 @@
 import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
+import axios from 'axios'
+
+vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 
 describe('CourseStudents complete performance loading', () => {
+    it.each([true, false])('reloads the calculated note preference %s', (value) => {
+        const context = { showCalculatedGrade: !value }
+        ;(CourseStudents as any).watch['settings.teaching_show_calculated_grade'].handler.call(context, value)
+        expect(context.showCalculatedGrade).toBe(value)
+    })
+
+    it.each([[false, true], [true, false]])('persists calculated note visibility from %s to %s', async (previous, value) => {
+        const saveSettings = vi.fn().mockResolvedValue(true)
+        const context = { showCalculatedGrade: previous, savingCalculatedGradePreference: false, teachingStore: { saveSettings } }
+        await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        expect(saveSettings).toHaveBeenCalledWith({ teaching_show_calculated_grade: value }, { notifySuccess: false })
+        expect(context.showCalculatedGrade).toBe(value)
+        expect(context.savingCalculatedGradePreference).toBe(false)
+    })
+
+    it('retains the calculated note preference when saving fails', async () => {
+        const context = { showCalculatedGrade: true, savingCalculatedGradePreference: false,
+            teachingStore: { saveSettings: vi.fn().mockResolvedValue(false) } }
+        await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        expect(context.showCalculatedGrade).toBe(true)
+        expect(context.savingCalculatedGradePreference).toBe(false)
+    })
+    it.each([18, 99])('loads the shared grading report and rejects a mismatched course %s', async (reportCourseId) => {
+        const report = { course_id: reportCourseId, schoolyear_id: 3, students: [] }
+        vi.mocked(axios.get).mockResolvedValueOnce({ data: { data: report } })
+        const context: any = {
+            performanceRequestId: 0, usesNewBulkEntryDefinitions: true,
+            config: { selected_schoolyear: { id: 3 } },
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(axios.get).toHaveBeenLastCalledWith(expect.stringMatching(/18.*semester=3/))
+        expect(context.performanceLoadFailed).toBe(reportCourseId !== 18)
+        if (reportCourseId === 18) expect(context.performanceData.gradingReport).toEqual(report)
+    })
     it.each(['6,25', '0', 'NA'])('saves bulk points %s as a normalized value', async (grade) => {
         const methods = (CourseStudents as any).methods
         const store = vi.fn().mockResolvedValue(true)
@@ -137,7 +178,7 @@ describe('CourseStudents complete performance loading', () => {
         const context = { performanceRequestId: 4, performanceData: { entries: [{ teaching_course_id: 18 }] }, performanceLoading: false, courseStore: { index: vi.fn() } }
         ;(CourseStudents as any).watch['config.selected_schoolyear.id'].call(context, 4, 3)
         expect(context.performanceRequestId).toBe(5)
-        expect(context.performanceData).toEqual({ entries: [], behaviourEntries: [], works: [], evaluations: [] })
+        expect(context.performanceData).toEqual({ entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null })
         expect(context.performanceLoading).toBe(true)
         expect(context.courseStore.index).toHaveBeenCalledOnce()
     })

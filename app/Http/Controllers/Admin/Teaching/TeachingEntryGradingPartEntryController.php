@@ -30,8 +30,8 @@ class TeachingEntryGradingPartEntryController extends Controller
             ->whereNull('teaching_entry_grading_part_id')
             ->firstOrFail();
 
-        if ($entryGradingPart->allowed_entry_types === 'points' && $entryDefinition->properties_mode !== 'points') {
-            throw ValidationException::withMessages(['teaching_entry_definition_id' => 'Dieser Benotungsteil erlaubt nur Punktetypen.']);
+        if (! $entryGradingPart->allowsEntry($entryDefinition)) {
+            throw ValidationException::withMessages(['teaching_entry_definition_id' => 'Dieser Eintragstyp ist für die gewählten Typengruppen nicht zulässig.']);
         }
 
         $entryDefinition->update([

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin\Teaching;
 
 use App\Models\TeachingEntryDefinition;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -67,11 +68,51 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             && $entryDefinition->schoolyear_id === $user->schoolyear_id;
     }
 
+    public static function standardGradeOccurrenceRules(bool $supported, string $field = 'standard_grade_occurrences'): array
+    {
+        return [
+            $field => ['sometimes', 'nullable', 'array:mode,count,mean', 'required_array_keys:mode', Rule::prohibitedIf(! $supported), function (string $attribute, mixed $value, Closure $fail): void {
+                if (! is_array($value) || ! is_array($value['mean'] ?? null) || ! is_array($value['mean']['weights'] ?? null)) {
+                    return;
+                }
+                $weights = $value['mean']['weights'];
+                if (count($weights) !== (int) ($value['count'] ?? 0)) {
+                    $fail('Bitte für jede vorgesehene Arbeit genau ein Prozentgewicht eingeben.');
+                }
+                if (collect($weights)->every(fn (mixed $weight): bool => is_numeric($weight) && is_finite((float) $weight))
+                    && array_sum(array_map(fn (mixed $weight): int => (int) round((float) $weight * 1000), $weights)) !== 100000) {
+                    $fail('Die Gewichte der Arbeiten müssen zusammen genau 100 % ergeben.');
+                }
+            }],
+            $field.'.mode' => ['required_with:'.$field, Rule::in(['single', 'fixed', 'unlimited'])],
+            $field.'.count' => ['required_if:'.$field.'.mode,fixed', 'nullable', 'integer', 'min:2', 'max:9007199254740991', 'prohibited_unless:'.$field.'.mode,fixed'],
+            $field.'.mean' => ['sometimes', 'array:mode,weights', 'required_array_keys:mode', 'prohibited_unless:'.$field.'.mode,fixed'],
+            $field.'.mean.mode' => ['required_with:'.$field.'.mean', Rule::in(['equal', 'weighted'])],
+            $field.'.mean.weights' => ['required_if:'.$field.'.mean.mode,weighted', 'array', 'list', 'max:1000'],
+            $field.'.mean.weights.*' => ['required', 'numeric', 'decimal:0,3', 'min:0', 'max:100', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! is_numeric($value) || ! is_finite((float) $value)) {
+                    $fail('Bitte einen endlichen Prozentwert von 0 bis 100 eingeben.');
+                }
+            }],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'standard_grade_occurrences.count.required_if' => 'Bitte die feste Anzahl der Leistungsfeststellungen eingeben.',
+            'standard_grade_occurrences.count.integer' => 'Bitte eine ganze Anzahl eingeben.',
+            'standard_grade_occurrences.count.min' => 'Die feste Anzahl muss mindestens 2 sein.',
+            'standard_grade_occurrences.prohibited' => 'Die Anzahl ist nur für Standardnoten verfügbar.',
+        ];
+    }
+
     public function rules(): array
     {
         $entryDefinition = $this->route('entryDefinition');
 
         return [
+            ...self::standardGradeOccurrenceRules((new TeachingEntryDefinition($this->only(['category', 'has_properties', 'properties_mode', 'fixed_properties'])))->calculation_mode === 'grades'),
             ...UpdateTeachingEntryCalculationSettingsRequest::definitionEvaluationRules($this->input('category'), $this->input('properties_mode'), $this->input('fixed_properties', []), $this->input('enabled_special_properties', $this->route('entryDefinition')?->enabled_special_properties ?? TeachingEntryDefinition::SpecialProperties)),
             'teaching_entry_area_id' => [
                 'required',
@@ -103,7 +144,7 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             'maximum_points' => [
                 Rule::requiredIf(fn (): bool => $this->boolean('has_properties') && $this->input('properties_mode') === 'points'),
                 'nullable', 'numeric', 'gt:0',
-                function (string $attribute, mixed $value, \Closure $fail): void {
+                function (string $attribute, mixed $value, Closure $fail): void {
                     if (! is_numeric($value) || ! is_finite((float) $value)) {
                         $fail('Bitte eine endliche positive maximale Punktzahl eingeben.');
                     }

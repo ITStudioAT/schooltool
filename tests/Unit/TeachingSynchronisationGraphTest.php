@@ -10,6 +10,20 @@ function teachingGraphFixture(): array
         'import116' => [], 'school_tools' => [], 'max_ids' => ['import116' => 100, 'users' => 100, 'schoolyears' => 100]];
 }
 
+test('remaps group weight members independently of relative grading part weights', function () {
+    $source = teachingGraphFixture();
+    $local = teachingGraphFixture();
+    $source['tables']['teaching_entry_areas'] = [['id' => 30, 'school_id' => 1, 'schoolyear_id' => 10, 'user_id' => 20,
+        'grading_part_groups' => json_encode([['id' => 'group', 'name' => 'Basisnote', 'weights' => [['teaching_entry_grading_part_id' => 40, 'weight' => 1.5]]]])]];
+    $source['tables']['teaching_entry_grading_parts'] = [['id' => 40, 'school_id' => 1, 'schoolyear_id' => 10, 'user_id' => 20, 'teaching_entry_area_id' => 30, 'grading_group_id' => 'group', 'weight' => 3]];
+    $local['max_ids']['teaching_entry_grading_parts'] = 100;
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+    expect($plan['conflicts'])->toBe([]);
+    $groups = json_decode($plan['tables']['teaching_entry_areas'][0]['grading_part_groups'], true);
+    expect($groups[0]['weights'][0])->toBe(['teaching_entry_grading_part_id' => $plan['maps']['teaching_entry_grading_parts'][40], 'weight' => 1.5]);
+    expect($plan['tables']['teaching_entry_grading_parts'][0]['weight'])->toBe(3);
+});
+
 function teachingLinkedStudentFixture(): array
 {
     $source = teachingGraphFixture();

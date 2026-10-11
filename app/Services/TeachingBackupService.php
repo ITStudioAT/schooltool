@@ -1488,6 +1488,34 @@ class TeachingBackupService
             ]);
         }
 
+        foreach ($tables['teaching_entry_areas'] ?? [] as $area) {
+            if (isset($area['grading_level_weights'], $areaIdMap[(int) $area['id']])) {
+                $weights = json_decode($area['grading_level_weights'], true, 512, JSON_THROW_ON_ERROR);
+                foreach ($weights as &$item) {
+                    if (isset($item['teaching_entry_grading_part_id'])) {
+                        $item['teaching_entry_grading_part_id'] = $partIdMap[(int) $item['teaching_entry_grading_part_id']]
+                            ?? throw new RuntimeException('Benotungsteil der äußeren Gewichtung fehlt.');
+                    }
+                }
+                unset($item);
+                DB::table('teaching_entry_areas')->where('id', $areaIdMap[(int) $area['id']])->update(['grading_level_weights' => json_encode($weights, JSON_THROW_ON_ERROR)]);
+            }
+            if (! isset($area['grading_part_groups'], $areaIdMap[(int) $area['id']])) {
+                continue;
+            }
+            $groups = json_decode($area['grading_part_groups'], true, 512, JSON_THROW_ON_ERROR) ?? [];
+            foreach ($groups as &$group) {
+                foreach ($group['weights'] ?? [] as $index => $item) {
+                    if (isset($item['teaching_entry_grading_part_id'])) {
+                        $group['weights'][$index]['teaching_entry_grading_part_id'] = $partIdMap[(int) $item['teaching_entry_grading_part_id']]
+                            ?? throw new RuntimeException('Benotungsteil der Gruppengewichtung fehlt.');
+                    }
+                }
+            }
+            unset($group);
+            DB::table('teaching_entry_areas')->where('id', $areaIdMap[(int) $area['id']])->update(['grading_part_groups' => json_encode($groups, JSON_THROW_ON_ERROR)]);
+        }
+
         foreach ($tables['teaching_entry_definitions'] ?? [] as $definition) {
             $areaId = $areaIdMap[(int) $definition['teaching_entry_area_id']] ?? null;
             if ($areaId === null) {

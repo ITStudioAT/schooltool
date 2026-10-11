@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryGradingPartRequest;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -8,12 +9,31 @@ use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
+use App\Support\TeachingSignAdjustment;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Grammars\SQLiteGrammar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Fluent;
 use Spatie\Permission\Models\Role;
+
+test('saves adjustment decimals and drafts without invented defaults or unrelated changes', function () {
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id];
+    $part = TeachingEntryGradingPart::factory()->create([...$attributes, 'points_assessment_mode' => 'sign_adjust']);
+    TeachingEntryGradingPart::factory()->create($attributes);
+    TeachingEntryDefinition::factory()->create([...$attributes, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $this->actingAs($this->teacher, 'sanctum');
+    $configuration = ['improvement_factor' => '0,25', 'max_improvement' => '1', 'deterioration_factor' => '0.5', 'max_deterioration' => '2'];
+    $this->putJson($url, ['name' => $part->name, 'sign_adjustment' => $configuration])->assertOk()->assertJsonPath('data.sign_adjustment.improvement_factor', '0.25');
+    expect($part->fresh()->sign_adjustment['max_deterioration'])->toBe('2');
+    $this->putJson($url, ['name' => $part->name])->assertOk()->assertJsonPath('data.sign_adjustment.improvement_factor', '0.25');
+    $this->putJson($url, ['name' => $part->name, 'sign_adjustment' => [...$configuration, 'max_improvement' => '-1']])->assertUnprocessable()->assertJsonValidationErrors('sign_adjustment.max_improvement');
+    $this->putJson($url, ['name' => $part->name, 'sign_adjustment' => array_fill_keys(TeachingSignAdjustment::FIELDS, null)])->assertOk();
+    expect($part->fresh()->sign_adjustment)->toEqual(array_fill_keys(TeachingSignAdjustment::FIELDS, null));
+    $this->actingAs($this->otherTeacher, 'sanctum')->putJson($url, ['name' => $part->name, 'sign_adjustment' => $configuration])->assertForbidden();
+});
 
 trait RefreshTeachingEntryGradingPartDatabase
 {
@@ -63,6 +83,74 @@ trait RefreshTeachingEntryGradingPartDatabase
 }
 
 uses(RefreshTeachingEntryGradingPartDatabase::class);
+
+test('part cog persists occurrence configuration on the existing entry type', function (array $configuration) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5']]);
+    $entry->update(['category' => 'Benotung']);
+    $original = $entry->refresh()->getRawOriginal();
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'grade_mean', 'entry_standard_grade_occurrences' => [['entry_definition_id' => $entry->id, 'configuration' => $configuration]]])
+        ->assertOk()->assertJsonPath('entry_definitions.0.standard_grade_occurrences.mode', $configuration['mode']);
+    expect($entry->fresh()->standard_grade_occurrences)->toBe($configuration);
+    foreach (['name', 'short_name', 'fixed_properties', 'property_evaluations', 'teaching_entry_grading_part_id'] as $field) {
+        expect($entry->fresh()->getRawOriginal($field))->toBe($original[$field]);
+    }
+    $this->getJson('/api/admin/teaching/entry_definitions')->assertJsonPath('data.0.standard_grade_occurrences.mode', $configuration['mode']);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name])->assertOk();
+    expect($entry->fresh()->standard_grade_occurrences)->toBe($configuration);
+})->with([[['mode' => 'single', 'count' => null]], [['mode' => 'fixed', 'count' => 2]], [['mode' => 'fixed', 'count' => 3]], [['mode' => 'unlimited', 'count' => null]]]);
+
+test('part cog rejects invalid occurrence counts atomically', function (array $configuration) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5']]);
+    $entry->update(['category' => 'Benotung']);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => 'Geändert', 'entry_standard_grade_occurrences' => [['entry_definition_id' => $entry->id, 'configuration' => $configuration]]])->assertUnprocessable();
+    expect($part->fresh()->name)->toBe($part->name)->and($entry->fresh()->standard_grade_occurrences)->toBeNull();
+})->with([[['mode' => 'fixed', 'count' => 1]], [['mode' => 'fixed', 'count' => 2.5]], [['mode' => 'fixed']], [['mode' => 'single', 'count' => 2]]]);
+
+test('part cog rejects occurrence IDs outside its ownership and assignment boundaries', function (string $boundary) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5']];
+    $attributes['category'] = 'Benotung';
+    TeachingEntryDefinition::factory()->create($attributes);
+    $attributes[$boundary] = match ($boundary) {
+        'user_id' => $this->otherTeacher->id, 'school_id' => School::factory()->create()->id,
+        'schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id,
+        'teaching_entry_area_id' => TeachingEntryArea::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id])->id,
+        default => null,
+    };
+    $foreign = TeachingEntryDefinition::factory()->create($attributes);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'entry_standard_grade_occurrences' => [['entry_definition_id' => $foreign->id, 'configuration' => ['mode' => 'single', 'count' => null]]]])->assertUnprocessable();
+    expect($foreign->fresh()->standard_grade_occurrences)->toBeNull();
+})->with(['user_id', 'school_id', 'schoolyear_id', 'teaching_entry_area_id', 'teaching_entry_grading_part_id']);
+
+test('persists equal or percentage weighting inside the existing occurrence configuration', function (array $mean, int $count) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['category' => 'Benotung', 'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5']]);
+    $configuration = ['mode' => 'fixed', 'count' => $count, 'mean' => $mean];
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'grade_mean', 'entry_standard_grade_occurrences' => [['entry_definition_id' => $entry->id, 'configuration' => $configuration]]])->assertOk()->assertJsonPath('entry_definitions.0.standard_grade_occurrences.mean.mode', $mean['mode']);
+    expect($entry->fresh()->standard_grade_occurrences)->toEqual($configuration);
+    $this->getJson('/api/admin/teaching/entry_definitions')->assertJsonPath('data.0.standard_grade_occurrences.mean.mode', $mean['mode']);
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'grade_each'])->assertOk();
+    expect($entry->fresh()->standard_grade_occurrences)->toEqual($configuration);
+})->with([[['mode' => 'equal'], 2], [['mode' => 'equal', 'weights' => [70, 30]], 2], [['mode' => 'weighted', 'weights' => [70, 30]], 2], [['mode' => 'weighted', 'weights' => [0, 100]], 2], [['mode' => 'weighted', 'weights' => [33.333, 33.333, 33.334]], 3]]);
+
+test('validates percentage sum slot count and finite bounds on the server', function (array $configuration) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['category' => 'Benotung', 'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5']]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => 'Geändert', 'points_assessment_mode' => 'grade_mean', 'entry_standard_grade_occurrences' => [['entry_definition_id' => $entry->id, 'configuration' => $configuration]]])->assertUnprocessable();
+    expect($entry->fresh()->standard_grade_occurrences)->toBeNull()->and($part->fresh()->name)->toBe($part->name);
+})->with([
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [70, 29]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [70, 31]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [100]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [-1, 101]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => ['Infinity', 0]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [null, 100]]]],
+    [['mode' => 'fixed', 'count' => 2, 'mean' => ['mode' => 'weighted', 'weights' => [0.0001, 99.9999]]]],
+    [['mode' => 'single', 'count' => null, 'mean' => ['mode' => 'equal']]],
+    [['mode' => 'unlimited', 'count' => null, 'mean' => ['mode' => 'equal']]],
+]);
 
 test('stores individual points weighting selection and preserves inactive choices', function () {
     $this->actingAs($this->teacher, 'sanctum');
@@ -194,7 +282,195 @@ test('validates points assessment selection on create and update', function (str
     } else {
         $response->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
     }
-})->with([['points', 'overall', true], ['points', 'individual', true], ['all', 'individual', true], ['all', 'overall', false], ['points', 'invalid', false], ['points', null, false]]);
+})->with([['points', 'overall', true], ['points', 'individual', true], ['all', 'individual', true], ['all', 'overall', false], ['points', 'invalid', false], ['points', null, false], ['all', 'plus_minus', true], ['points', 'plus_minus', true], ['non_points', 'plus_minus', true]]);
+
+test('blocks the point sum for exclusively assigned plus minus types without changing assignments', function (string $mode, array $properties) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+        'properties_mode' => $mode, 'fixed_properties' => $properties, 'category' => 'Benotung']);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'sum_percent'])
+        ->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'plus_minus'])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', 'plus_minus');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'allowed_entry_types' => 'non_points'])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', 'plus_minus');
+    expect($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id);
+    $point = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'properties_mode' => 'points', 'category' => 'Benotung']);
+    $this->postJson("/api/admin/teaching/entry_grading_parts/{$part->id}/entries", ['teaching_entry_definition_id' => $point->id])
+        ->assertUnprocessable()->assertJsonValidationErrors('teaching_entry_definition_id');
+})->with([['plus_minus', []], ['plus', []], ['free', ['+', '++', '---', '−−']], ['fixed', ['++++', '-']], ['free', ['+', '0']], ['free', ['+', '-', '0', '~']], ['fixed', ['~', '0']]]);
+
+test('enforces single and paired entry type groups on assignments', function (string $groups, string $mode, array $properties, bool $allowed) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'allowed_entry_types' => $groups])
+        ->assertOk()->assertJsonPath('data.allowed_entry_types', $groups);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'properties_mode' => $mode, 'fixed_properties' => $properties, 'category' => 'Benotung']);
+    $response = $this->postJson("/api/admin/teaching/entry_grading_parts/{$part->id}/entries", ['teaching_entry_definition_id' => $entry->id]);
+    if ($allowed) {
+        $response->assertOk();
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('teaching_entry_definition_id');
+        expect($entry->fresh()->teaching_entry_grading_part_id)->toBeNull();
+    }
+})->with([
+    ['signs', 'free', ['+', '++', '−−'], true], ['signs', 'fixed', ['+', '0'], true], ['signs', 'free', ['0'], false],
+    ['signs', 'points', [], false], ['grades', 'fixed', ['1', '2', '3', '4', '5'], true],
+    ['grades', 'free', ['+', '-'], false], ['signs_pts', 'points', [], true],
+    ['signs_pts', 'fixed', ['1', '2', '3', '4', '5'], false], ['signs_note', 'free', ['+', '-'], true],
+    ['signs_note', 'points', [], false], ['pts_notes', 'free', ['+', 'F'], true], ['pts_notes', 'plus_minus', [], false],
+]);
+
+test('rejects plus minus calculation only for actual pure point assignments', function (array $modes, bool $purePoints) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    foreach ($modes as $mode) {
+        TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+            'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => $mode, 'category' => 'Benotung']);
+    }
+    $this->actingAs($this->teacher, 'sanctum');
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $response = $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'plus_minus']);
+    if ($purePoints) {
+        $response->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+        expect($part->fresh()->points_assessment_mode)->toBe('individual');
+    } else {
+        $response->assertOk()->assertJsonPath('data.points_assessment_mode', 'plus_minus');
+    }
+    $this->putJson($url, ['name' => $part->name, 'points_assessment_mode' => 'sum_percent'])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', 'sum_percent');
+    expect($part->entryDefinitions()->count())->toBe(count($modes));
+})->with([[['points'], true], [['points', 'points'], true], [['points', 'plus_minus'], false], [[], false], [['fixed'], false]]);
+
+test('persists either pending standard grade method without applying point or sign methods', function (string $method) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['5', '3', '1', '2', '4']]);
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $part->name, 'points_assessment_mode' => $method])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', $method);
+    $this->putJson($url, ['name' => 'Prüfungen', 'allowed_entry_types' => 'grades'])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', $method);
+    foreach (['sum_percent', 'plus_minus'] as $unavailable) {
+        $this->putJson($url, ['name' => 'Prüfungen', 'points_assessment_mode' => $unavailable])
+            ->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    }
+    expect($part->fresh()->points_assessment_mode)->toBe($method)
+        ->and($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id);
+})->with(['grade_each', 'grade_mean']);
+
+test('rejects standard grade methods for empty or non standard type assignments', function (?string $mode, array $properties) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    if ($mode !== null) {
+        TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+            'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode, 'fixed_properties' => $properties]);
+    }
+    foreach (['grade_each', 'grade_mean'] as $method) {
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => $method])
+            ->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    }
+})->with([[null, []], ['points', []], ['plus_minus', []], ['free', ['1', '2', '3', '4', '5']], ['fixed', ['1', '2', '3', '4', '5', 'NB']]]);
+
+test('persists alternative sign purposes without changing the assigned types', function (string $method) {
+    TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'points_assessment_mode' => 'plus_minus']);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'free', 'fixed_properties' => ['+', '0']]);
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $part->name, 'points_assessment_mode' => $method])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', $method);
+    $this->putJson($url, ['name' => 'Mitarbeit', 'allowed_entry_types' => 'non_points'])
+        ->assertOk()->assertJsonPath('data.points_assessment_mode', $method);
+    expect($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id)
+        ->and($part->fresh()->points_assessment_mode)->toBe($method);
+})->with(['sign_grade', 'sign_adjust']);
+
+test('persists sign thresholds per part without altering point configuration or other parts', function () {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    $other = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}",
+        ['name' => $part->name, 'points_assessment_mode' => 'sign_grade', 'sign_grade_thresholds' => [4 => -2, 3 => 0, 2 => 2, 1 => 4]])
+        ->assertOk()->assertJsonPath('data.sign_grade_thresholds.4', -2);
+    expect($part->fresh()->sign_grade_thresholds)->toBe([1 => 4, 2 => 2, 3 => 0, 4 => -2])
+        ->and($other->fresh()->sign_grade_thresholds)->toBeNull()->and($part->fresh()->overall_points_grade_thresholds)->toBeNull();
+});
+
+test('rejects invalid sign threshold ordering and values', function (array $thresholds) {
+    $validator = Validator::make(['sign_grade_thresholds' => $thresholds],
+        UpdateTeachingEntryGradingPartRequest::signThresholdRules(true));
+    expect($validator->fails())->toBeTrue();
+})->with([[[4 => 0, 3 => 0, 2 => 2, 1 => 3]], [[4 => 1, 3 => 0, 2 => 2, 1 => 3]],
+    [[4 => 0, 3 => 1, 2 => 2, 1 => 2]], [[4 => 0.5, 3 => 1, 2 => 2, 1 => 3]],
+    [[4 => 'NaN', 3 => 1, 2 => 2, 1 => 3]], [[4 => -INF, 3 => 1, 2 => 2, 1 => 3]],
+    [[4 => 0, 3 => 1, 2 => 2]], [[4 => 0, 3 => 1, 2 => 2, 1 => 3, 5 => -1]]]);
+
+test('rejects sign purposes outside actual pure sign assignments', function (array $modes) {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id]);
+    foreach ($modes as $mode) {
+        TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+            'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode,
+            'fixed_properties' => $mode === 'fixed' ? ['1', '2', '3', '4', '5'] : []]);
+    }
+    foreach (['sign_grade', 'sign_adjust'] as $method) {
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => $method])
+            ->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    }
+})->with([[[]], [['points']], [['fixed']], [['plus_minus', 'points']]]);
+
+test('does not remove assigned point types when restricting a part to non point types', function () {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'points_assessment_mode' => 'plus_minus']);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'teaching_entry_grading_part_id' => $part->id,
+        'properties_mode' => 'points', 'category' => 'Benotung']);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'allowed_entry_types' => 'non_points'])
+        ->assertUnprocessable()->assertJsonValidationErrors('allowed_entry_types');
+    expect($part->fresh()->allowed_entry_types)->toBe('all')->and($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id);
+});
+
+test('saves point summation only for the edited part without replacing stored thresholds or other settings', function () {
+    $part = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'overall',
+        'weight' => 3, 'is_required' => true, 'overall_points_grade_thresholds' => [1 => 4, 2 => 3, 3 => 2, 4 => 1],
+    ]);
+    $other = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'individual',
+    ]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", [
+        'name' => $part->name, 'points_assessment_mode' => 'sum_percent',
+    ])->assertOk()->assertJsonPath('data.points_assessment_mode', 'sum_percent');
+
+    expect($part->fresh()->weight)->toBe('3.000')->and($part->fresh()->is_required)->toBeTrue()
+        ->and($part->fresh()->overall_points_grade_thresholds)->toBe([1 => 4, 2 => 3, 3 => 2, 4 => 1])
+        ->and($other->fresh()->points_assessment_mode)->toBe('individual');
+
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", [
+        'name' => $part->name, 'allowed_entry_types' => 'all',
+    ])->assertOk()->assertJsonPath('data.points_assessment_mode', 'sum_percent');
+    expect($part->fresh()->points_assessment_mode)->toBe('sum_percent');
+});
 
 test('persists allowed entry types and enforces assignment restrictions', function (string $mode, bool $allowed) {
     $this->actingAs($this->teacher, 'sanctum');

@@ -15,8 +15,11 @@ const helpers = path.join(root, 'scripts/git_helpers.ps1');
 const temporaryRoot = os.tmpdir();
 const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\nSESSION_COOKIE=owned-shared-session\nREDIS_PREFIX=owned_shared_\n';
 
-test('opens an explicit development launch but keeps automatic sessions silent', () => {
-    assert.equal(shouldOpenLocalDev([]), true);
+test('keeps development launches silent unless browser opening is explicitly requested', () => {
+    assert.equal(shouldOpenLocalDev([]), false);
+    assert.equal(shouldOpenLocalDev(['--project', root]), false);
+    assert.equal(shouldOpenLocalDev(['--open']), true);
+    assert.equal(shouldOpenLocalDev(['--open', '--no-open']), false);
     assert.equal(shouldOpenLocalDev(['--no-open']), false);
     assert.equal(shouldOpenLocalDev(['--session']), false);
     assert.equal(shouldOpenLocalDev(['--session', '--open']), true);

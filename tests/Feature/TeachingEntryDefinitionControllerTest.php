@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryDefinitionRequest;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -12,6 +13,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Grammars\SQLiteGrammar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Fluent;
 use Spatie\Permission\Models\Role;
 
@@ -151,6 +153,26 @@ test('validates balance adjustment pair and applicable modes', function (string 
     ['free', ['grading_part_plus_adjustment' => 1, 'grading_part_minus_adjustment' => 1]],
 ]);
 
+test('stores planned standard grade occurrences on one type and preserves them on unrelated edits', function (string $mode, ?int $count) {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area);
+    $other = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, ['short_name' => 'ZZ']);
+    $payload = validEntryPayload($this->area, ['properties_mode' => 'fixed', 'fixed_properties' => ['1', '2', '3', '4', '5'], 'standard_grade_occurrences' => ['mode' => $mode, 'count' => $count]]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_definitions/{$entry->id}", $payload)
+        ->assertOk()->assertJsonPath('data.standard_grade_occurrences.mode', $mode)->assertJsonPath('data.standard_grade_occurrences.count', $count);
+    $this->postJson('/api/admin/teaching/entry_definitions', [...$payload, 'short_name' => 'N1', 'name' => 'Neuer Standardnotentyp'])
+        ->assertCreated()->assertJsonPath('data.standard_grade_occurrences.mode', $mode)->assertJsonPath('data.standard_grade_occurrences.count', $count);
+    unset($payload['standard_grade_occurrences']);
+    $payload['description'] = 'Neue Beschreibung';
+    $this->putJson("/api/admin/teaching/entry_definitions/{$entry->id}", $payload)->assertOk()->assertJsonPath('data.standard_grade_occurrences.mode', $mode);
+    expect($entry->fresh()->standard_grade_occurrences)->toEqual(['mode' => $mode, 'count' => $count])->and($other->fresh()->standard_grade_occurrences)->toBeNull();
+})->with([['single', null], ['fixed', 2], ['fixed', 3], ['unlimited', null]]);
+
+test('rejects invalid planned counts and counts for non standard types', function (array $config, bool $supported) {
+    expect(Validator::make(['standard_grade_occurrences' => $config],
+        UpdateTeachingEntryDefinitionRequest::standardGradeOccurrenceRules($supported))->fails())->toBeTrue();
+})->with([[['mode' => 'fixed', 'count' => 1], true], [['mode' => 'fixed', 'count' => 2.5], true], [['mode' => 'fixed'], true],
+    [['mode' => 'fixed', 'count' => 'Infinity'], true], [['mode' => 'single', 'count' => 2], true], [['mode' => 'single'], false]]);
+
 test('supports the combined balance rounding choice only for plus minus entries', function (string $mode, string $selection, bool $valid) {
     $part = TeachingEntryGradingPart::factory()->create([
         'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
@@ -180,6 +202,25 @@ test('supports the combined balance rounding choice only for plus minus entries'
     ['plus_minus', 'balance_rounding', true], ['plus_minus', 'points', false], ['points', 'balance_rounding', false],
     ['plus', 'balance_rounding', false], ['free', 'balance_rounding', false], ['fixed', 'balance_rounding', false],
 ]);
+
+test('preserves assigned type group restrictions when editing configured properties', function () {
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id, 'allowed_entry_types' => 'signs']);
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, [
+        'teaching_entry_grading_part_id' => $part->id, 'properties_mode' => 'free', 'fixed_properties' => ['+', '-'],
+    ]);
+    $url = "/api/admin/teaching/entry_definitions/{$entry->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, validEntryPayload($this->area, [
+        'properties_mode' => 'free', 'fixed_properties' => ['+', 'F'],
+    ]))->assertUnprocessable()->assertJsonValidationErrors('properties_mode');
+    expect($entry->fresh()->fixed_properties)->toBe(['+', '-'])
+        ->and($entry->fresh()->teaching_entry_grading_part_id)->toBe($part->id);
+    $this->putJson($url, validEntryPayload($this->area, [
+        'properties_mode' => 'fixed', 'fixed_properties' => ['++++', '−−'],
+    ]))->assertOk();
+    $this->putJson($url, validEntryPayload($this->area, ['properties_mode' => 'points', 'maximum_points' => 10]))
+        ->assertUnprocessable()->assertJsonValidationErrors('properties_mode');
+});
 
 test('only point entry types support the other assessment points selection', function (string $mode) {
     $part = TeachingEntryGradingPart::factory()->create([

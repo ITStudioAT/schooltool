@@ -366,7 +366,7 @@ class TeachingSynchronisationGraph
                             'before_snapshot', 'after_snapshot', 'summary', 'meta', 'counts', 'report_summary', 'report_paths',
                             'fixed_properties', 'notification_recipients', 'property_evaluations', 'enabled_special_properties',
                             'maximum_plus_grade_thresholds', 'free_deficit_grade_thresholds', 'free_points_grade_thresholds',
-                            'points_grade_thresholds', 'overall_points_grade_thresholds'], true)
+                            'points_grade_thresholds', 'overall_points_grade_thresholds', 'grading_part_groups', 'grading_level_weights'], true)
                             && in_array(substr(ltrim($value), 0, 1), ['[', '{'], true)) {
                             $historicalStudentSnapshot = $table === 'import116_run_changes' && in_array($column, ['before_snapshot', 'after_snapshot'], true);
                             $row[$column] = json_encode($this->remapJson(json_decode($value, true, 512, JSON_THROW_ON_ERROR), $maps, $column, $studentMap, $historicalStudentSnapshot), JSON_THROW_ON_ERROR);

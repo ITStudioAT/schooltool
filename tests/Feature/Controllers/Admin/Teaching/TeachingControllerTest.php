@@ -1589,6 +1589,28 @@ describe('settings and semester endpoints', function () {
             ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
     });
 
+    test('calculated note visibility reloads independently for each teacher and preserves other columns', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade', false);
+        foreach ([true, false, true] as $visible) {
+            $this->postJson('/api/admin/teaching/save_settings', ['teaching_show_calculated_grade' => $visible])->assertOk();
+            $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+                ->assertJsonPath('settings.teaching_show_calculated_grade', $visible);
+            expect(data_get($this->teacher->fresh()->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_calculated_grade"))->toBe($visible);
+        }
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_grade_columns' => ['show_sem1' => true]])->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade', true)
+            ->assertJsonPath('settings.teaching_grade_columns.show_sem1', true);
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_show_calculated_grade' => false])->assertOk()
+            ->assertJsonPath('settings.teaching_grade_columns.show_sem1', true);
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_show_calculated_grade' => 'invalid'])->assertUnprocessable();
+        $this->actingAs($this->admin, 'sanctum');
+        $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade', false);
+        expect($this->admin->fresh()->teaching_grade_columns_by_schoolyear)->toBeNull();
+    });
+
     test('save_settings persists teaching student grade column visibility by schoolyear', function () {
         $this->actingAs($this->admin, 'sanctum');
 

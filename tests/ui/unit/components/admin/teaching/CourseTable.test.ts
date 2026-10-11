@@ -572,6 +572,9 @@ describe('CourseTable sign properties', () => {
         ['plus', '---', false],
         ['plus_minus', '---', true],
         ['plus_minus', '+++', true],
+        ['plus_minus', '0', true],
+        ['plus_minus', '~', true],
+        ['plus_minus', '~~', false],
         ['plus_minus', '+-', false],
         ['plus_minus', '2', false],
         ['plus', '+'.repeat(50), true],
@@ -3859,7 +3862,7 @@ describe('CourseTable', () => {
             courseWorkForCellEntry: () => ({ status: { assessment_json_imports: [{ student_id: 12, record }] } }) }, { source: 'course_work' })).toBe(comment)
     })
 
-    it('saves a new entry for the selected student and date', async () => {
+    it.each(['+', '0', '~'])('saves and reopens a new sign entry %s for the selected student and date', async (grade) => {
         const methods = (CourseTable as any).methods
         const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
         const ctx = {
@@ -3872,7 +3875,7 @@ describe('CourseTable', () => {
             entryDialog: { courseDate: { date: '2026-03-09' } },
             entryForm: {
                 description: 'Gute Mitarbeit',
-                grade: '+',
+                grade,
                 type: 'M',
             },
             entryFormOpen: true,
@@ -3889,12 +3892,15 @@ describe('CourseTable', () => {
             teaching_course_id: 20,
             user_id: 10,
             type: 'M',
-            grade: '+',
+            grade,
             date: '2026-03-09',
             description: 'Gute Mitarbeit',
         })
         expect(ctx.entryFormOpen).toBe(false)
         expect(ctx.entrySaving).toBe(false)
+        const reloaded: any = { canModifyCellEntry: methods.canModifyCellEntry }
+        methods.startEditingCellEntry.call(reloaded, { id: 12, kind: 'assessment', type: 'M', grade, uid: 'entry-12' })
+        expect(reloaded.entryForm.grade).toBe(grade)
     })
 
     it('creates an entry and immediately emails the selected recipients', async () => {

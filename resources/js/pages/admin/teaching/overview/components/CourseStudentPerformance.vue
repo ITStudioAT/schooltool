@@ -6,6 +6,18 @@
             Leistungen konnten nicht vollständig geladen werden.
         </div>
         <template v-else>
+            <div v-if="gradingPartSummaries.length" class="grading-part-cards" role="group" aria-label="Benotungsteile"
+                :style="{ '--grading-part-columns': gradingPartColumns.length, '--grading-mobile-columns': Math.min(gradingPartColumns.length, 2) }">
+                <div v-for="part in gradingPartSummaries" :key="part.key" class="grading-part-card"
+                    :title="part.hint"
+                    :style="{ ...gradingPartCardPosition(part), '--calculated-grade-color': part.gradeColor }"
+                    :class="[{ 'grading-part-card--incomplete': part.incomplete && !part.balanceTone, 'grading-part-card--note': part.id === 'calculated-semester-grade', 'grading-part-card--calculated-note': part.calculatedGrade }, part.balanceTone ? `grading-part-card--${part.balanceTone}` : null]">
+                    <span class="grading-part-card-title">{{ part.label }}:</span>
+                    <strong class="grading-part-card-value">{{ part.value }}</strong>
+                    <span v-if="part.detail" class="text-caption">{{ part.detail }}</span>
+                </div>
+            </div>
+            <div class="performance-details">
             <span v-if="!hasYearBounds" class="text-caption text-warning">Schuljahresgrenzen fehlen: keine datierten Summen.</span>
             <v-chip v-if="summaryData.unassignedCount" size="x-small" color="warning" variant="outlined">
                 Ohne Zeitraumzuordnung: {{ summaryData.unassignedCount }} (nicht mitgezählt)
@@ -64,12 +76,32 @@
             <div v-if="!summaryData.groups.length && !summaryData.unassignedCount && !studentEvaluations.length && !assignedGrades.length && !hasStars && hasYearBounds" class="text-caption text-medium-emphasis">
                 Keine Leistungen im Zeitraum.
             </div>
+            </div>
+            <div v-for="progress in assignmentsProgress" :key="progress.id" class="assignment-progress">
+                <div class="assignment-progress-label">
+                    <span>{{ progress.label }}</span>
+                    <span :class="{ 'text-warning': progress.warning }">{{ progress.text }}</span>
+                </div>
+                <div class="assignment-progress-track">
+                <v-progress-linear :model-value="progress.fill" :max="100" height="6" rounded
+                    color="transparent" bg-color="grey-lighten-2" :bg-opacity="1"
+                    :title="progress.bandLabel"
+                    :aria-label="progress.label" :aria-valuetext="progress.text"
+                    :aria-description="assignmentGradeDescription"
+                    :aria-hidden="progress.percent === null ? true : undefined" />
+                    <div v-if="progress.percent !== null" class="assignment-progress-fill" aria-hidden="true"
+                        :style="{ backgroundImage: percentageProgressGradient, clipPath: `inset(0 ${100 - progress.fill}% 0 0)` }" />
+                    <span v-for="band in assignmentGradeBoundaries" :key="band.grade" class="assignment-grade-boundary"
+                        :style="{ left: `${band.min}%` }" :title="`Ab ${formatResult(band.min)} %: ${band.label}`" aria-hidden="true" />
+                </div>
+            </div>
         </template>
     </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { percentageGradeBand, percentageProgressGradient, standardPercentageGrades } from '@/helpers/gradeCalculation'
 import CourseStudentHoverDetails from './CourseStudentHoverDetails.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import { teachingCourseMatchesSchoolyear, teachingDateKey, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
@@ -81,6 +113,8 @@ const props = defineProps({
     behaviourEntries: { type: Array, default: () => [] },
     works: { type: Array, default: () => [] },
     evaluations: { type: Array, default: () => [] },
+    gradingReport: { type: Object, default: null },
+    showCalculatedGrade: { type: Boolean, default: false },
     schema: { type: Object, default: null },
     usesEntryAreas: { type: Boolean, default: false },
     activeSemester: { type: Number, default: 3 },
@@ -101,6 +135,160 @@ function belongsToStudent(entry) {
 }
 
 const courseMatchesSchoolyear = computed(() => teachingCourseMatchesSchoolyear(props.course, props.schoolyear))
+const gradingPartSummaries = computed(() => {
+    const report = props.gradingReport
+    if (!report || !sameId(report.course_id, props.course.id) || !sameId(report.schoolyear_id, props.schoolyear?.id)) return []
+    const students = report.students || []
+    const evaluation = students.find((item) => sameId(item.course_student_id, props.student.course_student_id))
+        || students.find((item) => sameId(item.user_id, props.student.user_id))
+        || students.find((item) => sameId(item.import116_id, props.student.import116_id))
+    const cards = (evaluation?.semesters || [])
+        .filter((semester) => Number(report.semester_count) === 1 || props.activeSemester === 3 || Number(semester.semester) === props.activeSemester)
+        .flatMap((semester) => {
+            const cards = (semester.parts || []).filter((part) => {
+            const types = part.types || []
+            const emptyOptionalStandardGrade = part.config?.is_required === false && types.length > 0
+                && types.every((type) => type.config?.calculation_mode === 'grades' && Array.isArray(type.entries) && type.entries.length === 0)
+            return !emptyOptionalStandardGrade
+        }).map((part) => {
+            const label = props.activeSemester === 3 && Number(report.semester_count) > 1 ? `${part.name} · Sem ${semester.semester}` : part.name
+            let value = 'Keine Bewertung'
+            let detail = ''
+            let hint = ''
+            const gradeMethodPending = ['grade_each', 'grade_mean'].includes(part.trace?.method)
+            const pending = (part.trace?.method === 'plus_minus' && !part.trace?.thresholds) || gradeMethodPending
+            const appliedAdjustment = part.trace?.purpose === 'adjust_grade' && part.status === 'complete'
+                && Number.isFinite(part.result)
+            if (part.trace?.purpose === 'adjust_grade') {
+                const trace = part.trace
+                value = trace.balance_status === 'complete' && Number.isFinite(trace.balance)
+                    ? `Saldo ${trace.balance > 0 ? '+' : ''}${formatResult(trace.balance)}`
+                    : trace.balance_status === 'empty' ? 'Saldo 0' : 'Saldo unvollständig'
+            } else if (gradeMethodPending) {
+                value = 'Regel offen'
+                hint = `${part.trace.method === 'grade_each' ? 'Jede Note extra rechnen' : 'Notendurchschnitt'}: Berechnungsregel noch offen`
+            } else if (pending) {
+                const trace = part.trace || {}
+                const pendingDetail = 'Note noch offen'
+                if (trace.purpose) hint = 'Eigene Note berechnen: Regel wird noch festgelegt'
+                if (trace.balance_status === 'complete' && Number.isFinite(trace.balance)) {
+                    value = `Saldo ${trace.balance > 0 ? '+' : ''}${formatResult(trace.balance)}`
+                    detail = pendingDetail
+                } else if (trace.balance_status === 'incomplete') {
+                    value = 'Saldo unvollständig'
+                    detail = pendingDetail
+                } else if (trace.balance_status === 'empty') {
+                    value = 'Saldo 0'
+                    detail = pendingDetail
+                } else {
+                    value = 'Berechnungsregel wird noch festgelegt'
+                }
+            } else if (part.trace?.method === 'plus_minus') {
+                const trace = part.trace
+                value = trace.balance_status === 'complete' ? `Saldo ${trace.balance > 0 ? '+' : ''}${formatResult(trace.balance)}` : trace.balance_status === 'empty' ? 'Saldo 0' : 'Saldo unvollständig'
+                detail = part.status === 'complete' && Number.isFinite(part.result) ? `Note ${formatResult(part.result)}` : 'Note noch offen'
+                hint = trace.rule_label
+            } else if (part.status === 'incomplete' || (semester.issues || []).some((issue) => issue.severity === 'error' && ['invalid_period', 'unassigned_date'].includes(issue.code))) {
+                value = 'Nicht vollständig berechenbar'
+            } else if (part.status === 'complete') {
+                const trace = part.trace || {}
+                if (trace.method === 'single_grade' && Number.isFinite(part.result)) {
+                    value = `Note ${formatResult(part.result)}`
+                } else if (trace.method === 'standard_grade_mean' && Number.isFinite(part.result)) {
+                    value = `Notendurchschnitt ${formatResult(part.result)}`
+                    hint = trace.rule_label
+                } else if (['sum_percent', 'overall_points'].includes(trace.method) && Number.isFinite(trace.sum) && Number.isFinite(trace.maximum) && trace.maximum > 0) {
+                    value = `${formatResult(trace.sum)} / ${formatResult(trace.maximum)} Punkte`
+                } else if (Number.isFinite(part.result)) {
+                    value = `Bewertung ${formatResult(part.result)}`
+                }
+            }
+            return { key: `${semester.semester}-${part.id}`, id: part.id, semester: Number(semester.semester), name: part.name, status: part.status, trace: part.trace,
+                balanceTone: part.trace?.method === 'plus_minus'
+                    ? part.trace.balance_status === 'empty' ? 'neutral'
+                        : part.trace.balance_status === 'complete' && Number.isFinite(part.trace.balance)
+                            ? part.trace.balance > 0 ? 'positive' : part.trace.balance < 0 ? 'negative' : 'neutral' : null
+                    : null,
+                label, value, detail, hint, incomplete: (pending && !appliedAdjustment) || value === 'Nicht vollständig berechenbar' }
+            })
+            if (props.showCalculatedGrade) {
+                const complete = semester.status === 'complete' && Number.isFinite(semester.result)
+                cards.push({ key: `${semester.semester}-calculated-grade`, id: 'calculated-semester-grade', semester: Number(semester.semester),
+                    name: 'Note', label: props.activeSemester === 3 && Number(report.semester_count) > 1 ? `Note · Sem ${semester.semester}` : 'Note',
+                    value: complete ? String(Math.round(semester.result)) : 'Nicht berechenbar', incomplete: !complete,
+                    gradeColor: complete ? standardPercentageGrades.find((band) => band.grade === Math.round(semester.result))?.color : undefined,
+                    calculatedGrade: complete, detail: complete && semester.result_exact != null ? formatExactResult(semester.result_exact) : '',
+                    hint: complete ? 'Berechnete Semesternote' : (semester.issues || []).filter((issue) => issue.severity === 'error').map((issue) => issue.message).filter(Boolean).join(' ') || 'Eine vollständige berechenbare Semesterbewertung fehlt.',
+                })
+            }
+            return cards
+        })
+    if (props.showCalculatedGrade && props.activeSemester === 3 && Number(report.semester_count) > 1) {
+        const year = evaluation?.year
+        const complete = year?.status === 'complete' && Number.isFinite(year.result)
+        if (evaluation) cards.push({ key: 'calculated-year-grade', id: 'calculated-semester-grade', semester: 3,
+            name: 'Gesamtnote', label: 'Gesamtnote', value: complete ? String(Math.round(year.result)) : 'Nicht berechenbar', incomplete: !complete,
+            gradeColor: complete ? standardPercentageGrades.find((band) => band.grade === Math.round(year.result))?.color : undefined,
+            calculatedGrade: complete, detail: complete && year.result_exact != null ? formatExactResult(year.result_exact) : '',
+            hint: complete ? 'Berechnete Gesamtnote nach den Semester-Einstellungen' : (year?.issues || []).filter((issue) => issue.severity === 'error').map((issue) => issue.message).filter(Boolean).join(' ') || 'Vollständige Semesternoten und die Semestergewichtung fehlen.',
+        })
+    }
+    return cards
+})
+
+const gradingPartColumns = computed(() => [...new Set(gradingPartSummaries.value.map((part) => String(part.id)))]
+    .sort((left, right) => left === 'calculated-semester-grade' ? 1 : right === 'calculated-semester-grade' ? -1 : 0))
+
+function gradingPartCardPosition(part) {
+    const column = gradingPartColumns.value.indexOf(String(part.id))
+    const twoSemesters = props.activeSemester === 3 && Number(props.gradingReport?.semester_count) > 1
+    const row = twoSemesters ? part.semester : 1
+    return {
+        '--grading-column': column + 1,
+        '--grading-row': row,
+        '--grading-mobile-column': column % 2 + 1,
+        '--grading-mobile-row': Math.floor(column / 2) * (twoSemesters ? 2 : 1) + row,
+    }
+}
+
+const assignmentsProgress = computed(() => {
+    const byPart = new Map()
+    for (const part of gradingPartSummaries.value.filter((part) => ['sum_percent', 'overall_points'].includes(part.trace?.method))) {
+        const key = String(part.id)
+        if (!byPart.has(key)) byPart.set(key, [])
+        byPart.get(key).push(part)
+    }
+    return [...byPart.values()].map((parts) => {
+        const unavailable = (text) => ({ id: parts[0].id, label: parts[0].name, percent: null, fill: 0, text, warning: true })
+        if (parts.some((part) => part.incomplete)) return unavailable('Nicht vollständig berechenbar')
+        if (parts.some((part) => part.status !== 'complete')) return unavailable('Keine Bewertung')
+        if (parts.some((part) => !['sum_percent', 'overall_points'].includes(part.trace?.method) || !Number.isFinite(part.trace?.sum))) return unavailable('Keine Punktesumme verfügbar')
+        if (parts.some((part) => !Number.isFinite(part.trace?.maximum) || part.trace.maximum <= 0)) return unavailable('Keine Maximalpunkte')
+        const sum = parts.reduce((total, part) => total + part.trace.sum, 0)
+        const maximum = parts.reduce((total, part) => total + part.trace.maximum, 0)
+        const percent = sum / maximum * 100
+        const band = percentageGradeBand(percent)
+        const warning = percent < 0 || percent > 100
+        const text = `${percent.toLocaleString('de-AT', { maximumFractionDigits: 2 })} %${warning ? ' · außerhalb 0–100 %' : ''}`
+        return { id: parts[0].id, label: parts[0].name, percent, fill: Math.max(0, Math.min(100, percent)), text, warning, bandLabel: band?.label }
+    })
+})
+
+const assignmentGradeBoundaries = standardPercentageGrades.filter((band) => band.grade < 5)
+const assignmentGradeDescription = `Notengrenzen: ${[...assignmentGradeBoundaries].reverse().map((band) => `${formatResult(band.min)} % ${band.label}`).join(', ')}`
+
+function formatExactResult(value) {
+    if (!/^\d+\/\d+$/.test(String(value))) return Number(value).toLocaleString('de-AT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const [numerator, denominator] = String(value).split('/').map(BigInt)
+    if (denominator === 0n) return '–'
+    const scaled = numerator * 100n
+    const hundredths = scaled / denominator + (scaled % denominator * 2n >= denominator ? 1n : 0n)
+    return `${hundredths / 100n},${String(hundredths % 100n).padStart(2, '0')}`
+}
+
+function formatResult(value) {
+    return Number(value).toLocaleString('de-AT', { maximumFractionDigits: 6 })
+}
 const hasYearBounds = computed(() => {
     const from = teachingDateKey(props.schoolyear?.from)
     const until = teachingDateKey(props.schoolyear?.until)
@@ -213,11 +401,46 @@ const performanceRows = computed(() => [
 
 <style scoped>
 .student-performance {
+    display: contents;
+}
+
+.assignment-progress {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+.assignment-progress-label {
     display: flex;
-    flex: 1 1 280px;
-    flex-direction: column;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: space-between;
     gap: 4px;
+    margin-bottom: 3px;
+    font-size: 0.7rem;
+    line-height: 1.3;
+}
+
+.assignment-progress-track { position: relative; }
+.assignment-progress-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    pointer-events: none;
+}
+.assignment-grade-boundary {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(0, 0, 0, 0.65);
+    box-shadow: 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.performance-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 160px;
     min-width: 0;
 }
 
@@ -226,6 +449,106 @@ const performanceRows = computed(() => [
     flex-wrap: wrap;
     gap: 4px;
     max-width: 100%;
+}
+
+.grading-part-cards {
+    display: grid;
+    grid-template-columns: repeat(var(--grading-part-columns), minmax(0, 100px));
+    gap: 6px;
+    order: 2;
+    flex: 0 1 auto;
+    max-width: 50%;
+    margin-left: auto;
+}
+
+.grading-part-card {
+    grid-column: var(--grading-column);
+    grid-row: var(--grading-row);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 3px;
+    width: 100%;
+    max-width: 100%;
+    min-height: 58px;
+    padding: 6px 8px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.2);
+    border-radius: 8px;
+    color: rgb(var(--v-theme-primary));
+    background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.14), rgba(var(--v-theme-primary), 0.04));
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .grading-part-cards {
+        grid-template-columns: repeat(var(--grading-mobile-columns), minmax(0, 100px));
+    }
+
+    .grading-part-card {
+        grid-column: var(--grading-mobile-column);
+        grid-row: var(--grading-mobile-row);
+    }
+}
+
+.grading-part-card--incomplete {
+    border-color: rgba(var(--v-theme-warning), 0.2);
+    color: rgb(var(--v-theme-warning));
+    background: linear-gradient(135deg, rgba(var(--v-theme-warning), 0.14), rgba(var(--v-theme-warning), 0.04));
+}
+
+.grading-part-card--positive {
+    border-color: rgba(22, 163, 74, 0.45);
+    color: rgb(var(--v-theme-on-surface));
+    background: linear-gradient(135deg, rgba(22, 163, 74, 0.24), rgba(22, 163, 74, 0.14));
+}
+
+.grading-part-card--negative {
+    border-color: rgba(var(--v-theme-error), 0.2);
+    color: rgb(var(--v-theme-on-surface));
+    background: linear-gradient(135deg, rgba(var(--v-theme-error), 0.14), rgba(var(--v-theme-error), 0.04));
+}
+
+.grading-part-card-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.grading-part-card-value {
+    font-size: 0.8rem;
+    font-weight: 750;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+}
+
+.grading-part-card--calculated-note .grading-part-card-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: right;
+    align-self: stretch;
+}
+
+.grading-part-card--calculated-note {
+    border-color: var(--calculated-grade-color);
+    color: rgb(var(--v-theme-on-surface));
+    background: linear-gradient(135deg, color-mix(in srgb, var(--calculated-grade-color) 32%, transparent), color-mix(in srgb, var(--calculated-grade-color) 20%, transparent));
+}
+
+.grading-part-card--calculated-note .text-caption {
+    text-align: right;
+    align-self: stretch;
+    font-weight: 400;
+}
+
+.grading-part-card--note .grading-part-card-title {
+    text-align: right;
+    align-self: stretch;
+}
+
+.grading-part-card--note .grading-part-card-value {
+    text-align: right;
+    align-self: stretch;
 }
 
 .performance-group {

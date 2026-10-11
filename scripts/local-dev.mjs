@@ -175,11 +175,10 @@ function openWorkspace(url) {
 }
 
 export function shouldOpenLocalDev(argumentsList) {
-    return !argumentsList.includes('--no-open')
-        && (!argumentsList.includes('--session') || argumentsList.includes('--open'));
+    return argumentsList.includes('--open') && !argumentsList.includes('--no-open');
 }
 
-export async function startLocalDev(project, { webOnly = false, open = true, checkSeconds = 0, portOffset = 0 } = {}) {
+export async function startLocalDev(project, { webOnly = false, open = false, checkSeconds = 0, portOffset = 0 } = {}) {
     if (process.platform !== 'win32') {
         throw new Error('This workstation launcher supports Windows only.');
     }

@@ -70,6 +70,324 @@ function entry(overrides = {}) {
 }
 
 describe('Compact course student performance', () => {
+    it('shows authoritative points per part and student and follows the selected semester', async () => {
+        const wrapper = mountPerformance({ props: {
+            student: { ...student, course_student_id: 42 }, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [
+                { course_student_id: 99, user_id: 99, semesters: [{ semester: 1, parts: [{ id: 1, name: 'Fremd', status: 'complete', trace: { method: 'sum_percent', sum: 99, maximum: 100 } }] }] },
+                { course_student_id: 42, user_id: null, semesters: [
+                    { semester: 1, issues: [{ code: 'incomplete_part', severity: 'error' }], parts: [
+                        { id: 1, name: 'Aufträge', status: 'complete', trace: { method: 'sum_percent', sum: 18, maximum: 25 } },
+                        { id: 2, name: 'Tests', status: 'complete', trace: { method: 'overall_points', sum: 6.25, maximum: 10 } },
+                        { id: 3, name: 'Mitarbeit', status: 'complete', result: 2.5, trace: { method: 'weighted_mean' } },
+                        { id: 4, name: 'Referat', status: 'empty', trace: { method: 'sum_percent', sum: 0, maximum: 0 } },
+                        { id: 5, name: 'Offen', status: 'incomplete', trace: { method: 'sum_percent', sum: 4, maximum: 10 } },
+                    ] },
+                    { semester: 2, parts: [{ id: 1, name: 'Aufträge', status: 'complete', trace: { method: 'sum_percent', sum: 7, maximum: 20 } }] },
+                ] },
+            ] },
+        } })
+        const summaries = () => wrapper.findAll('.grading-part-card').map((card) => `${card.get('.grading-part-card-title').text()} ${card.get('.grading-part-card-value').text()}`).join(' ')
+        expect(summaries()).toContain('Aufträge: 18 / 25 Punkte')
+        expect(summaries()).toContain('Tests: 6,25 / 10 Punkte')
+        expect(summaries()).toContain('Mitarbeit: Bewertung 2,5')
+        expect(summaries()).toContain('Referat: Keine Bewertung')
+        expect(summaries()).toContain('Offen: Nicht vollständig berechenbar')
+        expect(summaries()).not.toContain('Fremd')
+        expect(summaries()).not.toContain('7 / 20')
+        expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge72 %')
+        expect(wrapper.get('v-progress-linear').attributes('model-value')).toBe('72')
+        await wrapper.setProps({ activeSemester: 2 })
+        expect(summaries()).toBe('Aufträge: 7 / 20 Punkte')
+        expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge35 %')
+        await wrapper.setProps({ activeSemester: 3 })
+        expect(summaries()).toContain('Aufträge · Sem 1: 18 / 25 Punkte')
+        expect(summaries()).toContain('Aufträge · Sem 2: 7 / 20 Punkte')
+        expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge55,56 %')
+        await wrapper.setProps({ student: { ...student, user_id: 99, course_student_id: 99 } })
+        expect(summaries()).toContain('Fremd')
+        expect(summaries()).not.toContain('Aufträge')
+        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+    })
+
+    it.each([
+        { status: 'complete', sum: 0, maximum: 5, text: '0 %', fill: '0' },
+        { status: 'complete', sum: 4.6, maximum: 5, text: '92 %', fill: '92' },
+        { status: 'complete', sum: 6, maximum: 5, text: '120 % · außerhalb 0–100 %', fill: '100' },
+        { status: 'complete', sum: -1, maximum: 5, text: '-20 % · außerhalb 0–100 %', fill: '0' },
+        { status: 'incomplete', sum: 4, maximum: 5, text: 'Nicht vollständig berechenbar', fill: '0', unknown: true },
+        { status: 'empty', sum: 0, maximum: 0, text: 'Keine Bewertung', fill: '0', unknown: true },
+        { status: 'complete', sum: 4, maximum: 0, text: 'Keine Maximalpunkte', fill: '0', unknown: true },
+        { status: 'complete', sum: 4, maximum: undefined, text: 'Keine Maximalpunkte', fill: '0', unknown: true },
+        { status: 'complete', sum: undefined, maximum: 5, text: 'Keine Punktesumme verfügbar', fill: '0', unknown: true },
+    ])('shows authoritative assignment progress or a clear unavailable state: $text', ({ status, sum, maximum, text, fill, unknown }) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Aufträge', status, trace: { method: 'sum_percent', sum, maximum } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.assignment-progress').text()).toBe(`Aufträge${text}`)
+        expect(wrapper.get('v-progress-linear').attributes('model-value')).toBe(fill)
+        expect(wrapper.get('v-progress-linear').attributes('aria-hidden')).toBe(unknown ? 'true' : undefined)
+        expect(wrapper.find('.assignment-progress-fill').exists()).toBe(!unknown)
+    })
+
+    it('does not merge distinct configured parts with the same assignment title', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [7, 8].map((id) => ({ id, name: 'Aufträge', status: 'complete', trace: { method: 'sum_percent', sum: 4, maximum: 5 } })),
+            }] }] },
+        } })
+        expect(wrapper.findAll('.assignment-progress').map((progress) => progress.text())).toEqual(['Aufträge80 %', 'Aufträge80 %'])
+    })
+
+    it('shows progress from point calculation data after renaming a part without adding percentages to grades or balances', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1, parts: [
+                { id: 7, name: 'Leistungsfeststellungen', status: 'complete', trace: { method: 'sum_percent', sum: 4.1, maximum: 5 } },
+                { id: 8, name: 'Weitere Punkte', status: 'complete', trace: { method: 'overall_points', sum: 10, maximum: 20 } },
+                { id: 9, name: 'Mitarbeit', status: 'complete', result: 1, trace: { method: 'plus_minus', purpose: 'adjust_grade', balance: 2, balance_status: 'complete' } },
+                { id: 10, name: 'Prüfung', status: 'complete', result: 5, trace: { method: 'single_grade' } },
+            ] }] }] },
+        } })
+        expect(wrapper.findAll('.assignment-progress').map((progress) => progress.text())).toEqual(['Leistungsfeststellungen82 %', 'Weitere Punkte50 %'])
+        expect(wrapper.findAll('v-progress-linear').map((progress) => progress.attributes('model-value'))).toEqual(['82', '50'])
+        expect(wrapper.text()).toContain('Mitarbeit:Saldo +2')
+        expect(wrapper.text()).toContain('Prüfung:Note 5')
+    })
+
+    it('keeps the selected plus-minus rule pending without a points percentage', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Aufträge', status: 'incomplete', trace: { method: 'plus_minus' } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toContain('Berechnungsregel wird noch festgelegt')
+        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+        expect(wrapper.find('.assignment-progress-fill').exists()).toBe(false)
+    })
+
+    it.each(['grade_each', 'grade_mean'])('keeps grade method %s visible as pending without a computed grade', (method) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Prüfung', status: 'incomplete', result: null, trace: { method } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe('Regel offen')
+        expect(wrapper.get('.grading-part-card').attributes('title')).toContain(method === 'grade_each' ? 'Jede Note extra rechnen' : 'Notendurchschnitt')
+    })
+
+    it.each([
+        [3, 'complete', 'Saldo +3', null], [-2, 'complete', 'Saldo -2', null], [0, 'complete', 'Saldo 0', null],
+        [null, 'empty', 'Saldo 0', null], [null, 'incomplete', 'Saldo unvollständig', null],
+        [3, 'complete', 'Saldo +3', 'own_grade'], [-2, 'complete', 'Saldo -2', 'adjust_grade'],
+    ])('shows the defined sign balance %s separately from the pending grade', (balance, balanceStatus, label, purpose) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Aufträge', status: 'incomplete', result: null,
+                    trace: { method: 'plus_minus', balance, balance_status: balanceStatus, purpose } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe(label)
+        if (purpose === 'adjust_grade') expect(wrapper.get('.grading-part-card').text()).toBe(`Aufträge:${label}`)
+        else expect(wrapper.get('.grading-part-card').text()).toContain('Note noch offen')
+        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+        expect(wrapper.get('.grading-part-card').text()).not.toContain('%')
+    })
+
+    it.each([
+        [2, '-1/2', 2.5],
+        [8, '-5/4', 1.75],
+    ])('shows only balance %s even when the report contains an applied adjustment', (balance, delta, result) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Mitarbeit', status: 'complete', result,
+                    config: { sign_adjustment: { improvement_factor: '0.25', max_improvement: '1.25', deterioration_factor: '0.25', max_deterioration: '1' } },
+                    trace: { method: 'plus_minus', purpose: 'adjust_grade', balance, balance_status: 'complete',
+                        base_exact: '3', delta_exact: delta, adjusted_exact: String(result), rule_label: 'Gespeicherte Anpassungsregel' } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe(`Saldo +${balance}`)
+        expect(wrapper.get('.grading-part-card').text()).toBe(`Mitarbeit:Saldo +${balance}`)
+        expect(wrapper.get('.grading-part-card').text()).not.toContain('offen')
+        expect(wrapper.get('.grading-part-card').classes()).not.toContain('grading-part-card--incomplete')
+    })
+
+    it.each(['complete', 'empty', 'incomplete'])('shows only the balance state %s when adjustment prerequisites are incomplete', (balanceStatus) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Mitarbeit', status: 'incomplete', result: null,
+                    config: { sign_adjustment: { improvement_factor: '0.25', max_improvement: '1.25', deterioration_factor: '0.25', max_deterioration: '1' } },
+                    trace: { method: 'plus_minus', purpose: 'adjust_grade', balance: balanceStatus === 'complete' ? 2 : null, balance_status: balanceStatus } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toBe(`Mitarbeit:${balanceStatus === 'complete'
+            ? 'Saldo +2' : balanceStatus === 'empty' ? 'Saldo 0' : 'Saldo unvollständig'}`)
+        expect(wrapper.text()).not.toContain('Notenanpassung −0,5')
+    })
+
+    it('shows a directly adopted single standard grade as a note', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Prüfung', status: 'complete', result: 2, trace: { method: 'single_grade', values: [2], count: 1 } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe('Note 2')
+    })
+
+    it('toggles calculated semester and year cards using only the matching report results', async () => {
+        const part = { id: 7, name: 'Leistungsfeststellungen', status: 'complete', trace: { method: 'sum_percent', sum: 4, maximum: 5 } }
+        const report = { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [
+            { user_id: 12, semesters: [
+                { semester: 1, status: 'complete', result: 2, result_exact: '42/25', parts: [part] },
+                { semester: 2, status: 'complete', result: 4, parts: [part] },
+            ], year: { status: 'complete', result: 3, result_exact: '14/5' } },
+            { user_id: 13, semesters: [{ semester: 1, status: 'incomplete', result: null, parts: [part],
+                issues: [{ severity: 'error', message: 'Verpflichtende Prüfung fehlt.' }] }], year: { status: 'incomplete', result: null } },
+        ] }
+        const wrapper = mountPerformance({ props: { student: { ...student, sem_grade: 5 }, course, activeSemester: 1, gradingReport: report } })
+        const cards = () => wrapper.findAll('.grading-part-card').map((card) => card.text())
+        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte'])
+        await wrapper.setProps({ showCalculatedGrade: true })
+        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte', 'Note:21,68'])
+        await wrapper.setProps({ activeSemester: 2 })
+        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte', 'Note:4'])
+        await wrapper.setProps({ activeSemester: 3 })
+        expect(cards()).toEqual(['Leistungsfeststellungen · Sem 1:4 / 5 Punkte', 'Note · Sem 1:21,68',
+            'Leistungsfeststellungen · Sem 2:4 / 5 Punkte', 'Note · Sem 2:4', 'Gesamtnote:32,80'])
+        await wrapper.setProps({ student: { ...student, user_id: 13 }, activeSemester: 1 })
+        expect(cards()).toContain('Note:Nicht berechenbar')
+        expect(wrapper.findAll('.grading-part-card').at(-1).attributes('title')).toBe('Verpflichtende Prüfung fehlt.')
+        await wrapper.setProps({ showCalculatedGrade: false })
+        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte'])
+        await wrapper.setProps({ showCalculatedGrade: true, course: { ...course, id: 99 } })
+        expect(cards()).toEqual([])
+    })
+
+    it.each([['5/3', '1,67'], ['1', '1,00'], ['42/25', '1,68']])('shows exact raw %s to two decimal places below the final grade', (raw, displayed) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1, showCalculatedGrade: true,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12,
+                semesters: [{ semester: 1, status: 'complete', result: 2, result_exact: raw, parts: [] }],
+            }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe('2')
+        expect(wrapper.get('.grading-part-card .text-caption').text()).toBe(displayed)
+    })
+
+    it.each([[null, 'empty'], [0, 'complete']])('shows neutral balance for %s without changing the underlying performance report', (balance, balanceStatus) => {
+        const trace = { method: 'plus_minus', purpose: 'adjust_grade', balance, balance_status: balanceStatus, values: balance === null ? [] : [0] }
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Mitarbeit', status: balanceStatus === 'empty' ? 'empty' : 'incomplete', result: null, trace }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toBe('Mitarbeit:Saldo 0')
+        expect(trace.balance).toBe(balance)
+        expect(trace.balance_status).toBe(balanceStatus)
+        expect(trace.values).toEqual(balance === null ? [] : [0])
+    })
+
+    it('shows the configured average as a decimal without rounding to a school grade', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Schularbeiten', status: 'complete', result: 1.6, trace: { method: 'standard_grade_mean', rule_label: 'Chronologische Arbeiten je Semester' } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe('Notendurchschnitt 1,6')
+        expect(wrapper.get('.grading-part-card').text()).not.toContain('Regel offen')
+    })
+
+    it('shows optional standard grade cards only for the person and semester with actual entries', async () => {
+        const exam = (required, entries = []) => ({ id: 7, name: 'Prüfung', config: { is_required: required },
+            types: [{ config: { calculation_mode: 'grades' }, entries }],
+            status: entries.length ? 'complete' : required ? 'incomplete' : 'empty',
+            result: entries.length ? 5 : null, trace: { method: 'single_grade' } })
+        const report = { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [
+            { user_id: 12, semesters: [{ semester: 1, parts: [exam(false)] }, { semester: 2, parts: [exam(false, [{ value: '5' }])] }] },
+            { user_id: 13, semesters: [{ semester: 1, parts: [exam(false, [{ value: '5' }])] }] },
+            { user_id: 14, semesters: [{ semester: 1, parts: [exam(true)] }] },
+        ] }
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1, gradingReport: report } })
+        expect(wrapper.find('.grading-part-card').exists()).toBe(false)
+        await wrapper.setProps({ student: { ...student, user_id: 13 } })
+        expect(wrapper.get('.grading-part-card').text()).toBe('Prüfung:Note 5')
+        await wrapper.setProps({ student })
+        expect(wrapper.find('.grading-part-card').exists()).toBe(false)
+        await wrapper.setProps({ activeSemester: 2 })
+        expect(wrapper.get('.grading-part-card').text()).toBe('Prüfung:Note 5')
+        await wrapper.setProps({ student: { ...student, user_id: 14 }, activeSemester: 1 })
+        expect(wrapper.get('.grading-part-card').text()).toContain('Prüfung:Nicht vollständig berechenbar')
+    })
+
+    it('retains optional cards with incomplete entries and optional cards of other types', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1, parts: [
+                { id: 7, name: 'Prüfung', config: { is_required: false }, status: 'incomplete', result: null,
+                    types: [{ config: { calculation_mode: 'grades' }, entries: [{ value: 'ungültig' }] }], trace: { method: 'single_grade' } },
+                { id: 8, name: 'Punktearbeit', config: { is_required: false }, status: 'empty',
+                    types: [{ config: { calculation_mode: 'points' }, entries: [] }], trace: { method: 'sum_percent' } },
+            ] }] }] },
+        } })
+        expect(wrapper.findAll('.grading-part-card')).toHaveLength(2)
+        expect(wrapper.text()).toContain('Prüfung:Nicht vollständig berechenbar')
+        expect(wrapper.text()).toContain('Punktearbeit:Keine Bewertung')
+    })
+
+    it('shows a configured own sign grade alongside its net balance without point percentages', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Mitarbeit', status: 'complete', result: 3,
+                    trace: { method: 'plus_minus', balance: 0, balance_status: 'complete', purpose: 'own_grade', thresholds: { 4: -2, 3: 0, 2: 2, 1: 4 } } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toContain('Saldo 0Note 3')
+        expect(wrapper.get('.grading-part-card').text()).not.toContain('%')
+        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+    })
+
+    it('shows both semester sign balances without treating either as a grade', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 3,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12,
+                semesters: [1, 2].map((semester) => ({ semester, parts: [{ id: 7, name: 'Mitarbeit', status: 'incomplete', result: null,
+                    trace: { method: 'plus_minus', balance: semester === 1 ? 2 : -1, balance_status: 'complete' } }] })),
+            }] },
+        } })
+        expect(wrapper.findAll('.grading-part-card').map((card) => card.text())).toEqual([
+            'Mitarbeit · Sem 1:Saldo +2Note noch offen', 'Mitarbeit · Sem 2:Saldo -1Note noch offen',
+        ])
+    })
+
+    it.each([
+        [0, 'Nicht genügend'],
+        [49.999, 'Nicht genügend'],
+        [50, 'Genügend'],
+        [62.499, 'Genügend'],
+        [62.5, 'Befriedigend'],
+        [74.999, 'Befriedigend'],
+        [75, 'Gut'],
+        [87.499, 'Gut'],
+        [87.5, 'Sehr gut'],
+        [100, 'Sehr gut'],
+    ])('clips the full gradient at unrounded share %s with boundary label %s', (sum, label) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Aufträge', status: 'complete', trace: { method: 'sum_percent', sum, maximum: 100 } }],
+            }] }] },
+        } })
+        expect(wrapper.get('v-progress-linear').attributes('title')).toBe(label)
+        expect(Number(wrapper.get('v-progress-linear').attributes('model-value'))).toBeCloseTo(sum as number)
+        const fill = wrapper.get('.assignment-progress-fill').element as HTMLElement
+        expect(Number(fill.style.clipPath.split(' ')[1].replace('%', ''))).toBeCloseTo(100 - Number(sum))
+        expect(fill.style.backgroundImage).toContain('#e53935 50%, #fb8c00 50%')
+        expect(fill.style.backgroundImage).toContain('#43a047 87.5%')
+        if (sum === 49.999) expect(wrapper.get('.assignment-progress-label').text()).toContain('50 %')
+    })
+
+    it.each([{ course_id: 99, schoolyear_id: 3 }, { course_id: 18, schoolyear_id: 99 }])('does not show a grading report for a different scope', (scope) => {
+        const wrapper = mountPerformance({ props: { student, course, gradingReport: { ...scope, students: [{ user_id: 12, semesters: [{ semester: 1, parts: [{ id: 1, name: 'Fremd', status: 'empty' }] }] }] } } })
+        expect(wrapper.find('[aria-label="Benotungsteile"]').exists()).toBe(false)
+        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+    })
     it('shows only the selected student evaluation PDF inside the work details', async () => {
         const wrapper = await mountInteractive({
             schema: { works: [{ short_name: 'MA', name: 'Mitarbeit' }] },

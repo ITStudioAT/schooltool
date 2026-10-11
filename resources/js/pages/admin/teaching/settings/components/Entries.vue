@@ -4,8 +4,6 @@
             <v-btn v-if="!assignGradingPartId" color="primary" variant="tonal" rounded="lg" prepend-icon="mdi-shape-square-plus" :disabled="isEditing" @click="openCreateAreaDialog">Neuer Bereich</v-btn>
         </template>
 
-        <div v-if="!assignGradingPartId" class="text-body-2 text-medium-emphasis mt-2">Gruppieren Sie Einträge passend zu Schulstufe oder Fach.</div>
-
         <v-progress-linear v-if="isLoading" indeterminate color="primary" class="mt-4" />
 
         <div v-if="areas.length" v-show="!assignGradingPartId" class="entry-area-grid mt-4">
@@ -182,18 +180,24 @@
                     </v-btn>
                     <v-btn v-if="activeEdit === 'semesters'" class="ml-2" variant="text" :disabled="isSavingSemesters" @click="delete semesterDrafts[activeAreaId]">Abbrechen</v-btn>
                 </section>
-                <header v-if="!assignGradingPartId" class="calculation-semester-grade-header mt-4">
-                    <div class="text-h6 font-weight-bold">Semesternote</div>
-                </header>
-
                 <section v-if="assignGradingPartId" class="calculation-area-card mt-3">
+                    <div class="text-subtitle-2 mb-2">Zulässige Eintragstypen</div>
+                    <v-btn-toggle v-model="assignmentEntryTypeGroups" class="maximum-plus-grading-options mb-4"
+                        aria-label="Zulässige Eintragstypen" color="primary" variant="outlined" multiple :disabled="isAssigningGradingEntry">
+                        <v-btn value="signs" :disabled="assignmentEntryTypeGroups.length >= 2 && !assignmentEntryTypeGroups.includes('signs')">Plus-Minus-Typen</v-btn>
+                        <v-btn value="points" :disabled="assignmentEntryTypeGroups.length >= 2 && !assignmentEntryTypeGroups.includes('points')">Punktetypen</v-btn>
+                        <v-btn value="grades" :disabled="assignmentEntryTypeGroups.length >= 2 && !assignmentEntryTypeGroups.includes('grades')">Notentypen</v-btn>
+                    </v-btn-toggle>
+                    <p class="text-caption mb-3">Eine oder zwei Typengruppen auswählen. Bestehende Zuordnungen bleiben erhalten.</p>
+                    <p v-if="assignmentAllowedEntryTypes === 'all'" class="text-caption mb-3">Bisher sind alle Typen zulässig. Wählen Sie die gewünschten Gruppen, um diese Einstellung zu ändern.</p>
+                    <p v-if="assignmentAllowedEntryTypes === 'none'" class="text-caption mb-3">Bitte mindestens eine Typengruppe auswählen.</p>
                     <header class="calculation-area-header">
                         <span class="calculation-area-icon"><v-icon icon="mdi-format-list-checks" size="20" /></span>
                         <div class="calculation-area-heading">
                             <div class="calculation-area-name">Zuordnung: {{ gradingPartPendingAssignment?.name }}</div>
                             <div class="text-caption text-medium-emphasis">
-                                {{ calculationEntries.length }}
-                                {{ calculationEntries.length === 1 ? 'Benotungseintrag verfügbar' : 'Benotungseinträge verfügbar' }}
+                                {{ assignableCalculationEntries.length }}
+                                {{ assignableCalculationEntries.length === 1 ? 'Eintragstyp' : 'Eintragstypen' }}
                             </div>
                         </div>
                     </header>
@@ -203,30 +207,31 @@
                         <span>
                             Wählen Sie alle Einträge aus, die diesem Benotungsteil zugeordnet sein sollen.
                             Bestehende Zuordnungen sind vorausgewählt.
-                            <template v-if="gradingPartPendingAssignment?.allowed_entry_types === 'points'">Hier sind nur Eintragstypen mit der Eigenschaft „Punkte“ zulässig.</template>
+                            <template v-if="assignmentAllowedEntryTypes === 'points'">Hier sind nur Eintragstypen mit der Eigenschaft „Punkte“ zulässig.</template>
                         </span>
                     </div>
 
-                    <div v-if="calculationEntries.length" class="calculation-entry-selection-grid">
+                    <div v-if="assignableCalculationEntries.length" class="calculation-entry-selection-grid">
                         <button
-                            v-for="entry in calculationEntries"
+                            v-for="entry in assignableCalculationEntries"
                             :key="entry.id"
                             type="button"
                             class="calculation-entry-selection-card"
                             :class="{ 'calculation-entry-selection-card--selected': selectedGradingEntryIds.includes(entry.id) }"
                             :aria-pressed="selectedGradingEntryIds.includes(entry.id)"
+                            :title="!canAssignGradingEntry(entry) ? 'Für die gewählten Typengruppen nicht zulässig' : entry.name"
                             :disabled="isAssigningGradingEntry || !canAssignGradingEntry(entry)"
                             @click="toggleGradingEntrySelection(entry)">
                             <span class="calculation-entry-selection-card-header">
                                 <v-chip class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
                                 <v-icon
-                                    :icon="selectedGradingEntryIds.includes(entry.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
+                                    :icon="!canAssignGradingEntry(entry) ? 'mdi-lock-outline' : selectedGradingEntryIds.includes(entry.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
                                     :color="selectedGradingEntryIds.includes(entry.id) ? 'primary' : undefined"
                                     size="22" />
                             </span>
                             <div class="calculation-entry-details">
                                 <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
-                                <span v-if="!canAssignGradingEntry(entry)" class="text-caption text-medium-emphasis">Nur Punktetypen zulässig</span>
+                                <span v-if="!canAssignGradingEntry(entry)" class="text-caption">Nicht zulässig für die gewählten Typengruppen</span>
                                 <div class="calculation-entry-values">
                                     <span v-if="standardCalculationLabel(entry)" class="calculation-evaluation calculation-evaluation--neutral">{{ standardCalculationLabel(entry) }}</span>
                                     <v-chip
@@ -238,12 +243,13 @@
                                         {{ propertyModeLabel(entry.properties_mode) }}
                                     </v-chip>
                                     <span
-                                        v-for="property in calculationProperties(entry)"
+                                        v-for="(property, propertyIndex) in calculationProperties(entry)"
                                         v-else-if="entry.has_properties"
                                         :key="property"
                                         class="calculation-entry-value calculation-property">
                                         <span class="calculation-property-name">{{ property }}</span>
                                         <span v-if="propertyEvaluationLabel(entry, property)" class="calculation-evaluation" :class="propertyEvaluationClass(entry, property)">{{ propertyEvaluationLabel(entry, property) }}</span>
+                                        <span v-if="propertyIndex < calculationProperties(entry).length - 1" aria-hidden="true">,</span>
                                     </span>
                                     <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
                                 </div>
@@ -255,7 +261,7 @@
                             </div>
                         </button>
                     </div>
-                    <div v-else class="text-body-2 text-medium-emphasis">Keine Benotungseinträge verfügbar.</div>
+                    <div v-else class="text-body-2 text-medium-emphasis">{{ assignmentAllowedEntryTypes === 'none' ? 'Bitte mindestens eine Typengruppe auswählen.' : 'Keine Benotungseinträge verfügbar.' }}</div>
 
                     <div class="calculation-assignment-actions">
                         <v-btn variant="text" :disabled="isAssigningGradingEntry" @click="cancelGradingEntryAssignment">Abbrechen</v-btn>
@@ -271,42 +277,102 @@
                     </div>
                 </section>
 
-                <div v-if="calculationAreas.length && !assignGradingPartId" class="calculation-area-list mt-3">
+                <div v-if="!assignGradingPartId" class="calculation-overviews mt-4">
+                <section v-for="simulation in [false, true]" :key="String(simulation)"
+                    class="calculation-overview" :class="{ 'calculation-simulation': simulation }"
+                    :aria-label="simulation ? 'Simulation' : 'Semesternote'">
+                <header class="calculation-semester-grade-header">
+                    <div class="text-h6 font-weight-bold">{{ simulation ? 'Simulation' : 'Semesternote' }}</div>
+                    <span v-if="simulation" class="simulation-grade" aria-label="Simulationsnote gesamt">Note {{ simulationCalculatedResults.total ?? '–' }}</span>
+                    <v-btn v-if="!simulation && calculationBlocks.length >= 3" color="primary" variant="tonal" prepend-icon="mdi-group" :disabled="isEditing || isLoading" @click="openGradingGroupDialog()">Gruppe bilden</v-btn>
+                </header>
+                <p v-if="simulation && simulationCalculatedResults.totalStep" class="text-caption text-right mt-1">{{ simulationCalculatedResults.totalStep }}</p>
+                <p v-if="simulation && simulationStorageError" class="text-error text-caption mt-2" role="alert">{{ simulationStorageError }}</p>
+                <div v-if="calculationAreas.length" class="calculation-area-list mt-3">
+                    <template v-for="rootBlock in calculationBlocks" :key="rootBlock.id">
+                    <div v-if="gradingAdjustmentForBlock(rootBlock).target" class="grading-adjustment-connection" role="img"
+                        :aria-label="`${rootBlock.parts[0].name} passt ${gradingAdjustmentForBlock(rootBlock).target} an`"
+                        :title="`${rootBlock.parts[0].name} passt ${gradingAdjustmentForBlock(rootBlock).target} an`">
+                        <v-icon icon="mdi-link-variant" size="24" />
+                    </div>
+                    <GradingGroupFrame :block="rootBlock">
+                    <template #header="frame">
+                    <template v-for="block in [frame?.block || rootBlock]" :key="block.id">
+                        <header class="calculation-group-header">
+                            <div class="calculation-group-heading">
+                                <div class="grading-weight-heading">
+                                    <button v-if="!simulation && !isGradingAdjustmentContext(block.group?.parent_group_id)" type="button" class="grading-block-weight" :class="gradingLevelBlockWeight(block) === null ? 'grading-weight-trigger' : 'grading-group-member-weight'"
+                                        :aria-label="`${block.group?.parent_group_id ? 'Gewichtung innerhalb der Gruppe' : 'Gewichtung äußere Ebene'}: ${block.group?.name || block.parts[0]?.name}`" :disabled="isEditing" @click="openGradingBlockWeightDialog(block)">
+                                        <v-icon icon="mdi-weight" :size="gradingLevelBlockWeight(block) === null ? 16 : 20" color="primary" aria-hidden="true" />
+                                        <strong v-if="gradingLevelBlockWeight(block) !== null">{{ gradingNumberInput(gradingLevelBlockWeight(block)) }}</strong>
+                                    </button>
+                                    <h3>{{ gradingLevelBlockName(block) }}</h3>
+                                    <div v-if="simulation && block.group" class="simulation-result">
+                                        <span class="simulation-grade" :aria-label="`Simulationsnote: ${gradingLevelBlockName(block)}`">{{ block.group ? simulationCalculatedResults.groups[block.group.id] ?? '–' : simulationSummary(block.parts[0]) }}</span>
+                                        <small>{{ block.group ? simulationCalculatedResults.groupSteps[block.group.id] : simulationExplanation(block.parts[0]) }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="!simulation && block.group" class="calculation-group-actions">
+                                <v-btn variant="tonal" color="primary" size="small" :disabled="isEditing" @click="openGradingGroupDialog(block.group)">Gruppe bearbeiten</v-btn>
+                                <v-btn variant="text" color="error" size="small" :disabled="isEditing" @click="openDissolveGradingGroupDialog(block.group)">Gruppe auflösen</v-btn>
+                            </div>
+                        </header>
+                    </template>
+                    </template>
+                    <template #default="frame">
+                    <template v-for="block in [frame?.block || rootBlock]" :key="block.id">
+                        <div :class="[block.group ? 'calculation-group-parts' : 'calculation-area-list', { 'calculation-group-parts--adjustment-pair': block.group && block.parts.some((part) => gradingAdjustmentForPart(part).target) }]">
+                    <template v-for="area in block.parts" :key="area.id">
+                        <div v-if="block.group && gradingAdjustmentForPart(area).target" class="grading-adjustment-connection" role="img"
+                            :aria-label="`${area.name} passt ${gradingAdjustmentForPart(area).target} an`"
+                            :title="`${area.name} passt ${gradingAdjustmentForPart(area).target} an`">
+                            <v-icon icon="mdi-link-variant" size="24" />
+                        </div>
                     <section
-                        v-for="area in calculationAreas"
-                        :key="area.id"
                         class="calculation-area-card calculation-part-card"
                         :class="{ 'calculation-part-card--has-entries': area.entries.length }">
                         <span v-if="gradingPartCalculationIssue(area)" class="calculation-incomplete-marker" role="img"
                             :aria-label="`Berechnung unvollständig: ${gradingPartCalculationIssue(area)}`"
                             :title="gradingPartCalculationIssue(area)">!</span>
                         <header class="calculation-area-header">
-                            <div class="grading-weight-badge" :aria-label="gradingPartWeightLabel(area)">
-                                <v-icon icon="mdi-weight" size="24" aria-hidden="true" />
-                                <strong>{{ gradingPartWeightValue(area) }}</strong>
-                                <span>{{ area.fixed_percentage !== null && area.fixed_percentage !== undefined ? 'Fester Anteil' : 'Gewichtung' }}</span>
-                            </div>
                             <div class="calculation-area-heading">
-                                <div class="calculation-area-name">{{ area.name }}</div>
-                                <div class="text-caption text-medium-emphasis">{{ area.is_required ? 'Verpflichtend' : 'Optional' }}</div>
-                                <div v-if="area.allowed_entry_types === 'points'" class="text-caption text-medium-emphasis">Nur Punktetypen</div>
+                                <div class="grading-weight-heading">
+                                    <button v-if="!simulation && block.group && !isGradingAdjustmentContext(block.group.id)" type="button" :class="gradingGroupMemberWeight(block.group, area) === null ? 'grading-weight-trigger' : 'grading-group-member-weight'"
+                                        :aria-label="gradingGroupMemberWeight(block.group, area) === null ? `Gewichtung: ${area.name}` : `Gewichtung ${gradingNumberInput(gradingGroupMemberWeight(block.group, area))}: ${area.name}`"
+                                        :disabled="isEditing" @click="openGradingGroupWeightDialog(block.group)">
+                                        <v-icon icon="mdi-weight" :size="gradingGroupMemberWeight(block.group, area) === null ? 16 : 20" color="primary" aria-hidden="true" />
+                                        <strong v-if="gradingGroupMemberWeight(block.group, area) !== null">{{ gradingNumberInput(gradingGroupMemberWeight(block.group, area)) }}</strong>
+                                    </button>
+                                    <div class="grading-title-content">
+                                    <div class="calculation-area-name grading-part-title">
+                                    <span>{{ gradingPartDisplayName(area) }}</span>
+                                    <div v-if="simulation" class="simulation-result">
+                                        <span class="simulation-grade" :aria-label="`Simulationsnote: ${area.name}`">{{ simulationSummary(area) }}</span>
+                                        <small>{{ simulationExplanation(area) }}</small>
+                                    </div>
+                                    <v-btn v-if="!simulation" icon="mdi-pencil-outline" color="primary" variant="text" size="x-small"
+                                        title="Bezeichnung ändern" aria-label="Bezeichnung ändern" :disabled="isEditing"
+                                        @click="openEditGradingPartDialog(area, 'name')" />
+                                    </div>
+                                <div class="calculation-part-summary text-caption text-medium-emphasis">
+                                    <p v-if="gradingAdjustmentForPart(area).message" class="text-error">{{ gradingAdjustmentForPart(area).message }}</p>
+                                    <p v-for="line in gradingPartSummary(area, !simulation)" :key="line">{{ line }}</p>
+                                </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="calculation-part-actions">
+                            <div v-if="!simulation" class="calculation-part-actions">
+                                <v-btn icon="mdi-link-plus" color="primary" variant="tonal" size="x-small"
+                                    title="Zuordnung" aria-label="Zuordnung" :disabled="isEditing || isAssigningGradingEntry"
+                                    @click="toggleGradingEntryAssignment(area)" />
                                 <v-btn
-                                    :color="assignGradingPartId === area.gradingPartId ? 'secondary' : 'primary'"
-                                    variant="tonal"
-                                    size="small"
-                                    :prepend-icon="assignGradingPartId === area.gradingPartId ? 'mdi-close' : 'mdi-link-plus'"
-                                    :disabled="isAssigningGradingEntry || (isEditing && assignGradingPartId !== area.gradingPartId) || (!calculationEntries.length && assignGradingPartId !== area.gradingPartId)"
-                                    @click="toggleGradingEntryAssignment(area)">
-                                    {{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnung' }}
-                                </v-btn>
-                                <v-btn
-                                    icon="mdi-pencil-outline"
+                                    icon="mdi-cog-outline"
                                     color="primary"
                                     variant="tonal"
                                     size="x-small"
-                                    title="Benotungsteil bearbeiten"
+                                    title="Einstellungen"
+                                    aria-label="Einstellungen des Benotungsteils"
                                     :disabled="isEditing"
                                     @click="openEditGradingPartDialog(area)" />
                                 <v-btn
@@ -322,28 +388,15 @@
 
                         <ul v-if="area.entries.length" class="calculation-entry-list">
                             <li v-for="entry in area.entries" :key="entry.id">
-                                <button
-                                    type="button"
-                                    class="calculation-entry-item calculation-entry-open"
-                                    :disabled="isEditing"
-                                    :aria-label="`Berechnung für ${entry.name} öffnen`"
-                                    @click="openCalculationDialog(entry)">
+                                <div class="calculation-entry-item calculation-entry-static">
                                 <span v-if="entryCalculationIssue(entry)" class="calculation-incomplete-marker" role="img"
                                     :aria-label="`Berechnung unvollständig: ${entryCalculationIssue(entry)}`"
                                     :title="entryCalculationIssue(entry)">!</span>
-                                <span v-if="entryWeightLabel(entry, area.entries.length)" class="calculation-entry-weight"
-                                    :aria-label="`Gewichtung innerhalb des Benotungsteils: ${entryWeightLabel(entry, area.entries.length)}`"
-                                    :title="`Gewichtung innerhalb des Benotungsteils: ${entryWeightLabel(entry, area.entries.length)}`">
-                                    <v-icon icon="mdi-weight" size="16" aria-hidden="true" />
-                                    <strong>{{ entryWeightLabel(entry, area.entries.length) }}</strong>
-                                </span>
-                                <span v-else-if="entryAssessmentSymbol(entry)" class="calculation-entry-assessment-symbol" role="img"
-                                    :aria-label="entryAssessmentSymbol(entry).label" :title="entryAssessmentSymbol(entry).label">
-                                    <v-icon :icon="entryAssessmentSymbol(entry).icon" size="20" aria-hidden="true" />
-                                </span>
-                                <v-chip v-else class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
+                                <v-chip v-if="entry.short_name" class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
                                 <div class="calculation-entry-details">
-                                    <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
+                                    <div class="simulation-entry-heading">
+                                        <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
+                                    </div>
                                     <div class="calculation-entry-values">
                                         <span v-if="standardCalculationLabel(entry)" class="calculation-evaluation calculation-evaluation--neutral">{{ standardCalculationLabel(entry) }}</span>
                                         <v-chip
@@ -355,23 +408,44 @@
                                             {{ propertyModeLabel(entry.properties_mode) }}
                                         </v-chip>
                                         <span
-                                            v-for="property in calculationProperties(entry)"
+                                            v-for="(property, propertyIndex) in calculationProperties(entry)"
                                             v-else-if="entry.has_properties"
                                             :key="property"
                                             class="calculation-entry-value calculation-property">
                                             <span class="calculation-property-name">{{ property }}</span>
                                             <span v-if="propertyEvaluationLabel(entry, property)" class="calculation-evaluation" :class="propertyEvaluationClass(entry, property)">{{ propertyEvaluationLabel(entry, property) }}</span>
+                                            <span v-if="propertyIndex < calculationProperties(entry).length - 1" aria-hidden="true">,</span>
                                         </span>
                                         <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
+                                        <v-btn v-if="simulation" class="simulation-entry-add" icon="mdi-plus" color="primary" variant="tonal" size="x-small"
+                                            :aria-label="`Simulationseintrag hinzufügen: ${entry.short_name || entry.name}`"
+                                            :disabled="simulationEntryLimitReached(entry)"
+                                            :title="simulationEntryLimitReached(entry) ? 'Konfigurierte Anzahl pro Semester erreicht' : 'Simulationseintrag hinzufügen'"
+                                            @click="openSimulationEntry(entry)" />
                                     </div>
+                                    <ul v-if="simulation && simulationEntries[entry.id]?.length" class="simulation-entry-values" aria-label="Simulationseinträge">
+                                        <li v-for="(value, index) in simulationEntries[entry.id]" :key="index">
+                                            <span>{{ value }}</span>
+                                            <v-btn class="simulation-entry-remove" icon="mdi-close" color="error" variant="text" size="x-small" density="compact"
+                                                :aria-label="`Simulationseintrag entfernen: ${entry.short_name || entry.name}, ${value}, Eintrag ${index + 1}`"
+                                                title="Simulationseintrag entfernen" @click="removeSimulationEntry(entry.id, index)" />
+                                        </li>
+                                    </ul>
                                 </div>
-                                </button>
+                                </div>
                             </li>
                         </ul>
                     </section>
+                    </template>
+                        <p v-if="block.group && !block.parts.length && !block.children?.length" class="text-body-2 text-medium-emphasis">Dieser Gruppe sind noch keine Benotungsteile zugeordnet.</p>
+                        </div>
+                    </template>
+                    </template>
+                    </GradingGroupFrame>
+                    </template>
                 </div>
 
-                <div v-if="!assignGradingPartId" class="entry-list-actions mt-4">
+                <div v-if="!simulation" class="entry-list-actions mt-4">
                     <v-btn
                         color="primary"
                         variant="flat"
@@ -382,7 +456,30 @@
                         Benotungsteil hinzufügen
                     </v-btn>
                 </div>
+                </section>
+                </div>
             </template>
+
+            <v-dialog v-model="gradingGroupDialogOpen" persistent max-width="660">
+                <v-card rounded="xl">
+                    <v-card-title>{{ gradingGroupDissolving ? 'Gruppe auflösen' : editingGradingGroupId ? 'Gruppe bearbeiten' : 'Gruppe bilden' }}</v-card-title>
+                    <v-card-text>
+                        <template v-if="gradingGroupDissolving"><p>Gruppe „{{ gradingGroupForm.name }}“ auflösen? Alle Benotungsteile, Einträge und Bewertungen bleiben erhalten.</p></template>
+                        <template v-else>
+                            <v-text-field v-model="gradingGroupForm.name" label="Gruppenname" maxlength="100" :disabled="isSavingGradingGroup" />
+                            <v-checkbox v-for="item in gradingGroupSelectionItems" :key="item.key" :model-value="item.group_id ? gradingGroupForm.child_group_ids.includes(item.group_id) : gradingGroupForm.part_ids.includes(item.part_id)"
+                                :label="item.name" :disabled="isSavingGradingGroup" hide-details @update:model-value="toggleGradingGroupItem(item, $event)" />
+                            <p v-if="gradingGroupForm.part_ids.length + gradingGroupForm.child_group_ids.length < 2" class="text-body-2 mt-2">Mindestens zwei Bausteine auswählen.</p>
+                        </template>
+                        <v-alert v-if="gradingGroupError" type="error" variant="tonal" class="mt-3">{{ gradingGroupError }}</v-alert>
+                    </v-card-text>
+                    <v-card-actions>
+                        <v-spacer />
+                        <v-btn variant="text" :disabled="isSavingGradingGroup" @click="closeGradingGroupDialog">Abbrechen</v-btn>
+                        <v-btn :color="gradingGroupDissolving ? 'error' : 'primary'" variant="flat" :loading="isSavingGradingGroup" :disabled="!gradingGroupDissolving && (!gradingGroupForm.name.trim() || gradingGroupForm.part_ids.length + gradingGroupForm.child_group_ids.length < 2)" @click="saveGradingGroup">{{ gradingGroupDissolving ? 'Auflösen' : 'Speichern' }}</v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
 
             <template v-if="activeCategory !== 'Berechnung'">
                 <v-list class="bg-transparent pa-0 mt-2">
@@ -391,7 +488,10 @@
                             <div class="entry-main-row">
                                 <span class="entry-short">{{ entry.short_name }}</span>
                                 <div class="entry-title">
-                                    <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
+                                    <span class="entry-name" :title="entry.name">{{ entry.name }}<span
+                                        v-if="entry.category === 'Benotung' && entry.has_table_marking && entry.table_marking_color"
+                                        class="entry-marking-dot" :style="{ backgroundColor: tableMarkingColors.find((option) => option.value === entry.table_marking_color)?.swatch }"
+                                        role="img" aria-label="Markierung in der Tabelle" title="Markierung in der Tabelle" /></span>
                                     <span
                                         v-if="entry.description"
                                         class="entry-description"
@@ -400,7 +500,7 @@
                                     </span>
                                 </div>
                                 <div class="entry-actions">
-                                    <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" :disabled="isEditing" @click="openEditDialog(entry)" />
+                                    <v-btn :icon="['Benotung', 'Verhalten', 'Weitere'].includes(entry.category) ? 'mdi-cog-outline' : 'mdi-pencil-outline'" variant="tonal" color="primary" size="small" title="Einstellungen" aria-label="Einstellungen" :disabled="isEditing" @click="openEditDialog(entry)" />
                                     <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" :disabled="isEditing" @click="openDeleteDialog(entry)" />
                                 </div>
                             </div>
@@ -437,6 +537,29 @@
             </template>
         </template>
 
+
+        <v-dialog v-model="simulationEntryDialogOpen" persistent max-width="440" aria-labelledby="simulation-entry-title">
+            <v-card rounded="xl">
+                <v-card-title id="simulation-entry-title" class="text-wrap">Simulationseintrag · {{ simulationEntryDefinition?.short_name || simulationEntryDefinition?.name }}</v-card-title>
+                <v-card-text>
+                    <p class="mb-3">{{ simulationEntryDefinition?.name }}</p>
+                    <div v-if="simulationEntryOptions.length" class="d-flex flex-wrap ga-1">
+                        <v-btn v-for="value in simulationEntryOptions" :key="value" size="small" color="primary"
+                            :variant="simulationEntryValue === value ? 'flat' : 'tonal'"
+                            :aria-pressed="simulationEntryValue === value" @click="simulationEntryValue = value">{{ value }}</v-btn>
+                    </div>
+                    <v-text-field v-else-if="simulationEntryMode !== 'none'" v-model="simulationEntryValue"
+                        label="Wert" maxlength="50" :inputmode="simulationEntryMode === 'points' ? 'decimal' : undefined"
+                        :hint="simulationEntryHint" persistent-hint :error-messages="simulationEntryValue ? simulationEntryError : ''" />
+                    <p v-if="simulationEntryError && simulationEntryOptions.length" class="text-error" role="alert">{{ simulationEntryError }}</p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeSimulationEntry">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" aria-label="Simulationseintrag übernehmen" :disabled="Boolean(simulationEntryError)" @click="addSimulationEntry">Hinzufügen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="calculationDialogOpen" persistent scrollable max-width="620" aria-labelledby="calculation-dialog-title">
             <v-card rounded="xl">
@@ -596,46 +719,8 @@
                             <span class="plus-grade-editor-icon" aria-hidden="true">Σ</span>
                             <div><h3 id="entry-overall-grading-title" class="text-h5 font-weight-bold">Gesamtbeurteilung</h3></div>
                         </header>
-                        <p class="text-body-1">Die Notengrenzen werden gemeinsam im Benotungsteil „{{ calculationDialogOverallPart.name }}“ festgelegt.</p>
-                    </section>
-                    <section v-else-if="calculationDialogUsesPoints" class="plus-grade-editor mt-4" aria-labelledby="points-grading-title">
-                        <header class="plus-grade-editor-heading">
-                            <span class="plus-grade-editor-icon" aria-hidden="true">Σ</span>
-                            <div><h3 id="points-grading-title">Punkte in Noten umrechnen</h3><p>Ab welcher Punktzahl wird die jeweilige Note erreicht?</p></div>
-                        </header>
-                        <v-btn
-                            color="primary"
-                            variant="tonal"
-                            class="standard-points-button mb-4"
-                            prepend-icon="mdi-calculator"
-                            :disabled="isSavingCalculationDialog"
-                            @click="applyStandardPointThresholds">Berechnung durch Standardprozent</v-btn>
-                        <p class="text-body-2 mb-4">Die Standardgrenzen werden aus der maximalen Punktzahl berechnet und auf ganze Punkte gerundet. Anschließend können Sie alle Werte ändern.</p>
-                        <div class="plus-grade-rows">
-                            <div v-for="band in standardPercentageGrades.slice(0, 4)" :key="band.grade" class="plus-grade-row">
-                                <div class="plus-grade-name"><span class="plus-grade-badge">{{ band.grade }}</span><strong>{{ band.label }}</strong></div>
-                                <v-text-field
-                                    :model-value="gradingNumberInput(calculationDialogPointThresholds[band.grade])"
-                                    @update:model-value="calculationDialogPointThresholds[band.grade] = $event"
-                                    :aria-label="`${band.label}: Mindestpunkte`"
-                                    prefix="ab"
-                                    type="text"
-                                    inputmode="decimal"
-                                    class="grade-threshold-input"
-                                    suffix="Punkte"
-                                    variant="outlined"
-                                    density="compact"
-                                    hide-details="auto"
-                                    :disabled="isSavingCalculationDialog"
-                                    :error-messages="calculationDialogErrors[`points_grade_thresholds.${band.grade}`]" />
-                            </div>
-                            <div class="plus-grade-row plus-grade-row--automatic">
-                                <div class="plus-grade-name"><span class="plus-grade-badge">5</span><strong>Nicht genügend</strong></div>
-                                <span class="plus-grade-fallback">{{ calculationDialogPointFailingGradeLabel }}</span>
-                            </div>
-                        </div>
-                        <p v-if="calculationDialogPointThresholdError" class="text-error text-body-2 mt-2" role="status">{{ calculationDialogPointThresholdError }}</p>
-                        <p v-for="error in calculationDialogErrors.points_grade_thresholds" :key="error" class="text-error text-body-2 mt-2" role="status">{{ error }}</p>
+                        <p v-if="calculationDialogOverallPart.points_assessment_mode === 'sum_percent'" class="text-body-1">Alle Punkte werden im Benotungsteil „{{ calculationDialogOverallPart.name }}“ addiert. Die Note folgt der festen Prozentskala ab 50 %.</p>
+                        <p v-else class="text-body-1">Die Notengrenzen werden gemeinsam im Benotungsteil „{{ calculationDialogOverallPart.name }}“ festgelegt.</p>
                     </section>
                     <section v-if="calculationDialogUsesFreeGrading" class="mt-4">
                         <v-btn-toggle
@@ -801,22 +886,47 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="gradingWeightDialogOpen" persistent max-width="520" aria-labelledby="grading-weight-dialog-title">
+            <v-card rounded="xl">
+                <v-card-title id="grading-weight-dialog-title" class="grading-weight-title">{{ gradingWeightLevel ? 'Gewichtung der äußeren Ebene' : 'Gewichtung innerhalb der Gruppe' }}</v-card-title>
+                <v-card-text>
+                    <div class="font-weight-bold mb-4">{{ gradingWeightGroup?.name }}</div>
+                    <div class="grading-weight-fields">
+                        <div v-for="(row, index) in gradingGroupWeightRows" :key="row.group_id || row.part_id">
+                            <label :for="`grading-weight-${index}`" class="text-body-2">{{ row.name }}</label>
+                            <v-text-field :id="`grading-weight-${index}`" :model-value="gradingNumberInput(row.weight)" :aria-label="row.name"
+                                density="compact" hide-details inputmode="decimal" variant="outlined" :disabled="isSavingGroupWeights"
+                                @update:model-value="row.weight = $event" />
+                        </div>
+                    </div>
+                    <v-alert v-if="gradingGroupWeightError || gradingGroupWeightsValidationError" type="error" variant="tonal">{{ gradingGroupWeightError || gradingGroupWeightsValidationError }}</v-alert>
+                </v-card-text>
+                <v-card-actions class="grading-weight-actions">
+                    <v-btn color="error" variant="text" :disabled="isSavingGroupWeights" @click="saveGradingGroupWeights(true)">Gewichtungen entfernen</v-btn>
+                    <v-spacer />
+                    <v-btn variant="text" aria-label="Gewichtungsdialog schließen" :disabled="isSavingGroupWeights" @click="closeGradingWeightDialog">Schließen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="isSavingGroupWeights" :disabled="isSavingGroupWeights || Boolean(gradingGroupWeightsValidationError)" @click="saveGradingGroupWeights()">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="gradingPartDialogOpen" persistent scrollable max-width="520">
-            <v-card tag="form" rounded="xl" @submit.prevent="saveGradingPart">
+            <v-card tag="form" rounded="xl" @submit.prevent="saveGradingPart(gradingPartUsesPointSum)">
                 <v-card-title class="dialog-header">
                     <div class="dialog-title-group">
                         <span class="dialog-icon">
-                            <v-icon :icon="editingGradingPartId ? 'mdi-folder-edit-outline' : 'mdi-folder-plus-outline'" />
+                            <v-icon :icon="gradingPartDialogMode === 'name' ? 'mdi-pencil-outline' : editingGradingPartId ? 'mdi-cog-outline' : 'mdi-folder-plus-outline'" />
                         </span>
                         <div>
                             <div class="dialog-eyebrow">Berechnung</div>
-                            <div>{{ editingGradingPartId ? 'Benotungsteil bearbeiten' : 'Benotungsteil hinzufügen' }}</div>
+                            <div>{{ gradingPartDialogMode === 'name' ? 'Bezeichnung ändern' : editingGradingPartId ? 'Einstellungen des Benotungsteils' : 'Benotungsteil hinzufügen' }}</div>
                         </div>
                     </div>
                     <v-btn icon="mdi-close" variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog" />
                 </v-card-title>
                 <v-card-text class="pt-6">
                     <v-text-field
+                        v-if="gradingPartDialogMode === 'name' || !editingGradingPartId"
                         v-model="gradingPartForm.name"
                         label="Name des Benotungsteils"
                         placeholder="z. B. Mündlich"
@@ -825,134 +935,100 @@
                         maxlength="100"
                         autofocus
                         :error-messages="gradingPartFormErrors.name" />
-                    <v-btn-toggle
-                        v-model="gradingPartForm.weighting_mode"
-                        class="grading-weight-mode-toggle"
-                        aria-label="Art der Gewichtung"
-                        color="primary"
-                        variant="outlined"
-                        mandatory
-                        :disabled="isSavingGradingPart">
-                        <v-btn value="relative" :aria-pressed="gradingPartForm.weighting_mode === 'relative'" :variant="gradingPartForm.weighting_mode === 'relative' ? 'flat' : 'outlined'">Gewichtung</v-btn>
-                        <v-btn value="fixed" :aria-pressed="gradingPartForm.weighting_mode === 'fixed'" :variant="gradingPartForm.weighting_mode === 'fixed' ? 'flat' : 'outlined'">Fester Prozentanteil</v-btn>
-                    </v-btn-toggle>
-                    <p class="text-caption text-medium-emphasis text-center mt-1 mb-4">bezogen auf alle Benotungsteile</p>
-                    <v-text-field
-                        v-if="gradingPartForm.weighting_mode === 'relative'"
-                        v-model="gradingPartForm.weight"
-                        label="Gewichtung"
-                        type="number"
-                        inputmode="decimal"
-                        min="0.001"
-                        max="9999999.999"
-                        step="0.001"
-                        variant="outlined"
-                        color="primary"
-                        hint="Der verbleibende Anteil wird nach diesen Gewichten verteilt, z. B. 6 : 4."
-                        persistent-hint
-                        :disabled="isSavingGradingPart"
-                        :error-messages="gradingPartFormErrors.weight || (gradingPartWeightValid ? [] : ['Bitte eine positive Zahl mit höchstens drei Nachkommastellen eingeben.'])" />
-                    <v-text-field
-                        v-else
-                        v-model="gradingPartForm.fixed_percentage"
-                        label="Fester Anteil"
-                        type="number"
-                        inputmode="decimal"
-                        min="0.001"
-                        max="100"
-                        step="0.001"
-                        suffix="%"
-                        variant="outlined"
-                        color="primary"
-                        hint="Dieser Anteil bleibt fest, sobald eine Bewertung vorliegt."
-                        persistent-hint
-                        :disabled="isSavingGradingPart"
-                        :error-messages="gradingPartFormErrors.fixed_percentage || gradingPartPercentageError" />
-                    <v-btn-toggle
-                        v-model="gradingPartForm.is_required"
-                        class="grading-requirement-toggle mt-4"
-                        aria-label="Teilnahme am Benotungsteil"
-                        color="primary"
-                        variant="outlined"
-                        mandatory
-                        :disabled="isSavingGradingPart">
-                        <v-btn :value="false" :aria-pressed="!gradingPartForm.is_required" :variant="!gradingPartForm.is_required ? 'flat' : 'outlined'">Optional</v-btn>
-                        <v-btn :value="true" :aria-pressed="gradingPartForm.is_required" :variant="gradingPartForm.is_required ? 'flat' : 'outlined'">Verpflichtend</v-btn>
-                    </v-btn-toggle>
-                    <div class="text-caption text-medium-emphasis mt-2">
-                        {{ gradingPartForm.is_required ? 'Eine Bewertung ist erforderlich. Fehlend bedeutet offen, nicht automatisch negativ.' : 'Ohne Bewertung wird dieser Teil nicht berücksichtigt.' }}
-                    </div>
-                    <div v-if="gradingPartFormErrors.is_required" class="text-caption text-error mt-1" role="alert">{{ gradingPartFormErrors.is_required.join(' ') }}</div>
-                    <div class="text-subtitle-2 mt-5 mb-2">Zulässige Eintragstypen</div>
-                    <v-btn-toggle
-                        v-model="gradingPartForm.allowed_entry_types"
-                        class="maximum-plus-grading-options"
-                        aria-label="Zulässige Eintragstypen"
-                        color="primary"
-                        variant="outlined"
-                        mandatory
-                        :disabled="isSavingGradingPart">
-                        <v-btn value="all">Alle Eintragstypen</v-btn>
-                        <v-btn value="points" :disabled="gradingPartHasNonPointEntries">Nur Punktetypen</v-btn>
-                    </v-btn-toggle>
-                    <p class="text-caption text-medium-emphasis mt-2">„Nur Punktetypen“ erlaubt ausschließlich Einträge mit der Eigenschaft „Punkte“.</p>
-                    <p v-if="gradingPartHasNonPointEntries" class="text-caption text-medium-emphasis mt-2" role="status">Ein Wechsel zu „Nur Punktetypen“ ist nicht möglich, solange diesem Benotungsteil andere Eintragstypen zugeordnet sind.</p>
-                    <div v-if="gradingPartFormErrors.allowed_entry_types" class="text-caption text-error mt-1" role="alert">{{ gradingPartFormErrors.allowed_entry_types.join(' ') }}</div>
-                    <section v-if="gradingPartForm.allowed_entry_types === 'points'" class="mt-5" aria-label="Beurteilung der Punktetypen">
-                        <div class="text-subtitle-2 mb-2">Art der Beurteilung</div>
-                        <v-btn-toggle
-                            v-model="gradingPartForm.points_assessment_mode"
-                            class="maximum-plus-grading-options"
-                            aria-label="Art der Beurteilung"
-                            color="primary"
-                            variant="outlined"
-                            mandatory
-                            :disabled="isSavingGradingPart">
-                            <v-btn value="overall">Gesamtbeurteilung</v-btn>
-                            <v-btn value="individual">Einzelbeurteilungen</v-btn>
-                        </v-btn-toggle>
-                        <div v-if="gradingPartFormErrors.points_assessment_mode" class="text-caption text-error mt-1" role="alert">{{ gradingPartFormErrors.points_assessment_mode.join(' ') }}</div>
-                        <section v-if="gradingPartForm.points_assessment_mode === 'individual'" class="mt-5" aria-label="Gewichtung der Einzelbeurteilungen">
-                            <div class="text-subtitle-2 mb-2">Gewichtung der Einzelbeurteilungen</div>
-                            <v-btn-toggle v-model="gradingPartForm.individual_points_weighting_mode" class="maximum-plus-grading-options"
-                                aria-label="Gewichtung der Einzelbeurteilungen" color="primary" variant="outlined" mandatory :disabled="isSavingGradingPart">
-                                <v-btn value="points">Nach Punkten</v-btn>
-                                <v-btn value="weighted">Nach Gewichtung</v-btn>
-                            </v-btn-toggle>
-                            <div v-if="gradingPartFormErrors.individual_points_weighting_mode" class="text-caption text-error mt-1" role="alert">{{ gradingPartFormErrors.individual_points_weighting_mode.join(' ') }}</div>
-                        </section>
-                        <section v-if="gradingPartForm.points_assessment_mode === 'overall'" class="plus-grade-editor mt-4" aria-labelledby="overall-points-grading-title">
-                            <header class="plus-grade-editor-heading">
-                                <span class="plus-grade-editor-icon" aria-hidden="true">Σ</span>
-                                <div><h3 id="overall-points-grading-title">Gesamtbeurteilung</h3><p>Maximal {{ gradingPartOverallMaximumPoints.toLocaleString('de-AT') }} Punkte aus den zugeordneten Punktetypen.</p></div>
-                            </header>
-                            <template v-if="gradingPartOverallMaximumPoints > 0">
-                                <v-btn color="primary" variant="tonal" class="standard-points-button mb-4" prepend-icon="mdi-calculator"
-                                    :disabled="isSavingGradingPart" @click="applyStandardOverallPointThresholds">Berechnung durch Standardprozent</v-btn>
-                                <p class="text-body-2 mb-4">Die Standardgrenzen werden aus der Gesamtpunktzahl berechnet und auf ganze Punkte gerundet. Anschließend können Sie alle Werte ändern.</p>
-                                <div class="plus-grade-rows">
-                                    <div v-for="band in standardPercentageGrades.slice(0, 4)" :key="band.grade" class="plus-grade-row">
-                                        <div class="plus-grade-name"><span class="plus-grade-badge">{{ band.grade }}</span><strong>{{ band.label }}</strong></div>
-                                        <v-text-field
-                                            :model-value="gradingNumberInput(gradingPartOverallThresholds[band.grade])"
-                                            @update:model-value="gradingPartOverallThresholds[band.grade] = $event"
-                                            :aria-label="`${band.label}: Mindestpunkte gesamt`"
-                                            prefix="ab" type="text" inputmode="decimal" class="grade-threshold-input" suffix="Punkte"
-                                            variant="outlined" density="compact" hide-details="auto" :disabled="isSavingGradingPart"
-                                            :error-messages="gradingPartFormErrors[`overall_points_grade_thresholds.${band.grade}`]" />
-                                    </div>
-                                    <div class="plus-grade-row plus-grade-row--automatic">
-                                        <div class="plus-grade-name"><span class="plus-grade-badge">5</span><strong>Nicht genügend</strong></div>
-                                        <span class="plus-grade-fallback">{{ gradingPartOverallFailingGradeLabel }}</span>
-                                    </div>
+                    <template v-if="gradingPartDialogMode !== 'name'">
+                        <div v-if="editingGradingPartId" class="text-subtitle-1 font-weight-bold">{{ gradingPartForm.name }}</div>
+                        <section v-if="gradingPartUsesPointSum" class="mt-5" aria-labelledby="grading-part-calculation-title">
+                            <section v-if="gradingPartOnlyStandardGrades" class="mb-5" aria-label="Verbindlichkeit der Standardnote">
+                                <h3 class="text-subtitle-2 mb-2">Verbindlichkeit</h3>
+                                <v-btn-toggle v-model="gradingPartForm.is_required" mandatory selected-class="choice-selected" class="choice-grid" :disabled="isSavingGradingPart">
+                                    <v-btn :value="false" class="choice-card" variant="text">Optional</v-btn>
+                                    <v-btn :value="true" class="choice-card" variant="text">Verpflichtend</v-btn>
+                                </v-btn-toggle>
+                            </section>
+                            <section v-if="gradingPartOnlyStandardGrades" class="mb-5" aria-label="Anzahl der Leistungsfeststellungen">
+                                <h3 class="text-subtitle-2 mb-2">Anzahl der Leistungsfeststellungen</h3>
+                                <div v-for="occurrence in gradingPartStandardOccurrences" :key="occurrence.entry_definition_id" class="mb-3">
+                                    <p v-if="gradingPartStandardOccurrences.length > 1" class="text-body-2 font-weight-bold mb-2">{{ occurrence.name }}</p>
+                                    <v-btn-toggle :model-value="occurrence.mode" @update:model-value="setGradingPartOccurrenceMode(occurrence, $event)" :mandatory="Boolean(occurrence.mode)" selected-class="choice-selected" class="choice-grid" :disabled="isSavingGradingPart">
+                                        <v-btn value="single" class="choice-card" variant="text">Eine</v-btn>
+                                        <v-btn value="fixed" class="choice-card" variant="text">Mehrere mit fester Anzahl</v-btn>
+                                        <v-btn value="unlimited" class="choice-card" variant="text">Beliebig viele</v-btn>
+                                    </v-btn-toggle>
+                                    <v-text-field v-if="occurrence.mode === 'fixed'" v-model="occurrence.count" label="Feste Anzahl" type="number" min="2" step="1" variant="outlined" class="mt-3" :disabled="isSavingGradingPart" :error-messages="gradingPartOccurrenceError(occurrence)" />
                                 </div>
-                                <p class="plus-grade-order-hint">Sehr gut &gt; Gut &gt; Befriedigend &gt; Genügend</p>
-                                <p v-if="gradingPartOverallThresholdError" class="text-error text-body-2 mt-2" role="status">{{ gradingPartOverallThresholdError }}</p>
+                                <p v-for="error in Object.values(gradingPartFormErrors).flat()" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
+                            </section>
+                            <p v-if="gradingPartOnlyPlusMinus" class="text-caption mb-3">Plus und Minus werden gegengerechnet. Jedes Plus zählt +1, jedes Minus −1, eine 0 ist neutral. ~ zählt +0,5.</p>
+                            <h3 id="grading-part-calculation-title" class="text-subtitle-2 mb-2">{{ gradingPartOnlyPlusMinus ? 'Zweck' : 'Notenberechnung' }}</h3>
+                            <p v-if="gradingPartSingleStandardNote" class="text-caption mt-2">Für diesen Benotungsteil ist eine Standardnote vorgesehen. Die erfasste Note wird direkt übernommen. {{ gradingPartForm.is_required ? 'Bei fehlender Bewertung bleibt die Berechnung offen.' : 'Ohne Bewertung wird dieser optionale Benotungsteil ausgelassen.' }} Mehrere Bewertungen bleiben nicht auswertbar.</p>
+                            <v-btn-toggle v-if="gradingPartOnlyPlusMinus" v-model="gradingPartSignPurpose" class="maximum-plus-grading-options" aria-label="Verwendung des Plus-Minus-Saldos"
+                                color="primary" variant="outlined" :mandatory="Boolean(gradingPartSignPurpose)" :disabled="isSavingGradingPart">
+                                <v-btn value="sign_grade">Eigene Note berechnen</v-btn>
+                                <v-btn value="sign_adjust">Bestehende Note anpassen</v-btn>
+                            </v-btn-toggle>
+                            <v-btn-toggle v-else-if="!gradingPartSingleStandardNote" v-model="gradingPartCalculationMethod" class="maximum-plus-grading-options" aria-label="Berechnungsmethode"
+                                color="primary" variant="outlined" mandatory :disabled="isSavingGradingPart">
+                                <v-btn v-if="!gradingPartOnlyPlusMinus && !gradingPartOnlyStandardGrades" value="sum_percent">Alle Punkte addieren</v-btn>
+                                <v-btn v-if="!gradingPartOnlyPoints && !gradingPartOnlyStandardGrades" value="plus_minus">Plus und Minus gegenrechnen</v-btn>
+                                <v-btn v-if="gradingPartOnlyStandardGrades" value="grade_each">Jede Note extra rechnen</v-btn>
+                                <v-btn v-if="gradingPartOnlyStandardGrades" value="grade_mean">Notendurchschnitt</v-btn>
+                            </v-btn-toggle>
+                            <template v-if="gradingPartOnlyPlusMinus">
+                                <p v-for="error in gradingPartFormErrors.points_assessment_mode || []" :key="error" class="text-caption text-error mt-2" role="alert">{{ error }}</p>
                             </template>
-                            <p v-else class="text-body-2">Ordnen Sie diesem Benotungsteil zuerst Punktetypen zu. Danach können Sie die Notengrenzen festlegen.</p>
-                            <p v-for="error in gradingPartFormErrors.overall_points_grade_thresholds" :key="error" class="text-error text-body-2 mt-2" role="status">{{ error }}</p>
+                            <div v-if="gradingPartOnlyPlusMinus && gradingPartSignPurpose === 'sign_adjust'" class="text-body-2 mt-3">
+                                <p class="mb-2">Positiver Netto-Saldo: Note verbessern</p>
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-text-field v-model="gradingPartSignAdjustment.improvement_factor" label="Verbesserungsfaktor" inputmode="decimal" variant="outlined" density="compact" class="sign-adjustment-field" :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors['sign_adjustment.improvement_factor']" />
+                                    <v-text-field v-model="gradingPartSignAdjustment.max_improvement" label="Max. Verbesserung" inputmode="decimal" variant="outlined" density="compact" class="sign-adjustment-field" :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors['sign_adjustment.max_improvement']" />
+                                </div>
+                                <p class="mb-3">Saldo 0: Notenwert beibehalten.</p>
+                                <p class="mb-2">Negativer Netto-Saldo: Note verschlechtern</p>
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-text-field v-model="gradingPartSignAdjustment.deterioration_factor" label="Verschlechterungsfaktor" inputmode="decimal" variant="outlined" density="compact" class="sign-adjustment-field" :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors['sign_adjustment.deterioration_factor']" />
+                                    <v-text-field v-model="gradingPartSignAdjustment.max_deterioration" label="Max. Verschlechterung" inputmode="decimal" variant="outlined" density="compact" class="sign-adjustment-field" :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors['sign_adjustment.max_deterioration']" />
+                                </div>
+                                <p class="text-caption">Notenwertänderung = Betrag des Netto-Saldos × Faktor, höchstens das jeweilige Maximum. Alle vier Werte sind frei festzulegen. Erst anschließend kaufmännisch runden; Note 1 bis 5.</p>
+                                <p v-for="error in gradingPartFormErrors.sign_adjustment || []" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
+                            </div>
+                            <template v-if="gradingPartOnlyStandardGrades && gradingPartCalculationMethod === 'grade_mean'">
+                                <section v-for="occurrence in gradingPartStandardOccurrences.filter((item) => item.mode === 'fixed')" :key="occurrence.entry_definition_id" class="mt-4" aria-label="Gewichtung der Arbeiten">
+                                    <h4 class="text-subtitle-2 mb-2">Gewichtung der Arbeiten{{ gradingPartStandardOccurrences.length > 1 ? ` – ${occurrence.name}` : '' }}</h4>
+                                    <v-btn-toggle :model-value="occurrence.mean_mode" @update:model-value="setGradingPartMeanMode(occurrence, $event)" class="maximum-plus-grading-options" mandatory :disabled="isSavingGradingPart">
+                                        <v-btn value="equal">Alle Arbeiten zählen gleich</v-btn>
+                                        <v-btn value="weighted">Gewichtung festlegen</v-btn>
+                                    </v-btn-toggle>
+                                    <div v-if="occurrence.mean_mode === 'weighted'" class="mt-3">
+                                        <v-text-field v-for="index in gradingPartWeightSlots(occurrence)" :key="index" v-model="occurrence.mean_weights[index]" :label="`Arbeit ${index + 1}`" suffix="%" type="text" inputmode="decimal" variant="outlined" :disabled="isSavingGradingPart" />
+                                        <p class="text-body-2">Summe: {{ gradingPartWeightTotal(occurrence) }} % · erforderlich: 100 %</p>
+                                        <p v-if="gradingPartMeanError(occurrence)" class="text-error text-caption" role="alert">{{ gradingPartMeanError(occurrence) }}</p>
+                                    </div>
+                                </section>
+                            </template>
+                            <div v-if="gradingPartOnlyPlusMinus && gradingPartSignPurpose === 'sign_grade'" class="mt-4">
+                                <p class="text-caption mb-3">Mindest-Saldo für jede Note. Die Grenzen müssen von Genügend bis Sehr gut streng steigen. Unter der Genügend-Grenze gilt Nicht genügend (5); genau ab einer Grenze gilt bereits die zugehörige Note.</p>
+                                <v-text-field v-for="item in [{ grade: 4, label: 'Genügend (4)' }, { grade: 3, label: 'Befriedigend (3)' }, { grade: 2, label: 'Gut (2)' }, { grade: 1, label: 'Sehr gut (1)' }]"
+                                    :key="item.grade" v-model="gradingPartSignThresholds[item.grade]" :label="`${item.label} – ab Saldo`" type="number" step="1" variant="outlined"
+                                    :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors[`sign_grade_thresholds.${item.grade}`]" />
+                                <p v-if="gradingPartSignThresholdError" class="text-caption text-error" role="alert">{{ gradingPartSignThresholdError }}</p>
+                                <p v-for="error in gradingPartFormErrors.sign_grade_thresholds || []" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
+                            </div>
+                            <template v-else-if="gradingPartOnlyPlusMinus">
+                                <p v-if="gradingPartSignPurpose !== 'sign_adjust'" class="text-caption mt-2">Regel wird noch festgelegt. Bis dahin wird ausschließlich der Saldo angezeigt; keine Note wird berechnet oder angepasst.</p>
+                            </template>
+                            <p v-else-if="gradingPartCalculationMethod === 'plus_minus'" class="text-caption mt-2">Jedes Plus zählt +1, jedes Minus −1; 0 zählt neutral. Die Umrechnung des Saldos in eine Note wird noch festgelegt.</p>
+                            <template v-else-if="!gradingPartSingleStandardNote && !gradingPartOnlyStandardGrades">
+                            <p class="text-caption mt-2">Erreichte und mögliche Punkte aller erfassten Punktebewertungen werden jeweils addiert. Andere Eintragstypen fließen in diese Methode nicht ein. Ab 50 % ist die Beurteilung positiv; 50 bis 100 % verteilen sich gleichmäßig auf die vier positiven Noten.</p>
+                            <dl class="point-sum-grade-scale text-caption mt-3">
+                                <div><dt>87,5–100 %</dt><dd>Sehr gut (1)</dd></div>
+                                <div><dt>75 bis unter 87,5 %</dt><dd>Gut (2)</dd></div>
+                                <div><dt>62,5 bis unter 75 %</dt><dd>Befriedigend (3)</dd></div>
+                                <div><dt>50 bis unter 62,5 %</dt><dd>Genügend (4)</dd></div>
+                                <div><dt>Unter 50 %</dt><dd>Nicht genügend (5)</dd></div>
+                            </dl>
+                            </template>
                         </section>
-                    </section>
+                    </template>
                 </v-card-text>
                 <v-card-actions class="dialog-actions">
                     <v-btn variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog">Abbrechen</v-btn>
@@ -962,7 +1038,7 @@
                         variant="flat"
                         rounded="lg"
                         :loading="isSavingGradingPart"
-                        :disabled="!gradingPartForm.name.trim() || !gradingPartWeightValid || Boolean(gradingPartOverallThresholdError)">
+                        :disabled="!gradingPartForm.name.trim() || (gradingPartDialogMode !== 'name' && !gradingPartUsesPointSum && (!gradingPartWeightValid || Boolean(gradingPartOverallThresholdError)))">
                         Speichern
                     </v-btn>
                 </v-card-actions>
@@ -1033,7 +1109,7 @@
                     <section v-if="entryForm.category === 'Benotung'" class="form-section">
                         <div class="form-heading">
                             <v-icon icon="mdi-format-color-fill" color="primary" />
-                            <strong>Markierung in Tabelle</strong>
+                            <strong>Ganzen Tag bei Verwendung dieses Eintrags markieren</strong>
                         </div>
                         <v-btn-toggle v-model="entryForm.has_table_marking" mandatory selected-class="choice-selected" class="choice-grid">
                             <v-btn :value="false" class="choice-card" variant="text">
@@ -1085,17 +1161,9 @@
                                         <v-icon icon="mdi-format-list-checks" />
                                         <span>Standardnoten</span>
                                     </v-btn>
-                                    <v-btn value="free" class="choice-card" variant="text">
-                                        <v-icon icon="mdi-pencil-outline" />
-                                        <span>Freie Eingabe</span>
-                                    </v-btn>
                                     <v-btn value="plus_minus" class="choice-card" variant="text">
                                         <v-icon icon="mdi-plus-minus" />
                                         <span>Plus und Minus</span>
-                                    </v-btn>
-                                    <v-btn value="plus" class="choice-card" variant="text">
-                                        <v-icon icon="mdi-plus" />
-                                        <span>Nur Plus</span>
                                     </v-btn>
                                     <v-btn value="points" class="choice-card" variant="text">
                                         <v-icon icon="mdi-counter" />
@@ -1116,10 +1184,13 @@
                                     persistent-hint
                                     :error-messages="formErrors.maximum_points || entryMaximumPointsError" />
                                 <p v-if="entryForm.properties_mode === 'plus_minus'" class="text-body-2 mt-3 mb-0">
-                                    Mehrere Pluszeichen (+, ++, +++, …) oder Minuszeichen (-, --, ---, …) eingeben.
+                                    Mehrere Pluszeichen (+, ++, +++, …), Minuszeichen (-, --, ---, …), 0 (neutral) oder ~ (+0,5) eingeben.
                                 </p>
                                 <p v-else-if="entryForm.properties_mode === 'plus'" class="text-body-2 mt-3 mb-0">
-                                    Nur Pluszeichen (+, ++, +++, …) eingeben.
+                                    Bestehender Typ „Nur Plus“: Nur Pluszeichen (+, ++, +++, …) eingeben. Der gespeicherte Typ bleibt erhalten, solange keine andere Eigenschaft ausgewählt wird.
+                                </p>
+                                <p v-else-if="selectedPropertyMode === 'free'" class="text-body-2 mt-3 mb-0">
+                                    Bestehender Typ „Freie Eingabe“: Eigenschaften und Werte können weiter bearbeitet werden. Der gespeicherte Typ bleibt erhalten, solange keine andere Eigenschaft ausgewählt wird.
                                 </p>
                                 <p v-else-if="selectedPropertyMode === 'grades'" class="text-body-2 mt-3 mb-0">
                                     Noten 1, 2, 3, 4 und 5 auswählen.
@@ -1254,8 +1325,18 @@ import { update as updateGradingPart } from '@/actions/App/Http/Controllers/Admi
 import { update as updateEntryArea } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryAreaController'
 import { update as updateCalculationSettings } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingEntryCalculationSettingsController'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import GradingGroupFrame from './GradingGroupFrame.vue'
+import { standardPercentageGrades } from '@/helpers/gradeCalculation'
+import { isStoredSimulationValue, simulationEntryGrade, simulationPartGrade, simulationPartSummary, simulationPartExplanation, simulationStructure } from '@/helpers/gradingSimulation'
+import { gradingAdjustmentState, gradingAdjustmentChangeError } from '@/helpers/gradingAdjustmentStructure'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+
+function isAdjustmentContext(component, context = null) {
+    const parts = (component.gradingParts || []).filter((part) => part.teaching_entry_area_id === component.activeAreaId)
+    return Object.values(gradingAdjustmentState(component.gradingGroups || [], parts)).some((state) => state.context === (context ?? 'root'))
+}
 
 const specialPropertyOptions = [
     { value: 'NA', label: 'NA – Nicht angetreten' },
@@ -1264,13 +1345,49 @@ const specialPropertyOptions = [
 ]
 
 function gradingPartAllowsEntry(gradingPart, entry) {
-    return gradingPart?.allowed_entry_types !== 'points' || entry.properties_mode === 'points'
+    const mode = gradingPart?.allowed_entry_types ?? 'all'
+    return mode === 'all' || entryTypeGroups(mode).includes(entryTypeGroup(entry))
+}
+
+function entryTypeGroup(entry) {
+    if (entry.properties_mode === 'points') return 'points'
+    if (['plus', 'plus_minus'].includes(entry.properties_mode)) return 'signs'
+    const properties = entry.fixed_properties || []
+    return properties.some((value) => typeof value === 'string' && /^(?:[+\-−]+|~)$/u.test(value.trim()))
+        && properties.every((value) => typeof value === 'string' && (value.trim() === '0' || /^(?:[+\-−]+|~)$/u.test(value.trim()))) ? 'signs' : 'grades'
+}
+
+function entryTypeGroups(mode) {
+    return { non_points: ['signs', 'grades'], signs_note: ['signs', 'grades'], signs_pts: ['signs', 'points'], pts_notes: ['points', 'grades'], none: [], all: [] }[mode] || [mode]
 }
 
 function entryPartWeightError(value) {
     const weight = parseGradingNumber(value)
     return Number.isInteger(weight) && weight >= 1 && weight <= 9999999 && /^\d+$/.test(String(value).trim())
         ? '' : 'Bitte eine positive ganze Zahl als Gewichtung eingeben.'
+}
+
+function standardGradeMeanError(occurrence) {
+    if (occurrence.mean_mode !== 'weighted') return ''
+    const count = Number(occurrence.count)
+    if (!Number.isSafeInteger(count) || count < 2 || count > 1000) return 'Für die Prozentgewichtung sind 2 bis 1000 Arbeiten möglich.'
+    const values = Array.from({ length: count }, (_, index) => occurrence.mean_weights[index])
+    if (values.some((value) => value === null || value === undefined || String(value).trim() === '')) return 'Bitte für jede Arbeit einen Prozentwert eingeben.'
+    const weights = values.map(parseGradingNumber)
+    if (weights.some((weight, index) => !Number.isFinite(weight) || weight < 0 || weight > 100 || !/^\d+(?:[.,]\d{1,3})?$/.test(String(values[index]).trim()))) return 'Bitte endliche Prozentwerte von 0 bis 100 mit höchstens drei Nachkommastellen eingeben.'
+    return weights.reduce((sum, weight) => sum + Math.round(weight * 1000), 0) === 100000 ? '' : 'Die Gewichte der Arbeiten müssen zusammen genau 100 % ergeben.'
+}
+
+function standardGradeOccurrenceConfiguration(occurrence, method) {
+    const configuration = { mode: occurrence.mode, count: occurrence.mode === 'fixed' ? Number(occurrence.count) : null }
+    if (occurrence.mode !== 'fixed') return configuration
+    if (method === 'grade_mean') {
+        configuration.mean = { mode: occurrence.mean_mode }
+        if (occurrence.mean_mode === 'weighted' || (occurrence.mean_weights.length && !standardGradeMeanError({ ...occurrence, mean_mode: 'weighted' }))) {
+            configuration.mean.weights = Array.from({ length: Number(occurrence.count) }, (_, index) => parseGradingNumber(occurrence.mean_weights[index]))
+        }
+    } else if (occurrence.saved_count === configuration.count && occurrence.saved_mean) configuration.mean = occurrence.saved_mean
+    return configuration
 }
 
 function entryOtherAssessmentMode(entry, value = entry?.grading_part_other_assessment_mode) {
@@ -1397,6 +1514,21 @@ function normalizePropertyEvaluation(value) {
     return null
 }
 
+function displaySignValue(value) {
+    const normalized = String(value).trim().replaceAll('−', '-')
+    if (normalized === '0') return 0
+    if (/^\++$/.test(normalized)) return normalized.length
+    if (/^-+$/.test(normalized)) return -normalized.length
+    return null
+}
+
+function sortedCalculationProperties(properties) {
+    const signs = properties.filter((property) => displaySignValue(property) !== null)
+        .sort((left, right) => displaySignValue(right) - displaySignValue(left))
+    let signIndex = 0
+    return properties.map((property) => displaySignValue(property) === null ? property : signs[signIndex++])
+}
+
 function overallCalculationIssue(part, entries) {
     if (part?.allowed_entry_types !== 'points' || part.points_assessment_mode !== 'overall') return ''
     const assigned = entries.filter((entry) => entry.teaching_entry_grading_part_id === (part.gradingPartId ?? part.id))
@@ -1408,6 +1540,12 @@ function overallCalculationIssue(part, entries) {
 }
 
 function calculationIssueForEntry(entry, gradingParts, entries) {
+    const pointSumPart = gradingParts.find((part) => part.id === entry.teaching_entry_grading_part_id && part.points_assessment_mode === 'sum_percent')
+    if (pointSumPart) {
+        if (entry.properties_mode !== 'points') return ''
+        const maximum = parseGradingNumber(entry.maximum_points)
+        return Number.isFinite(maximum) && maximum > 0 ? '' : 'Bitte unter Benotung eine gültige maximale Punktzahl festlegen.'
+    }
     const inheritedWeighting = individualPointWeighting(entry, gradingParts)
     if (inheritedWeighting === 'weighted') {
         const weightError = entryPartWeightError(entry.grading_part_weight)
@@ -1445,13 +1583,20 @@ function calculationIssueForEntry(entry, gradingParts, entries) {
 }
 
 export default {
-    components: { ItsGridBox },
+    components: { ItsGridBox, GradingGroupFrame },
 
     data() {
         return {
             areas: [],
             entries: [],
             gradingParts: [],
+            simulationEntries: {},
+            simulationEntryDialogOpen: false,
+            simulationEntryId: null,
+            simulationEntryValue: '',
+            simulationStorageError: '',
+            simulationAdminStore: null,
+            assignmentAllowedEntryTypes: null,
             calculationDialogOpen: false,
             calculationDialogEntry: null,
             calculationDialogAllowsMaximumPlus: false,
@@ -1463,6 +1608,15 @@ export default {
             calculationDialogSumPlusEvaluations: false,
             calculationDialogMaximumPlusGradingMode: 'standard_percentage',
             calculationDialogGradeThresholds: { 1: null, 2: null, 3: null, 4: null },
+            gradingPartCalculationMethod: 'sum_percent',
+            gradingPartOnlyPlusMinus: false,
+            gradingPartSignPurpose: null,
+            gradingPartSignAdjustment: { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null },
+            gradingPartSignThresholds: { 1: null, 2: null, 3: null, 4: null },
+            gradingPartOnlyPoints: false,
+            gradingPartOnlyStandardGrades: false,
+            gradingPartSingleStandardNote: false,
+            gradingPartStandardOccurrences: [],
             calculationDialogFreeGradingMode: 'deficit_points',
             calculationDialogFreeDeficitThresholds: { 1: null, 2: null, 3: null, 4: null },
             calculationDialogFreePointThresholds: { 1: null, 2: null, 3: null, 4: null },
@@ -1477,18 +1631,25 @@ export default {
             categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
             tableMarkingColors,
             specialPropertyOptions,
-            standardPercentageGrades: [
-                { min: 87.5, max: 100, grade: 1, label: 'Sehr gut' },
-                { min: 75, max: 87.5, grade: 2, label: 'Gut' },
-                { min: 62.5, max: 75, grade: 3, label: 'Befriedigend' },
-                { min: 50, max: 62.5, grade: 4, label: 'Genügend' },
-                { min: 0, max: 50, grade: 5, label: 'Nicht genügend' },
-            ],
+            standardPercentageGrades,
             editDialogOpen: false,
             deleteDialogOpen: false,
             areaDialogOpen: false,
             areaDeleteDialogOpen: false,
             gradingPartDialogOpen: false,
+            gradingWeightDialogOpen: false,
+            gradingWeightGroup: null,
+            gradingWeightLevel: false,
+            gradingGroupWeightRows: [],
+            gradingGroupWeightError: '',
+            isSavingGroupWeights: false,
+            gradingGroupDialogOpen: false,
+            gradingGroupDissolving: false,
+            editingGradingGroupId: null,
+            gradingGroupForm: { name: '', part_ids: [], child_group_ids: [] },
+            gradingGroupError: '',
+            isSavingGradingGroup: false,
+            gradingPartDialogMode: 'settings',
             gradingPartDeleteDialogOpen: false,
             entryCopyDialogOpen: false,
             previousYearImportDialogOpen: false,
@@ -1526,9 +1687,9 @@ export default {
                 description: '',
                 category: 'Benotung',
                 has_properties: true,
-                properties_mode: 'free',
+                properties_mode: 'fixed',
                 maximum_points: null,
-                fixed_properties: [],
+                fixed_properties: ['1', '2', '3', '4', '5'],
                 property_evaluations: [],
                 enabled_special_properties: specialPropertyOptions.map((option) => option.value),
                 has_notifications: false,
@@ -1540,6 +1701,55 @@ export default {
     },
 
     computed: {
+        simulationStorageKey() {
+            const config = this.simulationAdminStore?.config
+            const context = [config?.user?.id, config?.selected_school?.id, config?.selected_schoolyear?.id, this.activeAreaId]
+            return context.every((id) => id !== null && id !== undefined && String(id) !== '')
+                ? `schooltool:grading-simulation:v1:${context.map(encodeURIComponent).join(':')}` : null
+        },
+        simulationEntryDefinition() {
+            return this.entries.find((entry) => entry.id === this.simulationEntryId
+                && entry.teaching_entry_area_id === this.activeAreaId
+                && this.calculationAreas.some((part) => part.entries.some((assigned) => assigned.id === entry.id))) || null
+        },
+        simulationEntryMode() {
+            const entry = this.simulationEntryDefinition
+            return entry?.has_properties ? entry.properties_mode : 'none'
+        },
+        simulationEntryOptions() {
+            if (this.simulationEntryMode === 'grades') return ['1', '2', '3', '4', '5']
+            return this.simulationEntryDefinition && ['fixed', 'free'].includes(this.simulationEntryMode)
+                ? entryCalculationProperties(this.simulationEntryDefinition).map(String) : []
+        },
+        simulationEntryHint() {
+            if (this.simulationEntryMode === 'points') return `Punkte von 0 bis ${this.simulationEntryDefinition?.maximum_points}; Dezimalstellen sind möglich.`
+            if (this.simulationEntryMode === 'plus') return 'Nur Pluszeichen, z. B. +, ++, +++ (max. 50).'
+            if (this.simulationEntryMode === 'plus_minus') return 'Pluszeichen, Minuszeichen, 0 oder ~, z. B. +++, --, 0, ~ (max. 50).'
+            return ''
+        },
+        simulationEntryError() {
+            if (!this.simulationEntryDefinition) return 'Dieser Eintragstyp ist hier nicht mehr verfügbar.'
+            if (this.simulationEntryLimitReached(this.simulationEntryDefinition)) return 'Die konfigurierte Anzahl pro Semester ist erreicht.'
+            if (this.simulationEntryMode === 'none') return ''
+            const selectedValue = String(this.simulationEntryValue ?? '').trim()
+            const value = selectedValue.replaceAll('−', '-')
+            if (!value) return 'Bitte einen Wert eingeben.'
+            if (this.simulationEntryOptions.length) return this.simulationEntryOptions.includes(selectedValue) ? '' : 'Bitte einen vorhandenen Wert auswählen.'
+            if (this.simulationEntryMode === 'points') {
+                const maximum = parseGradingNumber(this.simulationEntryDefinition.maximum_points)
+                const points = parseGradingNumber(value)
+                return /^\d+(?:[.,]\d+)?$/.test(value) && value.length <= 50 && Number.isFinite(maximum)
+                    && maximum > 0 && Number.isFinite(points) && points >= 0 && points <= maximum ? '' : this.simulationEntryHint
+            }
+            if (['plus', 'plus_minus'].includes(this.simulationEntryMode)) {
+                const pattern = this.simulationEntryMode === 'plus' ? /^\+{1,50}$/ : /^(?:\+{1,50}|-{1,50}|0|~)$/
+                return pattern.test(value) ? '' : this.simulationEntryHint
+            }
+            return value.length <= 50 ? '' : 'Bitte höchstens 50 Zeichen eingeben.'
+        },
+        gradingPartUsesPointSum() {
+            return Boolean(this.editingGradingPartId) && this.gradingPartDialogMode !== 'name'
+        },
         calculationDialogIndividualPointWeighting() {
             return individualPointWeighting(this.calculationDialogEntry, this.gradingParts)
         },
@@ -1551,6 +1761,7 @@ export default {
             return this.calculationDialogUsesBalanceAdjustment ? entryAdjustmentError(this.calculationDialogPlusAdjustment, this.calculationDialogMinusAdjustment) : ''
         },
         calculationDialogHasPartAssessment() {
+            if (this.gradingParts?.some((part) => part.id === this.calculationDialogEntry?.teaching_entry_grading_part_id && part.points_assessment_mode === 'sum_percent')) return false
             if (individualPointWeighting(this.calculationDialogEntry, this.gradingParts)) return true
             const partId = this.calculationDialogEntry?.teaching_entry_grading_part_id
             return Boolean(partId) && this.calculationEntries.filter((entry) => entry.teaching_entry_grading_part_id === partId).length > 1
@@ -1573,6 +1784,14 @@ export default {
                 .reduce((sum, entry) => sum + parseGradingNumber(entry.maximum_points), 0)
             return Number.isFinite(total) && total > 0 ? Number(total.toPrecision(15)) : 0
         },
+        gradingPartSignThresholdError() {
+            if (!this.gradingPartOnlyPlusMinus || this.gradingPartSignPurpose !== 'sign_grade') return ''
+            const values = [4, 3, 2, 1].map((grade) => this.gradingPartSignThresholds[grade])
+            if (values.some((value) => value === null || value === undefined || String(value).trim() === '')) return 'Bitte alle vier Saldo-Grenzen eingeben.'
+            if (values.some((value) => !/^[+-]?\d+$/.test(String(value).trim()) || !Number.isSafeInteger(Number(value)))) return 'Bitte endliche ganze Saldo-Zahlen eingeben.'
+            if (values.some((value, index) => index > 0 && Number(value) <= Number(values[index - 1]))) return 'Befriedigend braucht mehr Saldo als Genügend, Gut mehr als Befriedigend und Sehr gut mehr als Gut.'
+            return ''
+        },
         gradingPartOverallThresholdError() {
             if (this.gradingPartForm.allowed_entry_types !== 'points' || this.gradingPartForm.points_assessment_mode !== 'overall' || this.gradingPartOverallMaximumPoints <= 0) return ''
             return pointThresholdError(this.gradingPartOverallThresholds, this.gradingPartOverallMaximumPoints)
@@ -1584,7 +1803,7 @@ export default {
         calculationDialogOverallPart() {
             if (this.calculationDialogEntry?.properties_mode !== 'points') return null
             return this.gradingParts.find((part) => part.id === this.calculationDialogEntry.teaching_entry_grading_part_id
-                && part.allowed_entry_types === 'points' && part.points_assessment_mode === 'overall') || null
+                && (part.points_assessment_mode === 'sum_percent' || (part.allowed_entry_types === 'points' && part.points_assessment_mode === 'overall'))) || null
         },
         calculationDialogUsesPoints() {
             return this.calculationDialogEntry?.properties_mode === 'points' && !this.calculationDialogOverallPart
@@ -1692,8 +1911,12 @@ export default {
             return otherPartsTotal + Math.round(percentage * 1000) > 100000
                 ? 'Die festen Anteile dieses Bereichs dürfen zusammen höchstens 100 % ergeben.' : ''
         },
+        gradingGroupWeightsValidationError() {
+            return !this.gradingGroupWeightRows.length || this.gradingGroupWeightRows.some((row) => !Number.isFinite(parseGradingNumber(row.weight)) || parseGradingNumber(row.weight) <= 0)
+                ? 'Bitte für jeden Benotungsteil eine endliche positive Gewichtung eingeben.' : ''
+        },
         activeEdit() {
-            if (this.calculationDialogOpen || this.editDialogOpen || this.deleteDialogOpen || this.areaDialogOpen
+            if (this.gradingWeightDialogOpen || this.gradingGroupDialogOpen || this.isSavingGradingGroup || this.calculationDialogOpen || this.editDialogOpen || this.deleteDialogOpen || this.areaDialogOpen
                 || this.areaDeleteDialogOpen || this.gradingPartDialogOpen || this.gradingPartDeleteDialogOpen
                 || this.entryCopyDialogOpen || this.previousYearImportDialogOpen
                 || this.isSaving || this.isDeleting || this.isSavingArea
@@ -1729,6 +1952,22 @@ export default {
         calculationEntries() {
             return this.entries.filter((entry) => entry.teaching_entry_area_id === this.activeAreaId && entry.category === 'Benotung')
         },
+        assignableCalculationEntries() {
+            return this.calculationEntries
+        },
+        assignmentEntryTypeGroups: {
+            get() {
+                const mode = this.assignmentAllowedEntryTypes ?? this.gradingPartPendingAssignment?.allowed_entry_types ?? 'all'
+                return entryTypeGroups(mode)
+            },
+            set(groups) {
+                if (groups.length > 2) return
+                const ordered = ['signs', 'points', 'grades'].filter((group) => groups.includes(group))
+                this.assignmentAllowedEntryTypes = ordered.length === 2
+                    ? { 'signs,points': 'signs_pts', 'signs,grades': 'signs_note', 'points,grades': 'pts_notes' }[ordered.join(',')]
+                    : ordered[0] || 'none'
+            },
+        },
         calculationAreas() {
             return this.gradingParts
                 .filter((gradingPart) => gradingPart.teaching_entry_area_id === this.activeAreaId)
@@ -1745,8 +1984,45 @@ export default {
                     entries: this.calculationEntries.filter((entry) => entry.teaching_entry_grading_part_id === gradingPart.id),
                 }))
         },
+        gradingGroups() {
+            return this.areas.find((area) => area.id === this.activeAreaId)?.grading_part_groups || []
+        },
+        simulationCalculatedResults() {
+            return simulationStructure(this.calculationAreas, this.gradingGroups, this.areas.find((area) => area.id === this.activeAreaId)?.grading_level_weights, this.simulationEntries)
+        },
+        gradingAdjustmentStates() {
+            return gradingAdjustmentState(this.gradingGroups, this.gradingParts.filter((part) => part.teaching_entry_area_id === this.activeAreaId))
+        },
+        calculationBlocks() {
+            const makeBlock = (group, visited = []) => ({ id: group.id, group,
+                  parts: this.calculationAreas.filter((part) => group.part_ids.includes(part.gradingPartId))
+                      .sort((left, right) => Number(Boolean(this.gradingAdjustmentStates?.[left.gradingPartId]?.target)) - Number(Boolean(this.gradingAdjustmentStates?.[right.gradingPartId]?.target))),
+                children: this.gradingGroups.filter((child) => child.parent_group_id === group.id && !visited.includes(child.id))
+                    .map((child) => makeBlock(child, [...visited, group.id])),
+            })
+            const blocks = this.gradingGroups.filter((group) => !group.parent_group_id).map((group) => makeBlock(group))
+            const assigned = new Set(this.gradingGroups.flatMap((group) => group.part_ids))
+            const ungrouped = this.calculationAreas.filter((part) => !assigned.has(part.gradingPartId))
+            for (const part of ungrouped) blocks.push({ id: `ungrouped-${part.gradingPartId}`, group: null, parts: [part] })
+            return blocks.sort((left, right) => Number(Boolean(!left.group && this.gradingAdjustmentStates?.[left.parts[0]?.gradingPartId]?.target))
+                - Number(Boolean(!right.group && this.gradingAdjustmentStates?.[right.parts[0]?.gradingPartId]?.target)))
+        },
+        gradingGroupSelectionItems() {
+            const editing = this.gradingGroups.find((group) => group.id === this.editingGradingGroupId)
+            const parentId = editing?.parent_group_id ?? null
+            const eligibleGroups = this.gradingGroups.filter((group) => group.id !== this.editingGradingGroupId
+                && ((group.parent_group_id ?? null) === parentId || group.parent_group_id === this.editingGradingGroupId))
+            const eligibleParts = this.calculationAreas.filter((part) => {
+                const owner = this.gradingGroups.find((group) => group.part_ids.includes(part.gradingPartId))
+                return (owner?.id ?? null) === parentId || owner?.id === this.editingGradingGroupId
+            })
+            return [...eligibleGroups.map((group) => ({ key: `group:${group.id}`, group_id: group.id, name: group.name })),
+                ...eligibleParts.map((part) => ({ key: `part:${part.gradingPartId}`, part_id: part.gradingPartId, name: part.name }))]
+        },
         hasGradingEntryAssignmentChanges() {
+            if (this.assignmentAllowedEntryTypes === 'none') return false
             if (!this.assignGradingPartId || this.isAssigningGradingEntry) return false
+            if (this.assignmentAllowedEntryTypes && this.assignmentAllowedEntryTypes !== (this.gradingPartPendingAssignment?.allowed_entry_types ?? 'all')) return true
 
             const assignedEntryIds = this.calculationEntries
                 .filter((entry) => entry.teaching_entry_grading_part_id === this.assignGradingPartId)
@@ -1817,6 +2093,11 @@ export default {
     },
 
     watch: {
+        simulationStorageKey(key, previousKey) {
+            if (!key && !previousKey) return
+            this.closeSimulationEntry()
+            this.restoreSimulationEntries()
+        },
         activeCategory(category) {
             this.syncCategoryQuery(category)
         },
@@ -1832,12 +2113,298 @@ export default {
     },
 
     beforeMount() {
+        this.simulationAdminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.restoreCategoryFromRoute()
         this.loadData()
     },
 
     methods: {
+        simulationEntryGrade,
+        simulationPartGrade,
+        simulationSummary(part) {
+            return simulationPartSummary(part, this.simulationEntries, this.simulationCalculatedResults.parts[part.gradingPartId ?? part.id])
+        },
+        simulationExplanation(part) {
+            return this.simulationCalculatedResults.partSteps[part.gradingPartId ?? part.id] || simulationPartExplanation(part, this.simulationEntries)
+        },
+        restoreSimulationEntries() {
+            this.simulationEntries = {}
+            this.simulationStorageError = ''
+            if (!this.simulationStorageKey) return
+            try {
+                const saved = JSON.parse(localStorage.getItem(this.simulationStorageKey) || '{}')
+                if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return
+                const restored = {}
+                for (const entry of this.entries.filter((entry) => entry.category === 'Benotung' && entry.teaching_entry_area_id === this.activeAreaId)) {
+                    const values = saved[entry.id]
+                    if (!Array.isArray(values)) continue
+                    restored[entry.id] = values.filter((value) => isStoredSimulationValue(entry, value))
+                }
+                this.simulationEntries = restored
+            } catch (error) {
+                if (!(error instanceof SyntaxError)) this.simulationStorageError = 'Die Simulation konnte nicht aus dem Browser geladen werden.'
+            }
+        },
+        persistSimulationEntries() {
+            if (!this.simulationStorageKey) return
+            try {
+                const saved = {}
+                for (const entry of this.entries.filter((entry) => entry.category === 'Benotung' && entry.teaching_entry_area_id === this.activeAreaId)) {
+                    if (this.simulationEntries[entry.id]) saved[entry.id] = this.simulationEntries[entry.id]
+                }
+                localStorage.setItem(this.simulationStorageKey, JSON.stringify(saved))
+                this.simulationStorageError = ''
+            } catch {
+                this.simulationStorageError = 'Die Simulation konnte nicht im Browser gespeichert werden.'
+            }
+        },
+        simulationEntryLimit(entry) {
+            if (!entry?.has_properties || entryPropertyMode(entry) !== 'grades') return null
+            const configuration = entry.standard_grade_occurrences
+            if (configuration?.mode === 'single') return 1
+            const count = Number(configuration?.count)
+            return configuration?.mode === 'fixed' && Number.isSafeInteger(count) && count >= 2 ? count : null
+        },
+        simulationEntryLimitReached(entry) {
+            const limit = this.simulationEntryLimit(entry)
+            return limit !== null && (this.simulationEntries[entry.id]?.length || 0) >= limit
+        },
+        openSimulationEntry(entry) {
+            if (this.simulationEntryLimitReached(entry)) return
+            this.simulationEntryId = entry.id
+            this.simulationEntryValue = ''
+            this.simulationEntryDialogOpen = true
+        },
+        closeSimulationEntry() {
+            this.simulationEntryDialogOpen = false
+            this.simulationEntryId = null
+            this.simulationEntryValue = ''
+        },
+        addSimulationEntry() {
+            if (!this.simulationEntryDialogOpen || this.simulationEntryError) return
+            const id = this.simulationEntryDefinition.id
+            const value = this.simulationEntryMode === 'none' ? 'Eintrag'
+                : String(this.simulationEntryValue).trim()
+            this.simulationEntries[id] = [...(this.simulationEntries[id] || []), value]
+            this.persistSimulationEntries()
+            this.closeSimulationEntry()
+        },
+        removeSimulationEntry(entryId, index) {
+            this.simulationEntries[entryId] = (this.simulationEntries[entryId] || [])
+                .filter((value, valueIndex) => valueIndex !== index)
+            this.persistSimulationEntries()
+        },
+        isGradingAdjustmentContext(context = null) {
+            return isAdjustmentContext(this, context)
+        },
+        gradingGroupMemberWeight(group, part) {
+            if (isAdjustmentContext(this, group.id)) return null
+            return group.weights?.find((item) => item.part_id === part.gradingPartId)?.weight ?? null
+        },
+        gradingLevelBlockWeight(block) {
+            if (isAdjustmentContext(this, block.group?.parent_group_id)) return null
+            if (block.group?.parent_group_id) {
+                return this.gradingGroups.find((group) => group.id === block.group.parent_group_id)?.weights?.find((row) => row.group_id === block.group.id)?.weight ?? null
+            }
+            const weights = this.areas.find((area) => area.id === this.activeAreaId)?.grading_level_weights
+            return weights?.find((row) => block.group ? row.group_id === block.group.id : row.part_id === block.parts[0]?.gradingPartId)?.weight ?? null
+        },
+        openGradingBlockWeightDialog(block) {
+            const parent = this.gradingGroups.find((group) => group.id === block.group?.parent_group_id)
+            if (parent) this.openGradingGroupWeightDialog(parent)
+            else this.openGradingLevelWeightDialog()
+        },
+        gradingLevelBlockName(block) {
+            if (block.group) return block.group.name
+            const name = block.parts[0]?.name || ''
+            const label = /note$/i.test(name.trim()) ? name : `${name}-Note`
+            return block.parts[0]?.is_required === false && !/\(optional\)/i.test(name) ? `${label} (optional)` : label
+        },
+        openGradingLevelWeightDialog() {
+            if (isAdjustmentContext(this)) return
+            this.gradingWeightLevel = true
+            this.gradingWeightGroup = { name: 'Semesternote' }
+            this.gradingGroupWeightRows = this.calculationBlocks.map((block) => ({
+                ...(block.group ? { group_id: block.group.id } : { part_id: block.parts[0].gradingPartId }),
+                name: this.gradingLevelBlockName(block), weight: this.gradingLevelBlockWeight(block) ?? 1,
+            }))
+            this.gradingGroupWeightError = ''
+            this.gradingWeightDialogOpen = true
+        },
+        openGradingGroupWeightDialog(group) {
+            if (isAdjustmentContext(this, group.id)) return
+            const saved = this.gradingGroups.find((candidate) => candidate.id === group.id)
+            if (!saved) return
+            this.gradingWeightLevel = false
+            this.gradingWeightGroup = { id: saved.id, name: saved.name }
+            this.gradingGroupWeightRows = this.calculationAreas.filter((part) => saved.part_ids.includes(part.gradingPartId))
+                .map((part) => ({ part_id: part.gradingPartId, name: part.name, weight: this.gradingGroupMemberWeight(saved, part) ?? 1 }))
+            this.gradingGroupWeightRows.push(...this.gradingGroups.filter((child) => child.parent_group_id === saved.id)
+                .map((child) => ({ group_id: child.id, name: child.name, weight: saved.weights?.find((row) => row.group_id === child.id)?.weight ?? 1 })))
+            this.gradingGroupWeightError = ''
+            this.gradingWeightDialogOpen = true
+        },
+        closeGradingWeightDialog() {
+            this.gradingWeightDialogOpen = false
+            this.gradingWeightGroup = null
+            this.gradingWeightLevel = false
+            this.gradingGroupWeightRows = []
+            this.gradingGroupWeightError = ''
+        },
+        async saveGradingGroupWeights(remove = false) {
+            if (this.isSavingGroupWeights || !this.gradingWeightGroup || (!remove && this.gradingGroupWeightsValidationError)) return
+            const area = this.areas.find((area) => area.id === this.activeAreaId)
+            if (!area) return
+            if (isAdjustmentContext(this, this.gradingWeightLevel ? null : this.gradingWeightGroup.id)) {
+                this.gradingGroupWeightError = 'Diese Ebene verwendet eine Notenanpassung und wird nicht gewichtet.'
+                return
+            }
+            this.isSavingGroupWeights = true
+            this.gradingGroupWeightError = ''
+            try {
+                const weights = remove ? null : this.gradingGroupWeightRows.map((row) => ({
+                    ...(row.group_id ? { group_id: row.group_id } : { part_id: row.part_id }), weight: parseGradingNumber(row.weight),
+                }))
+                const response = await axios.put(updateEntryArea.url(area.id), { name: area.name,
+                    ...(this.gradingWeightLevel ? { grading_level_weights: weights } : { grading_group_weights: { group_id: this.gradingWeightGroup.id, weights } }),
+                })
+                const index = this.areas.findIndex((candidate) => candidate.id === area.id)
+                if (index !== -1) this.areas.splice(index, 1, response.data.data)
+                this.closeGradingWeightDialog()
+            } catch (error) {
+                this.gradingGroupWeightError = Object.values(error?.response?.data?.errors || {}).flat().join(' ') || error?.response?.data?.message || 'Die Gewichtungen konnten nicht gespeichert werden.'
+            } finally {
+                this.isSavingGroupWeights = false
+            }
+        },
+        gradingPartDisplayName(part) {
+            return part.is_required === false && !/\(optional\)\s*$/i.test(part.name) ? `${part.name} (optional)` : part.name
+        },
+        gradingPartSummary(part, showWeights = true) {
+            const entries = part.entries || []
+            const method = part.points_assessment_mode
+            if (!showWeights && (['sum_percent', 'overall', 'sign_adjust'].includes(method)
+                || (entries.length && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')))) return []
+            if (entries.length && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')) {
+                const lines = entries.map((entry) => {
+                    const configuration = entry.standard_grade_occurrences
+                    const names = { Schularbeit: ['Schularbeit', 'Schularbeiten'], Prüfung: ['Prüfung', 'Prüfungen'] }[entry.name] || [`Leistungsfeststellung (${entry.name})`, `Leistungsfeststellungen (${entry.name})`]
+                    if (!configuration) return `Anzahl für ${entry.name} noch nicht festgelegt.`
+                    if (configuration.mode === 'single') return `Eine ${names[0]} pro Semester.`
+                    let label = configuration.mode === 'unlimited' ? `Beliebig viele ${names[1]} pro Semester.`
+                        : `${{ 2: 'Zwei', 3: 'Drei', 4: 'Vier', 5: 'Fünf' }[configuration.count] || configuration.count} ${names[1]} pro Semester.`
+                    if (method === 'grade_each') label += ' Jede Note wird extra berechnet; die Verknüpfungsregel ist noch offen.'
+                    else if (method === 'grade_mean') label += !showWeights ? ' Notendurchschnitt.' : configuration.mode === 'fixed' && configuration.mean
+                        ? ` Notendurchschnitt · ${configuration.mean.mode === 'weighted' ? `gewichtet (${configuration.mean.weights.map((weight) => `${Number(weight).toLocaleString('de-AT')} %`).join(' / ')})` : 'alle Arbeiten zählen gleich'}.`
+                        : ' Notendurchschnitt; Gewichtungsregel noch offen.'
+                    else label += ' Berechnungsmethode noch nicht festgelegt.'
+                    return label
+                })
+                if (entries.length > 1) lines.push('Die Verknüpfung dieser Eintragstypen zu einer Teilnote ist noch festzulegen.')
+                return lines
+            }
+            if (['sum_percent', 'overall'].includes(method)) return showWeights ? ['Benotung aufgrund der addierten Punkte.'] : []
+            if (method === 'sign_grade') return [part.sign_grade_thresholds ? 'Eigene Note aus dem Plus-Minus-Saldo anhand der gespeicherten Saldo-Grenzen.' : 'Eigene Note aus dem Plus-Minus-Saldo; die Saldo-Grenzen fehlen noch.']
+            if (method === 'sign_adjust') return [part.sign_adjustment && Object.values(part.sign_adjustment).every((value) => value !== null && value !== '')
+                ? 'Bestehende Note anhand des Netto-Saldos, der Faktoren und maximalen Notenwertänderungen anpassen.'
+                : 'Bestehende Note anhand des Plus-Minus-Saldos anpassen; die Anpassungsregel ist noch offen.']
+            if (method === 'plus_minus') return ['Plus und Minus gegenrechnen; die Umrechnung in eine Note ist noch offen.']
+            return entries.length ? ['Beurteilung nach den gespeicherten Einzelbewertungen.'] : ['Noch keine Eintragstypen zugeordnet.']
+        },
+        setGradingPartOccurrenceMode(occurrence, mode) {
+            occurrence.mode = mode
+            if (mode === 'fixed' && (occurrence.count === null || occurrence.count === undefined || occurrence.count === '')) occurrence.count = 2
+            this.gradingPartSingleStandardNote = this.gradingPartOnlyStandardGrades && this.gradingPartStandardOccurrences.length === 1 && mode === 'single'
+        },
+        gradingPartOccurrenceError(occurrence) {
+            if (occurrence.mode !== 'fixed') return ''
+            return occurrence.count !== null && String(occurrence.count).trim() !== '' && Number.isSafeInteger(Number(occurrence.count)) && Number(occurrence.count) >= 2
+                ? '' : 'Bitte eine ganze Anzahl ab 2 eingeben.'
+        },
+        gradingPartWeightSlots(occurrence) {
+            const count = Number(occurrence.count)
+            return Number.isSafeInteger(count) && count >= 2 && count <= 1000 ? Array.from({ length: count }, (_, index) => index) : []
+        },
+        setGradingPartMeanMode(occurrence, mode) {
+            occurrence.mean_mode = mode
+            const count = Number(occurrence.count)
+            if (mode !== 'weighted' || !Number.isSafeInteger(count) || count < 2 || count > 1000 || occurrence.mean_weights.some((weight) => weight !== null && weight !== undefined && String(weight).trim() !== '')) return
+            const base = Math.floor(10000 / count)
+            const remainder = 10000 % count
+            occurrence.mean_weights = Array.from({ length: count }, (_, index) => (base + (index >= count - remainder ? 1 : 0)) / 100)
+        },
+        gradingPartWeightTotal(occurrence) {
+            const weights = this.gradingPartWeightSlots(occurrence).map((index) => parseGradingNumber(occurrence.mean_weights[index]))
+            return weights.length && weights.every(Number.isFinite) ? (weights.reduce((sum, weight) => sum + Math.round(weight * 1000), 0) / 1000).toLocaleString('de-AT') : '–'
+        },
+        gradingPartMeanError(occurrence) {
+            return standardGradeMeanError(occurrence)
+        },
+        openGradingGroupDialog(group = null) {
+            this.editingGradingGroupId = group?.id ?? null
+            this.gradingGroupDissolving = false
+            this.gradingGroupForm = { name: group?.name ?? 'Basisgruppe', part_ids: [...(group?.part_ids ?? [])], child_group_ids: group ? this.gradingGroups.filter((child) => child.parent_group_id === group.id).map((child) => child.id) : [] }
+            this.gradingGroupError = ''
+            this.gradingGroupDialogOpen = true
+        },
+        openDissolveGradingGroupDialog(group) {
+            this.openGradingGroupDialog(group)
+            this.gradingGroupDissolving = true
+        },
+        closeGradingGroupDialog() {
+            this.gradingGroupDialogOpen = false
+            this.gradingGroupError = ''
+        },
+        gradingGroupPartLabel(part) {
+            const group = this.gradingGroups.find((group) => group.part_ids.includes(part.gradingPartId))
+            return group ? `${part.name} · ${group.name}` : part.name
+        },
+        toggleGradingGroupItem(item, selected) {
+            const field = item.group_id ? 'child_group_ids' : 'part_ids'
+            const id = item.group_id || item.part_id
+            this.gradingGroupForm[field] = this.gradingGroupForm[field].filter((candidate) => candidate !== id)
+            if (selected) this.gradingGroupForm[field].push(id)
+        },
+        async saveGradingGroup() {
+            if (this.isSavingGradingGroup || (!this.gradingGroupDissolving && (!this.gradingGroupForm.name.trim() || this.gradingGroupForm.part_ids.length + (this.gradingGroupForm.child_group_ids?.length || 0) < 2))) return
+            const area = this.areas.find((area) => area.id === this.activeAreaId)
+            if (!area) return
+            const id = this.editingGradingGroupId || crypto.randomUUID()
+            const current = this.gradingGroups.find((group) => group.id === id)
+            const parentId = current?.parent_group_id ?? null
+            const selected = new Set(this.gradingGroupForm.part_ids)
+            const selectedGroups = new Set(this.gradingGroupForm.child_group_ids || [])
+            const groups = this.gradingGroups.filter((group) => group.id !== id).map((group) => {
+                const wasChild = group.parent_group_id === id
+                const nextParent = this.gradingGroupDissolving && wasChild ? parentId
+                    : !this.gradingGroupDissolving && selectedGroups.has(group.id) ? id
+                        : !this.gradingGroupDissolving && wasChild ? parentId : group.parent_group_id ?? null
+                let partIds = group.part_ids.filter((partId) => !selected.has(partId))
+                if (this.gradingGroupDissolving) partIds = [...group.part_ids]
+                if (group.id === parentId) partIds.push(...(this.gradingGroupDissolving ? current?.part_ids || [] : (current?.part_ids || []).filter((partId) => !selected.has(partId))))
+                return { id: group.id, name: group.name, parent_group_id: nextParent, part_ids: [...new Set(partIds)] }
+            })
+            if (!this.gradingGroupDissolving) groups.push({ id, name: this.gradingGroupForm.name.trim(), parent_group_id: parentId, part_ids: [...selected] })
+            const parts = (this.gradingParts || []).filter((part) => part.teaching_entry_area_id === this.activeAreaId)
+            const structureError = gradingAdjustmentChangeError(this.gradingGroups, parts, groups, parts)
+            if (structureError) {
+                this.gradingGroupError = structureError
+                return
+            }
+            this.isSavingGradingGroup = true
+            this.gradingGroupError = ''
+            try {
+                const response = await axios.put(updateEntryArea.url(area.id), { name: area.name, grading_part_groups: groups })
+                const index = this.areas.findIndex((candidate) => candidate.id === area.id)
+                if (index !== -1) this.areas.splice(index, 1, response.data.data)
+                this.closeGradingGroupDialog()
+            } catch (error) {
+                this.gradingGroupError = Object.values(error?.response?.data?.errors || {}).flat().join(' ') || error?.response?.data?.message || 'Die Gruppe konnte nicht gespeichert werden.'
+            } finally {
+                this.isSavingGradingGroup = false
+            }
+        },
         entryAssessmentSymbol(entry) {
             if (entry.grading_part_assessment_mode !== 'other' || entry.properties_mode !== 'plus_minus') return null
             return {
@@ -1861,6 +2428,8 @@ export default {
             return calculationIssueForEntry(entry, this.gradingParts, this.calculationEntries)
         },
         gradingPartCalculationIssue(area) {
+            const structureIssue = this.gradingAdjustmentStates?.[area.gradingPartId ?? area.id]?.message
+            if (structureIssue) return structureIssue
             const issue = overallCalculationIssue(area, this.calculationEntries)
             if (issue) return issue
             for (const entry of area.entries) {
@@ -1868,6 +2437,12 @@ export default {
                 if (entryIssue) return `${entry.name}: ${entryIssue}`
             }
             return ''
+        },
+        gradingAdjustmentForPart(area) {
+            return this.gradingAdjustmentStates?.[area.gradingPartId ?? area.id] || {}
+        },
+        gradingAdjustmentForBlock(block) {
+            return !block.group && block.parts.length === 1 ? this.gradingAdjustmentForPart(block.parts[0]) : {}
         },
         gradingNumberInput(value) {
             return typeof value === 'number' ? String(value).replace('.', ',') : value
@@ -1997,13 +2572,14 @@ export default {
         standardCalculationLabel(entry) {
             if (!entry.has_properties) return ''
             if (entry.properties_mode === 'points') return pointsMaximumLabel(entry)
-            return { grades: 'Standardnoten', plus: 'Nur Plus', plus_minus: 'Plus und Minus', points: 'Punkte' }[entryPropertyMode(entry)] || ''
+            return { grades: 'Standardnoten 1 bis 5', plus: 'Nur Plus', plus_minus: 'Plus und Minus', points: 'Punkte' }[entryPropertyMode(entry)] || ''
         },
         calculationProperties(entry) {
             const properties = entryCalculationProperties(entry)
 
-            return ['plus_minus', 'grades'].includes(entry.calculation_mode) ? properties.filter((property) => !isStandardCalculationValue(entry.calculation_mode, property)
+            const visibleProperties = ['plus_minus', 'grades'].includes(entry.calculation_mode) ? properties.filter((property) => !isStandardCalculationValue(entry.calculation_mode, property)
                 && normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation) !== null) : properties
+            return sortedCalculationProperties(visibleProperties)
         },
         propertyEvaluationClass(entry, property) {
             const evaluation = normalizePropertyEvaluation(entry.property_evaluations?.find((item) => item.property === property)?.evaluation)
@@ -2134,6 +2710,7 @@ export default {
                 this.gradingParts = gradingPartResponse.data?.data || []
                 this.previousYearImportOffer = areaResponse.data?.meta?.previous_year_import || null
                 if (!this.areas.some((area) => area.id === this.activeAreaId)) this.activeAreaId = this.areas[0]?.id || null
+                if (this.simulationStorageKey) this.restoreSimulationEntries()
             } catch (error) {
                 this.notifyError(error)
             } finally {
@@ -2157,9 +2734,9 @@ export default {
                 description: '',
                 category: this.activeCategory,
                 has_properties: this.activeCategory === 'Benotung',
-                properties_mode: 'free',
+                properties_mode: this.activeCategory === 'Benotung' ? 'fixed' : 'free',
                 maximum_points: null,
-                fixed_properties: [],
+                fixed_properties: this.activeCategory === 'Benotung' ? ['1', '2', '3', '4', '5'] : [],
                 property_evaluations: [],
                 enabled_special_properties: specialPropertyOptions.map((option) => option.value),
                 has_notifications: false,
@@ -2242,6 +2819,7 @@ export default {
             }
             this.isSaving = true
             this.formErrors = {}
+            delete payload.standard_grade_occurrences
             try {
                 const response = this.selectedEntryId
                     ? await axios.put(`/api/admin/teaching/entry_definitions/${this.selectedEntryId}`, payload)
@@ -2350,6 +2928,7 @@ export default {
         },
         openCreateGradingPartDialog() {
             if (!this.activeAreaId) return
+            this.gradingPartDialogMode = 'settings'
             this.gradingPartOverallThresholds = { 1: null, 2: null, 3: null, 4: null }
 
             this.editingGradingPartId = null
@@ -2357,7 +2936,24 @@ export default {
             this.gradingPartFormErrors = {}
             this.gradingPartDialogOpen = true
         },
-        openEditGradingPartDialog(gradingPartArea) {
+        openEditGradingPartDialog(gradingPartArea, mode = 'settings') {
+            const entries = gradingPartArea.entries || (this.calculationEntries || []).filter((entry) => entry.teaching_entry_grading_part_id === gradingPartArea.gradingPartId)
+            this.gradingPartOnlyPlusMinus = entries.length > 0 && entries.every((entry) => entryTypeGroup(entry) === 'signs')
+            this.gradingPartSignPurpose = this.gradingPartOnlyPlusMinus && ['sign_grade', 'sign_adjust'].includes(gradingPartArea.points_assessment_mode) ? gradingPartArea.points_assessment_mode : null
+            this.gradingPartSignThresholds = { 1: null, 2: null, 3: null, 4: null, ...gradingPartArea.sign_grade_thresholds }
+            this.gradingPartSignAdjustment = { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null, ...gradingPartArea.sign_adjustment }
+            this.gradingPartOnlyPoints = entries.length > 0 && entries.every((entry) => entryTypeGroup(entry) === 'points')
+            this.gradingPartOnlyStandardGrades = entries.length > 0 && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')
+            this.gradingPartSingleStandardNote = this.gradingPartOnlyStandardGrades && entries.length === 1 && (entries[0].standard_grade_occurrences?.mode ?? 'single') === 'single'
+            this.gradingPartStandardOccurrences = this.gradingPartOnlyStandardGrades ? entries.map((entry) => ({
+                entry_definition_id: entry.id, name: entry.name, mode: entry.standard_grade_occurrences?.mode ?? 'single', count: entry.standard_grade_occurrences?.count ?? null,
+                mean_mode: entry.standard_grade_occurrences?.mean?.mode ?? 'equal', mean_weights: [...(entry.standard_grade_occurrences?.mean?.weights ?? [])],
+                saved_count: entry.standard_grade_occurrences?.count ?? null, saved_mean: entry.standard_grade_occurrences?.mean ?? null,
+            })) : []
+            this.gradingPartCalculationMethod = this.gradingPartOnlyStandardGrades
+                ? gradingPartArea.points_assessment_mode === 'grade_mean' ? 'grade_mean' : 'grade_each'
+                : this.gradingPartOnlyPoints ? 'sum_percent' : this.gradingPartOnlyPlusMinus || gradingPartArea.points_assessment_mode === 'plus_minus' ? 'plus_minus' : 'sum_percent'
+            this.gradingPartDialogMode = mode
             this.gradingPartOverallThresholds = { 1: null, 2: null, 3: null, 4: null, ...gradingPartArea.overall_points_grade_thresholds }
             this.editingGradingPartId = gradingPartArea.gradingPartId
             this.gradingPartForm = {
@@ -2374,19 +2970,28 @@ export default {
             this.gradingPartDialogOpen = true
         },
         closeGradingPartDialog() {
+            this.gradingPartDialogMode = 'settings'
             this.gradingPartOverallThresholds = { 1: null, 2: null, 3: null, 4: null }
             this.gradingPartDialogOpen = false
             this.editingGradingPartId = null
             this.gradingPartForm = { name: '', weight: 1, is_required: false, weighting_mode: 'relative', fixed_percentage: null, allowed_entry_types: 'all', points_assessment_mode: 'individual', individual_points_weighting_mode: 'weighted' }
             this.gradingPartFormErrors = {}
         },
-        async saveGradingPart() {
-            if (!this.activeAreaId || !this.gradingPartForm.name.trim() || !this.gradingPartWeightValid || this.isSavingGradingPart) return
-            if (this.gradingPartOverallThresholdError) {
+        async saveGradingPart(usePointSum = false) {
+            if (this.gradingPartDialogMode !== 'name' && this.gradingPartOnlyStandardGrades && this.gradingPartCalculationMethod === 'grade_mean' && (this.gradingPartStandardOccurrences || []).some((occurrence) => occurrence.mode === 'fixed' && standardGradeMeanError(occurrence))) return
+            if (this.gradingPartDialogMode !== 'name' && this.gradingPartOnlyStandardGrades && (this.gradingPartStandardOccurrences || []).some((occurrence) => this.gradingPartOccurrenceError(occurrence))) return
+            usePointSum = Boolean(this.editingGradingPartId) && usePointSum
+            const isRenaming = Boolean(this.editingGradingPartId) && this.gradingPartDialogMode === 'name'
+            if (!isRenaming && usePointSum && this.gradingPartSignThresholdError) {
+                this.gradingPartFormErrors = { sign_grade_thresholds: [this.gradingPartSignThresholdError] }
+                return
+            }
+            if (!this.activeAreaId || !this.gradingPartForm.name.trim() || (!isRenaming && !usePointSum && !this.gradingPartWeightValid) || this.isSavingGradingPart) return
+            if (!isRenaming && !usePointSum && this.gradingPartOverallThresholdError) {
                 this.gradingPartFormErrors = { overall_points_grade_thresholds: [this.gradingPartOverallThresholdError] }
                 return
             }
-            if (this.gradingPartForm.allowed_entry_types === 'points' && this.gradingPartHasNonPointEntries) {
+            if (!isRenaming && !usePointSum && this.gradingPartForm.allowed_entry_types === 'points' && this.gradingPartHasNonPointEntries) {
                 this.gradingPartFormErrors = { allowed_entry_types: ['Ein Wechsel ist nicht möglich, solange andere Eintragstypen zugeordnet sind.'] }
                 return
             }
@@ -2398,14 +3003,36 @@ export default {
                 const weight = Number(this.gradingPartForm.weight)
                 const isRequired = this.gradingPartForm.is_required
                 const fixedPercentage = this.gradingPartForm.weighting_mode === 'fixed' ? Number(this.gradingPartForm.fixed_percentage) : null
-                const payload = { name, is_required: isRequired, fixed_percentage: fixedPercentage, allowed_entry_types: this.gradingPartForm.allowed_entry_types ?? 'all' }
-                if (payload.allowed_entry_types === 'points') payload.points_assessment_mode = this.gradingPartForm.points_assessment_mode ?? 'individual'
+                const method = this.gradingPartOnlyStandardGrades
+                    ? this.gradingPartCalculationMethod === 'grade_mean' ? 'grade_mean' : 'grade_each'
+                    : this.gradingPartOnlyPlusMinus ? this.gradingPartSignPurpose || 'plus_minus'
+                        : this.gradingPartOnlyPoints ? 'sum_percent' : this.gradingPartCalculationMethod === 'plus_minus' ? 'plus_minus' : 'sum_percent'
+                const payload = isRenaming ? { name } : usePointSum && this.editingGradingPartId ? { name, points_assessment_mode: method } : { name, is_required: isRequired, fixed_percentage: fixedPercentage, allowed_entry_types: this.gradingPartForm.allowed_entry_types ?? 'all' }
+                if (!isRenaming && usePointSum && this.gradingPartOnlyStandardGrades) payload.is_required = isRequired
+                if (!isRenaming && this.gradingPartOnlyStandardGrades) {
+                    const occurrences = (this.gradingPartStandardOccurrences || []).filter((occurrence) => occurrence.mode).map((occurrence) => ({
+                        entry_definition_id: occurrence.entry_definition_id, configuration: standardGradeOccurrenceConfiguration(occurrence, method),
+                    }))
+                    if (occurrences.length) payload.entry_standard_grade_occurrences = occurrences
+                }
+                if (!isRenaming && usePointSum) payload.points_assessment_mode = method
+                if (!isRenaming && usePointSum && method === 'sign_grade') payload.sign_grade_thresholds = Object.fromEntries([4, 3, 2, 1].map((grade) => [grade, Number(this.gradingPartSignThresholds[grade])]))
+                if (!isRenaming && usePointSum && method === 'sign_adjust') payload.sign_adjustment = Object.fromEntries(Object.entries(this.gradingPartSignAdjustment).map(([key, value]) => [key, value === null || String(value).trim() === '' ? null : String(value).trim().replace(',', '.')]))
+                if (payload.allowed_entry_types === 'points') payload.points_assessment_mode = usePointSum ? method : this.gradingPartForm.points_assessment_mode ?? 'individual'
                 if (payload.points_assessment_mode === 'individual') payload.individual_points_weighting_mode = this.gradingPartForm.individual_points_weighting_mode ?? 'weighted'
                 if (payload.points_assessment_mode === 'overall') {
                     payload.overall_points_grade_thresholds = this.gradingPartOverallMaximumPoints > 0
                         ? Object.fromEntries([1, 2, 3, 4].map((grade) => [grade, parseGradingNumber(this.gradingPartOverallThresholds[grade])])) : null
                 }
-                if (fixedPercentage === null) payload.weight = weight
+                if (!isRenaming && !(usePointSum && this.editingGradingPartId) && fixedPercentage === null) payload.weight = weight
+                const parts = (this.gradingParts || []).filter((part) => part.teaching_entry_area_id === this.activeAreaId)
+                const nextParts = this.editingGradingPartId ? parts.map((part) => part.id === this.editingGradingPartId ? { ...part, ...payload } : part)
+                    : [...parts, { id: -1, ...payload }]
+                const structureError = gradingAdjustmentChangeError(this.gradingGroups || [], parts, this.gradingGroups || [], nextParts)
+                if (structureError) {
+                    this.gradingPartFormErrors = { points_assessment_mode: [structureError] }
+                    return
+                }
                 const response = this.editingGradingPartId
                     ? await axios.put(updateGradingPart.url(this.editingGradingPartId), payload)
                     : await axios.post('/api/admin/teaching/entry_grading_parts', {
@@ -2422,6 +3049,11 @@ export default {
                 }
 
                 this.gradingParts.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+                if (response.data.entry_area) {
+                    const areaIndex = this.areas.findIndex((area) => area.id === response.data.entry_area.id)
+                    if (areaIndex !== -1) this.areas.splice(areaIndex, 1, response.data.entry_area)
+                }
+                for (const entry of response.data.entry_definitions || []) this.replaceGradingEntry(entry)
                 this.closeGradingPartDialog()
             } catch (error) {
                 this.gradingPartFormErrors = error?.response?.data?.errors || {}
@@ -2446,6 +3078,13 @@ export default {
                 const deletedGradingPartId = this.deleteGradingPartId
                 await axios.delete(`/api/admin/teaching/entry_grading_parts/${deletedGradingPartId}`)
                 this.gradingParts = this.gradingParts.filter((gradingPart) => gradingPart.id !== deletedGradingPartId)
+                for (const area of this.areas || []) {
+                    for (const group of area.grading_part_groups || []) {
+                        group.part_ids = group.part_ids.filter((partId) => partId !== deletedGradingPartId)
+                        if (group.weights?.some((row) => row.part_id === deletedGradingPartId)) delete group.weights
+                    }
+                    if (area.grading_level_weights?.some((row) => row.part_id === deletedGradingPartId)) area.grading_level_weights = null
+                }
                 this.entries = this.entries.map((entry) => entry.teaching_entry_grading_part_id === deletedGradingPartId
                     ? { ...entry, teaching_entry_grading_part_id: null }
                     : entry)
@@ -2463,18 +3102,20 @@ export default {
             }
 
             this.assignGradingPartId = gradingPartArea.gradingPartId
+            this.assignmentAllowedEntryTypes = gradingPartArea.allowed_entry_types ?? 'all'
             this.selectedGradingEntryIds = this.calculationEntries
                 .filter((entry) => entry.teaching_entry_grading_part_id === gradingPartArea.gradingPartId)
                 .map((entry) => entry.id)
         },
         cancelGradingEntryAssignment() {
             this.assignGradingPartId = null
+            this.assignmentAllowedEntryTypes = null
             this.selectedGradingEntryIds = []
         },
         toggleGradingEntrySelection(entry) {
             if (!entry?.id || this.isAssigningGradingEntry) return
             const gradingPart = this.gradingParts?.find((part) => part.id === this.assignGradingPartId)
-            if (!gradingPartAllowsEntry(gradingPart, entry)) return
+            if (!gradingPartAllowsEntry(gradingPart ? { ...gradingPart, allowed_entry_types: this.assignmentAllowedEntryTypes ?? gradingPart.allowed_entry_types } : null, entry)) return
 
             if (this.selectedGradingEntryIds.includes(entry.id)) {
                 this.selectedGradingEntryIds = this.selectedGradingEntryIds.filter((entryId) => entryId !== entry.id)
@@ -2484,7 +3125,8 @@ export default {
             this.selectedGradingEntryIds.push(entry.id)
         },
         canAssignGradingEntry(entry) {
-            return gradingPartAllowsEntry(this.gradingPartPendingAssignment, entry)
+            const part = this.gradingPartPendingAssignment
+            return gradingPartAllowsEntry(part ? { ...part, allowed_entry_types: this.assignmentAllowedEntryTypes ?? part.allowed_entry_types } : null, entry)
         },
         gradingPartName(gradingPartId) {
             const gradingPart = this.gradingParts.find((part) => part.id === gradingPartId)
@@ -2492,13 +3134,16 @@ export default {
             return gradingPart?.name || 'anderer Benotungsteil'
         },
         async saveGradingEntryAssignments() {
+            if (this.assignmentAllowedEntryTypes === 'none') return
             if (!this.assignGradingPartId || this.isAssigningGradingEntry) return
 
             const gradingPartId = this.assignGradingPartId
             const selectedEntryIds = new Set(this.selectedGradingEntryIds)
             const gradingPart = this.gradingParts?.find((part) => part.id === gradingPartId)
-            if (this.calculationEntries.some((entry) => selectedEntryIds.has(entry.id) && !gradingPartAllowsEntry(gradingPart, entry))) {
-                this.notifyError(new Error('Diesem Benotungsteil können nur Punktetypen zugeordnet werden.'))
+            const allowedTypes = this.assignmentAllowedEntryTypes ?? gradingPart?.allowed_entry_types
+            const selection = gradingPart ? { ...gradingPart, allowed_entry_types: allowedTypes } : null
+            if (this.calculationEntries.some((entry) => selectedEntryIds.has(entry.id) && !gradingPartAllowsEntry(selection, entry))) {
+                this.notifyError(new Error('Ausgewählte Einträge passen nicht zu den Typengruppen. Bitte aktivieren Sie die passende Gruppe und entfernen Sie diese Auswahl ausdrücklich.'))
                 return
             }
             const changedEntries = this.calculationEntries.filter(
@@ -2506,12 +3151,17 @@ export default {
                     ? entry.teaching_entry_grading_part_id !== gradingPartId
                     : entry.teaching_entry_grading_part_id === gradingPartId,
             )
-            if (!changedEntries.length) return
+            const hasTypeChange = Boolean(gradingPart && this.assignmentAllowedEntryTypes) && allowedTypes !== (gradingPart?.allowed_entry_types ?? 'all')
+            if (!changedEntries.length && !hasTypeChange) return
 
             this.isAssigningGradingEntry = true
             try {
+                const saveAllowedTypes = async () => {
+                    const response = await axios.put(updateGradingPart.url(gradingPartId), { name: gradingPart.name, allowed_entry_types: allowedTypes })
+                    const partIndex = this.gradingParts.findIndex((part) => part.id === gradingPartId)
+                    this.gradingParts.splice(partIndex, 1, response.data.data)
+                }
                 for (const entry of changedEntries) {
-                    const shouldBeAssigned = selectedEntryIds.has(entry.id)
                     const currentGradingPartId = entry.teaching_entry_grading_part_id
 
                     if (currentGradingPartId) {
@@ -2522,8 +3172,10 @@ export default {
                         this.replaceGradingEntry({ ...entry, teaching_entry_grading_part_id: null })
                     }
 
-                    if (!shouldBeAssigned) continue
-
+                }
+                if (hasTypeChange) await saveAllowedTypes()
+                for (const entry of changedEntries) {
+                    if (!selectedEntryIds.has(entry.id)) continue
                     const response = await axios.post(storeGradingEntryAssignment.url(gradingPartId), {
                         teaching_entry_definition_id: entry.id,
                     })
@@ -2827,8 +3479,170 @@ export default {
     flex-direction: column;
     gap: 12px;
 }
+.calculation-overviews {
+    --grading-overview-width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, max(360px, var(--grading-overview-width)));
+    align-items: start;
+    gap: 16px;
+    overflow-x: auto;
+}
+/* Preserve the former settings column width, including its surrounding gutters. */
+@media (min-width: 960px) {
+    .calculation-overviews {
+        --grading-overview-width: calc(50% - 31px);
+    }
+}
+@media (min-width: 1280px) {
+    .calculation-overviews {
+        --grading-overview-width: calc(58.3333333333% - 25.8333333333px);
+    }
+}
+@media (min-width: 1920px) {
+    .calculation-overviews {
+        --grading-overview-width: calc(33.3333333333% - 41.3333333333px);
+    }
+}
+.calculation-overview {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(var(--v-border-color), 0.16);
+    border-radius: 16px;
+    background: rgb(var(--v-theme-surface));
+    overflow-wrap: anywhere;
+}
+.calculation-simulation .calculation-group-header {
+    grid-template-columns: minmax(0, 1fr);
+}
+.simulation-entry-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    padding: 0;
+    margin-top: 8px;
+}
+.simulation-entry-values li {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(var(--v-theme-primary), 0.1);
+    color: rgb(var(--v-theme-primary));
+    font-weight: 600;
+}
+.simulation-entry-remove {
+    align-self: flex-start;
+    transform: translateY(-4px);
+}
+.calculation-simulation .grading-weight-heading,
+.calculation-simulation .grading-part-title,
+.simulation-entry-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+}
+.simulation-entry-heading .calculation-entry-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.simulation-grade {
+    margin-left: auto;
+    flex-shrink: 1;
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+    font-weight: 400;
+    color: rgb(var(--v-theme-primary));
+}
+.sign-adjustment-field {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+.simulation-result {
+    margin-left: auto;
+    min-width: 0;
+    text-align: right;
+    flex: 0 1 65%;
+    overflow-wrap: anywhere;
+}
+.simulation-result small {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: rgb(var(--v-theme-on-surface));
+}
+.simulation-entry-add {
+    margin-left: auto;
+}
+@media (max-width: 600px) {
+    .calculation-overviews {
+        grid-template-columns: repeat(2, 100%);
+    }
+    .calculation-simulation .grading-part-title,
+    .calculation-simulation .grading-weight-heading {
+        flex-wrap: wrap;
+    }
+    .simulation-result {
+        flex-basis: 100%;
+    }
+    .calculation-overview {
+        padding: 8px;
+    }
+}
+.calculation-semester-grade-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.calculation-group-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.calculation-group-heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.calculation-group-actions {
+    display: grid;
+    justify-items: end;
+    justify-self: end;
+    gap: 4px;
+}
+@media (max-width: 600px) {
+    .calculation-group-header {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .calculation-group-actions {
+        justify-self: end;
+    }
+}
+.calculation-group-parts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    gap: 12px;
+}
+.calculation-group-parts--adjustment-pair {
+    grid-template-columns: minmax(0, 1fr);
+}
+.grading-adjustment-connection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    color: rgb(var(--v-theme-primary));
+}
 .calculation-area-card {
-    padding: 14px;
+    padding: 12px;
     border: 1px solid rgba(var(--v-border-color), 0.16);
     border-radius: 16px;
     background: rgb(var(--v-theme-surface));
@@ -2872,14 +3686,24 @@ export default {
     flex: 1;
 }
 .calculation-part-card .calculation-area-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
     margin-bottom: 0;
     padding-right: 20px;
 }
+.calculation-part-card .calculation-area-heading {
+    flex-basis: 160px;
+}
+@media (max-width: 600px) {
+    .calculation-part-card .calculation-area-header {
+        padding-right: 0;
+    }
+}
 .calculation-part-card,
-.calculation-entry-open {
+.calculation-entry-static {
     position: relative;
 }
-.calculation-entry-item.calculation-entry-open {
+.calculation-entry-item.calculation-entry-static {
     padding-right: 30px;
 }
 .calculation-incomplete-marker {
@@ -2904,49 +3728,133 @@ export default {
 .calculation-part-actions {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
 }
-.grading-weight-badge {
-    display: grid;
-    grid-template-columns: 24px auto;
+.point-sum-grade-scale > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+}
+.point-sum-grade-scale dd {
+    margin: 0;
+    font-weight: 600;
+}
+.grading-weight-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+}
+.grading-weight-heading > h3 {
+    display: flex;
     align-items: center;
-    gap: 4px 10px;
-    min-width: 104px;
-    padding: 12px 14px;
+    min-height: 24px;
+}
+.grading-title-content {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.grading-part-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+}
+.calculation-part-summary {
+    margin-top: 2px;
+}
+.grading-part-title > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.grading-part-title > .v-btn {
+    flex-shrink: 0;
+}
+.grading-weight-heading > h3,
+.grading-weight-heading > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.grading-weight-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.grading-weight-trigger:focus-visible {
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+.grading-weight-trigger:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+.grading-group-member-weight {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    width: 80px;
+    height: 56px;
     flex-shrink: 0;
     border: 1px solid rgba(var(--v-theme-primary), 0.2);
     border-radius: 12px;
     color: rgb(var(--v-theme-primary));
-    background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.14), rgba(var(--v-theme-primary), 0.04));
+    background: color-mix(in srgb, rgb(var(--grading-level-color)) 24%, white);
+    cursor: pointer;
 }
-.grading-weight-badge strong {
-    font-size: 1.8rem;
-    font-weight: 750;
-    line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+.grading-group-member-weight strong {
+    font-size: 1.4rem;
+    line-height: 1;
 }
-.grading-weight-badge > span {
-    grid-column: 1 / -1;
-    font-size: 0.65rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+.grading-block-weight.grading-group-member-weight {
+    background: color-mix(in srgb, rgb(var(--grading-parent-color)) 24%, white);
+}
+.grading-weight-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.grading-weight-fields label {
+    display: block;
+    margin-bottom: 6px;
+    overflow-wrap: anywhere;
+}
+.grading-weight-actions {
+    flex-wrap: wrap;
+}
+.grading-weight-title {
+    white-space: normal;
 }
 .calculation-entry-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 0;
     list-style: none;
+}
+.calculation-entry-list > li {
+    width: 280px;
+    max-width: 100%;
 }
 .calculation-entry-item {
     display: flex;
     align-items: flex-start;
     min-width: 0;
     gap: 8px;
-    padding: 10px;
+    padding: 8px;
     border: 1px solid rgba(var(--v-border-color), 0.14);
     border-radius: 10px;
     background: rgba(var(--v-theme-on-surface), 0.025);
@@ -2957,22 +3865,11 @@ export default {
         box-shadow 150ms ease,
         opacity 150ms ease;
 }
-.calculation-entry-open {
+.calculation-entry-static {
     width: 100%;
     text-align: left;
     color: inherit;
-    cursor: pointer;
 }
-.calculation-entry-open:hover,
-.calculation-entry-open:focus-visible {
-    border-color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), 0.06);
-}
-.calculation-entry-open:focus-visible {
-    outline: 2px solid rgb(var(--v-theme-primary));
-    outline-offset: 2px;
-}
-.calculation-entry-open:disabled,
 .entry-area-select:disabled {
     opacity: 0.5;
     cursor: default;
@@ -3014,7 +3911,7 @@ export default {
 }
 .calculation-entry-selection-card--selected {
     border-color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), 0.12);
+    background: rgba(var(--v-theme-primary), 0.28);
     box-shadow: 0 6px 16px rgba(var(--v-theme-primary), 0.12);
 }
 .calculation-entry-selection-card:focus-visible {
@@ -3022,8 +3919,37 @@ export default {
     outline-offset: 2px;
 }
 .calculation-entry-selection-card:disabled {
-    cursor: wait;
-    opacity: 0.7;
+    cursor: not-allowed;
+    opacity: 1;
+    color: #475569;
+    background: #d1d5db;
+    border-color: #9ca3af;
+    box-shadow: none;
+    transform: none;
+}
+.entry-marking-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-left: 8px;
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.25);
+    border-radius: 50%;
+    vertical-align: middle;
+}
+.calculation-entry-selection-card:disabled * {
+    color: inherit !important;
+}
+.calculation-entry-selection-card:disabled .v-chip__underlay,
+.calculation-entry-selection-card:disabled .v-chip__overlay {
+    opacity: 0.12;
+}
+.calculation-entry-selection-card:disabled .v-chip,
+.calculation-entry-selection-card:disabled .v-icon {
+    filter: grayscale(1);
+}
+.calculation-entry-selection-card:disabled .calculation-entry-code,
+.calculation-entry-selection-card:disabled .calculation-evaluation {
+    background: #c3c8cf !important;
 }
 .calculation-assignment-actions {
     display: flex;
@@ -3095,12 +4021,11 @@ export default {
     font-size: 0.72rem;
 }
 .calculation-entry-values {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    display: flex;
     align-items: center;
     flex-wrap: wrap;
     min-width: 0;
-    gap: 6px 16px;
+    gap: 4px;
     width: 100%;
     margin-top: 6px;
 }
@@ -3135,14 +4060,13 @@ export default {
     white-space: normal;
 }
 .calculation-property {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 6px 10px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: rgb(var(--v-theme-surface));
+    gap: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
 }
 .calculation-property-name {
     font-size: 0.82rem;

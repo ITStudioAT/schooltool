@@ -5475,7 +5475,7 @@ export default {
         gradeInputHint(mode, type) {
             if (mode === 'points') return `Punkte von 0 bis ${this.maximumPointsForType(type)}; Dezimalstellen sind möglich.`
             if (mode === 'plus') return 'Nur Pluszeichen, z. B. +, ++, +++ (max. 50).'
-            if (mode === 'plus_minus') return 'Nur Pluszeichen oder nur Minuszeichen, z. B. +++, -- (max. 50).'
+            if (mode === 'plus_minus') return 'Pluszeichen, Minuszeichen, 0 (neutral) oder ~ (+0,5), z. B. +++, --, 0, ~ (max. 50).'
             return ''
         },
         specialGradeItemsForType(type) {
@@ -5505,7 +5505,7 @@ export default {
                     && Number.isFinite(maximum) && maximum > 0 && Number(normalized) <= maximum)
                     || this.gradeInputHint(mode, type)
             }
-            const pattern = mode === 'plus' ? /^\+{1,50}$/ : /^(?:\+{1,50}|-{1,50})$/
+            const pattern = mode === 'plus' ? /^\+{1,50}$/ : /^(?:\+{1,50}|-{1,50}|0|~)$/
             return pattern.test(grade) || this.gradeInputHint(mode)
         },
         toggledCourseWorkGrade(currentGrade, selectedGrade) {

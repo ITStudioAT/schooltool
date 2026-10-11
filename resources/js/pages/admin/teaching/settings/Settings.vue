@@ -22,7 +22,7 @@
         </section>
     </v-col>
 
-    <v-col cols="12" md="6" lg="7" xl="4">
+    <v-col cols="12" :md="active_panel === 'entries' ? 12 : 6" :lg="active_panel === 'entries' ? 12 : 7" :xl="active_panel === 'entries' ? 12 : 4">
         <section class="teaching-settings-content-shell">
             <v-window v-model="active_panel" class="w-100" :touch="false">
                 <v-window-item value="basic">

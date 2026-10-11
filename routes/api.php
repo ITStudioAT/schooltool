@@ -87,6 +87,7 @@ use App\Http\Controllers\Admin\Teaching\HolidayController;
 use App\Http\Controllers\Admin\Teaching\Import116Controller;
 use App\Http\Controllers\Admin\Teaching\ImportedCurriculumController;
 use App\Http\Controllers\Admin\Teaching\MyHolidayController;
+use App\Http\Controllers\Admin\Teaching\PersonalAppointmentController;
 use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupRecoveryController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
@@ -677,6 +678,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/my_holidays', MyHolidayController::class)
             ->only(['index', 'store', 'destroy'])
             ->parameters(['my_holidays' => 'my_holiday']);
+        Route::apiResource('/admin/teaching/personal_appointments', PersonalAppointmentController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->parameters(['personal_appointments' => 'personalAppointment']);
+        Route::put('/admin/teaching/personal_appointments/{personalAppointment}/occurrence', [PersonalAppointmentController::class, 'updateOccurrence']);
         Route::get('/admin/teaching/load_class_students', [App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/load_class_students', [Import116Controller::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/runs', [Import116Controller::class, 'runs']);

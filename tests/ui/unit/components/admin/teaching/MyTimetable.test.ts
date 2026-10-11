@@ -11,11 +11,55 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 
+vi.mock('@/pages/admin/teaching/overview/components/PersonalAppointments.vue', () => ({ default: { template: '<div />', methods: { open: vi.fn() } } }))
+
 afterEach(() => {
     vi.useRealTimers()
 })
 
 describe('MyTimetable automatic week selection', () => {
+    it.each([
+        { adjacentCourse: 18, adjacentHour: 6, adjacentStatus: [], connects: true },
+        { adjacentCourse: 99, adjacentHour: 6, adjacentStatus: [], connects: false },
+        { adjacentCourse: 18, adjacentHour: 7, adjacentStatus: [], connects: false },
+        { adjacentCourse: 18, adjacentHour: 6, adjacentStatus: ['free'], connects: false },
+    ])('connects consecutive course blocks only when their course and status match: %j', ({ adjacentCourse, adjacentHour, adjacentStatus, connects }) => {
+        const methods = (MyTimetable as any).methods
+        const item = { courseId: 18, status: [] }
+        const adjacent = { courseId: adjacentCourse, status: adjacentStatus }
+        const context = {
+            ...methods,
+            getTableCellItems: (_day, hour) => hour === 5 ? [item] : hour === adjacentHour ? [adjacent] : [],
+        }
+        expect(methods.tableCellsConnect.call(context, '2026-10-12', 5, 6)).toBe(connects)
+    })
+
+    it('clears the next-lesson button selection while browsing and restores it on return', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-06T16:00:00Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.rangeSelection = 'next_week'
+            expect(vm.rangeSelection).toBe('next_week')
+            vm.navigateNext()
+            await nextTick()
+            expect(vm.rangeSelection).toBeNull()
+            vm.navigatePrevious()
+            await nextTick()
+            expect(vm.rangeSelection).toBe('next_week')
+            vm.navigateNext()
+            vm.rangeSelection = 'next_week'
+            await nextTick()
+            expect(vm.offset).toBe(0)
+            expect(vm.rangeSelection).toBe('next_week')
+            vm.rangeSelection = 'week'
+            expect(vm.rangeSelection).toBe('week')
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
     function prepareTimetable(now: string) {
         sessionStorage.clear()
         setActivePinia(createPinia())
@@ -45,6 +89,166 @@ describe('MyTimetable automatic week selection', () => {
         })
         return { courseStore, route, mountTimetable }
     }
+
+    it.each([[5, 6], [5, 6, 7]])('shows consecutive hours %j as one course block', async (...hours) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        ;(courseStore.courses[0] as any).course_dates[0].hours = hours
+        useSchoolHourStore().school_hours = hours.map((hour) => ({ hour, from: `${hour + 6}:30:00`, until: `${hour + 7}:20:00` })) as any
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            expect(wrapper.findAll('.timetable-grid-course').map((item) => item.text())).toEqual(['Mathematik'])
+            expect(wrapper.find('.timetable-grid-item--block').element.closest('td')?.getAttribute('rowspan')).toBe(String(hours.length))
+            expect(wrapper.find('.timetable-grid-item--block').text()).toContain(`5.–${hours.at(-1)}. Std`)
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it.each(['table', 'list'])('shows timed personal appointments without changing courses in the %s view', async (viewMode) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        courseStore.timetable_view_mode = viewMode
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [
+                { id: 7, kind: 'lunch_supervision', title: 'Mittagspause', date: '2026-03-06', starts_at: '12:00', ends_at: '12:30', repeat_until: null },
+                { id: 8, kind: 'day_care_standby', title: '', date: '2026-03-07', starts_at: '18:00', ends_at: '20:00', repeat_until: null },
+                { id: 9, kind: 'special_assignment', title: '', date: '2026-03-06', starts_at: '07:45', ends_at: '10:50', school_hours: [1, 3], time_segments: [{ hour: 1, starts_at: '07:45', ends_at: '08:35' }, { hour: 3, starts_at: '10:00', ends_at: '10:50' }], repeat_until: null },
+            ] })
+            expect(wrapper.findAll('.personal-appointment-card')).toHaveLength(viewMode === 'table' ? 4 : 3)
+            expect(wrapper.text()).toContain('Mittagspause')
+            expect(wrapper.text()).toContain('18:00–20:00')
+            expect(wrapper.text()).toContain('1. Std · 07:45–08:35')
+            expect(wrapper.text()).toContain('3. Std · 10:00–10:50')
+            expect(wrapper.text()).toContain('Sondereinsatz')
+            expect(wrapper.text()).not.toContain('07:45–10:50')
+            expect(courseStore.courses[0].course_dates).toHaveLength(4)
+            const open = vi.spyOn((wrapper.vm as any).$refs.personalAppointments, 'open')
+            await wrapper.findAll('.personal-appointment-card').find((card) => card.text().includes('Sondereinsatz'))!.trigger('click')
+            expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 9, school_hours: [1, 3] }))
+            if (viewMode === 'table') expect(wrapper.findAll('th.timetable-day-header-cell').map((day) => day.text())).toContain('Sa07.03.')
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it.each(['table', 'list'])('renders a saved exception only on its own entry and hour in %s view', async (viewMode) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        courseStore.timetable_view_mode = viewMode
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            const definition = { id: 21, kind: 'consultation', title: 'Serie', date: '2026-03-06', repeat_until: '2026-04-10', school_hours: [5, 6], starts_at: '11:30', ends_at: '13:15', time_segments: [{ hour: 5, starts_at: '11:30', ends_at: '12:20' }, { hour: 6, starts_at: '12:25', ends_at: '13:15' }], title_exceptions: { '2026-03-06:6': 'Einzeltext' } }
+            await wrapper.setData({ appointmentDefinitions: [definition, { ...definition, id: 22, title_exceptions: {} }] })
+            expect(wrapper.findAll('.personal-appointment-card').filter((card) => card.text().includes('Einzeltext'))).toHaveLength(1)
+            const open = vi.spyOn((wrapper.vm as any).$refs.personalAppointments, 'open')
+            await wrapper.findAll('.personal-appointment-card').find((card) => card.text().includes('Einzeltext'))!.trigger('click')
+            expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 21, occurrenceDate: '2026-03-06', occurrenceHour: 6 }))
+            expect(wrapper.text()).toContain('Serie')
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it.each([[[1]], [[1, 2]], [[1, 3]]])('positions selected personal hours %j in their actual cells, joining only consecutive hours', async (hours) => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const times = [{ hour: 1, from: '07:45', until: '08:35' }, { hour: 2, from: '08:40', until: '09:30' }, { hour: 3, from: '09:35', until: '10:25' }]
+        useSchoolHourStore().school_hours = [...times, ...useSchoolHourStore().school_hours] as any
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [{ id: 90, kind: 'supplier_standby', title: 'XSUP', date: '2026-03-03', starts_at: '07:45', ends_at: times[hours.at(-1) - 1].until, school_hours: hours,
+                time_segments: times.filter((entry) => hours.includes(entry.hour)).map((entry) => ({ hour: entry.hour, starts_at: entry.from, ends_at: entry.until })), repeat_until: '2026-04-14' }] })
+            const firstCell = wrapper.find('td[data-date="2026-03-03"][data-hour="1"]')
+            expect(firstCell.text()).toContain('XSUP')
+            expect(firstCell.attributes('rowspan')).toBe(hours.includes(2) ? '2' : '1')
+            expect(wrapper.text()).not.toContain('Eigene Termine')
+            expect(wrapper.text()).not.toContain('Vor Unterricht')
+            if (hours.includes(3)) {
+                expect(wrapper.find('td[data-date="2026-03-03"][data-hour="2"]').find('.personal-appointment-card').exists()).toBe(false)
+                expect(wrapper.find('td[data-date="2026-03-03"][data-hour="3"]').text()).toContain('3. Std · 09:35–10:25')
+            }
+            const open = vi.spyOn((wrapper.vm as any).$refs.personalAppointments, 'open')
+            await firstCell.find('.personal-appointment-card').trigger('click')
+            expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 90, school_hours: hours, repeat_until: '2026-04-14' }))
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it('preserves a merged lesson and positions an overlapping personal appointment at its second hour', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [{ id: 91, kind: 'break_supervision', title: '', date: '2026-03-06', starts_at: '12:25', ends_at: '13:15', school_hours: [6], time_segments: [{ hour: 6, starts_at: '12:25', ends_at: '13:15' }], repeat_until: null }] })
+            const cell = wrapper.find('td[data-date="2026-03-06"][data-hour="5"]')
+            expect(cell.attributes('rowspan')).toBe('2')
+            expect(cell.findAll('.timetable-grid-course').map((entry) => entry.text())).toEqual(['Mathematik'])
+            const card = cell.find('.personal-appointment-card')
+            expect(card.text()).toContain('Pausenaufsicht')
+            expect((card.element as HTMLElement).style.gridRow).toBe('2 / span 1')
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it('positions free times within the raster while keeping outside times visible', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [
+                { id: 92, kind: 'consultation', title: '', date: '2026-03-06', starts_at: '11:40', ends_at: '12:40', repeat_until: null },
+                { id: 93, kind: 'day_care_standby', title: '', date: '2026-03-06', starts_at: '18:00', ends_at: '20:00', repeat_until: null },
+            ] })
+            const cell = wrapper.find('td[data-date="2026-03-06"][data-hour="5"]')
+            expect(cell.text()).toContain('Sprechstunde')
+            expect(cell.text()).toContain('11:40–12:40')
+            expect(cell.text()).not.toContain('Tagesbetreuung')
+            const outside = wrapper.findAll('tr.timetable-gap-row').find((row) => row.text().includes('Tagesbetreuung'))!
+            expect(outside.text()).not.toContain('Nach Unterricht')
+            expect(outside.text()).toContain('Tagesbetreuung')
+            expect(outside.text()).toContain('18:00–20:00')
+            expect(outside.text()).not.toContain('Sprechstunde')
+            const placement = (wrapper.vm as any).gapAppointmentsOnDay(new Date(2026, 2, 6), 6).find((entry: any) => entry.appointment.id === 93)
+            expect(placement.gapMinutes).toBe(285)
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it('places early midday and afternoon free times in chronological additional rows', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [
+                { id: 94, kind: 'standby', title: 'Früh', date: '2026-03-03', starts_at: '07:00', ends_at: '08:00', repeat_until: null },
+                { id: 95, kind: 'break_supervision', title: 'Pause', date: '2026-03-03', starts_at: '12:20', ends_at: '12:25', repeat_until: null },
+                { id: 96, kind: 'day_care_standby', title: 'Spät', date: '2026-03-03', starts_at: '18:00', ends_at: '20:00', repeat_until: null },
+            ] })
+            const rows = wrapper.findAll('tbody tr')
+            const early = rows.findIndex((row) => row.text().includes('Früh'))
+            const hour5 = rows.findIndex((row) => row.attributes('data-hour') === '5')
+            const pause = rows.findIndex((row) => row.attributes('data-gap-after') === '5')
+            const hour6 = rows.findIndex((row) => row.attributes('data-hour') === '6')
+            const late = rows.findIndex((row) => row.text().includes('Spät'))
+            expect(early).toBeLessThan(hour5)
+            expect(pause).toBeGreaterThan(hour5)
+            expect(pause).toBeLessThan(hour6)
+            expect(rows[pause].text()).toContain('12:20–12:25')
+            expect(late).toBeGreaterThan(hour6)
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
+
+    it('preserves course rowspans and places pause appointments inside their actual intervening row', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [{ id: 97, kind: 'break_supervision', title: 'Pausenaufsicht', date: '2026-03-06', starts_at: '12:20', ends_at: '12:25', repeat_until: null }] })
+            const cell = wrapper.find('td[data-date="2026-03-06"][data-hour="5"]')
+            expect(cell.attributes('rowspan')).toBe('3')
+            expect(cell.findAll('.timetable-grid-course')).toHaveLength(1)
+            const card = cell.find('.personal-appointment-card')
+            expect(card.text()).toContain('12:20–12:25')
+            expect((card.element as HTMLElement).style.gridRow).toBe('2 / span 1')
+            expect(wrapper.find('tr[data-gap-after="5"]').findAll('td[data-date="2026-03-06"]')).toHaveLength(0)
+        } finally { wrapper.unmount(); sessionStorage.clear() }
+    })
 
     it.each([
         { now: '2026-03-04T12:00:00Z', range: 'week', date: '2026-03-06' },
@@ -113,7 +317,7 @@ describe('MyTimetable automatic week selection', () => {
             try {
                 await flushPromises()
                 expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(
-                    viewMode === 'table' ? remaining : Number(remaining > 0),
+                    Number(remaining > 0),
                 )
             } finally {
                 wrapper.unmount()
@@ -137,15 +341,16 @@ describe('MyTimetable automatic week selection', () => {
         }
     })
 
-    it.each([[[5]], [[6]], [[5, 6]]])('displays cancelled hours %j individually and selects only actual teaching days', async (cancelledHours) => {
+    it.each([[[5]], [[6]], [[5, 6]]])('keeps cancelled hours %j separate from active blocks and selects only actual teaching days', async (cancelledHours) => {
         const { courseStore, mountTimetable } = prepareTimetable('2026-03-06T10:29:59Z')
         ;(courseStore.courses[0] as any).course_dates[0].cancelled_hours = cancelledHours
         const wrapper = mountTimetable()
         try {
             await flushPromises()
             await wrapper.setData({ range: 'week' })
-            expect(wrapper.findAll('.timetable-grid-item.timetable-item--free')).toHaveLength(cancelledHours.length)
-            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(2 - cancelledHours.length)
+            expect(wrapper.findAll('.timetable-grid-item.timetable-item--free')).toHaveLength(1)
+            expect(wrapper.findAll('.timetable-item--upcoming')).toHaveLength(Number(cancelledHours.length < 2))
+            expect(wrapper.find('.timetable-grid-item.timetable-item--free').text()).toContain('Entfallen')
             expect((wrapper.vm as any).highlightedTeachingDate).toBe(cancelledHours.length === 2 ? '2026-04-10' : '2026-03-06')
         } finally {
             wrapper.unmount()
@@ -280,7 +485,7 @@ describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', 
 
         try {
             await wrapper.setData({ range: 'week' })
-            const firstDateCellCount = viewMode === 'table' ? 2 : 1
+            const firstDateCellCount = 1
             const visibilitySelector = '[aria-label$="Anhang"], [aria-label$="Anhänge"]'
             expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount + 3)
             expect(wrapper.findAll('[aria-label="3 veröffentlichte Anhänge"]')).toHaveLength(firstDateCellCount)
@@ -383,7 +588,7 @@ describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', 
             await wrapper.setData({ range: 'week' })
             const indicatorSelector = '[aria-label="Curriculum-Eintrag zugeordnet"]'
             const indicators = wrapper.findAll(indicatorSelector)
-            expect(indicators).toHaveLength(viewMode === 'table' ? 2 : 1)
+            expect(indicators).toHaveLength(1)
             expect(indicators[0].attributes()).toMatchObject({
                 title: 'Curriculum-Eintrag zugeordnet', role: 'img', 'aria-hidden': 'false',
                 color: 'green-darken-2', size: '10',

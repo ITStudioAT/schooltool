@@ -10,6 +10,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeachingEntryDefinition extends Model
 {
+    /** @param array{mode: string, count?: int|null, mean?: array{mode: string, weights?: list<int|float|string>}}|null $configuration */
+    public static function normalizeStandardGradeOccurrences(?array $configuration): ?array
+    {
+        if ($configuration === null) {
+            return null;
+        }
+        $normalized = ['mode' => $configuration['mode'], 'count' => $configuration['mode'] === 'fixed' ? (int) $configuration['count'] : null];
+        if (isset($configuration['mean'])) {
+            $normalized['mean'] = ['mode' => $configuration['mean']['mode']];
+            if (isset($configuration['mean']['weights'])) {
+                $normalized['mean']['weights'] = array_map(fn (mixed $weight): float => (float) $weight, $configuration['mean']['weights']);
+            }
+        }
+
+        return $normalized;
+    }
+
     /** @use HasFactory<TeachingEntryDefinitionFactory> */
     use HasFactory;
 
@@ -46,6 +63,7 @@ class TeachingEntryDefinition extends Model
         'maximum_points',
         'points_grade_thresholds',
         'fixed_properties',
+        'standard_grade_occurrences',
         'property_evaluations',
         'calculation_mode',
         'allows_maximum_plus',
@@ -99,6 +117,7 @@ class TeachingEntryDefinition extends Model
         'enabled_special_properties' => 'array',
         'has_properties' => 'boolean',
         'fixed_properties' => 'array',
+        'standard_grade_occurrences' => 'array',
         'property_evaluations' => 'array',
         'has_notifications' => 'boolean',
         'notification_recipients' => 'array',

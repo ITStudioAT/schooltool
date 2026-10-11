@@ -41,16 +41,10 @@
                 <v-icon start>{{ isDayOverviewMode ? 'mdi-close' : 'mdi-view-list' }}</v-icon>
                 {{ isDayOverviewMode ? 'Heute schließen' : 'Heute' }}
             </v-btn>
-            <v-btn
-                v-if="!isDayOverviewMode"
-                size="small"
-                class="students-bulk-btn"
-                :variant="show_bulk_entry ? 'flat' : 'outlined'"
-                :color="show_bulk_entry ? 'warning' : 'primary'"
-                @click="toggleBulkEntry">
-                <v-icon v-if="show_bulk_entry" start>mdi-close</v-icon>
-                {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
-            </v-btn>
+            <v-btn v-if="!isDayOverviewMode" size="small" color="primary"
+                :variant="showCalculatedGrade ? 'flat' : 'outlined'" :aria-pressed="showCalculatedGrade"
+                :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings"
+                @click="toggleCalculatedGrade">Note berechnen</v-btn>
             <v-spacer />
             <v-btn-toggle
                 v-if="!isDayOverviewMode"
@@ -175,7 +169,7 @@
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
                                 :link="false">
-                                <div class="student-row d-flex flex-wrap align-center ga-2 w-100" :class="{ 'student-row--canceled': isStudentCanceled(student) }">
+                                <div class="student-row ga-2 w-100" :class="[{ 'student-row--canceled': isStudentCanceled(student) }, showPerformances && !show_bulk_entry ? 'student-row--performances' : 'd-flex flex-wrap align-center']">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
                                         v-model="bulk_entry_form.student_ids"
@@ -198,9 +192,6 @@
                                                 </v-icon>
                                             </v-btn>
                                         </div>
-                                        <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
-                                            {{ student.schoolclass || student.class }}
-                                        </v-chip>
                                         <div
                                             class="student-name"
                                             :class="studentNameClass(student)">
@@ -217,6 +208,9 @@
                                                     :title="studentSexTitle(student)">
                                                     {{ studentSexIcon(student) }}
                                                 </v-icon>
+                                                <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                                    {{ student.schoolclass || student.class }}
+                                                </v-chip>
                                                 <CourseStudentIndicators :student="studentForSelectedSemester(student)" :course-id="selected_course.id"
                                                     :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
                                                     :schoolyear="config.selected_schoolyear"
@@ -258,6 +252,8 @@
                                         :behaviour-entries="performanceData.behaviourEntries"
                                         :works="performanceData.works"
                                         :evaluations="performanceData.evaluations"
+                                        :grading-report="performanceData.gradingReport"
+                                        :show-calculated-grade="showCalculatedGrade"
                                         :schema="selectedCourseSchema"
                                         :uses-entry-areas="usesNewBulkEntryDefinitions"
                                         :active-semester="activeSemester"
@@ -325,6 +321,8 @@
     </ItsGridBox>
 </template>
 <script>
+import axios from 'axios'
+import { show as showCourseEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseEvaluationController'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
 import { teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
@@ -395,7 +393,9 @@ export default {
             performanceLoading: true,
             performanceLoadFailed: false,
             performanceRequestId: 0,
-            performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [] },
+            performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null },
+            showCalculatedGrade: false,
+            savingCalculatedGradePreference: false,
             schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
@@ -791,10 +791,16 @@ export default {
     },
 
     watch: {
+        'settings.teaching_show_calculated_grade': {
+            immediate: true,
+            handler(value) {
+                this.showCalculatedGrade = value === true
+            },
+        },
         'config.selected_schoolyear.id'(value, previous) {
             if (value === previous) return
             this.performanceRequestId++
-            this.performanceData = { entries: [], behaviourEntries: [], works: [], evaluations: [] }
+            this.performanceData = { entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null }
             this.performanceLoading = true
             this.courseStore?.index()
         },
@@ -875,6 +881,17 @@ export default {
     },
 
     methods: {
+        async toggleCalculatedGrade() {
+            if (this.savingCalculatedGradePreference) return
+            this.savingCalculatedGradePreference = true
+            try {
+                const value = !this.showCalculatedGrade
+                const saved = await this.teachingStore.saveSettings({ teaching_show_calculated_grade: value }, { notifySuccess: false })
+                if (saved) this.showCalculatedGrade = value
+            } finally {
+                this.savingCalculatedGradePreference = false
+            }
+        },
         studentForSelectedSemester(student) {
             const schoolyear = this.config?.selected_schoolyear
             const matchesSchoolyear = teachingCourseMatchesSchoolyear(this.selected_course, schoolyear)
@@ -892,17 +909,24 @@ export default {
             const requestId = ++this.performanceRequestId
             this.performanceLoading = true
             this.performanceLoadFailed = false
+            const schoolyearId = this.config?.selected_schoolyear?.id
             const results = await Promise.allSettled([
                 this.behaviourEntryStore.indexByCourse(courseId).then((success) => ({ success, data: this.behaviourEntryStore.courseEntries || [] })),
                 this.entryStore.indexByCourse(courseId).then((success) => ({ success, data: this.entryStore.courseEntries || [] })),
                 this.courseWorkStore.index(courseId).then((success) => ({ success, data: this.courseWorkStore.courseWorks || [] })),
                 this.categoryEvaluationStore.indexByCourse(courseId).then((success) => ({ success, data: this.categoryEvaluationStore.evaluations || [] })),
+                this.usesNewBulkEntryDefinitions
+                    ? axios.get(showCourseEvaluation.url(courseId, { query: { semester: 3 } })).then(({ data }) => ({
+                        success: String(data.data?.course_id) === String(courseId) && String(data.data?.schoolyear_id) === String(schoolyearId),
+                        data: data.data,
+                    }))
+                    : Promise.resolve({ success: true, data: null }),
             ])
             if (requestId !== this.performanceRequestId) return
             this.performanceLoadFailed = results.some((result) => result.status === 'rejected' || !result.value.success)
             if (!this.performanceLoadFailed) {
-                const [behaviourEntries, entries, works, evaluations] = results.map((result) => result.value.data)
-                this.performanceData = { behaviourEntries, entries, works, evaluations }
+                const [behaviourEntries, entries, works, evaluations, gradingReport] = results.map((result) => result.value.data)
+                this.performanceData = { behaviourEntries, entries, works, evaluations, gradingReport }
             }
             this.performanceLoading = false
         },
@@ -1683,6 +1707,49 @@ export default {
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
+.student-row--performances {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+}
+
+.student-row--performances .student-identity {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.student-row--performances :deep(.grading-part-cards) {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
+}
+
+.student-row--performances :deep(.performance-details) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+
+.student-row--performances :deep(.assignment-progress) {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    .student-row--performances {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .student-row--performances :deep(.grading-part-cards) {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .student-row--performances :deep(.performance-details) {
+        grid-row: 3;
+    }
+}
+
 .student-row--canceled {
     background: linear-gradient(180deg, #fefce8 0%, #fef9c3 100%);
     border-color: rgba(234, 179, 8, 0.2);
@@ -1810,10 +1877,6 @@ export default {
         flex: 1 1 0;
     }
 
-    .students-bulk-btn {
-        width: 100%;
-        margin-top: 6px;
-    }
 
     .students-attendance-check-btn {
         width: 100%;

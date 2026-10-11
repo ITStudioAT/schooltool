@@ -19,6 +19,7 @@ class TeachingEntryGradingPart extends Model
         'schoolyear_id',
         'user_id',
         'teaching_entry_area_id',
+        'grading_group_id',
         'name',
         'weight',
         'is_required',
@@ -27,13 +28,61 @@ class TeachingEntryGradingPart extends Model
         'points_assessment_mode',
         'individual_points_weighting_mode',
         'overall_points_grade_thresholds',
+        'sign_grade_thresholds',
+        'sign_adjustment',
     ];
 
     protected $attributes = ['weight' => 1, 'is_required' => false, 'allowed_entry_types' => 'all', 'points_assessment_mode' => 'individual', 'individual_points_weighting_mode' => 'weighted'];
 
     protected function casts(): array
     {
-        return ['weight' => 'decimal:3', 'is_required' => 'boolean', 'fixed_percentage' => 'decimal:3', 'overall_points_grade_thresholds' => 'array'];
+        return ['weight' => 'decimal:3', 'is_required' => 'boolean', 'fixed_percentage' => 'decimal:3', 'overall_points_grade_thresholds' => 'array', 'sign_grade_thresholds' => 'array', 'sign_adjustment' => 'array'];
+    }
+
+    /** @return list<string> */
+    public static function allowedEntryTypeOptions(): array
+    {
+        return ['all', 'points', 'non_points', 'signs', 'grades', 'signs_pts', 'signs_note', 'pts_notes'];
+    }
+
+    public static function entryTypeGroup(TeachingEntryDefinition $entry): string
+    {
+        if ($entry->properties_mode === 'points') {
+            return 'points';
+        }
+        if (in_array($entry->properties_mode, ['plus', 'plus_minus'], true)) {
+            return 'signs';
+        }
+        $properties = $entry->fixed_properties ?? [];
+        if (collect($properties)->contains(fn (mixed $value): bool => is_string($value) && preg_match('/^(?:[+\-−]+|~)$/u', trim($value)) === 1)
+            && collect($properties)->every(fn (mixed $value): bool => is_string($value) && (trim($value) === '0' || preg_match('/^(?:[+\-−]+|~)$/u', trim($value)) === 1))) {
+            return 'signs';
+        }
+
+        return 'grades';
+    }
+
+    public function allowsEntry(TeachingEntryDefinition $entry, ?string $allowedTypes = null): bool
+    {
+        $groups = match ($allowedTypes ?? $this->allowed_entry_types) {
+            'all' => ['signs', 'points', 'grades'],
+            'non_points', 'signs_note' => ['signs', 'grades'],
+            'signs_pts' => ['signs', 'points'],
+            'pts_notes' => ['points', 'grades'],
+            default => [$allowedTypes ?? $this->allowed_entry_types],
+        };
+
+        return in_array(self::entryTypeGroup($entry), $groups, true);
+    }
+
+    public static function isStandardGradeType(TeachingEntryDefinition $entry): bool
+    {
+        return $entry->calculation_mode === 'grades';
+    }
+
+    public function usesSignBalance(): bool
+    {
+        return in_array($this->points_assessment_mode, ['plus_minus', 'sign_grade', 'sign_adjust'], true);
     }
 
     public function overallMaximumPoints(): float
@@ -41,6 +90,22 @@ class TeachingEntryGradingPart extends Model
         return (float) (array_key_exists('overall_maximum_points', $this->getAttributes())
             ? $this->getAttributes()['overall_maximum_points']
             : $this->entryDefinitions()->where('properties_mode', 'points')->sum('maximum_points'));
+    }
+
+    public function hasValidSignGradeThresholds(): bool
+    {
+        $thresholds = $this->sign_grade_thresholds;
+        if (! is_array($thresholds) || count($thresholds) !== 4) {
+            return false;
+        }
+        foreach ([4, 3, 2, 1] as $grade) {
+            $value = $thresholds[$grade] ?? null;
+            if (! is_int($value) || abs($value) > 9007199254740991 || ($grade < 4 && $value <= $thresholds[$grade + 1])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function invalidateOverallPointsThresholds(): void
@@ -54,7 +119,7 @@ class TeachingEntryGradingPart extends Model
 
     protected function pointsAssessmentMode(): Attribute
     {
-        return Attribute::make(get: fn (?string $value): string => $this->allowed_entry_types === 'points' ? ($value ?? 'individual') : 'individual');
+        return Attribute::make(get: fn (?string $value): string => in_array($value, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean'], true) ? $value : ($this->allowed_entry_types === 'points' ? ($value ?? 'individual') : 'individual'));
     }
 
     public function school(): BelongsTo

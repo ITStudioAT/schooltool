@@ -81,6 +81,7 @@ test('validates repeated sign grades on entry create and update', function (stri
     $response = $this->putJson("/api/admin/teaching/course_student_entries/{$entry->id}", ['type' => 'MA', 'grade' => $grade]);
     if ($valid) {
         $response->assertOk()->assertJsonPath('data.grade', $grade);
+        expect($entry->fresh()->grade)->toBe($grade);
     } else {
         $response->assertUnprocessable()->assertJsonValidationErrors('grade');
         expect($entry->fresh()->grade)->toBe('+');
@@ -90,6 +91,7 @@ test('validates repeated sign grades on entry create and update', function (stri
     ['points', '-1', false], ['points', '10.6', false], ['points', 'abc', false], ['points', '1e999', false],
     ['plus', '+++', true], ['plus', '-', false], ['plus', '1', false],
     ['plus_minus', '+++', true], ['plus_minus', '---', true], ['plus_minus', '+-', false],
+    ['plus_minus', '0', true], ['plus_minus', '~', true], ['plus_minus', '~~', false],
     ['plus_minus', null, true], ['plus', str_repeat('+', 51), false],
     ['plus', 'NA', true], ['plus_minus', 'VL', true], ['fixed', 'F', true], ['free', 'F', false, []],
     ['plus', 'NA', false, []],

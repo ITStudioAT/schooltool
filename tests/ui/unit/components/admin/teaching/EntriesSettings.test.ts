@@ -1,7 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { shallowMount as mountShallow } from '@vue/test-utils'
 import Entries from '@/pages/admin/teaching/settings/components/Entries.vue'
+import { gradingAdjustmentState, gradingAdjustmentChangeError } from '@/helpers/gradingAdjustmentStructure'
+import { simulationEntryGrade, simulationPartGrade, simulationPartSummary, simulationPartExplanation, simulationStructure } from '@/helpers/gradingSimulation'
+import { createPinia } from 'pinia'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+
+function shallowMount(component, options: any = {}) {
+    return mountShallow(component, { ...options, global: { ...options.global,
+        stubs: { ...options.global?.stubs, GradingGroupFrame: false },
+    } })
+}
 
 function entryFixture(overrides = {}) {
     return {
@@ -24,6 +35,791 @@ function entryFixture(overrides = {}) {
 }
 
 describe('Teaching entries settings', () => {
+    it('labels optional grading parts without changing or duplicating their stored name', () => {
+        const name = (Entries as any).methods.gradingPartDisplayName
+        expect(name({ name: 'Prüfung', is_required: false })).toBe('Prüfung (optional)')
+        expect(name({ name: 'Prüfung', is_required: true })).toBe('Prüfung')
+        expect(name({ name: 'Prüfung (optional)', is_required: false })).toBe('Prüfung (optional)')
+    })
+
+    it('keeps a configured optional adjustment neutral when no signs have been entered', () => {
+        const base = { id: 1, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 5 })] }
+        const adjustment = { id: 2, is_required: false, points_assessment_mode: 'sign_adjust', entries: [entryFixture({ id: 2 })], sign_adjustment: { improvement_factor: '0.25', max_improvement: '1.25', deterioration_factor: '0.25', max_deterioration: '1' } }
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'] }).total).toBe('1')
+        adjustment.is_required = true
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'] }).total).toBeNull()
+    })
+
+    it('shows points totals only for actual entered assessments and preserves invalid input', () => {
+        const part = { points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 10 }), entryFixture({ id: 2, properties_mode: 'points', maximum_points: 100 })] }
+        expect(simulationPartSummary(part, { 1: ['5', '10'] })).toBe('15 / 20 Punkte · 75 % · Note 2')
+        expect(simulationPartSummary(part, { 1: ['8.749999'] })).toBe('8,749999 / 10 Punkte · 87,49999 % · Note 2')
+        expect(simulationPartSummary(part, {})).toBe('–')
+        expect(simulationPartSummary(part, { 1: [''] })).toBe('–')
+    })
+
+    it('shows signed half balances even when an adjustment has no complete configuration', () => {
+        const part = { id: 20, points_assessment_mode: 'sign_adjust', entries: [entryFixture()] }
+        expect(simulationPartSummary(part, { 1: ['++', '-', '~', '0'] })).toBe('Saldo +1,5')
+        expect(simulationPartSummary(part, { 1: ['-', '~'] })).toBe('Saldo −0,5')
+        expect(simulationPartSummary(part, { 1: ['+', '-'] })).toBe('Saldo 0')
+    })
+
+    it('explains actual note weights and adjustment numbers', () => {
+        const entry = entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [70, 30] } } })
+        const part = { id: 1, points_assessment_mode: 'grade_mean', entries: [entry] }
+        expect(simulationPartExplanation(part, { 1: ['1', '3'] })).toBe('(1 × 70 + 3 × 30) / 100 = 1,6')
+        const adjustment = { id: 2, points_assessment_mode: 'sign_adjust', entries: [entryFixture({ id: 2 })], sign_adjustment: { improvement_factor: '0.25', max_improvement: '0.5', deterioration_factor: '0.25', max_deterioration: '0.5' } }
+        const result = simulationStructure([part, adjustment], [], null, { 1: ['1', '3'], 2: ['++++'] })
+        expect(result.partSteps[2]).toBe('Basisnote 1,6; Saldo 4 × 0,25 = 1; angewandt 0,5. 1,6 − 0,5 = 1,1')
+        expect(result.parts[2]).toBe('1,1')
+        expect(result.total).toBe('1')
+    })
+
+    it.each([[45, 55, '1,9'], ['1,5', '1,3', '≈ 2,0714']])('uses saved relative child weights %s / %s without intermediate rounding', (firstWeight, secondWeight, expected) => {
+        const parts = [1, 2].map((id) => ({ id, points_assessment_mode: 'grade_each', is_required: true, entries: [entryFixture({ id, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }))
+        const groups = [{ id: 'basis', part_ids: [1, 2], weights: [{ part_id: 1, weight: firstWeight }, { part_id: 2, weight: secondWeight }] }]
+        expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['1'] }).groups.basis).toBe(expected)
+        expect(simulationStructure(parts, groups, null, { 1: ['3'] }).total).toBeNull()
+    })
+
+    it('explains the complete root calculation with actual weights and final commercial rounding', () => {
+        const basis = { id: 1, points_assessment_mode: 'grade_mean', entries: [entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [68, 32] } } })] }
+        const exam = { id: 2, points_assessment_mode: 'grade_each', entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const groups = [{ id: 'basis', part_ids: [1], weights: [{ part_id: 1, weight: 1 }] }]
+        const weights = [{ group_id: 'basis', weight: 2 }, { part_id: 2, weight: 1 }]
+        const result = simulationStructure([basis, exam], groups, weights, { 1: ['2', '1'], 2: ['1'] })
+        expect(result.totalStep).toBe('(2 × 1,68 + 1 × 1) / 3 = 4,36 / 3 ≈ 1,453333…; kaufmännisch → Note 1')
+        expect(result.total).toBe('1')
+        basis.entries[0].standard_grade_occurrences.mean = { mode: 'equal' } as any
+        basis.entries[0].standard_grade_occurrences.count = 3
+        const repeating = simulationStructure([basis, exam], groups, weights, { 1: ['2', '1', '1'], 2: ['1'] })
+        expect(repeating.groups.basis).toBe('≈ 1,3333')
+        expect(repeating.totalStep).toBe('(2 × (4/3) + 1 × 1) / 3 = (11/3) / 3 ≈ 1,222222…; kaufmännisch → Note 1')
+    })
+
+    it('omits only absent optional standard grades and their weights in root and nested contexts', () => {
+        const optional = { id: 1, points_assessment_mode: 'grade_each', is_required: false, entries: [entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const exam = { id: 2, points_assessment_mode: 'grade_each', is_required: true, entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const weights = [{ part_id: 1, weight: 2 }, { part_id: 2, weight: 1 }]
+        const evaluate = (values = { 2: ['3'] }, groups = [], rootWeights = weights) => simulationStructure([optional, exam], groups, rootWeights, values)
+        expect(evaluate().total).toBe('3')
+        expect(evaluate().totalStep).toBe('(1 × 3) / 1 = 3 / 1 = 3; kaufmännisch → Note 3')
+        expect(evaluate({ 1: ['1'], 2: ['3'] }).total).toBe('2')
+        for (const invalid of ['11', '', 'F']) expect(evaluate({ 1: [invalid], 2: ['3'] }).total).toBeNull()
+        expect(evaluate({} as any).total).toBeNull()
+        optional.is_required = true
+        expect(evaluate().total).toBeNull()
+        optional.is_required = false
+        const nested = [{ id: 'basis', part_ids: [1, 2], weights }]
+        const nestedResult = evaluate(undefined, nested as any, [{ group_id: 'basis', weight: 4 }] as any)
+        expect(nestedResult.groups.basis).toBe('3')
+        expect(nestedResult.total).toBe('3')
+        expect(evaluate({} as any, nested as any, [{ group_id: 'basis', weight: 4 }] as any).total).toBeNull()
+        const onlyOptionalGroup = [{ id: 'optional', part_ids: [1], weights: [{ part_id: 1, weight: 2 }] }]
+        expect(evaluate(undefined, onlyOptionalGroup as any, [{ group_id: 'optional', weight: 4 }, { part_id: 2, weight: 1 }] as any).total).toBe('3')
+        expect(evaluate({ 1: ['11'], 2: ['3'] }, onlyOptionalGroup as any, [{ group_id: 'optional', weight: 4 }, { part_id: 2, weight: 1 }] as any).total).toBeNull()
+        expect(simulationStructure([optional], onlyOptionalGroup, [{ group_id: 'optional', weight: 4 }], {}).total).toBeNull()
+        expect(evaluate(undefined, [{ id: 'basis', part_ids: [1, 2] }] as any, [{ group_id: 'basis', weight: 4 }] as any).total).toBeNull()
+        expect(evaluate(undefined, [], [{ part_id: 2, weight: 1 }] as any).total).toBeNull()
+    })
+
+    it('keeps missing points grades and adjustments of other calculation types blocking', () => {
+        const points = { id: 1, points_assessment_mode: 'sum_percent', is_required: false, entries: [entryFixture({ properties_mode: 'points', maximum_points: 10 })] }
+        const exam = { id: 2, points_assessment_mode: 'grade_each', is_required: false, entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        expect(simulationStructure([points, exam], [], [{ part_id: 1, weight: 1 }, { part_id: 2, weight: 1 }], { 2: ['3'] }).total).toBeNull()
+        const adjustment = { id: 3, points_assessment_mode: 'sign_adjust', is_required: true, entries: [entryFixture({ id: 3 })], sign_adjustment: { improvement_factor: 0.25, max_improvement: 0.5, deterioration_factor: 0.25, max_deterioration: 0.5 } }
+        expect(simulationStructure([points, adjustment], [], null, { 3: ['+'] }).total).toBeNull()
+        expect(simulationStructure([exam, adjustment], [], null, { 2: ['3'] }).total).toBeNull()
+    })
+
+    it('omits empty optional grade means but keeps partially entered means incomplete', () => {
+        const mean = { id: 1, points_assessment_mode: 'grade_mean', is_required: false, entries: [entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'equal' } } })] }
+        const exam = { id: 2, points_assessment_mode: 'grade_each', is_required: true, entries: [entryFixture({ id: 2, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const weights = [{ part_id: 1, weight: 2 }, { part_id: 2, weight: 1 }]
+        expect(simulationStructure([mean, exam], [], weights, { 2: ['3'] }).total).toBe('3')
+        expect(simulationStructure([mean, exam], [], weights, { 1: ['1'], 2: ['3'] }).total).toBeNull()
+        expect(simulationStructure([mean, exam], [], weights, { 1: ['1', '2'], 2: ['3'] }).total).toBe('2')
+        mean.is_required = true
+        expect(simulationStructure([mean, exam], [], weights, { 2: ['3'] }).total).toBeNull()
+    })
+
+    it('removes the named static descriptions only from simulation summaries', () => {
+        const summary = (Entries as any).methods.gradingPartSummary
+        const part = { points_assessment_mode: 'sum_percent', entries: [] }
+        expect(summary(part, false)).toEqual([])
+        expect(summary(part, true)).toEqual(['Benotung aufgrund der addierten Punkte.'])
+        const adjustment = { points_assessment_mode: 'sign_adjust', sign_adjustment: { improvement_factor: 1, max_improvement: 1, deterioration_factor: 1, max_deterioration: 1 }, entries: [] }
+        expect(summary(adjustment, false)).toEqual([])
+        expect(summary(adjustment, true)).toEqual(['Bestehende Note anhand des Netto-Saldos, der Faktoren und maximalen Notenwertänderungen anpassen.'])
+        const exam = { points_assessment_mode: 'grade_each', entries: [entryFixture({ name: 'Prüfung', properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        expect(summary(exam, false)).toEqual([])
+        expect(summary(exam, true)).toEqual(['Eine Prüfung pro Semester.'])
+        expect(simulationPartExplanation({ ...part, entries: [entryFixture({ properties_mode: 'points', maximum_points: 10 })] }, { 1: ['10'] })).toBe('ab 87,5 % → Note 1')
+    })
+
+    it.each([['+', '2'], ['~', '2'], ['-', '3'], ['0', '3']])('adjusts the unrounded nested basis with balance %s and half-up rounding', (sign, expected) => {
+        const parts = [1, 2].map((id) => ({ id, points_assessment_mode: 'grade_each', entries: [entryFixture({ id, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }))
+        parts.push({ id: 3, points_assessment_mode: 'sign_adjust', sign_adjustment: { improvement_factor: '0.25', max_improvement: '0.5', deterioration_factor: '0.25', max_deterioration: '0.5' }, entries: [entryFixture({ id: 3 })] } as any)
+        const groups = [{ id: 'inner', parent_group_id: 'basis', part_ids: [1, 2], weights: [{ part_id: 1, weight: 1 }, { part_id: 2, weight: 1 }] }, { id: 'basis', part_ids: [], weights: [{ group_id: 'inner', weight: 40 }] }]
+        expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['2'], 3: [sign] }).total).toBe(expected)
+        expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['2'], 3: ['++++++'] }).total).toBe('2')
+        expect(simulationStructure(parts, groups, null, { 1: ['3'], 2: ['2'] }).total).toBeNull()
+    })
+
+    it('keeps exact near-half values until final rounding and uses complete root child weights', () => {
+        const base = { id: 1, points_assessment_mode: 'grade_mean', entries: [entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: ['50.0001', '49.9999'] } } })] }
+        const adjustment = { id: 2, points_assessment_mode: 'sign_adjust', entries: [entryFixture({ id: 2 })], sign_adjustment: { improvement_factor: '0', max_improvement: '0', deterioration_factor: '0', max_deterioration: '0' } }
+        const result = simulationStructure([base, adjustment], [], null, { 1: ['2', '3'], 2: ['0'] })
+        expect(result.parts[2]).toBe('2,499999')
+        expect(result.total).toBe('2')
+        const third = { id: 3, points_assessment_mode: 'grade_each', is_required: true, entries: [entryFixture({ id: 3, properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })] }
+        const groups = [{ id: 'basis', part_ids: [1, 2] }]
+        const weights = [{ group_id: 'basis', weight: 2 }, { part_id: 3, weight: 1 }]
+        expect(simulationStructure([base, adjustment, third], groups, weights, { 1: ['2', '3'], 2: ['0'] }).total).toBeNull()
+        expect(simulationStructure([base, adjustment, third], groups, weights, { 1: ['2', '3'], 2: ['0'], 3: ['4'] }).total).toBe('3')
+    })
+
+    it.each([
+        ['0', '5'], ['4,999', '5'], ['5', '4'], ['6,25', '3'], ['7,5', '2'], ['8,75', '1'], ['10', '1'],
+        ['', null], ['11', null], ['F', null],
+    ])('calculates the fixed point scale exactly for %s points (%s)', (value, expected) => {
+        const entry = entryFixture({ properties_mode: 'points', maximum_points: 10 })
+        const part = { points_assessment_mode: 'sum_percent', entries: [entry] }
+        expect(simulationEntryGrade(entry, part, { 1: [value] })).toBe(expected)
+        expect(simulationPartGrade(part, { 1: [value] })).toBe(expected)
+    })
+
+    it('adds possible points only for entered assessments across point types', () => {
+        const first = entryFixture({ properties_mode: 'points', maximum_points: 5 })
+        const second = entryFixture({ id: 2, properties_mode: 'points', maximum_points: 15 })
+        const part = { points_assessment_mode: 'sum_percent', entries: [first, second] }
+        expect(simulationPartGrade(part, {})).toBeNull()
+        expect(simulationPartGrade(part, { 1: ['5'] })).toBe('1')
+        expect(simulationPartGrade(part, { 1: ['5'], 2: ['5'] })).toBe('4')
+        expect(simulationPartGrade(part, { 1: ['5', '0'], 2: ['5'] })).toBe('5')
+        expect(simulationPartGrade({ ...part, entries: [{ ...first, maximum_points: null }] }, { 1: ['5'] })).toBeNull()
+    })
+
+    it('uses saved increasing sign thresholds for the complete part balance including neutral and half plus', () => {
+        const part = { points_assessment_mode: 'sign_grade', sign_grade_thresholds: { 4: -2, 3: 0, 2: 2, 1: 4 },
+            entries: [entryFixture({ properties_mode: 'plus_minus' }), entryFixture({ id: 2, properties_mode: 'plus_minus' })] }
+        expect(simulationPartGrade(part, {})).toBeNull()
+        expect(simulationPartGrade(part, { 1: ['--', '0'], 2: ['~'] })).toBe('4')
+        expect(simulationPartGrade(part, { 1: ['--', '0', '++++'], 2: ['~'] })).toBe('2')
+        expect(simulationPartGrade(part, { 1: ['---'] })).toBe('5')
+        expect(simulationPartGrade(part, { 1: ['+-'] })).toBeNull()
+        expect(simulationPartGrade({ ...part, sign_grade_thresholds: { 4: 0, 3: 0, 2: 2, 1: 4 } }, { 1: ['++++'] })).toBeNull()
+        expect(simulationPartGrade({ ...part, points_assessment_mode: 'sign_adjust' }, { 1: ['++++'] })).toBeNull()
+        expect(simulationPartGrade({ ...part, sign_grade_thresholds: null }, { 1: ['++++'] })).toBeNull()
+    })
+
+    it('uses only complete configured standard means and keeps exact values without new rounding', () => {
+        const entry = entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [40, 60] } } })
+        const part = { points_assessment_mode: 'grade_mean', entries: [entry] }
+        expect(simulationPartGrade(part, { 1: ['2'] })).toBeNull()
+        expect(simulationPartGrade(part, { 1: ['2', '3'] })).toBe('2,6')
+        expect(simulationPartGrade(part, { 1: ['2', '3', '4'] })).toBeNull()
+        expect(simulationPartGrade(part, { 1: ['2', 'F'] })).toBeNull()
+        entry.standard_grade_occurrences.mean.weights = [40, 50]
+        expect(simulationPartGrade(part, { 1: ['2', '3'] })).toBeNull()
+        entry.standard_grade_occurrences = { mode: 'fixed', count: 3, mean: { mode: 'equal' } } as any
+        expect(simulationPartGrade(part, { 1: ['2', '3', '3'] })).toBe('8/3')
+        expect(simulationPartGrade({ ...part, points_assessment_mode: 'grade_each' }, { 1: ['2', '3', '3'] })).toBeNull()
+        entry.standard_grade_occurrences = { mode: 'single' } as any
+        expect(simulationPartGrade(part, { 1: ['3'] })).toBe('3')
+        expect(simulationPartGrade(part, { 1: ['3', '2'] })).toBeNull()
+        expect(simulationPartGrade({ ...part, entries: [entry, { ...entry, id: 2 }] }, { 1: ['3'], 2: ['2'] })).toBeNull()
+    })
+
+    it('updates the point summary only on the parent while groups without weights stay undefined', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'basis', name: 'Basisnote', part_ids: [20] }] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Punkte', teaching_entry_area_id: 10, points_assessment_mode: 'sum_percent' }],
+                entries: [entryFixture({ name: 'Auftrag', properties_mode: 'points', maximum_points: 5, teaching_entry_grading_part_id: 20 })] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const simulation = wrapper.get('[aria-label="Simulation"]')
+            const vm = wrapper.vm as any
+            expect(simulation.find('[aria-label="Simulationsnote: Auftrag"]').exists()).toBe(false)
+            vm.openSimulationEntry(vm.entries[0]); vm.simulationEntryValue = '5'; vm.addSimulationEntry()
+            await vm.$nextTick()
+            expect(simulation.find('[aria-label="Simulationsnote: Auftrag"]').exists()).toBe(false)
+            expect(simulation.get('[aria-label="Simulationsnote: Punkte"]').text()).toBe('5 / 5 Punkte · 100 % · Note 1')
+            expect(simulation.get('[aria-label="Simulationsnote: Basisnote"]').text()).toBe('–')
+            vm.openSimulationEntry(vm.entries[0]); vm.simulationEntryValue = '0'; vm.addSimulationEntry()
+            await vm.$nextTick()
+            expect(simulation.get('[aria-label="Simulationsnote: Punkte"]').text()).toBe('5 / 10 Punkte · 50 % · Note 4')
+            await simulation.get('[aria-label="Simulationseintrag entfernen: M, 0, Eintrag 2"]').trigger('click')
+            expect(simulation.get('[aria-label="Simulationsnote: Punkte"]').text()).toBe('5 / 5 Punkte · 100 % · Note 1')
+        } finally { wrapper.unmount() }
+    })
+
+    it('restores browser values after remount, persists removal and isolates user, year and area contexts', async () => {
+        const saved = new Map()
+        vi.stubGlobal('localStorage', { getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) })
+        const pinia = createPinia()
+        const adminStore = useAdminStore(pinia)
+        adminStore.config = { user: { id: 7 }, selected_school: { id: 8 }, selected_schoolyear: { id: 9 } } as any
+        const mountSimulation = () => shallowMount({ ...Entries, methods: { ...(Entries as any).methods, loadData() {} } }, {
+            data: () => ({
+                areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }, { id: 11, name: 'Oberstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Noten', teaching_entry_area_id: 10 }],
+                entries: [entryFixture({ properties_mode: 'grades', teaching_entry_grading_part_id: 20, standard_grade_occurrences: { mode: 'single' } })] }),
+            global: { plugins: [pinia], stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        let wrapper = mountSimulation()
+        try {
+            let vm = wrapper.vm as any
+            await vm.$nextTick()
+            vm.openSimulationEntry(vm.entries[0]); vm.simulationEntryValue = '3'; vm.addSimulationEntry()
+            const firstKey = vm.simulationStorageKey
+            wrapper.unmount(); wrapper = mountSimulation(); vm = wrapper.vm as any
+            vm.restoreSimulationEntries()
+            expect(vm.simulationEntries).toEqual({ 1: ['3'] })
+            vm.activeAreaId = 11
+            await vm.$nextTick()
+            expect(vm.simulationEntries).toEqual({})
+            vm.activeAreaId = 10
+            await vm.$nextTick()
+            expect(vm.simulationEntries).toEqual({ 1: ['3'] })
+            adminStore.config.user.id = 99
+            await vm.$nextTick()
+            expect(vm.simulationEntries).toEqual({})
+            adminStore.config.user.id = 7
+            adminStore.config.selected_schoolyear.id = 99
+            await vm.$nextTick()
+            expect(vm.simulationEntries).toEqual({})
+            adminStore.config.selected_schoolyear.id = 9
+            await vm.$nextTick()
+            vm.removeSimulationEntry(1, 0)
+            vm.restoreSimulationEntries()
+            expect(vm.simulationEntries).toEqual({ 1: [] })
+            saved.set(firstKey, '{broken')
+            expect(() => vm.restoreSimulationEntries()).not.toThrow()
+            expect(vm.simulationEntries).toEqual({})
+            saved.set(firstKey, JSON.stringify({ 1: ['2', '3', null, 4, 'bad'], 999: ['4'] }))
+            vm.restoreSimulationEntries()
+            expect(vm.simulationEntries).toEqual({ 1: ['2', '3'] })
+            expect(vm.simulationEntryLimitReached(vm.entries[0])).toBe(true)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+    it.each([
+        [{ mode: 'single' }, 1],
+        [{ mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [40, 60] } }, 2],
+        [{ mode: 'fixed', count: 3 }, 3],
+        [{ mode: 'unlimited' }, null],
+    ])('limits standard grade simulation occurrences using %j and frees a slot after removal', async (configuration, limit) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Standardnoten', teaching_entry_area_id: 10 }],
+                entries: [entryFixture({ properties_mode: 'grades', teaching_entry_grading_part_id: 20, standard_grade_occurrences: configuration }),
+                    entryFixture({ id: 2, short_name: 'P', properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'], teaching_entry_grading_part_id: 20, standard_grade_occurrences: { mode: 'single' } })],
+                simulationEntries: { 2: ['3'] } }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            const entry = vm.entries[0]
+            for (let index = 0; index < (limit ?? 4); index++) {
+                vm.openSimulationEntry(entry)
+                vm.simulationEntryValue = '2'
+                vm.addSimulationEntry()
+            }
+            await vm.$nextTick()
+            expect(vm.simulationEntryLimitReached(entry)).toBe(limit !== null)
+            expect(wrapper.get('[aria-label="Simulationseintrag hinzufügen: M"]').attributes('disabled')).toBe(String(limit !== null))
+            if (limit !== null) {
+                vm.openSimulationEntry(entry)
+                expect(vm.simulationEntryDialogOpen).toBe(false)
+                vm.simulationEntryId = entry.id
+                vm.simulationEntryValue = '4'
+                vm.simulationEntryDialogOpen = true
+                vm.addSimulationEntry()
+                expect(vm.simulationEntries[1]).toHaveLength(limit)
+                vm.closeSimulationEntry()
+                await wrapper.get('[aria-label="Simulationseintrag entfernen: M, 2, Eintrag 1"]').trigger('click')
+                expect(wrapper.get('[aria-label="Simulationseintrag hinzufügen: M"]').attributes('disabled')).toBe('false')
+                vm.openSimulationEntry(entry)
+                vm.simulationEntryValue = '4'
+                vm.addSimulationEntry()
+                expect(vm.simulationEntries[1]).toHaveLength(limit)
+                expect(vm.simulationEntries[1].at(-1)).toBe('4')
+            } else {
+                vm.openSimulationEntry(entry)
+                vm.simulationEntryValue = '4'
+                vm.addSimulationEntry()
+                expect(vm.simulationEntries[1]).toHaveLength(5)
+            }
+            expect(vm.simulationEntries[2]).toEqual(['3'])
+        } finally { wrapper.unmount() }
+    })
+
+    it('rechecks an occurrence limit changed while a simulation dialog is open without deleting saved values', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Schularbeiten', teaching_entry_area_id: 10 }],
+                entries: [entryFixture({ properties_mode: 'grades', teaching_entry_grading_part_id: 20, standard_grade_occurrences: { mode: 'fixed', count: 3 } })],
+                simulationEntries: { 1: ['2', '3'] } }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            vm.openSimulationEntry(vm.entries[0])
+            vm.simulationEntryValue = '1'
+            vm.entries[0].standard_grade_occurrences = { mode: 'single' }
+            await vm.$nextTick()
+            expect(wrapper.get('[aria-label="Simulationseintrag übernehmen"]').attributes('disabled')).toBeDefined()
+            vm.addSimulationEntry()
+            expect(vm.simulationEntries[1]).toEqual(['2', '3'])
+        } finally { wrapper.unmount() }
+    })
+    it('removes exactly one local simulation occurrence while retaining other values and entry types', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Mitarbeit', teaching_entry_area_id: 10 }],
+                entries: [entryFixture({ teaching_entry_grading_part_id: 20 }), entryFixture({ id: 2, short_name: 'P', teaching_entry_grading_part_id: 20 })],
+                simulationEntries: { 1: ['+', '-', '+'], 2: ['~'] } }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const write = vi.fn()
+        vi.stubGlobal('axios', { post: write, put: write, patch: write, delete: write })
+        try {
+            const vm = wrapper.vm as any
+            const original = JSON.stringify({ entries: vm.entries, areas: vm.areas, parts: vm.gradingParts })
+            const simulation = wrapper.get('[aria-label="Simulation"]')
+            await simulation.get('[aria-label="Simulationseintrag entfernen: M, +, Eintrag 3"]').trigger('click')
+            expect(vm.simulationEntries).toEqual({ 1: ['+', '-'], 2: ['~'] })
+            expect(simulation.findAll('[aria-label^="Simulationseintrag entfernen:"]')).toHaveLength(3)
+            await simulation.get('[aria-label="Simulationseintrag entfernen: P, ~, Eintrag 1"]').trigger('click')
+            expect(vm.simulationEntries).toEqual({ 1: ['+', '-'], 2: [] })
+            expect(simulation.findAll('[aria-label="Simulationseinträge"]')).toHaveLength(1)
+            expect(wrapper.get('[aria-label="Semesternote"]').find('[aria-label^="Simulationseintrag entfernen:"]').exists()).toBe(false)
+            expect(JSON.stringify({ entries: vm.entries, areas: vm.areas, parts: vm.gradingParts })).toBe(original)
+            expect(write).not.toHaveBeenCalled()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+    it.each([
+        ['points', '0', true], ['points', '5', true], ['points', '2,5', true],
+        ['points', '6', false], ['points', '-1', false], ['points', 'Infinity', false], ['points', '', false],
+        ['plus_minus', '+++', true], ['plus_minus', '--', true], ['plus_minus', '0', true], ['plus_minus', '~', true],
+        ['plus_minus', '+-', false], ['plus_minus', '+'.repeat(51), false],
+        ['plus', '++', true], ['plus', '-', false],
+        ['grades', '1', true], ['grades', '5', true], ['grades', '6', false],
+        ['fixed', 'gut', true], ['fixed', 'unbekannt', false],
+    ])('keeps a %s simulation value %s local and validates it before adding (%s)', async (mode, value, valid) => {
+        const entry = entryFixture({ teaching_entry_grading_part_id: 20, properties_mode: mode, maximum_points: 5, fixed_properties: ['gut', 'offen'] })
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Mitarbeit', teaching_entry_area_id: 10 }], entries: [entry] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const write = vi.fn()
+        vi.stubGlobal('axios', { post: write, put: write, patch: write, delete: write })
+        try {
+            const vm = wrapper.vm as any
+            const original = JSON.stringify({ entries: vm.entries, areas: vm.areas, parts: vm.gradingParts })
+            const simulation = wrapper.get('[aria-label="Simulation"]')
+            expect(wrapper.get('[aria-label="Semesternote"]').find('[aria-label^="Simulationseintrag hinzufügen:"]').exists()).toBe(false)
+            await simulation.get('[aria-label="Simulationseintrag hinzufügen: M"]').trigger('click')
+            expect(vm.simulationEntryDialogOpen).toBe(true)
+            vm.simulationEntryValue = value
+            await vm.$nextTick()
+            expect(Boolean(vm.simulationEntryError)).toBe(!valid)
+            await wrapper.get('[aria-label="Simulationseintrag übernehmen"]').trigger('click')
+            expect(vm.simulationEntries[entry.id] || []).toEqual(valid ? [value] : [])
+            if (valid) {
+                expect(simulation.get('[aria-label="Simulationseinträge"]').text()).toBe(value)
+                expect(wrapper.get('[aria-label="Semesternote"]').find('[aria-label="Simulationseinträge"]').exists()).toBe(false)
+                expect(vm.simulationEntryDialogOpen).toBe(false)
+            }
+            expect(JSON.stringify({ entries: vm.entries, areas: vm.areas, parts: vm.gradingParts })).toBe(original)
+            expect(write).not.toHaveBeenCalled()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('cancels a simulation draft and rechecks changed definitions before adding', () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [{ id: 20, name: 'Punkte', teaching_entry_area_id: 10 }],
+                entries: [entryFixture({ teaching_entry_grading_part_id: 20, properties_mode: 'points', maximum_points: 5 })] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            vm.openSimulationEntry(vm.entries[0])
+            vm.simulationEntryValue = '4'
+            vm.closeSimulationEntry()
+            expect(vm.simulationEntries).toEqual({})
+            vm.openSimulationEntry(vm.entries[0])
+            expect(vm.simulationEntryValue).toBe('')
+            vm.simulationEntryValue = '4'
+            vm.entries[0].maximum_points = 3
+            vm.addSimulationEntry()
+            expect(vm.simulationEntries).toEqual({})
+            vm.entries[0].teaching_entry_grading_part_id = null
+            vm.addSimulationEntry()
+            expect(vm.simulationEntries).toEqual({})
+        } finally { wrapper.unmount() }
+    })
+    it('mirrors the current nested structure in Simulation without mutation controls or weights', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({
+                areas: [{ id: 10, name: 'Unterstufe', grading_level_weights: [{ group_id: 'outer', weight: 73 }], grading_part_groups: [
+                    { id: 'outer', name: 'Gesamtnote', part_ids: [20] },
+                    { id: 'basis', name: 'Basisnote', parent_group_id: 'outer', part_ids: [] },
+                    { id: 'inner', name: 'Prüfungsgruppe', parent_group_id: 'basis', part_ids: [21, 22], weights: [{ part_id: 21, weight: 45 }, { part_id: 22, weight: 55 }] },
+                ] }],
+                activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [
+                    { id: 20, name: 'Mitarbeit', teaching_entry_area_id: 10, points_assessment_mode: 'sign_adjust' },
+                    { id: 21, name: 'Prüfung', teaching_entry_area_id: 10, points_assessment_mode: 'grade_mean' },
+                    { id: 22, name: 'Punktearbeit', teaching_entry_area_id: 10, points_assessment_mode: 'sum_percent' },
+                ],
+                entries: [entryFixture({ name: 'Prüfung', short_name: 'P', teaching_entry_grading_part_id: 21,
+                    properties_mode: 'grades', standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [37, 63] } } })],
+            }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const simulation = wrapper.get('[aria-label="Simulation"]')
+            expect(simulation.get('[aria-label="Gruppe Gesamtnote"] [aria-label="Gruppe Basisnote"] [aria-label="Gruppe Prüfungsgruppe"]').exists()).toBe(true)
+            expect(simulation.findAll('.calculation-part-card')).toHaveLength(3)
+            expect(simulation.get('.calculation-entry-code').text()).toBe('P')
+            expect(simulation.text()).not.toContain('Zwei Prüfungen pro Semester.')
+            expect(simulation.text()).not.toContain('Benotung aufgrund der addierten Punkte.')
+            expect(simulation.text()).not.toContain('Bestehende Note anhand des')
+            expect(simulation.get('[aria-label="Mitarbeit passt Basisnote an"]').exists()).toBe(true)
+            expect(simulation.findAll('[aria-label^="Simulationseintrag hinzufügen:"]')).toHaveLength(1)
+            expect(simulation.get('[aria-label="Simulationseintrag hinzufügen: P"]').exists()).toBe(true)
+            expect(simulation.find('button, input, select, textarea, [tabindex], [role="button"], [contenteditable]').exists()).toBe(false)
+            expect(simulation.text()).not.toMatch(/Gewicht|37|63|45|55|73/)
+            expect(wrapper.get('[aria-label="Semesternote"]').text()).toContain('gewichtet (37 % / 63 %)')
+
+            const vm = wrapper.vm as any
+            vm.areas[0].grading_part_groups[2].name = 'Neue Prüfungsgruppe'
+            vm.gradingParts[1].name = 'Mündliche Prüfung'
+            vm.entries[0].short_name = 'MP'
+            await vm.$nextTick()
+            expect(simulation.get('[aria-label="Gruppe Neue Prüfungsgruppe"]').exists()).toBe(true)
+            expect(simulation.text()).toContain('Mündliche Prüfung')
+            expect(simulation.get('.calculation-entry-code').text()).toBe('MP')
+        } finally { wrapper.unmount() }
+    })
+    it('places a connector between a direct target part and its adjustment inside a group', () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'pair', name: 'Gesamtnote', part_ids: [20, 21] }] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [
+                    { id: 20, name: 'Mitarbeit', teaching_entry_area_id: 10, points_assessment_mode: 'sign_adjust' },
+                    { id: 21, name: 'Prüfung', teaching_entry_area_id: 10 },
+                ] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const children = wrapper.find('.calculation-group-parts').element.children
+        expect(children[0].textContent).toContain('Prüfung')
+        expect(children[1].getAttribute('aria-label')).toBe('Mitarbeit passt Prüfung an')
+        expect(children[2].textContent).toContain('Mitarbeit')
+        wrapper.unmount()
+    })
+    it.each([0, 1, 2, 3])('offers group creation only with three direct candidates, currently %s', (count) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: Array.from({ length: count }, (_, index) => ({ id: 20 + index, name: `Teil ${index}`, teaching_entry_area_id: 10 })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        expect(wrapper.find('.calculation-semester-grade-header').text().includes('Gruppe bilden')).toBe(count >= 3)
+        wrapper.unmount()
+    })
+
+    it('counts an existing group as one creation candidate and keeps its edit and dissolve actions', () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'basis', name: 'Basisnote', part_ids: [20, 21, 22] }] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [20, 21, 22, 23].map((id) => ({ id, name: `Teil ${id}`, teaching_entry_area_id: 10 })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        expect(wrapper.find('.calculation-semester-grade-header').text()).not.toContain('Gruppe bilden')
+        expect(wrapper.find('[aria-label="Gruppe Basisnote"]').text()).toContain('Gruppe bearbeiten')
+        expect(wrapper.find('[aria-label="Gruppe Basisnote"]').text()).toContain('Gruppe auflösen')
+        wrapper.unmount()
+    })
+    it('hides adjustment context weights at nested depth while retaining the target group inner and higher weights', () => {
+        const groups = [{ id: 'outer', name: 'Gesamtnote', part_ids: [20], weights: [{ group_id: 'basis', weight: 2 }, { part_id: 20, weight: 1 }] },
+            { id: 'basis', name: 'Basisnote', parent_group_id: 'outer', part_ids: [21, 22], weights: [{ part_id: 21, weight: 45 }, { part_id: 22, weight: 55 }] }]
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: groups, grading_level_weights: [{ group_id: 'outer', weight: 3 }] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [20, 21, 22].map((id) => ({ id, name: `Teil ${id}`, teaching_entry_area_id: 10, points_assessment_mode: id === 20 ? 'sign_adjust' : 'individual' })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        expect(wrapper.find('[aria-label="Gewichtung innerhalb der Gruppe: Basisnote"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Gewichtung 1: Teil 20"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Gewichtung 45: Teil 21"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Gewichtung 55: Teil 22"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Gewichtung äußere Ebene: Gesamtnote"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Teil 20 passt Basisnote an"]').exists()).toBe(true)
+        const frame = wrapper.find('[aria-label="Gruppe Gesamtnote"]')
+        expect(frame.element.children[1].textContent).toContain('Basisnote')
+        expect(frame.element.children[2].children[0].getAttribute('aria-label')).toBe('Teil 20 passt Basisnote an')
+        wrapper.unmount()
+    })
+
+    it('rechecks adjustment context before saving an already open weight dialog', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [20, 21].map((id) => ({ id, name: `Teil ${id}`, teaching_entry_area_id: 10 })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const put = vi.fn()
+        vi.stubGlobal('axios', { put })
+        try {
+            const vm = wrapper.vm as any
+            vm.openGradingLevelWeightDialog()
+            expect(vm.gradingWeightDialogOpen).toBe(true)
+            vm.gradingParts[0].points_assessment_mode = 'sign_adjust'
+            await vm.saveGradingGroupWeights()
+            expect(put).not.toHaveBeenCalled()
+            expect(vm.gradingGroupWeightError).toContain('wird nicht gewichtet')
+            vm.closeGradingWeightDialog()
+            vm.openGradingLevelWeightDialog()
+            expect(vm.gradingWeightDialogOpen).toBe(false)
+        } finally { vi.unstubAllGlobals(); wrapper.unmount() }
+    })
+    it('blocks a purpose change for three siblings and shows its error in the sign dialog', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [entryFixture({ teaching_entry_grading_part_id: 20, properties_mode: 'plus_minus' })],
+                gradingParts: [20, 21, 22].map((id) => ({ id, name: `Teil ${id}`, teaching_entry_area_id: 10, points_assessment_mode: 'plus_minus', allowed_entry_types: 'all' })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const put = vi.fn()
+        vi.stubGlobal('axios', { put })
+        try {
+            const vm = wrapper.vm as any
+            vm.openEditGradingPartDialog(vm.calculationAreas.find((part: any) => part.gradingPartId === 20))
+            vm.gradingPartSignPurpose = 'sign_adjust'
+            await vm.saveGradingPart(true)
+            await vm.$nextTick()
+            expect(put).not.toHaveBeenCalled()
+            expect(vm.gradingPartFormErrors.points_assessment_mode[0]).toContain('insgesamt genau zwei direkte Bausteine')
+            expect(wrapper.findAll('[role="alert"]').some((alert) => alert.text().includes('insgesamt genau zwei direkte Bausteine'))).toBe(true)
+        } finally { vi.unstubAllGlobals(); wrapper.unmount() }
+    })
+    it('shows adjustment targets, warns for a third sibling and removes the warning after grouping the base parts', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [
+                    { id: 20, name: 'Mitarbeit', teaching_entry_area_id: 10, points_assessment_mode: 'sign_adjust' },
+                    { id: 21, name: 'Basisnote', teaching_entry_area_id: 10 },
+                ] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const vm = wrapper.vm as any
+        expect(wrapper.find('[aria-label="Mitarbeit passt Basisnote an"]').exists()).toBe(true)
+        expect(wrapper.get('[aria-label="Semesternote"]').findAll('.calculation-level-frame').map((frame) => frame.find('h3').text())).toEqual(['Basisnote', 'Mitarbeit-Note'])
+        vm.gradingParts.push({ id: 22, name: 'Prüfung', teaching_entry_area_id: 10 })
+        await vm.$nextTick()
+        expect(wrapper.text()).toContain('insgesamt genau zwei direkte Bausteine')
+        expect(wrapper.findAll('.grading-adjustment-connection')).toHaveLength(0)
+        expect(wrapper.find('[aria-label*="Berechnung unvollständig: „Bestehende Note anpassen“"]').exists()).toBe(true)
+        vm.areas[0].grading_part_groups = [{ id: 'basis', name: 'Basisgruppe', part_ids: [21, 22] }]
+        await vm.$nextTick()
+        expect(wrapper.find('[aria-label="Mitarbeit passt Basisgruppe an"]').exists()).toBe(true)
+        expect(wrapper.text()).not.toContain('insgesamt genau zwei direkte Bausteine')
+        vm.gradingParts = vm.gradingParts.filter((part: any) => part.id !== 21 && part.id !== 22)
+        vm.areas[0].grading_part_groups = []
+        await vm.$nextTick()
+        expect(wrapper.text()).toContain('insgesamt genau zwei direkte Bausteine')
+        wrapper.unmount()
+    })
+
+    it('blocks dissolving the target group into several siblings before sending the request', async () => {
+        const group = { id: 'basis', name: 'Basisnote', part_ids: [21, 22] }
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [group] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: [20, 21, 22].map((id) => ({ id, name: `Teil ${id}`, teaching_entry_area_id: 10, points_assessment_mode: id === 20 ? 'sign_adjust' : 'individual' })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const put = vi.fn()
+        vi.stubGlobal('axios', { put })
+        try {
+            const vm = wrapper.vm as any
+            vm.openDissolveGradingGroupDialog(group)
+            await vm.saveGradingGroup()
+            expect(put).not.toHaveBeenCalled()
+            expect(vm.gradingGroupError).toContain('insgesamt genau zwei direkte Bausteine')
+            expect(vm.gradingGroupDialogOpen).toBe(true)
+        } finally { vi.unstubAllGlobals(); wrapper.unmount() }
+    })
+
+    it('counts a nested group once and rejects two adjustment siblings without blocking unchanged legacy errors', () => {
+        const groups = [{ id: 'outer', name: 'Gesamtnote', part_ids: [20] }, { id: 'basis', name: 'Basisnote', parent_group_id: 'outer', part_ids: [21, 22, 23] }]
+        const parts = [20, 21, 22, 23].map((id) => ({ id, name: `Teil ${id}`, points_assessment_mode: id === 20 ? 'sign_adjust' : 'individual' }))
+        expect(gradingAdjustmentState(groups, parts)[20]).toMatchObject({ target: 'Basisnote', message: '' })
+        const pair = [parts[0], { ...parts[1], points_assessment_mode: 'sign_adjust' }]
+        expect(gradingAdjustmentState([], pair)[20].message).toContain('einander nicht als Ziel')
+        expect(gradingAdjustmentState([], pair)[21].message).toContain('einander nicht als Ziel')
+        expect(gradingAdjustmentChangeError([], pair, [], pair.map((part) => ({ ...part, name: 'Umbenannt' })))).toBe('')
+        expect(gradingAdjustmentChangeError([], [pair[0], parts[1]], [], pair)).toContain('einander nicht als Ziel')
+        expect(gradingAdjustmentChangeError([], pair, [], [pair[0], parts[1]])).toBe('')
+        expect(gradingAdjustmentChangeError([], [...pair, parts[2]], [], [pair[0], parts[1], parts[2]])).toBe('')
+    })
+    it('offers complete top level blocks for grouping and requires two direct selections', async () => {
+        const group = { id: 'basis', name: 'Basisnote', part_ids: [20, 21], weights: [{ part_id: 20, weight: 40 }, { part_id: 21, weight: 60 }] }
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [group] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: ['Leistungsfeststellungen', 'Schularbeiten', 'Mitarbeit', 'Prüfung'].map((name, index) => ({ id: 20 + index, teaching_entry_area_id: 10, name })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const put = vi.fn().mockResolvedValue({ data: { data: { id: 10 } } })
+        vi.stubGlobal('axios', { put })
+        try {
+            const vm = wrapper.vm as any
+            vm.openGradingGroupDialog()
+            expect(vm.gradingGroupSelectionItems.map((item) => item.name)).toEqual(['Basisnote', 'Mitarbeit', 'Prüfung'])
+            vm.toggleGradingGroupItem(vm.gradingGroupSelectionItems[0], true)
+            await vm.saveGradingGroup()
+            expect(put).not.toHaveBeenCalled()
+            vm.toggleGradingGroupItem(vm.gradingGroupSelectionItems[1], true)
+            await vm.saveGradingGroup()
+            const groups = put.mock.calls[0][1].grading_part_groups
+            const parent = groups.find((item) => item.id !== 'basis')
+            expect(parent.part_ids).toEqual([22])
+            expect(groups.find((item) => item.id === 'basis')).toEqual({ id: 'basis', name: 'Basisnote', part_ids: [20, 21], parent_group_id: parent.id })
+        } finally { vi.unstubAllGlobals(); wrapper.unmount() }
+    })
+
+    it('renders nested groups and opens the direct parent weight context without flattening children', async () => {
+        const groups = [{ id: 'basis', name: 'Basisnote', parent_group_id: 'outer', part_ids: [20, 21] },
+            { id: 'outer', name: 'Gesamtnote', part_ids: [22] }]
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: groups }], activeAreaId: 10,
+                activeCategory: 'Berechnung', entries: [], gradingParts: ['Leistungsfeststellungen', 'Schularbeiten', 'Mitarbeit', 'Prüfung'].map((name, index) => ({ id: 20 + index, teaching_entry_area_id: 10, name })) }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            expect(vm.calculationBlocks.map((block) => block.group?.name || block.parts[0].name)).toEqual(['Gesamtnote', 'Prüfung'])
+            expect(wrapper.get('[aria-label="Gruppe Gesamtnote"]').get('[aria-label="Gruppe Basisnote"]').exists()).toBe(true)
+            await wrapper.get('button[aria-label="Gewichtung innerhalb der Gruppe: Basisnote"]').trigger('click')
+            expect(vm.gradingGroupWeightRows.map((row) => row.name)).toEqual(['Mitarbeit', 'Basisnote'])
+            vm.closeGradingWeightDialog()
+            vm.openGradingGroupWeightDialog(groups[0])
+            expect(vm.gradingGroupWeightRows.map((row) => row.name)).toEqual(['Leistungsfeststellungen', 'Schularbeiten'])
+        } finally { wrapper.unmount() }
+    })
+    it('opens outer blocks once and saves their weights independently of member ratios', async () => {
+        const methods = (Entries as any).methods
+        const area: any = { id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'group', name: 'Basisnote', part_ids: [20], weights: [{ part_id: 20, weight: 40 }] }] }
+        const ctx: any = { areas: [area], activeAreaId: 10, gradingLevelBlockWeight: methods.gradingLevelBlockWeight, gradingLevelBlockName: methods.gradingLevelBlockName,
+            gradingGroupWeightsValidationError: '', closeGradingWeightDialog: methods.closeGradingWeightDialog,
+            calculationBlocks: [{ group: area.grading_part_groups[0], parts: [{ gradingPartId: 20, name: 'Schularbeiten' }] },
+                { group: null, parts: [{ gradingPartId: 21, name: 'Mitarbeit' }] }, { group: null, parts: [{ gradingPartId: 22, name: 'Prüfung' }] }] }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...area, grading_level_weights: payload.grading_level_weights } } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            methods.openGradingLevelWeightDialog.call(ctx)
+            expect(ctx.gradingGroupWeightRows.map((row) => row.name)).toEqual(['Basisnote', 'Mitarbeit-Note', 'Prüfung-Note'])
+            expect(ctx.gradingGroupWeightRows.map((row) => row.weight)).toEqual([1, 1, 1])
+            expect(put).not.toHaveBeenCalled()
+            ctx.gradingGroupWeightRows[0].weight = '1,5'
+            await methods.saveGradingGroupWeights.call(ctx)
+            expect(put.mock.calls[0][1]).toEqual({ name: 'Unterstufe', grading_level_weights: [{ group_id: 'group', weight: 1.5 }, { part_id: 21, weight: 1 }, { part_id: 22, weight: 1 }] })
+            expect(ctx.areas[0].grading_part_groups[0].weights[0].weight).toBe(40)
+            methods.openGradingLevelWeightDialog.call(ctx)
+            expect(ctx.gradingGroupWeightRows[0].weight).toBe(1.5)
+            await methods.saveGradingGroupWeights.call(ctx, true)
+            expect(put.mock.calls[1][1].grading_level_weights).toBeNull()
+            expect(ctx.areas[0].grading_part_groups[0].weights[0].weight).toBe(40)
+        } finally { vi.unstubAllGlobals() }
+    })
+    it('opens persistent group weights with draft defaults and closes explicitly without changing grading data', async () => {
+        const gradingParts = [{ id: 20, teaching_entry_area_id: 10, name: 'Schularbeiten', weight: 3 }]
+        const group = { id: 'group', name: 'Basisnote', part_ids: [20] }
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [group] }], activeAreaId: 10,
+                activeCategory: 'Berechnung', gradingParts, entries: [] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' },
+                'v-dialog': { props: { modelValue: Boolean, persistent: Boolean }, template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const original = JSON.stringify((wrapper.vm as any).gradingParts)
+            const trigger = wrapper.get('button[aria-label="Gewichtung: Schularbeiten"]')
+            expect(trigger.attributes('type')).toBe('button')
+            await trigger.trigger('click')
+            expect((wrapper.vm as any).gradingWeightDialogOpen).toBe(true)
+            expect((wrapper.vm as any).gradingWeightGroup).toEqual({ id: 'group', name: 'Basisnote' })
+            expect((wrapper.vm as any).gradingGroupWeightRows).toEqual([{ part_id: 20, name: 'Schularbeiten', weight: 1 }])
+            expect((wrapper.vm as any).activeEdit).toBe('dialog')
+            const dialog = wrapper.getComponent('[aria-labelledby="grading-weight-dialog-title"]')
+            expect(dialog.props('persistent')).toBe(true)
+            expect(dialog.props('modelValue')).toBe(true)
+            expect(dialog.text()).toContain('Basisnote')
+            expect(dialog.findAll('input')).toHaveLength(0)
+            await dialog.get('[aria-label="Gewichtungsdialog schließen"]').trigger('click')
+            expect((wrapper.vm as any).gradingWeightDialogOpen).toBe(false)
+            expect((wrapper.vm as any).gradingWeightGroup).toBeNull()
+            expect((wrapper.vm as any).activeEdit).toBeNull()
+            expect(JSON.stringify((wrapper.vm as any).gradingParts)).toBe(original)
+        } finally { wrapper.unmount() }
+    })
+
+    it('saves decimal group ratios reloads them and removes only group weights', async () => {
+        const methods = (Entries as any).methods
+        const group = { id: 'group', name: 'Basisnote', part_ids: [20, 21] }
+        const area = { id: 10, name: 'Unterstufe', grading_part_groups: [group] }
+        const ctx: any = { areas: [area], activeAreaId: 10, gradingGroups: [group], gradingGroupWeightsValidationError: '',
+            calculationAreas: [{ gradingPartId: 20, name: 'Leistungsfeststellungen' }, { gradingPartId: 21, name: 'Schularbeiten' }],
+            gradingGroupMemberWeight: methods.gradingGroupMemberWeight, closeGradingWeightDialog: methods.closeGradingWeightDialog }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...area,
+            grading_part_groups: [{ ...group, ...(payload.grading_group_weights.weights ? { weights: payload.grading_group_weights.weights } : {}) }] } } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            methods.openGradingGroupWeightDialog.call(ctx, group)
+            expect(put).not.toHaveBeenCalled()
+            ctx.gradingGroupWeightRows[0].weight = '1,5'
+            ctx.gradingGroupWeightRows[1].weight = '1,3'
+            await methods.saveGradingGroupWeights.call(ctx)
+            expect(put.mock.calls[0][1]).toEqual({ name: 'Unterstufe', grading_group_weights: { group_id: 'group',
+                weights: [{ part_id: 20, weight: 1.5 }, { part_id: 21, weight: 1.3 }] } })
+            ctx.gradingGroups = ctx.areas[0].grading_part_groups
+            methods.openGradingGroupWeightDialog.call(ctx, ctx.gradingGroups[0])
+            expect(ctx.gradingGroupWeightRows.map((row) => row.weight)).toEqual([1.5, 1.3])
+            await methods.saveGradingGroupWeights.call(ctx, true)
+            expect(put.mock.calls[1][1].grading_group_weights.weights).toBeNull()
+            expect(ctx.gradingWeightDialogOpen).toBe(false)
+            ctx.gradingGroups = ctx.areas[0].grading_part_groups
+            expect(ctx.gradingGroups[0]).not.toHaveProperty('weights')
+            methods.openGradingGroupWeightDialog.call(ctx, ctx.gradingGroups[0])
+            expect(ctx.gradingGroupWeightRows.map((row) => row.weight)).toEqual([1, 1])
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it.each(['0', '-1', '', 'Infinity', 'invalid', true])('blocks invalid relative group weight %s', (weight) => {
+        expect((Entries as any).computed.gradingGroupWeightsValidationError.call({ gradingGroupWeightRows: [{ weight }] })).toBeTruthy()
+    })
+
+    it('offers weight access only for actual group members', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'group', name: 'Basisnote', part_ids: [20], weights: [{ part_id: 20, weight: 1.5 }] }] }],
+                activeAreaId: 10, activeCategory: 'Berechnung', entries: [], gradingParts: [
+                    { id: 20, teaching_entry_area_id: 10, name: 'Schularbeiten' }, { id: 21, teaching_entry_area_id: 10, name: 'Mitarbeit' }] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            expect(wrapper.find('button[aria-label="Gewichtung äußere Ebene: Basisnote"]').exists()).toBe(true)
+            expect(wrapper.find('button[aria-label="Gewichtung 1,5: Schularbeiten"]').exists()).toBe(true)
+            expect(wrapper.find('button[aria-label="Gewichtung: Mitarbeit"]').exists()).toBe(false)
+            expect(wrapper.find('button[aria-label="Gewichtung äußere Ebene: Mitarbeit"]').exists()).toBe(true)
+            await wrapper.setData({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [] }] })
+            expect(wrapper.findAll('button[aria-label^="Gewichtung:"]')).toHaveLength(0)
+            expect(wrapper.findAll('button[aria-label^="Gewichtung äußere Ebene:"]')).toHaveLength(2)
+        } finally { wrapper.unmount() }
+    })
+
     it.each(['points', 'weighted'])('inherits individual point weighting %s from the part and saves only applicable entry settings', async (mode) => {
         const methods = (Entries as any).methods
         const computed = (Entries as any).computed
@@ -268,12 +1064,12 @@ describe('Teaching entries settings', () => {
         } finally { vi.unstubAllGlobals() }
     })
 
-    it('places the internal weight before entry details and uses the short code only as a fallback', () => {
+    it('shows the stored short code before entry details without an internal weight', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         const card = source.slice(source.indexOf('<ul v-if="area.entries.length"'), source.indexOf('</ul>', source.indexOf('<ul v-if="area.entries.length"')))
-        expect(card.indexOf('class="calculation-entry-weight"')).toBeLessThan(card.indexOf('class="calculation-entry-details"'))
-        expect(card).toContain('<v-chip v-else class="calculation-entry-code"')
-        expect(card.match(/class="calculation-entry-weight"/g)).toHaveLength(1)
+        expect(card.indexOf('class="calculation-entry-code"')).toBeLessThan(card.indexOf('class="calculation-entry-details"'))
+        expect(card).toContain('{{ entry.short_name }}')
+        expect(card).not.toContain('entryWeightLabel')
     })
 
     it.each([
@@ -422,7 +1218,7 @@ describe('Teaching entries settings', () => {
         } finally { vi.unstubAllGlobals() }
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         expect(source).toContain('<section v-if="calculationDialogOverallPart"')
-        expect(source).toContain('<section v-else-if="calculationDialogUsesPoints"')
+        expect(source).not.toContain('Punkte in Noten umrechnen')
         expect(source).toContain('id="entry-overall-grading-title" class="text-h5 font-weight-bold">Gesamtbeurteilung</h3>')
     })
 
@@ -533,10 +1329,11 @@ describe('Teaching entries settings', () => {
         expect((Entries as any).computed.calculationAreas.call(ctx).map((part) => part.gradingPartId)).toEqual([2, 3, 5, 1, 6])
     })
 
-    it.each([[{ weight: 6 }, '6'], [{ weight: 4 }, '4'], [{ weight: 1, fixed_percentage: 30 }, '30 %'], [{ weight: 1.5 }, '1,5']])('formats the prominent weight badge %j', (part, expected) => {
+    it.each([[{ weight: 6 }, '6'], [{ weight: 4 }, '4'], [{ weight: 1, fixed_percentage: 30 }, '30 %'], [{ weight: 1.5 }, '1,5']])('preserves existing weight formatting without claiming a weight on the main card %j', (part, expected) => {
         expect((Entries as any).methods.gradingPartWeightValue(part)).toBe(expected)
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
-        expect(source).toContain('class="grading-weight-badge" :aria-label="gradingPartWeightLabel(area)"')
+        expect(source).not.toContain('{{ gradingPartWeightValue(area) }}')
+        expect(source).not.toContain(':aria-label="gradingPartWeightLabel(area)"')
         expect(source).toContain('icon="mdi-weight"')
     })
 
@@ -771,6 +1568,235 @@ describe('Teaching entries settings', () => {
         }
     })
 
+    it('offers Plus und Minus while preserving a legacy Nur Plus entry during unrelated edits', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const original = entryFixture({ properties_mode: 'plus', allows_maximum_plus: true, maximum_plus: 8 })
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 1, ...payload } } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            ;(wrapper.vm as any).openEditDialog(original)
+            await wrapper.vm.$nextTick()
+            expect(wrapper.find('v-btn[value="plus"]').exists()).toBe(false)
+            expect(wrapper.find('v-btn[value="plus_minus"]').exists()).toBe(true)
+            expect((wrapper.vm as any).entryForm.properties_mode).toBe('plus')
+            expect(wrapper.text()).toContain('Bestehender Typ „Nur Plus“')
+            const methods = (Entries as any).methods
+            const ctx: any = { entries: [original], canSaveEntry: true, normalizeShortName: methods.normalizeShortName,
+                closeEditDialog: methods.closeEditDialog, notifyError: vi.fn() }
+            methods.openEditDialog.call(ctx, original)
+            ctx.entryForm.description = 'Neue Beschreibung'
+            await methods.saveEntry.call(ctx)
+            expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ properties_mode: 'plus', allows_maximum_plus: true, maximum_plus: 8, description: 'Neue Beschreibung' }))
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('hides new free-input selection but preserves legacy free values during editing', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        const original = entryFixture({ properties_mode: 'free', fixed_properties: ['+', '0', '~'],
+            property_evaluations: [{ property: '~', evaluation: 0.5 }] })
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 1, ...payload } } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            ;(wrapper.vm as any).openEditDialog(original)
+            await wrapper.vm.$nextTick()
+            expect(wrapper.find('v-btn[value="free"]').exists()).toBe(false)
+            expect(wrapper.text()).toContain('Bestehender Typ „Freie Eingabe“')
+            const methods = (Entries as any).methods
+            const ctx: any = { entries: [original], canSaveEntry: true, normalizeShortName: methods.normalizeShortName,
+                closeEditDialog: methods.closeEditDialog, notifyError: vi.fn() }
+            methods.openEditDialog.call(ctx, original)
+            ctx.entryForm.description = 'Neue Beschreibung'
+            await methods.saveEntry.call(ctx)
+            expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ properties_mode: 'free', fixed_properties: ['+', '0', '~'], property_evaluations: [{ property: '~', evaluation: 0.5 }] }))
+            expect(methods.createEmptyEntry.call({ activeCategory: 'Benotung', activeAreaId: 10 }).properties_mode).toBe('fixed')
+            expect(methods.createEmptyEntry.call({ activeCategory: 'Verhalten', activeAreaId: 10 }).properties_mode).toBe('free')
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it.each([['single', null], ['fixed', 2], ['fixed', 3], ['unlimited', null]])('saves and restores planned standard grade occurrences %s through the part cog', async (mode, count) => {
+        const methods = (Entries as any).methods
+        const original = entryFixture({ properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'] })
+        const part = { id: 20, gradingPartId: 20, name: 'Prüfung', entries: [original] }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...part, ...payload }, entry_definitions: [{ ...original, standard_grade_occurrences: { mode, count } }] } }))
+        const ctx: any = { activeAreaId: 10, entries: [original], gradingParts: [part], gradingPartWeightValid: true,
+            closeGradingPartDialog: methods.closeGradingPartDialog, replaceGradingEntry: methods.replaceGradingEntry, gradingPartOccurrenceError: methods.gradingPartOccurrenceError, notifyError: vi.fn() }
+        vi.stubGlobal('axios', { put })
+        try {
+            methods.openEditGradingPartDialog.call(ctx, part)
+            methods.setGradingPartOccurrenceMode.call(ctx, ctx.gradingPartStandardOccurrences[0], mode)
+            ctx.gradingPartStandardOccurrences[0].count = count
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ entry_standard_grade_occurrences: [{ entry_definition_id: 1, configuration: { mode, count } }] }))
+            methods.openEditGradingPartDialog.call(ctx, { ...part, entries: ctx.entries })
+            expect(ctx.gradingPartStandardOccurrences[0]).toMatchObject({ mode, count })
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it.each([['single', 1, false], ['fixed', 1, true], ['unlimited', 1, true], ['single', 2, true], [null, 1, false]])('only offers the method choice for multiple planned notes (%s, %s types)', async (mode, count, choice) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            ;(wrapper.vm as any).openEditGradingPartDialog({ gradingPartId: 20, name: 'Prüfung', entries: Array.from({ length: count }, (_, index) =>
+                entryFixture({ id: index + 1, properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'], standard_grade_occurrences: mode ? { mode, count: mode === 'fixed' ? 2 : null } : null })) })
+            await wrapper.vm.$nextTick()
+            expect(wrapper.find('[aria-label="Berechnungsmethode"]').exists()).toBe(choice)
+            if (!choice) expect(wrapper.text()).toContain('Die erfasste Note wird direkt übernommen')
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows occurrences only in the part cog and switches methods immediately', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const entry = entryFixture({ properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'] })
+            const vm = wrapper.vm as any
+            vm.openEditDialog(entry)
+            await vm.$nextTick()
+            expect(wrapper.text()).not.toContain('Anzahl der Leistungsfeststellungen')
+            vm.closeEditDialog()
+            vm.openEditGradingPartDialog({ gradingPartId: 20, name: 'Prüfung', entries: [entry] })
+            await vm.$nextTick()
+            expect(wrapper.find('[aria-label="Anzahl der Leistungsfeststellungen"]').text()).toContain('Eine')
+            expect(vm.gradingPartStandardOccurrences[0].mode).toBe('single')
+            const occurrence = vm.gradingPartStandardOccurrences[0]
+            vm.setGradingPartOccurrenceMode(occurrence, 'fixed')
+            expect(occurrence.count).toBe(2)
+            occurrence.count = 1
+            await vm.$nextTick()
+            expect(wrapper.find('[aria-label="Berechnungsmethode"]').exists()).toBe(true)
+            expect(vm.gradingPartOccurrenceError(occurrence)).toContain('ab 2')
+            occurrence.count = 3
+            expect(vm.gradingPartOccurrenceError(occurrence)).toBe('')
+            vm.setGradingPartOccurrenceMode(occurrence, 'single')
+            await vm.$nextTick()
+            expect(wrapper.find('[aria-label="Berechnungsmethode"]').exists()).toBe(false)
+            vm.setGradingPartOccurrenceMode(occurrence, 'fixed')
+            expect(occurrence.count).toBe(3)
+        } finally { wrapper.unmount() }
+    })
+
+    it('renders grouped parts once, retains their controls and leaves other parts outside', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe', grading_part_groups: [{ id: 'basis', name: 'Basisgruppe', part_ids: [20, 21] }] }], activeAreaId: 10, activeCategory: 'Berechnung',
+                gradingParts: [20, 21, 22].map((id) => ({ id, teaching_entry_area_id: 10, name: `Teil ${id}` })), entries: [entryFixture({ teaching_entry_grading_part_id: 20 })] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const frame = wrapper.find('[aria-label="Gruppe Basisgruppe"]')
+            expect(frame.findAll('.calculation-part-card')).toHaveLength(2)
+            expect(frame.find('h3').text()).toBe('Basisgruppe')
+            expect(frame.findAll('[aria-label="Zuordnung"]')).toHaveLength(2)
+            expect(wrapper.find('[aria-label="Ungruppierte Benotungsteile"]').text()).toContain('Teil 22')
+            expect(wrapper.get('[aria-label="Semesternote"]').findAll('.calculation-part-card')).toHaveLength(3)
+            await frame.find('[aria-label="Einstellungen des Benotungsteils"]').trigger('click')
+            expect((wrapper.vm as any).editingGradingPartId).toBe(20)
+        } finally { wrapper.unmount() }
+    })
+
+    it('saves group renames and dissolution as structure without changing entries', async () => {
+        const methods = (Entries as any).methods
+        const group = { id: '18b12f8d-a9a2-4c09-bca4-664e89c6c941', name: 'Alt', part_ids: [20, 21] }
+        const area = { id: 10, name: 'Unterstufe', grading_part_groups: [group] }
+        const ctx: any = { areas: [area], activeAreaId: 10, gradingGroups: [group], openGradingGroupDialog: methods.openGradingGroupDialog, closeGradingGroupDialog: methods.closeGradingGroupDialog }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...area, ...payload } } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            methods.openGradingGroupDialog.call(ctx, group)
+            ctx.gradingGroupForm = { name: 'Basis', part_ids: [21, 22] }
+            await methods.saveGradingGroup.call(ctx)
+            expect(put.mock.calls.at(-1)[1]).toEqual({ name: 'Unterstufe', grading_part_groups: [{ id: group.id, name: 'Basis', parent_group_id: null, part_ids: [21, 22] }] })
+            ctx.gradingGroups = ctx.areas[0].grading_part_groups
+            methods.openDissolveGradingGroupDialog.call(ctx, ctx.gradingGroups[0])
+            await methods.saveGradingGroup.call(ctx)
+            expect(put.mock.calls.at(-1)[1]).toEqual({ name: 'Unterstufe', grading_part_groups: [] })
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('shows exactly N percentage fields only for fixed-count averages and preserves saved values', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            vm.openEditGradingPartDialog({ gradingPartId: 20, name: 'Schularbeiten', points_assessment_mode: 'grade_mean', entries: [entryFixture({ fixed_properties: ['1', '2', '3', '4', '5'], standard_grade_occurrences: { mode: 'fixed', count: 3, mean: { mode: 'weighted', weights: [20, 30, 50] } } })] })
+            await vm.$nextTick()
+            const section = wrapper.get('[aria-label="Gewichtung der Arbeiten"]')
+            expect(section.findAll('[label^="Arbeit "]')).toHaveLength(3)
+            const occurrence = vm.gradingPartStandardOccurrences[0]
+            expect(vm.gradingPartWeightTotal(occurrence)).toBe('100')
+            expect(vm.gradingPartMeanError(occurrence)).toBe('')
+            occurrence.mean_weights[2] = 49
+            expect(vm.gradingPartMeanError(occurrence)).toContain('100 %')
+            occurrence.mean_weights[2] = 'Infinity'
+            expect(vm.gradingPartMeanError(occurrence)).toContain('endliche')
+            occurrence.mean_weights[2] = null
+            expect(vm.gradingPartMeanError(occurrence)).toContain('jede Arbeit')
+            vm.gradingPartCalculationMethod = 'grade_each'
+            await vm.$nextTick()
+            expect(wrapper.find('[aria-label="Gewichtung der Arbeiten"]').exists()).toBe(false)
+            vm.gradingPartCalculationMethod = 'grade_mean'
+            vm.setGradingPartOccurrenceMode(occurrence, 'unlimited')
+            await vm.$nextTick()
+            expect(wrapper.find('[aria-label="Gewichtung der Arbeiten"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([[2, [50, 50]], [3, [33.33, 33.33, 33.34]], [4, [25, 25, 25, 25]]])('prefills exactly 100 percent for %s works and preserves entered weights', (count, weights) => {
+        const methods = (Entries as any).methods
+        const occurrence = { count, mean_mode: 'equal', mean_weights: [] }
+        methods.setGradingPartMeanMode(occurrence, 'weighted')
+        expect(occurrence.mean_weights).toEqual(weights)
+        expect(methods.gradingPartMeanError(occurrence)).toBe('')
+        occurrence.mean_weights[0] = 70
+        methods.setGradingPartMeanMode(occurrence, 'equal')
+        methods.setGradingPartMeanMode(occurrence, 'weighted')
+        expect(occurrence.mean_weights[0]).toBe(70)
+    })
+
+    it('saves percentage weighting from the cog and retains it when changing methods', async () => {
+        const methods = (Entries as any).methods
+        const entry = entryFixture({ fixed_properties: ['1', '2', '3', '4', '5'], standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [70, 30] } } })
+        const part = { id: 20, gradingPartId: 20, name: 'Schularbeiten', entries: [entry], points_assessment_mode: 'grade_mean' }
+        const ctx: any = { activeAreaId: 10, entries: [entry], gradingParts: [part], gradingPartWeightValid: true,
+            closeGradingPartDialog: methods.closeGradingPartDialog, replaceGradingEntry: methods.replaceGradingEntry, gradingPartOccurrenceError: methods.gradingPartOccurrenceError, notifyError: vi.fn() }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...part, ...payload }, entry_definitions: [{ ...entry, standard_grade_occurrences: payload.entry_standard_grade_occurrences[0].configuration }] } }))
+        vi.stubGlobal('axios', { put })
+        try {
+            methods.openEditGradingPartDialog.call(ctx, part)
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put.mock.calls.at(-1)[1].entry_standard_grade_occurrences[0].configuration).toEqual(entry.standard_grade_occurrences)
+            methods.openEditGradingPartDialog.call(ctx, { ...part, entries: ctx.entries })
+            ctx.gradingPartCalculationMethod = 'grade_each'
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put.mock.calls.at(-1)[1].entry_standard_grade_occurrences[0].configuration.mean).toEqual({ mode: 'weighted', weights: [70, 30] })
+            methods.openEditGradingPartDialog.call(ctx, { ...part, entries: ctx.entries })
+            ctx.gradingPartCalculationMethod = 'grade_mean'
+            methods.setGradingPartMeanMode(ctx.gradingPartStandardOccurrences[0], 'equal')
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put.mock.calls.at(-1)[1].entry_standard_grade_occurrences[0].configuration.mean).toEqual({ mode: 'equal', weights: [70, 30] })
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('summarizes saved assessment per part without treating draft defaults as persisted choices', () => {
+        const summary = (Entries as any).methods.gradingPartSummary
+        expect(summary({ entries: [entryFixture({ properties_mode: 'points' })], points_assessment_mode: 'sum_percent' })).toEqual(['Benotung aufgrund der addierten Punkte.'])
+        const entry = entryFixture({ name: 'Schularbeit', fixed_properties: ['1', '2', '3', '4', '5'] })
+        expect(summary({ entries: [entry], points_assessment_mode: 'grade_mean' })[0]).toContain('noch nicht festgelegt')
+        expect(summary({ entries: [{ ...entry, standard_grade_occurrences: { mode: 'single', count: null } }], points_assessment_mode: 'grade_mean' })[0]).toBe('Eine Schularbeit pro Semester.')
+        expect(summary({ entries: [{ ...entry, standard_grade_occurrences: { mode: 'fixed', count: 2, mean: { mode: 'weighted', weights: [70, 30] } } }], points_assessment_mode: 'grade_mean' })[0]).toContain('Zwei Schularbeiten pro Semester. Notendurchschnitt · gewichtet (70 % / 30 %)')
+        expect(summary({ entries: [{ ...entry, standard_grade_occurrences: { mode: 'unlimited' } }], points_assessment_mode: 'grade_each' })[0]).toContain('Beliebig viele Schularbeiten pro Semester. Jede Note wird extra berechnet')
+        expect(summary({ entries: [], points_assessment_mode: 'sign_adjust' })[0]).toContain('Anpassungsregel ist noch offen')
+    })
+
     it('defaults new special checkboxes on and keeps edited selections isolated', () => {
         const methods = (Entries as any).methods
         const draft = methods.createEmptyEntry.call({ activeCategory: 'Benotung', activeAreaId: 10 })
@@ -831,7 +1857,7 @@ describe('Teaching entries settings', () => {
     it.each([
         ['fixed', 'Standardnoten', ['1', '2', '3', '4', '5']],
         ['free', 'Freie Eingabe', []], ['plus', 'Nur Plus', []], ['plus_minus', 'Plus und Minus', []],
-    ])('opens a persistent calculation dialog for %s entries', (mode, label, properties) => {
+    ])('retains the calculation dialog logic for %s entries without an overview click trigger', (mode, label, properties) => {
         const ctx: any = {}
         const entry = entryFixture({ properties_mode: mode, fixed_properties: properties })
         ;(Entries as any).methods.openCalculationDialog.call(ctx, entry)
@@ -840,7 +1866,7 @@ describe('Teaching entries settings', () => {
         expect((Entries as any).computed.calculationDialogPropertyLabel.call(ctx)).toBe(label)
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         expect(source).toContain('<v-dialog v-model="calculationDialogOpen" persistent')
-        expect(source).toContain('@click="openCalculationDialog(entry)"')
+        expect(source).not.toContain('@click="openCalculationDialog(entry)"')
         expect(source).toContain('v-if="calculationDialogEntry?.properties_mode === \'plus\'"')
     })
 
@@ -1106,6 +2132,21 @@ describe('Teaching entries settings', () => {
         expect((Entries as any).methods.calculationProperties(entry)).toEqual(['Erledigt', 'Fehlt', 'Extra'])
     })
 
+    it.each([
+        [['+', '++', '-'], ['++', '+', '-']],
+        [['--', '0', '+', '−', '++++', '++'], ['++++', '++', '+', '0', '−', '--']],
+        [['F', '-', 'Extra', '++', '0'], ['F', '++', 'Extra', '0', '-']],
+        [['Erledigt', 'Fehlt'], ['Erledigt', 'Fehlt']],
+        [['1', '2', '3', '4', '5'], ['1', '2', '3', '4', '5']],
+    ])('sorts interpretable display signs %j without changing stored values', (properties, expected) => {
+        const entry = entryFixture({ properties_mode: 'free', fixed_properties: [...properties] })
+        expect((Entries as any).methods.calculationProperties(entry)).toEqual(expected)
+        expect(entry.fixed_properties).toEqual(properties)
+        const ctx: any = {}
+        ;(Entries as any).methods.openEditDialog.call(ctx, entry)
+        expect(ctx.entryForm.fixed_properties).toEqual(properties)
+    })
+
     it.each(['Benotung', 'Verhalten', 'Weitere'])('enables properties only for new Benotung entries (%s)', (category) => {
         const entry = (Entries as any).methods.createEmptyEntry.call({ activeCategory: category, activeAreaId: 10 })
         expect(entry.has_properties).toBe(category === 'Benotung')
@@ -1135,7 +2176,7 @@ describe('Teaching entries settings', () => {
         methods.openEditDialog.call(ctx, entry)
         expect(ctx.entryForm.properties_mode).toBe(propertyMode)
         expect(methods.standardCalculationLabel.call({}, entry)).toBe(
-            propertyMode === 'plus' ? 'Nur Plus' : propertyMode === 'plus_minus' ? 'Plus und Minus' : 'Standardnoten'
+            propertyMode === 'plus' ? 'Nur Plus' : propertyMode === 'plus_minus' ? 'Plus und Minus' : 'Standardnoten 1 bis 5'
         )
     })
 
@@ -1576,6 +2617,32 @@ describe('Teaching entries settings', () => {
         }])
     })
 
+    it('keeps assigned entry cards informational while retaining part settings and assignment controls', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            await wrapper.setData({ activeAreaId: 10, activeCategory: 'Berechnung', areas: [{ id: 10, name: 'Bereich' }],
+                gradingParts: [{ id: 20, teaching_entry_area_id: 10, name: 'Mitarbeit' }],
+                entries: [entryFixture({ short_name: 'MA', teaching_entry_grading_part_id: 20, grading_part_weight: 2 })] })
+            const card = wrapper.get('.calculation-entry-list li > div')
+            expect(card.get('.calculation-entry-code').text()).toBe('MA')
+            expect(card.text()).not.toContain('Gewichtung innerhalb')
+            expect(card.find('button, [role="button"], [tabindex]').exists()).toBe(false)
+            await card.trigger('click')
+            await card.trigger('keydown', { key: 'Enter' })
+            expect((wrapper.vm as any).calculationDialogOpen).toBe(false)
+            await wrapper.get('[aria-label="Einstellungen des Benotungsteils"]').trigger('click')
+            expect((wrapper.vm as any).gradingPartDialogOpen).toBe(true)
+            ;(wrapper.vm as any).closeGradingPartDialog()
+            await wrapper.vm.$nextTick()
+            await wrapper.get('[title="Zuordnung"]').trigger('click')
+            expect((wrapper.vm as any).assignGradingPartId).toBe(20)
+            expect(wrapper.find('.calculation-entry-selection-card').exists()).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+
     it('preselects the entries already assigned to the selected grading part', () => {
         const methods = (Entries as any).methods
         const ctx: any = {
@@ -1597,7 +2664,7 @@ describe('Teaching entries settings', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
 
         expect(source).not.toContain('Mögliche Werte:')
-        expect(source).toContain('v-for="entry in calculationEntries"')
+        expect(source).toContain('v-for="entry in assignableCalculationEntries"')
         expect(source).toContain('Benotungsteil hinzufügen')
         expect(source).toContain('@click="openCreateGradingPartDialog"')
         expect(source).toContain('v-for="property in entry.fixed_properties"')
@@ -1904,6 +2971,25 @@ describe('Teaching entries settings', () => {
         expect(ctx.gradingPartForm.is_required).toBe(false)
     })
 
+    it('creates a grading part without choosing the new point-sum method', async () => {
+        const methods = (Entries as any).methods
+        const ctx: any = { activeAreaId: 10, gradingParts: [], gradingPartWeightValid: true,
+            closeGradingPartDialog: methods.closeGradingPartDialog, notifyError: vi.fn() }
+        const post = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 20, ...payload } } }))
+        vi.stubGlobal('axios', { post })
+        try {
+            methods.openCreateGradingPartDialog.call(ctx)
+            expect((Entries as any).computed.gradingPartUsesPointSum.call(ctx)).toBe(false)
+            ctx.gradingPartForm.name = ' Neuer Teil '
+            await methods.saveGradingPart.call(ctx, true)
+            expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts', {
+                teaching_entry_area_id: 10, name: 'Neuer Teil', is_required: false, fixed_percentage: null, allowed_entry_types: 'all', weight: 1,
+            })
+            methods.openEditGradingPartDialog.call(ctx, { gradingPartId: 20, name: 'Neuer Teil' })
+            expect((Entries as any).computed.gradingPartUsesPointSum.call(ctx)).toBe(true)
+        } finally { vi.unstubAllGlobals() }
+    })
+
     it.each(['all', 'points'])('saves and restores allowed entry types %s', async (allowed) => {
         const methods = (Entries as any).methods
         const ctx: any = { activeAreaId: 10, gradingParts: [], gradingPartWeightValid: true,
@@ -1950,12 +3036,283 @@ describe('Teaching entries settings', () => {
         } finally { vi.unstubAllGlobals() }
     })
 
-    it('offers point assessment choices only for points-only parts', () => {
-        const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
-        expect(source).toContain('<section v-if="gradingPartForm.allowed_entry_types === \'points\'" class="mt-5" aria-label="Beurteilung der Punktetypen">')
-        expect(source).toMatch(/<v-btn-toggle\s+v-model="gradingPartForm.points_assessment_mode"\s+class="maximum-plus-grading-options"[\s\S]*?\smandatory\s/)
-        expect(source).toContain('<v-btn value="overall">Gesamtbeurteilung</v-btn>')
-        expect(source).toContain('<v-btn value="individual">Einzelbeurteilungen</v-btn>')
+    it('keeps legacy per-entry weights and thresholds inactive under the new point sum', () => {
+        const entry = entryFixture({ properties_mode: 'points', maximum_points: 5, teaching_entry_grading_part_id: 20,
+            points_grade_thresholds: null, grading_part_weight: null })
+        const part = { id: 20, allowed_entry_types: 'points', points_assessment_mode: 'sum_percent' }
+        const ctx = { gradingParts: [part], calculationDialogEntry: entry, calculationEntries: [entry, { ...entry, id: 2 }] }
+
+        expect((Entries as any).computed.calculationDialogHasPartAssessment.call(ctx)).toBe(false)
+        expect((Entries as any).methods.entryCalculationIssue.call(ctx, entry)).toBe('')
+    })
+
+    it.each(['sum_percent', 'plus_minus', 'grade_each', 'grade_mean', 'sign_grade', 'sign_adjust'])('saves method %s without changing the assignment filter or requiring old thresholds', async (method) => {
+        const methods = (Entries as any).methods
+        const original = { id: 20, gradingPartId: 20, name: 'Aufträge', allowed_entry_types: 'points',
+            points_assessment_mode: 'overall', weight: 3, is_required: true }
+        if (method.startsWith('grade_')) Object.assign(original, { entries: [entryFixture({ properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'] })] })
+        if (method.startsWith('sign_')) Object.assign(original, { entries: [entryFixture({ properties_mode: 'free', fixed_properties: ['+', '0'] })] })
+        const updated = { ...original, points_assessment_mode: method }
+        const put = vi.fn().mockResolvedValue({ data: { data: updated } })
+        vi.stubGlobal('axios', { put })
+        try {
+            const ctx: any = { activeAreaId: 10, gradingParts: [original], gradingPartWeightValid: false,
+                gradingPartOverallThresholdError: 'Notengrenzen fehlen', closeGradingPartDialog: methods.closeGradingPartDialog,
+                gradingPartOccurrenceError: methods.gradingPartOccurrenceError, notifyError: vi.fn() }
+            methods.openEditGradingPartDialog.call(ctx, original)
+            ctx.gradingPartCalculationMethod = method
+            if (method.startsWith('sign_')) ctx.gradingPartSignPurpose = method
+            if (method === 'sign_grade') ctx.gradingPartSignThresholds = { 4: -2, 3: 0, 2: 2, 1: 4 }
+
+            await methods.saveGradingPart.call(ctx, true)
+
+            expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20', {
+                name: 'Aufträge', points_assessment_mode: method,
+                ...(method.startsWith('grade_') ? { is_required: true, entry_standard_grade_occurrences: [{ entry_definition_id: 1, configuration: { mode: 'single', count: null } }] } : {}),
+                ...(method === 'sign_grade' ? { sign_grade_thresholds: { 4: -2, 3: 0, 2: 2, 1: 4 } } : {}),
+                ...(method === 'sign_adjust' ? { sign_adjustment: { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null } } : {}),
+            })
+            expect(ctx.gradingParts).toEqual([updated])
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it.each([false, true, undefined])('restores and saves the standard grade requirement %s through the existing setting', async (required) => {
+        const methods = (Entries as any).methods
+        const entries = [entryFixture({ properties_mode: 'grades', standard_grade_occurrences: { mode: 'single' } })]
+        const original = { id: 20, gradingPartId: 20, name: 'Prüfung', points_assessment_mode: 'grade_each', is_required: required, entries }
+        const put = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { ...original, ...payload } } }))
+        vi.stubGlobal('axios', { put })
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const vm = wrapper.vm as any
+            vm.activeAreaId = 10
+            vm.gradingParts = [original]
+            vm.openEditGradingPartDialog(original)
+            await vm.$nextTick()
+            expect(vm.gradingPartForm.is_required).toBe(required ?? false)
+            const choices = wrapper.get('[aria-label="Verbindlichkeit der Standardnote"]')
+            expect(choices.text()).toContain('Optional')
+            expect(choices.text()).toContain('Verpflichtend')
+            const section = wrapper.get('[aria-labelledby="grading-part-calculation-title"]')
+            expect(section.element.firstElementChild).toBe(choices.element)
+            vm.gradingPartForm.is_required = !(required ?? false)
+            await vm.saveGradingPart(true)
+            expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/entry_grading_parts/20', { name: 'Prüfung', points_assessment_mode: 'grade_each', is_required: !(required ?? false), entry_standard_grade_occurrences: [{ entry_definition_id: 1, configuration: { mode: 'single', count: null } }] })
+            vm.openEditGradingPartDialog({ ...vm.gradingParts[0], gradingPartId: 20 })
+            expect(vm.gradingPartForm.is_required).toBe(!(required ?? false))
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it.each(['points', 'all', 'non_points'])('saves assignment filter %s without changing existing assignments or calculation mode', async (allowed) => {
+        const methods = (Entries as any).methods
+        const original = { id: 20, name: 'Aufträge', allowed_entry_types: allowed === 'all' ? 'points' : 'all', points_assessment_mode: 'sum_percent' }
+        const updated = { ...original, allowed_entry_types: allowed }
+        const put = vi.fn().mockResolvedValue({ data: { data: updated } })
+        const post = vi.fn()
+        const remove = vi.fn()
+        vi.stubGlobal('axios', { put, post, delete: remove })
+        try {
+            const ctx: any = { assignGradingPartId: 20, selectedGradingEntryIds: [1], assignmentAllowedEntryTypes: allowed,
+                gradingParts: [original], calculationEntries: [entryFixture({ properties_mode: allowed === 'non_points' ? 'plus_minus' : 'points', teaching_entry_grading_part_id: 20 })],
+                cancelGradingEntryAssignment: methods.cancelGradingEntryAssignment, notifyError: vi.fn() }
+
+            await methods.saveGradingEntryAssignments.call(ctx)
+
+            expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20', { name: 'Aufträge', allowed_entry_types: allowed })
+            expect(ctx.gradingParts).toEqual([updated])
+            expect(post).not.toHaveBeenCalled()
+            expect(remove).not.toHaveBeenCalled()
+            expect(ctx.assignmentAllowedEntryTypes).toBeNull()
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('rejects a filter switch with incompatible selected assignments without changing saved data', async () => {
+        const put = vi.fn()
+        const remove = vi.fn()
+        vi.stubGlobal('axios', { put, delete: remove })
+        try {
+            const ctx: any = { assignGradingPartId: 20, selectedGradingEntryIds: [1], assignmentAllowedEntryTypes: 'points',
+                gradingParts: [{ id: 20, allowed_entry_types: 'all' }],
+                calculationEntries: [entryFixture({ properties_mode: 'free', teaching_entry_grading_part_id: 20 })], notifyError: vi.fn() }
+
+            await (Entries as any).methods.saveGradingEntryAssignments.call(ctx)
+
+            expect(put).not.toHaveBeenCalled()
+            expect(remove).not.toHaveBeenCalled()
+            expect(ctx.notifyError).toHaveBeenCalled()
+            expect(ctx.selectedGradingEntryIds).toEqual([1])
+        } finally { vi.unstubAllGlobals() }
+    })
+
+    it('renames a grading part without changing its calculation settings or requiring thresholds', async () => {
+        const methods = (Entries as any).methods
+        const original = { id: 20, gradingPartId: 20, name: 'Aufträge', weight: 6, fixed_percentage: 30,
+            is_required: true, allowed_entry_types: 'points', points_assessment_mode: 'overall',
+            individual_points_weighting_mode: 'points', overall_points_grade_thresholds: null }
+        const updated = { ...original, name: 'Arbeitsaufträge' }
+        const put = vi.fn().mockResolvedValue({ data: { data: updated } })
+        vi.stubGlobal('axios', { put })
+        const ctx: any = { activeAreaId: 10, gradingParts: [original], gradingPartWeightValid: false,
+            gradingPartOverallThresholdError: 'Notengrenzen fehlen', gradingPartHasNonPointEntries: true,
+            closeGradingPartDialog: methods.closeGradingPartDialog, notifyError: vi.fn() }
+
+        methods.openEditGradingPartDialog.call(ctx, original, 'name')
+        expect(ctx.gradingPartDialogMode).toBe('name')
+        ctx.gradingPartForm.name = '  Arbeitsaufträge  '
+        await methods.saveGradingPart.call(ctx)
+
+        expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20', { name: 'Arbeitsaufträge' })
+        expect(ctx.gradingParts).toEqual([updated])
+        expect(ctx.gradingPartDialogOpen).toBe(false)
+        methods.openEditGradingPartDialog.call(ctx, updated)
+        expect(ctx.gradingPartDialogMode).toBe('settings')
+        expect(ctx.gradingPartForm.weight).toBe(6)
+        expect(ctx.gradingPartForm.fixed_percentage).toBe(30)
+        expect(ctx.gradingPartForm.is_required).toBe(true)
+        expect(ctx.gradingPartForm.points_assessment_mode).toBe('overall')
+    })
+
+    it('keeps incompatible assignment options visible and disables them', async () => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            data: () => ({ areas: [{ id: 10, name: 'Unterstufe' }], activeAreaId: 10,
+                activeCategory: 'Berechnung', assignGradingPartId: 20,
+                gradingParts: [{ id: 20, teaching_entry_area_id: 10, name: 'Aufträge', allowed_entry_types: 'points' }],
+                entries: [entryFixture({ id: 1, name: 'Punkteauftrag', properties_mode: 'points', maximum_points: 5 }),
+                    ...['fixed', 'free', 'plus', 'plus_minus'].map((mode, index) =>
+                        entryFixture({ id: index + 2, name: `Anderer Typ ${mode}`, properties_mode: mode }))] }),
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            expect(wrapper.findAll('.calculation-entry-selection-card')).toHaveLength(5)
+            expect(wrapper.find('.calculation-entry-selection-card').text()).toContain('Punkteauftrag')
+            expect(wrapper.findAll('.calculation-entry-selection-card:disabled')).toHaveLength(4)
+            expect(wrapper.text()).toContain('Nicht zulässig für die gewählten Typengruppen')
+            expect(wrapper.text()).toContain('5 Eintragstypen')
+
+            await wrapper.setData({ assignmentAllowedEntryTypes: 'all' })
+
+            expect(wrapper.findAll('.calculation-entry-selection-card')).toHaveLength(5)
+            expect(wrapper.text()).toContain('Anderer Typ fixed')
+            expect(wrapper.findAll('.calculation-entry-selection-card:disabled')).toHaveLength(0)
+            ;(wrapper.vm as any).assignmentEntryTypeGroups = ['signs', 'grades']
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll('.calculation-entry-selection-card')).toHaveLength(5)
+            expect(wrapper.findAll('.calculation-entry-selection-card:disabled')).toHaveLength(1)
+            expect((wrapper.vm as any).assignmentAllowedEntryTypes).toBe('signs_note')
+            ;(wrapper.vm as any).assignmentEntryTypeGroups = ['signs', 'points', 'grades']
+            expect((wrapper.vm as any).assignmentAllowedEntryTypes).toBe('signs_note')
+            ;(wrapper.vm as any).assignmentEntryTypeGroups = []
+            await wrapper.vm.$nextTick()
+            expect(wrapper.findAll('.calculation-entry-selection-card')).toHaveLength(5)
+            expect(wrapper.findAll('.calculation-entry-selection-card:disabled')).toHaveLength(5)
+            expect((wrapper.vm as any).hasGradingEntryAssignmentChanges).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        [['plus_minus'], true], [['plus_minus', 'plus_minus'], true], [['points'], false], [['points', 'points'], false], [['plus_minus', 'points'], false], [[], false], [['free'], false],
+    ])('uses actual assigned modes %j to restrict pure plus-minus parts', async (modes, pure) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true, 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            const onlyPoints = modes.length > 0 && modes.every((mode) => mode === 'points')
+            ;(wrapper.vm as any).openEditGradingPartDialog({ gradingPartId: 20, name: 'Mitarbeit', allowed_entry_types: 'all', points_assessment_mode: onlyPoints ? 'plus_minus' : 'individual', entries: (modes as string[]).map((properties_mode) => ({ properties_mode })) })
+            await wrapper.vm.$nextTick()
+            const section = wrapper.get('[aria-labelledby="grading-part-calculation-title"]')
+            expect(section.text().includes('Alle Punkte addieren')).toBe(!pure)
+            expect(section.text().includes('Plus und Minus gegenrechnen')).toBe(!onlyPoints && !pure)
+            expect((wrapper.vm as any).gradingPartCalculationMethod).toBe(pure ? 'plus_minus' : 'sum_percent')
+            if (pure) {
+                expect(section.text()).toContain('Regel wird noch festgelegt')
+                expect((wrapper.vm as any).gradingPartSignPurpose).toBeNull()
+                expect(section.text()).toContain('Eigene Note berechnen')
+                expect(section.text()).toContain('Bestehende Note anpassen')
+                expect(section.find('[aria-label="Berechnungsmethode"]').exists()).toBe(false)
+            }
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        [[{ has_properties: true, properties_mode: 'fixed', fixed_properties: ['5', '3', '1', '2', '4'], standard_grade_occurrences: { mode: 'fixed', count: 2 } }], true],
+        [[{ has_properties: true, properties_mode: 'free', fixed_properties: ['1', '2', '3', '4', '5'] }], false],
+        [[{ has_properties: true, properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5', 'NB'] }], false],
+        [[{ has_properties: true, properties_mode: 'fixed', fixed_properties: ['1', '2', '3', '4', '5'] }, { properties_mode: 'points' }], false],
+        [[], false],
+    ])('offers the two grade methods only for actual standard grade types %j', async (entries, pure) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            ;(wrapper.vm as any).openEditGradingPartDialog({ gradingPartId: 20, name: 'Prüfung', points_assessment_mode: 'grade_mean', entries })
+            await wrapper.vm.$nextTick()
+            const section = wrapper.get('[aria-labelledby="grading-part-calculation-title"]')
+            expect(section.text().includes('Jede Note extra rechnen')).toBe(pure)
+            expect(section.text().includes('Notendurchschnitt')).toBe(pure)
+            expect(section.text().includes('Alle Punkte addieren')).toBe(!pure)
+            expect(section.text().includes('Plus und Minus gegenrechnen')).toBe(!pure)
+            expect((wrapper.vm as any).gradingPartCalculationMethod).toBe(pure ? 'grade_mean' : 'sum_percent')
+            if (pure) expect(section.find('.point-sum-grade-scale').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        ['free', ['+', '++', '---', '−−'], true], ['fixed', ['++++', '-'], true],
+        ['free', ['+', '0'], true], ['fixed', ['-', '0'], true], ['free', ['0'], false],
+        ['fixed', ['+', '-', 'F'], false], ['free', [], false],
+    ])('recognizes configured %s signs %j without treating mixed lists as pure', async (properties_mode, fixed_properties, pure) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            ;(wrapper.vm as any).openEditGradingPartDialog({ gradingPartId: 20, name: 'Mitarbeit', allowed_entry_types: 'all', entries: [{ properties_mode, fixed_properties }] })
+            await wrapper.vm.$nextTick()
+            expect(wrapper.get('[aria-labelledby="grading-part-calculation-title"]').text().includes('Alle Punkte addieren')).toBe(!pure)
+            expect((wrapper.vm as any).gradingPartCalculationMethod).toBe(pure ? 'plus_minus' : 'sum_percent')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([['plus_minus', null], ['sign_grade', 'sign_grade'], ['sign_adjust', 'sign_adjust']])('opens saved sign mode %s with its explicit purpose and no automatic conversion', async (mode, purpose) => {
+        const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
+            global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
+                'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
+        })
+        try {
+            ;(wrapper.vm as any).openEditGradingPartDialog({ gradingPartId: 20, name: 'Mitarbeit', points_assessment_mode: mode,
+                entries: [{ properties_mode: 'free', fixed_properties: ['+', '0'] }] })
+            await wrapper.vm.$nextTick()
+            expect((wrapper.vm as any).gradingPartSignPurpose).toBe(purpose)
+            const section = wrapper.get('[aria-labelledby="grading-part-calculation-title"]')
+            expect(section.text()).toContain('Plus und Minus werden gegengerechnet. Jedes Plus zählt +1, jedes Minus −1, eine 0 ist neutral.')
+            expect(section.find('[aria-label="Berechnungsmethode"]').exists()).toBe(false)
+            expect(section.get('[aria-label="Verwendung des Plus-Minus-Saldos"]').attributes('multiple')).toBeUndefined()
+            if (mode === 'sign_adjust') {
+                expect(section.text()).toContain('Note verbessern')
+                expect(section.text()).toContain('Notenwert beibehalten')
+                expect(section.text()).toContain('Note verschlechtern')
+            } else {
+                expect(section.text()).toContain(mode === 'sign_grade' ? 'Mindest-Saldo' : 'keine Note wird berechnet oder angepasst')
+            }
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        [{ 4: -2, 3: 0, 2: 2, 1: 4 }, ''],
+        [{ 4: 0, 3: 0, 2: 2, 1: 4 }, 'mehr Saldo'],
+        [{ 4: 1, 3: 0, 2: 2, 1: 4 }, 'mehr Saldo'],
+        [{ 4: null, 3: 0, 2: 2, 1: 4 }, 'alle vier'],
+        [{ 4: 0.5, 3: 1, 2: 2, 1: 4 }, 'ganze'],
+        [{ 4: -Infinity, 3: 1, 2: 2, 1: 4 }, 'ganze'],
+    ])('validates signed integer grade thresholds %j', (thresholds, error) => {
+        const validate = (Entries as any).computed.gradingPartSignThresholdError
+        expect(validate.call({ gradingPartOnlyPlusMinus: true, gradingPartSignPurpose: 'sign_grade', gradingPartSignThresholds: thresholds })).toContain(error)
+        expect(validate.call({ gradingPartOnlyPlusMinus: true, gradingPartSignPurpose: 'sign_adjust', gradingPartSignThresholds: thresholds })).toBe('')
     })
 
     it.each(['fixed', 'free', 'plus', 'plus_minus', 'points'])('restricts assignment based on property mode %s', (mode) => {
@@ -2058,6 +3415,7 @@ describe('Teaching entries settings', () => {
             gradingParts: [{ id: 20, teaching_entry_area_id: 10, name: 'Mündlich' }],
             entries,
             deleteGradingPartId: 20,
+            areas: [{ id: 10, grading_part_groups: [{ id: 'group', part_ids: [20, 21], weights: [{ part_id: 20, weight: 40 }, { part_id: 21, weight: 60 }] }], grading_level_weights: [{ group_id: 'group', weight: 2 }] }],
             gradingPartDeleteDialogOpen: true,
             isDeletingGradingPart: false,
             closeDeleteGradingPartDialog: methods.closeDeleteGradingPartDialog,
@@ -2069,6 +3427,9 @@ describe('Teaching entries settings', () => {
         expect(deleteRequest).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20')
         expect(ctx.gradingParts).toEqual([])
         expect(ctx.entries).toEqual(entries)
+        expect(ctx.areas[0].grading_part_groups[0].part_ids).toEqual([21])
+        expect(ctx.areas[0].grading_part_groups[0]).not.toHaveProperty('weights')
+        expect(ctx.areas[0].grading_level_weights).toEqual([{ group_id: 'group', weight: 2 }])
     })
 
     it('loads all grading entries and saves selected and deselected assignments', async () => {
@@ -2272,10 +3633,10 @@ describe('Teaching entries settings', () => {
         const addEntryButtonIndex = source.indexOf('@click="openCreateDialog"')
         const designationCardIndex = source.indexOf('<strong>Bezeichnung</strong>')
         const descriptionFieldIndex = source.indexOf('v-model="entryForm.description"')
-        const tableMarkingCardIndex = source.indexOf('<strong>Markierung in Tabelle</strong>')
+        const tableMarkingCardIndex = source.indexOf('<strong>Ganzen Tag bei Verwendung dieses Eintrags markieren</strong>')
         const propertiesCardIndex = source.indexOf('<strong>Eigenschaften</strong>')
         const calculationPageIndex = source.indexOf('<template v-if="activeCategory === \'Berechnung\'">')
-        const semesterGradeTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">Semesternote</div>')
+        const semesterGradeTitleIndex = source.indexOf("{{ simulation ? 'Simulation' : 'Semesternote' }}")
         const calculationAreaListIndex = source.indexOf('class="calculation-area-list mt-3"')
         const addGradingPartButtonIndex = source.indexOf('Benotungsteil hinzufügen')
         const assignGradingPartButtonIndex = source.indexOf('@click="toggleGradingEntryAssignment(area)"')
@@ -2290,7 +3651,7 @@ describe('Teaching entries settings', () => {
         expect(propertiesCardIndex).toBeGreaterThan(tableMarkingCardIndex)
         expect(semesterGradeTitleIndex).toBeGreaterThan(calculationPageIndex)
         expect(addGradingPartButtonIndex).toBeGreaterThan(calculationAreaListIndex)
-        expect(editGradingPartButtonIndex).toBeGreaterThan(assignGradingPartButtonIndex)
+        expect(assignGradingPartButtonIndex).toBeLessThan(editGradingPartButtonIndex)
         expect(deleteGradingPartButtonIndex).toBeGreaterThan(editGradingPartButtonIndex)
         expect(source).toContain('label="Beschreibung"')
         expect(source).toContain(':error-messages="formErrors.description"')
@@ -2304,23 +3665,23 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('@click="copyEntriesFromArea"')
         expect(source).toContain('class="entry-area-grid mt-4"')
         expect(source).toContain("categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere']")
-        expect(source).toContain('v-for="area in calculationAreas"')
+        expect(source).toContain('v-for="area in block.parts"')
         expect(source).toContain('v-for="entry in area.entries"')
         expect(source).toContain('class="calculation-area-list mt-3"')
         expect(source).toContain('class="calculation-entry-selection-grid"')
         expect(source).toContain('<section v-if="assignGradingPartId" class="calculation-area-card mt-3">')
-        expect(source).toContain('v-for="entry in calculationEntries"')
+        expect(source).toContain('v-for="entry in assignableCalculationEntries"')
         expect(source).toContain('class="calculation-entry-selection-card"')
         expect(source).toContain("'calculation-entry-selection-card--selected': selectedGradingEntryIds.includes(entry.id)")
         expect(source).toContain(':aria-pressed="selectedGradingEntryIds.includes(entry.id)"')
         expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))')
         expect(source).toContain('@click="toggleGradingEntryAssignment(area)"')
-        expect(source).toContain('title="Benotungsteil bearbeiten"')
+        expect(source).toContain('title="Einstellungen"')
         expect(source).toContain('@click="openEditGradingPartDialog(area)"')
         expect(source).toContain('@click="toggleGradingEntrySelection(entry)"')
         expect(source).toContain('@click="saveGradingEntryAssignments"')
         expect(source).toContain('Zuordnung speichern')
-        expect(source).toContain("{{ assignGradingPartId === area.gradingPartId ? 'Auswahl abbrechen' : 'Zuordnung' }}")
+        expect(source).toContain('title="Zuordnung" aria-label="Zuordnung"')
         expect(source).not.toContain('@click="assignGradingEntry(entry)"')
         expect(source).not.toContain('calculation-entry-list--source')
         expect(source).not.toContain('v-model="assignGradingEntryDialogOpen"')

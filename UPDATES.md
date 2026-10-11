@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.51.0
+## 3.51.1
 
 ### Unterricht
 
@@ -11,6 +11,16 @@
 - Quick-Import aus einem pro Benutzer und Arbeit zugeordneten Dropbox-Ordner: aktuellen Cloudstand lesen, Vorschau und Übernahme getrennt bestätigen
 - Dropbox-Quick-Import beschleunigt: PDFs und Versandprotokolle mit höchstens vier gleichzeitigen Downloads lesen; vollständige Prüfungen und frischer Cloudstand vor der Übernahme bleiben erhalten
 - Dropbox-Anbindung lokal mit simulierten API-Antworten und echtem Lesezugriff geprüft; Datei-Prüfsummen und Vorschau mit dem lokalen Import verglichen, noch nicht online veröffentlicht
+- Stundenplan Übersicht: Angepasstes UI-Design
+- XSUP, XSPR, BMP, TABE im Stundenplan eintragbar machen
+
+### Notenbewertungen
+
+- Weiterentwicklung der Bewertung von Leistungen
+
+### Unterricht - Detail
+
+- Schüler:innen: Ergebnisse werden detailliert angezeigt
 
 ### System
 

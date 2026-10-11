@@ -65,6 +65,7 @@ class StoreTeachingEntryDefinitionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            ...UpdateTeachingEntryDefinitionRequest::standardGradeOccurrenceRules((new TeachingEntryDefinition($this->only(['category', 'has_properties', 'properties_mode', 'fixed_properties'])))->calculation_mode === 'grades'),
             ...UpdateTeachingEntryCalculationSettingsRequest::definitionEvaluationRules($this->input('category'), $this->input('properties_mode'), $this->input('fixed_properties', []), $this->input('enabled_special_properties', $this->route('entryDefinition')?->enabled_special_properties ?? TeachingEntryDefinition::SpecialProperties)),
             'teaching_entry_area_id' => [
                 'required',

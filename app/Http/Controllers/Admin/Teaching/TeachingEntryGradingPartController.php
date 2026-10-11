@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Teaching\StoreTeachingEntryGradingPartRequest;
 use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryGradingPartRequest;
+use App\Http\Resources\Admin\Teaching\TeachingEntryAreaResource;
+use App\Http\Resources\Admin\Teaching\TeachingEntryDefinitionResource;
 use App\Http\Resources\Admin\Teaching\TeachingEntryGradingPartResource;
 use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
+use App\Support\TeachingGradingAdjustmentStructure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class TeachingEntryGradingPartController extends Controller
@@ -38,6 +43,7 @@ class TeachingEntryGradingPartController extends Controller
         $gradingPart = DB::transaction(function () use ($request, $user): TeachingEntryGradingPart {
             $areaId = $request->integer('teaching_entry_area_id');
             $this->lockArea($user, $areaId);
+            TeachingGradingAdjustmentStructure::assertChange(TeachingEntryArea::query()->findOrFail($areaId), 'teaching_entry_area_id', partChange: ['id' => -1, 'points_assessment_mode' => 'individual']);
             $this->ensureFixedPercentageTotal($user, $areaId, $request->validated('fixed_percentage'));
 
             return TeachingEntryGradingPart::query()->create([
@@ -57,13 +63,13 @@ class TeachingEntryGradingPartController extends Controller
     ): TeachingEntryGradingPartResource {
         $user = $this->authorizedUser();
         $this->ensureGradingPartBelongsToUser($entryGradingPart, $user);
-        DB::transaction(function () use ($request, $entryGradingPart, $user): void {
+        $updatedArea = null;
+        DB::transaction(function () use ($request, $entryGradingPart, $user, &$updatedArea): void {
             $this->lockArea($user, $entryGradingPart->teaching_entry_area_id);
             $entryGradingPart->refresh();
-            if ($request->validated('allowed_entry_types', $entryGradingPart->allowed_entry_types) === 'points'
-                && $entryGradingPart->entryDefinitions()->where('properties_mode', '!=', 'points')->exists()) {
+            if ($entryGradingPart->entryDefinitions()->get()->contains(fn ($entry): bool => ! $entryGradingPart->allowsEntry($entry, $request->validated('allowed_entry_types', $entryGradingPart->allowed_entry_types)))) {
                 throw ValidationException::withMessages([
-                    'allowed_entry_types' => 'Bitte zuerst alle anderen Eintragstypen aus diesem Benotungsteil entfernen oder in Punktetypen ändern.',
+                    'allowed_entry_types' => 'Bitte zuerst die unzulässigen Eintragstypen ausdrücklich aus diesem Benotungsteil entfernen.',
                 ]);
             }
             $this->ensureFixedPercentageTotal(
@@ -73,7 +79,32 @@ class TeachingEntryGradingPartController extends Controller
                 $entryGradingPart->id,
             );
             $payload = $request->validated();
-            if (($payload['allowed_entry_types'] ?? $entryGradingPart->allowed_entry_types) !== 'points') {
+            if (array_key_exists('sign_adjustment', $payload) && ! Schema::hasColumn('teaching_entry_grading_parts', 'sign_adjustment')) {
+                abort(409, 'Die vorbereitete Migration für die Notenanpassung muss zuerst angewendet werden.');
+            }
+            if (array_key_exists('points_assessment_mode', $payload)) {
+                TeachingGradingAdjustmentStructure::assertChange(
+                    TeachingEntryArea::query()->findOrFail($entryGradingPart->teaching_entry_area_id),
+                    'points_assessment_mode',
+                    partChange: ['id' => $entryGradingPart->id, 'points_assessment_mode' => $payload['points_assessment_mode']],
+                );
+            }
+            foreach ($payload['entry_standard_grade_occurrences'] ?? [] as $occurrence) {
+                $entry = $entryGradingPart->entryDefinitions()->whereKey($occurrence['entry_definition_id'])
+                    ->where('user_id', $user->id)->where('school_id', $user->school_id)
+                    ->where('schoolyear_id', $user->schoolyear_id)->where('teaching_entry_area_id', $entryGradingPart->teaching_entry_area_id)
+                    ->lockForUpdate()->first();
+                if (! $entry || ! TeachingEntryGradingPart::isStandardGradeType($entry)) {
+                    throw ValidationException::withMessages(['entry_standard_grade_occurrences' => 'Die Anzahl ist nur für zugeordnete Standardnotentypen dieses Benotungsteils verfügbar.']);
+                }
+                $entry->update(['standard_grade_occurrences' => TeachingEntryDefinition::normalizeStandardGradeOccurrences($occurrence['configuration'])]);
+            }
+            unset($payload['entry_standard_grade_occurrences']);
+            if (isset($payload['sign_grade_thresholds'])) {
+                $payload['sign_grade_thresholds'] = array_map(fn (mixed $value): int => (int) $value, $payload['sign_grade_thresholds']);
+            }
+            if (($payload['allowed_entry_types'] ?? $entryGradingPart->allowed_entry_types) !== 'points'
+                && ! in_array($payload['points_assessment_mode'] ?? $entryGradingPart->points_assessment_mode, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean'], true)) {
                 $payload['points_assessment_mode'] = 'individual';
                 $payload['overall_points_grade_thresholds'] = null;
             }
@@ -81,15 +112,49 @@ class TeachingEntryGradingPartController extends Controller
                 $payload['overall_points_grade_thresholds'] = array_map(fn (mixed $value): float => (float) $value, $payload['overall_points_grade_thresholds']);
             }
             $entryGradingPart->update($payload);
+            $area = TeachingEntryArea::query()->findOrFail($entryGradingPart->teaching_entry_area_id);
+            if (TeachingGradingAdjustmentStructure::clearContextWeights($area, [$entryGradingPart->grading_group_id ?? 'root'])) {
+                $updatedArea = $area;
+            }
         });
 
-        return new TeachingEntryGradingPartResource($entryGradingPart->refresh());
+        $resource = new TeachingEntryGradingPartResource($entryGradingPart->refresh());
+        $additional = [];
+        if ($updatedArea !== null) {
+            $additional['entry_area'] = (new TeachingEntryAreaResource($updatedArea->loadCount('entryDefinitions')))->resolve();
+        }
+        if ($request->has('entry_standard_grade_occurrences')) {
+            $additional['entry_definitions'] = TeachingEntryDefinitionResource::collection($entryGradingPart->entryDefinitions)->resolve();
+        }
+        $resource->additional($additional);
+
+        return $resource;
     }
 
     public function destroy(TeachingEntryGradingPart $entryGradingPart): Response
     {
-        $this->ensureGradingPartBelongsToUser($entryGradingPart, $this->authorizedUser());
-        $entryGradingPart->delete();
+        $user = $this->authorizedUser();
+        $this->ensureGradingPartBelongsToUser($entryGradingPart, $user);
+        DB::transaction(function () use ($entryGradingPart, $user): void {
+            $this->lockArea($user, $entryGradingPart->teaching_entry_area_id);
+            $area = TeachingEntryArea::query()->findOrFail($entryGradingPart->teaching_entry_area_id);
+            $groups = $area->grading_part_groups ?? [];
+            $changes = [];
+            foreach ($groups as $index => $group) {
+                if (collect($group['weights'] ?? [])->contains('teaching_entry_grading_part_id', $entryGradingPart->id)) {
+                    unset($groups[$index]['weights']);
+                    $changes['grading_part_groups'] = $groups;
+                }
+            }
+            if (collect($area->grading_level_weights ?? [])->contains('teaching_entry_grading_part_id', $entryGradingPart->id)) {
+                $changes['grading_level_weights'] = null;
+            }
+            if ($changes !== []) {
+                $area->update($changes);
+            }
+            $entryGradingPart->delete();
+            TeachingGradingAdjustmentStructure::clearContextWeights($area, [$entryGradingPart->grading_group_id ?? 'root']);
+        });
 
         return response()->noContent();
     }

@@ -1,5 +1,21 @@
 import { parseLocalDate } from '@/helpers/date'
 
+export const standardPercentageGrades = [
+    { min: 87.5, max: 100, grade: 1, label: 'Sehr gut', color: '#43a047' },
+    { min: 75, max: 87.5, grade: 2, label: 'Gut', color: '#7cb342' },
+    { min: 62.5, max: 75, grade: 3, label: 'Befriedigend', color: '#ffb300' },
+    { min: 50, max: 62.5, grade: 4, label: 'Genügend', color: '#fb8c00' },
+    { min: 0, max: 50, grade: 5, label: 'Nicht genügend', color: '#e53935' },
+]
+
+const failingBand = standardPercentageGrades.at(-1)
+export const percentageProgressGradient = `linear-gradient(to right, ${failingBand.color} 0%, ${failingBand.color} ${failingBand.max}%, ${standardPercentageGrades.slice(0, -1).reverse().map((band) => `${band.color} ${band.min}%`).join(', ')}, ${standardPercentageGrades[0].color} 100%)`
+
+export function percentageGradeBand(percent) {
+    if (!Number.isFinite(percent)) return null
+    return standardPercentageGrades.find((band) => percent >= band.min) || standardPercentageGrades.at(-1)
+}
+
 function normalizeGradeKey(gradeKey) {
     return String(gradeKey || '').trim().toUpperCase()
 }

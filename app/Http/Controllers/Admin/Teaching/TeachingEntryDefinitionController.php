@@ -59,8 +59,8 @@ class TeachingEntryDefinitionController extends Controller
         if (! in_array($entryDefinition->grading_part_other_assessment_mode, TeachingEntryDefinition::allowedOtherAssessmentModes($payload['properties_mode']), true)) {
             $payload['grading_part_other_assessment_mode'] = null;
         }
-        if ($entryDefinition->gradingPart?->allowed_entry_types === 'points' && $payload['properties_mode'] !== 'points') {
-            throw ValidationException::withMessages(['properties_mode' => 'Dieser Benotungsteil erlaubt nur Punktetypen. Bitte zuerst die Zuordnung entfernen.']);
+        if ($entryDefinition->gradingPart && ! $entryDefinition->gradingPart->allowsEntry(new TeachingEntryDefinition($payload))) {
+            throw ValidationException::withMessages(['properties_mode' => 'Dieser Eintragstyp ist für den zugeordneten Benotungsteil nicht zulässig. Bitte zuerst die Zuordnung entfernen.']);
         }
         if ($payload['properties_mode'] !== 'points'
             || collect($entryDefinition->points_grade_thresholds ?? [])->contains(fn (mixed $threshold): bool => $threshold > $payload['maximum_points'])) {
@@ -154,6 +154,7 @@ class TeachingEntryDefinitionController extends Controller
 
         return [
             ...(array_key_exists('property_evaluations', $validated) ? ['property_evaluations' => $validated['property_evaluations']] : []),
+            ...(array_key_exists('standard_grade_occurrences', $validated) ? ['standard_grade_occurrences' => TeachingEntryDefinition::normalizeStandardGradeOccurrences($validated['standard_grade_occurrences'])] : []),
             ...(array_key_exists('enabled_special_properties', $validated) ? ['enabled_special_properties' => $validated['enabled_special_properties']] : []),
             'teaching_entry_area_id' => (int) $validated['teaching_entry_area_id'],
             'short_name' => Str::of($validated['short_name'])->trim()->upper()->toString(),
