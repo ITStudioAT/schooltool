@@ -58,7 +58,7 @@ it('fills the available width with equal weekdays and keeps long entries readabl
         global: {
             plugins: [createVuetify()],
             components: { VIcon, VCard, VCardText, VCardTitle },
-            stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+            stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true, 'v-checkbox': true,
                 'v-icon': false, 'v-card': false, 'v-card-text': false, 'v-card-title': false },
         },
     })

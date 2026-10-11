@@ -11,6 +11,9 @@ use RuntimeException;
 
 class TeachingSynchronisationGraph
 {
+    /** Dropbox folder choices belong to the local OAuth connection, never to the transferred school graph. */
+    private const array LOCAL_TABLES = ['teaching_work_dropbox_folders'];
+
     // Dependency order; recovery archives/history are separate functions.
     public const array TABLES = [
         'teaching_curricula' => 'school_id',
@@ -22,6 +25,7 @@ class TeachingSynchronisationGraph
         'teaching_entry_definitions' => 'school_id',
         'teaching_holidays' => 'school_id',
         'teaching_school_hours' => 'school_id',
+        'teaching_personal_appointments' => 'school_id',
         'teaching_class_heads' => 'school_id',
         'teaching_class_head_emails' => 'school_id',
         'teaching_courses' => 'school_id',
@@ -77,7 +81,7 @@ class TeachingSynchronisationGraph
         $state = ['tables' => [], 'columns' => [], 'foreign_keys' => [], 'max_ids' => []];
         foreach (array_column($schema->getTables(), 'name') as $name) {
             if (str_starts_with($name, 'teaching_') && ! isset(self::TABLES[$name])
-                && ! in_array($name, ['teaching_backups', 'teaching_backup_restore_runs'], true)) {
+                && ! in_array($name, [...self::LOCAL_TABLES, 'teaching_backups', 'teaching_backup_restore_runs'], true)) {
                 throw new RuntimeException("Unbekannte Unterrichtstabelle {$name}; Umfang zuerst prüfen.");
             }
         }

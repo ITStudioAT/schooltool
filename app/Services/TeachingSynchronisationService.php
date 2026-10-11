@@ -169,6 +169,9 @@ class TeachingSynchronisationService
                             DB::table($table)->insert($chunk);
                         }
                     }
+                    foreach ($plan['dropbox_folders'] as $folder) {
+                        DB::table('teaching_work_dropbox_folders')->insert($folder);
+                    }
                     DB::table('school_tools')->where('school_id', $actor->school_id)->update($preview['source']['school_tools'][0]);
                 });
             } catch (\Throwable $exception) {
@@ -199,8 +202,25 @@ class TeachingSynchronisationService
     private function localState(int $schoolId, bool $lock = false): array
     {
         $state = $this->graph->capture(DB::connection(), $schoolId, $lock, true);
+        $folders = DB::table('teaching_work_dropbox_folders')
+            ->whereIn('teaching_course_work_id', array_column($state['tables']['teaching_course_works'], 'id'))
+            ->orderBy('id');
+        if ($lock) {
+            $folders->lockForUpdate();
+        }
+        $state['dropbox_folders'] = $folders->get()->map(fn (object $row): array => (array) $row)->all();
         $state['files'] = $this->files->capture($state['tables'], config('filesystems'), false, true);
         $state['conflicts'] = [];
+        $ownedConnections = DB::table('dropbox_connections')
+            ->join('users', 'users.id', '=', 'dropbox_connections.user_id')
+            ->where('users.school_id', $schoolId)
+            ->whereIn('dropbox_connections.id', array_column($state['dropbox_folders'], 'dropbox_connection_id'))
+            ->pluck('dropbox_connections.id')->all();
+        foreach ($state['dropbox_folders'] as $folder) {
+            if (! in_array($folder['dropbox_connection_id'], $ownedConnections, true)) {
+                $state['conflicts'][] = 'Lokale Dropbox-Ordnerzuordnung gehört zu einem Konto außerhalb der Schule.';
+            }
+        }
         foreach ($state['tables'] as $table => $rows) {
             foreach ($rows as $row) {
                 if (isset($row['school_id']) && (int) $row['school_id'] !== $schoolId) {
@@ -222,7 +242,7 @@ class TeachingSynchronisationService
                 $state['conflicts'][] = 'Lokale Datei '.$file['path'].': '.$file['error'];
             }
         }
-        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
+        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), 'teaching_work_dropbox_folders', 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
         $engines = DB::table('information_schema.TABLES')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())->whereIn('TABLE_NAME', $tables)->pluck('ENGINE');
         if ($engines->count() !== count($tables) || $engines->contains(fn ($engine): bool => strcasecmp((string) $engine, 'InnoDB') !== 0)) {
             $state['conflicts'][] = 'Alle betroffenen Tabellen müssen transaktionale InnoDB-Tabellen sein.';
@@ -231,9 +251,10 @@ class TeachingSynchronisationService
             $state['conflicts'][] = 'Datenbank-Trigger könnten fremde Module verändern; Synchronisation gesperrt.';
         }
         // Catch foreign-school, orphan and non-scoped references, including cascades in other modules.
+        $replacementTables = [...$state['tables'], 'teaching_work_dropbox_folders' => $state['dropbox_folders']];
         $references = DB::table('information_schema.KEY_COLUMN_USAGE')
             ->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())
-            ->whereIn('REFERENCED_TABLE_NAME', array_keys(TeachingSynchronisationGraph::TABLES))
+            ->whereIn('REFERENCED_TABLE_NAME', array_keys($replacementTables))
             ->get(['TABLE_NAME', 'COLUMN_NAME', 'REFERENCED_TABLE_NAME', 'REFERENCED_COLUMN_NAME']);
         foreach ($references as $reference) {
             if ($reference->REFERENCED_COLUMN_NAME !== 'id') {
@@ -242,9 +263,9 @@ class TeachingSynchronisationService
                 continue;
             }
             $query = DB::table($reference->TABLE_NAME)->whereIn($reference->COLUMN_NAME,
-                array_column($state['tables'][$reference->REFERENCED_TABLE_NAME], 'id'));
-            if (isset($state['tables'][$reference->TABLE_NAME])) {
-                $query->whereNotIn('id', array_column($state['tables'][$reference->TABLE_NAME], 'id'));
+                array_column($replacementTables[$reference->REFERENCED_TABLE_NAME], 'id'));
+            if (isset($replacementTables[$reference->TABLE_NAME])) {
+                $query->whereNotIn('id', array_column($replacementTables[$reference->TABLE_NAME], 'id'));
             }
             if ($query->exists()) {
                 $state['conflicts'][] = "Fremde Daten in {$reference->TABLE_NAME} referenzieren zu ersetzende Unterrichtsdaten.";
@@ -258,6 +279,21 @@ class TeachingSynchronisationService
     {
         $plan = $this->graph->plan($source, $local, $schoolId);
         $plan['conflicts'] = [...$plan['conflicts'], ...($local['conflicts'] ?? [])];
+        $plan['dropbox_folders'] = $local['dropbox_folders'];
+        $localWorks = array_column($local['tables']['teaching_course_works'], null, 'id');
+        $mappedWorks = array_column($plan['tables']['teaching_course_works'], null, 'id');
+        $localCourses = array_column($local['tables']['teaching_courses'], null, 'id');
+        $mappedCourses = array_column($plan['tables']['teaching_courses'], null, 'id');
+        $identityFields = array_flip(['teaching_course_id', 'type', 'title', 'date_for_all_groups']);
+        foreach ($plan['dropbox_folders'] as $folder) {
+            $localWork = $localWorks[$folder['teaching_course_work_id']];
+            $mappedWork = $mappedWorks[$folder['teaching_course_work_id']] ?? null;
+            if ($mappedWork === null
+                || array_intersect_key($localWork, $identityFields) !== array_intersect_key($mappedWork, $identityFields)
+                || $localCourses[$localWork['teaching_course_id']]['user_id'] !== ($mappedCourses[$mappedWork['teaching_course_id']]['user_id'] ?? null)) {
+                $plan['conflicts'][] = "Lokale Dropbox-Ordnerzuordnung für Arbeit #{$localWork['id']} kann nicht sicher erhalten werden. Arbeit oder Kursbesitzer unterscheidet sich; Zuordnung zuerst prüfen.";
+            }
+        }
         foreach ($source['files'] as $file) {
             if (isset($file['error'])) {
                 $plan['conflicts'][] = 'Cloud-Datei '.$file['path'].': '.$file['error'];

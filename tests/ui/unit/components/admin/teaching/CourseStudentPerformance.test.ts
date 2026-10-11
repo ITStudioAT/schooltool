@@ -107,7 +107,8 @@ describe('Compact course student performance', () => {
         await wrapper.setProps({ student: { ...student, user_id: 99, course_student_id: 99 } })
         expect(summaries()).toContain('Fremd')
         expect(summaries()).not.toContain('Aufträge')
-        expect(wrapper.find('.assignment-progress').exists()).toBe(false)
+        expect(wrapper.findAll('.assignment-progress').map((progress) => progress.text())).toEqual(['Fremd99 %'])
+        expect(wrapper.get('v-progress-linear').attributes('model-value')).toBe('99')
     })
 
     it.each([
