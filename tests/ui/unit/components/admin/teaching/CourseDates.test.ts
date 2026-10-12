@@ -910,7 +910,7 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('courseWorksForDate(courseDate)')
         expect(source).toContain('class="course-date-work-chip cursor-pointer"')
         expect(source).toContain('@click.stop="openCourseWork(work)"')
-        expect(source).toContain('prepend-icon="mdi-clipboard-text"')
+        expect(source).toContain('icon="mdi-brain"')
         expect(assignments.map((assignment: Record<string, any>) => assignment.label)).toEqual([
             'GA: Projekt (Gr. 1, 3)',
             'SA: Schularbeit (Einzelarbeit)',

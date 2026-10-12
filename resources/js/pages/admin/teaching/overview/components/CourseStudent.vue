@@ -712,7 +712,7 @@
                 <v-dialog v-model="show_work_entry_dialog" persistent max-width="500">
                     <v-card v-if="work_entry_dialog">
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                            <v-icon :color="workEntryIconColor(work_entry_dialog)" size="18">mdi-brain</v-icon>
                             Bewertung aus Arbeit
                             <v-chip v-if="work_entry_dialog.isGroupWork" size="x-small" variant="tonal" color="info">Gruppenarbeit</v-chip>
                             <v-spacer />
@@ -897,7 +897,7 @@ import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
-import { parseLocalDate } from '@/helpers/date'
+import { parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -1536,6 +1536,11 @@ export default {
     },
 
     methods: {
+        workEntryIconColor(dialog) {
+            const groupDate = this.normalizeDateString(dialog?.work?.groups?.[dialog.groupIndex]?.date)
+            const fallbackDate = this.normalizeDateString(dialog?.work?.date_for_all_groups)
+            return scheduledWorkIconColor(groupDate || fallbackDate)
+        },
         async copyEmail(email) {
             try {
                 await navigator.clipboard.writeText(email)

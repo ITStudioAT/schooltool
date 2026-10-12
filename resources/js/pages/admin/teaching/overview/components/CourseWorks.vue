@@ -2,7 +2,7 @@
     <ItsGridBox
         variant="overview"
         color="primary"
-        icon="mdi-clipboard-text"
+        icon="mdi-brain"
         class="w-100"
         v-if="selected_course"
         :disabled="action != '' && action != 'new_course_work' && action != 'edit_course_work'">
@@ -34,7 +34,7 @@
         <!-- Arbeiten (Anzeige) -->
         <v-card variant="outlined" class="mt-4" v-if="filteredCourseWorks?.length && action !== 'new_course_work' && action !== 'edit_course_work'">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                <v-icon size="18">mdi-clipboard-text</v-icon>
+                <v-icon color="error" size="18">mdi-brain</v-icon>
                 Arbeiten
                 <v-chip size="x-small" color="primary" variant="tonal">
                     {{ filteredCourseWorks.length }}
@@ -2428,6 +2428,10 @@ export default {
 </script>
 
 <style scoped>
+:deep(.its-grid-box__icon-wrap .mdi-brain) {
+    color: rgb(var(--v-theme-error));
+}
+
 .course-works-deadline-fields {
     flex-wrap: nowrap;
 }

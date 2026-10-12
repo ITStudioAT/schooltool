@@ -49,7 +49,7 @@
                             content-class="student-performance-tooltip">
                             <template #activator="{ props: activatorProps }">
                                 <v-chip v-bind="activatorProps" size="x-small" tabindex="0"
-                                    :color="group.category === 'Benotung' ? 'primary' : 'warning'" variant="tonal"
+                                    :color="summary.values === 'Offen' && group.category !== 'Erinnerungen' ? 'error' : group.category === 'Benotung' ? 'primary' : 'warning'" variant="tonal"
                                     :aria-label="summary.label + ': ' + (summary.values || 'Eintrag') + ', ' + formatDate(summary.details[0].date)">
                                     {{ summary.type }}{{ summary.values ? `: ${summary.values}` : '' }}
                                 </v-chip>

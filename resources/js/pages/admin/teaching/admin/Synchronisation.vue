@@ -15,6 +15,9 @@
                 {{ success.message }}
                 <a v-if="success.backup" :href="backupRoute.url(success.backup)" class="d-block mt-2">Verschlüsseltes Sicherheitsbackup herunterladen</a>
                 <p class="mt-2">Das Backup benötigt den Schlüssel dieser Installation und bleibt auch lokal im privaten Speicher erhalten.</p>
+                <ul v-if="success.dropbox_warnings?.length" class="ml-5 mt-2">
+                    <li v-for="warning in success.dropbox_warnings" :key="warning">{{ warning }}</li>
+                </ul>
                 <v-btn class="mt-2" @click="reload">Unterricht neu laden</v-btn>
             </v-alert>
             <v-btn color="primary" prepend-icon="mdi-cloud-search-outline" :loading="previewing"
@@ -43,6 +46,14 @@
                     Ältere Importhistorien enthalten Dateinamen, deren ursprüngliche Quelldatei bereits in LIVE nicht verfügbar ist.
                     Diese Historieneinträge bleiben erhalten; für sie kann keine Datei kopiert werden.
                     <ul class="ml-5"><li v-for="warning in preview.file_warnings" :key="warning">{{ warning }}</li></ul>
+                </v-alert>
+                <v-alert v-if="preview.dropbox_notices?.length" type="info" variant="tonal" class="mb-3">
+                    Lokale Dropbox-Ordner bleiben beim eindeutig passenden Unterricht erhalten.
+                    <ul class="ml-5"><li v-for="notice in preview.dropbox_notices" :key="notice">{{ notice }}</li></ul>
+                </v-alert>
+                <v-alert v-if="preview.dropbox_warnings?.length" type="warning" variant="tonal" class="mb-3">
+                    Diese lokalen Dropbox-Zuordnungen werden nur im Sicherheitsbackup erhalten:
+                    <ul class="ml-5"><li v-for="warning in preview.dropbox_warnings" :key="warning">{{ warning }}</li></ul>
                 </v-alert>
                 <v-alert v-if="preview.updated_schoolyears?.length" type="warning" variant="tonal" class="mb-3">
                     Die folgenden gemeinsamen Schuljahreinstellungen werden aktualisiert; sie gelten auch in anderen Modulen.

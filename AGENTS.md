@@ -34,6 +34,8 @@ Choose the smallest sufficient path from the actual change, not file count alone
 - Do not reinstall dependencies, regenerate unchanged routes, restart healthy services, clear broad caches or create a worktree for every small edit.
 - Deliver a short result: what changed, the focused check, and a real limitation if any.
 - If the scope grows beyond a small fix, explain the concrete reason rather than silently expanding the task.
+- A programming task is ready for the operator's visual review only when verified changes from a separate worktree have been safely integrated into the locally used checkout at `C:\laravel\schooltool`. Compare the current files before applying the scoped patch, preserve existing and unrelated changes, and integrate autonomously unless a real conflict cannot be resolved safely.
+- Local integration is authorized by default. Verify the actual checkout served by the existing preview and Vite/HMR, and tell the operator when a reload is needed. Do not report worktree-only completion as locally available. This authorization does not include commits, pushes, publication, deployment or production changes.
 
 ## Authorization and data safety
 

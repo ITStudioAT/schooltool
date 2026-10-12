@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\Teaching\TeachingEntryGradingPartResource;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingEntryGradingPart;
@@ -28,6 +29,9 @@ class TeachingCourseEvaluationService
             ->where('school_id', $course->school_id)->where('schoolyear_id', $course->schoolyear_id)
             ->where('teaching_entry_area_id', $course->teaching_entry_area_id)->get();
         $entries = TeachingCourseStudentEntry::query()->with('teachingCourseWork')->where('teaching_course_id', $course->id)->orderBy('date')->orderBy('id')->get();
+        $unprocessedWorkIds = $entries->where('source', 'course_work')->groupBy('teaching_course_work_id')
+            ->filter(fn (Collection $workEntries): bool => $workEntries->first()->teachingCourseWork !== null
+                && $this->isUnprocessedWork($workEntries->first()->teachingCourseWork, $workEntries))->keys()->all();
         $area = TeachingEntryArea::query()->whereKey($course->teaching_entry_area_id)->where('user_id', $course->user_id)
             ->where('school_id', $course->school_id)->where('schoolyear_id', $course->schoolyear_id)->first();
         $grading = $area?->only(['semester_count', 'semester_1_weight', 'semester_2_weight']) ?? [];
@@ -38,7 +42,7 @@ class TeachingCourseEvaluationService
         foreach ($course->teachingCourseStudents as $student) {
             $aliases = array_filter([$student->user_id, $student->import116?->user_id]);
             $studentEntries = $entries->filter(fn ($entry): bool => in_array($entry->user_id, $aliases, true));
-            $reports = array_map(fn (int $value): array => $this->semester($value, $semesterCount, $year, $definitions, $parts, $studentEntries, $area), $semesters);
+            $reports = array_map(fn (int $value): array => $this->semester($value, $semesterCount, $year, $definitions, $parts, $studentEntries, $area, $unprocessedWorkIds), $semesters);
             $students[] = ['course_student_id' => $student->id, 'user_id' => $student->user_id, 'import116_id' => $student->import116_id,
                 'semesters' => $reports, 'year' => $this->year($reports, $grading, $semesterCount)];
         }
@@ -47,7 +51,8 @@ class TeachingCourseEvaluationService
             'rounding' => ($area?->grading_part_groups ?? []) !== [] || $area?->grading_level_weights !== null || $parts->contains('points_assessment_mode', 'sign_adjust') ? 'half_up' : false, 'issues' => $area ? [] : [$this->issue('missing_area', 'Dem Kurs ist kein gültiger eigener Eintragsbereich zugeordnet.')], 'students' => $students];
     }
 
-    private function semester(int $semester, int $semesterCount, Schoolyear $year, Collection $definitions, Collection $parts, Collection $entries, ?TeachingEntryArea $area): array
+    /** @param list<int> $unprocessedWorkIds */
+    private function semester(int $semester, int $semesterCount, Schoolyear $year, Collection $definitions, Collection $parts, Collection $entries, ?TeachingEntryArea $area, array $unprocessedWorkIds): array
     {
         $included = collect();
         $excluded = [];
@@ -59,6 +64,13 @@ class TeachingCourseEvaluationService
         }
         foreach ($entries as $entry) {
             if (! $definitions->contains('short_name', $entry->type)) {
+                continue;
+            }
+            if ($entry->source === 'course_work' && in_array($entry->teaching_course_work_id, $unprocessedWorkIds, true)) {
+                $excluded[] = ['id' => $entry->id, 'work_id' => $entry->teaching_course_work_id, 'date' => $this->entryDate($entry),
+                    'raw_value' => $entry->grade, 'type' => $entry->type,
+                    'issues' => [$this->issue('unprocessed_work', 'Die Arbeit ist noch völlig unbearbeitet und wird samt Gewicht nicht berücksichtigt.', 'info')]];
+
                 continue;
             }
             $date = $this->entryDate($entry);
@@ -97,6 +109,32 @@ class TeachingCourseEvaluationService
         }
 
         return [...$total, 'semester' => $semester, 'parts' => $partReports, 'unassigned_types' => $unassigned, 'excluded_entries' => $excluded, 'issues' => [...$issues, ...$total['issues']]];
+    }
+
+    /** @param Collection<int, TeachingCourseStudentEntry> $entries */
+    private function isUnprocessedWork(TeachingCourseWork $work, Collection $entries): bool
+    {
+        foreach (['folder_imported_at', 'folder_import_sources', 'assessment_json_imports', 'assessment_json_packages',
+            'submission_checks', 'evaluation_pdfs', 'dispatch_logs', 'dispatch_notifications', 'dispatch_attempts'] as $field) {
+            if (! empty($work->status[$field])) {
+                return false;
+            }
+        }
+        foreach ($work->groups ?? [] as $group) {
+            if (trim((string) ($group['grade'] ?? '')) !== '' || trim((string) ($group['comment'] ?? '')) !== '') {
+                return false;
+            }
+            foreach (['grades' => 'grade', 'points' => 'points', 'comments' => 'comment'] as $field => $valueKey) {
+                foreach ($group[$field] ?? [] as $value) {
+                    if (trim((string) ($value[$valueKey] ?? '')) !== '') {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return $entries->every(fn (TeachingCourseStudentEntry $entry): bool => trim((string) $entry->grade) === ''
+            && trim((string) $entry->status) === '');
     }
 
     private function structuredTotal(array &$reports, Collection $parts, ?TeachingEntryArea $area): array

@@ -10,6 +10,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 
 vi.mock('@/pages/admin/teaching/overview/components/PersonalAppointments.vue', () => ({ default: { template: '<div />', methods: { open: vi.fn() } } }))
 
@@ -118,6 +119,9 @@ describe('MyTimetable automatic week selection', () => {
                 { id: 9, kind: 'special_assignment', title: '', date: '2026-03-06', starts_at: '07:45', ends_at: '10:50', school_hours: [1, 3], time_segments: [{ hour: 1, starts_at: '07:45', ends_at: '08:35' }, { hour: 3, starts_at: '10:00', ends_at: '10:50' }], repeat_until: null },
             ] })
             expect(wrapper.findAll('.personal-appointment-card')).toHaveLength(viewMode === 'table' ? 4 : 3)
+            wrapper.findAll('.personal-appointment-card').forEach((card) => {
+                expect(card.find('.timetable-attendance-status, .timetable-content-status, .timetable-curriculum-status, .timetable-work-status').exists()).toBe(false)
+            })
             expect(wrapper.text()).toContain('Mittagspause')
             expect(wrapper.text()).toContain('18:00–20:00')
             expect(wrapper.text()).toContain('1. Std · 07:45–08:35')
@@ -455,8 +459,275 @@ describe('MyTimetable automatic week selection', () => {
     })
 })
 
-describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', (viewMode) => {
-    it('counts published and hidden attachments and reacts to toggles and refreshed dates', async () => {
+describe.each(['list', 'table'])('MyTimetable lesson statuses without attachment indicators in %s view', (viewMode) => {
+    it('colors scheduled group work yesterday and today red and tomorrow orange', async () => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-09-29T10:00:00Z'))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }] as any
+        const dates = ['2026-09-28', '2026-09-29', '2026-09-30']
+        const store = useCourseStore()
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', course_dates: dates.map((date, index) => ({
+            id: index + 1, date, hours: [1], has_curriculum_assignment: true,
+        })) }] as any
+        const works = useCourseWorkStore()
+        works.loadedCourseId = 28
+        works.courseWorks = [{ id: 66, teaching_course_id: 28, is_group_work: true,
+            date_for_all_groups: '2026-10-01', groups: dates.map((date) => ({ date })) }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            const icons = wrapper.findAll('.timetable-work-status')
+            expect(icons.map((icon) => icon.attributes('icon'))).toEqual(['mdi-brain', 'mdi-brain', 'mdi-brain'])
+            expect(icons.map((icon) => icon.attributes('color'))).toEqual(['error', 'error', 'orange'])
+            expect(wrapper.findAll('.timetable-curriculum-status').map((icon) => icon.attributes('color')))
+                .toEqual(['deep-purple', 'deep-purple', 'deep-purple'])
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'initial mixed summary', complete: true, counts: { present: 11, absent: 1 }, visible: true },
+        { label: 'all present summary', complete: true, counts: { present: 12, absent: 0 }, visible: true },
+        { label: 'all absent summary', complete: true, counts: { present: 0, absent: 12 }, visible: true },
+        { label: 'incomplete summary', complete: false, counts: { present: 11, absent: 1 }, visible: false },
+        { label: 'missing counts', complete: true, counts: null, visible: false },
+        { label: 'invalid counts', complete: true, counts: { present: -1, absent: 13 }, visible: false },
+        { label: 'empty roster', complete: true, counts: { present: 0, absent: 0 }, visible: false },
+    ])('shows attendance counts from the initial summary only when complete: $label', async ({ complete, counts, visible }) => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 8, 29, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [11, 12, 13].map((hour) => ({ hour })) as any
+        const store = useCourseStore()
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', course_dates: [{
+            id: 724, date: '2026-09-29', hours: [11, 12, 13], attendance_complete: complete, attendance_counts: counts,
+        }] }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.findAll('.timetable-attendance-counts')).toHaveLength(visible ? 1 : 0)
+            if (visible) {
+                expect(wrapper.get('.timetable-attendance-counts .text-success').text()).toBe(String(counts?.present))
+                expect(wrapper.get('.timetable-attendance-counts .text-error').text()).toBe(String(counts?.absent))
+            }
+            const date = store.courses[0].course_dates[0] as any
+            date.cancelled_hours = [11, 12, 13]
+            await nextTick()
+            expect(wrapper.find('.timetable-attendance-counts').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'initial summary date', workCourseId: 99, works: [], scheduled: true },
+        { label: 'individual common date', workCourseId: 28, works: [{ date_for_all_groups: '2026-09-29' }], scheduled: true },
+        { label: 'other date', workCourseId: 28, works: [{ date_for_all_groups: '2026-10-06' }], scheduled: false },
+        { label: 'group explicit date', workCourseId: 28, works: [{ is_group_work: true, groups: [{ date: '2026-09-29' }] }], scheduled: true },
+        { label: 'group explicit dates override common date', workCourseId: 28, works: [{ is_group_work: true, date_for_all_groups: '2026-09-29', groups: [{ date: '2026-10-06' }] }], scheduled: false },
+        { label: 'group inherits common date', workCourseId: 28, works: [{ is_group_work: true, date_for_all_groups: '2026-09-29', groups: [{ date: '2026-10-06' }, { date: null }] }], scheduled: true },
+        { label: 'individual common date remains assigned', workCourseId: 28, works: [{ is_group_work: false, date_for_all_groups: '2026-09-29', groups: [{ date: '2026-10-06' }] }], scheduled: true },
+        { label: 'another course work', workCourseId: 28, works: [{ teaching_course_id: 99, date_for_all_groups: '2026-09-29' }], scheduled: false },
+        { label: 'deadline and creation date alone', workCourseId: 28, works: [{ finish_until_date: '2026-09-29', created_at: '2026-09-29' }], scheduled: false },
+        { label: 'loaded empty list clears stale summary', workCourseId: 28, works: [], scheduled: false },
+    ])('shows the brain icon only for a scheduled course work: $label', async ({ workCourseId, works, scheduled }) => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 8, 29, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }] as any
+        const store = useCourseStore()
+        const workStore = useCourseWorkStore()
+        workStore.loadedCourseId = workCourseId
+        workStore.courseWorks = works as any
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', scheduled_work_dates: ['2026-09-29'], course_dates: [{
+            id: 724, date: '2026-09-29', hours: [1], attendance_complete: true,
+        }] }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.findAll('.timetable-work-status')).toHaveLength(scheduled ? 1 : 0)
+            if (scheduled) expect(wrapper.get('.timetable-work-status').attributes()).toMatchObject({
+                icon: 'mdi-brain', 'aria-label': 'Arbeit vorgesehen', title: 'Arbeit vorgesehen',
+            })
+            workStore.loadedCourseId = 28
+            workStore.courseWorks = [{ id: 66, teaching_course_id: 28, is_group_work: true,
+                groups: [{ date: '2026-09-29' }, { date: '2026-10-06' }] }] as any
+            await nextTick()
+            expect(wrapper.findAll('.timetable-work-status')).toHaveLength(1)
+            ;(store.courses[0].course_dates[0] as any).cancelled_hours = [1]
+            await nextTick()
+            expect(wrapper.find('.timetable-work-status').exists()).toBe(false)
+            ;(store.courses[0].course_dates[0] as any).cancelled_hours = []
+            workStore.courseWorks = []
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.find('.timetable-work-status').exists()).toBe(false)
+            expect(wrapper.get('.timetable-attendance-status').attributes('icon')).toBe('mdi-check')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'summary assignment', date: { has_curriculum_assignment: true }, assigned: true },
+        { label: 'unassigned summary', date: { has_curriculum_assignment: false }, assigned: false },
+        { label: 'adopted curriculum entry', date: { adopted_materials: [{ id: 9, title: 'Thema: Einheit' }] }, assigned: true },
+        { label: 'course curriculum alone', date: {}, assigned: false },
+        { label: 'empty detail', date: { adopted_materials: [] }, assigned: false },
+        { label: 'attachments alone', date: { shared_curriculum_attachments_count: 2 }, assigned: false },
+        { label: 'explicit summary overrides stale details', date: { has_curriculum_assignment: false, adopted_materials: [{ id: 9 }] }, assigned: false },
+        { label: 'cancelled lesson', date: { has_curriculum_assignment: true, cancelled_hours: [1] }, assigned: false },
+    ])('shows the existing course detail Curriculum icon only for a dated assignment: $label', async ({ date, assigned }) => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 8, 29, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }] as any
+        const store = useCourseStore()
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', teaching_curriculum_id: 9, course_dates: [{
+            id: 724, date: '2026-09-29', hours: [1], attendance_complete: true, ...date,
+        }] }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(assigned ? 1 : 0)
+            if (assigned) {
+                expect(wrapper.get('.timetable-curriculum-status').attributes()).toMatchObject({
+                    icon: 'mdi-book-education-outline', color: 'deep-purple',
+                    'aria-label': 'Curriculum-Eintrag zugeordnet', title: 'Curriculum-Eintrag zugeordnet',
+                })
+            }
+            const courseDate = store.courses[0].course_dates[0] as any
+            courseDate.cancelled_hours = []
+            courseDate.has_curriculum_assignment = true
+            await nextTick()
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(1)
+            expect(wrapper.get('.timetable-content-status').attributes('color')).toBe('warning')
+            courseDate.has_curriculum_assignment = false
+            await nextTick()
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(0)
+            expect(wrapper.get('.timetable-attendance-status').attributes('icon')).toBe('mdi-check')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'manual text', content: 'Dateiverwaltung', entered: true },
+        { label: 'rich text', content: '<p><strong>Dateiverwaltung</strong></p>', entered: true },
+        { label: 'saved curriculum text', content: '<p>Ordnerstruktur / Dateien benennen</p>', entered: true },
+        { label: 'missing content', content: undefined, entered: false },
+        { label: 'null content', content: null, entered: false },
+        { label: 'empty content', content: '', entered: false },
+        { label: 'whitespace', content: ' \n\t ', entered: false },
+        { label: 'empty editor', content: '<p><br></p>', entered: false },
+        { label: 'HTML whitespace', content: '<p>&nbsp;&#160;</p>', entered: false },
+        { label: 'invisible editor content', content: '<p>\u200B</p><!-- empty -->', entered: false },
+    ])('shows an independent lesson content icon for $label and reacts to saved content', async ({ content, entered }) => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 8, 29, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [11, 12, 13].map((hour) => ({ hour })) as any
+        const store = useCourseStore()
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', course_dates: [{
+            id: 724, date: '2026-09-29', hours: [11, 12, 13], cancelled_hours: [12], content,
+            attendance_complete: true, has_curriculum_assignment: true,
+            adopted_materials: [{ title: 'Thema: Nur verknüpfter Curriculum-Inhalt', attachments: [{ id: 1 }] }],
+        }] }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            const icons = wrapper.findAll('.timetable-content-status')
+            expect(icons).toHaveLength(viewMode === 'list' ? 1 : 2)
+            icons.forEach((icon) => {
+                expect(icon.attributes()).toMatchObject({ icon: 'mdi-text-box-outline', color: entered ? 'success' : 'warning',
+                    title: entered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen',
+                    'aria-label': entered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen' })
+                expect(icon.element.parentElement?.querySelector('.timetable-attendance-status')).not.toBeNull()
+            })
+            const date = store.courses[0].course_dates[0] as any
+            date.content = '<p>Gespeicherter Stoff</p>'
+            await nextTick()
+            expect(wrapper.get('.timetable-content-status').attributes('color')).toBe('success')
+            date.content = '<p><br></p>'
+            await nextTick()
+            expect(wrapper.get('.timetable-content-status').attributes('color')).toBe('warning')
+            expect(wrapper.get('.timetable-attendance-status').attributes('icon')).toBe('mdi-check')
+            expect(wrapper.find('[icon="mdi-eye"], [icon="mdi-eye-off"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'all present', attendance: { s_301: true, s_302: true }, complete: true, present: 2, absent: 0 },
+        { label: 'mixed', attendance: { s_301: true, s_302: false }, complete: true, present: 1, absent: 1 },
+        { label: 'all absent', attendance: { s_301: false, s_302: false }, complete: true, present: 0, absent: 2 },
+        { label: 'encoded states', attendance: { s_301: '1', s_302: '0' }, complete: true, present: 1, absent: 1 },
+        { label: 'numeric states', attendance: { '301': 1, '302': 0 }, complete: true, present: 1, absent: 1 },
+        { label: 'text states', attendance: { s_301: 'true', s_302: 'false' }, complete: true, present: 1, absent: 1 },
+        { label: 'missing cell', attendance: { s_301: true, s_999: true }, complete: false },
+        { label: 'empty cell', attendance: { s_301: false, s_302: null }, complete: false },
+        { label: 'invalid cell', attendance: { s_301: true, s_302: 'unknown' }, complete: false },
+        { label: 'empty map', attendance: {}, complete: false },
+    ])('shows INF 2 on 29 September from actual attendance cells: $label', async ({ attendance, complete, present, absent }) => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 8, 29, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [11, 12, 13].map((hour) => ({ hour })) as any
+        const store = useCourseStore()
+        store.timetable_view_mode = viewMode
+        store.courses = [{ id: 28, user_id: 7, title: 'INF 2', students_info: [
+            { id: 301 }, { id: 302 }, { id: 301 }, { id: 303, canceled_at: '2026-09-01' }, { id: 304, deleted_at: '2026-09-01' },
+        ], course_dates: [{ id: 724, date: '2026-09-29', hours: [11, 12, 13], cancelled_hours: [12],
+            attendance, attendance_checked: !complete, attendance_complete: !complete }] }] as any
+        const wrapper = mount(MyTimetable, { global: { stubs: {
+            ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true,
+        } } })
+        try {
+            await wrapper.setData({ range: 'week' })
+            const icons = wrapper.findAll('.timetable-attendance-status')
+            expect(icons).toHaveLength(viewMode === 'list' ? 1 : 2)
+            icons.forEach((icon) => expect(icon.attributes()).toMatchObject({
+                icon: complete ? 'mdi-check' : 'mdi-alert-circle-outline', color: complete ? 'success' : 'warning',
+            }))
+            const counts = wrapper.findAll('.timetable-attendance-counts')
+            expect(counts).toHaveLength(complete ? (viewMode === 'list' ? 1 : 2) : 0)
+            counts.forEach((footer) => {
+                expect(footer.get('.text-success').text()).toBe(String(present))
+                expect(footer.get('.text-error').text()).toBe(String(absent))
+            })
+            const date = store.courses[0].course_dates[0] as any
+            date.attendance = { s_301: true, s_302: false }
+            await nextTick()
+            expect(wrapper.get('.timetable-attendance-status').attributes('icon')).toBe('mdi-check')
+            expect(wrapper.get('.timetable-attendance-counts').attributes('aria-label')).toBe('1 anwesend / 1 abwesend')
+            date.attendance.s_302 = null
+            await nextTick()
+            expect(wrapper.get('.timetable-attendance-status').attributes('icon')).toBe('mdi-alert-circle-outline')
+            expect(wrapper.find('.timetable-attendance-counts').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps lesson navigation and independent attendance, content and curriculum symbols', async () => {
+        sessionStorage.clear()
         setActivePinia(createPinia())
         vi.useFakeTimers()
         vi.setSystemTime(new Date(2026, 2, 2, 12))
@@ -467,149 +738,64 @@ describe.each(['list', 'table'])('MyTimetable curriculum indicator in %s view', 
         courseStore.courses = [{
             id: 18, user_id: 7, title: 'Deutsch', classes: ['1A'], teaching_curriculum_id: 9,
             course_dates: [
-                { id: 1, date: '2026-03-02', hours: [1, 2], has_curriculum_assignment: true,
-                    shared_curriculum_attachments_count: 3, private_curriculum_attachments_count: 0 },
-                { id: 2, date: '2026-03-03', hours: [1], has_curriculum_assignment: true,
-                    shared_curriculum_attachments_count: 1, private_curriculum_attachments_count: 2 },
-                { id: 3, date: '2026-03-04', hours: [1], has_curriculum_assignment: true,
-                    shared_curriculum_attachments_count: 0, private_curriculum_attachments_count: 3 },
-                { id: 4, date: '2026-03-05', hours: [1], has_curriculum_assignment: true,
-                    shared_curriculum_attachments_count: 0, private_curriculum_attachments_count: 0 },
-                { id: 5, date: '2026-03-06', hours: [1], has_curriculum_assignment: false,
-                    shared_curriculum_attachments_count: 8, private_curriculum_attachments_count: 9 },
+                { id: 1, date: '2026-03-02', hours: [1, 2], attendance_complete: true,
+                    has_curriculum_assignment: true, shared_curriculum_attachments_count: 1, private_curriculum_attachments_count: 2 },
+                { id: 2, date: '2026-03-03', hours: [1], has_curriculum_assignment: false },
+                { id: 3, date: '2026-03-04', hours: [1], status: ['free'], attendance_checked: true },
+                { id: 4, date: '2026-03-05', hours: [1], cancelled_hours: [1], attendance_checked: false },
             ],
+        }] as any
+        const wrapper = mount(MyTimetable, {
+            global: { mocks: { $route: { path: '/admin/teaching', query: {} }, $router: { replace: vi.fn().mockResolvedValue(undefined) } },
+                stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true } },
+        })
+        try {
+            await wrapper.setData({ range: 'week' })
+            expect(wrapper.text()).toContain('Deutsch')
+            expect(wrapper.text()).toContain('1A')
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(1)
+            expect(wrapper.find('[aria-label$="Anhang"], [aria-label$="Anhänge"], [aria-label="Keine Anhänge veröffentlicht"]').exists()).toBe(false)
+            expect(wrapper.find('[icon="mdi-eye"], [icon="mdi-eye-off"]').exists()).toBe(false)
+            expect(wrapper.text()).not.toMatch(/mdi-circle|mdi-check-circle/)
+            expect(wrapper.findAll('.timetable-attendance-status')).toHaveLength(2)
+            expect(wrapper.findAll('.timetable-content-status')).toHaveLength(2)
+            expect(wrapper.get('[aria-label="Anwesenheit geprüft"]').attributes()).toMatchObject({ icon: 'mdi-check', color: 'success', title: 'Anwesenheit geprüft' })
+            expect(wrapper.get('[aria-label="Anwesenheit noch nicht geprüft"]').attributes()).toMatchObject({ icon: 'mdi-alert-circle-outline', color: 'warning', title: 'Anwesenheit noch nicht geprüft' })
+            await wrapper.get(viewMode === 'table' ? '.timetable-grid-item' : 'v-list-item').trigger('click')
+            expect(courseStore.selected_course_id).toBe(18)
+        } finally { wrapper.unmount() }
+    })
+
+    it('refreshes curriculum and attendance icons while keeping attachment visibility out of the timetable display', async () => {
+        sessionStorage.clear()
+        setActivePinia(createPinia())
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 2, 2, 12))
+        useAdminStore().config = { user: { id: 7 } } as any
+        useSchoolHourStore().school_hours = [{ hour: 1 }] as any
+        const courseStore = useCourseStore()
+        courseStore.timetable_view_mode = viewMode
+        courseStore.courses = [{
+            id: 18, user_id: 7, title: 'Deutsch', classes: ['1A'],
+            course_dates: [{ id: 1, date: '2026-03-02', hours: [1], adopted_materials: [] }],
         }] as any
         const wrapper = mount(MyTimetable, {
             global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, VDivider: true, VListItemTitle: true } },
         })
-
         try {
             await wrapper.setData({ range: 'week' })
-            const firstDateCellCount = 1
-            const visibilitySelector = '[aria-label$="Anhang"], [aria-label$="Anhänge"]'
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount + 3)
-            expect(wrapper.findAll('[aria-label="3 veröffentlichte Anhänge"]')).toHaveLength(firstDateCellCount)
-            for (const [label, count, icon, color] of [
-                ['3 veröffentlichte Anhänge', '', 'mdi-eye', 'success'],
-                ['1 veröffentlichter Anhang', '1', 'mdi-eye', 'success'],
-                ['2 verborgene Anhänge', '2', 'mdi-eye-off', 'grey-darken-1'],
-                ['3 verborgene Anhänge', '', 'mdi-eye-off', 'grey-darken-1'],
-            ]) {
-                const indicator = wrapper.get(`[aria-label="${label}"]`)
-                expect(indicator.attributes('role')).toBe('img')
-                expect(indicator.text()).toBe(count)
-                expect(indicator.get('[icon]').attributes()).toMatchObject({ icon, color, 'aria-hidden': 'true' })
-            }
-            const mixedStatus = wrapper.get('[title="1 veröffentlicht, 2 verborgen"]')
-            expect(mixedStatus.findAll('[role="img"]')).toHaveLength(2)
-            expect(wrapper.findAll('[title="3 veröffentlicht"]')).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll('[title="3 verborgen"]')).toHaveLength(1)
-            const unpublishedFallback = wrapper.get('[aria-label="Keine Anhänge veröffentlicht"]')
-            expect(unpublishedFallback.text()).toBe('')
-            expect(unpublishedFallback.get('[icon]').attributes()).toMatchObject({ icon: 'mdi-eye-off', color: 'grey-darken-1' })
-            expect(wrapper.findAll('[aria-label="Curriculum-Eintrag zugeordnet"]')).toHaveLength(firstDateCellCount + 3)
-
-            const course = courseStore.courses[0] as any
-            course.course_dates = course.course_dates.map((date: any) => ({ ...date, adopted_materials: [] }))
-            course.course_dates[0].adopted_materials = [
-                { id: 10, status: 'in_progress', attachments: [{ id: 1, student_visible: false }] },
-                { id: 11, attachments: [{ id: 2, student_visible: false }] },
-            ]
+            const before = wrapper.text()
+            const date = courseStore.courses[0].course_dates[0] as any
+            date.adopted_materials = [{ id: 10, title: 'Einheit', attachments: [
+                { id: 1, student_visible: true }, { id: 2, student_visible: false },
+            ] }]
+            date.attendance_complete = true
             await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll('[aria-label="2 verborgene Anhänge"]')).toHaveLength(firstDateCellCount)
-
-            const materials = course.course_dates[0].adopted_materials
-            materials[0].attachments[0].student_visible = true
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll('[title="1 veröffentlicht, 1 verborgen"]')).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll('[aria-label="1 verborgener Anhang"]')).toHaveLength(firstDateCellCount)
-            materials[1].attachments[0].student_visible = true
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll('[aria-label="2 veröffentlichte Anhänge"]')).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount)
-
-            materials[0].attachments[0].source_teaching_curriculum_document_id = 42
-            materials[1].attachments[0].source_teaching_curriculum_document_id = 42
-            materials[1].attachments[0].student_visible = false
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll('[aria-label="1 veröffentlichter Anhang"]')).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(firstDateCellCount)
-            materials[1].attachments[0].source_teaching_curriculum_document_id = 43
-            materials[1].attachments[0].student_visible = true
-
-            course.course_dates[0].unadopted_curriculum_attachments_count = 1
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll('[title="2 veröffentlicht, 1 verborgen"]')).toHaveLength(firstDateCellCount)
-            course.course_dates[0].unadopted_curriculum_attachments_count = 0
-
-            course.course_dates[0] = { ...course.course_dates[0], adopted_materials: [{ id: 10, attachments: [] }] }
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(0)
-            expect(wrapper.findAll('[aria-label="Curriculum-Eintrag zugeordnet"]')).toHaveLength(firstDateCellCount)
-            expect(wrapper.findAll('[aria-label="Keine Anhänge veröffentlicht"]')).toHaveLength(firstDateCellCount)
-            course.course_dates[0].adopted_materials = []
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(visibilitySelector)).toHaveLength(0)
-            expect(wrapper.findAll('[aria-label="Curriculum-Eintrag zugeordnet"]')).toHaveLength(0)
-            expect(wrapper.findAll('[aria-label="Keine Anhänge veröffentlicht"]')).toHaveLength(0)
-        } finally {
-            wrapper.unmount()
-        }
-    })
-
-    it('marks only assigned dates and reacts to linking and unlinking in loaded details', async () => {
-        setActivePinia(createPinia())
-        vi.useFakeTimers()
-        vi.setSystemTime(new Date(2026, 2, 2, 12))
-        useAdminStore().config = { user: { id: 7 } } as any
-        useSchoolHourStore().school_hours = [{ hour: 1 }, { hour: 2 }] as any
-        const courseStore = useCourseStore()
-        courseStore.timetable_view_mode = viewMode
-        courseStore.courses = [{
-            id: 18, user_id: 7, title: 'Deutsch', classes: ['1A'], teaching_curriculum_id: 9,
-            course_dates: [
-                { id: 1, date: '2026-03-02', hours: [1, 2], has_curriculum_assignment: true },
-                { id: 2, date: '2026-03-03', hours: [1], has_curriculum_assignment: false },
-                { id: 3, date: '2026-03-04', hours: [1], content: 'Manueller Inhalt' },
-            ],
-        }] as any
-        const wrapper = mount(MyTimetable, {
-            global: {
-                stubs: {
-                    ItsGridBox: { template: '<div><slot /></div>' },
-                    VDivider: true,
-                    VListItemTitle: true,
-                },
-            },
-        })
-
-        try {
-            await wrapper.setData({ range: 'week' })
-            const indicatorSelector = '[aria-label="Curriculum-Eintrag zugeordnet"]'
-            const indicators = wrapper.findAll(indicatorSelector)
-            expect(indicators).toHaveLength(1)
-            expect(indicators[0].attributes()).toMatchObject({
-                title: 'Curriculum-Eintrag zugeordnet', role: 'img', 'aria-hidden': 'false',
-                color: 'green-darken-2', size: '10',
-            })
-            expect(indicators[0].text()).toBe('mdi-circle')
-
-            const course = courseStore.courses[0] as any
-            course.course_dates = course.course_dates.map((date: any) => ({ ...date, adopted_materials: [] }))
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(indicatorSelector)).toHaveLength(0)
-
-            course.course_dates[1].adopted_materials = [{ id: 5, title: 'Thema: Einheit ohne Datei' }]
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(indicatorSelector)).toHaveLength(1)
-
-            course.course_dates[1].adopted_materials = []
-            await wrapper.vm.$nextTick()
-            expect(wrapper.findAll(indicatorSelector)).toHaveLength(0)
-        } finally {
-            wrapper.unmount()
-        }
+            expect(wrapper.text()).toBe(before)
+            expect(wrapper.findAll('.timetable-attendance-status')).toHaveLength(1)
+            expect(wrapper.get('.timetable-attendance-status').attributes('aria-label')).toBe('Anwesenheit geprüft')
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(1)
+        } finally { wrapper.unmount() }
     })
 })
 
@@ -705,6 +891,10 @@ describe('MyTimetable time range labels', () => {
             ],
             formatHoursTimeRange: methods.formatHoursTimeRange,
             formatTimeValue: methods.formatTimeValue,
+            attendanceIsComplete: methods.attendanceIsComplete,
+            attendanceCounts: methods.attendanceCounts,
+            hasLessonContent: methods.hasLessonContent,
+            scheduledWorkDatesForCourse: methods.scheduledWorkDatesForCourse,
         }
 
         ctx.schoolHoursByHour = computed.schoolHoursByHour.call(ctx)
@@ -735,6 +925,10 @@ describe('MyTimetable time range labels', () => {
             ],
             formatHoursTimeRange: methods.formatHoursTimeRange,
             formatTimeValue: methods.formatTimeValue,
+            attendanceIsComplete: methods.attendanceIsComplete,
+            attendanceCounts: methods.attendanceCounts,
+            hasLessonContent: methods.hasLessonContent,
+            scheduledWorkDatesForCourse: methods.scheduledWorkDatesForCourse,
         }
 
         ctx.schoolHoursByHour = computed.schoolHoursByHour.call(ctx)

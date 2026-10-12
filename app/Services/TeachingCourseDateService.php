@@ -22,6 +22,35 @@ use Throwable;
 
 class TeachingCourseDateService
 {
+    /** @return list<string> */
+    public function scheduledWorkDates(TeachingCourse $course): array
+    {
+        $course->loadMissing('teachingCourseWorks:id,teaching_course_id,is_group_work,date_for_all_groups,groups');
+        $dates = [];
+        foreach ($course->teachingCourseWorks as $work) {
+            $fallbackDate = $work->date_for_all_groups?->format('Y-m-d');
+            $hasExplicitGroupDates = false;
+            foreach ($work->groups ?? [] as $group) {
+                $groupDate = substr((string) ($group['date'] ?? ''), 0, 10);
+                if (! preg_match('/\A(\d{4})-(\d{2})-(\d{2})\z/', $groupDate, $parts)
+                    || ! checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+                    $groupDate = null;
+                }
+                $hasExplicitGroupDates = $hasExplicitGroupDates || $groupDate !== null;
+                if ($effectiveDate = $groupDate ?? $fallbackDate) {
+                    $dates[$effectiveDate] = true;
+                }
+            }
+            if ($fallbackDate && (! $work->is_group_work || ! $hasExplicitGroupDates)) {
+                $dates[$fallbackDate] = true;
+            }
+        }
+        $scheduledDates = array_keys($dates);
+        sort($scheduledDates);
+
+        return $scheduledDates;
+    }
+
     /**
      * @param  Collection<int, TeachingCourseDate>  $dates
      */

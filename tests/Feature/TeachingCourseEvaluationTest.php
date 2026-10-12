@@ -14,12 +14,83 @@ use App\Models\TeachingEntryGradingPart;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseEvaluationService;
+use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Support\TeachingSignAdjustment;
 use Brick\Math\BigRational;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+test('unprocessed works leave existing performance semester and year calculations unchanged', function (bool $structured, bool $separateType, ?string $date) {
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    if ($structured) {
+        $this->area->update(['grading_level_weights' => [['part_id' => $this->part->id, 'weight' => 3]]]);
+    }
+    evaluationEntry($this, $definition, '4.1');
+    evaluationEntry($this, $definition, '4.6', ['date' => '2027-03-01']);
+    $baseline = app(TeachingCourseEvaluationService::class)->report($this->course->fresh(), 3)['students'][0];
+    $workType = $separateType ? evaluationDefinition($this, ['short_name' => 'NX', 'properties_mode' => 'points', 'maximum_points' => 100, 'grading_part_weight' => 9]) : $definition;
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'type' => $workType->short_name,
+        'groups' => [], 'status' => [], 'date_for_all_groups' => $date, 'finish_until_date' => $date, 'is_group_work' => false]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->getJson("/api/admin/teaching/courses/{$this->course->id}/evaluations?semester=3")->assertOk();
+    $report = $response->json('data.students.0');
+    foreach ($baseline['semesters'] as $index => $semester) {
+        expect($report['semesters'][$index]['status'])->toBe('complete')
+            ->and($report['semesters'][$index]['result_exact'])->toBe($semester['result_exact'])
+            ->and($report['semesters'][$index]['parts'][0]['trace'])->toEqual($semester['parts'][0]['trace'])
+            ->and(collect($report['semesters'][$index]['excluded_entries'])->firstWhere('work_id', $work->id)['issues'][0]['code'])->toBe('unprocessed_work');
+    }
+    expect($report['year'])->toEqual($baseline['year'])->and($this->roster->fresh()->sem_grade)->toBe('4')
+        ->and($work->teachingCourseStudentEntries()->first()->grade)->toBeNull();
+})->with([false, true])->with([false, true])->with(['2026-10-05', null]);
+
+test('globally started works keep a missing individual result incomplete', function (array $status, array $groupValues, ?string $peerGrade) {
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    evaluationEntry($this, $definition, '4.1');
+    $peer = User::factory()->create(['school_id' => $this->school->id]);
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'type' => $definition->short_name,
+        'status' => $status, 'groups' => [['student_ids' => [$this->student->id, $peer->id], ...$groupValues]], 'finish_until_date' => '2026-10-05']);
+    evaluationEntry($this, $definition, null, ['source' => 'course_work', 'teaching_course_work_id' => $work->id]);
+    if ($peerGrade !== null) {
+        evaluationEntry($this, $definition, $peerGrade, ['user_id' => $peer->id, 'source' => 'course_work', 'teaching_course_work_id' => $work->id]);
+    }
+
+    $report = evaluationSemester($this);
+    expect($report['status'])->toBe('incomplete')->and($report['result'])->toBeNull()
+        ->and($report['parts'][0]['types'][0]['entries'])->toHaveCount(2)
+        ->and($report['parts'][0]['types'][0]['entries'][1]['status'])->toBe('incomplete')
+        ->and($this->roster->fresh()->sem_grade)->toBe('4');
+})->with([
+    'peer assessment' => [[], [], '4'],
+    'peer zero assessment' => [[], [], '0'],
+    'invalid peer assessment' => [[], [], 'unbekannt'],
+    'group grade' => [[], ['grade' => '2'], null],
+    'individual grade' => [[], ['grades' => [['grade' => '2']]], null],
+    'zero points' => [[], ['points' => [['points' => 0]]], null],
+    'personal comment' => [[], ['comments' => [['comment' => 'Bewertung begonnen']]], null],
+    'group comment' => [[], ['comment' => 'Bewertung begonnen'], null],
+    'folder import' => [['folder_imported_at' => '2026-10-05T12:00:00Z'], [], null],
+    'open JSON assessment import' => [['assessment_json_imports' => [['record' => ['evaluation_state' => 'open']]]], [], null],
+    'submission check import' => [['submission_checks' => [['check' => []]]], [], null],
+    'evaluation PDF import' => [['evaluation_pdfs' => [['origin' => 'evaluation_import']]], [], null],
+]);
+
+test('manual missing results and required empty parts still block after unprocessed works are omitted', function () {
+    $this->part->update(['points_assessment_mode' => 'sum_percent', 'is_required' => true]);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'type' => $definition->short_name, 'groups' => [], 'status' => []]);
+    evaluationEntry($this, $definition, null, ['source' => 'course_work', 'teaching_course_work_id' => $work->id, 'date' => null]);
+    expect(evaluationSemester($this)['result'])->toBeNull();
+    evaluationEntry($this, $definition, '4.1');
+    expect(evaluationSemester($this)['status'])->toBe('complete');
+    evaluationEntry($this, $definition, null);
+    expect(evaluationSemester($this)['status'])->toBe('incomplete');
+});
 
 test('adjustment uses exact decimals caps and half-up only after the unrounded base', function (string $base, string $saldo, string $expectedRaw, int $expectedGrade) {
     $configuration = ['improvement_factor' => '0.25', 'max_improvement' => '0.5', 'deterioration_factor' => '0.25', 'max_deterioration' => '0.75'];

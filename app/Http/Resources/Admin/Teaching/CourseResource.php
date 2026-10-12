@@ -21,6 +21,7 @@ class CourseResource extends JsonResource
 
         $data = parent::toArray($request);
         unset($data['teaching_course_dates']);
+        unset($data['teaching_course_works']);
         unset($data['teaching_course_students']);
         unset($data['teaching_course_students_with_trashed']);
         unset($data['teaching_entry_area']);
@@ -29,6 +30,7 @@ class CourseResource extends JsonResource
         return array_merge($data, [
             'students' => $this->students ?? [],
             'students_deleted' => $this->students_deleted ?? [],
+            'scheduled_work_dates' => app(TeachingCourseDateService::class)->scheduledWorkDates($this->resource),
             'teaching_entry_area' => $this->whenLoaded('teachingEntryArea', fn (): ?array => $this->teachingEntryArea ? [
                 'id' => (int) $this->teachingEntryArea->id,
                 'name' => $this->teachingEntryArea->name,

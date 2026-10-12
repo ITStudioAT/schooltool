@@ -465,7 +465,7 @@ export default {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
-                panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
+                panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
                 panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
@@ -1077,6 +1077,10 @@ export default {
     flex-wrap: wrap;
     row-gap: 6px;
     height: auto !important;
+}
+
+[data-testid="teaching-overview-panel-works"] :deep(.mdi-brain) {
+    color: rgb(var(--v-theme-error));
 }
 
 .teaching-overview-toolbar-btn {

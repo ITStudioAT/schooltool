@@ -48,6 +48,7 @@ class TeachingCourseController extends Controller
 
         $coursesQuery = TeachingCourse::with([
             'teachingEntryArea:id,name',
+            'teachingCourseWorks:id,teaching_course_id,is_group_work,date_for_all_groups,groups',
             'teachingCourseDates' => fn ($query) => $query
                 ->select([
                     'id',
@@ -56,6 +57,7 @@ class TeachingCourseController extends Controller
                     'hours',
                     'content',
                     'status',
+                    'attendance',
                     'attendance_checked',
                 ])
                 ->withExists('materials')

@@ -144,7 +144,7 @@
                             <tr v-if="tableView === 'entries'" class="course-table-work-row">
                                 <th scope="row" class="course-table-work-label">
                                     <div class="course-table-work-label-content">
-                                        <v-icon color="primary" size="18">mdi-clipboard-text</v-icon>
+                                        <v-icon color="error" size="18">mdi-brain</v-icon>
                                         <span>Arbeiten</span>
                                     </div>
                                 </th>
@@ -223,7 +223,7 @@
                                             }"
                                             :title="work.title">
                                             <div class="course-table-work-summary-meta">
-                                                <v-icon size="13">mdi-clipboard-text</v-icon>
+                                                <v-icon :color="scheduledWorkIconColor(courseDate.date)" size="13">mdi-brain</v-icon>
                                                 <span>{{ work.work.type || 'Arbeit' }}</span>
                                                 <span
                                                     class="course-table-work-summary-count"
@@ -927,7 +927,7 @@
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
-                    <v-icon size="20">mdi-clipboard-text</v-icon>
+                    <v-icon :color="scheduledWorkIconColor(workDialogFormOpen ? workDialogForm.date_for_all_groups : workDialog.courseDate?.date)" size="20">mdi-brain</v-icon>
                     Arbeiten
                     <v-date-input
                         v-if="workDialogFormOpen && workDialogDateEditing"
@@ -2481,7 +2481,7 @@ import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
-import { parseLocalDate, formatViennaDateTime, workDeadlineExpired } from '@/helpers/date'
+import { parseLocalDate, formatViennaDateTime, scheduledWorkIconColor, workDeadlineExpired } from '@/helpers/date'
 import { currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
@@ -2622,6 +2622,7 @@ export default {
                 open: false,
             },
             savingAttendanceCells: {},
+            attendanceCycleCells: {},
             tableView: 'entries',
             hoveredCourseWorkTimelineKeys: [],
             workDeleting: false,
@@ -2716,6 +2717,7 @@ export default {
             this.entryTransfer = null
         },
         selected_course(course) {
+            this.attendanceCycleCells = {}
             this.closeCurriculumDialog()
             if (course?.id && this.tableView === 'entries') {
                 this.loadCourseTableData(course.id)
@@ -3200,6 +3202,7 @@ export default {
     },
 
     methods: {
+        scheduledWorkIconColor,
         cancellationHours: courseDateHours,
         isHourCancelled: isCourseDateHourCancelled,
         openCancellationDialog(courseDate) {
@@ -6104,7 +6107,7 @@ export default {
 
             return status.includes('att_checked:1')
         },
-        applyUpdatedCourseDate(updatedDate) {
+        applyUpdatedCourseDate(updatedDate, preserveAttendanceCycle = false) {
             if (!updatedDate?.id || !this.selected_course?.id) return
 
             const dates = Array.isArray(this.selected_course.course_dates) ? [...this.selected_course.course_dates] : []
@@ -6115,6 +6118,16 @@ export default {
                 dates.push(updatedDate)
             }
             this.selected_course.course_dates = dates
+            const cycleCells = { ...this.attendanceCycleCells }
+            for (const [key, cycle] of Object.entries(cycleCells)) {
+                if (String(cycle.courseDate.id) !== String(updatedDate.id)) continue
+                if (preserveAttendanceCycle) {
+                    cycleCells[key] = { ...cycle, courseDate: dates.find((date) => String(date.id) === String(updatedDate.id)) }
+                } else {
+                    delete cycleCells[key]
+                }
+            }
+            this.attendanceCycleCells = cycleCells
 
             const summaryCourse = this.courseStore?.courses?.find((course) => String(course.id) === String(this.selected_course.id))
             if (summaryCourse && summaryCourse !== this.selected_course) {
@@ -6157,14 +6170,16 @@ export default {
             const currentState = Object.prototype.hasOwnProperty.call(attendance, studentId)
                 ? attendance[studentId]
                 : this.isAttendanceChecked(courseDate) ? true : null
+            const cycle = this.attendanceCycleCells?.[cellKey]
+            const clearCell = cycle?.courseDate === courseDate && cycle.state === currentState
             const nextState = requestedState === undefined
-                ? currentState === null ? false : currentState === false ? true : null
+                ? currentState === null ? false : clearCell ? null : !currentState
                 : requestedState
             attendance[studentId] = nextState
 
             const nextAttendance = this.sanitizeAttendanceMap(attendance)
             const optimisticDate = { ...courseDate, attendance: nextAttendance }
-            this.applyUpdatedCourseDate(optimisticDate)
+            this.applyUpdatedCourseDate(optimisticDate, true)
 
             try {
                 const response = await this.courseDateStore?.updateStatus(courseDate.id, {
@@ -6175,10 +6190,20 @@ export default {
                     this.applyUpdatedCourseDate({
                         ...response,
                         attendance: this.getAttendanceMap(response),
-                    })
+                    }, true)
+                    const cycleCells = { ...this.attendanceCycleCells }
+                    if (requestedState === undefined && currentState !== null && nextState !== null) {
+                        cycleCells[cellKey] = { state: nextState, courseDate: this.selected_course.course_dates.find((date) => String(date.id) === String(courseDate.id)) }
+                    } else {
+                        delete cycleCells[cellKey]
+                    }
+                    this.attendanceCycleCells = cycleCells
                 } else {
-                    this.applyUpdatedCourseDate(previousDate)
+                    this.applyUpdatedCourseDate(previousDate, true)
                 }
+            } catch (error) {
+                this.applyUpdatedCourseDate(previousDate, true)
+                throw error
             } finally {
                 const remainingCells = { ...this.savingAttendanceCells }
                 delete remainingCells[cellKey]

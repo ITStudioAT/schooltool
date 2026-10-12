@@ -636,6 +636,24 @@ describe('CourseStudent work entry dialog', () => {
 })
 
 describe('CourseStudent auswertung entry title rendering', () => {
+    it.each([
+        { groupDate: '2026-10-11', commonDate: '2026-10-13', color: 'error' },
+        { groupDate: '2026-10-12', commonDate: '2026-10-13', color: 'error' },
+        { groupDate: '2026-10-13', commonDate: '2026-10-11', color: 'orange' },
+        { groupDate: null, commonDate: '2026-10-13', color: 'orange' },
+        { groupDate: null, commonDate: null, color: 'error' },
+    ])('uses the participant group date for the work icon: $groupDate / $commonDate', ({ groupDate, commonDate, color }) => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-10-12T10:00:00Z'))
+        const methods = (CourseStudent as any).methods
+        const ctx = { normalizeDateString: methods.normalizeDateString, toDateString: methods.toDateString }
+        try {
+            expect(methods.workEntryIconColor.call(ctx, { groupIndex: 0, entry: { date: '2026-10-20' },
+                work: { date_for_all_groups: commonDate, groups: [{ date: groupDate }] },
+            })).toBe(color)
+        } finally { vi.useRealTimers() }
+    })
+
     it('renders row title and row work title as text lines in auswertung list', () => {
         const componentPath = resolve(
             process.cwd(),

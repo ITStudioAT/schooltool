@@ -82,6 +82,17 @@ describe('Teaching entries settings', () => {
         expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'], 2: ['+'] }).total).toBeNull()
     })
 
+    it('keeps simulated points and final grades unchanged when an additional point type is still untouched', () => {
+        const part = { id: 1, is_required: true, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 5 })] }
+        const values = { 1: ['4.1'] }
+        const baseline = simulationStructure([part], [], null, values)
+        part.entries.push(entryFixture({ id: 2, properties_mode: 'points', maximum_points: 100, grading_part_weight: 9 }))
+        expect(simulationPartSummary(part, values)).toBe('4,1 / 5 Punkte · 82 % · Note 2')
+        expect(simulationStructure([part], [], null, values)).toEqual(baseline)
+        expect(simulationStructure([part], [], null, { ...values, 2: [''] }).total).toBeNull()
+        expect(simulationStructure([part], [], null, { ...values, 2: ['0'] }).total).toBe('5')
+    })
+
     it('shows points totals only for actual entered assessments and preserves invalid input', () => {
         const part = { points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 10 }), entryFixture({ id: 2, properties_mode: 'points', maximum_points: 100 })] }
         expect(simulationPartSummary(part, { 1: ['5', '10'] })).toBe('15 / 20 Punkte · 75 % · Note 2')

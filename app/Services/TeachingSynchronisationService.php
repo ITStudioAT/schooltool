@@ -57,7 +57,7 @@ class TeachingSynchronisationService
             $token = Str::random(64);
             Cache::store('file')->put('teaching-sync:'.$token, Crypt::encryptString(json_encode([
                 'actor' => $actor->id, 'school' => $actor->school_id, 'local_hash' => $this->fingerprint($local),
-                'source' => $source,
+                'source_hash' => $this->fingerprint($this->sourceContent($source)),
             ], JSON_THROW_ON_ERROR)), now()->addMinutes(15));
         }
 
@@ -80,6 +80,8 @@ class TeachingSynchronisationService
             }, $plan['updated_teachers']),
             'updated_schoolyears' => $plan['updated_years'],
             'changed_contacts' => $plan['changed_contacts'], 'conflicts' => $plan['conflicts'],
+            'dropbox_notices' => $plan['dropbox_notices'],
+            'dropbox_warnings' => $plan['dropbox_warnings'],
             'shared' => ['users' => count($source['users']), 'import116' => count($source['import116']),
                 'settings' => count($source['school_tools'][0] ?? []),
                 'teachers' => count($source['teachers']),
@@ -100,15 +102,18 @@ class TeachingSynchronisationService
                 throw new RuntimeException('Vorschau gehört nicht zu diesem Benutzer und Schulkontext.');
             }
             $currentSource = $this->source->snapshot(School::query()->findOrFail($actor->school_id));
-            $content = fn (array $snapshot): array => array_diff_key($snapshot, array_flip(['captured_at', 'max_ids']));
-            if (! hash_equals($this->fingerprint($content($preview['source'])), $this->fingerprint($content($currentSource)))) {
+            $sourceHash = $preview['source_hash'] ?? $this->fingerprint($this->sourceContent($preview['source']));
+            if (! hash_equals($sourceHash, $this->fingerprint($this->sourceContent($currentSource)))) {
                 Cache::store('file')->forget('teaching-sync:'.$token);
                 throw new RuntimeException('Der Cloud-Unterrichtsstand oder seine Dateien wurden seit der Vorschau geändert. Bitte den aktuellen Umfang erneut prüfen.');
             }
+            $preview['source'] = $currentSource;
+            unset($currentSource);
             $created = [];
             $backup = null;
+            $dropboxWarnings = [];
             try {
-                DB::transaction(function () use ($actor, $preview, &$created, &$backup): void {
+                DB::transaction(function () use ($actor, $preview, &$created, &$backup, &$dropboxWarnings): void {
                     $local = $this->localState((int) $actor->school_id, true);
                     if (! hash_equals($preview['local_hash'], $this->fingerprint($local))) {
                         throw new RuntimeException('Lokale Daten oder Dateien wurden seit der Vorschau geändert. Bitte erneut prüfen.');
@@ -117,12 +122,14 @@ class TeachingSynchronisationService
                     if ($plan['conflicts'] !== []) {
                         throw ValidationException::withMessages(['synchronisation' => $plan['conflicts']]);
                     }
+                    $dropboxWarnings = $plan['dropbox_warnings'];
                     // The complete encrypted, private recovery copy must be persisted and verified before any replacement.
                     $backup = Str::random(64);
                     $backupPath = $this->backupPath($actor, $backup);
                     $this->assertTargetParents(Storage::disk('local')->path($backupPath));
                     $backupBytes = Crypt::encryptString(json_encode(['format' => 'schooltool-teaching-sync-safety-v1',
                         'school' => $actor->school_id, 'actor' => $actor->id, 'created_at' => now()->toISOString(), 'state' => $local,
+                        'dropbox_recovery' => $plan['dropbox_recovery'],
                     ], JSON_THROW_ON_ERROR));
                     if (! Storage::disk('local')->put($backupPath, $backupBytes)
                         || ! hash_equals(hash('sha256', $backupBytes), hash('sha256', Storage::disk('local')->get($backupPath)))) {
@@ -185,7 +192,8 @@ class TeachingSynchronisationService
             }
             Cache::store('file')->forget('teaching-sync:'.$token);
 
-            return ['backup' => $backup, 'message' => 'Der geprüfte Cloud-Unterrichtsstand wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
+            return ['backup' => $backup, 'dropbox_warnings' => $dropboxWarnings,
+                'message' => 'Der geprüfte Cloud-Unterrichtsstand wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
         });
     }
 
@@ -279,21 +287,7 @@ class TeachingSynchronisationService
     {
         $plan = $this->graph->plan($source, $local, $schoolId);
         $plan['conflicts'] = [...$plan['conflicts'], ...($local['conflicts'] ?? [])];
-        $plan['dropbox_folders'] = $local['dropbox_folders'];
-        $localWorks = array_column($local['tables']['teaching_course_works'], null, 'id');
-        $mappedWorks = array_column($plan['tables']['teaching_course_works'], null, 'id');
-        $localCourses = array_column($local['tables']['teaching_courses'], null, 'id');
-        $mappedCourses = array_column($plan['tables']['teaching_courses'], null, 'id');
-        $identityFields = array_flip(['teaching_course_id', 'type', 'title', 'date_for_all_groups']);
-        foreach ($plan['dropbox_folders'] as $folder) {
-            $localWork = $localWorks[$folder['teaching_course_work_id']];
-            $mappedWork = $mappedWorks[$folder['teaching_course_work_id']] ?? null;
-            if ($mappedWork === null
-                || array_intersect_key($localWork, $identityFields) !== array_intersect_key($mappedWork, $identityFields)
-                || $localCourses[$localWork['teaching_course_id']]['user_id'] !== ($mappedCourses[$mappedWork['teaching_course_id']]['user_id'] ?? null)) {
-                $plan['conflicts'][] = "Lokale Dropbox-Ordnerzuordnung für Arbeit #{$localWork['id']} kann nicht sicher erhalten werden. Arbeit oder Kursbesitzer unterscheidet sich; Zuordnung zuerst prüfen.";
-            }
-        }
+        $plan = $this->planLocalDropboxFolders($plan, $local);
         foreach ($source['files'] as $file) {
             if (isset($file['error'])) {
                 $plan['conflicts'][] = 'Cloud-Datei '.$file['path'].': '.$file['error'];
@@ -382,6 +376,76 @@ class TeachingSynchronisationService
         $plan['conflicts'] = array_values(array_unique($plan['conflicts']));
 
         return $plan;
+    }
+
+    private function planLocalDropboxFolders(array $plan, array $local): array
+    {
+        $plan['dropbox_folders'] = [];
+        $plan['dropbox_recovery'] = [];
+        $plan['dropbox_notices'] = [];
+        $plan['dropbox_warnings'] = [];
+        $localWorks = array_column($local['tables']['teaching_course_works'], null, 'id');
+        $localFolders = array_column($local['dropbox_folders'], null, 'id');
+        $localCourses = array_column($local['tables']['teaching_courses'], null, 'id');
+        $mappedCourses = array_column($plan['tables']['teaching_courses'], null, 'id');
+        $candidates = [];
+        foreach ($plan['tables']['teaching_course_works'] as $work) {
+            if (! isset($mappedCourses[$work['teaching_course_id']])) {
+                continue;
+            }
+            $identity = $this->dropboxWorkIdentity($work, $mappedCourses[$work['teaching_course_id']]);
+            $candidates[$identity][] = $work['id'];
+        }
+        $targets = [];
+        foreach ($local['dropbox_folders'] as $folder) {
+            $work = $localWorks[$folder['teaching_course_work_id']];
+            $identity = $this->dropboxWorkIdentity($work, $localCourses[$work['teaching_course_id']]);
+            $matches = $candidates[$identity] ?? [];
+            if (count($matches) !== 1) {
+                $plan['dropbox_recovery'][] = $folder;
+
+                continue;
+            }
+            $target = $folder['dropbox_connection_id'].'/'.$matches[0];
+            $targets[$target][] = [...$folder, 'teaching_course_work_id' => $matches[0]];
+        }
+        foreach ($targets as $folders) {
+            if (count($folders) !== 1) {
+                foreach ($folders as $folder) {
+                    $plan['dropbox_recovery'][] = $localFolders[$folder['id']];
+                }
+
+                continue;
+            }
+            $folder = $folders[0];
+            $plan['dropbox_folders'][] = $folder;
+            $original = $localFolders[$folder['id']];
+            if ($original['teaching_course_work_id'] !== $folder['teaching_course_work_id']) {
+                $plan['dropbox_notices'][] = "Lokale Dropbox-Ordnerzuordnung: Arbeit #{$original['teaching_course_work_id']} → #{$folder['teaching_course_work_id']}. Arbeit, Kurs, Schuljahr und Besitzer stimmen eindeutig überein.";
+            }
+        }
+        foreach ($plan['dropbox_recovery'] as $folder) {
+            $plan['dropbox_warnings'][] = "Lokale Dropbox-Ordnerzuordnung für Arbeit #{$folder['teaching_course_work_id']} hat kein eindeutiges Gegenstück. Sie wird im verschlüsselten Sicherheitsbackup aufbewahrt und keiner anderen Arbeit zugeordnet. Quick-Import erfordert danach eine erneute Ordnerauswahl.";
+        }
+
+        return $plan;
+    }
+
+    private function dropboxWorkIdentity(array $work, array $course): string
+    {
+        $classes = is_array($course['classes']) ? $course['classes'] : json_decode($course['classes'] ?? '[]', true, flags: JSON_THROW_ON_ERROR);
+        sort($classes);
+
+        return json_encode([
+            'owner' => $course['user_id'], 'year' => $course['schoolyear_id'],
+            'course' => $course['title'], 'classes' => $classes,
+            'type' => $work['type'], 'title' => $work['title'], 'date' => $work['date_for_all_groups'],
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    private function sourceContent(array $source): array
+    {
+        return array_diff_key($source, array_flip(['captured_at', 'max_ids']));
     }
 
     private function fingerprint(array $state): string

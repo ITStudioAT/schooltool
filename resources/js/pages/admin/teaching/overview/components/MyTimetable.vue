@@ -58,47 +58,38 @@
                                 <PersonalAppointmentCard :appointment="appointment" show-date @edit="$refs.personalAppointments.open($event)" />
                             </v-list-item>
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--upcoming': isUpcomingLesson(item) }]" :style="getDateBackgroundStyle(item)">
+                                <div :class="['timetable-lesson-card d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--upcoming': isUpcomingLesson(item) }]" :style="getDateBackgroundStyle(item)">
+                                    <div class="timetable-card-header">
+                                        <div class="timetable-card-heading d-flex flex-wrap align-center ga-2">
+                                            <span v-if="hasFreeStatus(item)" class="timetable-cancelled-label">Entfallen</span>
+                                            <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
+                                            <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
+                                        </div>
+                                        <div v-if="!hasFreeStatus(item)" class="timetable-status-icons">
+                                        <v-icon class="timetable-attendance-status" size="16"
+                                            :icon="isAttendanceChecked(item) ? 'mdi-check' : 'mdi-alert-circle-outline'"
+                                            :color="isAttendanceChecked(item) ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                            :aria-label="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'"
+                                            :title="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'" />
+                                        <v-icon class="timetable-content-status" size="16" icon="mdi-text-box-outline"
+                                            :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                            :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
+                                            :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
+                                        <v-icon v-if="item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                            icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
+                                            aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
+                                        <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
+                                            icon="mdi-brain" :color="scheduledWorkIconColor(item.date)" role="img" :aria-hidden="false"
+                                            aria-label="Arbeit vorgesehen" title="Arbeit vorgesehen" />
+                                        </div>
+                                    </div>
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
-                                        <span v-if="hasFreeStatus(item)" class="timetable-cancelled-label">Entfallen</span>
-                                        <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
-                                        <v-icon
-                                            v-if="isAttendanceChecked(item)"
-                                            size="16"
-                                            color="success"
-                                            title="Anwesenheit geprüft">
-                                            mdi-check-circle
-                                        </v-icon>
-                                        <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
                                         <v-chip v-for="hour in item.hours" :key="hour" size="x-small" variant="outlined"
                                             :color="hasFreeStatus(item, hour) ? 'success' : 'primary'"
                                             :class="{ 'timetable-item--free': hasFreeStatus(item, hour) }">{{ hour }}. Std</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
-                                        <v-icon
-                                            v-if="item.hasCurriculumAssignment"
-                                            size="10"
-                                            color="green-darken-2"
-                                            role="img"
-                                            :aria-hidden="false"
-                                            aria-label="Curriculum-Eintrag zugeordnet"
-                                            title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                        <span
-                                            v-if="item.curriculumAttachmentVisibility"
-                                            class="d-inline-flex align-center ga-2"
-                                            :title="item.curriculumAttachmentVisibility.label">
-                                            <span
-                                                v-for="indicator in item.curriculumAttachmentVisibility.indicators"
-                                                :key="indicator.key"
-                                                class="d-inline-flex align-center ga-1 text-caption"
-                                                :class="`text-${indicator.color}`"
-                                                role="img"
-                                                :aria-label="indicator.label">
-                                                <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
-                                                <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
-                                            </span>
-                                        </span>
                                         <v-chip
                                             v-if="hasFreeStatus(item) && item.freeReason"
                                             size="x-small"
@@ -109,6 +100,12 @@
                                         </v-chip>
                                     </div>
                                     <div v-if="item.content" class="text-caption timetable-content" v-html="contentHtml(item.content)"></div>
+                                    <div v-if="!hasFreeStatus(item) && item.attendanceCounts" class="timetable-attendance-counts"
+                                        :aria-label="`${item.attendanceCounts.present} anwesend / ${item.attendanceCounts.absent} abwesend`">
+                                        <span class="text-success">{{ item.attendanceCounts.present }}</span>
+                                        <span>/</span>
+                                        <span class="text-error">{{ item.attendanceCounts.absent }}</span>
+                                    </div>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!filteredItems.length && !personalAppointmentOccurrences.length">
@@ -178,32 +175,28 @@
                                                 :class="['timetable-grid-item', ...getStatusClass(item, hour), { 'timetable-grid-item--block': tableCellSpan(day, hour) > 1, 'timetable-item--upcoming': tableBlockHours(day, hour).some((blockHour) => isUpcomingLesson(item, blockHour)) }]"
                                                 :style="tableCellSpan(day, hour) > 1 ? { minHeight: `${tableCellSpan(day, hour) * 52}px` } : undefined"
                                                 @click="openCourse(item)">
-                                                <div v-if="hasFreeStatus(item, hour)" class="timetable-cancelled-label">Entfallen</div>
-                                                <div class="d-flex align-center ga-1">
-                                                    <v-icon
-                                                        v-if="item.hasCurriculumAssignment"
-                                                        size="10"
-                                                        color="green-darken-2"
-                                                        role="img"
-                                                        :aria-hidden="false"
-                                                        aria-label="Curriculum-Eintrag zugeordnet"
-                                                        title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                                    <span
-                                                        v-if="item.curriculumAttachmentVisibility"
-                                                        class="d-inline-flex align-center ga-2"
-                                                        :title="item.curriculumAttachmentVisibility.label">
-                                                        <span
-                                                            v-for="indicator in item.curriculumAttachmentVisibility.indicators"
-                                                            :key="indicator.key"
-                                                            class="d-inline-flex align-center ga-1 text-caption"
-                                                            :class="`text-${indicator.color}`"
-                                                            role="img"
-                                                            :aria-label="indicator.label">
-                                                            <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
-                                                            <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
-                                                        </span>
-                                                    </span>
-                                                    <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                <div class="timetable-card-header">
+                                                    <div class="timetable-card-heading">
+                                                        <div v-if="hasFreeStatus(item, hour)" class="timetable-cancelled-label">Entfallen</div>
+                                                        <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                    </div>
+                                                    <div v-if="!hasFreeStatus(item, hour)" class="timetable-status-icons">
+                                                    <v-icon class="timetable-attendance-status" size="16"
+                                                        :icon="isAttendanceChecked(item) ? 'mdi-check' : 'mdi-alert-circle-outline'"
+                                                        :color="isAttendanceChecked(item) ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                                        :aria-label="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'"
+                                                        :title="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'" />
+                                                    <v-icon class="timetable-content-status" size="16" icon="mdi-text-box-outline"
+                                                        :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                                        :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
+                                                        :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
+                                                    <v-icon v-if="item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                                        icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
+                                                        aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
+                                                    <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
+                                                        icon="mdi-brain" :color="scheduledWorkIconColor(item.date)" role="img" :aria-hidden="false"
+                                                        aria-label="Arbeit vorgesehen" title="Arbeit vorgesehen" />
+                                                    </div>
                                                 </div>
                                                 <div class="timetable-grid-class">{{ item.classLabel }}</div>
                                                 <div v-if="tableCellSpan(day, hour) > 1" class="timetable-grid-class">
@@ -211,7 +204,12 @@
                                                     <template v-if="formatHoursTimeRange(tableBlockHours(day, hour)) !== '-'"> · {{ formatHoursTimeRange(tableBlockHours(day, hour)) }}</template>
                                                 </div>
                                                 <div v-if="range === RANGE_TODAY && item.content" class="timetable-grid-content" v-html="contentHtml(item.content)"></div>
-                                                <v-icon v-if="isAttendanceChecked(item)" size="12" color="success">mdi-check-circle</v-icon>
+                                                <div v-if="!hasFreeStatus(item, hour) && item.attendanceCounts" class="timetable-attendance-counts"
+                                                    :aria-label="`${item.attendanceCounts.present} anwesend / ${item.attendanceCounts.absent} abwesend`">
+                                                    <span class="text-success">{{ item.attendanceCounts.present }}</span>
+                                                    <span>/</span>
+                                                    <span class="text-error">{{ item.attendanceCounts.absent }}</span>
+                                                </div>
                                             </div>
                                             </div>
                                             <div v-for="column in tablePersonalAppointmentColumns(day, hour)" :key="column.appointment.id"
@@ -256,11 +254,12 @@
 </template>
 
 <script>
-import { applicationDate, parseLocalDate } from '@/helpers/date'
+import { applicationDate, parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
 import { cancelledCourseDateHours, activeCourseDateHours, isCourseDateHourCancelled } from '@/helpers/courseDateHours'
-import { mapWritableState } from 'pinia'
+import { mapState, mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
@@ -273,50 +272,6 @@ const RANGE_WEEK = 'week'
 const RANGE_NEXT_WEEK = 'next_week'
 const RANGE_MONTH = 'month'
 const RANGE_CURRENT_SEMESTER = 'current_semester'
-
-function curriculumAttachmentVisibility(courseDate, hasAssignment) {
-    if (!hasAssignment) return null
-
-    let sharedCount = Number(courseDate?.shared_curriculum_attachments_count ?? 0)
-    let privateCount = Number(courseDate?.private_curriculum_attachments_count ?? 0)
-
-    if (Array.isArray(courseDate?.adopted_materials)) {
-        const attachments = courseDate.adopted_materials.flatMap((material) =>
-            Array.isArray(material?.attachments) ? material.attachments : [],
-        )
-        const visibilityByFile = new Map()
-        attachments.forEach((attachment, index) => {
-            const key = attachment.source_teaching_curriculum_document_id
-                ? `document-${attachment.source_teaching_curriculum_document_id}`
-                : `attachment-${attachment.id ?? index}`
-            visibilityByFile.set(key, visibilityByFile.get(key) === true || attachment.student_visible === true)
-        })
-        sharedCount = [...visibilityByFile.values()].filter(Boolean).length
-        privateCount = visibilityByFile.size - sharedCount + Number(courseDate?.unadopted_curriculum_attachments_count ?? 0)
-    }
-
-    const indicators = [
-        {
-            key: 'shared', icon: 'mdi-eye', color: 'success', count: sharedCount,
-            label: sharedCount === 1 ? '1 veröffentlichter Anhang' : `${sharedCount} veröffentlichte Anhänge`,
-            summary: `${sharedCount} veröffentlicht`,
-        },
-        {
-            key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: privateCount,
-            label: privateCount === 1 ? '1 verborgener Anhang' : `${privateCount} verborgene Anhänge`,
-            summary: `${privateCount} verborgen`,
-        },
-    ].filter((indicator) => indicator.count > 0)
-
-    if (indicators.length === 0) {
-        return {
-            indicators: [{ key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: 0, label: 'Keine Anhänge veröffentlicht' }],
-            label: 'Keine Anhänge veröffentlicht',
-        }
-    }
-
-    return { indicators, label: indicators.map((indicator) => indicator.summary).join(', ') }
-}
 
 const timetableCellObservers = new WeakMap()
 const timetableDurationObservers = new WeakMap()
@@ -493,6 +448,7 @@ export default {
             'timetable_view_mode',
         ]),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
+        ...mapState(useCourseWorkStore, { loadedWorkCourseId: 'loadedCourseId', loadedCourseWorks: 'courseWorks' }),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
@@ -519,6 +475,7 @@ export default {
                     const classLabel = Array.isArray(course?.classes) ? course.classes.join(', ') : ''
                     const courseTitle = (course?.title || '').toString().trim()
                     const dates = Array.isArray(course?.course_dates) ? course.course_dates : []
+                    const scheduledWorkDates = this.scheduledWorkDatesForCourse(course)
 
                     return dates.map((courseDate) => {
                         const date = (courseDate?.date || '').toString().slice(0, 10)
@@ -532,9 +489,6 @@ export default {
                         const timeRangeLabel = this.formatHoursTimeRange(hours)
 
                         const status = Array.isArray(courseDate?.status) ? courseDate.status : []
-                        const hasCurriculumAssignment = Array.isArray(courseDate?.adopted_materials)
-                            ? courseDate.adopted_materials.length > 0
-                            : courseDate?.has_curriculum_assignment === true
 
                         return {
                             key: `${course?.id || 'x'}-${courseDate?.id || date}-${hoursLabel}`,
@@ -549,13 +503,15 @@ export default {
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
-                            hasCurriculumAssignment,
-                            curriculumAttachmentVisibility: curriculumAttachmentVisibility(courseDate, hasCurriculumAssignment),
+                            contentEntered: this.hasLessonContent(courseDate?.content),
+                            curriculumAssigned: typeof courseDate?.has_curriculum_assignment === 'boolean'
+                                ? courseDate.has_curriculum_assignment
+                                : Array.isArray(courseDate?.adopted_materials) && courseDate.adopted_materials.length > 0,
+                            workScheduled: scheduledWorkDates.includes(date),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
-                            attendanceChecked: typeof courseDate?.attendance_checked === 'boolean'
-                                ? courseDate.attendance_checked
-                                : status.includes('att_checked:1'),
+                            attendanceChecked: this.attendanceIsComplete(course, courseDate),
+                            attendanceCounts: this.attendanceCounts(course, courseDate),
                         }
                     })
                 })
@@ -741,6 +697,9 @@ export default {
     },
 
     methods: {
+        scheduledWorkIconColor(date) {
+            return scheduledWorkIconColor(date, new Date(this.nowTs))
+        },
         personalAppointmentDuration,
         personalAppointmentsOnDay(day) {
             return this.personalAppointmentOccurrences.filter((appointment) => appointment.occurrenceDate === this.normalizeDateToString(day))
@@ -1117,16 +1076,102 @@ export default {
             return time.length === 5 ? `${time}:00` : time
         },
         isAttendanceChecked(item) {
-            if (!item) return false
-            if (typeof item.attendanceChecked === 'boolean') return item.attendanceChecked
-            const status = Array.isArray(item?.status) ? item.status : []
-            return status.includes('att_checked:1')
+            return item?.attendanceChecked === true
+        },
+        hasLessonContent(content) {
+            const text = String(content || '').trim()
+            if (!text) return false
+            const document = new DOMParser().parseFromString(text, 'text/html')
+            return Boolean((document.body.textContent || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim())
+        },
+        scheduledWorkDatesForCourse(course) {
+            if (Number(course?.id) !== this.loadedWorkCourseId) return course?.scheduled_work_dates || []
+
+            const dateKey = (value) => {
+                if (!value) return null
+                const date = parseLocalDate(value)
+                return isNaN(date.getTime()) ? null : applicationDate(date)
+            }
+            const dates = new Set()
+            for (const work of this.loadedCourseWorks || []) {
+                if (work.teaching_course_id && Number(work.teaching_course_id) !== Number(course.id)) continue
+                const fallbackDate = dateKey(work.date_for_all_groups)
+                const groups = Array.isArray(work.groups) ? work.groups : []
+                const hasExplicitGroupDates = groups.some((group) => dateKey(group?.date))
+                for (const group of groups) {
+                    const date = dateKey(group?.date) || fallbackDate
+                    if (date) dates.add(date)
+                }
+                if (fallbackDate && (!work.is_group_work || !hasExplicitGroupDates)) dates.add(fallbackDate)
+            }
+            return [...dates]
+        },
+        attendanceIsComplete(course, courseDate) {
+            if (!courseDate?.attendance || typeof courseDate.attendance !== 'object') {
+                return courseDate?.attendance_complete === true
+            }
+            return this.attendanceCounts(course, courseDate) !== null
+        },
+        attendanceCounts(course, courseDate) {
+            if (!courseDate?.attendance || typeof courseDate.attendance !== 'object') {
+                const counts = courseDate?.attendance_counts
+                return courseDate?.attendance_complete === true
+                    && Number.isInteger(counts?.present) && counts.present >= 0
+                    && Number.isInteger(counts?.absent) && counts.absent >= 0
+                    && counts.present + counts.absent > 0 ? counts : null
+            }
+            const students = Array.isArray(course?.students_info) ? course.students_info : course?.students || []
+            const studentIds = [...new Set(students
+                .filter((student) => !student?.canceled_at && !student?.deleted_at)
+                .map((student) => String(student?.id ?? student)))]
+            if (!studentIds.length) return null
+
+            let present = 0
+            for (const studentId of studentIds) {
+                const attendance = courseDate.attendance
+                const key = Object.prototype.hasOwnProperty.call(attendance, `s_${studentId}`) ? `s_${studentId}` : studentId
+                if (!Object.prototype.hasOwnProperty.call(attendance, key)
+                    || ![true, false, 1, 0, '1', '0', 'true', 'false'].includes(attendance[key])) return null
+                if ([true, 1, '1', 'true'].includes(attendance[key])) present += 1
+            }
+            return { present, absent: studentIds.length - present }
         },
     },
 }
 </script>
 
 <style scoped>
+.timetable-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+}
+
+.timetable-card-heading {
+    flex: 1;
+    min-width: 0;
+}
+
+.timetable-status-icons {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}
+
+.timetable-attendance-counts {
+    display: flex;
+    justify-content: flex-end;
+    gap: 3px;
+    margin-top: auto;
+    padding-top: 4px;
+    font-size: 0.65rem;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
 .timetable-range-toggle {
     flex-wrap: wrap;
     row-gap: 4px;
@@ -1308,6 +1353,8 @@ export default {
 }
 
 .timetable-grid-item {
+    display: flex;
+    flex-direction: column;
     padding: 4px 5px;
     border-radius: 3px;
     background-color: #bbd9f4;

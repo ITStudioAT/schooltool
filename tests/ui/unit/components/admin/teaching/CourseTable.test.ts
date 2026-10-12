@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
-import { workDeadlineExpired } from '@/helpers/date'
+import { scheduledWorkIconColor, workDeadlineExpired } from '@/helpers/date'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +23,19 @@ import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStuden
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 
 describe('CourseTable hourly cancellation dialog', () => {
+    it.each([
+        ['2026-10-11', '2026-10-12T10:00:00Z', 'error'],
+        ['2026-10-12', '2026-10-12T10:00:00Z', 'error'],
+        ['2026-10-13', '2026-10-12T10:00:00Z', 'orange'],
+        ['2026-10-13T00:00:00.000Z', '2026-10-12T10:00:00Z', 'orange'],
+        ['2026-10-13', '2026-10-12T22:30:00Z', 'error'],
+        ['2026-10-14', '2026-10-12T22:30:00Z', 'orange'],
+        ['2026-02-30', '2026-02-01T10:00:00Z', 'error'],
+        [null, '2026-10-12T10:00:00Z', 'error'],
+    ])('colors the scheduled work day %s at %s in Vienna', (date, now, color) => {
+        expect(scheduledWorkIconColor(date, new Date(now as string))).toBe(color)
+    })
+
     function mountCancellationTable(cancelledHours: number[] = []) {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-12', hours: [5, 6], status: [], cancelled_hours: cancelledHours }
@@ -4704,6 +4717,79 @@ describe('CourseTable', () => {
         expect(methods.studentPresencePercentage.call(ctx, { id: 10 })).toBeNull()
     })
 
+    it.each([false, true])('inverts an existing %s marker before clearing it and keeps cells independent across reloads', async (initial) => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const store = useCourseStore(pinia)
+        store.selected_course = {
+            id: 18, title: 'Testkurs',
+            students_info: [{ id: 10, first_name: 'Anna', last_name: 'Test' }, { id: 11, first_name: 'Ben', last_name: 'Test' }],
+            course_dates: [{ id: 1, date: '2026-09-14', attendance: { 10: initial, 11: initial }, attendance_checked: false },
+                { id: 2, date: '2026-09-21', attendance: { 10: initial }, attendance_checked: false }],
+        } as never
+        const wrapper = mount(CourseTable, { props: { view: 'attendance' }, global: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog } })],
+            components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog }, stubs: {
+            'v-btn': false, VBtn: false, 'v-icon': false, VIcon: false, 'v-dialog': false, VDialog: false,
+            'v-divider': true, 'v-list-subheader': true, 'v-autocomplete': true, 'v-checkbox': true,
+            'v-date-input': true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+            WorkEvaluationImport: true, CourseStudentNotes: true, CourseStudentIndicators: true,
+            ItsGridBox: { template: '<div><slot /></div>' },
+        } } })
+        const updateStatus = vi.mocked(useCourseDateStore(pinia).updateStatus)
+        updateStatus.mockImplementation(async (dateId) => JSON.parse(JSON.stringify(
+            store.selected_course.course_dates.find((date) => date.id === dateId),
+        )))
+        const click = async (studentId, dateId) => {
+            const vm = wrapper.vm as any
+            await vm.toggleStudentAttendance({ id: studentId }, store.selected_course.course_dates.find((date) => date.id === dateId))
+            await flushPromises()
+        }
+        const state = (studentId, dateId) => (store.selected_course.course_dates.find((date) => date.id === dateId) as any).attendance[studentId]
+        try {
+            await flushPromises()
+            await wrapper.findAll('.course-table-row .course-table-entry-cell')[0].trigger('click')
+            await flushPromises()
+            expect(state(10, 1)).toBe(!initial)
+            expect(updateStatus).toHaveBeenLastCalledWith(1, expect.objectContaining({ attendance_state: !initial }))
+            await click(11, 1)
+            await click(10, 2)
+            expect(state(11, 1)).toBe(!initial)
+            expect(state(10, 2)).toBe(!initial)
+            updateStatus.mockResolvedValueOnce(false)
+            await click(10, 1)
+            expect(state(10, 1)).toBe(!initial)
+            await click(10, 1)
+            expect(state(10, 1)).toBeNull()
+            expect(state(11, 1)).toBe(!initial)
+            await click(11, 1)
+            expect(state(11, 1)).toBeNull()
+            store.selected_course = JSON.parse(JSON.stringify(store.selected_course))
+            await flushPromises()
+            await click(10, 2)
+            expect(state(10, 2)).toBe(initial)
+            await click(10, 2)
+            expect(state(10, 2)).toBeNull()
+            await (wrapper.vm as any).toggleStudentAttendance({ id: 10 }, store.selected_course.course_dates[1], true)
+            await click(10, 2)
+            expect(state(10, 2)).toBe(false)
+            store.selected_course.course_dates = JSON.parse(JSON.stringify(store.selected_course.course_dates))
+            await flushPromises()
+            await click(10, 2)
+            expect(state(10, 2)).toBe(true)
+            updateStatus.mockRejectedValueOnce(new Error('Test network error'))
+            await expect((wrapper.vm as any).toggleStudentAttendance({ id: 10 }, store.selected_course.course_dates[1])).rejects.toThrow('Test network error')
+            expect(state(10, 2)).toBe(true)
+            await click(10, 2)
+            expect(state(10, 2)).toBeNull()
+            await click(10, 1)
+            expect(state(10, 1)).toBe(false)
+            await click(10, 1)
+            expect(state(10, 1)).toBe(true)
+            await click(10, 1)
+            expect(state(10, 1)).toBeNull()
+        } finally { wrapper.unmount() }
+    })
+
     it('toggles and persists attendance for an eligible table cell', async () => {
         const methods = (CourseTable as any).methods
         const updateStatus = vi.fn().mockResolvedValue({
@@ -4919,7 +5005,7 @@ describe('CourseTable', () => {
         expect(source).toContain('<span class="course-table-work-summary-title">')
         expect(source).toContain('{{ work.work.title || work.label }}')
         expect(source).toMatch(/\.course-table-work-summary-title \{[\s\S]*font-weight: 400;/u)
-        expect(source).toContain('<v-icon size="13">mdi-clipboard-text</v-icon>')
+        expect(source).toContain('<v-icon :color="scheduledWorkIconColor(courseDate.date)" size="13">mdi-brain</v-icon>')
         expect(source).toContain('@click="openWorkDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')

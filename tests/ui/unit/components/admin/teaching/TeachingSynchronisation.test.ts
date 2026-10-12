@@ -48,6 +48,30 @@ function reviewedPreview(conflicts: string[] = []) {
 }
 
 describe('Teaching synchronisation', () => {
+    it('shows safe Dropbox remapping and recoverable unmatched folders without blocking a reviewed import', async () => {
+        const { post } = await mountSynchronisation()
+        const preview = reviewedPreview()
+        Object.assign(preview.data.data, {
+            dropbox_notices: ['Lokale Dropbox-Ordnerzuordnung: Arbeit #66 → #63.'],
+            dropbox_warnings: ['Arbeit #70 bleibt im Sicherheitsbackup; keiner anderen Arbeit zugeordnet.'],
+        })
+        post.mockResolvedValueOnce(preview)
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('#66 → #63')
+        expect(wrapper.text()).toContain('Arbeit #70 bleibt im Sicherheitsbackup')
+        expect(wrapper.text()).not.toContain('Übernahme gesperrt')
+        await wrapper.findAll('input')[0].setValue(true)
+        await wrapper.findAll('input')[1].setValue(true)
+        expect(wrapper.findAll('button')[1].attributes('disabled')).toBeUndefined()
+        post.mockResolvedValueOnce({ data: { message: 'Übernommen', backup: 'saved-backup',
+            dropbox_warnings: preview.data.data.dropbox_warnings } })
+        await wrapper.findAll('button')[1].trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Sicherheitsbackup herunterladen')
+        expect(wrapper.text()).toContain('Arbeit #70 bleibt im Sicherheitsbackup')
+    })
+
     it('checks availability without reading cloud data automatically', async () => {
         const { post } = await mountSynchronisation(false)
         expect(post).not.toHaveBeenCalled()

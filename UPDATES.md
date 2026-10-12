@@ -1,5 +1,12 @@
 # UPDATES
 
+## 3.51.3
+
+### Unterricht
+
+- Übersicht: Neue Symbole
+- Schüler:innen: Berechnung der Beurteilung werden durch nicht durchgeführte Arbeiten nicht blockiert
+
 ## 3.51.2
 
 ### Unterricht

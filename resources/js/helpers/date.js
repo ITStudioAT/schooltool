@@ -19,6 +19,15 @@ export function applicationDate(date = new Date()) {
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vienna' }).format(date)
 }
 
+export function scheduledWorkIconColor(value, now = new Date()) {
+    const date = typeof value === 'string' ? value.slice(0, 10) : ''
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'error'
+    const [year, month, day] = date.split('-').map(Number)
+    if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) return 'error'
+
+    return date > applicationDate(now) ? 'orange' : 'error'
+}
+
 export function workDeadlineExpired(work, now = Date.now()) {
     const date = work?.finish_until_date
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !Number.isFinite(now)) return false

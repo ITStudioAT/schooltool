@@ -74,6 +74,10 @@ describe('CourseWorkStore', () => {
             params: { course_id: 55 },
         })
         expect(store.courseWorks).toEqual([{ id: 10, title: 'Testarbeit' }])
+        expect(store.loadedCourseId).toBe(55)
+        store.clearWorks()
+        expect(store.loadedCourseId).toBeNull()
+        expect(store.courseWorks).toEqual([])
     })
 
     it('update returns false if id is missing', async () => {

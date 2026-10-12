@@ -118,10 +118,10 @@
                                             size="x-small"
                                             variant="tonal"
                                             :color="work.isGroupWork ? 'success' : 'primary'"
-                                            prepend-icon="mdi-clipboard-text"
                                             class="course-date-work-chip cursor-pointer"
                                             :title="work.title"
                                             @click.stop="openCourseWork(work)">
+                                            <v-icon start size="16" icon="mdi-brain" :color="scheduledWorkIconColor(courseDate.date)" />
                                             {{ work.label }}
                                         </v-chip>
                                         <span
@@ -738,7 +738,7 @@
 <script>
 import { defineAsyncComponent } from 'vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
-import { parseLocalDate } from '@/helpers/date'
+import { parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
@@ -1159,6 +1159,7 @@ export default {
     },
 
     methods: {
+        scheduledWorkIconColor,
         scrollToHighlightedDate() {
             this.$nextTick(() => {
                 setTimeout(() => {
