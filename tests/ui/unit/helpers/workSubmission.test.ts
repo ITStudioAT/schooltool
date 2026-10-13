@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { workSubmissionStatus } from '@/helpers/workSubmission'
 import WorkSubmissionStatus from '@/pages/admin/teaching/overview/components/WorkSubmissionStatus.vue'
+import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
 
 const now = Date.parse('2026-10-14T10:00:00Z')
 
@@ -22,6 +23,15 @@ function finalDownload() {
         final_download: { exercise_id: 'exercise-65', download_checksum: 'b'.repeat(64),
             deadline_at: '2026-10-07T10:00:00Z', download_completed_at: '2026-10-08T09:00:00Z',
             scope: 'Gesicherter lokaler Postfachbestand', participants: [{ participant_id: 'person-12', submission_sha256: [] }] } })
+    return work
+}
+
+function withProvision(work, method = 'download_release') {
+    const sha256 = 'd'.repeat(64)
+    work.status.dispatch_logs = [{ origin: 'provision_import', purpose: 'provision', sha256 }]
+    work.status.provision_events = [{ origin: 'provision_import', student_id: 12, participant_id: 'person-12',
+        exercise_id: 'exercise-65', method, available_at: '2026-10-01T10:00:00Z', log_sha256: sha256,
+        evidence_sha256: ['e'.repeat(64)] }]
     return work
 }
 
@@ -50,7 +60,7 @@ describe('Personal work submission evidence', () => {
     it.each(['unresolved', 'not_received'])('keeps %s neutral without a confirmed negative proof, even for zero points', state => {
         const work = fixture(state)
         work.status.assessment_json_imports[0].record.total_minor = 0
-        expect(workSubmissionStatus(work, 12, now)).toMatchObject({ state: 'unknown', color: 'grey-darken-1' })
+        expect(workSubmissionStatus(work, 12, now)).toMatchObject({ state: 'unknown', color: 'orange-darken-2' })
     })
 
     it('does not turn task provision, dispatch or result notifications into submission evidence', () => {
@@ -135,7 +145,98 @@ describe('Personal work submission evidence', () => {
             expect(icon.attributes('color')).toBe('success')
             expect(icon.attributes('title')).toBe(icon.attributes('aria-label'))
             await wrapper.setProps({ studentId: 13 })
-            expect(wrapper.get('[aria-label]').attributes('color')).toBe('grey-darken-1')
+            expect(wrapper.get('[aria-label]').attributes('color')).toBe('orange-darken-2')
+        } finally { wrapper.unmount() }
+    })
+})
+
+describe('Personal table status icon sequence', () => {
+    const sequence = wrapper => wrapper.findAll('[data-work-status], [data-submission-state]')
+        .map(icon => icon.attributes('data-work-status') || 'download')
+
+    it('renders all three unknown states orange in task, download, result order without extra provision icons', () => {
+        const work = fixture('unresolved')
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+        try {
+            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
+            expect(wrapper.findAll('[aria-label]').map(icon => icon.attributes('color')))
+                .toEqual(['orange-darken-2', 'orange-darken-2', 'orange-darken-2'])
+            expect(wrapper.get('[data-work-status="tasks"]').attributes('aria-label')).toContain('kein bestätigter E-Mail-Versand')
+            expect(wrapper.get('[data-submission-state]').attributes('aria-label')).toContain('ungeklärt')
+            expect(wrapper.get('[data-work-status="results"]').attributes('aria-label')).toContain('kein bestätigter E-Mail-Versand')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['download_release', 'direct_issue'])('shows %s availability green without a fictitious task email or submission', method => {
+        const work = withProvision(fixture('unresolved'), method)
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+        try {
+            expect(sequence(wrapper)).toEqual(['download', 'results'])
+            const icon = wrapper.get('[data-submission-state="available"]')
+            expect(icon.attributes('color')).toBe('success')
+            expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben')
+            expect(icon.attributes('aria-label')).toContain('01.10.2026 um 12:00 Uhr').toContain('Download oder Empfang nicht bestätigt')
+            expect(icon.attributes('aria-label')).not.toContain('heruntergeladen')
+            expect(icon.attributes('aria-label')).not.toContain('Abgabe laut importiertem')
+            expect(wrapper.find('[icon="mdi-file-check-outline"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['received', 'not_received'])('gives actual %s evidence priority over task availability', state => {
+        const work = withProvision(state === 'received' ? fixture() : finalDownload())
+        const status = workSubmissionStatus(work, 12, now)
+        expect(status.state).toBe(state)
+        expect(status.color).toBe(state === 'received' ? 'success' : 'error')
+        expect(status.label).toContain(state === 'received' ? 'Abgabe laut importiertem' : 'lokalen Abschlussdownload')
+        expect(status.label).not.toContain('Zum Download bereitgestellt')
+    })
+
+    it('keeps an unproven absence orange unless a separate availability proof exists', () => {
+        const work = fixture('not_received')
+        expect(workSubmissionStatus(work, 12, now).state).toBe('unknown')
+        expect(workSubmissionStatus(withProvision(work), 12, now).state).toBe('available')
+    })
+
+    it.each(['other student', 'missing source', 'missing participant', 'group peer', 'removed member'])
+        ('never borrows availability for %s', change => {
+            const work = withProvision(fixture('unresolved'))
+            let studentId = 12
+            if (change === 'other student') studentId = 999
+            if (change === 'missing source') work.status.dispatch_logs = []
+            if (change === 'missing participant') work.status.provision_events[0].participant_id = null
+            if (change === 'group peer') { work.is_group_work = true; studentId = 13 }
+            if (change === 'removed member') { work.is_group_work = true; work.groups[0].student_ids = [13] }
+            const wrapper = mount(WorkCellStatus, { props: { work, studentId, now } })
+            try {
+                expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
+                expect(wrapper.get('[data-submission-state]').attributes('color')).toBe('orange-darken-2')
+            } finally { wrapper.unmount() }
+        })
+
+    it('keeps real task and result mail evidence green and preserves a separately confirmed absence red', () => {
+        const work = withProvision(finalDownload())
+        work.status.dispatch_notifications = ['tasks', 'results'].map(purpose => {
+            const log = { origin: 'dispatch_import', purpose, sha256: purpose === 'tasks' ? 'b'.repeat(64) : 'c'.repeat(64) }
+            work.status.dispatch_logs.push(log)
+            return { origin: 'dispatch_import', purpose, student_id: 12, log_sha256: log.sha256, sent_at: '2026-10-08T10:00:00Z' }
+        })
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+        try {
+            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
+            expect(wrapper.findAll('[aria-label]').map(icon => icon.attributes('color'))).toEqual(['success', 'error', 'success'])
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['test', 'prepared', 'scheduled', 'unconfirmed'])('keeps %s mail orange without claiming confirmed transmission', mode => {
+        const work = fixture('unresolved')
+        const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'b'.repeat(64) }
+        work.status.dispatch_logs = [log]
+        work.status.dispatch_attempts = [{ origin: 'dispatch_import', purpose: 'tasks', student_id: 12, mode,
+            log_sha256: log.sha256, planned_at: '2026-10-01T10:00:00Z' }]
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+        try {
+            expect(wrapper.get('[data-work-status="tasks"]').attributes('color')).toBe('orange-darken-2')
+            expect(wrapper.get('[data-work-status="tasks"]').attributes('aria-label')).not.toContain('Aufgaben per E-Mail versandt')
         } finally { wrapper.unmount() }
     })
 })

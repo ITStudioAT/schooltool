@@ -149,6 +149,8 @@ describe('CourseTable evaluation PDF links', () => {
             expect(received.get('[data-submission-state]').attributes('color')).toBe('success')
             expect(received.text()).toContain('Abgabe laut importiertem personenbezogenem Nachweis eingegangen')
             expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(1)
+            expect(received.findAll('[data-work-status], [data-submission-state]').map(icon =>
+                icon.attributes('data-work-status') || 'download')).toEqual(['tasks', 'download', 'results'])
             expect(cells.filter(cell => cell.find('[data-submission-state="unknown"]').exists())).toHaveLength(1)
             expect(wrapper.find('.course-table-work-summary [data-submission-state]').exists()).toBe(false)
             expect(received.findAll('v-tooltip')).toHaveLength(1)

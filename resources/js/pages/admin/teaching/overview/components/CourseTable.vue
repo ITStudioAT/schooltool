@@ -574,17 +574,11 @@
                                                                 </span>
                                                             </template>
                                                         </v-chip>
-                                                        <span v-if="entry.source === 'course_work'" class="d-inline-flex align-center ga-1">
-                                                            <WorkDispatchStatus
-                                                                :work="courseWorkForCellEntry(entry)"
-                                                                :native-title="false"
-                                                                :student-id="registeredStudentUserId(student)" />
-                                                            <WorkSubmissionStatus
-                                                                :work="courseWorkForCellEntry(entry)"
-                                                                :native-title="false"
-                                                                :now="deadlineNow"
-                                                                :student-id="registeredStudentUserId(student)" />
-                                                        </span>
+                                                        <WorkCellStatus
+                                                            v-if="entry.source === 'course_work'"
+                                                            :work="courseWorkForCellEntry(entry)"
+                                                            :now="deadlineNow"
+                                                            :student-id="registeredStudentUserId(student)" />
                                                     </div>
                                                 </div>
                                             </div>
@@ -2508,7 +2502,7 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
-import WorkSubmissionStatus from './WorkSubmissionStatus.vue'
+import WorkCellStatus from './WorkCellStatus.vue'
 import { workSubmissionStatus } from '@/helpers/workSubmission'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
@@ -2525,7 +2519,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkSubmissionStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
