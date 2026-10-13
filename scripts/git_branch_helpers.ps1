@@ -475,7 +475,7 @@ function Select-SchooltoolExistingWorkspace {
 function Switch-SchooltoolBranch {
     param([string]$Branch)
     Assert-SchooltoolRepository
-    if (Select-SchooltoolExistingWorkspace $Branch) { return }
+    if ($Branch -cne 'main' -and (Select-SchooltoolExistingWorkspace $Branch)) { return }
     Assert-SchooltoolClean
     Update-SchooltoolRemote
     Assert-SchooltoolSaved
@@ -551,7 +551,11 @@ function gitwork {
 function gitmain {
     [CmdletBinding()]
     param()
-    Switch-SchooltoolBranch main
+    Assert-SchooltoolRepository
+    $source = (Get-Location).Path
+    Set-Location -LiteralPath (Get-SchooltoolMainWorkspace)
+    try { Switch-SchooltoolBranch main }
+    catch { Set-Location -LiteralPath $source; throw }
 }
 
 function gitsave {

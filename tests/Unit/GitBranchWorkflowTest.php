@@ -514,19 +514,97 @@ it('shares unfinished development between two devices without changing main', fu
         ->and(file_exists($this->workflowPc.'/pc.txt'))->toBeFalse();
 });
 
-it('navigates existing main without preparation, cache writes or history mutation', function (): void {
-    $head = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+it('updates and prepares existing main from origin on every gitmain call', function (string $shell, bool $fromFeature): void {
+    $main = $this->workflowPc;
+    if ($fromFeature) {
+        assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart update-main', $shell));
+        file_put_contents($this->workflowPc.'/keep.txt', 'Unfinished feature work');
+    }
+    $head = commitBranchWorkflowFile($this->workflowLaptop, 'received.txt', 'Latest main');
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+    $command = <<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation {
+    if (-not (Test-Path -LiteralPath 'received.txt')) { throw 'PREPARATION_BEFORE_UPDATE' }
+    Write-Host 'UPDATED_MAIN_PREPARED'
+}
+gitmain
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($this->workflowPc)->toBe($main);
+    expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(file_get_contents($main.'/received.txt'))->toBe('Latest main');
+    expect($result->getOutput())->toContain('UPDATED_MAIN_PREPARED');
+    $selection = json_decode(file_get_contents($main.'/.git/schooltool-dev/selection.json'), true, flags: JSON_THROW_ON_ERROR);
+    expect(str_replace('\\', '/', $selection['project']))->toBe($main);
+    if ($fromFeature) {
+        expect(file_get_contents($main.'-features/update-main/keep.txt'))->toBe('Unfinished feature work');
+    }
+
+    $nextHead = commitBranchWorkflowFile($this->workflowLaptop, 'received.txt', 'Next main');
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, $command, $shell));
+    expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($nextHead);
+    expect(file_get_contents($main.'/received.txt'))->toBe('Next main');
+})->with(['powershell', 'pwsh'])->with([false, true]);
+
+it('refuses updating main with unsaved or unpublished work and preserves its files', function (bool $committed): void {
     file_put_contents($this->workflowPc.'/keep.txt', 'Preserved local work');
+    if ($committed) {
+        runBranchWorkflowGit($this->workflowPc, 'add', 'keep.txt');
+        runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Unpublished main work');
+    }
+    $head = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    commitBranchWorkflowFile($this->workflowLaptop, 'received.txt', 'Remote main');
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
     $command = <<<'POWERSHELL'
 function Invoke-SchooltoolLocalPreparation { throw 'UNEXPECTED_PREPARATION' }
-function Update-SchooltoolRemote { throw 'UNEXPECTED_FETCH' }
 function php { throw 'UNEXPECTED_CACHE_WRITE' }
 gitmain
 POWERSHELL;
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, $command));
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    expect($result->isSuccessful())->toBeFalse();
+    expect($result->getOutput())->toContain($committed ? 'local commits not saved on origin' : 'Unsaved changes exist');
     expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($head);
     expect(file_get_contents($this->workflowPc.'/keep.txt'))->toBe('Preserved local work');
-});
+    expect(is_file($this->workflowPc.'/received.txt'))->toBeFalse();
+})->with([false, true]);
+
+it('restores the source feature folder when updating main fails', function (string $failure): void {
+    $main = $this->workflowPc;
+    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart failed-main-update'));
+    $feature = $this->workflowPc;
+    file_put_contents($feature.'/keep.txt', 'Unfinished feature work');
+    if ($failure === 'dirty main') {
+        file_put_contents($main.'/keep.txt', 'Unfinished main work');
+    }
+    $override = match ($failure) {
+        'fetch' => "function Update-SchooltoolRemote { throw 'EXPECTED_FETCH_FAILURE' }",
+        'preparation' => "function Invoke-SchooltoolLocalPreparation { throw 'EXPECTED_PREPARATION_FAILURE' }",
+        default => '',
+    };
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $override."\n".<<<'POWERSHELL'
+try { gitmain; throw 'UPDATE_SHOULD_FAIL' } catch {
+    if ($_.Exception.Message -eq 'UPDATE_SHOULD_FAIL') { throw }
+    Write-Host ('UPDATE_FAILED: ' + $_.Exception.Message)
+}
+POWERSHELL);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($this->workflowPc)->toBe($feature);
+    expect($result->getOutput())->toContain(match ($failure) {
+        'fetch' => 'EXPECTED_FETCH_FAILURE',
+        'preparation' => 'EXPECTED_PREPARATION_FAILURE',
+        default => 'Unsaved changes exist',
+    });
+    expect(file_get_contents($feature.'/keep.txt'))->toBe('Unfinished feature work');
+    expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($this->workflowMain);
+})->with(['dirty main', 'fetch', 'preparation']);
 
 it('preserves unsaved work while navigating between existing workspaces', function (bool $committed): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
@@ -898,8 +976,9 @@ try {
     $env:SCHOOLTOOL_TEST_FAIL_PREPARATION = '1'
     gitwork profile-feature
     if ((Get-Location).Path -ne $featureFolder) { throw 'Existing workspace navigation invoked preparation.' }
+    Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION
     gitmain
-} finally { Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION }
+} finally { Remove-Item Env:SCHOOLTOOL_TEST_FAIL_PREPARATION -ErrorAction SilentlyContinue }
 Write-Host 'PROFILE_NAVIGATION_VERIFIED'
 POWERSHELL, $shell);
 
