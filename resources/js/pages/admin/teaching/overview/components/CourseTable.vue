@@ -619,8 +619,8 @@
                                                 <div v-if="detail.title" class="course-table-entry-tooltip-title">
                                                     {{ detail.title }}
                                                 </div>
-                                                <div v-if="detail.submission" class="course-table-entry-tooltip-text">
-                                                    {{ detail.submission }}
+                                                <div v-for="(status, statusIndex) in detail.statuses" :key="statusIndex" class="course-table-entry-tooltip-text">
+                                                    {{ status }}
                                                 </div>
                                                 <div v-if="detail.notification && !detail.isWork" class="course-table-entry-tooltip-text">
                                                     {{ detail.notification }}
@@ -2503,7 +2503,7 @@ import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 import WorkCellStatus from './WorkCellStatus.vue'
-import { workSubmissionStatus } from '@/helpers/workSubmission'
+import { workCellStatuses } from '@/helpers/workCellStatus'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -4934,7 +4934,7 @@ export default {
 
                 return {
                     isWork: Boolean(work),
-                    submission: work ? workSubmissionStatus(work, studentId, this.deadlineNow).label : '',
+                    statuses: work ? workCellStatuses(work, studentId, this.deadlineNow).map(item => item.label) : [],
                     notification: ['tasks', 'results'].map(purpose => {
                         const record = workDispatchRecord(work, studentId, purpose)
                         return record ? dispatchNotificationText(record.sent_at, purpose, record.mode) : ''

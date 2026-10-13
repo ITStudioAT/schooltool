@@ -147,10 +147,10 @@ describe('CourseTable evaluation PDF links', () => {
             expect(cells).toHaveLength(2)
             const received = cells.find(cell => cell.find('[data-submission-state="received"]').exists())!
             expect(received.get('[data-submission-state]').attributes('color')).toBe('success')
-            expect(received.text()).toContain('Abgabe laut importiertem personenbezogenem Nachweis eingegangen')
+            expect(received.text()).toContain('Abgabe liegt vor')
             expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(1)
             expect(received.findAll('[data-work-status], [data-submission-state]').map(icon =>
-                icon.attributes('data-work-status') || 'download')).toEqual(['tasks', 'download', 'results'])
+                icon.attributes('data-work-status') || 'download')).toEqual(['tasks', 'download', 'evaluation', 'results'])
             expect(cells.filter(cell => cell.find('[data-submission-state="unknown"]').exists())).toHaveLength(1)
             expect(wrapper.find('.course-table-work-summary [data-submission-state]').exists()).toBe(false)
             expect(received.findAll('v-tooltip')).toHaveLength(1)
@@ -3811,7 +3811,9 @@ describe('CourseTable', () => {
                 comment: 'Super gemacht',
                 isWork: true,
                 notification: '',
-                submission: 'Abgabestatus ungeklärt: kein bestätigter personenbezogener Abgabenachweis.',
+                statuses: ['Aufgabenversand: kein bestätigter E-Mail-Versand.',
+                    'Abgabestatus ungeklärt: kein bestätigter personenbezogener Abgabenachweis.',
+                    'Bewertungsabschluss nicht belegt.', 'Ergebnisbenachrichtigung: kein bestätigter E-Mail-Versand.'],
                 description: '',
                 grade: '+',
                 kind: 'Bewertung',
@@ -3823,7 +3825,7 @@ describe('CourseTable', () => {
                 comment: 'Ruhig mitgearbeitet',
                 isWork: false,
                 notification: '',
-                submission: '',
+                statuses: [],
                 description: '',
                 grade: '',
                 kind: 'Verhalten',

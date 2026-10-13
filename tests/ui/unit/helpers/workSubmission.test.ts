@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { workSubmissionStatus } from '@/helpers/workSubmission'
 import WorkSubmissionStatus from '@/pages/admin/teaching/overview/components/WorkSubmissionStatus.vue'
 import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
+import { workEvaluationStatus } from '@/helpers/workCellStatus'
 
 const now = Date.parse('2026-10-14T10:00:00Z')
 
@@ -19,6 +20,7 @@ function fixture(state = 'received') {
 
 function finalDownload() {
     const work = fixture('not_received')
+    Object.assign(work.status.assessment_json_imports[0].record, { evaluation_state: 'complete', total_minor: 0 })
     work.status.assessment_json_packages.push({ exercise_id: 'exercise-65', imported_at: '2026-10-08T10:00:01Z',
         final_download: { exercise_id: 'exercise-65', download_checksum: 'b'.repeat(64),
             deadline_at: '2026-10-07T10:00:00Z', download_completed_at: '2026-10-08T09:00:00Z',
@@ -154,31 +156,36 @@ describe('Personal table status icon sequence', () => {
     const sequence = wrapper => wrapper.findAll('[data-work-status], [data-submission-state]')
         .map(icon => icon.attributes('data-work-status') || 'download')
 
-    it('renders all three unknown states orange in task, download, result order without extra provision icons', () => {
+    it('renders four unknown phases orange in output, submission, evaluation, notification order', () => {
         const work = fixture('unresolved')
         const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
         try {
-            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
+            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'evaluation', 'results'])
             expect(wrapper.findAll('[aria-label]').map(icon => icon.attributes('color')))
-                .toEqual(['orange-darken-2', 'orange-darken-2', 'orange-darken-2'])
+                .toEqual(['orange-darken-2', 'orange-darken-2', 'orange-darken-2', 'orange-darken-2'])
             expect(wrapper.get('[data-work-status="tasks"]').attributes('aria-label')).toContain('kein bestätigter E-Mail-Versand')
             expect(wrapper.get('[data-submission-state]').attributes('aria-label')).toContain('ungeklärt')
             expect(wrapper.get('[data-work-status="results"]').attributes('aria-label')).toContain('kein bestätigter E-Mail-Versand')
+            expect(wrapper.findAll('[role="img"]')).toHaveLength(4)
+            expect(wrapper.findAll('[aria-hidden="false"]')).toHaveLength(4)
         } finally { wrapper.unmount() }
     })
 
-    it.each(['download_release', 'direct_issue'])('shows %s availability green without a fictitious task email or submission', method => {
+    it.each(['download_release', 'direct_issue'])('shows %s availability with a blue folder separately from submission', method => {
         const work = withProvision(fixture('unresolved'), method)
         const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
         try {
-            expect(sequence(wrapper)).toEqual(['download', 'results'])
-            const icon = wrapper.get('[data-submission-state="available"]')
-            expect(icon.attributes('color')).toBe('success')
-            expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben')
-            expect(icon.attributes('aria-label')).toContain('01.10.2026 um 12:00 Uhr').toContain('Download oder Empfang nicht bestätigt')
+            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'evaluation', 'results'])
+            const icon = wrapper.get('[data-work-status="tasks"]')
+            expect(icon.attributes('color')).toBe('blue-darken-2')
+            expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'Aufgabe zum Download bereitgestellt' : 'Direkt ausgegeben')
+            expect(icon.attributes('aria-label')).toContain('01.10.2026').toContain('12:00 Uhr')
+            expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'tatsächlicher Download nicht bekannt' : 'Download oder Empfang nicht bestätigt')
             expect(icon.attributes('aria-label')).not.toContain('heruntergeladen')
-            expect(icon.attributes('aria-label')).not.toContain('Abgabe laut importiertem')
-            expect(wrapper.find('[icon="mdi-file-check-outline"]').exists()).toBe(false)
+            expect(icon.attributes('aria-label')).not.toContain('Abgabe liegt vor')
+            expect(icon.attributes('icon')).toBe('mdi-folder-open-outline')
+            expect(wrapper.find('[icon="mdi-file-send-outline"]').exists()).toBe(false)
+            expect(wrapper.get('[data-submission-state]').attributes('color')).toBe('orange-darken-2')
         } finally { wrapper.unmount() }
     })
 
@@ -187,14 +194,14 @@ describe('Personal table status icon sequence', () => {
         const status = workSubmissionStatus(work, 12, now)
         expect(status.state).toBe(state)
         expect(status.color).toBe(state === 'received' ? 'success' : 'error')
-        expect(status.label).toContain(state === 'received' ? 'Abgabe laut importiertem' : 'lokalen Abschlussdownload')
+        expect(status.label).toContain(state === 'received' ? 'Abgabe liegt vor' : 'lokalen Abschlussdownload')
         expect(status.label).not.toContain('Zum Download bereitgestellt')
     })
 
-    it('keeps an unproven absence orange unless a separate availability proof exists', () => {
+    it('keeps an unproven absence orange even when task availability is confirmed', () => {
         const work = fixture('not_received')
         expect(workSubmissionStatus(work, 12, now).state).toBe('unknown')
-        expect(workSubmissionStatus(withProvision(work), 12, now).state).toBe('available')
+        expect(workSubmissionStatus(withProvision(work), 12, now).state).toBe('unknown')
     })
 
     it.each(['other student', 'missing source', 'missing participant', 'group peer', 'removed member'])
@@ -208,7 +215,7 @@ describe('Personal table status icon sequence', () => {
             if (change === 'removed member') { work.is_group_work = true; work.groups[0].student_ids = [13] }
             const wrapper = mount(WorkCellStatus, { props: { work, studentId, now } })
             try {
-                expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
+                expect(sequence(wrapper)).toEqual(['tasks', 'download', 'evaluation', 'results'])
                 expect(wrapper.get('[data-submission-state]').attributes('color')).toBe('orange-darken-2')
             } finally { wrapper.unmount() }
         })
@@ -222,8 +229,8 @@ describe('Personal table status icon sequence', () => {
         })
         const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
         try {
-            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'results'])
-            expect(wrapper.findAll('[aria-label]').map(icon => icon.attributes('color'))).toEqual(['success', 'error', 'success'])
+            expect(sequence(wrapper)).toEqual(['tasks', 'download', 'evaluation', 'results'])
+            expect(wrapper.findAll('[aria-label]').map(icon => icon.attributes('color'))).toEqual(['success', 'error', 'success', 'success'])
         } finally { wrapper.unmount() }
     })
 
@@ -237,6 +244,63 @@ describe('Personal table status icon sequence', () => {
         try {
             expect(wrapper.get('[data-work-status="tasks"]').attributes('color')).toBe('orange-darken-2')
             expect(wrapper.get('[data-work-status="tasks"]').attributes('aria-label')).not.toContain('Aufgaben per E-Mail versandt')
+        } finally { wrapper.unmount() }
+    })
+})
+
+describe('Personal evaluation completion evidence', () => {
+    it.each(['open', 'partial', null])('does not infer completion from points when the evaluation is %s', state => {
+        const work = fixture()
+        Object.assign(work.status.assessment_json_imports[0].record, { evaluation_state: state, total_minor: 450,
+            evaluation_completed_at: '2026-10-08T10:00:00Z' })
+        expect(workEvaluationStatus(work, 12, now).color).toBe('orange-darken-2')
+    })
+
+    it('shows a completed zero-point assessment green and uses its actual completion timestamp', () => {
+        const work = fixture()
+        Object.assign(work.status.assessment_json_imports[0].record, { evaluation_state: 'complete', total_minor: 0,
+            evaluation_completed_at: '2026-10-08T10:00:00Z' })
+        expect(workEvaluationStatus(work, 12, now)).toMatchObject({ state: 'complete', color: 'success' })
+        expect(workEvaluationStatus(work, 12, now).label).toContain('Bewertung abgeschlossen').toContain('08.10.2026, 12:00 Uhr')
+        expect(workEvaluationStatus(work, 13, now).color).toBe('orange-darken-2')
+    })
+
+    it('describes confirmed absence assessment without claiming that a submitted work was corrected', () => {
+        const work = finalDownload()
+        expect(workEvaluationStatus(work, 12, now).label).toContain('Bestätigte Nichtabgabe abschließend beurteilt')
+            .toContain('keine eingegangene Arbeit korrigiert')
+        work.finish_until_time = '13:00'
+        expect(workEvaluationStatus(work, 12, now).color).toBe('orange-darken-2')
+    })
+
+    it('does not invent a correction from a confirmed absence when the evaluation remains open', () => {
+        const work = finalDownload()
+        work.status.assessment_json_imports[0].record.evaluation_state = 'open'
+        expect(workEvaluationStatus(work, 12, now)).toMatchObject({ state: 'open', color: 'orange-darken-2' })
+    })
+
+    it('does not infer a collection from received alone, but describes file-backed final inventory when present', () => {
+        const work = fixture()
+        expect(workSubmissionStatus(work, 12, now).label).not.toContain('eingesammelt')
+        expect(workSubmissionStatus(work, 12, now).label).not.toContain('Gesicherter')
+        work.status.assessment_json_packages = finalDownload().status.assessment_json_packages
+        work.status.assessment_json_packages[0].final_download.participants[0].submission_sha256 = ['e'.repeat(64)]
+        expect(workSubmissionStatus(work, 12, now).label).toContain('Gesicherter lokaler Abschlussbestand: 08.10.2026, 11:00 Uhr')
+    })
+
+    it('refreshes each separate phase when an available task is submitted and later evaluated', async () => {
+        const work = withProvision(fixture('unresolved'))
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+        try {
+            expect(wrapper.get('[data-submission-state]').attributes('color')).toBe('orange-darken-2')
+            await wrapper.setProps({ work: withProvision(fixture()) })
+            expect(wrapper.get('[data-submission-state]').attributes('aria-label')).toContain('Abgabe liegt vor')
+            expect(wrapper.get('[data-evaluation-state]').attributes('color')).toBe('orange-darken-2')
+            const evaluated = withProvision(fixture())
+            evaluated.status.assessment_json_imports[0].record.evaluation_state = 'complete'
+            await wrapper.setProps({ work: evaluated })
+            expect(wrapper.get('[data-evaluation-state]').attributes('color')).toBe('success')
+            expect(wrapper.get('[data-work-status="results"]').attributes('color')).toBe('orange-darken-2')
         } finally { wrapper.unmount() }
     })
 })
