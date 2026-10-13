@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\Import116;
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
+use App\Models\User;
 use App\Support\PrivateImportSourceFile;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -258,7 +261,8 @@ class TeachingWorkDispatchImport
     /** @param array<string, mixed> $report
      * @return array<string, mixed>
      */
-    public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true): array
+    /** @param array<string, array<string, mixed>>|null $participantAdditions */
+    public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true, ?array $participantAdditions = null): array
     {
         $course = $work->teachingCourse;
         if (($report['personal_results'] ?? false)
@@ -275,7 +279,8 @@ class TeachingWorkDispatchImport
         if ($requireMatchingTitle && $candidates->filter(fn (TeachingCourseWork $candidate): bool => $this->assignment((string) $candidate->title) === $report['title'])->count() !== 1) {
             $this->reject('Mehrere Arbeiten mit diesem Titel und Datum – Zuordnung nicht eindeutig.');
         }
-        $identities = $this->evaluations->courseIdentities($course);
+        $identities = $this->dispatchIdentities($course);
+        $participantAdditions ??= $this->participantAdditions($work, [$report]);
         $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
         $members = array_map('intval', collect($groups)->flatMap(fn (array $group): array => is_array($group['student_ids'] ?? null) ? $group['student_ids'] : [])->all());
         $existing = $work->status['dispatch_notifications'] ?? [];
@@ -312,17 +317,21 @@ class TeachingWorkDispatchImport
             $key = TeachingWorkMarkdownImport::identity($row['person'], $row['class']);
             $matches = collect($identities[$key] ?? [])->unique('student_id')->values()->all();
             $email = mb_strtolower($this->value($recipient, 'To'));
+            $addition = $participantAdditions[$key] ?? null;
+            $pending = $addition !== null && $email === $addition['email'];
             if ($role !== 'Schülerempfänger' || $this->value($recipient, 'Vorname') === '' || $this->value($recipient, 'Nachname') === '' || $row['class'] === ''
                 || $this->normalize($this->value($recipient, 'Kurs')) !== $this->normalize((string) $course->title)
-                || count($matches) !== 1 || ! in_array($matches[0]['student_id'] ?? null, $members, true)
-                || ! filter_var($email, FILTER_VALIDATE_EMAIL) || $email !== ($matches[0]['email'] ?? null)) {
+                || (! $pending && (count($matches) !== 1 || ! in_array($matches[0]['student_id'] ?? null, $members, true)
+                    || ! in_array($email, $matches[0]['emails'] ?? [], true)))
+                || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $row['status'] = 'Kurs, Person, Klasse, Arbeitszuordnung oder E-Mail nicht eindeutig – Import gesperrt';
                 $blocked = true;
                 $rows[] = $row;
 
                 continue;
             }
-            $row['student_id'] = $matches[0]['student_id'];
+            $row['student_id'] = $pending ? $addition['user_id'] : $matches[0]['student_id'];
+            $row['participant_addition'] = $pending ? $addition : null;
             $plannedAt = $this->plannedTime($recipient, $report['metadata']);
             $row['planned_at'] = $plannedAt;
             $row['prepared_at'] = $this->providerTime($this->value($report['metadata'], 'Erstellt'))
@@ -366,6 +375,10 @@ class TeachingWorkDispatchImport
                     $row['mode'] = 'live';
                 }
             }
+            if ($pending && ! str_contains($row['status'], 'gesperrt')) {
+                $row['status'] .= ' · Nachzügler '.($addition['create_enrollment'] ? 'zu Kurs und Arbeit' : 'zur Arbeit').' hinzufügen'
+                    .($addition['create_account'] ? ' (Schülerkonto wird angelegt)' : '');
+            }
             $rows[] = $row;
         }
         $logs = $work->status['dispatch_logs'] ?? [];
@@ -387,8 +400,137 @@ class TeachingWorkDispatchImport
             ],
             'title' => $work->title, 'date' => $report['date'], 'rows' => $rows, 'already_imported' => $alreadyImported,
             'can_import' => ! $blocked,
-            'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $candidates->toArray(), $identities, $groups, $sha256], JSON_THROW_ON_ERROR)),
+            'participant_additions' => $participantAdditions,
+            'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $candidates->toArray(), $identities, $groups, $participantAdditions, $sha256], JSON_THROW_ON_ERROR)),
         ];
+    }
+
+    /** @return array<string, list<array{student_id: int, email: string, emails: list<string>}>> */
+    private function dispatchIdentities(TeachingCourse $course): array
+    {
+        $identities = $this->evaluations->courseIdentities($course);
+        $users = $course->teachingCourseStudents()->whereNull('canceled_at')->with('user')->get()
+            ->pluck('user')->filter()->keyBy('id');
+        foreach ($identities as $key => &$people) {
+            foreach ($people as &$person) {
+                $person['emails'] = [$person['email']];
+                $user = $users[$person['student_id']] ?? null;
+                if ($user && (int) $user->school_id === (int) $course->school_id
+                    && TeachingWorkMarkdownImport::identity($user->first_name.' '.$user->last_name, explode(' / ', $key)[1] ?? '') === $key) {
+                    $email = mb_strtolower(trim((string) $user->email));
+                    $otherOwner = collect($identities)->flatten(1)->contains(fn (array $other): bool => $other['student_id'] !== $person['student_id'] && $other['email'] === $email);
+                    if (filter_var($email, FILTER_VALIDATE_EMAIL) && ! $otherOwner) {
+                        $person['emails'] = array_values(array_unique([...$person['emails'], $email]));
+                    }
+                }
+            }
+            unset($person);
+        }
+        unset($people);
+
+        return $identities;
+    }
+
+    /** Explicit additions are resolved read-only; only a later authorized apply enrolls them.
+     * @param  list<array<string, mixed>>  $reports
+     * @return array<string, array<string, mixed>>
+     */
+    public function participantAdditions(TeachingCourseWork $work, array $reports): array
+    {
+        $course = $work->teachingCourse;
+        $identities = $this->dispatchIdentities($course);
+        $members = collect(app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work))->flatMap(fn (array $group): array => $group['student_ids'] ?? [])->all();
+        $additions = [];
+        foreach ($reports as $report) {
+            foreach ($report['recipients'] as $recipient) {
+                if (! isset($recipient['Teilnehmerzugang'])) {
+                    continue;
+                }
+                $person = trim($this->value($recipient, 'Vorname').' '.$this->value($recipient, 'Nachname'));
+                $key = TeachingWorkMarkdownImport::identity($person, $this->value($recipient, 'Klasse'));
+                $email = mb_strtolower($this->value($recipient, 'To'));
+                if ($recipient['Teilnehmerzugang'] !== 'nachträglich' || $report['purpose'] !== 'tasks'
+                    || $this->value($recipient, 'Rolle') !== 'Schülerempfänger'
+                    || $this->normalize($this->value($recipient, 'Kurs')) !== $this->normalize((string) $course->title)
+                    || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $this->reject($person.': Nachträglicher Teilnehmerzugang ist nicht gültig belegt.');
+                }
+                $matches = $identities[$key] ?? [];
+                if (count($matches) > 1 || (count($matches) === 1 && ! in_array($email, $matches[0]['emails'], true))) {
+                    $this->reject($person.': Bestehende Kursidentität oder E-Mail widerspricht dem Teilnehmerzugang.');
+                }
+                if (count($matches) === 1 && in_array($matches[0]['student_id'], $members, true)
+                    && in_array($email, $matches[0]['emails'], true)) {
+                    continue;
+                }
+                if ($work->is_group_work) {
+                    $this->reject($person.': Nachzügler vor dem Import einer Arbeitsgruppe zuordnen.');
+                }
+                $imports = Import116::query()->where('school_id', $course->school_id)->where('schoolyear_id', $course->schoolyear_id)
+                    ->where('first_name', $this->value($recipient, 'Vorname'))->where('last_name', $this->value($recipient, 'Nachname'))
+                    ->where('class', $this->value($recipient, 'Klasse'))->lockForUpdate()->get();
+                $import = $imports->first();
+                if ($imports->count() !== 1 || ($matches === [] && mb_strtolower(trim((string) $import?->email)) !== $email)) {
+                    $this->reject($person.': Nachzügler benötigt genau einen aktuellen Schülerimport mit passender Klasse und E-Mail.');
+                }
+                $expectedUserId = $matches[0]['student_id'] ?? $import->user_id;
+                $users = User::query()->where('school_id', $course->school_id)
+                    ->where(fn ($query) => $query->where('email', $email)->when($expectedUserId, fn ($query) => $query->orWhere('id', $expectedUserId)))
+                    ->lockForUpdate()->get();
+                $user = $users->first();
+                if (($import->user_id && (! $user || (int) $import->user_id !== (int) $user->id))
+                    || ($expectedUserId && (! $user || (int) $expectedUserId !== (int) $user->id))
+                    || $users->count() > 1 || ($user && ((int) $user->schoolyear_id !== (int) $course->schoolyear_id
+                    && (int) $user->import116_id !== (int) $import->id && (int) $import->user_id !== (int) $user->id
+                    || $this->normalize($user->first_name.' '.$user->last_name) !== $this->normalize($person)
+                    || ! $user->hasRole('student') || ($user->import116_id && (int) $user->import116_id !== (int) $import->id)))) {
+                    $this->reject($person.': Schülerkonto widerspricht dem nachträglichen Teilnehmerzugang.');
+                }
+                $enrollments = $course->teachingCourseStudents()->withTrashed()
+                    ->where(fn ($query) => $query->where('import116_id', $import->id)->when($user, fn ($query) => $query->orWhere('user_id', $user->id)))
+                    ->lockForUpdate()->get();
+                if ($enrollments->count() > 1 || $enrollments->contains(fn ($enrollment): bool => $enrollment->trashed() || $enrollment->canceled_at !== null
+                    || ($enrollment->user_id && (int) $enrollment->user_id !== (int) $user?->id))) {
+                    $this->reject($person.': Ausgetretene, entfernte oder mehrdeutige Kursteilnahme vor dem Import klären.');
+                }
+                if (isset($additions[$key]) && $additions[$key]['email'] !== $email) {
+                    $this->reject($person.': Widersprüchliche Nachzüglerzuordnung.');
+                }
+                $additions[$key] = ['import116_id' => (int) $import->id, 'user_id' => $user?->id, 'email' => $email,
+                    'create_account' => $user === null, 'create_enrollment' => $enrollments->isEmpty(), 'enrollment_id' => $enrollments->first()?->id,
+                    'snapshot' => hash('sha256', json_encode([$import->getAttributes(), $user?->getAttributes(), $enrollments->toArray()], JSON_THROW_ON_ERROR))];
+            }
+        }
+
+        return $additions;
+    }
+
+    /** @param array<string, array<string, mixed>> $additions */
+    public function applyParticipantAdditions(TeachingCourseWork $work, array $additions): void
+    {
+        foreach ($additions as $addition) {
+            $import = Import116::query()->lockForUpdate()->findOrFail($addition['import116_id']);
+            $studentId = app(TeachingCourseService::class)->findOrCreateUserIdFromImport($import, (int) $work->teachingCourse->school_id);
+            if (! $studentId) {
+                $this->reject('Nachzügler konnte nicht mit dem geprüften Schülerimport verbunden werden.');
+            }
+            $enrollment = $addition['enrollment_id'] !== null
+                ? $work->teachingCourse->teachingCourseStudents()->findOrFail($addition['enrollment_id'])
+                : $work->teachingCourse->teachingCourseStudents()->make(['import116_id' => $import->id]);
+            $enrollment->import116_id = $import->id;
+            $enrollment->user_id = $studentId;
+            $enrollment->save();
+            $memberships = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
+            if (! collect($memberships)->contains(fn (array $group): bool => in_array($studentId, $group['student_ids'] ?? [], true))) {
+                $groups = is_array($work->groups) ? $work->groups : [];
+                $groups[] = ['student_ids' => [$studentId], 'date' => $work->date_for_all_groups?->format('Y-m-d'),
+                    'grade' => null, 'comment' => null, 'grades' => [], 'points' => [], 'comments' => []];
+                $work->groups = $groups;
+                $work->save();
+                app(TeachingCourseWorkEntrySyncService::class)->syncWork($work, useStoredGroups: true);
+                $work->unsetRelation('teachingCourseWorkGroupStudents');
+            }
+        }
     }
 
     /** @param array<string, mixed> $preview */

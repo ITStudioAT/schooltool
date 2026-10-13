@@ -3,7 +3,12 @@
 ## 3.51.5 !!!
 
 ### Accounts
+
 - Schüler-Account-Übernahme
+
+### Unterricht
+
+- Automatische Arbeiten: Import bei geänderten Kandidaten implementiert
 
 ## 3.51.4
 
@@ -11,8 +16,6 @@
 
 - Dropbox: Alphabetisch
 - Übernahme geplanter Arbeiten
-
-
 
 ## 3.51.3
 

@@ -1052,6 +1052,176 @@ function workFolderPayload(?array $reports = null, ?array $protocols = null, boo
         'pdf_paths' => json_encode(array_map(fn (UploadedFile $file): string => $folder.'/Beurteilungen/'.$file->getClientOriginalName(), $pdfs), JSON_THROW_ON_ERROR), 'pdfs' => $pdfs];
 }
 
+/** @return array{work: TeachingCourseWork, import: Import116, metadata: array<string, mixed>, text: string} */
+function lateTaskParticipantFixture(object $context): array
+{
+    $work = prepareWorkDispatchImport($context);
+    $work->update(['date_for_all_groups' => '2026-10-13', 'finish_until_date' => '2026-10-13', 'finish_until_time' => '20:15']);
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText(13);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $context->openStudent->update(['first_name' => 'Student', 'last_name' => '1', 'email' => 'student1@example.test', 'schoolyear_id' => $context->schoolyear->id]);
+    for ($index = 2; $index < 12; $index++) {
+        $user = User::factory()->create(['school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id,
+            'first_name' => 'Student', 'last_name' => (string) $index, 'schoolclass' => '1A', 'email' => "student{$index}@example.test"]);
+        $user->assignRole('student');
+        $context->course->teachingCourseStudents()->create(['user_id' => $user->id]);
+    }
+    $import = Import116::factory()->create(['school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id,
+        'first_name' => 'Student', 'last_name' => '12', 'class' => '1A', 'email' => 'student12@example.test', 'user_id' => null]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    foreach ($metadata['Empfaenger'] as $index => &$recipient) {
+        $recipient['Providerzeit'] = $recipient['Office_Zustand']['SentOn'] = $index === 12 ? '2026-10-13T22:56:52+02:00' : '2026-10-13T08:49:50+02:00';
+    }
+    unset($recipient);
+    $metadata['Empfaenger'][12]['Teilnehmerzugang'] = 'nachträglich';
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    return compact('work', 'import', 'metadata', 'text');
+}
+
+test('complete task folder previews thirteen recipients without writes and enrolls one explicit late participant only on apply', function () {
+    $this->travelTo('2026-10-13T21:10:00Z');
+    ['work' => $work, 'import' => $import, 'metadata' => $metadata, 'text' => $text] = lateTaskParticipantFixture($this);
+    $heading = substr($text, 0, strpos($text, '{'));
+    $original = $metadata;
+    $original['Empfaenger'] = array_slice($metadata['Empfaenger'], 0, 12);
+    $late = $metadata;
+    $late['Empfaenger'] = [$metadata['Empfaenger'][12]];
+    $late['Empfaenger'][0]['Datensatzposition'] = 1;
+    unset($late['Empfaenger'][0]['Teilnehmerzugang']);
+    $payload = workFolderPayload([], [
+        'Versand/Aufgaben/Versand_2026-10-13_08-28-16/Versandprotokoll.txt' => $heading.json_encode($original, JSON_THROW_ON_ERROR),
+        'Versand/Aufgaben/Versand_2026-10-13_22-54-59/Versandprotokoll.txt' => $heading.json_encode($late, JSON_THROW_ON_ERROR),
+        'Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text,
+    ], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $originalPayload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_08-28-16/Versandprotokoll.txt' => $heading.json_encode($original, JSON_THROW_ON_ERROR)], false);
+    $originalPreview = $this->postJson($url, $originalPayload)->assertOk()->json('preview');
+    $this->postJson($url, $originalPayload + ['apply' => true, 'hash' => $originalPreview['hash']])->assertOk();
+    $work->refresh();
+    $beforeNotifications = $work->status['dispatch_notifications'];
+    $beforeGroups = $work->fresh()->groups;
+    $users = User::count();
+    $enrollments = $this->course->teachingCourseStudents()->count();
+    Mail::fake();
+    Notification::fake();
+
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeTrue()->and($preview['assessment_included'])->toBeFalse();
+    expect($preview['dispatches'][2]['rows'])->toHaveCount(13);
+    expect(collect($preview['dispatches'][2]['rows'])->where('accepted', true))->toHaveCount(13);
+    expect($preview['dispatches'][2]['rows'][12]['participant_addition']['create_account'])->toBeTrue();
+    expect(User::count())->toBe($users);
+    expect($this->course->teachingCourseStudents()->count())->toBe($enrollments);
+    expect($work->fresh()->groups)->toBe($beforeGroups);
+    expect($import->fresh()->user_id)->toBeNull();
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $work->refresh();
+    $studentId = $import->fresh()->user_id;
+    expect($studentId)->not->toBeNull();
+    expect(User::count())->toBe($users + 1);
+    expect($this->course->teachingCourseStudents()->where('user_id', $studentId)->whereNull('canceled_at')->count())->toBe(1);
+    expect(array_slice($work->groups, 0, 12))->toBe($beforeGroups);
+    expect($work->groups[12]['student_ids'])->toBe([$studentId]);
+    expect($work->finish_until_time)->toBe('20:15');
+    expect($work->status['dispatch_notifications'])->toHaveCount(13);
+    expect(array_slice($work->status['dispatch_notifications'], 0, 12))->toBe($beforeNotifications);
+    expect(collect($work->status['dispatch_notifications'])->firstWhere('student_id', $studentId)['sent_at'])->toBe('2026-10-13T20:56:52Z');
+    $notifications = $work->status['dispatch_notifications'];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect(User::count())->toBe($users + 1);
+    expect($work->fresh()->status['dispatch_notifications'])->toBe($notifications);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('dispatch imports accept the same linked student account email without rewriting the different current import address', function () {
+    $work = prepareWorkDispatchImport($this);
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A', 'email' => 'current-import@example.test']);
+    $this->student->update(['import116_id' => $import->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['import116_id' => $import->id]);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => TeachingWorkDispatchFixture::nativeOfficeTasksText(1)], false);
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    expect($preview['dispatches'][0]['rows'][0]['student_id'])->toBe($this->student->id);
+    expect($preview['dispatches'][0]['rows'][0]['accepted'])->toBeTrue();
+    expect($import->fresh()->email)->toBe('current-import@example.test');
+});
+
+test('dispatch account aliases remain blocked when another active course person owns that address', function () {
+    $work = prepareWorkDispatchImport($this);
+    $otherImport = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->openStudent->id, 'first_name' => 'Bea', 'last_name' => 'Beta', 'class' => '1A', 'email' => 'ada@example.test']);
+    $this->openStudent->update(['import116_id' => $otherImport->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->openStudent->id)->update(['import116_id' => $otherImport->id]);
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A', 'email' => 'current-import@example.test']);
+    $this->student->update(['import116_id' => $import->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['import116_id' => $import->id]);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => TeachingWorkDispatchFixture::nativeOfficeTasksText(1)], false);
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeFalse();
+});
+
+test('explicit late task participants reject foreign ambiguous removed and conflicting identities before writes', function (string $case) {
+    ['work' => $work, 'import' => $import, 'metadata' => $metadata, 'text' => $text] = lateTaskParticipantFixture($this);
+    if ($case === 'foreign school') {
+        $import->update(['school_id' => $this->otherSchool->id]);
+    } elseif ($case === 'old year') {
+        $import->update(['schoolyear_id' => $this->otherSchoolyear->id]);
+    } elseif ($case === 'ambiguous') {
+        Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Student', 'last_name' => '12', 'class' => '1A', 'email' => 'student12@example.test']);
+    } elseif ($case === 'removed') {
+        $enrollment = $this->course->teachingCourseStudents()->create(['import116_id' => $import->id]);
+        $enrollment->delete();
+    } elseif ($case === 'canceled') {
+        $this->course->teachingCourseStudents()->create(['import116_id' => $import->id, 'canceled_at' => now()]);
+    } elseif ($case === 'foreign identity') {
+        User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'email' => 'student12@example.test',
+            'first_name' => 'Other', 'last_name' => 'Person'])->assignRole('student');
+    } elseif ($case === 'group work') {
+        $work->update(['is_group_work' => true]);
+    } elseif ($case === 'wrong email') {
+        $metadata['Empfaenger'][12]['To'] = $metadata['Empfaenger'][12]['Office_Zustand']['To'] = 'foreign@example.test';
+    } elseif ($case === 'ambiguous course identity') {
+        foreach (['first@example.test', 'second@example.test'] as $email) {
+            $user = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+                'first_name' => 'Student', 'last_name' => '12', 'schoolclass' => '1A', 'email' => $email]);
+            $this->course->teachingCourseStudents()->create(['user_id' => $user->id]);
+        }
+    } elseif ($case === 'known wrong email') {
+        $metadata['Empfaenger'][0]['Teilnehmerzugang'] = 'nachträglich';
+        $metadata['Empfaenger'][0]['To'] = $metadata['Empfaenger'][0]['Office_Zustand']['To'] = 'foreign@example.test';
+    }
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text], false);
+    $users = User::count();
+    $before = $work->fresh()->getAttributes();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertUnprocessable();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertUnprocessable();
+    expect(User::count())->toBe($users);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['foreign school', 'old year', 'ambiguous', 'removed', 'canceled', 'foreign identity', 'group work', 'wrong email', 'ambiguous course identity', 'known wrong email']);
+
+test('changed late participant identity invalidates the preview before enrollment', function () {
+    ['work' => $work, 'import' => $import, 'text' => $text] = lateTaskParticipantFixture($this);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $import->update(['phone_1' => 'changed']);
+    $users = User::count();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    expect(User::count())->toBe($users);
+    expect($import->fresh()->user_id)->toBeNull();
+});
+
 test('compact folder evaluations import points and personal PDFs while retaining open grades and comments', function () {
     $work = prepareWorkDispatchImport($this);
     $payload = workFolderPayload(TeachingWorkEvaluationFixture::compactReports(), [], false);

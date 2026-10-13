@@ -36,8 +36,10 @@ watch(key, async value => {
 
 <style scoped>
 .work-import-action {
+    align-self: flex-start;
     display: inline-flex;
     max-width: 100%;
+    vertical-align: top;
 }
 .work-quick-import-action {
     flex-direction: column;

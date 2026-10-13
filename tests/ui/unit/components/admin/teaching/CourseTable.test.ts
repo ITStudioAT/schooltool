@@ -12,6 +12,9 @@ import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components/VBtn'
 import { VIcon } from 'vuetify/components/VIcon'
 import { VDialog } from 'vuetify/components/VDialog'
+import { VAutocomplete } from 'vuetify/components/VAutocomplete'
+import { VChip } from 'vuetify/components/VChip'
+import { VTextField } from 'vuetify/components/VTextField'
 import { VList, VListItem } from 'vuetify/components/VList'
 import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
@@ -460,6 +463,7 @@ describe('CourseTable evaluation import', () => {
             courseWorks: [savedWork], selected_course: { id: 2 },
             $refs: { evaluationImport: { openImport } },
             workDialogForm: { id: 12 }, applySavedCourseWork: vi.fn(),
+            courseStore: { loadCourseDetails: vi.fn().mockResolvedValue({ id: 2 }) },
             loadCourseTableData: vi.fn(), resetCourseWorkEntryDrafts: vi.fn(), startEditingDateWork: vi.fn(),
         }
         const methods = (CourseTable as any).methods
@@ -470,9 +474,42 @@ describe('CourseTable evaluation import', () => {
         const importedWork = { ...savedWork, groups: [{ points: 4.5 }] }
         await methods.evaluationImported.call(ctx, importedWork)
         expect(ctx.applySavedCourseWork).toHaveBeenCalledWith({ data: importedWork })
+        expect(ctx.courseStore.loadCourseDetails).toHaveBeenCalledWith(2, { force: true })
         expect(ctx.loadCourseTableData).toHaveBeenCalledWith(2, true)
         expect(ctx.resetCourseWorkEntryDrafts).toHaveBeenCalled()
         expect(ctx.startEditingDateWork).toHaveBeenCalledWith(importedWork)
+    })
+
+    it.each([false, true])('shows thirteen open participants immediately after import for group mode %s', async isGroupWork => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const courseStore = useCourseStore(pinia)
+        const workStore = useCourseWorkStore(pinia)
+        const date = { id: 1, date: '2026-10-13' }
+        const students = Array.from({ length: 13 }, (_, index) => ({ id: 100 + index, user_id: 100 + index, first_name: 'Student', last_name: String(index + 1) }))
+        courseStore.selected_course = { id: 28, students_info: students.slice(0, 12), course_dates: [date] } as never
+        const work = { id: 72, teaching_course_id: 28, type: 'A5', title: 'Aufgaben', date_for_all_groups: date.date,
+            is_group_work: isGroupWork, groups: students.slice(0, 12).map(student => ({ student_ids: [student.user_id] })), status: {} }
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: {
+            WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true,
+            CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true,
+            'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+        } } })
+        try {
+            await flushPromises()
+            workStore.courseWorks = [work] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary-progress').text()).toContain('0 erledigt · 12 offen')
+            vi.mocked(courseStore.loadCourseDetails).mockImplementation(async () => {
+                courseStore.selected_course = { ...courseStore.selected_course, students_info: students } as never
+                return courseStore.selected_course
+            })
+            ;(wrapper.vm as any).loadCourseTableData = vi.fn().mockResolvedValue(true)
+            await (wrapper.vm as any).evaluationImported({ ...work, groups: students.map(student => ({ student_ids: [student.user_id] })) })
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary-progress').text()).toContain('0 erledigt · 13 offen')
+            expect(courseStore.selected_course?.students_info).toHaveLength(13)
+            expect(courseStore.loadCourseDetails).toHaveBeenCalledWith(28, { force: true })
+        } finally { wrapper.unmount() }
     })
 })
 
@@ -3319,6 +3356,38 @@ describe('CourseTable', () => {
             workDialogTypeEditing: false,
             workSaving: false,
         })).toBe(false)
+    })
+
+    it('renders and removes a selected student chip in a new group with the installed autocomplete slot contract', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        useCourseStore(pinia).selected_course = { id: 18, title: 'Test', students_info: [
+            { id: 12, user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
+        ], course_dates: [] } as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia, createVuetify({ components: { VAutocomplete, VChip, VTextField } })],
+            components: { 'v-autocomplete': VAutocomplete, 'v-chip': VChip, 'v-text-field': VTextField }, stubs: {
+                'v-autocomplete': false, VAutocomplete: false, 'v-chip': false, VChip: false,
+                'v-text-field': false, VTextField: false,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' },
+                CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true,
+                ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+                'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+            },
+        } })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.workDialog.open = true
+            vm.workDialogFormOpen = true
+            vm.workDialogTab = 'groups'
+            vm.workDialogForm = { ...vm.emptyDateWorkForm(), is_group_work: true, type: 'A', groups: [{ _is_new: true, student_ids: [12] }] }
+            await flushPromises()
+            const chip = wrapper.get('.course-table-work-group-student-chip')
+            expect(chip.text()).toContain('Alpha, Ada')
+            await chip.get('.v-chip__close').trigger('click')
+            expect(vm.workDialogForm.groups[0].student_ids).toEqual([])
+        } finally { wrapper.unmount() }
     })
 
     it('removes a work from the date dialog after confirmation', async () => {

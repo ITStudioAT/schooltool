@@ -377,9 +377,11 @@ describe('CourseWorks automatic folder import', () => {
             await ctx.selectFolder(event)
             expect(ctx.import_summary.missing).toEqual(['Auswertungen', 'Ergebnisbenachrichtigung'])
             expect(ctx.$emit).toHaveBeenCalledWith('imported', work)
-            const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 } }
+            const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 },
+                courseStore: { loadCourseDetails: vi.fn().mockResolvedValue({ id: 2 }) } }
             await (CourseWorks as any).methods.evaluationImported.call(parent, work)
             expect(parent.refreshWorks).toHaveBeenCalled()
+            expect(parent.courseStore.loadCourseDetails).toHaveBeenCalledWith('2', { force: true })
             expect(parent.editWork).toHaveBeenCalledWith(work)
             expect(event.target.value).toBe('')
         } finally { vi.unstubAllGlobals() }

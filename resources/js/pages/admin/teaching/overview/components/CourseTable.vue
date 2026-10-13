@@ -1240,7 +1240,7 @@
                                             variant="outlined">
                                             <div class="course-table-work-group-grade-grid">
                                                 <div>
-                                                    <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                                    <div class="course-table-work-grade-person text-body-2 font-weight-medium">{{ row.studentName }}</div>
                                                     <WorkEvaluationPdf :work="savedWorkDialogWork" :student-id="row.studentId" class="mt-2" />
                                                 </div>
                                                 <v-text-field
@@ -1255,7 +1255,7 @@
                                                 <div
                                                     v-if="availableWorkGradeInputMode === 'fixed'"
                                                     class="course-table-work-grade-choice-field">
-                                                    <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                                    <div class="text-caption text-medium-emphasis mb-1">Leistung</div>
                                                     <div class="d-flex flex-wrap ga-1">
                                                         <v-chip
                                                             v-for="item in availableWorkGradeItems"
@@ -1282,7 +1282,7 @@
                                                     :inputmode="availableWorkGradeInputMode === 'points' ? 'decimal' : undefined"
                                                     persistent-hint
                                                     :rules="[value => gradeInputValidation(value, availableWorkGradeInputMode, workDialogForm.type)]"
-                                                    label="Note"
+                                                    label="Leistung"
                                                     :maxlength="50"
                                                     variant="outlined"
                                                     :disabled="workSaving"
@@ -1456,7 +1456,7 @@
                                                 persistent-hint
                                                 :disabled="workSaving"
                                                 @click.stop>
-                                                <template #chip="{ internalItem }">
+                                                <template #chip="{ item: internalItem }">
                                                     <v-chip
                                                         class="course-table-work-group-student-chip"
                                                         closable
@@ -1566,7 +1566,7 @@
                                 variant="outlined">
                                 <div class="course-table-work-group-grade-grid">
                                     <div>
-                                        <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                        <div class="course-table-work-grade-person text-body-2 font-weight-medium">{{ row.studentName }}</div>
                                         <WorkEvaluationPdf :work="savedWorkDialogWork" :student-id="row.studentId" class="mt-2" />
                                     </div>
                                     <v-text-field
@@ -1581,7 +1581,7 @@
                                     <div
                                         v-if="availableWorkGradeInputMode === 'fixed'"
                                         class="course-table-work-grade-choice-field">
-                                        <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                        <div class="text-caption text-medium-emphasis mb-1">Leistung</div>
                                         <div class="d-flex flex-wrap ga-1">
                                             <v-chip
                                                 v-for="item in availableWorkGradeItems"
@@ -1609,7 +1609,7 @@
                                         :inputmode="availableWorkGradeInputMode === 'points' ? 'decimal' : undefined"
                                         persistent-hint
                                         :rules="[value => gradeInputValidation(value, availableWorkGradeInputMode, workDialogForm.type)]"
-                                        label="Note"
+                                        label="Leistung"
                                         :maxlength="50"
                                         variant="outlined"
                                         :disabled="workSaving"
@@ -3591,6 +3591,8 @@ export default {
         async evaluationImported(work) {
             if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
             this.applySavedCourseWork({ data: work })
+            await this.courseStore.loadCourseDetails(work.teaching_course_id, { force: true })
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
             await this.loadCourseTableData(work.teaching_course_id, true)
             this.resetCourseWorkEntryDrafts()
             if (String(this.workDialogForm.id) === String(work.id)) {
@@ -7380,10 +7382,16 @@ export default {
 }
 
 .course-table-work-group-grade-grid {
-    align-items: center;
+    align-items: start;
     display: grid;
     gap: 12px;
     grid-template-columns: minmax(0, 1fr) minmax(240px, 2fr) minmax(100px, 130px);
+}
+
+.course-table-work-grade-person {
+    align-items: center;
+    display: flex;
+    min-height: 40px;
 }
 
 @media (max-width: 600px) {

@@ -1178,8 +1178,10 @@ export default {
             else this.$refs.evaluationImport.openImport(work)
         },
         async evaluationImported(work) {
-            await this.refreshWorks()
             if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            await this.courseStore.loadCourseDetails(work.teaching_course_id, { force: true })
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            await this.refreshWorks()
             this.editWork(work)
             this.show_points_grading_view = true
         },

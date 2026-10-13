@@ -60,7 +60,7 @@ class CourseWorkController extends Controller
         }
         $createdPaths = [];
         try {
-            $result = DB::transaction(function () use ($course_work, $actor, $importer, $folderImporter, $dispatchImporter, $bundle, $dispatchBundle, $uploads, $data, &$createdPaths): array {
+            $result = DB::transaction(function () use ($course_work, $actor, $importer, $folderImporter, $bundle, $dispatchBundle, $uploads, $data, &$createdPaths): array {
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
@@ -74,9 +74,8 @@ class CourseWorkController extends Controller
                     'hash' => hash('sha256', json_encode($work->getAttributes(), JSON_THROW_ON_ERROR)),
                 ];
                 $preview['dispatches'] = [];
-                foreach ($dispatchBundle['protocols'] ?? [] as $file) {
-                    $dispatchPreview = $dispatchImporter->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
-                    $preview['dispatches'][] = ['source' => $file['source']] + $dispatchPreview;
+                foreach ($dispatchBundle !== null ? $folderImporter->previewDispatches($work, $dispatchBundle) : [] as $dispatchPreview) {
+                    $preview['dispatches'][] = $dispatchPreview;
                     $preview['can_import'] = $preview['can_import'] && $dispatchPreview['can_import'];
                 }
                 if ($dispatchBundle !== null) {
@@ -172,6 +171,9 @@ class CourseWorkController extends Controller
                 }
                 abort_unless($preview['can_import'], 422, 'Versandprotokoll enthält ungeklärte Zuordnungen.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Kurs oder Protokoll wurde geändert. Bitte Vorschau erneut laden.');
+                $importer->applyParticipantAdditions($work, $preview['participant_additions']);
+                $preview = $importer->preview($work, $report, $sha256);
+                abort_unless($preview['can_import'], 422, 'Versandprotokoll enthält ungeklärte Zuordnungen.');
                 $directory = "teaching/work_dispatches/{$work->teachingCourse->school_id}/{$work->id}";
                 $path = "{$directory}/{$sha256}.txt";
                 if (! Storage::disk('local')->exists($path)) {

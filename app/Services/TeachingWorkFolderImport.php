@@ -114,6 +114,21 @@ class TeachingWorkFolderImport
         $sources[$source] = $sha256;
     }
 
+    /** @param array<string, mixed> $bundle
+     * @return list<array<string, mixed>>
+     */
+    public function previewDispatches(TeachingCourseWork $work, array $bundle): array
+    {
+        $additions = $this->dispatches->participantAdditions($work, array_column($bundle['protocols'], 'report'));
+        $previews = [];
+        foreach ($bundle['protocols'] as $file) {
+            $previews[] = ['source' => $file['source']] + $this->dispatches->preview($work, $file['report'], $file['sha256'],
+                requireMatchingTitle: false, participantAdditions: $additions);
+        }
+
+        return $previews;
+    }
+
     /** Call within the authorized work transaction and clean created files on rollback.
      * @param  array<string, mixed>  $bundle
      * @param  list<string>  $createdPaths
@@ -123,6 +138,14 @@ class TeachingWorkFolderImport
     {
         $messages = [];
         $missing = [];
+        $dispatchPreviews = $this->previewDispatches($work, $bundle);
+        foreach ($dispatchPreviews as $preview) {
+            if (! $preview['can_import']) {
+                $bad = collect($preview['rows'])->first(fn (array $row): bool => str_contains($row['status'], 'gesperrt'));
+                $this->reject($preview['source'].': '.($bad['person'] ?? '').' '.($bad['status'] ?? 'Zuordnung ungeklärt').'. Keine Dateien wurden übernommen.');
+            }
+        }
+        $this->dispatches->applyParticipantAdditions($work, $dispatchPreviews[0]['participant_additions'] ?? []);
         $previous = $work->status['folder_import_sources'] ?? [];
         if ($bundle['evaluation']) {
             $report = $bundle['evaluation'];

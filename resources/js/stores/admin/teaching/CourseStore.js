@@ -296,7 +296,8 @@ export const useCourseStore = defineStore('AdminCourseStore', {
 
             const requestKey = String(normalizedCourseId)
             if (this.course_detail_request_promises[requestKey]) {
-                return this.course_detail_request_promises[requestKey]
+                if (!force) return this.course_detail_request_promises[requestKey]
+                await this.course_detail_request_promises[requestKey]
             }
 
             const notification = useNotificationStore()
