@@ -21,17 +21,17 @@ import { downloadDispatch } from '@/actions/App/Http/Controllers/Admin/Teaching/
 
 const props = defineProps({ work: { type: Object, default: null } })
 const logs = computed(() => props.work?.id
-    ? (props.work.status?.dispatch_logs || []).filter(log => log.origin === 'dispatch_import' && log.sha256)
+    ? (props.work.status?.dispatch_logs || []).filter(log => ['dispatch_import', 'provision_import'].includes(log.origin) && log.sha256)
     : [])
-const groups = computed(() => ['tasks', 'results'].map(purpose => ({
-    purpose, label: purpose === 'tasks' ? 'Download Aufgabenversand' : 'Download Ergebnisbenachrichtigung',
-    icon: purpose === 'tasks' ? 'mdi-file-send-outline' : 'mdi-email-outline',
+const groups = computed(() => ['provision', 'tasks', 'results'].map(purpose => ({
+    purpose, label: purpose === 'provision' ? 'Download Bereitstellungsbeleg' : purpose === 'tasks' ? 'Download Aufgabenversand' : 'Download Ergebnisbenachrichtigung',
+    icon: purpose === 'provision' ? 'mdi-file-check-outline' : purpose === 'tasks' ? 'mdi-file-send-outline' : 'mdi-email-outline',
     logs: logs.value.filter(log => (log.purpose || 'results') === purpose)
-        .sort((first, second) => String(second.dispatch_at || second.name).localeCompare(String(first.dispatch_at || first.name))),
+        .sort((first, second) => String(second.dispatch_at || second.available_at || second.name).localeCompare(String(first.dispatch_at || first.available_at || first.name))),
 })).filter(group => group.logs.length))
 const downloadUrl = log => downloadDispatch.url({ course_work: props.work.id, sha256: log.sha256 })
 function logTitle(log) {
-    const time = log.mode === 'scheduled' || log.mode === 'prepared' ? log.planned_at || log.prepared_at : log.dispatch_at || log.prepared_at
+    const time = log.purpose === 'provision' ? log.available_at : log.mode === 'scheduled' || log.mode === 'prepared' ? log.planned_at || log.prepared_at : log.dispatch_at || log.prepared_at
     if (time && Number.isFinite(Date.parse(time))) {
         return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(time))
     }
@@ -39,6 +39,7 @@ function logTitle(log) {
     return run ? `${run[3]}.${run[2]}.${run[1]} um ${run[4]}:${run[5]}:${run[6]} Uhr` : log.name || 'Versandprotokoll'
 }
 function logDescription(log) {
+    if (log.purpose === 'provision') return 'Belegte Bereitstellung · kein individueller Download bestätigt'
     const records = (props.work.status?.dispatch_notifications || []).filter(record => record.log_sha256 === log.sha256 && record.student_id)
     const attempts = (props.work.status?.dispatch_attempts || []).filter(record => record.log_sha256 === log.sha256 && record.student_id)
     const mode = log.mode === 'scheduled' ? 'Serverseitig geplant · Versand noch nicht bestätigt'

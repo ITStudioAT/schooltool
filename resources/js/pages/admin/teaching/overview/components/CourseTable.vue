@@ -574,11 +574,17 @@
                                                                 </span>
                                                             </template>
                                                         </v-chip>
-                                                        <WorkDispatchStatus
-                                                            v-if="entry.source === 'course_work'"
-                                                            :work="courseWorkForCellEntry(entry)"
-                                                            :native-title="false"
-                                                            :student-id="registeredStudentUserId(student)" />
+                                                        <span v-if="entry.source === 'course_work'" class="d-inline-flex align-center ga-1">
+                                                            <WorkDispatchStatus
+                                                                :work="courseWorkForCellEntry(entry)"
+                                                                :native-title="false"
+                                                                :student-id="registeredStudentUserId(student)" />
+                                                            <WorkSubmissionStatus
+                                                                :work="courseWorkForCellEntry(entry)"
+                                                                :native-title="false"
+                                                                :now="deadlineNow"
+                                                                :student-id="registeredStudentUserId(student)" />
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -618,6 +624,9 @@
                                                 </div>
                                                 <div v-if="detail.title" class="course-table-entry-tooltip-title">
                                                     {{ detail.title }}
+                                                </div>
+                                                <div v-if="detail.submission" class="course-table-entry-tooltip-text">
+                                                    {{ detail.submission }}
                                                 </div>
                                                 <div v-if="detail.notification && !detail.isWork" class="course-table-entry-tooltip-text">
                                                     {{ detail.notification }}
@@ -2499,6 +2508,8 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
+import WorkSubmissionStatus from './WorkSubmissionStatus.vue'
+import { workSubmissionStatus } from '@/helpers/workSubmission'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -2514,7 +2525,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkSubmissionStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -4929,6 +4940,7 @@ export default {
 
                 return {
                     isWork: Boolean(work),
+                    submission: work ? workSubmissionStatus(work, studentId, this.deadlineNow).label : '',
                     notification: ['tasks', 'results'].map(purpose => {
                         const record = workDispatchRecord(work, studentId, purpose)
                         return record ? dispatchNotificationText(record.sent_at, purpose, record.mode) : ''

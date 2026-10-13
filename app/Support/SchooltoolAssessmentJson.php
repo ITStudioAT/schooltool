@@ -23,7 +23,8 @@ class SchooltoolAssessmentJson
         } catch (JsonException) {
             $this->check(false, 'Ungültiges UTF-8-JSON.');
         }
-        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $version = ($object instanceof stdClass && ($object->schema_version ?? null) === 2) ? 2 : 1;
+        $schema = json_decode(file_get_contents(__DIR__."/schooltool-json-v{$version}.schema.json"), true, flags: JSON_THROW_ON_ERROR);
         $this->structure($object, $schema, $schema, '$');
         $package = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
         $download = $package['final_download'] ?? null;
@@ -113,6 +114,37 @@ class SchooltoolAssessmentJson
         return mb_convert_case(preg_replace('/\s+/u', ' ', trim($value)), MB_CASE_FOLD, 'UTF-8');
     }
 
+    /** @return array<string, mixed> */
+    public function provision(string $text): array
+    {
+        $this->check(strlen($text) <= 1048576 && ! str_starts_with($text, "\xEF\xBB\xBF"), 'Bereitstellungsbeleg höchstens 1 MiB, UTF-8 ohne BOM.');
+        try {
+            $object = json_decode($text, false, 32, JSON_THROW_ON_ERROR);
+            $offset = 0;
+            $this->scan($text, $offset);
+        } catch (JsonException) {
+            $this->check(false, 'Ungültiges UTF-8-JSON im Bereitstellungsbeleg.');
+        }
+        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-provision-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->structure($object, $schema, $schema, '$');
+        $provision = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $ids = array_column($provision['participants'], 'participant_id');
+        $this->check(count(array_unique($ids)) === count($ids), 'Bereitstellung: doppelte Teilnehmerkennung.');
+        sort($ids, SORT_STRING);
+        $this->check(hash_equals($provision['roster_fingerprint'], self::digest($ids)), 'Bereitstellung: falscher Teilnehmerfingerprint.');
+        $eventIds = array_column($provision['events'], 'event_id');
+        $this->check(count(array_unique($eventIds)) === count($eventIds), 'Bereitstellung: doppelte Ereigniskennung.');
+        foreach ($provision['events'] as $event) {
+            $available = $this->instant($event['available_at']);
+            $this->check($available <= new DateTimeImmutable(now()->toISOString()), 'Bereitstellung liegt in der Zukunft.');
+            $this->check(count(array_unique($event['participant_ids'])) === count($event['participant_ids'])
+                && array_diff($event['participant_ids'], $ids) === [], 'Bereitstellung: Ereignis enthält fremde oder doppelte Teilnehmer.');
+        }
+        $this->checksum($provision, 'provision_checksum');
+
+        return $provision;
+    }
+
     /** @param list<array<string, mixed>> $records */
     public function finalDownload(array $download, string $exerciseId, array $records): void
     {
@@ -161,7 +193,8 @@ class SchooltoolAssessmentJson
     /** @param list<array<string, mixed>> $records */
     public function submissionCheck(array $check, string $exerciseId, array $records, array $absenceIds = []): void
     {
-        $schema = json_decode(file_get_contents(__DIR__.'/schooltool-json-v1.schema.json'), true, flags: JSON_THROW_ON_ERROR);
+        $version = ($check['schema_version'] ?? null) === 2 ? 2 : 1;
+        $schema = json_decode(file_get_contents(__DIR__."/schooltool-json-v{$version}.schema.json"), true, flags: JSON_THROW_ON_ERROR);
         $this->structure(json_decode(json_encode($check, JSON_THROW_ON_ERROR)), $schema['$defs']['submission_check'], $schema, '$.submission_check');
         $this->check($check['exercise_id'] === $exerciseId, 'Abgabeprüfung gehört zu einer anderen Arbeit.');
         $deadline = $this->instant($check['deadline_at']);
@@ -177,7 +210,12 @@ class SchooltoolAssessmentJson
         if ($checked <= $deadline) {
             $gaps[] = 'deadline_not_passed';
         }
-        $dispatches = array_map(fn (array $person): DateTimeImmutable => $this->instant($person['dispatched_at']), $check['participants']);
+        $dispatches = array_map(fn (array $person): DateTimeImmutable => $this->instant($person[$version === 2 ? 'available_at' : 'dispatched_at']), $check['participants']);
+        if ($version === 2) {
+            foreach ($check['participants'] as $person) {
+                $this->check(array_diff($person['availability_evidence_sha256'], $person['evidence_sha256']) === [], 'Abgabeprüfung: Bereitstellungsbelege fehlen im persönlichen Nachweis.');
+            }
+        }
         $earliest = min($dispatches);
         $mailboxes = array_column($check['coverage'], 'mailbox');
         sort($mailboxes, SORT_STRING);

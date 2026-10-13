@@ -1,16 +1,17 @@
 <template>
-    <div class="border rounded pa-3 mb-4">
-        <strong>Dropbox · Quick-Import</strong>
-        <p class="text-caption mt-1">Liest den aktuellen synchronisierten Cloudstand. Vorschau und Übernahme erfolgen separat.</p>
-        <p v-if="loading" role="status">Dropbox-Verbindung prüfen …</p>
-        <p v-else-if="state">{{ state.message }}</p>
-        <p v-if="state?.folder" class="mt-1">Zugeordneter Ordner: {{ state.folder.name }}</p>
-        <div v-if="state?.configured && state?.installed" class="d-flex flex-wrap ga-2 mt-2">
-            <v-btn v-if="!state.connected" variant="outlined" :disabled="busy || loading" @click="connectDropbox">Dropbox verbinden</v-btn>
+    <div class="border rounded pa-2 mb-2 work-dropbox-source">
+        <strong class="text-body-2">Dropbox · Quick-Import</strong>
+        <p v-if="loading" role="status" class="text-caption">Dropbox-Verbindung prüfen …</p>
+        <p v-else-if="state && !state.can_quick_import" class="text-caption">{{ state.message }}</p>
+        <p v-if="state?.folder" class="text-caption">{{ state.folder.name }}</p>
+        <div v-if="state?.configured && state?.installed" class="d-flex flex-wrap align-center ga-2 mt-2">
+            <v-btn v-if="!state.connected" size="small" variant="outlined" :disabled="busy || loading" @click="connectDropbox">Dropbox verbinden</v-btn>
             <template v-else>
-                <v-btn variant="outlined" :disabled="busy || loading" @click="browseRoot">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen' }}</v-btn>
-                <v-btn v-if="state.folder" variant="tonal" :disabled="busy || loading" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
-                <v-btn variant="text" :disabled="busy || loading" @click="disconnectDropbox">Verbindung in Schooltool entfernen</v-btn>
+                <v-btn v-if="state.folder" size="small" variant="tonal" :disabled="busy || loading" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
+                <v-btn size="small" variant="text" :disabled="busy || loading" @click="browseRoot">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen' }}</v-btn>
+                <details class="text-caption"><summary>Verbindung verwalten</summary>
+                    <v-btn size="small" variant="text" :disabled="busy || loading" @click="disconnectDropbox">Verbindung in Schooltool entfernen</v-btn>
+                </details>
             </template>
         </div>
         <v-alert v-if="error" type="error" variant="tonal" class="mt-2">{{ error }}</v-alert>
@@ -144,3 +145,8 @@ watch(() => [props.active, key.value], async () => {
     }
 }, { immediate: true })
 </script>
+
+<style scoped>
+.work-dropbox-source { overflow-wrap: anywhere; }
+.work-dropbox-source summary { cursor: pointer; }
+</style>

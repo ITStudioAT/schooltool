@@ -7,6 +7,43 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('provision contract validates real release fields without asserting email or individual downloads', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $provision = TeachingWorkJsonFixture::provision();
+    expect((new SchooltoolAssessmentJson)->provision(json_encode($provision, JSON_THROW_ON_ERROR)))->toBe($provision);
+});
+
+test('provision contract rejects missing forged future and unbound event evidence', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $provision = TeachingWorkJsonFixture::provision();
+    match ($case) {
+        'mail field' => $provision['sent_at'] = '2026-10-04T08:00:00Z',
+        'missing evidence' => $provision['events'][0]['evidence_sha256'] = [],
+        'bad checksum' => $provision['provision_checksum'] = str_repeat('f', 64),
+        'future' => $provision['events'][0]['available_at'] = '2026-10-08T08:00:00Z',
+        'unbound' => $provision['events'][0]['participant_ids'][] = 'foreign',
+        'duplicate person' => $provision['participants'][] = $provision['participants'][0],
+        'individual download claim' => $provision['events'][0]['method'] = 'downloaded',
+        'invalid date' => $provision['events'][0]['available_at'] = '2026-02-30T08:00:00Z',
+    };
+    if ($case !== 'bad checksum') {
+        unset($provision['provision_checksum']);
+        $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    }
+    expect(fn () => (new SchooltoolAssessmentJson)->provision(json_encode($provision, JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
+})->with(['mail field', 'missing evidence', 'bad checksum', 'future', 'unbound', 'duplicate person', 'individual download claim', 'invalid date']);
+
+test('assessment v2 binds the neutral check version and evidence while v1 stays unchanged', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $v1 = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withSubmissionCheck(TeachingWorkJsonFixture::package()));
+    $v2 = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withAvailabilityCheck($v1, str_repeat('e', 64)));
+    $parser = new SchooltoolAssessmentJson;
+    expect($parser->parse(json_encode($v1, JSON_THROW_ON_ERROR)))->toBe($v1);
+    expect($parser->parse(json_encode($v2, JSON_THROW_ON_ERROR)))->toBe($v2);
+    $v2['schema_version'] = 1;
+    expect(fn () => $parser->parse(json_encode(TeachingWorkJsonFixture::sign($v2), JSON_THROW_ON_ERROR)))->toThrow(ValidationException::class);
+});
+
 test('JSON final download permits a missing local submission zero assessment without claiming a server search', function () {
     $this->travelTo('2026-10-07T11:00:00Z');
     $package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::withFinalDownload(TeachingWorkJsonFixture::package()));

@@ -713,7 +713,7 @@ describe('Teaching page navigation', () => {
 
         expect(source).toContain("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })")
         expect(source).toContain("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })")
-        expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
+        expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })")
         expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
         expect(source).toContain("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })")
         expect(source).not.toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
@@ -730,8 +730,8 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
-            .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
-        expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })"))
+        expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
         const validPanels = source.match(/const validPanels = \[([\s\S]*?)\]/)?.[1] || ''

@@ -383,12 +383,13 @@ class TeachingWorkDispatchImport
         }
         $logs = $work->status['dispatch_logs'] ?? [];
         $alreadyImported = collect($logs)->contains('sha256', $sha256);
-        if (! $alreadyImported && count($logs) >= 30) {
+        if (! $alreadyImported && collect($logs)->where('origin', 'dispatch_import')->count() >= 30) {
             $this->reject('Für diese Arbeit sind bereits 30 Versandprotokolle gespeichert.');
         }
 
         return [
             'purpose' => $report['purpose'], 'mode' => $report['mode'],
+            'source_sha256' => $sha256,
             'log_info' => [
                 'dispatch_at' => collect($rows)->where('accepted', true)->pluck('sent_at')->filter()->sort()->last(),
                 'prepared_at' => $this->providerTime($this->value($report['metadata'], 'Erstellt'))
@@ -579,7 +580,7 @@ class TeachingWorkDispatchImport
 
     public function streamLog(TeachingCourseWork $work, string $sha256): StreamedResponse
     {
-        $attachment = collect($work->status['dispatch_logs'] ?? [])->first(fn (array $log): bool => ($log['origin'] ?? null) === 'dispatch_import' && ($log['sha256'] ?? null) === $sha256);
+        $attachment = collect($work->status['dispatch_logs'] ?? [])->first(fn (array $log): bool => in_array($log['origin'] ?? null, ['dispatch_import', 'provision_import'], true) && ($log['sha256'] ?? null) === $sha256);
         abort_unless($attachment, 404);
         $path = $attachment['file_path'] ?? '';
         $schoolId = $work->teachingCourse->school_id;
@@ -587,10 +588,11 @@ class TeachingWorkDispatchImport
         abort_unless(($attachment['storage_disk'] ?? null) === 'local'
             && (str_starts_with($path, "teaching/work_dispatches/{$schoolId}/")
                 || str_starts_with($path, "teaching/synchronisation/{$schoolId}/") || str_starts_with($path, 'teaching/personal_restores/')), 404);
-        $name = PrivateImportSourceFile::downloadName($attachment['name'], 'versandprotokoll', 'txt');
+        $provision = $attachment['origin'] === 'provision_import';
+        $name = PrivateImportSourceFile::downloadName($attachment['name'], $provision ? 'bereitstellung' : 'versandprotokoll', $provision ? 'json' : 'txt');
 
         return Storage::disk('local')->download($path, $name, [
-            'Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
+            'Content-Type' => ($provision ? 'application/json' : 'text/plain').'; charset=UTF-8', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
             'Content-Disposition' => HeaderUtils::makeDisposition('attachment', $name),
         ]);
     }

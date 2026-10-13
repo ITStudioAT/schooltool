@@ -43,7 +43,7 @@ class TeachingWorkJsonImport
     }
 
     /** @return list<array{student_id: int, first_name: string, last_name: string, class_name: string}> */
-    private function participants(TeachingCourse $course): array
+    public function participants(TeachingCourse $course): array
     {
         $participants = [];
         foreach ($course->teachingCourseStudents()->whereNull('canceled_at')->with(['user', 'import116'])->get() as $student) {
@@ -62,7 +62,8 @@ class TeachingWorkJsonImport
         return $participants;
     }
 
-    public function preview(TeachingCourseWork $work, User $actor, array $bundle): array
+    /** @param list<array<string, mixed>> $availabilitySources */
+    public function preview(TeachingCourseWork $work, User $actor, array $bundle, array $availabilitySources = []): array
     {
         $package = $bundle['package'];
         $course = $work->teachingCourse;
@@ -73,6 +74,7 @@ class TeachingWorkJsonImport
                 $this->checkDeadline($work, $package['teacher_absence_decision']);
             }
         }
+        $previousDownload = null;
         if (isset($package['final_download'])) {
             if (! $deadlineNeedsReview) {
                 $this->checkDeadline($work, $package['final_download']);
@@ -161,6 +163,19 @@ class TeachingWorkJsonImport
         $submissionCheck = $package['submission_check'] ?? null;
         if ($submissionCheck !== null) {
             $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abgabeprüfung benötigt genau alle erwarteten Zielpersonen.');
+            if ($submissionCheck['schema_version'] === 2) {
+                foreach ($submissionCheck['participants'] as $person) {
+                    $row = collect($rows)->firstWhere('participant_id', $person['participant_id']);
+                    $sources = array_values(array_filter($availabilitySources, fn (array $source): bool => (int) $source['student_id'] === (int) $row['student_id']
+                        && in_array($source['log_sha256'], $person['availability_evidence_sha256'], true)
+                        && (! isset($source['exercise_id']) || ($source['exercise_id'] === $package['exercise_id'] && $source['participant_id'] === $person['participant_id']))));
+                    $this->parser->check($sources !== [], 'Abgabeprüfung: personenbezogener Bereitstellungs- oder echter Aufgabenversandbeleg fehlt.');
+                    $earliest = min(array_map(fn (array $source): DateTimeImmutable => $this->parser->instant($source['available_at']), $sources));
+                    $this->parser->check($this->parser->instant($person['available_at']) == $earliest
+                        && collect($sources)->contains(fn (array $source): bool => $source['method'] === $person['availability_method'] && $this->parser->instant($source['available_at']) == $earliest),
+                        'Abgabeprüfung: Verfügbarkeitsbeginn oder Ausgabeweg widerspricht dem gebundenen Beleg.');
+                }
+            }
             if (! $deadlineNeedsReview) {
                 $this->checkDeadline($work, $submissionCheck);
             }
@@ -177,7 +192,13 @@ class TeachingWorkJsonImport
                         $incoming = array_values(array_filter($incoming, fn (array $receipt): bool => $receipt['exercise_id'] !== $package['exercise_id'] || $receipt['participant_id'] !== $record['participant_id']));
                         $incoming[] = ['exercise_id' => $package['exercise_id'], 'participant_id' => $record['participant_id'], 'student_id' => $rows[$index]['student_id'], 'record' => $record];
                     }
-                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($incoming), 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
+                    $sameSubmissions = $previousCheck['bindings'] === $this->recordBindings($incoming);
+                    if ($previousDownload !== null && isset($package['final_download'])) {
+                        $this->parser->finalDownload($previousDownload, $package['exercise_id'], array_column(array_values(array_filter($receipts,
+                            fn (array $receipt): bool => $receipt['exercise_id'] === $package['exercise_id'])), 'record'));
+                        $sameSubmissions = $this->recordBindings($receipts, $previousDownload) === $this->recordBindings($incoming, $package['final_download']);
+                    }
+                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($receipts) && $sameSubmissions, 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
                 }
             }
         }
@@ -310,13 +331,21 @@ class TeachingWorkJsonImport
     }
 
     /** @return array<int, string> */
-    private function recordBindings(array $receipts): array
+    private function recordBindings(array $receipts, ?array $download = null): array
     {
         $bindings = [];
         foreach ($receipts as $receipt) {
             $record = $receipt['record'];
+            $source = $record['source_fingerprint'] ?? null;
+            if ($download !== null && $download['exercise_id'] === $receipt['exercise_id']) {
+                $person = collect($download['participants'])->firstWhere('participant_id', $receipt['participant_id']);
+                $this->parser->check($person !== null, 'Abschlussbestand enthält nicht alle gebundenen Personen.');
+                $hashes = $person['submission_sha256'];
+                sort($hashes, SORT_STRING);
+                $source = ['submission_sha256' => $hashes];
+            }
             $bindings[(int) $receipt['student_id']] = SchooltoolAssessmentJson::digest([$receipt['exercise_id'], $receipt['participant_id'], $record['identity'] ?? [],
-                $record['submission_state'] ?? null, $record['source_fingerprint'] ?? null, $record['email_collected_at'] ?? null]);
+                $record['submission_state'] ?? null, $source, $record['email_collected_at'] ?? null]);
         }
         ksort($bindings, SORT_NUMERIC);
 

@@ -3838,7 +3838,7 @@ class TeachingBackupService
             $status['dispatch_logs'][$index]['file_path'] = $this->restoreFilePath($log['file_path'], $files, "teaching/work_dispatches/{$schoolId}/restored");
             $status['dispatch_logs'][$index]['storage_disk'] = 'local';
         }
-        foreach (['dispatch_notifications', 'dispatch_attempts'] as $key) {
+        foreach (['dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
             foreach ($status[$key] ?? [] as $index => $notification) {
                 if ($userIdMap !== []) {
                     $status[$key][$index]['student_id'] = $userIdMap[$notification['student_id']] ?? throw new RuntimeException('Schülerzuordnung des Versandnachweises fehlt.');

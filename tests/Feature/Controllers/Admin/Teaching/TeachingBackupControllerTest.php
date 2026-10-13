@@ -1952,6 +1952,11 @@ test('full restore replaces active teaching data and restores imported records w
         'created_at' => $now,
         'updated_at' => $now,
     ]];
+    $tables['teaching_course_works'][0]['status'] = [
+        'dispatch_logs' => [['origin' => 'provision_import', 'purpose' => 'provision', 'file_path' => 'teaching/provision-original.json', 'storage_disk' => 'local', 'sha256' => hash('sha256', 'Provision original')]],
+        'provision_events' => [['student_id' => $backupUserId, 'participant_id' => 'stable-person', 'method' => 'direct_issue', 'available_at' => '2026-04-01T08:00:00Z', 'origin' => 'provision_import']],
+        'provision_imports' => [['student_id' => $backupUserId, 'participant_id' => 'stable-person', 'exercise_id' => 'exercise-1', 'origin' => 'provision_import']],
+    ];
     $tables['teaching_course_student_entries'] = [[
         'id' => 99013,
         'teaching_course_id' => $courseId,
@@ -2082,6 +2087,7 @@ test('full restore replaces active teaching data and restores imported records w
                 'exists' => true,
                 'base64' => base64_encode('Demo'),
             ],
+            ['path' => 'teaching/provision-original.json', 'exists' => true, 'base64' => base64_encode('Provision original')],
         ],
     ];
 
@@ -2142,6 +2148,11 @@ test('full restore replaces active teaching data and restores imported records w
     $restoredUser = User::query()->where('email', 'restored.student@example.test')->firstOrFail();
     $restoredCourse = TeachingCourse::query()->where('title', 'Voll Kurs')->firstOrFail();
     $restoredCurriculum = TeachingCurriculum::query()->where('title', 'Voll Curriculum')->firstOrFail();
+    $restoredWork = $restoredCourse->teachingCourseWorks()->firstOrFail();
+    expect($restoredWork->status['provision_events'][0]['student_id'])->toBe($restoredUser->id)
+        ->and($restoredWork->status['provision_imports'][0]['student_id'])->toBe($restoredUser->id)
+        ->and($restoredWork->status['provision_events'][0]['participant_id'])->toBe('stable-person')
+        ->and(Storage::disk('local')->get($restoredWork->status['dispatch_logs'][0]['file_path']))->toBe('Provision original');
 
     expect($restoredUser->id)->not->toBe($backupUserId)
         ->and((int) $restoredCourse->user_id)->toBe($restoredUser->id)

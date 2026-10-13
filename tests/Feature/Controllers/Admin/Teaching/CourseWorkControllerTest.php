@@ -314,6 +314,65 @@ test('JSON submission checkpoint rejects changed deadline incomplete roster and 
     expect($work->fresh()->status)->not->toHaveKey('submission_checks')->not->toHaveKey('assessment_json_imports');
 })->with(['deadline', 'no time', 'roster', 'stale preview']);
 
+test('reassessment reuses legacy checks only for the same secured submission inventory and identity', function (string $change) {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $originalPdf = workEvaluationPdf('Beurteilung_Ada.pdf');
+    $package['records'][0]['pdf'] = ['filename' => $originalPdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $originalPdf->getRealPath())];
+    $proof = TeachingWorkJsonFixture::withFinalDownload($package)['final_download'];
+    $proof['deadline_at'] = $package['submission_check']['deadline_at'];
+    $proof['download_completed_at'] = '2026-10-06T10:02:00Z';
+    foreach ($proof['participants'] as &$person) {
+        $person['submission_sha256'] = [hash('sha256', $person['participant_id'].' original submission')];
+    }
+    unset($person, $proof['download_checksum']);
+    $proof['download_checksum'] = SchooltoolAssessmentJson::digest($proof);
+    $package['final_download'] = $proof;
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$originalPdf]];
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $before = $work->fresh()->getAttributes();
+    $originalFingerprint = $package['records'][0]['source_fingerprint'];
+    $package['records'][0]['source_fingerprint'] = hash('sha256', 'Updated evaluation and evidence');
+    $package['records'][0]['criteria'][0]['reason'] = 'Konkreter korrigierter Fehlerhinweis mit Lernverweis.';
+    $package['records'][0]['comment'] = 'Neu erläuterte Beurteilung bei unveränderter Abgabe.';
+    $package['records'][0]['evaluation_completed_at'] = '2026-10-08T10:00:00Z';
+    $updatedPdf = workEvaluationPdf('Beurteilung_Ada_Aktualisiert.pdf');
+    $package['records'][0]['pdf'] = ['filename' => $updatedPdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $updatedPdf->getRealPath())];
+    if (in_array($change, ['submission bytes', 'submission bytes with unchanged fingerprint'], true)) {
+        if ($change === 'submission bytes with unchanged fingerprint') {
+            $package['records'][0]['source_fingerprint'] = $originalFingerprint;
+        }
+        $package['final_download']['participants'][0]['submission_sha256'] = [hash('sha256', 'Changed submission bytes')];
+        $package['final_download']['download_completed_at'] = '2026-10-06T10:03:00Z';
+        unset($package['final_download']['download_checksum']);
+        $package['final_download']['download_checksum'] = SchooltoolAssessmentJson::digest($package['final_download']);
+    } elseif ($change === 'collection time') {
+        $package['records'][0]['email_collected_at'] = '2026-10-04T08:00:01Z';
+    } elseif ($change === 'no secured inventory') {
+        unset($package['final_download']);
+    }
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$updatedPdf]];
+    $response = $this->postJson($url, $payload);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    if ($change !== 'feedback') {
+        $response->assertUnprocessable();
+
+        return;
+    }
+    $preview = $response->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()->assertJsonPath('data.submission_check_status.complete', true);
+    $status = $work->fresh()->status;
+    $receipt = collect($status['assessment_json_imports'])->firstWhere('participant_id', $package['records'][0]['participant_id']);
+    expect($receipt['history'])->toHaveCount(1);
+    expect($receipt['history'][0]['record']['pdf']['sha256'])->toBe(hash_file('sha256', $originalPdf->getRealPath()));
+    expect($status['submission_checks'][0]['check'])->toBe($status['submission_checks'][1]['check']);
+    expect($status['assessment_json_packages'][0]['final_download'])->toBe($status['assessment_json_packages'][1]['final_download']);
+})->with(['feedback', 'submission bytes', 'submission bytes with unchanged fingerprint', 'collection time', 'no secured inventory']);
+
 test('JSON submission checkpoint preserves history rejects older proofs and requires a fresh proof for changed submissions', function () {
     $work = prepareWorkDispatchImport($this);
     $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
@@ -1078,6 +1137,194 @@ function lateTaskParticipantFixture(object $context): array
 
     return compact('work', 'import', 'metadata', 'text');
 }
+
+test('provision-only folder previews and archives direct release without creating email records or changing grades', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    Mail::fake();
+    Notification::fake();
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    expect($preview['dispatches'])->toBe([]);
+    expect($preview['provisions'][0]['records'])->toHaveCount(2);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->refresh();
+    expect($work->status['provision_events'])->toHaveCount(2);
+    expect($work->status['dispatch_notifications'] ?? [])->toBe([]);
+    expect($work->status['dispatch_attempts'] ?? [])->toBe([]);
+    expect($work->groups)->toEqual(json_decode($before['groups'], true));
+    expect(Storage::disk('local')->get($work->status['dispatch_logs'][0]['file_path']))->toBe($text);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/".hash('sha256', $text))->assertOk()->assertHeader('Content-Type', 'application/json; charset=UTF-8');
+    $status = $work->status;
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['provision_events' => [], 'provision_imports' => []]])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toBe($status['provision_events']);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('assessment v2 uses bound release evidence in the same folder and preserves the teacher deadline', function (string $method) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $provision['events'][0]['method'] = $method;
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text), $method);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['submission_checks'][0]['check']['schema_version'])->toBe(2);
+    expect($work->fresh()->finish_until_time)->toBe('12:00');
+    expect($work->fresh()->status['dispatch_notifications'] ?? [])->toBe([]);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.complete', true);
+})->with(['download_release', 'direct_issue']);
+
+test('provision blocks ambiguous person class group id and incomplete work rosters without writes', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    if ($case === 'roster') {
+        array_pop($provision['participants']);
+        $ids = array_column($provision['participants'], 'participant_id');
+        $provision['events'][0]['participant_ids'] = $ids;
+        $provision['roster_fingerprint'] = SchooltoolAssessmentJson::digest($ids);
+    } else {
+        $field = ['person' => 'first_name', 'class' => 'class_name', 'group' => 'group_name', 'id' => 'schooltool_person_id'][$case];
+        $provision['participants'][0]['identity'][$field] = 'unrelated';
+    }
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => json_encode($provision, JSON_THROW_ON_ERROR)], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', false)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['person', 'class', 'group', 'id', 'roster']);
+
+test('assessment v2 reuses an archived provision and respects the later individual release and earliest event', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $ids = array_column($package['records'], 'participant_id');
+    $provision['events'][0]['participant_ids'] = [$ids[0]];
+    $provision['events'][] = array_replace($provision['events'][0], ['event_id' => 'later-person', 'participant_ids' => [$ids[1]], 'available_at' => '2026-10-05T08:00:00Z']);
+    $provision['events'][] = array_replace($provision['events'][0], ['event_id' => 'second-issue', 'available_at' => '2026-10-05T09:00:00Z']);
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    $package['submission_check']['participants'][1]['available_at'] = '2026-10-05T08:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toHaveCount(3);
+    $package['submission_check']['participants'][0]['available_at'] = '2026-10-05T09:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $this->postJson($url, ['package' => TeachingWorkJsonFixture::upload($package)])->assertUnprocessable();
+});
+
+test('provision apply rejects a stale preview without storing an original', function () {
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $text = json_encode(TeachingWorkJsonFixture::provision($package), JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $work->update(['finish_until_date' => '2026-10-08']);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    expect($work->fresh()->status['provision_events'] ?? [])->toBe([]);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('assessment v2 accepts mixed direct release and actual task mail but rejects local mail tests as availability', function (bool $actualMail) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $provision['events'][0]['participant_ids'] = [$package['records'][1]['participant_id']];
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $mail = TeachingWorkDispatchFixture::tasksText(! $actualMail);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    $person = &$package['submission_check']['participants'][0];
+    $person['available_at'] = $actualMail ? '2026-10-01T15:02:40Z' : '2026-10-02T15:02:40Z';
+    $person['availability_method'] = 'email_dispatch';
+    $person['availability_evidence_sha256'] = [hash('sha256', $mail)];
+    $person['evidence_sha256'][] = hash('sha256', $mail);
+    unset($person);
+    foreach ($package['submission_check']['coverage'] as &$coverage) {
+        $coverage['start_at'] = '2026-10-01T15:02:40Z';
+    }
+    unset($coverage, $package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text,
+        'Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt' => $mail], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $response = $this->postJson($url, $payload);
+    if (! $actualMail) {
+        $response->assertUnprocessable();
+        expect($work->fresh()->status['provision_events'] ?? [])->toBe([]);
+
+        return;
+    }
+    $preview = $response->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toHaveCount(1);
+    expect($work->fresh()->status['dispatch_notifications'])->toHaveCount(1);
+    expect($work->fresh()->status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id);
+})->with([true, false]);
+
+test('assessment v2 rejects missing inconsistent and unrelated release evidence before writes', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, $case === 'unbound hash' ? str_repeat('f', 64) : hash('sha256', $text));
+    if ($case === 'changed time') {
+        $package['submission_check']['participants'][0]['available_at'] = '2026-10-04T08:00:01Z';
+    } elseif ($case === 'different method') {
+        $package['submission_check']['participants'][0]['availability_method'] = 'direct_issue';
+    } elseif ($case === 'other exercise') {
+        $package['exercise_id'] = $package['submission_check']['exercise_id'] = 'another-exercise';
+    }
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], $case === 'missing' ? [] : ['Schooltool-Bereitstellung.json' => $text], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $before = $work->fresh()->getAttributes();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['missing', 'unbound hash', 'changed time', 'different method', 'other exercise']);
 
 test('complete task folder previews thirteen recipients without writes and enrolls one explicit late participant only on apply', function () {
     $this->travelTo('2026-10-13T21:10:00Z');

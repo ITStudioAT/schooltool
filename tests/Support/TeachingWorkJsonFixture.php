@@ -29,6 +29,43 @@ class TeachingWorkJsonFixture
         return UploadedFile::fake()->createWithContent('Schooltool-Bewertungen.json', json_encode(self::sign($package), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
     }
 
+    /** @return array<string, mixed> */
+    public static function provision(?array $package = null): array
+    {
+        $package ??= self::withSubmissionCheck(self::package());
+        $ids = array_column($package['records'], 'participant_id');
+        sort($ids, SORT_STRING);
+        $provision = ['schema_version' => 1, 'kind' => 'schooltool.provision', 'exercise_id' => $package['exercise_id'], 'timezone' => 'Europe/Vienna',
+            'exercise' => array_intersect_key($package['exercise'], array_flip(['title', 'subject', 'group'])),
+            'metadata_evidence_sha256' => [str_repeat('a', 64)], 'assignment_evidence_sha256' => [str_repeat('b', 64)], 'roster_evidence_sha256' => [str_repeat('c', 64)],
+            'roster_fingerprint' => SchooltoolAssessmentJson::digest($ids),
+            'participants' => array_map(fn (array $record): array => ['participant_id' => $record['participant_id'], 'identity' => $record['identity']], $package['records']),
+            'events' => [['event_id' => 'release-1', 'method' => 'download_release', 'available_at' => '2026-10-04T08:00:00Z', 'participant_ids' => $ids,
+                'source_kind' => 'teacher_confirmation', 'evidence_sha256' => [str_repeat('d', 64)]]]];
+        $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+
+        return $provision;
+    }
+
+    public static function withAvailabilityCheck(array $package, string $sourceHash, string $method = 'download_release'): array
+    {
+        $package['schema_version'] = 2;
+        $check = &$package['submission_check'];
+        $check['schema_version'] = 2;
+        foreach ($check['participants'] as &$person) {
+            $person['available_at'] = $person['dispatched_at'];
+            unset($person['dispatched_at']);
+            $person['availability_method'] = $method;
+            $person['availability_evidence_sha256'] = [$sourceHash];
+            $person['evidence_sha256'][] = $sourceHash;
+        }
+        unset($person, $check['check_checksum']);
+        $check['check_checksum'] = SchooltoolAssessmentJson::digest($check);
+        unset($check);
+
+        return $package;
+    }
+
     public static function withTeacherAbsenceDecision(array $package): array
     {
         $reason = 'Innerhalb der Frist nicht abgegeben';

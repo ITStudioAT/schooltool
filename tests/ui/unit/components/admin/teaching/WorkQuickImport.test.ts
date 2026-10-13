@@ -22,7 +22,12 @@ function mountImport(component = WorkEvaluationImport, props = {}) {
 function directory(name = 'Test') {
     const handle = { name, queryPermission: vi.fn().mockResolvedValue('granted'), requestPermission: vi.fn(),
         getDirectoryHandle: vi.fn().mockRejectedValue(new DOMException('Missing', 'NotFoundError')),
-        getFileHandle: vi.fn().mockImplementation(async () => ({ getFile: async () => new File([JSON.stringify({ records: [] })], 'Schooltool-Bewertungen.json') })),
+        getFileHandle: vi.fn().mockImplementation(async (filename) => {
+            if (filename !== 'Schooltool-Bewertungen.json') {
+                throw new DOMException('Missing', 'NotFoundError')
+            }
+            return { getFile: async () => new File([JSON.stringify({ records: [] })], filename) }
+        }),
     }
     return handle
 }
@@ -30,6 +35,18 @@ function directory(name = 'Test') {
 afterEach(() => { directories.workImportDirectories.clear(); clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Quick-Import reuses only a proven per-work directory and always previews', () => {
+    it('inventories a root provision in a saved directory without requiring assessments or a Versand folder', async () => {
+        const provision = new File(['{}'], 'Schooltool-Bereitstellung.json')
+        const handle = directory('Geschichte')
+        handle.getFileHandle.mockImplementation(async name => {
+            if (name !== provision.name) throw new DOMException('Missing', 'NotFoundError')
+            return { getFile: async () => provision }
+        })
+        const files = await directories.readWorkImportDirectory(handle)
+        expect(files).toHaveLength(1)
+        expect(files[0]).toBe(provision)
+        expect((files[0] as any)._relativePath).toBe('Geschichte/Schooltool-Bereitstellung.json')
+    })
     it('absorbs disabled button clicks inside an actionable work card and routes enabled Quick-Import to its preview', async () => {
         vi.stubGlobal('showDirectoryPicker', vi.fn())
         vi.stubGlobal('indexedDB', {})
@@ -154,7 +171,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             expect(wrapper.emitted('imported')).toBeUndefined()
             vm.openImport(work)
             await vm.reuseDirectory()
-            expect(handle.getFileHandle).toHaveBeenCalledTimes(2)
+            expect(handle.getFileHandle.mock.calls.filter(([name]) => name === 'Schooltool-Bewertungen.json')).toHaveLength(2)
             expect(post.mock.calls[0][1].get('package')).not.toBe(post.mock.calls[1][1].get('package'))
             await vm.applyJson()
             expect(post.mock.calls[2][1].get('apply')).toBe('1')
@@ -203,7 +220,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             await (wrapper.vm as any).reuseDirectory()
             expect((wrapper.vm as any).import_error).not.toBe('')
             expect((wrapper.vm as any).import_busy).toBe(false)
-            expect(wrapper.text()).toContain('Leistungsfeststellungs- oder Übungsordner auswählen')
+            expect(wrapper.findAll('button').find(button => button.text() === 'Ordner auswählen')!.attributes('disabled')).toBeUndefined()
             expect(post).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
     })

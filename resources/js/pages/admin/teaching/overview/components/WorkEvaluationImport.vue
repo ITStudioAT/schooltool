@@ -1,10 +1,10 @@
 <template>
     <v-dialog v-model="import_open" persistent scrollable max-width="850">
         <v-card>
-            <v-card-title class="text-wrap">Importieren · {{ import_work?.title }}</v-card-title>
-            <v-card-text>
-                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Vorbereitung, geplante Versandtermine und Versandprotokolle können auch vor der Bewertung importiert werden. Vorhandene Bewertungen und ihre PDFs werden mitgeprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
-                <p class="text-caption mb-3">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
+            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">Importieren · {{ import_work?.title }}</v-card-title>
+            <v-card-text class="px-4 pt-0 pb-3">
+                <p class="text-caption mb-2">Ordner prüfen, Vorschau ansehen, Änderungen übernehmen.</p>
+                <p class="text-caption mb-2">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
                 <WorkDropboxSource :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
                 <v-file-input
                     v-if="!directory_access_supported"
@@ -12,6 +12,7 @@
                     webkitdirectory
                     multiple
                     label="Leistungsfeststellungs- oder Übungsordner auswählen"
+                    density="compact"
                     prepend-icon="mdi-folder-open-outline"
                     variant="outlined"
                     hide-details="auto"
@@ -25,9 +26,9 @@
                     <v-btn class="work-import-folder-button" variant="outlined" prepend-icon="mdi-folder-open-outline" :disabled="import_busy" @click="chooseDirectory">Ordner auswählen</v-btn>
                     <p v-if="import_selection" class="work-import-selection mt-2">{{ import_selection }}</p>
                 </div>
-                <p v-if="import_busy" class="text-caption mt-3">Dateien prüfen und importieren …</p>
-                <v-alert v-if="import_error" type="error" variant="tonal" class="mt-3">{{ import_error }}</v-alert>
-                <v-btn v-if="import_error && (json_uploads || import_source === 'dropbox')" class="mt-3" variant="outlined"
+                <p v-if="import_busy" class="text-caption mt-2">{{ import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
+                <v-alert v-if="import_error" type="error" variant="tonal" class="mt-2" density="compact">{{ import_error }}</v-alert>
+                <v-btn v-if="import_error && (json_uploads || import_source === 'dropbox')" class="mt-2" variant="outlined" size="small"
                     :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
                     Vorschau erneut laden
                 </v-btn>
@@ -35,19 +36,20 @@
                     <div v-for="message in import_summary.messages" :key="message">{{ message }}</div>
                     <div v-if="import_summary.missing?.length" class="text-caption mt-2">Nicht vorhanden (optional): {{ import_summary.missing.join(', ') }}.</div>
                 </v-alert>
-                <div v-if="json_preview" class="mt-4 json-preview">
+                <div v-if="json_preview" class="mt-3 json-preview">
                     <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
-                    <template v-if="json_preview.exercise">
+                    <details v-if="json_preview.exercise" class="text-caption mt-1 mb-2">
+                        <summary>Quelle und Prüfnachweise</summary>
                         <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
                         <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
                         <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
-                    </template>
-                    <p v-else>Vorbereitung und Versanddaten · keine Bewertungen enthalten.</p>
-                    <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" class="mt-3 mb-3">
+                    </details>
+                    <p v-else>Bereitstellung, Vorbereitung und Versanddaten · keine Bewertungen enthalten.</p>
+                    <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" density="compact" class="mt-2 mb-2">
                         <strong>Aktuelle Lehrkraftfrist</strong>
                         <p v-if="json_preview.deadline_context.current_at">{{ assessmentTimeText(json_preview.deadline_context.current_at) }} (Europe/Vienna).</p>
                         <p v-else>{{ json_preview.deadline_context.current_date ?? 'Datum fehlt' }} · {{ json_preview.deadline_context.current_time ?? 'Uhrzeit fehlt' }}.</p>
-                        <p>{{ json_preview.deadline_context.message }}</p>
+                        <p class="text-caption">{{ json_preview.deadline_context.message }}</p>
                     </v-alert>
                     <div v-if="json_preview.final_download" class="mt-3">
                         <p><strong>Lokaler Abschlussdownload:</strong> {{ assessmentTimeText(json_preview.final_download.download_completed_at) }} · Frist: {{ assessmentTimeText(json_preview.final_download.deadline_at) }}</p>
@@ -57,16 +59,31 @@
                     <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
                     <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
                     <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Das Paket kann noch nicht übernommen werden. Hinweise zu Frist und Zuordnungen prüfen.</v-alert>
+                    <div v-for="provision in json_preview.provisions || []" :key="provision.source" class="border rounded pa-3 mt-3">
+                        <strong>Bereitstellung: {{ provision.exercise.title }}</strong>
+                        <p>{{ provision.source }}</p>
+                        <p v-if="!provision.roster_matches">Der Beleg benötigt genau alle aktiven Personen der Zielarbeit.</p>
+                        <p>Belegte Verfügbarkeit für benannte Personen; kein individueller Download oder Empfang bestätigt.</p>
+                        <div v-for="row in provision.rows" :key="row.participant_id">
+                            <p>{{ row.identity.first_name }} {{ row.identity.last_name }} · {{ row.status }}</p>
+                            <p v-for="event in row.events" :key="event.event_id">{{ event.method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben' }}: {{ assessmentTimeText(event.available_at) }} (Europe/Vienna).</p>
+                        </div>
+                    </div>
                     <div v-for="dispatch in json_preview.dispatches || []" :key="dispatch.source" class="border rounded pa-3 mt-3">
                         <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
                         <p>{{ dispatch.source }}</p>
                         <p>{{ dispatch.rows.filter(row => row.accepted).length }} Personen mit bestätigtem Live-Versand</p>
                         <p v-for="row in dispatch.rows" :key="row.person + row.student_id">{{ row.person }} · {{ row.status }}<template v-if="row.planned_at"> · Geplanter Versand: {{ assessmentTimeText(row.planned_at) }} (Europe/Vienna)</template></p>
                     </div>
-                    <div v-for="row in json_preview.rows" :key="row.participant_id" class="border rounded pa-3 mt-3">
-                        <p><strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }} · {{ row.identity.group_name }}</strong></p>
+                    <p v-if="json_preview.rows.length" class="text-caption mt-2">{{ json_preview.rows.length }} Personen · Einzelheiten aufklappen</p>
+                    <details v-for="row in json_preview.rows" :key="row.participant_id" :open="!row.student_id || row.deadline_requires_review || row.status?.includes('gesperrt')" class="work-import-person border rounded pa-2 mt-2">
+                        <summary>
+                            <strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }}</strong>
+                            <span class="work-import-person-result">{{ row.status }} · Punkte {{ row.previous.points ?? row.previous.grades ?? '—' }}<template v-if="row.will_replace"> → {{ minorPoints(row.total_minor) }}</template><template v-else> bleiben erhalten</template></span>
+                        </summary>
+                        <div class="pt-2">
+                        <p>{{ row.identity.group_name }} · {{ changeLabel(row.change) }}</p>
                         <p v-if="row.target">Zugeordnet: {{ row.target.first_name }} {{ row.target.last_name }} / {{ row.target.class_name }} · {{ row.target.group_name }}</p>
-                        <p>{{ row.status }} · {{ changeLabel(row.change) }}</p>
                         <p v-if="row.deadline_requires_review">Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.</p>
                         <p>Abgabe: {{ stateLabel(row.submission_state) }} · {{ row.submission_note }}</p>
                         <p>Bewertung: {{ stateLabel(row.evaluation_state) }} · {{ row.evaluation_note }}</p>
@@ -84,7 +101,8 @@
                             <p>PDF bisher: {{ row.previous_pdf?.name ?? '—' }}</p>
                             <p>PDF Quelle: {{ row.pdf?.filename ?? '—' }} · {{ row.will_replace && row.pdf ? 'wird übernommen' : 'bestehendes PDF bleibt erhalten' }}</p>
                         </details>
-                    </div>
+                        </div>
+                    </details>
                 </div>
             </v-card-text>
             <v-card-actions class="work-import-actions">
@@ -300,8 +318,8 @@ export default {
                     return matches[0]
                 })
                 const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file))
-                    || /^[^/]+\/Schooltool-Vorbereitung\.json$/i.test(relativePath(file)))
-                if (!packageFile && !protocols.length) throw new Error('Der Ordner enthält weder Bewertungen noch eine Vorbereitung oder Versandprotokolle.')
+                    || /^[^/]+\/Schooltool-(?:Vorbereitung|Bereitstellung)\.json$/i.test(relativePath(file)))
+                if (!packageFile && !protocols.length) throw new Error('Der Ordner enthält weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle.')
                 if (protocols.length > 30 || protocols.some(file => file.size > 1048576)
                     || [...packages, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
                     throw new Error('Maximal 30 Versandprotokolle und insgesamt 6 MiB pro Ordnerimport auswählen.')
@@ -448,7 +466,11 @@ export default {
     white-space: normal;
 }
 .json-preview { overflow-wrap: anywhere; }
+.work-import-title { overflow-wrap: anywhere; }
 .json-comment { white-space: pre-wrap; }
+.json-preview summary { cursor: pointer; }
+.work-import-person summary { line-height: 1.4; }
+.work-import-person-result { display: block; margin-left: 16px; font-size: 0.8125rem; }
 .work-import-actions { flex-wrap: wrap; }
 .work-import-actions :deep(.v-btn__content) { white-space: normal; }
 .work-import-folder-button { max-width: 100%; height: auto; min-height: 40px; padding-block: 8px; }

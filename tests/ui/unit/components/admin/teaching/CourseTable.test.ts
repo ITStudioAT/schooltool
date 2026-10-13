@@ -115,6 +115,50 @@ describe('CourseTable hourly cancellation dialog', () => {
 })
 
 describe('CourseTable evaluation PDF links', () => {
+    it('shows personal submission icons only in work cells and refreshes the common tooltip without changing dispatch icons', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-06' }
+        useCourseStore(pinia).selected_course = { id: 18,
+            students_info: [{ id: 999, user_id: 12 }, { id: 998, user_id: 13 }], course_dates: [date] } as never
+        const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'b'.repeat(64) }
+        const work = { id: 65, teaching_course_id: 18, type: 'A5', title: 'Abgabe', date_for_all_groups: date.date,
+            is_group_work: true, groups: [{ student_ids: [12, 13], date: date.date, grade: '0' }], status: {
+                dispatch_logs: [log], dispatch_notifications: [{ student_id: 12, origin: 'dispatch_import',
+                    purpose: 'tasks', log_sha256: log.sha256, sent_at: '2026-10-01T10:00:00Z' }],
+                assessment_json_imports: [{ student_id: 12, exercise_id: 'exercise-65', participant_id: 'person-12',
+                    record_checksum: 'a'.repeat(64), record: { participant_id: 'person-12', record_checksum: 'a'.repeat(64),
+                        submission_state: 'received', evaluation_state: 'open', total_minor: null } }],
+            } }
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: {
+            WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' },
+            CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+            'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+            'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+        } } })
+        try {
+            await flushPromises()
+            useCourseWorkStore(pinia).courseWorks = [work] as never
+            useCourseStudentEntryStore(pinia).courseEntries = [12, 13].map(userId => ({
+                id: userId, user_id: userId, date: date.date, type: 'A5', source: 'course_work',
+                teaching_course_work_id: 65, grade: 'NA',
+            })) as never
+            await flushPromises()
+            const cells = wrapper.findAll('.course-table-entry-cell')
+            expect(cells).toHaveLength(2)
+            const received = cells.find(cell => cell.find('[data-submission-state="received"]').exists())!
+            expect(received.get('[data-submission-state]').attributes('color')).toBe('success')
+            expect(received.text()).toContain('Abgabe laut importiertem personenbezogenem Nachweis eingegangen')
+            expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(1)
+            expect(cells.filter(cell => cell.find('[data-submission-state="unknown"]').exists())).toHaveLength(1)
+            expect(wrapper.find('.course-table-work-summary [data-submission-state]').exists()).toBe(false)
+            expect(received.findAll('v-tooltip')).toHaveLength(1)
+            expect(received.findAll('[aria-label][title]')).toHaveLength(0)
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, status: { ...work.status, assessment_json_imports: [] } }] as never
+            await flushPromises()
+            expect(wrapper.findAll('[data-submission-state="received"]')).toHaveLength(0)
+            expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(1)
+        } finally { wrapper.unmount() }
+    })
     it.each([
         ['2026-07-01', '12:00', '2026-07-01T10:00:00Z', false],
         ['2026-07-01', '12:00', '2026-07-01T10:00:01Z', true],
@@ -3765,6 +3809,7 @@ describe('CourseTable', () => {
                 comment: 'Super gemacht',
                 isWork: true,
                 notification: '',
+                submission: 'Abgabestatus ungeklärt: kein bestätigter personenbezogener Abgabenachweis.',
                 description: '',
                 grade: '+',
                 kind: 'Bewertung',
@@ -3776,6 +3821,7 @@ describe('CourseTable', () => {
                 comment: 'Ruhig mitgearbeitet',
                 isWork: false,
                 notification: '',
+                submission: '',
                 description: '',
                 grade: '',
                 kind: 'Verhalten',

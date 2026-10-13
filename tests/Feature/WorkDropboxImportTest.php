@@ -150,6 +150,24 @@ test('unconfigured Dropbox leaves quick import unavailable without network reque
     Http::assertNothingSent();
 });
 
+test('Dropbox previews and applies provision-only files without an email account or assessment file', function (): void {
+    dropboxConnectionForWork($this);
+    $package = dropboxAssessmentPackage($this);
+    $text = json_encode(TeachingWorkJsonFixture::provision($package), JSON_THROW_ON_ERROR);
+    fakeDropboxWorkFiles(['Schooltool-Bereitstellung.json' => $text]);
+    $before = $this->work->fresh()->getAttributes();
+    $preview = $this->postJson($this->url.'/import')->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.exercise', null)->assertJsonPath('preview.dispatches', [])->json('preview');
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($this->url.'/import', ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $this->work->fresh()->status;
+    expect($status['provision_events'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'] ?? [])->toBe([])
+        ->and($status['dispatch_attempts'] ?? [])->toBe([])
+        ->and(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text)
+        ->and($this->work->fresh()->groups[0]['grade'])->toBe('2');
+});
+
 test('an empty supplied assessment cannot be bypassed by importing preparation documents', function (): void {
     $this->postJson('/api/admin/teaching/course_works/'.$this->work->id.'/import-json', [
         'package' => UploadedFile::fake()->createWithContent('Schooltool-Bewertungen.json', ''),

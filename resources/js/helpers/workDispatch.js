@@ -17,6 +17,22 @@ export function workDispatchNotification(work, studentId, purpose = 'results') {
     return workDispatchNotifications(work, purpose).find(notification => String(notification.student_id) === String(studentId)) || null
 }
 
+export function workProvisionRecords(work, studentId, aggregate = false) {
+    if (!work?.id || (!aggregate && !studentId)) return []
+    const logs = work.status?.dispatch_logs || []
+    return (work.status?.provision_events || []).filter(event => event.origin === 'provision_import' && event.student_id
+        && (aggregate || String(event.student_id) === String(studentId))
+        && ['download_release', 'direct_issue'].includes(event.method) && Number.isFinite(Date.parse(event.available_at))
+        && logs.some(log => log.origin === 'provision_import' && log.purpose === 'provision' && log.sha256 === event.log_sha256))
+}
+
+export function provisionNotificationText(record, aggregate = false, count = 1) {
+    const action = record.method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben'
+    const parts = new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(record.available_at))
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+    return `${aggregate ? 'Zuletzt ' + action[0].toLowerCase() + action.slice(1) : action} am ${values.day}.${values.month}.${values.year} um ${values.hour}:${values.minute} Uhr.${aggregate ? ` ${count} ${count === 1 ? 'Person' : 'Personen'} mit belegter Verfügbarkeit.` : ''} Individueller Download oder Empfang nicht bestätigt.`
+}
+
 export function workDispatchRecord(work, studentId, purpose, aggregate = false) {
     if (!work?.id || (!aggregate && !studentId)) return null
     const success = aggregate ? workDispatchNotifications(work, purpose)[0] : workDispatchNotification(work, studentId, purpose)

@@ -8,6 +8,7 @@ use App\Models\TeachingCourseDate;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Container\Container;
 use Illuminate\Database\ConnectionResolver;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\SQLiteConnection;
 use Illuminate\Foundation\Application;
@@ -80,6 +81,8 @@ test('timetable summaries count individual shared and private attachments withou
     (new TeachingCourseDateService)->loadCurriculumAttachmentCounts($dates);
     $course = (new TeachingCourse)->forceFill(['id' => 10]);
     $course->setRelation('teachingCourseDates', $dates);
+    $course->setRelation('teachingCourseWorks', new Collection);
+    $course->setRelation('teachingCourseStudents', new Collection);
     $payload = (new CourseSummaryResource($course))->resolve(new Request);
 
     expect($this->connection->getQueryLog())->toHaveCount(4);
@@ -145,6 +148,8 @@ test('assigned curriculum source files count as hidden until copied and are dedu
     expect($this->connection->getQueryLog())->toHaveCount(5);
     $course = (new TeachingCourse)->forceFill(['id' => 10]);
     $course->setRelation('teachingCourseDates', $dates);
+    $course->setRelation('teachingCourseWorks', new Collection);
+    $course->setRelation('teachingCourseStudents', new Collection);
     $payload = (new CourseSummaryResource($course))->resolve(new Request);
 
     foreach ([[0, 0, 0], [0, 2, 2], [1, 1, 1], [2, 1, 0], [0, 0, 0], [0, 0, 0]] as $index => [$shared, $private, $unadopted]) {

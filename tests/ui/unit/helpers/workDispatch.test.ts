@@ -1,9 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { dispatchNotificationText, workDispatchNotification, workDispatchRecord } from '@/helpers/workDispatch'
+import { dispatchNotificationText, workDispatchNotification, workDispatchRecord, workProvisionRecords } from '@/helpers/workDispatch'
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 
 describe('Imported work dispatch notifications', () => {
+    it.each(['download_release', 'direct_issue'])('shows %s availability for the bound person without a task email claim', async method => {
+        const log = { sha256: 'd'.repeat(64), origin: 'provision_import', purpose: 'provision' }
+        const event = { student_id: 12, origin: 'provision_import', log_sha256: log.sha256, method, available_at: '2026-10-04T08:00:00Z' }
+        const input = { id: 65, status: { dispatch_logs: [log], provision_events: [event,
+            { ...event, student_id: 13, available_at: '2026-10-05T08:00:00Z' }] } }
+        const wrapper = mount(WorkDispatchStatus, { props: { work: input, studentId: 12, showResultTime: true } })
+        try {
+            expect(wrapper.text()).toContain(method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben')
+            expect(wrapper.text()).toContain('04.10.2026 um 10:00 Uhr')
+            expect(wrapper.text()).toContain('Individueller Download oder Empfang nicht bestätigt')
+            expect(wrapper.text()).not.toContain('Aufgabenversand')
+            expect(workDispatchNotification(input, 12, 'tasks')).toBeNull()
+            await wrapper.setProps({ aggregate: true })
+            expect(wrapper.text()).toContain('05.10.2026 um 10:00 Uhr')
+            expect(wrapper.text()).toContain('2 Personen mit belegter Verfügbarkeit')
+            await wrapper.setProps({ aggregate: false, studentId: 999, showResultTime: false })
+            expect(wrapper.find('[aria-label]').exists()).toBe(false)
+            expect(workProvisionRecords({ ...input, status: { ...input.status, dispatch_logs: [] } }, 12)).toEqual([])
+        } finally { wrapper.unmount() }
+    })
     it('keeps server scheduling ahead of preparation snapshots regardless of file order and confirmed sends ahead of both', () => {
         const log = { sha256: 'c'.repeat(64), origin: 'dispatch_import', purpose: 'tasks' }
         const scheduled = { student_id: 12, origin: 'dispatch_import', purpose: 'tasks', log_sha256: log.sha256,

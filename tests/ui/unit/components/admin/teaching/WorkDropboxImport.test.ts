@@ -23,6 +23,56 @@ function mountComponent(component: any, props = {}) {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it('keeps compact person summaries readable and opens blocked identities while apply remains disabled', async () => {
+        const row = { participant_id: 'p1', student_id: 12, identity: { first_name: 'Ada', last_name: 'Alpha', class_name: '1A', group_name: 'INF 2' },
+            status: 'Aktualisierung', previous: { points: 2 }, total_minor: 200, change: 'updated', criteria: [], adjustments: [],
+            submission_state: 'received', evaluation_state: 'complete', will_replace: true }
+        const post = vi.fn().mockResolvedValue({ data: { preview: { ...preview, can_import: false,
+            rows: [row, { ...row, participant_id: 'p2', student_id: null, will_replace: false, identity: { ...row.identity, first_name: 'Bea' }, status: 'Person nicht eindeutig – Import gesperrt' }] } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            await (wrapper.vm as any).openImport(work, true)
+            await flushPromises()
+            const people = wrapper.findAll('.work-import-person')
+            expect(people).toHaveLength(2)
+            expect(people[0].get('summary').text()).toContain('Ada Alpha / 1A')
+            expect(people[0].get('summary').text()).toContain('Aktualisierung')
+            expect(people[0].get('summary').text()).toContain('Punkte 2 → 2,00')
+            expect((people[0].element as HTMLDetailsElement).open).toBe(false)
+            expect(people[1].get('summary').text()).toContain('Import gesperrt')
+            expect(people[1].get('summary').text()).toContain('Punkte 2 bleiben erhalten')
+            expect((people[1].element as HTMLDetailsElement).open).toBe(true)
+            expect(wrapper.findAll('button').find(button => button.text() === 'Angezeigte Änderungen übernehmen')?.attributes('disabled')).toBeDefined()
+            expect(wrapper.text()).toContain('Ungespeicherte Änderungen werden verworfen')
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+    it('previews a provision-only local folder and displays the actual release without implying a send', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { preview: { ...preview, exercise: null, dispatches: [],
+            provisions: [{ source: 'Schooltool-Bereitstellung.json', exercise: { title: 'Geschichte' }, roster_matches: true,
+                rows: [{ participant_id: 'p1', identity: { first_name: 'Ada', last_name: 'Alpha' }, status: 'Zugeordnet',
+                    events: [{ event_id: 'e1', method: 'download_release', available_at: '2026-10-04T08:00:00Z' }] }] }] } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work)
+            const file = new File(['{}'], 'Schooltool-Bereitstellung.json')
+            Object.defineProperty(file, 'webkitRelativePath', { value: 'Arbeit/Schooltool-Bereitstellung.json' })
+            await vm.selectJsonFolder({ target: { files: [file], value: '' } })
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('package')).toBe(false)
+            expect(post.mock.calls[0][1].get('documents')).toContain('Schooltool-Bereitstellung.json')
+            expect(wrapper.text()).toContain('Bereitstellung: Geschichte')
+            expect(wrapper.text()).toContain('Zum Download bereitgestellt: 04.10.2026')
+            expect(wrapper.text()).toContain('kein individueller Download oder Empfang bestätigt')
+            expect(wrapper.text()).not.toContain('Personen mit bestätigtem Live-Versand')
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
     it('sorts Dropbox folders across loaded pages with German names and numbers', async () => {
         const get = vi.fn().mockResolvedValueOnce({ data: connected })
             .mockResolvedValueOnce({ data: { folders: [{ id: 'z', name: 'Zebra' }, { id: 'a10', name: 'Arbeit 10' }], cursor: 'next' } })

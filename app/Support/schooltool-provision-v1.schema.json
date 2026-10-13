@@ -1,0 +1,201 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "type": "string",
+      "const": "schooltool.provision"
+    },
+    "exercise_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timezone": {
+      "type": "string",
+      "const": "Europe/Vienna"
+    },
+    "exercise": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "title",
+        "subject",
+        "group"
+      ],
+      "additionalProperties": false
+    },
+    "metadata_evidence_sha256": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1
+    },
+    "assignment_evidence_sha256": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1
+    },
+    "roster_evidence_sha256": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1
+    },
+    "roster_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "identity": {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "last_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "class_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "group_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "schooltool_person_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            },
+            "required": [
+              "first_name",
+              "last_name",
+              "class_name",
+              "group_name",
+              "schooltool_person_id"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "participant_id",
+          "identity"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "download_release",
+              "direct_issue"
+            ]
+          },
+          "available_at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+          },
+          "participant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "teacher_confirmation",
+              "release_record"
+            ]
+          },
+          "evidence_sha256": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "event_id",
+          "method",
+          "available_at",
+          "participant_ids",
+          "source_kind",
+          "evidence_sha256"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "provision_checksum": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "exercise_id",
+    "timezone",
+    "exercise",
+    "metadata_evidence_sha256",
+    "assignment_evidence_sha256",
+    "roster_evidence_sha256",
+    "roster_fingerprint",
+    "participants",
+    "events",
+    "provision_checksum"
+  ],
+  "additionalProperties": false
+}

@@ -172,7 +172,7 @@ class PersonalTeachingBackupRecoveryService
                 }
                 if ($users !== [] && $table === 'teaching_course_works' && isset($row['status'])) {
                     $status = $this->decode($row['status']);
-                    foreach (['evaluation_pdfs', 'dispatch_notifications', 'dispatch_attempts'] as $key) {
+                    foreach (['evaluation_pdfs', 'dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
                         foreach ($status[$key] ?? [] as $index => $record) {
                             if (isset($users[$record['student_id'] ?? null])) {
                                 $status[$key][$index]['student_id'] = (int) $users[$record['student_id']];

@@ -656,6 +656,38 @@ test('file failure rolls back replacements and leaves old files and the encrypte
         ->and(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toHaveCount(1);
 });
 
+test('synchronisation remaps provision people and privately copies their unchanged original evidence', function () {
+    config(['filesystems.disks.local.root' => rtrim(Storage::disk('local')->path(''), '/\\')]);
+    $path = 'teaching/provision-original.json';
+    $bytes = 'Provision original';
+    Storage::disk('local')->put($path, $bytes);
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'title' => 'Provision work', 'status' => [
+        'dispatch_logs' => [['origin' => 'provision_import', 'purpose' => 'provision', 'file_path' => $path, 'storage_disk' => 'local', 'sha256' => hash('sha256', $bytes)]],
+        'provision_events' => [['student_id' => $this->actor->id, 'participant_id' => 'stable-person', 'origin' => 'provision_import', 'method' => 'direct_issue', 'available_at' => '2026-04-01T08:00:00Z']],
+        'provision_imports' => [['student_id' => $this->actor->id, 'participant_id' => 'stable-person', 'exercise_id' => 'exercise-1', 'origin' => 'provision_import']],
+    ]]);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    foreach ($this->snapshot['users'] as &$user) {
+        if ($user['id'] === $this->actor->id) {
+            $user['id'] = 90010;
+        }
+    }
+    unset($user);
+    $this->snapshot['tables']['teaching_courses'][0]['user_id'] = 90010;
+    $status = json_decode($this->snapshot['tables']['teaching_course_works'][0]['status'], true, flags: JSON_THROW_ON_ERROR);
+    $status['provision_events'][0]['student_id'] = $status['provision_imports'][0]['student_id'] = 90010;
+    $this->snapshot['tables']['teaching_course_works'][0]['status'] = json_encode($status, JSON_THROW_ON_ERROR);
+    $this->snapshot['files'] = [['disk' => 'local', 'path' => $path, 'size' => strlen($bytes), 'sha256' => hash('sha256', $bytes), 'content' => base64_encode($bytes)]];
+    $this->actingAs($this->actor, 'sanctum');
+    $token = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful()->assertJsonPath('data.conflicts', [])->json('data.token');
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($token))->assertSuccessful();
+    $restored = TeachingCourseWork::query()->where('title', $work->title)->firstOrFail();
+    expect($restored->status['provision_events'][0]['student_id'])->toBe($this->actor->id)
+        ->and($restored->status['provision_imports'][0]['student_id'])->toBe($this->actor->id)
+        ->and($restored->status['provision_events'][0]['participant_id'])->toBe('stable-person')
+        ->and(Storage::disk('local')->get($restored->status['dispatch_logs'][0]['file_path']))->toBe($bytes);
+});
+
 test('database failure after file creation rolls back the full graph and cleans only newly copied files', function () {
     $bytes = 'Cloud copy';
     $this->snapshot['files'] = [['disk' => 's3', 'path' => 'teaching/copy.pdf', 'size' => strlen($bytes),

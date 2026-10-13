@@ -44,6 +44,7 @@ it('fills the available width with equal weekdays and keeps long entries readabl
     ].map(({ date, assigned, hidden = 0, ...course }) => ({
         ...course,
         user_id: 7,
+        scheduled_work_dates: assigned ? [date] : [],
         course_dates: [{
             id: course.id,
             date,
@@ -101,15 +102,15 @@ it('fills the available width with equal weekdays and keeps long entries readabl
                                 || element.getBoundingClientRect().right > card.getBoundingClientRect().right + 1)),
                     }
                 })
-                const mixed = document.querySelector('[title="1 veröffentlicht, 1 verborgen"]')!
+                const statusIcons = document.querySelector('[data-date="2026-09-17"] .timetable-status-icons')!
                 const table = document.querySelector('.timetable-grid-table')!
                 const container = document.querySelector('.timetable-table-wrapper')!
                 const card = document.querySelector('.timetable-table-card')!
 
                 return {
                     days,
-                    mixedCounts: mixed.textContent?.replace(/\s/g, ''),
-                    mixedIconWidths: [...mixed.querySelectorAll('.v-icon')].map((icon) => icon.getBoundingClientRect().width),
+                    statusLabels: [...statusIcons.querySelectorAll('.v-icon')].map((icon) => icon.getAttribute('aria-label')),
+                    statusIconWidths: [...statusIcons.querySelectorAll('.v-icon')].map((icon) => icon.getBoundingClientRect().width),
                     tableWidth: table.getBoundingClientRect().width,
                     containerWidth: container.clientWidth,
                     scrollWidth: container.scrollWidth,
@@ -119,8 +120,11 @@ it('fills the available width with equal weekdays and keeps long entries readabl
                 }
             })
 
-            expect(layout.mixedCounts).toBe('11')
-            expect(layout.mixedIconWidths).toEqual([14, 14])
+            expect(layout.statusLabels).toEqual([
+                'Anwesenheit noch nicht geprüft', 'Unterrichtsstoff noch nicht eingetragen',
+                'Curriculum-Eintrag zugeordnet', 'Arbeit vorgesehen',
+            ])
+            expect(layout.statusIconWidths).toEqual([16, 16, 16, 16])
             expect(layout.hourWidth).toBe(44)
             expect(layout.dayCount).toBe(5)
             expect(layout.cardWidth).toBe(width)

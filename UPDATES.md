@@ -9,6 +9,7 @@
 ### Unterricht
 
 - Automatische Arbeiten: Import bei geänderten Kandidaten implementiert
+- Aufgaben können auch ohne Versand importiert werden
 
 ## 3.51.4
 

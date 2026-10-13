@@ -11,7 +11,7 @@ use JsonException;
 
 class TeachingWorkFolderImport
 {
-    public function __construct(private TeachingWorkMarkdownImport $evaluations, private TeachingWorkDispatchImport $dispatches) {}
+    public function __construct(private TeachingWorkMarkdownImport $evaluations, private TeachingWorkDispatchImport $dispatches, private TeachingWorkProvisionImport $provisions) {}
 
     /** @param list<UploadedFile> $uploads
      * @return array<string, mixed>
@@ -31,6 +31,7 @@ class TeachingWorkFolderImport
         }
         $reports = [];
         $protocols = [];
+        $provisions = [];
         $pdfs = [];
         $sources = [];
         foreach ($texts as $document) {
@@ -43,6 +44,9 @@ class TeachingWorkFolderImport
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
                 }
                 $reports[$file['name']] = $document['text'];
+            } elseif ($file['kind'] === 'provision') {
+                $provisions[] = $file + ['path' => $document['path'], 'report' => $this->provisions->parse($document['text']),
+                    'text' => $document['text'], 'sha256' => hash('sha256', $document['text'])];
             } elseif (in_array($file['kind'], ['tasks', 'results'], true)) {
                 try {
                     $report = $this->dispatches->parse($document['text']);
@@ -82,7 +86,7 @@ class TeachingWorkFolderImport
         usort($protocols, fn (array $first, array $second): int => strcmp($first['source'], $second['source']));
 
         return ['folder' => $folder, 'evaluation' => $reports !== [] ? $this->evaluations->parse($reports) : null,
-            'protocols' => $protocols, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+            'protocols' => $protocols, 'provisions' => $provisions, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
     }
 
     /** @return array{source: string, name: string, kind: string, run: string} */
@@ -93,6 +97,9 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
+        if (mb_strtolower($source) === 'schooltool-bereitstellung.json') {
+            return ['source' => 'schooltool-bereitstellung.json', 'name' => 'Schooltool-Bereitstellung.json', 'kind' => 'provision', 'run' => 'Bereitstellung'];
+        }
         if (mb_strtolower($source) === 'schooltool-vorbereitung.json') {
             return ['source' => 'schooltool-vorbereitung.json', 'name' => 'Schooltool-Vorbereitung.json', 'kind' => 'tasks', 'run' => 'Vorbereitung'];
         }
@@ -129,6 +136,48 @@ class TeachingWorkFolderImport
         return $previews;
     }
 
+    /** @param array<string, mixed> $bundle
+     * @return list<array<string, mixed>>
+     */
+    public function previewProvisions(TeachingCourseWork $work, array $bundle): array
+    {
+        return array_map(fn (array $file): array => ['source' => $file['source']] + $this->provisions->preview($work, $file['report'], $file['sha256']), $bundle['provisions'] ?? []);
+    }
+
+    /** @param list<array<string, mixed>> $provisions
+     * @param  list<array<string, mixed>>  $dispatches
+     * @return list<array<string, mixed>>
+     */
+    public function availabilitySources(TeachingCourseWork $work, array $provisions, array $dispatches): array
+    {
+        $logs = $work->status['dispatch_logs'] ?? [];
+        $sources = array_values(array_filter($work->status['provision_events'] ?? [], fn (array $event): bool => collect($logs)
+            ->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'provision_import' && $log['sha256'] === $event['log_sha256'])));
+        foreach ($work->status['dispatch_notifications'] ?? [] as $notice) {
+            if (($notice['purpose'] ?? 'results') === 'tasks' && ($notice['origin'] ?? null) === 'dispatch_import'
+                && collect($logs)->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'dispatch_import' && ($log['purpose'] ?? 'results') === 'tasks' && $log['sha256'] === $notice['log_sha256'])) {
+                $sources[] = ['student_id' => $notice['student_id'], 'method' => 'email_dispatch', 'available_at' => $notice['sent_at'], 'log_sha256' => $notice['log_sha256']];
+            }
+        }
+        foreach ($provisions as $preview) {
+            if ($preview['can_import']) {
+                $sources = array_merge($sources, $preview['records']);
+            }
+        }
+        foreach ($dispatches as $preview) {
+            if ($preview['purpose'] !== 'tasks' || ! $preview['can_import']) {
+                continue;
+            }
+            foreach ($preview['rows'] as $row) {
+                if ($row['accepted']) {
+                    $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['sent_at'], 'log_sha256' => $preview['source_sha256']];
+                }
+            }
+        }
+
+        return $sources;
+    }
+
     /** Call within the authorized work transaction and clean created files on rollback.
      * @param  array<string, mixed>  $bundle
      * @param  list<string>  $createdPaths
@@ -146,6 +195,11 @@ class TeachingWorkFolderImport
             }
         }
         $this->dispatches->applyParticipantAdditions($work, $dispatchPreviews[0]['participant_additions'] ?? []);
+        foreach ($bundle['provisions'] ?? [] as $file) {
+            $preview = $this->provisions->preview($work, $file['report'], $file['sha256']);
+            $this->provisions->apply($work, $preview, $file['text'], $createdPaths);
+            $messages[] = 'Bereitstellung: '.count($preview['records']).' personenbezogene Verfügbarkeitsbelege geprüft; kein individueller Download bestätigt.';
+        }
         $previous = $work->status['folder_import_sources'] ?? [];
         if ($bundle['evaluation']) {
             $report = $bundle['evaluation'];

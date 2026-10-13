@@ -75,7 +75,12 @@ test('admin can approve a deleted student and restore grades attendance work gro
         Storage::disk('local')->put($path, "%PDF-1.4\nOriginal {$index}");
         $pdfs[] = ['student_id' => $studentId, 'file_path' => $path, 'storage_disk' => 'local', 'name' => "{$index}.pdf", 'origin' => 'evaluation_import'];
     }
+    $provisionPath = "teaching/work_dispatches/{$this->school->id}/{$work->id}/provision.json";
+    Storage::disk('local')->put($provisionPath, 'provision original');
+    $logs[] = ['file_path' => $provisionPath, 'storage_disk' => 'local', 'sha256' => hash('sha256', 'provision original'), 'purpose' => 'provision', 'origin' => 'provision_import'];
+    $provision = ['student_id' => $id, 'participant_id' => 'stable-1', 'exercise_id' => 'exercise-1', 'log_sha256' => hash('sha256', 'provision original'), 'origin' => 'provision_import'];
     $work->update(['status' => ['evaluation_pdfs' => $pdfs,
+        'provision_events' => [$provision + ['method' => 'download_release', 'available_at' => '2026-09-10T10:00:00Z']], 'provision_imports' => [$provision],
         'dispatch_logs' => $logs, 'dispatch_notifications' => $notices,
         'dispatch_attempts' => [['student_id' => $id, 'purpose' => 'tasks', 'mode' => 'test', 'log_sha256' => $logs[0]['sha256'], 'origin' => 'dispatch_import']]]]);
     $entry = TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $id, 'teaching_course_work_id' => $work->id, 'date' => '2026-09-10', 'type' => 'M', 'grade' => '2']);
@@ -104,6 +109,10 @@ test('admin can approve a deleted student and restore grades attendance work gro
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'student_id'))->toBe([$this->target->id, $this->target->id])
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'purpose'))->toBe(['tasks', 'results'])
         ->and($work->fresh()->status['dispatch_attempts'][0]['student_id'])->toBe($this->target->id)
+        ->and($work->fresh()->status['provision_events'][0]['student_id'])->toBe($this->target->id)
+        ->and($work->fresh()->status['provision_imports'][0]['student_id'])->toBe($this->target->id)
+        ->and($work->fresh()->status['provision_events'][0]['participant_id'])->toBe('stable-1')
+        ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][2]['file_path']))->toBe('provision original')
         ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][0]['file_path']))->toBe('tasks original')
         ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][1]['file_path']))->toBe('results original')
         ->and($member->fresh()->member_ref)->toBe('user:'.$this->target->id)

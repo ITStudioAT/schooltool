@@ -326,9 +326,10 @@ class DropboxWorkImport
             }
             $protocolCount = 0;
             foreach ($files as $relative => $entry) {
-                if ($relative === 'schooltool-vorbereitung.json') {
-                    $downloads['preparation'] = ['entry' => $entry, 'name' => 'Schooltool-Vorbereitung.json', 'limit' => 1048576,
-                        'path' => $root['name'].'/Schooltool-Vorbereitung.json'];
+                if (in_array($relative, ['schooltool-vorbereitung.json', 'schooltool-bereitstellung.json'], true)) {
+                    $name = $relative === 'schooltool-vorbereitung.json' ? 'Schooltool-Vorbereitung.json' : 'Schooltool-Bereitstellung.json';
+                    $downloads[$relative] = ['entry' => $entry, 'name' => $name, 'limit' => 1048576,
+                        'path' => $root['name'].'/'.$name];
 
                     continue;
                 }
@@ -354,7 +355,7 @@ class DropboxWorkImport
             }
 
             if ($package === null && $documents === []) {
-                $this->fail('Der Dropbox-Ordner enthält weder Bewertungen noch eine Vorbereitung oder Versandprotokolle.');
+                $this->fail('Der Dropbox-Ordner enthält weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle.');
             }
 
             return $consume(['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
