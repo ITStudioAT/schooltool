@@ -17,6 +17,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -105,11 +106,57 @@ function dropboxAssessmentPackage(object $context): array
     return TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::package());
 }
 
+test('Dropbox and local upload preview and apply ungraded preparations and server schedules without marking them sent', function (bool $scheduled, string $source): void {
+    dropboxConnectionForWork($this);
+    $this->course->update(['title' => 'INF 1']);
+    $student = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada',
+        'last_name' => 'Van Alpha', 'schoolclass' => '1A', 'email' => 'ada@example.test']);
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $this->work->update(['is_group_work' => true, 'groups' => [['name' => 'Gruppe 1', 'student_ids' => [$student->id], 'grade' => '2']]]);
+    $text = TeachingWorkDispatchFixture::preparedTasksText($scheduled);
+    $path = $scheduled ? 'Versand/Aufgaben/Versand_2026-10-13_07-32-54/Versandprotokoll.txt' : 'Schooltool-Vorbereitung.json';
+    fakeDropboxWorkFiles([$path => $text]);
+    $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $payload = $source === 'dropbox' ? [] : ['folder' => 'Leistungsarbeit', 'documents' => json_encode([['path' => 'Leistungsarbeit/'.$path, 'text' => $text]])];
+    $this->travelTo(now()->setDate(2026, 10, 14));
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.exercise', null)->assertJsonPath('preview.dispatches.0.rows.0.accepted', false)
+        ->assertJsonPath('preview.dispatches.0.rows.0.mode', $scheduled ? 'scheduled' : 'prepared')
+        ->assertJsonPath('preview.dispatches.0.rows.0.planned_at', '2026-10-13T06:40:00Z')->json('preview');
+    expect($this->work->fresh()->status['dispatch_logs'] ?? [])->toBe([]);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $this->work->fresh()->status;
+    expect($status['dispatch_notifications'])->toBe([])->and($status['dispatch_attempts'][0]['sent_at'])->toBeNull()
+        ->and($status['dispatch_logs'][0]['dispatch_at'])->toBeNull()
+        ->and($status['dispatch_attempts'][0]['planned_at'])->toBe('2026-10-13T06:40:00Z')
+        ->and($this->work->fresh()->groups[0]['grade'])->toBe('2');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $legacy = $this->work->fresh()->status;
+    $legacy['dispatch_attempts'][0]['mode'] = 'unconfirmed';
+    unset($legacy['dispatch_attempts'][0]['planned_at'], $legacy['dispatch_attempts'][0]['prepared_at']);
+    $this->work->update(['status' => $legacy]);
+    $fresh = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $fresh['hash']])->assertOk();
+    expect($this->work->fresh()->status['dispatch_logs'])->toHaveCount(1)
+        ->and($this->work->fresh()->status['dispatch_attempts'])->toHaveCount(1)
+        ->and($this->work->fresh()->status['dispatch_attempts'][0]['mode'])->toBe($scheduled ? 'scheduled' : 'prepared');
+})->with([false, true])->with(['dropbox', 'upload']);
+
 test('unconfigured Dropbox leaves quick import unavailable without network requests', function (): void {
     config(['services.dropbox.client_secret' => null]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('configured', false)->assertJsonPath('can_quick_import', false);
     $this->postJson($this->url.'/connect')->assertUnprocessable();
     Http::assertNothingSent();
+});
+
+test('an empty supplied assessment cannot be bypassed by importing preparation documents', function (): void {
+    $this->postJson('/api/admin/teaching/course_works/'.$this->work->id.'/import-json', [
+        'package' => UploadedFile::fake()->createWithContent('Schooltool-Bewertungen.json', ''),
+        'folder' => 'Leistungsarbeit', 'documents' => json_encode([['path' => 'Leistungsarbeit/Schooltool-Vorbereitung.json',
+            'text' => TeachingWorkDispatchFixture::preparedTasksText()]]),
+    ])->assertUnprocessable()->assertJsonValidationErrors('package');
+    expect($this->work->fresh()->status['dispatch_logs'] ?? [])->toBe([]);
 });
 
 test('OAuth requests only read scopes and rejects wrong expired replayed and foreign-user state', function (string $case): void {

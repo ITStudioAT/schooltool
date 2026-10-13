@@ -7,6 +7,45 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('preparation packages retain their intended date and never authorize live evidence', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::preparedTasksText());
+
+    expect($report['mode'])->toBe('prepared')->and($report['live'])->toBeFalse()
+        ->and($report['metadata']['Termin'])->toBe('2026-10-13T08:40:00+02:00')
+        ->and($report['recipients'])->toHaveCount(1);
+});
+
+test('prepared and scheduled tasks retain approved task subjects with a colon', function (bool $scheduled) {
+    $text = str_replace('Leistungsfeststellung E-Mails – INF 1',
+        'Leistungsfeststellung: Verantwortung, Datenschutz und Datensicherheit – INF 2 Abend, 13.10.2026',
+        TeachingWorkDispatchFixture::preparedTasksText($scheduled));
+    $report = app(TeachingWorkDispatchImport::class)->parse($text);
+
+    expect($report['purpose'])->toBe('tasks')->and($report['title'])->toBe('verantwortung, datenschutz und datensicherheit')
+        ->and($report['recipients'][0]['Betreff'])->toBe('Leistungsfeststellung: Verantwortung, Datenschutz und Datensicherheit – INF 2 Abend, 13.10.2026');
+})->with([false, true]);
+
+test('preparation packages reject embedded send or scheduling claims', function (string $key) {
+    $value = json_decode(TeachingWorkDispatchFixture::preparedTasksText(), true, flags: JSON_THROW_ON_ERROR);
+    $value['Empfaenger'][0][$key] = [];
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($value, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['Office_Zustand', 'Native_Terminierung', 'Providerzeit', 'Providerkennung']);
+
+test('planned journals reject invalid dates offsets and conflicting schedule evidence', function (string $case) {
+    $text = TeachingWorkDispatchFixture::preparedTasksText(true);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'invalid date' => $metadata['Termin'] = '2026-02-30T08:40:00+01:00',
+        'offset' => $metadata['Termin'] = '2026-10-13T08:40:00+01:00',
+        'conflict' => $metadata['Empfaenger'][0]['Native_Terminierung']['ScheduledAt'] = '2026-10-13T08:50:00+02:00',
+    };
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['invalid date', 'offset', 'conflict']);
+
 test('embedded Mailpit task protocols retain recipients and remain local tests', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::mailpitTasksText());
 

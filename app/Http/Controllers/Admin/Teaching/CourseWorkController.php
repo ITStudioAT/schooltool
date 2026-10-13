@@ -34,7 +34,7 @@ class CourseWorkController extends Controller
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
         abort_if((int) $request->server('CONTENT_LENGTH', 0) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
         $data = $request->validate([
-            'package' => ['required', 'file', 'extensions:json', 'max:256'],
+            'package' => ['required_without:documents', 'file', 'extensions:json', 'max:256'],
             'pdfs' => ['sometimes', 'array', 'max:20'],
             'pdfs.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:6144'],
             'folder' => ['required_with:documents', 'nullable', 'string', 'max:255'],
@@ -43,17 +43,20 @@ class CourseWorkController extends Controller
             'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64'],
         ]);
         $uploads = $request->file('pdfs', []);
-        $text = $request->file('package')->get();
+        $text = $request->file('package')?->get() ?? '';
         $payloadSize = strlen($text) + strlen($data['documents'] ?? '') + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
         $transportSize = (int) $request->server('CONTENT_LENGTH', 0);
         if ($transportSize === 0) {
             $transportSize = $payloadSize + strlen(http_build_query($request->except(['package', 'pdfs']))) + (count($uploads) + 3) * 256;
         }
         abort_if(max($transportSize, $payloadSize, strlen($request->getContent())) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
-        $bundle = $importer->parse($text, $uploads);
+        $bundle = $request->hasFile('package') ? $importer->parse($text, $uploads) : null;
         $dispatchBundle = isset($data['documents']) ? $folderImporter->parse($data['folder'], $data['documents'], '[]', []) : null;
         if ($dispatchBundle !== null && $dispatchBundle['evaluation'] !== null) {
             throw ValidationException::withMessages(['documents' => 'Im JSON-Import sind nur Versandprotokolle als zusätzliche Textdateien erlaubt.']);
+        }
+        if ($bundle === null && ($uploads !== [] || ($dispatchBundle['protocols'] ?? []) === [])) {
+            throw ValidationException::withMessages(['documents' => 'Ohne Bewertungsdatei mindestens eine Vorbereitung oder ein Versandprotokoll auswählen; Bewertungs-PDFs benötigen ihr JSON-Paket.']);
         }
         $createdPaths = [];
         try {
@@ -65,7 +68,11 @@ class CourseWorkController extends Controller
                 $users = User::query()->whereIn('id', $enrollments->pluck('user_id'))->lockForUpdate()->get();
                 Import116::query()->whereIn('id', $enrollments->pluck('import116_id')->merge($users->pluck('import116_id'))->filter())->lockForUpdate()->get();
                 $work->teachingCourseWorkGroupStudents()->lockForUpdate()->get();
-                $preview = $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle);
+                $preview = $bundle !== null ? $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle) : [
+                    'target_work' => ['title' => $work->title, 'course_title' => $work->teachingCourse->title],
+                    'exercise' => null, 'rows' => [], 'can_import' => true, 'assessment_included' => false,
+                    'hash' => hash('sha256', json_encode($work->getAttributes(), JSON_THROW_ON_ERROR)),
+                ];
                 $preview['dispatches'] = [];
                 foreach ($dispatchBundle['protocols'] ?? [] as $file) {
                     $dispatchPreview = $dispatchImporter->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
@@ -81,7 +88,9 @@ class CourseWorkController extends Controller
                 abort_unless($preview['can_import'], 422, $preview['deadline_context']['requires_review'] ?? false
                     ? $preview['deadline_context']['message'] : 'JSON-Paket enthält ungeklärte Zuordnungen.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
-                $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
+                if ($bundle !== null) {
+                    $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
+                }
                 $messages = [];
                 if ($dispatchBundle !== null && $dispatchBundle['protocols'] !== []) {
                     $messages = $folderImporter->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $dispatchBundle, $createdPaths)['messages'];

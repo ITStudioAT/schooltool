@@ -3,7 +3,7 @@
         <v-card>
             <v-card-title class="text-wrap">Importieren · {{ import_work?.title }}</v-card-title>
             <v-card-text>
-                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Darin werden Schooltool-Bewertungen.json, die referenzierten PDFs und Versandprotokolle geprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
+                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Vorbereitung, geplante Versandtermine und Versandprotokolle können auch vor der Bewertung importiert werden. Vorhandene Bewertungen und ihre PDFs werden mitgeprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
                 <p class="text-caption mb-3">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
                 <WorkDropboxSource :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
                 <v-file-input
@@ -37,9 +37,12 @@
                 </v-alert>
                 <div v-if="json_preview" class="mt-4 json-preview">
                     <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
-                    <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
-                    <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
-                    <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
+                    <template v-if="json_preview.exercise">
+                        <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
+                        <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
+                        <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
+                    </template>
+                    <p v-else>Vorbereitung und Versanddaten · keine Bewertungen enthalten.</p>
                     <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" class="mt-3 mb-3">
                         <strong>Aktuelle Lehrkraftfrist</strong>
                         <p v-if="json_preview.deadline_context.current_at">{{ assessmentTimeText(json_preview.deadline_context.current_at) }} (Europe/Vienna).</p>
@@ -58,7 +61,7 @@
                         <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
                         <p>{{ dispatch.source }}</p>
                         <p>{{ dispatch.rows.filter(row => row.accepted).length }} Personen mit bestätigtem Live-Versand</p>
-                        <p v-for="row in dispatch.rows" :key="row.person + row.student_id">{{ row.person }} · {{ row.status }}</p>
+                        <p v-for="row in dispatch.rows" :key="row.person + row.student_id">{{ row.person }} · {{ row.status }}<template v-if="row.planned_at"> · Geplanter Versand: {{ assessmentTimeText(row.planned_at) }} (Europe/Vienna)</template></p>
                     </div>
                     <div v-for="row in json_preview.rows" :key="row.participant_id" class="border rounded pa-3 mt-3">
                         <p><strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }} · {{ row.identity.group_name }}</strong></p>
@@ -270,16 +273,16 @@ export default {
                 }
                 this.import_selection = folder
                 const packages = selected.filter(file => /^[^/]+\/(?:Beurteilungen\/)?Schooltool-Bewertungen\.json$/.test(relativePath(file)))
-                if (packages.length !== 1) {
-                    throw new Error('Der ausgewählte Ordner muss genau eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten. Den einzelnen Leistungsfeststellungs- oder Übungsordner auswählen; Markdown-Dateien werden nicht als Bewertungsquelle importiert.')
+                if (packages.length > 1) {
+                    throw new Error('Der ausgewählte Ordner darf nur eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten.')
                 }
                 const [packageFile] = packages
-                if (packageFile.size > 262144) {
+                if (packageFile?.size > 262144) {
                     throw new Error('Schooltool-Bewertungen.json überschreitet 256 KiB.')
                 }
-                let packageData
+                let packageData = { records: [] }
                 try {
-                    packageData = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await packageFile.arrayBuffer()))
+                    if (packageFile) packageData = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await packageFile.arrayBuffer()))
                 } catch {
                     throw new Error('Schooltool-Bewertungen.json kann nicht als UTF-8-JSON gelesen werden.')
                 }
@@ -287,7 +290,7 @@ export default {
                 if (!packageData || !Array.isArray(packageData.records)) {
                     throw new Error('Schooltool-Bewertungen.json enthält keine gültige Datensatzliste.')
                 }
-                const packageDirectory = relativePath(packageFile).slice(0, -packageFile.name.length)
+                const packageDirectory = packageFile ? relativePath(packageFile).slice(0, -packageFile.name.length) : ''
                 const references = [packageData.overview_pdf, ...packageData.records.map(record => record?.pdf)].filter(Boolean)
                 const pdfs = references.map(reference => {
                     const matches = selected.filter(file => relativePath(file) === packageDirectory + reference.filename && /\.pdf$/i.test(file.name))
@@ -296,16 +299,23 @@ export default {
                     }
                     return matches[0]
                 })
-                const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file)))
+                const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file))
+                    || /^[^/]+\/Schooltool-Vorbereitung\.json$/i.test(relativePath(file)))
+                if (!packageFile && !protocols.length) throw new Error('Der Ordner enthält weder Bewertungen noch eine Vorbereitung oder Versandprotokolle.')
                 if (protocols.length > 30 || protocols.some(file => file.size > 1048576)
-                    || [packageFile, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
+                    || [...packages, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
                     throw new Error('Maximal 30 Versandprotokolle und insgesamt 6 MiB pro Ordnerimport auswählen.')
                 }
                 const documents = await Promise.all(protocols.map(async file => ({ path: relativePath(file), text: new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) })))
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
-                this.import_selection = folder + ' · ' + (1 + pdfs.length + protocols.length) + ' Importdateien'
+                this.import_selection = folder + ' · ' + (packages.length + pdfs.length + protocols.length) + ' Importdateien'
                 this.import_busy = false
-                await this.selectJson({ target: { files: [packageFile, ...pdfs] } }, { folder, documents })
+                if (packageFile) {
+                    await this.selectJson({ target: { files: [packageFile, ...pdfs] } }, { folder, documents })
+                } else {
+                    this.json_uploads = { pdfs: [], folder, documents }
+                    await this.sendJson(false)
+                }
             } catch (error) {
                 if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
                     this.import_error = error.message || 'JSON-Paket im Ordner konnte nicht gelesen werden.'
@@ -342,7 +352,7 @@ export default {
             this.import_error = ''
             try {
                 const payload = new FormData()
-                payload.append('package', this.json_uploads.package, this.json_uploads.package.name)
+                if (this.json_uploads.package) payload.append('package', this.json_uploads.package, this.json_uploads.package.name)
                 for (const pdf of this.json_uploads.pdfs) payload.append('pdfs[]', pdf, pdf.name)
                 if (this.json_uploads.documents?.length) {
                     payload.append('folder', this.json_uploads.folder)
@@ -362,7 +372,7 @@ export default {
                     if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                     this.json_preview = null
                     this.json_uploads = null
-                    this.import_summary = { messages: ['JSON-Paket übernommen. Offene und teilweise bewertete Fälle erhalten ihre bisherige Bewertung.', ...(response.data.messages || [])] }
+                    this.import_summary = { messages: ['Import übernommen.', ...(response.data.messages || [])] }
                     this.$emit('imported', response.data.data)
                 } else {
                     this.json_preview = response.data.preview

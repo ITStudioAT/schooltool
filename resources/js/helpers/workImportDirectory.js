@@ -89,6 +89,8 @@ export async function readWorkImportDirectory(handle) {
             }
         }
     }
+    try { await addFile(handle, 'Schooltool-Vorbereitung.json', 'Schooltool-Vorbereitung.json') }
+    catch (error) { if (error.name !== 'NotFoundError') throw error }
     const dispatch = await optionalDirectory(handle, 'Versand')
     if (dispatch) {
         for (const purpose of ['Aufgaben', 'Ergebnisse']) {

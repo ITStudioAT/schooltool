@@ -266,8 +266,8 @@ class DropboxWorkImport
             $files[$relative] = $entry;
         }
         $packages = array_intersect_key($files, array_flip(['schooltool-bewertungen.json', 'beurteilungen/schooltool-bewertungen.json']));
-        if (count($packages) !== 1) {
-            $this->fail('Der Dropbox-Ordner muss genau eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten.');
+        if (count($packages) > 1) {
+            $this->fail('Der Dropbox-Ordner darf nur eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten.');
         }
         $temporaryPaths = [];
         $total = 0;
@@ -290,19 +290,23 @@ class DropboxWorkImport
                 return new UploadedFile($path, $name, null, null, true);
             };
             $packagePath = array_key_first($packages);
-            $this->checkDownloadSize($packages[$packagePath], 262144, $total);
-            $package = $saveDownload($packages[$packagePath], 'Schooltool-Bewertungen.json', 262144,
-                $this->api($connection, 'files/download', ['path' => 'rev:'.$packages[$packagePath]['rev']], true)->body());
-            try {
-                $payload = json_decode($package->get(), true, flags: JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                $this->fail('Schooltool-Bewertungen.json kann nicht als UTF-8-JSON gelesen werden.');
+            $package = null;
+            $references = [];
+            if ($packagePath !== null) {
+                $this->checkDownloadSize($packages[$packagePath], 262144, $total);
+                $package = $saveDownload($packages[$packagePath], 'Schooltool-Bewertungen.json', 262144,
+                    $this->api($connection, 'files/download', ['path' => 'rev:'.$packages[$packagePath]['rev']], true)->body());
+                try {
+                    $payload = json_decode($package->get(), true, flags: JSON_THROW_ON_ERROR);
+                } catch (JsonException) {
+                    $this->fail('Schooltool-Bewertungen.json kann nicht als UTF-8-JSON gelesen werden.');
+                }
+                if (! is_array($payload) || ! is_array($payload['records'] ?? null)) {
+                    $this->fail('Schooltool-Bewertungen.json enthält keine gültige Datensatzliste.');
+                }
+                $references = array_filter([$payload['overview_pdf'] ?? null, ...array_column($payload['records'], 'pdf')]);
             }
-            if (! is_array($payload) || ! is_array($payload['records'] ?? null)) {
-                $this->fail('Schooltool-Bewertungen.json enthält keine gültige Datensatzliste.');
-            }
-            $directory = str_starts_with($packagePath, 'beurteilungen/') ? 'beurteilungen/' : '';
-            $references = array_filter([$payload['overview_pdf'] ?? null, ...array_column($payload['records'], 'pdf')]);
+            $directory = $packagePath !== null && str_starts_with($packagePath, 'beurteilungen/') ? 'beurteilungen/' : '';
             $downloads = [];
             $pdfNames = [];
             foreach ($references as $reference) {
@@ -322,6 +326,12 @@ class DropboxWorkImport
             }
             $protocolCount = 0;
             foreach ($files as $relative => $entry) {
+                if ($relative === 'schooltool-vorbereitung.json') {
+                    $downloads['preparation'] = ['entry' => $entry, 'name' => 'Schooltool-Vorbereitung.json', 'limit' => 1048576,
+                        'path' => $root['name'].'/Schooltool-Vorbereitung.json'];
+
+                    continue;
+                }
                 if (! preg_match('#\Aversand/(aufgaben|ergebnisse)/versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}/versandprotokoll\.txt\z#', $relative, $matches)) {
                     continue;
                 }
@@ -343,8 +353,12 @@ class DropboxWorkImport
                 }
             }
 
+            if ($package === null && $documents === []) {
+                $this->fail('Der Dropbox-Ordner enthält weder Bewertungen noch eine Vorbereitung oder Versandprotokolle.');
+            }
+
             return $consume(['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
-                ['package' => $package, 'pdfs' => $pdfs]);
+                array_filter(['package' => $package, 'pdfs' => $pdfs]));
         } finally {
             foreach ($temporaryPaths as $path) {
                 if (is_file($path)) {

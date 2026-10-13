@@ -4,6 +4,32 @@ import { dispatchNotificationText, workDispatchNotification, workDispatchRecord 
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 
 describe('Imported work dispatch notifications', () => {
+    it('keeps server scheduling ahead of preparation snapshots regardless of file order and confirmed sends ahead of both', () => {
+        const log = { sha256: 'c'.repeat(64), origin: 'dispatch_import', purpose: 'tasks' }
+        const scheduled = { student_id: 12, origin: 'dispatch_import', purpose: 'tasks', log_sha256: log.sha256,
+            mode: 'scheduled', sent_at: null, prepared_at: '2026-10-13T06:00:00Z', planned_at: '2026-10-13T06:40:00Z' }
+        const prepared = { ...scheduled, mode: 'prepared', prepared_at: '2026-10-13T07:00:00Z' }
+        const work = { id: 65, status: { dispatch_logs: [log], dispatch_notifications: [], dispatch_attempts: [scheduled, prepared] } }
+        expect(workDispatchRecord(work, 12, 'tasks')).toBe(scheduled)
+        const sent = { ...scheduled, sent_at: '2026-10-13T06:40:04Z' }
+        work.status.dispatch_notifications = [sent] as any
+        expect(workDispatchRecord(work, 12, 'tasks')?.mode).toBe('live')
+    })
+    it.each(['prepared', 'scheduled'])('shows %s times even after the planned date without claiming a send', mode => {
+        const taskLog = { sha256: 'c'.repeat(64), origin: 'dispatch_import', purpose: 'tasks' }
+        const work = { id: 65, status: { dispatch_logs: [taskLog], dispatch_notifications: [],
+            dispatch_attempts: [{ student_id: 12, origin: 'dispatch_import', purpose: 'tasks', log_sha256: taskLog.sha256,
+                mode, sent_at: null, planned_at: '2020-10-13T06:40:00Z' }] } }
+        const wrapper = mount(WorkDispatchStatus, { props: { work, studentId: 12, showResultTime: true } })
+        try {
+            expect(wrapper.text()).toContain('13.10.2020 um 08:40 Uhr')
+            expect(wrapper.text()).toContain(mode === 'scheduled' ? 'serverseitig geplant' : 'vorbereitet')
+            expect(wrapper.text()).toContain('Versand noch nicht bestätigt')
+            expect(wrapper.text()).not.toContain('Aufgaben per E-Mail versandt')
+            expect(wrapper.get('[aria-label]').attributes('color')).toBe('grey-darken-1')
+            expect(workDispatchNotification(work, 12, 'tasks')).toBeNull()
+        } finally { wrapper.unmount() }
+    })
     const log = { sha256: 'a'.repeat(64), origin: 'dispatch_import' }
     const notification = { student_id: 12, sent_at: '2026-10-04T00:15:39Z', origin: 'dispatch_import', log_sha256: log.sha256 }
     const work = { id: 65, status: { dispatch_logs: [log], dispatch_notifications: [notification] } }

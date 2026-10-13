@@ -40,6 +40,7 @@ function visibleText(item) {
     if (item.record.mode === 'live') return dispatchNotificationText(item.record.sent_at, 'tasks').replace('Aufgaben per E-Mail versandt', 'Aufgabenversand')
     if (item.record.mode === 'test') return dispatchNotificationText(item.record.sent_at, item.purpose, 'test')
         .replace(': lokaler Mailpit-Test', ' · Test')
+    if (['prepared', 'scheduled'].includes(item.record.mode)) return dispatchNotificationText(item.record.planned_at, item.purpose, item.record.mode)
     return item.purpose === 'tasks' ? 'Kein bestätigter Aufgabenversand.' : 'Keine bestätigte Ergebnisbenachrichtigung.'
 }
 const records = computed(() => {
@@ -51,7 +52,7 @@ const records = computed(() => {
                 ? (purpose === 'tasks' ? 'Mindestens eine Aufgaben-E-Mail versandt' : 'Mindestens eine Ergebnis-E-Mail versandt')
                 : props.compact && record?.mode === 'test'
                     ? dispatchNotificationText(record.sent_at, purpose, 'test').replace(': lokaler Mailpit-Test', ' · Test')
-                    : dispatchNotificationText(record?.sent_at, purpose, record?.mode)
+                    : dispatchNotificationText(['prepared', 'scheduled'].includes(record?.mode) ? record.planned_at : record?.sent_at, purpose, record?.mode)
         return { purpose, record, label }
     })
     if (!props.compact && (props.aggregate || props.showResultTime) && (items.some(item => item.record) || showAssessmentTimes.value)) {

@@ -23,6 +23,37 @@ class TeachingWorkDispatchImport
             $this->reject('Ein UTF-8-Versandprotokoll mit höchstens 1 MB auswählen.');
         }
         $text = str_replace(["\r\n", "\r"], "\n", preg_replace('/\A\xEF\xBB\xBF/', '', $text));
+        if (str_starts_with(ltrim($text), '{')) {
+            try {
+                $preparation = json_decode($text, true, 32, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                $this->reject('Ungültiges JSON im Versandprotokoll.');
+            }
+            if (($preparation['kind'] ?? null) === 'schooltool.preparation') {
+                if (($preparation['schema_version'] ?? null) !== 1 || ($preparation['Versandzweck'] ?? null) !== 'Aufgabenversand'
+                    || ! is_array($preparation['Empfaenger'] ?? null)) {
+                    $this->reject('Ungültiges Schooltool-Vorbereitungspaket.');
+                }
+                $createdValue = $this->value($preparation, 'Erstellt');
+                $created = $this->providerTime($createdValue);
+                if ($created === null || (! str_ends_with($createdValue, 'Z')
+                    && (new DateTimeImmutable($created))->setTimezone(new DateTimeZone('Europe/Vienna'))->format('P') !== substr($createdValue, -6))) {
+                    $this->reject('Vorbereitungszeit benötigt ein gültiges Datum mit passendem Europe/Vienna-Offset.');
+                }
+                foreach ($preparation['Empfaenger'] as $recipient) {
+                    if (! is_array($recipient) || ($recipient['Status'] ?? null) !== 'vorbereitet'
+                        || isset($recipient['Office_Zustand']) || isset($recipient['Native_Terminierung'])
+                        || isset($recipient['Providerzeit']) || isset($recipient['Providerkennung'])) {
+                        $this->reject('Vorbereitung enthält unzulässige Versandbelege.');
+                    }
+                }
+                $report = $this->parse("Aufgabenversand – produktiver Live-Versand (Office/Outlook)\nVersandzweck: Aufgabenversand\n".$text);
+                $report['live'] = false;
+                $report['mode'] = 'prepared';
+
+                return $report;
+            }
+        }
         $postmarkTeacherTest = preg_match('/\AAufgabenversand – Einzelnachrichtentest – Live-Versand \(Postmark\)\nVersandzweck: Aufgabenversand\n(\{.*\})\s*\z/su', $text, $teacherSections);
         $officeTeacherTest = str_starts_with(ltrim($text), '{');
         $teacherTaskTest = $postmarkTeacherTest || $officeTeacherTest;
@@ -142,6 +173,7 @@ class TeachingWorkDispatchImport
             if (! in_array($this->value($recipient, 'Rolle'), ['Schülerempfänger', 'Lehrperson'], true)) {
                 continue;
             }
+            $this->plannedTime($recipient, $metadata);
             $subject = $this->value($recipient, 'Betreff');
             if (preg_match('/\AErgebnisse zur Leistungsfeststellung:\s*(.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'results';
@@ -162,7 +194,7 @@ class TeachingWorkDispatchImport
                 $rowPurpose = 'results';
             } elseif ($teacherTest && preg_match('/\A(?:Test|Formatierungstest) der Ergebnisbenachrichtigung:\s*(.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'results';
-            } elseif (preg_match('/\A(?:Aufgaben zur Leistungsfeststellung:\s*(.+)|Leistungsfeststellung\s+(.+?)\s+–\s+.+)\z/u', $subject, $matches)) {
+            } elseif (preg_match('/\A(?:Aufgaben zur Leistungsfeststellung:\s*(.+)|Leistungsfeststellung:?\s+(.+?)\s+–\s+.+)\z/u', $subject, $matches)) {
                 $rowPurpose = 'tasks';
             } else {
                 $this->reject('Die Nachricht „'.mb_substr($subject, 0, 255).'“ lässt sich keiner unterstützten Aufgaben- oder Ergebnisnachricht zuordnen. Ein Lehrer-Test benötigt den eindeutigen Testzweck und die passenden Empfängerangaben.');
@@ -291,6 +323,15 @@ class TeachingWorkDispatchImport
                 continue;
             }
             $row['student_id'] = $matches[0]['student_id'];
+            $plannedAt = $this->plannedTime($recipient, $report['metadata']);
+            $row['planned_at'] = $plannedAt;
+            $row['prepared_at'] = $this->providerTime($this->value($report['metadata'], 'Erstellt'))
+                ?? $this->providerTime($this->value($report['metadata'], 'VorbereitungAm'));
+            if ($report['mode'] !== 'test' && ($plannedAt !== null || $report['mode'] === 'prepared' || $this->value($recipient, 'Status') === 'vorbereitet')) {
+                $row['mode'] = $this->confirmedSchedule($recipient, $report['metadata'], $plannedAt) ? 'scheduled' : 'prepared';
+                $row['observed_at'] = null;
+                $row['status'] = $row['mode'] === 'scheduled' ? 'Serverseitig geplant – tatsächlicher Versand nicht bestätigt' : 'Vorbereitet – tatsächlicher Versand nicht bestätigt';
+            }
             $sentAt = $this->providerTime($this->value($recipient, 'Providerzeit'));
             $postmarkAccepted = $this->value($report['metadata'], 'Modus') === 'Live-Versand (Postmark)'
                 && ($report['metadata']['AktuelleServerpruefung']['DeliveryType'] ?? null) === 'Live'
@@ -336,10 +377,12 @@ class TeachingWorkDispatchImport
         return [
             'purpose' => $report['purpose'], 'mode' => $report['mode'],
             'log_info' => [
-                'dispatch_at' => collect($rows)->pluck('observed_at')->filter()->sort()->last()
-                    ?? $this->providerTime($this->value($report['metadata'], 'Erstellt'))
-                    ?? $this->providerTime($this->value($report['metadata'], 'Abschlusszeit')),
-                'mode' => $report['live'] ? 'live' : $report['mode'],
+                'dispatch_at' => collect($rows)->where('accepted', true)->pluck('sent_at')->filter()->sort()->last(),
+                'prepared_at' => $this->providerTime($this->value($report['metadata'], 'Erstellt'))
+                    ?? $this->providerTime($this->value($report['metadata'], 'VorbereitungAm')),
+                'planned_at' => collect($rows)->pluck('planned_at')->filter()->sort()->last(),
+                'mode' => collect($rows)->contains('accepted', true) ? 'live'
+                    : (collect($rows)->contains('mode', 'scheduled') ? 'scheduled' : (collect($rows)->contains('mode', 'prepared') ? 'prepared' : $report['mode'])),
                 'recipient_scope' => collect($report['recipients'])->every(fn (array $recipient): bool => $this->value($recipient, 'Rolle') === 'Lehrperson') ? 'teacher' : 'students',
             ],
             'title' => $work->title, 'date' => $report['date'], 'rows' => $rows, 'already_imported' => $alreadyImported,
@@ -365,9 +408,16 @@ class TeachingWorkDispatchImport
         $notifications = $status['dispatch_notifications'] ?? [];
         $attempts = $status['dispatch_attempts'] ?? [];
         foreach ($preview['rows'] as $row) {
-            if (! $row['accepted'] && $row['student_id'] && ! collect($attempts)->contains(fn (array $attempt): bool => $attempt['log_sha256'] === $sha256 && (int) $attempt['student_id'] === $row['student_id'])) {
-                $attempts[] = ['student_id' => $row['student_id'], 'sent_at' => $row['observed_at'], 'mode' => $row['mode'],
+            if (! $row['accepted'] && $row['student_id']) {
+                $parsedAttempt = ['student_id' => $row['student_id'], 'sent_at' => $row['observed_at'], 'mode' => $row['mode'],
+                    'planned_at' => $row['planned_at'] ?? null, 'prepared_at' => $row['prepared_at'] ?? null,
                     'purpose' => $preview['purpose'], 'log_sha256' => $sha256, 'origin' => 'dispatch_import'];
+                $index = collect($attempts)->search(fn (array $attempt): bool => $attempt['log_sha256'] === $sha256 && (int) $attempt['student_id'] === $row['student_id']);
+                if ($index === false) {
+                    $attempts[] = $parsedAttempt;
+                } else {
+                    $attempts[$index] = array_replace($attempts[$index], $parsedAttempt);
+                }
             }
             if (! $row['accepted'] || collect($notifications)->contains('provider_id', $row['provider_id'])) {
                 continue;
@@ -448,6 +498,50 @@ class TeachingWorkDispatchImport
         }
 
         return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+    }
+
+    private function plannedTime(array $recipient, array $metadata): ?string
+    {
+        $times = [];
+        foreach ([$this->value($recipient, 'Termin'), $this->value($metadata, 'Termin'),
+            $this->value(is_array($recipient['Native_Terminierung'] ?? null) ? $recipient['Native_Terminierung'] : [], 'ScheduledAt')] as $value) {
+            if ($value === '') {
+                continue;
+            }
+            $time = $this->providerTime($value);
+            if ($time === null || (! str_ends_with($value, 'Z')
+                && (new DateTimeImmutable($time))->setTimezone(new DateTimeZone('Europe/Vienna'))->format('P') !== substr($value, -6))) {
+                $this->reject('Geplanter Versandtermin benötigt ein gültiges Datum mit passendem Europe/Vienna-Offset.');
+            }
+            $times[] = $time;
+        }
+        if (count(array_unique($times)) > 1) {
+            $this->reject('Widersprüchliche geplante Versandtermine.');
+        }
+
+        return $times[0] ?? null;
+    }
+
+    private function confirmedSchedule(array $recipient, array $metadata, ?string $plannedAt): bool
+    {
+        $state = $recipient['Native_Terminierung'] ?? null;
+        $account = mb_strtolower($this->value($metadata, 'Account'));
+
+        return $plannedAt !== null && is_array($state)
+            && ($state['Scheduled'] ?? null) === true && ($state['Sent'] ?? null) === false
+            && $this->value($state, 'Status') === 'serverseitig geplant'
+            && $this->value($recipient, 'Status') === 'serverseitig geplant'
+            && $this->providerTime($this->value($state, 'ScheduledAt')) === $plannedAt
+            && mb_strtolower($this->value($state, 'To')) === mb_strtolower($this->value($recipient, 'To'))
+            && $this->value($state, 'DraftEntryID') !== '' && $this->value($state, 'DraftStoreID') !== ''
+            && (bool) preg_match('/\A[0-9a-f]{64}\z/i', $this->value($state, 'Webnachweis_SHA256'))
+            && $this->value($state, 'Webnachweis') !== ''
+            && $this->value($metadata, 'Provider') === 'Office/Outlook/Exchange'
+            && $this->value($recipient, 'Provider') === 'Office/Outlook/Exchange'
+            && $this->value($recipient, 'Modus') === 'Live-Versand (Office/Outlook)'
+            && filter_var($account, FILTER_VALIDATE_EMAIL) !== false
+            && $account === mb_strtolower($this->value($recipient, 'From'))
+            && $account === mb_strtolower($this->value($recipient, 'Account'));
     }
 
     private function confirmedOfficeSend(array $recipient, array $metadata): bool

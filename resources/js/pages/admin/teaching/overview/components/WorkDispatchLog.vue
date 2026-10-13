@@ -31,8 +31,9 @@ const groups = computed(() => ['tasks', 'results'].map(purpose => ({
 })).filter(group => group.logs.length))
 const downloadUrl = log => downloadDispatch.url({ course_work: props.work.id, sha256: log.sha256 })
 function logTitle(log) {
-    if (log.dispatch_at && Number.isFinite(Date.parse(log.dispatch_at))) {
-        return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(log.dispatch_at))
+    const time = log.mode === 'scheduled' || log.mode === 'prepared' ? log.planned_at || log.prepared_at : log.dispatch_at || log.prepared_at
+    if (time && Number.isFinite(Date.parse(time))) {
+        return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(time))
     }
     const run = /Versand_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(log.name || '')
     return run ? `${run[3]}.${run[2]}.${run[1]} um ${run[4]}:${run[5]}:${run[6]} Uhr` : log.name || 'Versandprotokoll'
@@ -40,7 +41,9 @@ function logTitle(log) {
 function logDescription(log) {
     const records = (props.work.status?.dispatch_notifications || []).filter(record => record.log_sha256 === log.sha256 && record.student_id)
     const attempts = (props.work.status?.dispatch_attempts || []).filter(record => record.log_sha256 === log.sha256 && record.student_id)
-    const mode = log.mode === 'teacher_test' ? 'Live-Test' : log.mode === 'test' || attempts.some(record => record.mode === 'test')
+    const mode = log.mode === 'scheduled' ? 'Serverseitig geplant · Versand noch nicht bestätigt'
+        : log.mode === 'prepared' ? 'Vorbereitet · Versand noch nicht bestätigt'
+        : log.mode === 'teacher_test' ? 'Live-Test' : log.mode === 'test' || attempts.some(record => record.mode === 'test')
         ? 'Mailpit-Test' : records.length ? 'Bestätigter Live-Versand' : log.mode === 'live' ? 'Live-Protokoll' : 'Versandprotokoll'
     const recipients = log.recipient_scope === 'teacher' ? 'nur Lehrperson' : records.length || attempts.length ? 'Schüler:innen' : ''
     return [mode, recipients].filter(Boolean).join(' · ')

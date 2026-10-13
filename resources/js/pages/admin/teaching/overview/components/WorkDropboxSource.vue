@@ -90,7 +90,9 @@ async function loadFolders(more = false) {
         ...(parent ? { folder_id: parent.id } : {}), ...(more && cursor.value ? { cursor: cursor.value } : {}),
     } })))
     if (response) {
-        folders.value = more ? [...folders.value, ...response.data.folders] : response.data.folders
+        folders.value = (more ? [...folders.value, ...response.data.folders] : response.data.folders)
+            .sort((first, second) => first.name.localeCompare(second.name, 'de-AT', { sensitivity: 'base', numeric: true })
+                || first.id.localeCompare(second.id))
         cursor.value = response.data.cursor
     }
 }

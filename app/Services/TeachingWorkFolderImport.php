@@ -93,6 +93,9 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
+        if (mb_strtolower($source) === 'schooltool-vorbereitung.json') {
+            return ['source' => 'schooltool-vorbereitung.json', 'name' => 'Schooltool-Vorbereitung.json', 'kind' => 'tasks', 'run' => 'Vorbereitung'];
+        }
         if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^\/_]+_[^\/_]+)\.(?:md|pdf))\z/iu', $source, $matches)) {
             return ['source' => mb_strtolower($source), 'name' => $matches[1], 'kind' => 'evaluation', 'run' => ''];
         }

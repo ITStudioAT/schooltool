@@ -23,6 +23,40 @@ function mountComponent(component: any, props = {}) {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it('sorts Dropbox folders across loaded pages with German names and numbers', async () => {
+        const get = vi.fn().mockResolvedValueOnce({ data: connected })
+            .mockResolvedValueOnce({ data: { folders: [{ id: 'z', name: 'Zebra' }, { id: 'a10', name: 'Arbeit 10' }], cursor: 'next' } })
+            .mockResolvedValueOnce({ data: { folders: [{ id: 'a2', name: 'Arbeit 2' }, { id: 'o', name: 'Österreich' }], cursor: null } })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true })
+        try {
+            await flushPromises()
+            await (wrapper.vm as any).loadFolders()
+            await (wrapper.vm as any).loadFolders(true)
+            expect((wrapper.vm as any).folders.map(folder => folder.name)).toEqual(['Arbeit 2', 'Arbeit 10', 'Österreich', 'Zebra'])
+        } finally { wrapper.unmount() }
+    })
+
+    it('previews a local preparation without a grading JSON and shows its intended time', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { preview: { ...preview, exercise: null,
+            dispatches: [{ source: 'Schooltool-Vorbereitung.json', purpose: 'tasks', rows: [{ person: 'Ada', status: 'Vorbereitet', planned_at: '2026-10-13T06:40:00Z' }] }] } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work)
+            const file = new File(['{}'], 'Schooltool-Vorbereitung.json')
+            Object.defineProperty(file, 'webkitRelativePath', { value: 'Arbeit/Schooltool-Vorbereitung.json' })
+            await vm.selectJsonFolder({ target: { files: [file], value: '' } })
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].has('package')).toBe(false)
+            expect(post.mock.calls[0][1].get('documents')).toContain('Schooltool-Vorbereitung.json')
+            expect(wrapper.text()).toContain('keine Bewertungen enthalten')
+            expect(wrapper.text()).toContain('08:40')
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
     it('enables only an owned mapped cloud folder without browser directory APIs', async () => {
         vi.stubGlobal('showDirectoryPicker', undefined)
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...connected, can_quick_import: false, folder: null } }) })

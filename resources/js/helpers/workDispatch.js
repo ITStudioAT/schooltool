@@ -21,17 +21,24 @@ export function workDispatchRecord(work, studentId, purpose, aggregate = false) 
     if (!work?.id || (!aggregate && !studentId)) return null
     const success = aggregate ? workDispatchNotifications(work, purpose)[0] : workDispatchNotification(work, studentId, purpose)
     if (success) return { ...success, mode: 'live' }
-    return (work.status?.dispatch_attempts || []).findLast(attempt => attempt.origin === 'dispatch_import'
+    const attempts = (work.status?.dispatch_attempts || []).filter(attempt => attempt.origin === 'dispatch_import'
         && attempt.purpose === purpose && attempt.student_id
         && (aggregate || String(attempt.student_id) === String(studentId))
         && (work.status?.dispatch_logs || []).some(log => log.origin === 'dispatch_import'
-            && log.purpose === purpose && log.sha256 === attempt.log_sha256)) || null
+            && log.purpose === purpose && log.sha256 === attempt.log_sha256))
+    const planning = attempts.filter(attempt => ['prepared', 'scheduled'].includes(attempt.mode))
+        .sort((first, second) => Number(second.mode === 'scheduled') - Number(first.mode === 'scheduled')
+            || (Date.parse(second.prepared_at) || 0) - (Date.parse(first.prepared_at) || 0))
+
+    return planning[0] || attempts.at(-1) || null
 }
 
 export function dispatchNotificationText(sentAt, purpose = 'results', mode = 'live') {
     const prefix = purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'
     const action = mode === 'live' ? (purpose === 'tasks' ? 'Aufgaben per E-Mail versandt' : 'Über die Korrektur per E-Mail verständigt')
-        : `${prefix}: ${mode === 'test' ? 'lokaler Mailpit-Test' : 'kein bestätigter Live-Versand'}`
+        : mode === 'scheduled' ? `${prefix}: serverseitig geplant`
+            : mode === 'prepared' ? `${prefix}: vorbereitet${sentAt ? ' · geplanter Versand' : ''}`
+                : `${prefix}: ${mode === 'test' ? 'lokaler Mailpit-Test' : 'kein bestätigter Live-Versand'}`
     if (!sentAt || !Number.isFinite(Date.parse(sentAt))) return mode === 'live' ? '' : `${action}.`
     const parts = new Intl.DateTimeFormat('de-AT', {
         timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -39,5 +46,5 @@ export function dispatchNotificationText(sentAt, purpose = 'results', mode = 'li
     }).formatToParts(new Date(sentAt))
     const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
 
-    return `${action} am ${values.day}.${values.month}.${values.year} um ${values.hour}:${values.minute} Uhr.`
+    return `${action} am ${values.day}.${values.month}.${values.year} um ${values.hour}:${values.minute} Uhr.${['prepared', 'scheduled'].includes(mode) ? ' Versand noch nicht bestätigt.' : ''}`
 }

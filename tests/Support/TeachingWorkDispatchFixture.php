@@ -211,6 +211,33 @@ class TeachingWorkDispatchFixture
             ."\nVersandzweck: Aufgabenversand\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
     }
 
+    public static function preparedTasksText(bool $scheduled = false): string
+    {
+        $text = self::combinedTasksText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Termin'] = '2026-10-13T08:40:00+02:00';
+        $row = $metadata['Empfaenger'][0];
+        foreach (['Office_Zustand', 'Providerzeit', 'Providerkennung', 'InternetMessageID', 'SentEntryID', 'StoreID', 'TatsaechlicheAnhaenge'] as $key) {
+            unset($row[$key]);
+        }
+        $row['From'] = $row['Account'];
+        $row['Status'] = $scheduled ? 'serverseitig geplant' : 'vorbereitet';
+        if ($scheduled) {
+            $row['Native_Terminierung'] = ['Scheduled' => true, 'Sent' => false, 'Status' => 'serverseitig geplant',
+                'ScheduledAt' => $metadata['Termin'], 'To' => $row['To'], 'DraftEntryID' => 'DRAFT', 'DraftStoreID' => 'STORE',
+                'Webnachweis' => 'Belege/Servertermin.txt', 'Webnachweis_SHA256' => str_repeat('a', 64)];
+        }
+        $metadata['Empfaenger'] = [$row];
+        if (! $scheduled) {
+            $metadata['kind'] = 'schooltool.preparation';
+            $metadata['schema_version'] = 1;
+
+            return json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    }
+
     public static function mailpitTasksText(): string
     {
         $text = self::combinedTasksText('Postmark');
