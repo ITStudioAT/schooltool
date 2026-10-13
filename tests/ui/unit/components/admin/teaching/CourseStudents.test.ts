@@ -4,6 +4,87 @@ import axios from 'axios'
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 
+describe('CourseStudents account switching', () => {
+    it.each([
+        [['super_admin'], false, true],
+        [['teacher'], false, false],
+        [['admin'], false, false],
+        [['super_admin'], true, false],
+        [null, false, false],
+    ])('allows account switching for roles %s while impersonating %s: %s', (roles, isImpersonating, allowed) => {
+        expect((CourseStudents as any).computed.canImpersonateStudents.call({
+            config: { roles, impersonation: { is_impersonating: isImpersonating } },
+        })).toBe(allowed)
+    })
+
+    function context(overrides = {}) {
+        return {
+            canImpersonateStudents: true,
+            selected_course: { id: 17 },
+            impersonatingStudentId: null,
+            hasUnsavedAttendanceChanges: false,
+            show_bulk_entry: false,
+            adminStore: { startImpersonation: vi.fn().mockResolvedValue(true) },
+            ...overrides,
+        }
+    }
+
+    it('switches to the linked user and opens the selected course in a new document', async () => {
+        const state = context()
+        const location = { href: '/admin/teaching?panel=students&course=17' }
+        vi.stubGlobal('window', { location })
+        try {
+            await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+            expect(state.adminStore.startImpersonation).toHaveBeenCalledWith(42)
+            expect(location.href).toBe('/student/course/17')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([
+        { canImpersonateStudents: false },
+        { impersonatingStudentId: 43 },
+        { hasUnsavedAttendanceChanges: true },
+        { show_bulk_entry: true },
+    ])('preserves the current session when switching is unavailable: %s', async (overrides) => {
+        const state = context(overrides)
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+        expect(state.adminStore.startImpersonation).not.toHaveBeenCalled()
+    })
+
+    it('never uses an import ID as the account ID', async () => {
+        const state = context()
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: null })
+        expect(state.adminStore.startImpersonation).not.toHaveBeenCalled()
+    })
+
+    it('stays in the teacher view and releases the loading state when the server rejects the switch', async () => {
+        const state = context({ adminStore: { startImpersonation: vi.fn().mockResolvedValue(false) } })
+        const location = { href: '/admin/teaching?panel=students&course=17' }
+        vi.stubGlobal('window', { location })
+        try {
+            await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+            expect(location.href).toBe('/admin/teaching?panel=students&course=17')
+            expect(state.impersonatingStudentId).toBeNull()
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('prevents duplicate switches while the first request is pending', async () => {
+        let complete: (success: boolean) => void
+        const startImpersonation = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+        const state = context({ adminStore: { startImpersonation } })
+        const firstRequest = (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 42 })
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 43 })
+        expect(startImpersonation).toHaveBeenCalledTimes(1)
+        complete!(false)
+        await firstRequest
+        expect(state.impersonatingStudentId).toBeNull()
+    })
+})
+
 describe('CourseStudents complete performance loading', () => {
     it.each([true, false])('reloads the calculated note preference %s', (value) => {
         const context = { showCalculatedGrade: !value }

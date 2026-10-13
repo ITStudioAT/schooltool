@@ -151,13 +151,16 @@ async function waitForWeb(project, ports, children = []) {
             throw new Error('A development service stopped before it became ready.');
         }
         try {
-            const backend = await fetch(`http://127.0.0.1:${ports.server}/up`, { signal: AbortSignal.timeout(1000) });
             const frontend = await fetch(`http://localhost:${ports.vite}/@vite/client`, { signal: AbortSignal.timeout(1000) });
             const hot = fs.readFileSync(path.join(project, 'public/hot'), 'utf8').trim();
-            if (backend.ok && frontend.ok && hot === `http://localhost:${ports.vite}`) {
-                const inventory = processInventory(ports);
-                if (existingWorkspaceSession(project, ports, inventory)) {
-                    return;
+            if (frontend.ok && hot === `http://localhost:${ports.vite}`) {
+                // Wait for Vite before probing Laravel; its first boot may take more than one second.
+                const backend = await fetch(`http://127.0.0.1:${ports.server}/up`, { signal: AbortSignal.timeout(5000) });
+                if (backend.ok) {
+                    const inventory = processInventory(ports);
+                    if (existingWorkspaceSession(project, ports, inventory)) {
+                        return;
+                    }
                 }
             }
         } catch {

@@ -1,5 +1,6 @@
 <template>
     <v-app>
+        <ImpersonationTransitionOverlay />
         <admin-navigation-drawer
             v-model="show_navigation_drawer"
             :is-visible="isAdminShellVisible"
@@ -62,6 +63,7 @@ import AdminImportCompletionListener from '@/pages/admin/components/AdminImportC
 import AdminImpersonationAlert from '@/pages/admin/components/AdminImpersonationAlert.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
+import ImpersonationTransitionOverlay from '@/pages/components/ImpersonationTransitionOverlay.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
@@ -77,6 +79,7 @@ export default {
         AdminImpersonationAlert,
         AdminNavigationDrawer,
         ItsNotification,
+        ImpersonationTransitionOverlay,
     },
 
     data() {

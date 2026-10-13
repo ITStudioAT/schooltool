@@ -240,6 +240,61 @@ function workflow(project, command) {
     assert.equal(result.status, 0, result.stdout + result.stderr);
 }
 
+test('startup probes Laravel once after Vite is ready and tolerates a slow first backend response',
+    { timeout: 45000, skip: process.platform !== 'win32' }, async () => {
+    const fixture = ownedFixture();
+    writeFixtureApplication(fixture.project);
+    fs.mkdirSync(path.join(fixture.project, 'storage/framework'), { recursive: true });
+    fs.writeFileSync(path.join(fixture.project, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'), `<?php
+$project = realpath(__DIR__."/../../../../../../../");
+file_put_contents($project.'/storage/framework/health-probes.jsonl', json_encode($_SERVER['REQUEST_URI'])."\\n", FILE_APPEND);
+usleep(1200000);
+header('Content-Type: application/json');
+echo json_encode(['status' => 'up']);
+`);
+    fs.writeFileSync(path.join(fixture.project, 'node_modules/vite/bin/vite.js'), `import fs from 'node:fs';
+import http from 'node:http';
+const project = process.cwd();
+const port = Number(process.argv[process.argv.indexOf('--port')+1]);
+let attempts = 0;
+http.createServer((request, response) => {
+    attempts += 1;
+    if (attempts <= 4) {
+        response.writeHead(503);
+    } else {
+        fs.writeFileSync(project+'/public/hot', 'http://localhost:'+port);
+    }
+    fs.writeFileSync(project+'/storage/framework/vite-probes.json', JSON.stringify(attempts));
+    response.end(project);
+}).listen(port, 'localhost', () => fs.writeFileSync(project+'/public/hot', 'http://localhost:1'));
+`);
+    git(fixture.project, 'init', '--initial-branch=main');
+    fs.writeFileSync(path.join(fixture.project, '.env'), localEnvironment);
+    const session = fork(launcher, ['--session', '--project', fixture.project, '--web-only', '--no-open',
+        '--check-port-offset=19999'], { cwd: fixture.project, silent: true, windowsHide: true });
+    let output = '';
+    session.stdout.on('data', data => { output += data; });
+    session.stderr.on('data', data => { output += data; });
+    const exited = new Promise(resolve => session.once('exit', resolve));
+    try {
+        await new Promise((resolve, reject) => {
+            session.on('message', message => { if (message?.ready === true) { resolve(); } });
+            session.once('exit', code => reject(new Error(`Startup exited with ${code}: ${output}`)));
+        });
+        const probes = fs.readFileSync(path.join(fixture.project, 'storage/framework/health-probes.jsonl'), 'utf8')
+            .trim().split(/\r?\n/).map(line => JSON.parse(line));
+        assert.deepEqual(probes, ['/up']);
+        assert.ok(JSON.parse(fs.readFileSync(path.join(fixture.project, 'storage/framework/vite-probes.json'), 'utf8')) >= 5);
+        assert.equal(fs.existsSync(path.join(fixture.project, 'background-was-started')), false);
+    } finally {
+        if (session.connected) {
+            session.send({ stop: true });
+        }
+        await exited;
+        fixture.cleanup();
+    }
+});
+
 async function waitForProject(project, main, output) {
     const ports = workspacePorts(project, main, 20000);
     const deadline = Date.now() + 45000;

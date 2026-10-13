@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { startDeploymentNotice } from './helpers/deploymentNotice';
+import { startImpersonationTransition } from './helpers/impersonationTransition';
 import '../css/deployment-notice.css';
 window.axios = axios;
 axios.defaults.withCredentials = true;
@@ -77,7 +78,11 @@ window.axios.interceptors.response.use(
 );
 
 const deploymentNotice = startDeploymentNotice({ axiosClient: window.axios });
+const impersonationTransition = startImpersonationTransition({ axiosClient: window.axios });
 
 if (import.meta.hot) {
-    import.meta.hot.dispose(() => deploymentNotice.stop());
+    import.meta.hot.dispose(() => {
+        deploymentNotice.stop();
+        impersonationTransition.stop();
+    });
 }

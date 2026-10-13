@@ -1,5 +1,6 @@
 <template>
     <v-app>
+        <ImpersonationTransitionOverlay />
         <v-layout>
             <v-main>
                 <v-alert v-if="isFeaturePreview" type="warning" variant="tonal" class="ma-2" role="status">
@@ -43,6 +44,7 @@
 <script setup>
 import ItsNotification from '@/pages/components/ItsNotification.vue'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
+import ImpersonationTransitionOverlay from '@/pages/components/ImpersonationTransitionOverlay.vue'
 </script>
 
 <script>

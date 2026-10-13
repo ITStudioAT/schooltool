@@ -199,6 +199,17 @@
                                                 <span class="student-name-text">
                                                     {{ student.last_name }}, {{ student.first_name }}
                                                 </span>
+                                                <v-btn
+                                                    v-if="canImpersonateStudents"
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    color="primary"
+                                                    prepend-icon="mdi-account-switch"
+                                                    :aria-label="`Account von ${student.first_name} ${student.last_name} öffnen`"
+                                                    :title="student.user_id ? 'Als Schüler anmelden' : 'Kein verknüpfter Account vorhanden'"
+                                                    :loading="impersonatingStudentId !== null && impersonatingStudentId === student.user_id"
+                                                    :disabled="!student.user_id || impersonatingStudentId !== null || hasUnsavedAttendanceChanges || show_bulk_entry"
+                                                    @click.stop="impersonateStudent(student)">Account öffnen</v-btn>
                                                 <CourseStudentIndicators v-if="studentForSelectedSemester(student).stars.length" :student="studentForSelectedSemester(student)" :course-id="selected_course.id" stars-only
                                                     @select="$refs.studentNotes.open(student, $event)" />
                                                 <v-icon
@@ -283,6 +294,17 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ item.student.last_name }}, {{ item.student.first_name }}
                                         </div>
+                                        <v-btn
+                                            v-if="canImpersonateStudents"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="primary"
+                                            prepend-icon="mdi-account-switch"
+                                            :aria-label="`Account von ${item.student.first_name} ${item.student.last_name} öffnen`"
+                                            :title="item.student.user_id ? 'Als Schüler anmelden' : 'Kein verknüpfter Account vorhanden'"
+                                            :loading="impersonatingStudentId !== null && impersonatingStudentId === item.student.user_id"
+                                            :disabled="!item.student.user_id || impersonatingStudentId !== null || hasUnsavedAttendanceChanges"
+                                            @click.stop="impersonateStudent(item.student)">Account öffnen</v-btn>
                                         <CourseStudentIndicators :student="studentForSelectedSemester(item.student)" :course-id="selected_course.id"
                                             :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
                                             :schoolyear="config.selected_schoolyear"
@@ -415,6 +437,7 @@ export default {
             hasUnsavedAttendanceChanges: false,
             students_sort_mode: 'last_name_first_name',
             copiedEmailId: null,
+            impersonatingStudentId: null,
         }
     },
 
@@ -425,6 +448,10 @@ export default {
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        canImpersonateStudents() {
+            return Array.isArray(this.config?.roles) && this.config.roles.includes('super_admin')
+                && !this.config?.impersonation?.is_impersonating
+        },
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
 
@@ -881,6 +908,18 @@ export default {
     },
 
     methods: {
+        async impersonateStudent(student) {
+            if (!this.canImpersonateStudents || !student?.user_id || !this.selected_course?.id
+                || this.impersonatingStudentId !== null || this.hasUnsavedAttendanceChanges || this.show_bulk_entry) return
+            this.impersonatingStudentId = student.user_id
+            try {
+                if (await this.adminStore.startImpersonation(student.user_id)) {
+                    window.location.href = `/student/course/${this.selected_course.id}`
+                }
+            } finally {
+                this.impersonatingStudentId = null
+            }
+        },
         async toggleCalculatedGrade() {
             if (this.savingCalculatedGradePreference) return
             this.savingCalculatedGradePreference = true
