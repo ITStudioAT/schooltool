@@ -70,6 +70,12 @@ class TeachingWorkAiExport
         $folder = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $work->id)
             ->whereIn('dropbox_connection_id', DropboxConnection::query()->select('id')->where('user_id', $actor->id))->first();
         $warnings = [];
+        $courseClasses = array_values(array_unique($course->classes ?? []));
+        $courseGroupNumber = null;
+        if (count($courseClasses) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course->title), $courseTitleParts) === 1
+            && trim($courseTitleParts[1]) === $courseClasses[0]) {
+            $courseGroupNumber = (int) $courseTitleParts[2];
+        }
         if ($dates === []) {
             $warnings[] = 'Kein Durchführungstermin gespeichert. Den technischen Anlagezeitpunkt nicht als Arbeitstermin verwenden.';
         }
@@ -83,7 +89,10 @@ class TeachingWorkAiExport
             'exported_at' => now()->utc()->toISOString(),
             'school' => ['id' => $course->school_id, 'name' => $course->school->long_name, 'short_name' => $course->school->short_name],
             'schoolyear' => ['id' => $course->schoolyear_id, 'name' => $course->schoolyear->name],
-            'course' => ['id' => $course->id, 'title' => $course->title, 'description' => $course->description, 'classes' => $course->classes ?? []],
+            'course' => ['id' => $course->id, 'title' => $course->title, 'description' => $course->description, 'classes' => $course->classes ?? [],
+                'group_number' => $courseGroupNumber,
+                'group_source' => $courseGroupNumber !== null ? 'course_title' : null,
+                'folder_group' => $courseGroupNumber !== null ? $courseClasses[0].'_Gruppe-'.$courseGroupNumber : null],
             'work' => ['id' => $work->id, 'title' => $work->title, 'description' => $work->description,
                 'type' => $work->type, 'type_definition' => $type,
                 'is_group_work' => $work->is_group_work, 'group_size' => $work->group_size, 'is_random_groups' => $work->is_random_groups, 'groups' => $groups,
@@ -106,7 +115,7 @@ class TeachingWorkAiExport
         $fence = str_repeat('`', max(3, 1 + max(array_map('strlen', $runs[0] ?: ['']))));
         $text = "# Auftrag an Codex: Leistungsfeststellung erstellen\n\n"
             ."Erstellen Sie die passende Leistungsfeststellung für die gespeicherte Schooltool-Arbeit #{$work->id} im Kurs #{$course->id}. Nutzen Sie den vorhandenen create-exercise-Workflow und die folgenden konkreten Arbeitsdaten. Dieser Auftrag umfasst die Erstellung der Aufgabenstellung als Markdown und PDF im passenden Arbeitsordner; er ist kein bloßer Zusammenfassungsauftrag.\n\n"
-            ."1. Prüfen Sie zuerst die vorhandene Ordnerbindung. Bei einer Dropbox-Zuordnung lösen Sie die gespeicherte Ordner-ID bzw. den Ordnernamen im verfügbaren Dropbox-/Materialienbestand auf und überprüfen Arbeit, Kurs und Durchführungstermin. Verwenden Sie den bestätigten vorhandenen Leistungsfeststellungsordner. Existiert noch kein eigener Arbeitsordner, legen Sie ihn ausschließlich unter der eindeutig verifizierten Lerninhaltswurzel nach den vorhandenen Namens- und Dateischutzregeln an; ordnen Sie ihn dem vorgesehenen Durchführungstermin dieser Arbeit zu. Titel allein beweist keine lokale Wurzel. Fehlt eine eindeutige Wurzel oder gibt es mehrere passende Ordner, klären Sie gezielt diese Lücke; erfinden Sie keinen vollständigen Pfad und überschreiben Sie keine früheren Fassungen.\n"
+            ."1. Prüfen Sie zuerst die vorhandene Ordnerbindung. Bei einer Dropbox-Zuordnung lösen Sie die gespeicherte Ordner-ID bzw. den Ordnernamen im verfügbaren Dropbox-/Materialienbestand auf und überprüfen Arbeit, Kurs und Durchführungstermin. Verwenden Sie den bestätigten vorhandenen Leistungsfeststellungsordner. Existiert noch kein eigener Arbeitsordner, legen Sie ihn ausschließlich unter der eindeutig verifizierten Lerninhaltswurzel nach den vorhandenen Namens- und Dateischutzregeln an; ordnen Sie ihn dem vorgesehenen Durchführungstermin dieser Arbeit zu. Übernehmen Sie course.folder_group für den Klassen-/Kursgruppenanteil des Ordnernamens; bei 5L2 und Kursgruppe 1 lautet er 5L2_Gruppe-1. course.group_number bezeichnet die Unterrichtsgruppe des Kurses, nicht work.groups oder work.is_group_work. Fehlt die strukturierte Kursgruppe in einem älteren Export, prüfen Sie den vollständigen gespeicherten Kurstitel gegen course.classes, statt die Kursgruppe wegzulassen oder aus Arbeitsgruppen zu erfinden. Titel allein beweist keine lokale Wurzel. Fehlt eine eindeutige Wurzel oder gibt es mehrere passende Ordner, klären Sie gezielt diese Lücke; erfinden Sie keinen vollständigen Pfad und überschreiben Sie keine früheren Fassungen.\n"
             ."2. Verwenden Sie scheduled_date bzw. die ausdrücklich gespeicherten Gruppentermine für die Arbeitszuordnung. Unterrichtsstunden liefern Beginn und Ende nur, soweit sie gespeichert sind. technical_created_at und exported_at sind technische Zeitpunkte, keine Durchführungstermine. main_deadline ist die bindende Lehrkraftfrist; sie ist keine automatisch für das Aufgabenblatt freigegebene Frist. communicated_deadline ist nicht separat gespeichert: Prüfen Sie vorhandene Anlage_und_Quellen.json und bestätigte Aufgabenblätter, bevor Sie eine Frist kommunizieren. Bewahren Sie Europe/Vienna und vorhandene Fristen.\n"
             ."3. Übernehmen Sie vorhandene Beschreibung, Materialien, Aufgabenart, Kriterien und Punkte. Prüfen Sie referenzierte Dateien im tatsächlich zugänglichen Bestand; Schooltool-Speicherpfade sind keine bestätigten lokalen Materialienpfade. Keine Aufgaben, Bearbeitungszeiten, Punkteverteilung oder Abgabevorgaben erfinden. Ergänzen Sie Aufgaben aus den eindeutig vorgegebenen Inhalten nach dem bestehenden Erstellungsworkflow; fehlende entscheidende Fachangaben gezielt klären. Bei belegtem Abendunterricht verwenden Sie die Sie-Form.\n"
             ."4. Die vollständige Kursliste enthält auch noch unbewertete und dieser Arbeit nicht zugeordnete Personen. Verwenden Sie alle aktiven Kursmitglieder als Teilnehmergrundlage und bewahren Sie Namen, Klassen und bekannte Schooltool-Kennungen. Abgemeldete Zuordnungen sind als Kontext enthalten: nicht still reaktivieren. Gruppenüberschneidungen erzeugen keine zusätzlichen Personen. Bestehende Teilnehmerdateien unverändert erhalten und Abweichungen vor einer Änderung klären.\n"

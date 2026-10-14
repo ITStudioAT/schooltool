@@ -72,6 +72,28 @@ test('AI export uses the saved work and all current course assignments without p
     Http::assertNothingSent();
 });
 
+test('AI export preserves the course group for folder naming independently of work groups', function (string $title, array $classes, ?int $number, ?string $folderGroup) {
+    $this->course->update(['title' => $title, 'classes' => $classes]);
+    $this->work->update(['is_group_work' => false, 'groups' => [['name' => 'Arbeitsgruppe 9', 'student_ids' => [$this->student->id]]]]);
+    $before = $this->course->fresh()->getAttributes();
+
+    $context = $this->getJson($this->url)->assertOk()->json('data.context');
+
+    expect($context['course']['title'])->toBe($title);
+    expect($context['course']['group_number'])->toBe($number);
+    expect($context['course']['folder_group'])->toBe($folderGroup);
+    expect($context['course']['group_source'])->toBe($number !== null ? 'course_title' : null);
+    expect($context['work']['is_group_work'])->toBeFalse();
+    expect($this->course->fresh()->getAttributes())->toBe($before);
+})->with([
+    'first course group' => ['INF - 5L2 - 1', ['5L2'], 1, '5L2_Gruppe-1'],
+    'second course group' => ['DGB - 3B - 2', ['3B'], 2, '3B_Gruppe-2'],
+    'unnumbered course' => ['INF 2 Abend', ['Abend'], null, null],
+    'class mismatch' => ['INF - 5L2 - 1', ['5L1'], null, null],
+    'multiple classes need explicit context' => ['INF - 5L2 - 1', ['5L2', '5L1'], null, null],
+    'number in another title format' => ['INF 5L2 1', ['5L2'], null, null],
+]);
+
 test('AI export is freshly read and preserves imported-only members and cancelled membership context', function () {
     $first = $this->getJson($this->url)->assertOk()->json('data');
     expect($first['participants_count'])->toBe(1);
