@@ -14,6 +14,7 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use App\Services\RestaurantSynchronisationService;
 use App\Services\TeachingLiveSource;
+use App\Services\TeachingSynchronisationBackup;
 use App\Services\TeachingSynchronisationGraph;
 use App\Services\TeachingSynchronisationService;
 use Illuminate\Database\Events\QueryExecuted;
@@ -74,6 +75,108 @@ function teachingSyncApplyPayload(string $token): array
     return ['token' => $token, 'replace_confirmed' => true, 'contacts_confirmed' => true];
 }
 
+test('a rejected safety archive leaves all data and files untouched', function (): void {
+    $backups = Mockery::mock(TeachingSynchronisationBackup::class)->makePartial();
+    $backups->shouldReceive('write')->once()->andThrow(new RuntimeException('Fixture safety archive failure.'));
+    app()->instance(TeachingSynchronisationBackup::class, $backups);
+    $this->snapshot['tables']['teaching_courses'][0]['title'] = 'Cloud change';
+    $this->actingAs($this->actor, 'sanctum');
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))
+        ->assertUnprocessable()->assertJsonPath('message', 'Fixture safety archive failure.');
+
+    expect($this->course->fresh()->title)->toBe('Local');
+    expect(Storage::disk('local')->allFiles('teaching'))->toBe([]);
+});
+
+test('safety downloads preserve encrypted bytes and reject another actor for old and streamed archives', function (bool $legacy): void {
+    $token = str_repeat('b', 64);
+    $path = "teaching/synchronisation-backups/{$this->school->id}/{$token}.enc";
+    $payload = ['format' => 'schooltool-teaching-sync-safety-v2', 'school' => $this->school->id,
+        'actor' => $this->actor->id, 'created_at' => now()->toISOString(), 'state' => []];
+    if ($legacy) {
+        $payload['format'] = 'schooltool-teaching-sync-safety-v1';
+        Storage::disk('local')->put($path, Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR)));
+    } else {
+        app(TeachingSynchronisationBackup::class)->write($payload, $path);
+    }
+    $expected = Storage::disk('local')->get($path);
+    $this->actingAs($this->actor, 'sanctum');
+    $response = $this->get('/api/admin/teaching/synchronisation/backups/'.$token)->assertSuccessful();
+    expect($response->streamedContent())->toBe($expected);
+    expect($response->headers->get('Cache-Control'))->toContain('private', 'no-store');
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id]);
+    $other->assignRole('super_admin');
+
+    $this->actingAs($other, 'sanctum')->get('/api/admin/teaching/synchronisation/backups/'.$token)->assertForbidden();
+})->with([false, true]);
+
+test('preview and full apply preserve 63 local files while importing 81 files within 512 MiB', function (): void {
+    $previousLimit = ini_get('memory_limit');
+    ini_set('memory_limit', '512M');
+    config(['filesystems.disks.local.root' => rtrim(Storage::disk('local')->path(''), '/\\')]);
+    $localReferences = [];
+    $localHashes = [];
+    for ($index = 0; $index < 63; $index++) {
+        $path = "teaching/old-{$index}.pdf";
+        $bytes = random_bytes((int) floor(55.1 * 1024 * 1024 / 63));
+        Storage::disk('local')->put($path, $bytes);
+        $localHashes[$path] = hash('sha256', $bytes);
+        $localReferences[] = ['file_path' => $path, 'storage_disk' => 'local'];
+    }
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id,
+        'status' => ['dispatch_logs' => $localReferences]]);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $incomingReferences = [];
+    $incomingHashes = [];
+    for ($index = 0; $index < 81; $index++) {
+        $path = "teaching/live-{$index}.pdf";
+        $bytes = random_bytes((int) floor(55.1 * 1024 * 1024 / 81));
+        $hash = hash('sha256', $bytes);
+        $this->snapshot['files'][] = ['disk' => 'local', 'path' => $path,
+            'size' => strlen($bytes), 'sha256' => $hash, 'content' => base64_encode($bytes)];
+        $incomingReferences[] = ['file_path' => $path, 'storage_disk' => 'local'];
+        $incomingHashes[] = $hash;
+    }
+    unset($bytes);
+    $this->snapshot['tables']['teaching_course_works'][0]['status'] = json_encode(['dispatch_logs' => $incomingReferences], JSON_THROW_ON_ERROR);
+    $this->snapshot['tables']['teaching_courses'][0]['title'] = 'Large reviewed cloud course';
+    $this->actingAs($this->actor, 'sanctum');
+    memory_reset_peak_usage();
+
+    try {
+        $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+        $preview->assertJsonPath('data.files', 81)->assertJsonPath('data.local_files', 63)->assertJsonPath('data.conflicts', []);
+        expect($this->course->fresh()->title)->toBe('Local');
+        $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))
+            ->assertSuccessful();
+        $applyPeak = memory_get_peak_usage(true);
+        expect($this->course->fresh()->title)->toBe('Large reviewed cloud course');
+        expect(Storage::disk('local')->allFiles('teaching/synchronisation/'.$this->school->id))->toHaveCount(81);
+        foreach ($incomingHashes as $hash) {
+            expect(hash_file('sha256', Storage::disk('local')->path("teaching/synchronisation/{$this->school->id}/{$hash}.pdf")))->toBe($hash);
+        }
+        foreach ($localHashes as $path => $hash) {
+            expect(hash_file('sha256', Storage::disk('local')->path($path)))->toBe($hash);
+        }
+        $backupPath = "teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc";
+        $backups = app(TeachingSynchronisationBackup::class);
+        $this->get('/api/admin/teaching/synchronisation/backups/'.$result->json('backup'))->assertSuccessful();
+        unset($this->snapshot['files']);
+        $saved = $backups->read($backupPath);
+        expect($saved['state']['files'])->toHaveCount(63);
+        foreach ($saved['state']['files'] as $file) {
+            expect(hash('sha256', base64_decode($file['content'], true)))->toBe($localHashes[$file['path']]);
+        }
+        expect($saved['state']['tables']['teaching_course_works'][0]['id'])->toBe($work->id);
+        expect($applyPeak)->toBeLessThan(512 * 1024 * 1024);
+        fwrite(STDERR, "\nFull synchronisation peak: {$applyPeak} bytes (512M limit).\n");
+    } finally {
+        ini_set('memory_limit', $previousLimit);
+    }
+});
+
 test('preview caches only the reviewed source fingerprint and still accepts older reviewed tokens', function (bool $legacy): void {
     $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
     $cached = json_decode(Crypt::decryptString(Cache::store('file')->get('teaching-sync:'.$preview->json('data.token'))),
@@ -110,9 +213,9 @@ test('multiple local Dropbox choices cannot silently converge on one incoming wo
         ->and($preview->json('data.dropbox_warnings'))->toHaveCount(2);
     $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertSuccessful();
     expect(DB::table('teaching_work_dropbox_folders')->count())->toBe(0);
-    $backup = json_decode(Crypt::decryptString(Storage::disk('local')->get(
+    $backup = app(TeachingSynchronisationBackup::class)->read(
         "teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc"
-    )), true, flags: JSON_THROW_ON_ERROR);
+    );
     expect($backup['dropbox_recovery'])->toBe($folders);
 });
 
@@ -195,7 +298,7 @@ test('preview is read only and apply imports every year with private backup and 
     $backup = $result->json('backup');
     $contents = Storage::disk('local')->get("teaching/synchronisation-backups/{$this->school->id}/{$backup}.enc");
     expect($contents)->not->toContain('Local');
-    $saved = json_decode(Crypt::decryptString($contents), true);
+    $saved = app(TeachingSynchronisationBackup::class)->read("teaching/synchronisation-backups/{$this->school->id}/{$backup}.enc");
     expect($saved['state']['tables']['teaching_courses'][0]['title'])->toBe('Local');
     $this->get('/api/admin/teaching/synchronisation/backups/'.$backup)->assertSuccessful();
     $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($token))->assertUnprocessable();
@@ -255,9 +358,9 @@ test('personal appointments are scoped to the school and imported across years w
     expect(TeachingPersonalAppointment::where('school_id', $this->school->id)->count())->toBe(2);
     expect($foreign->fresh()->getAttributes())->toBe($foreignAttributes);
     $backup = $result->json('backup');
-    $saved = json_decode(Crypt::decryptString(Storage::disk('local')->get(
+    $saved = app(TeachingSynchronisationBackup::class)->read(
         "teaching/synchronisation-backups/{$this->school->id}/{$backup}.enc"
-    )), true, flags: JSON_THROW_ON_ERROR);
+    );
     expect($saved['state']['tables']['teaching_personal_appointments'])->toBe([$localAttributes]);
 });
 
@@ -314,9 +417,10 @@ test('synchronisation preserves local Dropbox folder choices and credentials wit
     expect($foreignFolder->fresh()->getAttributes())->toBe($foreignAttributes);
     expect($connection->fresh()->getRawOriginal('credentials'))->toBe($credentials);
     $backup = $result->json('backup');
-    $savedBytes = Crypt::decryptString(Storage::disk('local')->get("teaching/synchronisation-backups/{$this->school->id}/{$backup}.enc"));
+    $saved = app(TeachingSynchronisationBackup::class)->read("teaching/synchronisation-backups/{$this->school->id}/{$backup}.enc");
+    $savedBytes = json_encode($saved, JSON_THROW_ON_ERROR);
     expect($savedBytes)->not->toContain($credentials, 'refresh_token');
-    expect(json_decode($savedBytes, true, flags: JSON_THROW_ON_ERROR)['state']['dropbox_folders'])->toBe([$folderAttributes]);
+    expect($saved['state']['dropbox_folders'])->toBe([$folderAttributes]);
 });
 
 test('synchronisation keeps unmatched Dropbox choices recoverable without assigning them to different work', function (string $change): void {
@@ -355,9 +459,9 @@ test('synchronisation keeps unmatched Dropbox choices recoverable without assign
         ->assertSuccessful();
     $this->assertDatabaseMissing('teaching_work_dropbox_folders', ['id' => $folder->id]);
     expect($result->json('dropbox_warnings'))->toBe($preview->json('data.dropbox_warnings'));
-    $backup = json_decode(Crypt::decryptString(Storage::disk('local')->get(
+    $backup = app(TeachingSynchronisationBackup::class)->read(
         "teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc"
-    )), true, flags: JSON_THROW_ON_ERROR);
+    );
     expect($backup['dropbox_recovery'])->toBe([$attributes])
         ->and($backup['state']['dropbox_folders'])->toBe([$attributes])
         ->and($backup['state']['tables']['teaching_course_works'][0]['id'])->toBe($work->id);

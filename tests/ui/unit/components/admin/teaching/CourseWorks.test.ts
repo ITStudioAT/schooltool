@@ -268,7 +268,7 @@ describe('CourseWorks automatic folder import', () => {
             if (scenario === 'missing package' || scenario === 'duplicate package') {
                 expect(ctx.import_selection).toBe('Test')
                 expect(ctx.import_error).toContain(scenario === 'missing package'
-                    ? 'weder Bewertungen noch eine Vorbereitung oder Versandprotokolle'
+                    ? 'weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle'
                     : 'direkt oder unter Beurteilungen')
             }
             expect(event.target.value).toBe('')

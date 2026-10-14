@@ -19,6 +19,7 @@ class TeachingSynchronisationService
         private TeachingLiveSource $source,
         private TeachingSynchronisationGraph $graph,
         private TeachingSynchronisationFiles $files,
+        private TeachingSynchronisationBackup $backups,
     ) {}
 
     public static function available(): bool
@@ -127,14 +128,10 @@ class TeachingSynchronisationService
                     $backup = Str::random(64);
                     $backupPath = $this->backupPath($actor, $backup);
                     $this->assertTargetParents(Storage::disk('local')->path($backupPath));
-                    $backupBytes = Crypt::encryptString(json_encode(['format' => 'schooltool-teaching-sync-safety-v1',
+                    $this->backups->write(['format' => 'schooltool-teaching-sync-safety-v2',
                         'school' => $actor->school_id, 'actor' => $actor->id, 'created_at' => now()->toISOString(), 'state' => $local,
                         'dropbox_recovery' => $plan['dropbox_recovery'],
-                    ], JSON_THROW_ON_ERROR));
-                    if (! Storage::disk('local')->put($backupPath, $backupBytes)
-                        || ! hash_equals(hash('sha256', $backupBytes), hash('sha256', Storage::disk('local')->get($backupPath)))) {
-                        throw new RuntimeException('Sicherheitsbackup konnte nicht vollständig gespeichert werden.');
-                    }
+                    ], $backupPath);
                     $this->files->assertCanonicalFile(Storage::disk('local')->path($backupPath), config('filesystems.disks.local.root'));
                     foreach ($plan['files'] as $file) {
                         $this->writeFile($file, $created);
@@ -450,7 +447,7 @@ class TeachingSynchronisationService
 
     private function fingerprint(array $state): string
     {
-        return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR));
+        return $this->backups->fingerprint($state);
     }
 
     private function writeFile(array $file, array &$created): void

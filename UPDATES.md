@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.51.5 !!!
+## 3.51.5
 
 ### Accounts
 
@@ -10,6 +10,10 @@
 
 - Automatische Arbeiten: Import bei geänderten Kandidaten implementiert
 - Aufgaben können auch ohne Versand importiert werden
+
+### Unterricht-Synchronisation
+
+- Speicherproblem behoben
 
 ## 3.51.4
 
