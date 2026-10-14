@@ -171,13 +171,13 @@ describe('Personal table status icon sequence', () => {
         } finally { wrapper.unmount() }
     })
 
-    it.each(['download_release', 'direct_issue'])('shows %s availability with a blue folder separately from submission', method => {
+    it.each(['download_release', 'direct_issue'])('shows %s availability with a green folder separately from submission', method => {
         const work = withProvision(fixture('unresolved'), method)
         const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
         try {
             expect(sequence(wrapper)).toEqual(['tasks', 'download', 'evaluation', 'results'])
             const icon = wrapper.get('[data-work-status="tasks"]')
-            expect(icon.attributes('color')).toBe('blue-darken-2')
+            expect(icon.attributes('color')).toBe('success')
             expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'Aufgabe zum Download bereitgestellt' : 'Direkt ausgegeben')
             expect(icon.attributes('aria-label')).toContain('01.10.2026').toContain('12:00 Uhr')
             expect(icon.attributes('aria-label')).toContain(method === 'download_release' ? 'tatsächlicher Download nicht bekannt' : 'Download oder Empfang nicht bestätigt')

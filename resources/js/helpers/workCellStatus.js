@@ -31,7 +31,7 @@ export function workCellStatuses(work, studentId, now = Date.now()) {
     const provision = personalWorkProvision(work, studentId)
     const direct = provision && tasks?.mode !== 'live'
     const output = direct
-        ? { icon: 'mdi-folder-open-outline', color: 'blue-darken-2', state: 'available',
+        ? { icon: 'mdi-folder-open-outline', color: 'success', state: 'available',
             label: provision.method === 'download_release'
                 ? `Aufgabe zum Download bereitgestellt; tatsächlicher Download nicht bekannt. Verfügbar seit ${assessmentTimeText(provision.available_at)}.`
                 : provisionNotificationText(provision) }
