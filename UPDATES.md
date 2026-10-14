@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.51.6 !!!
+
+### Unterricht
+
+- Kurse exportieren für lokalen KI-Import
+
 ## 3.51.5
 
 ### Accounts

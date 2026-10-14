@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
+use App\Services\TeachingWorkAiExport;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkJsonImport;
@@ -27,6 +28,21 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function aiExport(TeachingCourseWork $course_work, TeachingWorkAiExport $export): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor, 403);
+
+        return DB::transaction(function () use ($course_work, $actor, $export): JsonResponse {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->findOrFail($course_work->id);
+            abort_unless($work->teachingCourse, 403);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+
+            return response()->json(['data' => $export->build($work, $actor)])
+                ->header('Cache-Control', 'private, no-store');
+        });
+    }
+
     public function importJson(Request $request, TeachingCourseWork $course_work, TeachingWorkJsonImport $importer, TeachingWorkFolderImport $folderImporter, TeachingWorkDispatchImport $dispatchImporter): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);

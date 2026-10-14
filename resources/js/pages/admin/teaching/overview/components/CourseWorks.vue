@@ -121,6 +121,7 @@
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <div v-if="work_form.id" class="work-import-actions d-flex align-center flex-wrap ga-2 mt-3">
+                    <WorkAiExport :work="work_form" />
                     <WorkImportActions :work="courseWorks.find(work => work.id === work_form.id)" @open="openImport" />
                     <WorkEvaluationPdf :work="work_form" />
                     <WorkDispatchLog :work="work_form" />
@@ -829,9 +830,10 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
+import WorkAiExport from './WorkAiExport.vue'
 
 export default {
-    components: { ItsGridBox, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
+    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
