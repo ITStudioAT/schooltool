@@ -11,6 +11,7 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Support\SchooltoolAssessmentJson;
 use GuzzleHttp\Promise\Promise;
 use GuzzleHttp\Promise\Utils;
 use GuzzleHttp\Psr7\Response;
@@ -143,6 +144,61 @@ test('Dropbox and local upload preview and apply ungraded preparations and serve
         ->and($this->work->fresh()->status['dispatch_attempts'][0]['mode'])->toBe($scheduled ? 'scheduled' : 'prepared');
 })->with([false, true])->with(['dropbox', 'upload']);
 
+test('assignment-created preparations preview and import without email grades or release evidence', function (string $source): void {
+    dropboxConnectionForWork($this);
+    $this->course->update(['title' => 'INF 1']);
+    $student = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada',
+        'last_name' => 'Van Alpha', 'schoolclass' => '1A', 'email' => 'no-email-required']);
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $this->work->update(['date_for_all_groups' => '2026-10-15', 'groups' => [['student_ids' => [$student->id], 'grade' => '2']]]);
+    $text = json_encode(TeachingWorkDispatchFixture::documentPreparation($this->work->id, $this->course->id, $student->id), JSON_THROW_ON_ERROR);
+    fakeDropboxWorkFiles(['Schooltool-Vorbereitung.json' => $text]);
+    $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $payload = $source === 'dropbox' ? [] : ['folder' => 'Leistungsarbeit', 'documents' => json_encode([['path' => 'Leistungsarbeit/Schooltool-Vorbereitung.json', 'text' => $text]])];
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.dispatches.0.rows.0.mode', 'prepared')->assertJsonPath('preview.dispatches.0.rows.0.accepted', false)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $status = $this->work->fresh()->status;
+    expect($status['dispatch_notifications'])->toBe([]);
+    expect($status['provision_events'] ?? [])->toBe([]);
+    expect($status['dispatch_attempts'][0]['sent_at'])->toBeNull();
+    expect($status['dispatch_attempts'][0]['planned_at'])->toBeNull();
+    expect($this->work->fresh()->groups[0]['grade'])->toBe('2');
+    $fresh = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $fresh['hash']])->assertOk();
+    expect($this->work->fresh()->status['dispatch_logs'])->toHaveCount(1);
+    expect($this->work->fresh()->status['dispatch_attempts'])->toHaveCount(1);
+})->with(['dropbox', 'upload']);
+
+test('assignment-created preparation rejects a different work course date or person', function (string $case): void {
+    $this->course->update(['title' => 'INF 1']);
+    $student = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'schoolclass' => '1A']);
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $this->work->update(['date_for_all_groups' => '2026-10-15', 'groups' => [['student_ids' => [$student->id]]]]);
+    $package = TeachingWorkDispatchFixture::documentPreparation($this->work->id, $this->course->id, $student->id);
+    unset($package['preparation_checksum']);
+    match ($case) {
+        'work' => $package['work_id']++, 'course' => $package['course_id']++,
+        'date' => $package['exercise']['scheduled_date'] = '2026-10-16',
+        'person' => $package['participants'][0]['schooltool_person_id'] = (string) ($student->id + 1),
+    };
+    $package['preparation_checksum'] = SchooltoolAssessmentJson::digest($package);
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+    $payload = ['folder' => 'Leistungsarbeit', 'documents' => json_encode([['path' => 'Leistungsarbeit/Schooltool-Vorbereitung.json', 'text' => json_encode($package)]])];
+
+    $response = $this->postJson('/api/admin/teaching/course_works/'.$this->work->id.'/import-json', $payload);
+
+    if ($case === 'person') {
+        $response->assertOk()->assertJsonPath('preview.can_import', false);
+    } else {
+        $response->assertUnprocessable();
+    }
+    expect($this->work->fresh()->status['dispatch_logs'] ?? [])->toBe([]);
+})->with(['work', 'course', 'date', 'person']);
+
 test('unconfigured Dropbox leaves quick import unavailable without network requests', function (): void {
     config(['services.dropbox.client_secret' => null]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('configured', false)->assertJsonPath('can_quick_import', false);
@@ -230,11 +286,24 @@ test('folder assignment validates Dropbox identity and is private to the user an
     $this->getJson($this->url.'/folders')->assertOk()->assertJsonPath('folders.0.id', 'id:folder');
     $this->postJson($this->url.'/folder', ['folder_id' => 'id:folder'])->assertOk()->assertJsonPath('can_quick_import', true);
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
-    $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()->assertJsonPath('can_quick_import', false);
+    $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()->assertJsonPath('can_quick_import', false)
+        ->assertJsonPath('folder', null)->assertJsonPath('suggested_folder.id', 'id:folder');
     $this->postJson($this->url.'/folder', ['folder_id' => 'https://unrelated.example'])->assertUnprocessable();
     $this->actingAs(User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('admin'), 'sanctum');
-    $this->getJson($this->url)->assertOk()->assertJsonPath('connected', false)->assertJsonPath('folder', null);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('connected', false)->assertJsonPath('folder', null)->assertJsonPath('suggested_folder', null);
     expect($connection->fresh()->credentials)->not->toBeEmpty();
+});
+
+test('folder picker resolves the actual parent of a restored Dropbox folder', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    Http::fake(['api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [], 'has_more' => false]),
+        'api.dropboxapi.com/2/files/get_metadata' => function (Request $request) {
+            return Http::response($request['path'] === 'id:last' ? ['.tag' => 'folder', 'id' => 'id:last', 'name' => 'Arbeit', 'path_lower' => '/materialien/arbeit']
+                : ['.tag' => 'folder', 'id' => 'id:parent', 'name' => 'Materialien', 'path_lower' => '/materialien']);
+        }]);
+
+    $this->getJson($this->url.'/folders?folder_id=id:last')->assertOk()->assertJsonPath('parent.id', 'id:parent');
 });
 
 test('foreign teachers schools and students cannot access Dropbox work endpoints', function (string $case): void {

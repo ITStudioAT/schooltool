@@ -4,11 +4,12 @@
         <p v-if="loading" role="status" class="text-caption">Dropbox-Verbindung prüfen …</p>
         <p v-else-if="state && !state.can_quick_import" class="text-caption">{{ state.message }}</p>
         <p v-if="state?.folder" class="text-caption">{{ state.folder.name }}</p>
+        <p v-else-if="state?.suggested_folder" class="text-caption">Zuletzt gewählt: {{ state.suggested_folder.name }}</p>
         <div v-if="state?.configured && state?.installed" class="d-flex flex-wrap align-center ga-2 mt-2">
             <v-btn v-if="!state.connected" size="small" variant="outlined" :disabled="busy || loading" @click="connectDropbox">Dropbox verbinden</v-btn>
             <template v-else>
                 <v-btn v-if="state.folder" size="small" variant="tonal" :disabled="busy || loading" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
-                <v-btn size="small" variant="text" :disabled="busy || loading" @click="browseRoot">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen' }}</v-btn>
+                <v-btn size="small" variant="text" :disabled="busy || loading" @click="browseSuggested">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen' }}</v-btn>
                 <details class="text-caption"><summary>Verbindung verwalten</summary>
                     <v-btn size="small" variant="text" :disabled="busy || loading" @click="disconnectDropbox">Verbindung in Schooltool entfernen</v-btn>
                 </details>
@@ -18,6 +19,7 @@
         <div v-if="browsing" class="mt-3">
             <p>Dropbox / {{ ancestors.map(folder => folder.name).join(' / ') }}</p>
             <div class="d-flex flex-wrap ga-2 mt-2">
+                <v-btn v-if="ancestors.length" variant="text" :disabled="busy || loading" @click="browseRoot">Dropbox-Hauptordner</v-btn>
                 <v-btn v-if="ancestors.length" variant="outlined" :disabled="busy || loading" @click="browseParent">Übergeordneter Ordner</v-btn>
                 <v-btn v-if="ancestors.length" color="primary" :disabled="busy || loading" @click="assignFolder">Diesen Ordner zuordnen</v-btn>
                 <v-btn variant="text" :disabled="loading" @click="browsing = false">Ordnerauswahl schließen</v-btn>
@@ -95,11 +97,23 @@ async function loadFolders(more = false) {
             .sort((first, second) => first.name.localeCompare(second.name, 'de-AT', { sensitivity: 'base', numeric: true })
                 || first.id.localeCompare(second.id))
         cursor.value = response.data.cursor
+        if (parent && response.data.parent) {
+            ancestors.value = ancestors.value.map(folder => folder.id === parent.id ? { ...folder, parent: response.data.parent } : folder)
+        }
     }
 }
 
 function browseRoot() {
     ancestors.value = []
+    browsing.value = true
+    loadFolders()
+}
+
+function browseSuggested() {
+    const suggested = state.value?.folder || state.value?.suggested_folder
+    ancestors.value = suggested ? [suggested] : []
+    folders.value = []
+    cursor.value = null
     browsing.value = true
     loadFolders()
 }
@@ -112,7 +126,8 @@ function browseFolder(folder) {
 }
 
 function browseParent() {
-    ancestors.value = ancestors.value.slice(0, -1)
+    const parent = ancestors.value.at(-1)?.parent
+    ancestors.value = ancestors.value.length === 1 && parent ? [parent] : ancestors.value.slice(0, -1)
     folders.value = []
     cursor.value = null
     loadFolders()

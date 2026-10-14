@@ -27,9 +27,12 @@ class WorkDropboxController extends Controller
         $connected = $configured && $connection && ! $connection->revoked_at;
         $folder = $connected ? TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
             ->where('teaching_course_work_id', $course_work->id)->first() : null;
+        $suggested = $connected ? ($folder ?? TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
+            ->orderByDesc('updated_at')->orderByDesc('id')->first()) : null;
 
         return response()->json(['configured' => $configured, 'installed' => $installed, 'connected' => (bool) $connected,
             'folder' => $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null,
+            'suggested_folder' => $suggested ? ['id' => $suggested->folder_id, 'name' => $suggested->folder_name] : null,
             'can_quick_import' => (bool) ($connected && $folder),
             'message' => ! $configured || ! $installed ? 'Dropbox ist noch nicht eingerichtet. Bitte Importieren verwenden.'
                 : (! $connected ? 'Dropbox verbinden, um Quick-Import zu verwenden.'

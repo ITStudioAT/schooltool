@@ -1,11 +1,44 @@
 <?php
 
 use App\Services\TeachingWorkDispatchImport;
+use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+test('document preparations do not require email addresses and never authorize dispatch or provision', function () {
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+    $text = json_encode(TeachingWorkDispatchFixture::documentPreparation(), JSON_THROW_ON_ERROR);
+
+    $report = app(TeachingWorkDispatchImport::class)->parse($text);
+
+    expect($report['mode'])->toBe('prepared');
+    expect($report['live'])->toBeFalse();
+    expect($report['date'])->toBe('2026-10-15');
+    expect($report['recipients'][0]['SchooltoolPersonId'])->toBe('12');
+    expect($report['recipients'][0])->not->toHaveKey('To');
+});
+
+test('document preparations reject fabricated dispatch fields invalid dates and checksums', function (string $case) {
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+    $package = TeachingWorkDispatchFixture::documentPreparation();
+    unset($package['preparation_checksum']);
+    match ($case) {
+        'dispatch' => $package['sent_at'] = '2026-10-14T08:00:00Z',
+        'availability' => $package['available_at'] = '2026-10-14T08:00:00Z',
+        'future creation' => $package['prepared_at'] = '2026-10-15T08:00:00Z',
+        'duplicate person' => $package['participants'][] = $package['participants'][0],
+        'invalid date' => $package['exercise']['scheduled_date'] = '2026-02-30',
+        'unsafe file' => $package['assignment']['filename'] = '../Aufgabenstellung_E-Mails.pdf',
+        'checksum' => null,
+    };
+    $package['preparation_checksum'] = $case === 'checksum' ? str_repeat('0', 64) : SchooltoolAssessmentJson::digest($package);
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($package, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['dispatch', 'availability', 'future creation', 'duplicate person', 'invalid date', 'unsafe file', 'checksum']);
 
 test('preparation packages retain their intended date and never authorize live evidence', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::preparedTasksText());

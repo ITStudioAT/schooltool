@@ -23,6 +23,30 @@ function mountComponent(component: any, props = {}) {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it.each([true, false])('starts a new folder selection at the saved suggestion with an existing binding %s', async assigned => {
+        const suggestion = { id: 'id:last-folder', name: 'Zuletzt gewählt' }
+        const get = vi.fn().mockResolvedValueOnce({ data: { ...connected, folder: assigned ? suggestion : null,
+            suggested_folder: suggestion, can_quick_import: assigned } })
+            .mockResolvedValueOnce({ data: { folders: [], cursor: null, parent: { id: 'id:parent', name: 'Materialien' } } })
+            .mockResolvedValueOnce({ data: { folders: [], cursor: null, parent: null } })
+        const post = vi.fn()
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true })
+        try {
+            await flushPromises()
+            const change = wrapper.findAll('button').find(button => button.text() === (assigned ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen'))!
+            await change.trigger('click')
+            await flushPromises()
+            expect(get.mock.calls[1][0]).toContain('folder_id=id%3Alast-folder')
+            expect(wrapper.text()).toContain('Dropbox / Zuletzt gewählt')
+            expect(wrapper.text()).toContain('Diesen Ordner zuordnen')
+            expect(post).not.toHaveBeenCalled()
+            await wrapper.findAll('button').find(button => button.text() === 'Übergeordneter Ordner')!.trigger('click')
+            await flushPromises()
+            expect(get.mock.calls[2][0]).toContain('folder_id=id%3Aparent')
+            expect(wrapper.text()).toContain('Dropbox / Materialien')
+        } finally { wrapper.unmount() }
+    })
     it('keeps compact person summaries readable and opens blocked identities while apply remains disabled', async () => {
         const row = { participant_id: 'p1', student_id: 12, identity: { first_name: 'Ada', last_name: 'Alpha', class_name: '1A', group_name: 'INF 2' },
             status: 'Aktualisierung', previous: { points: 2 }, total_minor: 200, change: 'updated', criteria: [], adjustments: [],

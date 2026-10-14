@@ -2,10 +2,25 @@
 
 namespace Tests\Support;
 
+use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Http\UploadedFile;
 
 class TeachingWorkDispatchFixture
 {
+    /** @return array<string, mixed> */
+    public static function documentPreparation(int $workId = 65, int $courseId = 2, int $studentId = 12): array
+    {
+        $package = ['schema_version' => 2, 'kind' => 'schooltool.preparation', 'stage' => 'assignment_created',
+            'work_id' => $workId, 'course_id' => $courseId, 'prepared_at' => '2026-10-14T08:00:00Z', 'timezone' => 'Europe/Vienna',
+            'exercise' => ['title' => 'E-Mails', 'course_title' => 'INF 1', 'scheduled_date' => '2026-10-15'],
+            'participants' => [['participant_id' => 'user:'.$studentId, 'schooltool_person_id' => (string) $studentId,
+                'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class_name' => '1A']],
+            'assignment' => ['filename' => 'Aufgabenstellung_E-Mails.pdf', 'sha256' => str_repeat('a', 64)]];
+        $package['preparation_checksum'] = SchooltoolAssessmentJson::digest($package);
+
+        return $package;
+    }
+
     /** @return list<array<string, mixed>> */
     public static function recipients(): array
     {

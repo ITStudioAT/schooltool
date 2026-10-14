@@ -7,6 +7,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Support\PrivateImportSourceFile;
+use App\Support\SchooltoolAssessmentJson;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Storage;
@@ -33,6 +34,9 @@ class TeachingWorkDispatchImport
                 $this->reject('Ungültiges JSON im Versandprotokoll.');
             }
             if (($preparation['kind'] ?? null) === 'schooltool.preparation') {
+                if (($preparation['schema_version'] ?? null) === 2) {
+                    return $this->documentPreparation($preparation);
+                }
                 if (($preparation['schema_version'] ?? null) !== 1 || ($preparation['Versandzweck'] ?? null) !== 'Aufgabenversand'
                     || ! is_array($preparation['Empfaenger'] ?? null)) {
                     $this->reject('Ungültiges Schooltool-Vorbereitungspaket.');
@@ -233,6 +237,70 @@ class TeachingWorkDispatchImport
                 : (bool) preg_match('/\AVERSANDPROTOKOLL – (?:(?:AUFGABENVERSAND|ERGEBNISBENACHRICHTIGUNG) – )?LIVE-VERSAND \(POSTMARK\)\z/u', $heading)];
     }
 
+    /** @param array<string, mixed> $package
+     * @return array<string, mixed>
+     */
+    private function documentPreparation(array $package): array
+    {
+        $keys = ['schema_version', 'kind', 'stage', 'work_id', 'course_id', 'prepared_at', 'timezone', 'exercise', 'participants', 'assignment', 'preparation_checksum'];
+        if (array_diff(array_keys($package), $keys) !== [] || array_diff($keys, array_keys($package)) !== []
+            || $package['stage'] !== 'assignment_created' || $package['timezone'] !== 'Europe/Vienna'
+            || ! is_int($package['work_id']) || $package['work_id'] < 1 || ! is_int($package['course_id']) || $package['course_id'] < 1
+            || ! is_string($package['prepared_at']) || ! is_string($package['preparation_checksum'])) {
+            $this->reject('Ungültige Aufgaben-Vorbereitung; keine Versand- oder Bereitstellungsbelege erlaubt.');
+        }
+        $unsigned = $package;
+        unset($unsigned['preparation_checksum']);
+        if (! hash_equals(SchooltoolAssessmentJson::digest($unsigned), $package['preparation_checksum'])) {
+            $this->reject('Prüfsumme der Aufgaben-Vorbereitung stimmt nicht.');
+        }
+        $created = $this->providerTime($package['prepared_at']);
+        if ($created === null || (new DateTimeImmutable($created)) > new DateTimeImmutable(now()->toISOString())
+            || (! str_ends_with($package['prepared_at'], 'Z')
+                && (new DateTimeImmutable($created))->setTimezone(new DateTimeZone('Europe/Vienna'))->format('P') !== substr($package['prepared_at'], -6))) {
+            $this->reject('Aufgaben-Vorbereitung benötigt einen tatsächlichen Erstellungszeitpunkt mit gültiger Zeitzone.');
+        }
+        $exercise = $package['exercise'];
+        if (! is_array($exercise) || array_keys($exercise) === []
+            || array_diff(array_keys($exercise), ['title', 'course_title', 'scheduled_date']) !== []
+            || count($exercise) !== 3 || ! is_string($exercise['title'] ?? null) || trim($exercise['title']) === ''
+            || ! is_string($exercise['course_title'] ?? null) || trim($exercise['course_title']) === ''
+            || ! is_string($exercise['scheduled_date'] ?? null) || ! $this->validDate($exercise['scheduled_date'])) {
+            $this->reject('Titel, Kurs und Durchführungstermin der Aufgaben-Vorbereitung fehlen.');
+        }
+        $assignment = $package['assignment'];
+        if (! is_array($assignment) || array_diff(array_keys($assignment), ['filename', 'sha256']) !== [] || count($assignment) !== 2
+            || ! is_string($assignment['filename'] ?? null) || ! preg_match('/\AAufgabenstellung_[^\/\\\\\x00-\x1f:]+\.pdf\z/u', $assignment['filename'])
+            || ! is_string($assignment['sha256'] ?? null) || ! preg_match('/\A[0-9a-f]{64}\z/', $assignment['sha256'])) {
+            $this->reject('Aufgaben-Vorbereitung benötigt eine eindeutige Aufgaben-PDF mit Prüfsumme.');
+        }
+        if (! is_array($package['participants']) || ! array_is_list($package['participants'])
+            || $package['participants'] === [] || count($package['participants']) > 100) {
+            $this->reject('Aufgaben-Vorbereitung benötigt 1 bis 100 Teilnehmer.');
+        }
+        $recipients = [];
+        $ids = [];
+        foreach ($package['participants'] as $person) {
+            $personKeys = ['participant_id', 'schooltool_person_id', 'first_name', 'last_name', 'class_name'];
+            if (! is_array($person) || array_diff(array_keys($person), $personKeys) !== [] || count($person) !== count($personKeys)
+                || ! is_string($person['participant_id'] ?? null) || trim($person['participant_id']) === ''
+                || in_array($person['participant_id'], $ids, true)
+                || (($person['schooltool_person_id'] ?? null) !== null && (! is_string($person['schooltool_person_id']) || ! preg_match('/\A[1-9][0-9]*\z/', $person['schooltool_person_id'])))
+                || ! is_string($person['first_name'] ?? null) || trim($person['first_name']) === ''
+                || ! is_string($person['last_name'] ?? null) || trim($person['last_name']) === ''
+                || ! is_string($person['class_name'] ?? null) || trim($person['class_name']) === '') {
+                $this->reject('Unvollständige oder doppelte Teilnehmerkennung in der Aufgaben-Vorbereitung.');
+            }
+            $ids[] = $person['participant_id'];
+            $recipients[] = ['Vorname' => $person['first_name'], 'Nachname' => $person['last_name'], 'Klasse' => $person['class_name'],
+                'Kurs' => $exercise['course_title'], 'SchooltoolPersonId' => $person['schooltool_person_id'], 'Rolle' => 'Schülerempfänger'];
+        }
+
+        return ['metadata' => $package + ['Erstellt' => $package['prepared_at']], 'recipients' => $recipients,
+            'date' => $exercise['scheduled_date'], 'title' => $this->assignment($exercise['title']),
+            'personal_results' => false, 'purpose' => 'tasks', 'mode' => 'prepared', 'live' => false];
+    }
+
     /** @return list<array<string, mixed>> */
     private function legacyRecipients(string $text): array
     {
@@ -265,6 +333,11 @@ class TeachingWorkDispatchImport
     public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true, ?array $participantAdditions = null): array
     {
         $course = $work->teachingCourse;
+        $documentPreparation = ($report['metadata']['kind'] ?? null) === 'schooltool.preparation' && ($report['metadata']['schema_version'] ?? null) === 2;
+        if ($documentPreparation && ($report['metadata']['work_id'] !== (int) $work->id || $report['metadata']['course_id'] !== (int) $course->id
+            || $report['date'] !== $work->date_for_all_groups?->format('Y-m-d'))) {
+            $this->reject('Aufgaben-Vorbereitung gehört zu einer anderen Arbeit, einem anderen Kurs oder Durchführungstermin.');
+        }
         if (($report['personal_results'] ?? false)
             && $this->personalResultAssignment((string) $work->title) !== $this->personalResultAssignment($report['title'])) {
             $this->reject('Persönliches Ergebnisanschreiben passt nicht zur gespeicherten Arbeit.');
@@ -288,6 +361,7 @@ class TeachingWorkDispatchImport
         $blocked = false;
         $providers = [];
         $providerRecipients = [];
+        $preparedTargets = [];
         foreach ($report['recipients'] as $recipient) {
             $role = $this->value($recipient, 'Rolle');
             $row = [
@@ -322,8 +396,9 @@ class TeachingWorkDispatchImport
             if ($role !== 'Schülerempfänger' || $this->value($recipient, 'Vorname') === '' || $this->value($recipient, 'Nachname') === '' || $row['class'] === ''
                 || $this->normalize($this->value($recipient, 'Kurs')) !== $this->normalize((string) $course->title)
                 || (! $pending && (count($matches) !== 1 || ! in_array($matches[0]['student_id'] ?? null, $members, true)
-                    || ! in_array($email, $matches[0]['emails'] ?? [], true)))
-                || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    || ($documentPreparation ? (($recipient['SchooltoolPersonId'] ?? null) !== null && (string) $matches[0]['student_id'] !== $recipient['SchooltoolPersonId'])
+                        : ! in_array($email, $matches[0]['emails'] ?? [], true))))
+                || (! $documentPreparation && ! filter_var($email, FILTER_VALIDATE_EMAIL))) {
                 $row['status'] = 'Kurs, Person, Klasse, Arbeitszuordnung oder E-Mail nicht eindeutig – Import gesperrt';
                 $blocked = true;
                 $rows[] = $row;
@@ -331,6 +406,14 @@ class TeachingWorkDispatchImport
                 continue;
             }
             $row['student_id'] = $pending ? $addition['user_id'] : $matches[0]['student_id'];
+            if ($documentPreparation && in_array($row['student_id'], $preparedTargets, true)) {
+                $row['status'] = 'Doppelte Person in der Aufgaben-Vorbereitung – Import gesperrt';
+                $blocked = true;
+                $rows[] = $row;
+
+                continue;
+            }
+            $preparedTargets[] = $row['student_id'];
             $row['participant_addition'] = $pending ? $addition : null;
             $plannedAt = $this->plannedTime($recipient, $report['metadata']);
             $row['planned_at'] = $plannedAt;

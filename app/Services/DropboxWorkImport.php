@@ -139,15 +139,24 @@ class DropboxWorkImport
         return $data;
     }
 
-    /** @return array{folders: list<array{id:string,name:string}>, cursor: ?string} */
+    /** @return array{folders: list<array{id:string,name:string}>, cursor: ?string, parent: ?array{id:string,name:string}} */
     public function folders(DropboxConnection $connection, string $id = '', ?string $cursor = null): array
     {
         $data = $this->api($connection, $cursor ? 'files/list_folder/continue' : 'files/list_folder',
             $cursor ? ['cursor' => $cursor] : ['path' => $id, 'recursive' => false, 'limit' => 200])->json();
+        $parent = null;
+        if ($id !== '') {
+            $current = $this->metadata($connection, $id);
+            $parentPath = dirname($current['path_lower']);
+            if ($parentPath !== '/' && $parentPath !== '.') {
+                $parentFolder = $this->metadata($connection, $parentPath);
+                $parent = ['id' => $parentFolder['id'], 'name' => $parentFolder['name']];
+            }
+        }
 
         return ['folders' => collect($data['entries'] ?? [])->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder')
             ->map(fn (array $entry): array => ['id' => $entry['id'], 'name' => $entry['name']])->values()->all(),
-            'cursor' => ($data['has_more'] ?? false) ? ($data['cursor'] ?? null) : null];
+            'cursor' => ($data['has_more'] ?? false) ? ($data['cursor'] ?? null) : null, 'parent' => $parent];
     }
 
     private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false): Response
