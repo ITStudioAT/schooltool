@@ -24,10 +24,10 @@ const canQuickImport = computed(() => Boolean(workDropboxStates.get(key.value)?.
 const quickImportHint = computed(() => directoryLoadError.value
     ? 'Dropbox-Verbindung konnte nicht geprüft werden. Bitte Importieren verwenden.'
     : (workDropboxStates.get(key.value)?.message || 'Dropbox-Verbindung prüfen …'))
-watch(key, async value => {
+watch(() => [key.value, props.work?.status?.folder_imported_at], async ([value], previous) => {
     directoryLoadError.value = false
     try {
-        await loadWorkDropbox(value, props.work?.id)
+        await loadWorkDropbox(value, props.work?.id, previous?.[0] === value)
         const parameters = new URLSearchParams(window.location.search)
         if (value && key.value === value && parameters.get('dropbox_work') === String(props.work?.id)) emit('open', props.work, false)
     } catch { if (key.value === value) directoryLoadError.value = true }

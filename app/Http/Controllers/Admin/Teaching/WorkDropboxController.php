@@ -29,14 +29,22 @@ class WorkDropboxController extends Controller
             ->where('teaching_course_work_id', $course_work->id)->first() : null;
         $suggested = $connected ? ($folder ?? TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
             ->orderByDesc('updated_at')->orderByDesc('id')->first()) : null;
+        $plausibility = $suggested ? $dropbox->folderPlausibility($course_work, $suggested->folder_name) : null;
+        $hasImport = filled($course_work->status['folder_imported_at'] ?? null);
+        $canPreview = $connected && $folder && $plausibility['status'] !== 'mismatch';
 
         return response()->json(['configured' => $configured, 'installed' => $installed, 'connected' => (bool) $connected,
             'folder' => $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null,
             'suggested_folder' => $suggested ? ['id' => $suggested->folder_id, 'name' => $suggested->folder_name] : null,
-            'can_quick_import' => (bool) ($connected && $folder),
+            'folder_plausibility' => $plausibility,
+            'has_import' => $hasImport,
+            'can_preview' => (bool) $canPreview,
+            'can_quick_import' => (bool) ($canPreview && $hasImport),
             'message' => ! $configured || ! $installed ? 'Dropbox ist noch nicht eingerichtet. Bitte Importieren verwenden.'
                 : (! $connected ? 'Dropbox verbinden, um Quick-Import zu verwenden.'
-                    : (! $folder ? 'Für diese Arbeit einen Dropbox-Ordner zuordnen.' : 'Dropbox-Ordner erneut lesen und Vorschau öffnen.'))]);
+                    : (! $folder ? 'Für diese Arbeit einen Dropbox-Ordner zuordnen.'
+                        : ($plausibility['status'] === 'mismatch' ? $plausibility['message']
+                            : (! $hasImport ? 'Quick-Import erst nach dem ersten erfolgreich übernommenen Import dieser Arbeit.' : 'Dropbox-Ordner erneut lesen und Vorschau öffnen.'))))]);
     }
 
     public function connect(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
@@ -88,6 +96,10 @@ class WorkDropboxController extends Controller
         $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/']]);
         $connection = $dropbox->connection($actor);
         $folder = $dropbox->metadata($connection, $data['folder_id']);
+        $plausibility = $dropbox->folderPlausibility($course_work, $folder['name']);
+        if ($plausibility['status'] === 'mismatch') {
+            throw ValidationException::withMessages(['dropbox' => $plausibility['message']]);
+        }
         TeachingWorkDropboxFolder::query()->updateOrCreate(['dropbox_connection_id' => $connection->id,
             'teaching_course_work_id' => $course_work->id], ['folder_id' => $folder['id'], 'folder_name' => $folder['name']]);
 

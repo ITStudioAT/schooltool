@@ -5,10 +5,11 @@
         <p v-else-if="state && !state.can_quick_import" class="text-caption">{{ state.message }}</p>
         <p v-if="state?.folder" class="text-caption">{{ state.folder.name }}</p>
         <p v-else-if="state?.suggested_folder" class="text-caption">Zuletzt gewählt: {{ state.suggested_folder.name }}</p>
+        <v-alert v-if="['mismatch', 'unknown'].includes(state?.folder_plausibility?.status)" type="error" variant="tonal" icon="mdi-alert-circle" role="alert" class="mt-2 work-folder-mismatch">{{ state.folder_plausibility.message }}</v-alert>
         <div v-if="state?.configured && state?.installed" class="d-flex flex-wrap align-center ga-2 mt-2">
             <v-btn v-if="!state.connected" size="small" variant="outlined" :disabled="busy || loading" @click="connectDropbox">Dropbox verbinden</v-btn>
             <template v-else>
-                <v-btn v-if="state.folder" size="small" variant="tonal" :disabled="busy || loading" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
+                <v-btn v-if="state.folder" size="small" variant="tonal" :disabled="busy || loading || state.can_preview === false" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
                 <v-btn size="small" variant="text" :disabled="busy || loading" @click="browseSuggested">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Dropbox-Ordner zuordnen' }}</v-btn>
                 <details class="text-caption"><summary>Verbindung verwalten</summary>
                     <v-btn size="small" variant="text" :disabled="busy || loading" @click="disconnectDropbox">Verbindung in Schooltool entfernen</v-btn>

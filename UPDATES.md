@@ -5,6 +5,7 @@
 ### Unterricht
 
 - Kurse exportieren für lokalen KI-Import
+- Ordner-Auswahl absichern
 
 ## 3.51.5
 

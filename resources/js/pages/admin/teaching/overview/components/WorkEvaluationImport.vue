@@ -182,13 +182,14 @@ export default {
             try {
                 const state = await loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true)
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
-                if (!state?.can_quick_import) throw new Error(state?.message || 'Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.')
+                if (!(state?.can_preview ?? state?.can_quick_import)) throw new Error(state?.message || 'Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.')
                 this.import_selection = 'Dropbox · ' + state.folder.name
                 const response = await axios.post(importDropbox.url(work.id), apply ? { apply: true, hash } : {})
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                 if (apply) {
                     this.import_summary = { messages: ['Dropbox-Paket übernommen.', ...(response.data.messages || [])] }
                     this.$emit('imported', response.data.data)
+                    loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true).catch(() => {})
                 } else {
                     this.json_preview = response.data.preview
                 }
@@ -392,6 +393,7 @@ export default {
                     this.json_uploads = null
                     this.import_summary = { messages: ['Import übernommen.', ...(response.data.messages || [])] }
                     this.$emit('imported', response.data.data)
+                    loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true).catch(() => {})
                 } else {
                     this.json_preview = response.data.preview
                 }

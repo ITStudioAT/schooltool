@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
-import { VBtn, VFileInput } from 'vuetify/components'
+import { VAlert, VBtn, VFileInput } from 'vuetify/components'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkImportActions from '@/pages/admin/teaching/overview/components/WorkImportActions.vue'
 import WorkDropboxSource from '@/pages/admin/teaching/overview/components/WorkDropboxSource.vue'
@@ -16,13 +16,58 @@ const preview = { target_work: { title: 'E-Mails', course_title: 'Kurs' }, exerc
 function mountComponent(component: any, props = {}) {
     return mount(component, { props, global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
         AdminCourseStore: { selected_course: { id: 2 } }, AdminAdminStore: { config: { user: { id: 7 } } },
-    } }), createVuetify({ components: { VBtn, VFileInput } })],
-    components: { 'v-btn': VBtn, 'v-file-input': VFileInput }, stubs: { 'v-btn': false, VBtn: false, 'v-file-input': false, VFileInput: false } } })
+    } }), createVuetify({ components: { VAlert, VBtn, VFileInput } })],
+    components: { 'v-alert': VAlert, 'v-btn': VBtn, 'v-file-input': VFileInput }, stubs: { 'v-alert': false, VAlert: false, 'v-btn': false, VBtn: false, 'v-file-input': false, VFileInput: false } } })
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it('keeps Quick-Import disabled until apply while the initial Dropbox preview stays available', async () => {
+        const initial = { ...connected, can_quick_import: false, can_preview: true, has_import: false,
+            message: 'Quick-Import erst nach dem ersten erfolgreich übernommenen Import dieser Arbeit.' }
+        const get = vi.fn().mockResolvedValue({ data: initial })
+        vi.stubGlobal('axios', { get, post: vi.fn().mockResolvedValue({ data: { preview } }) })
+        const actions = mountComponent(WorkImportActions, { work })
+        const source = mountComponent(WorkDropboxSource, { work, active: true })
+        const importer = mountComponent(WorkEvaluationImport)
+        try {
+            await flushPromises()
+            expect(actions.findAll('button')[1].attributes('disabled')).toBeDefined()
+            expect(source.findAll('button').find(button => button.text() === 'Dropbox-Vorschau laden')!.attributes('disabled')).toBeUndefined()
+            const vm = importer.vm as any
+            await vm.openImport(work)
+            await vm.previewDropbox(false)
+            expect(vm.json_preview.hash).toBe(preview.hash)
+            expect(actions.findAll('button')[1].attributes('disabled')).toBeDefined()
+            get.mockResolvedValue({ data: { ...initial, can_quick_import: true, has_import: true } })
+            await vm.applyJson()
+            await flushPromises()
+            expect(actions.findAll('button')[1].attributes('disabled')).toBeUndefined()
+        } finally { actions.unmount(); source.unmount(); importer.unmount() }
+    })
+    it.each([
+        [false, 'mismatch', '2026-10-15_Informatik_5L2_Gruppe-1'],
+        [true, 'mismatch', '2026-10-15_Informatik_5L2_Gruppe-1'],
+        [false, 'mismatch', '2026-10-04_E-Mail_DGB-3B-2_Tag'],
+        [false, 'unknown', 'Leistungsarbeit'],
+    ])('shows a red alert with an exclamation icon for an implausible folder, assigned %s, status %s, name %s', async (assigned, status, name) => {
+        const folder = { id: 'id:wrong', name }
+        const message = 'Ordner passt nicht zum Kurs INF - 5L1 - 1. Bitte den passenden Dropbox-Ordner wählen!'
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...connected,
+            folder: assigned ? folder : null, suggested_folder: folder, can_preview: false, can_quick_import: false,
+            folder_plausibility: { status, message } } }) })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true })
+        try {
+            await flushPromises()
+            const alert = wrapper.get('.work-folder-mismatch')
+            expect(alert.attributes('role')).toBe('alert')
+            expect(alert.text()).toBe(message)
+            expect(alert.findComponent(VAlert).props()).toMatchObject({ type: 'error', icon: 'mdi-alert-circle' })
+            expect(wrapper.text()).toContain(folder.name)
+            if (assigned) expect(wrapper.findAll('button').find(button => button.text() === 'Dropbox-Vorschau laden')!.attributes('disabled')).toBeDefined()
+        } finally { wrapper.unmount() }
+    })
     it.each([true, false])('starts a new folder selection at the saved suggestion with an existing binding %s', async assigned => {
         const suggestion = { id: 'id:last-folder', name: 'Zuletzt gewählt' }
         const get = vi.fn().mockResolvedValueOnce({ data: { ...connected, folder: assigned ? suggestion : null,

@@ -139,6 +139,35 @@ class DropboxWorkImport
         return $data;
     }
 
+    /** @return array{status: string, message: string} */
+    public function folderPlausibility(TeachingCourseWork $work, string $name): array
+    {
+        $course = $work->teachingCourse;
+        $classes = array_map(fn (string $class): string => mb_strtoupper(trim($class)), $course->classes ?? []);
+        $group = null;
+        if (count($classes) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course->title), $parts) === 1
+            && mb_strtoupper(trim($parts[1])) === $classes[0]) {
+            $group = (int) $parts[2];
+        }
+        $recognized = preg_match('/(?:\A|_)([0-9]+[A-Z][A-Z0-9]*)(?:_Gruppe-([1-9][0-9]*))?\z/ui', $name, $parts) === 1;
+        if (! $recognized) {
+            $recognized = preg_match('/(?:\A|_)[A-Z][A-Z0-9]*-([0-9]+[A-Z][A-Z0-9]*)-([1-9][0-9]*)(?:_(?:Tag|Abend))?\z/ui', $name, $parts) === 1;
+        }
+        if (! $recognized || $classes === []) {
+            return ['status' => 'unknown', 'message' => 'Klasse und Kursgruppe sind im Ordnernamen nicht eindeutig erkennbar. Bitte den Inhalt beim Import prüfen.'];
+        }
+        $folderClass = mb_strtoupper($parts[1]);
+        $folderGroup = isset($parts[2]) ? (int) $parts[2] : null;
+        if (! in_array($folderClass, $classes, true) || ($group !== null && $folderGroup !== null && $folderGroup !== $group)) {
+            return ['status' => 'mismatch', 'message' => "Ordner passt nicht zum Kurs {$course->title}: {$name}. Bitte den passenden Dropbox-Ordner wählen!"];
+        }
+        if ($group !== null && $folderGroup === null) {
+            return ['status' => 'unknown', 'message' => "Die Kursgruppe {$group} fehlt im Ordnernamen. Bitte den Inhalt beim Import prüfen."];
+        }
+
+        return ['status' => 'match', 'message' => 'Klasse und Kursgruppe passen zum aktuellen Kurs.'];
+    }
+
     /** @return array{folders: list<array{id:string,name:string}>, cursor: ?string, parent: ?array{id:string,name:string}} */
     public function folders(DropboxConnection $connection, string $id = '', ?string $cursor = null): array
     {
@@ -246,6 +275,10 @@ class DropboxWorkImport
             $this->fail('Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.');
         }
         $root = $this->metadata($connection, $mapping->folder_id);
+        $plausibility = $this->folderPlausibility($work, $root['name']);
+        if ($plausibility['status'] === 'mismatch') {
+            $this->fail($plausibility['message']);
+        }
         $entries = [];
         $cursor = null;
         do {

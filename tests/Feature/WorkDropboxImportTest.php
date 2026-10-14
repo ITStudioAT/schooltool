@@ -284,7 +284,8 @@ test('folder assignment validates Dropbox identity and is private to the user an
         'api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [['.tag' => 'folder', 'id' => 'id:folder', 'name' => 'Arbeit']], 'has_more' => false]),
         'api.dropboxapi.com/2/files/get_metadata' => Http::response(['.tag' => 'folder', 'id' => 'id:folder', 'name' => 'Arbeit', 'path_lower' => '/arbeit'])]);
     $this->getJson($this->url.'/folders')->assertOk()->assertJsonPath('folders.0.id', 'id:folder');
-    $this->postJson($this->url.'/folder', ['folder_id' => 'id:folder'])->assertOk()->assertJsonPath('can_quick_import', true);
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:folder'])->assertOk()
+        ->assertJsonPath('can_quick_import', false)->assertJsonPath('can_preview', true)->assertJsonPath('has_import', false);
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
     $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()->assertJsonPath('can_quick_import', false)
         ->assertJsonPath('folder', null)->assertJsonPath('suggested_folder.id', 'id:folder');
@@ -323,17 +324,61 @@ test('Dropbox previews fresh content without writes rejects stale apply and impo
     $before = $this->work->fresh()->getAttributes();
     fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package)]);
     $preview = $this->postJson($this->url.'/import')->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->getJson($this->url)->assertOk()->assertJsonPath('can_quick_import', false)->assertJsonPath('has_import', false);
     expect($this->work->fresh()->getAttributes())->toBe($before)
         ->and(Storage::disk('local')->allFiles())->toBe([]);
     $package['records'][0]['comment'] = 'Geänderter Cloudstand';
     $package = TeachingWorkJsonFixture::sign($package);
     fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package)]);
     $this->postJson($this->url.'/import', ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('can_quick_import', false);
     expect($this->work->fresh()->getAttributes())->toBe($before);
     $fresh = $this->postJson($this->url.'/import')->assertOk()->json('preview');
     expect($fresh['hash'])->not->toBe($preview['hash']);
     $this->postJson($this->url.'/import', ['apply' => true, 'hash' => $fresh['hash']])->assertOk();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('can_quick_import', true)->assertJsonPath('has_import', true);
     expect($this->work->fresh()->status['assessment_json_imports'])->not->toBeEmpty();
+});
+
+test('Dropbox checks the suggested folder against this course and blocks an assigned mismatch even after an import', function (string $name, string $status): void {
+    $this->course->update(['title' => 'INF - 5L1 - 1', 'classes' => ['5L1']]);
+    $this->work->update(['status' => ['folder_imported_at' => now()->toISOString()]]);
+    $connection = dropboxConnectionForWork($this);
+    TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)->update(['folder_name' => $name]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('folder_plausibility.status', $status)
+        ->assertJsonPath('can_quick_import', $status !== 'mismatch')->assertJsonPath('can_preview', $status !== 'mismatch');
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()
+        ->assertJsonPath('suggested_folder.name', $name)->assertJsonPath('folder_plausibility.status', $status)
+        ->assertJsonPath('can_quick_import', false);
+    Http::assertNothingSent();
+})->with([
+    'other class' => ['2026-10-15_Informatik_5L2_Gruppe-1', 'mismatch'],
+    'other course group' => ['2026-10-19_Informatik_5L1_Gruppe-2', 'mismatch'],
+    'matching class and group' => ['2026-10-19_Informatik_5L1_Gruppe-1', 'match'],
+    'case insensitive' => ['2026-10-19_Informatik_5l1_gruppe-1', 'match'],
+    'legacy other class' => ['2026-10-04_E-Mail_DGB-3B-2_Tag', 'mismatch'],
+    'legacy matching day course' => ['2026-10-19_Dateimanagement_INF-5L1-1_Tag', 'match'],
+    'legacy matching evening course' => ['2026-10-19_Dateimanagement_INF-5L1-1_Abend', 'match'],
+    'legacy other group' => ['2026-10-19_Dateimanagement_INF-5L1-2', 'mismatch'],
+    'missing group' => ['2026-10-19_Informatik_5L1', 'unknown'],
+    'unstructured legacy folder' => ['Leistungsarbeit', 'unknown'],
+]);
+
+test('Dropbox rejects wrong course folders at assignment and checks live names again before reading import files', function (): void {
+    $this->course->update(['title' => 'INF - 5L1 - 1', 'classes' => ['5L1']]);
+    dropboxConnectionForWork($this);
+    $before = $this->work->fresh()->getAttributes();
+    Http::fake(['api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'api.dropboxapi.com/2/files/get_metadata' => Http::response(['.tag' => 'folder', 'id' => 'id:workfolder',
+            'name' => '2026-10-15_Informatik_5L2_Gruppe-1', 'path_lower' => '/wrong-folder'])]);
+
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:workfolder'])->assertUnprocessable()->assertJsonValidationErrors('dropbox');
+    $this->assertDatabaseHas('teaching_work_dropbox_folders', ['teaching_course_work_id' => $this->work->id, 'folder_name' => 'Leistungsarbeit']);
+    $this->postJson($this->url.'/import')->assertUnprocessable()->assertJsonValidationErrors('dropbox');
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files/list_folder'));
+    expect($this->work->fresh()->getAttributes())->toBe($before);
 });
 
 test('missing malformed ambiguous and incomplete Dropbox packages never apply', function (string $case): void {
