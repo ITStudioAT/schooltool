@@ -105,6 +105,9 @@
                                                 :class="{ 'course-table-hour--cancelled': isHourCancelled(courseDate, hour) }"
                                                 :title="isHourCancelled(courseDate, hour) ? 'Entfällt' : undefined">{{ hour }}. </span>Std
                                         </div>
+                                        <div v-if="courseDateTimeLabel(courseDate)" class="course-table-date-time">
+                                            {{ courseDateTimeLabel(courseDate) }}
+                                        </div>
                                         </button>
                                         <div
                                             v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
@@ -1095,7 +1098,8 @@
                                         <v-icon size="14">mdi-check</v-icon>
                                         {{ assignment.completion.completed }} erledigt · {{ assignment.completion.open }} offen
                                     </div>
-                                    <div class="work-import-actions d-flex flex-wrap align-center ga-2 mt-2">
+                                    <div class="work-import-actions d-flex flex-wrap align-start ga-2 mt-2">
+                                        <WorkAiExport :work="assignment.work" />
                                         <WorkImportActions :work="assignment.work" @open="openImport" />
                                         <WorkEvaluationPdf :work="assignment.work" />
                                     </div>
@@ -2498,6 +2502,7 @@ import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStuden
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
+import WorkAiExport from './WorkAiExport.vue'
 import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
@@ -2519,7 +2524,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -3547,6 +3552,18 @@ export default {
             if (!sortedHours.length) return ''
 
             return `${sortedHours.map((hour) => `${hour}.`).join(', ')} Std`
+        },
+        courseDateTimeLabel(courseDate) {
+            const hours = courseDateHours(courseDate)
+            if (!hours.length) return ''
+
+            const schoolHours = useSchoolHourStore().school_hours
+            const firstHour = schoolHours.find((entry) => Number(entry.hour) === hours[0])
+            const lastHour = schoolHours.find((entry) => Number(entry.hour) === hours[hours.length - 1])
+            const from = (firstHour?.from || '').slice(0, 5)
+            const until = (lastHour?.until || '').slice(0, 5)
+
+            return from && until ? `${from}–${until}` : ''
         },
         isFreeCourseDate(courseDate) {
             const statuses = Array.isArray(courseDate?.status) ? courseDate.status : []
@@ -6545,10 +6562,15 @@ export default {
 }
 
 .course-table-date-hours,
+.course-table-date-time,
 .course-table-sub-text {
     color: #64748b;
     font-size: 0.74rem;
     line-height: 1.25;
+}
+
+.course-table-date-time {
+    font-weight: 400;
 }
 
 .course-table-work-label,

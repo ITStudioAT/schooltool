@@ -65,6 +65,39 @@ describe('CourseTable hourly cancellation dialog', () => {
         return { wrapper, dates, courses, date }
     }
 
+    it('shows configured lesson start and end times in the date header and refreshes when times load', async () => {
+        const { wrapper, courses } = mountCancellationTable([5])
+        const date = (courses.selected_course as any).course_dates[0]
+        try {
+            await flushPromises()
+            const header = wrapper.get('[data-testid="course-date-cancellation-1"]')
+            expect(header.get('.course-table-date-time').text()).toBe('11:35–13:20')
+
+            date.hours = [6, 5, 6]
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:35–13:20')
+
+            useSchoolHourStore().school_hours = [{ hour: 5, from: '11:35:00', until: '12:25:00' }] as never
+            await flushPromises()
+            expect(header.find('.course-table-date-time').exists()).toBe(false)
+
+            useSchoolHourStore().school_hours = [
+                { hour: 5, from: '11:40:00', until: '12:30:00' },
+                { hour: 6, from: '12:35:00', until: '13:25:00' },
+            ] as never
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:40–13:25')
+
+            date.hours = [5]
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:40–12:30')
+
+            date.hours = []
+            await flushPromises()
+            expect(header.find('.course-table-date-time').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
     it.each([[[5]], [[6]], [[5, 6]]])('saves only the selected cancelled hours %j and updates the overview', async (hours) => {
         const { wrapper, dates, courses, date } = mountCancellationTable()
         try {
@@ -423,6 +456,23 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
             const card = wrapper.get('.course-table-date-work-item')
+            const previousAxios = globalThis.axios
+            const exportRequest = vi.fn().mockResolvedValue({ data: { data: {
+                work_id: 65, course_id: 18, roster_complete: true, participants_count: 1,
+                active_participants_count: 1, context: { work: { title: work.title } },
+                warnings: [], text: 'Gespeicherter Auftrag für Übung: E-Mails',
+            } } })
+            globalThis.axios = { get: exportRequest } as never
+            try {
+                const exportButton = card.findAll('v-btn').find(button => button.text() === 'KI-Export')!
+                expect(exportButton.attributes('disabled')).toBe('false')
+                exportButton.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+                await flushPromises()
+                expect(exportRequest).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export')
+                expect((card.get('textarea[aria-label="Vollständiger Auftrag an Codex"]').element as HTMLTextAreaElement).value)
+                    .toBe('Gespeicherter Auftrag für Übung: E-Mails')
+                expect(vm.workDialogFormOpen).toBe(false)
+            } finally { globalThis.axios = previousAxios }
             expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
