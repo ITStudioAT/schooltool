@@ -38,6 +38,8 @@ class CourseWorkController extends Controller
             abort_unless($work->teachingCourse, 403);
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
 
+            abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+
             return response()->json(['data' => $export->build($work, $actor)])
                 ->header('Cache-Control', 'private, no-store');
         });
@@ -48,6 +50,7 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         abort_if((int) $request->server('CONTENT_LENGTH', 0) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
         $data = $request->validate([
             'package' => ['required_without:documents', 'file', 'extensions:json', 'max:256'],
@@ -80,6 +83,7 @@ class CourseWorkController extends Controller
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
                 $enrollments = $work->teachingCourse->teachingCourseStudents()->lockForUpdate()->get();
                 $users = User::query()->whereIn('id', $enrollments->pluck('user_id'))->lockForUpdate()->get();
                 Import116::query()->whereIn('id', $enrollments->pluck('import116_id')->merge($users->pluck('import116_id'))->filter())->lockForUpdate()->get();
@@ -136,6 +140,7 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $data = $request->validate([
             'folder' => ['required', 'string', 'max:255'],
             'documents' => ['required', 'string', 'max:6291456'],
@@ -150,6 +155,7 @@ class CourseWorkController extends Controller
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $work->setRelation('teachingCourse', TeachingCourse::query()->lockForUpdate()->findOrFail($work->teaching_course_id));
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
                 try {
                     $summary = $importer->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle, $createdPaths);
                 } catch (Throwable $exception) {
@@ -173,6 +179,7 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $data = $request->validate([
             'protocol' => ['required', 'file', 'extensions:txt', 'mimetypes:text/plain,application/json', 'max:1024'],
             'purpose' => ['sometimes', Rule::in(['tasks', 'results'])],
@@ -191,6 +198,7 @@ class CourseWorkController extends Controller
             $result = DB::transaction(function () use ($course_work, $actor, $importer, $report, $sha256, $name, $upload, $data, &$createdPath): array {
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
                 $preview = $importer->preview($work, $report, $sha256);
                 if (! ($data['apply'] ?? false)) {
                     return ['preview' => $preview];
@@ -236,6 +244,7 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $data = $request->validate([
             'reports' => ['required', 'string', 'max:1048576'],
             'pdfs' => ['sometimes', 'array', 'max:20'],
@@ -264,6 +273,7 @@ class CourseWorkController extends Controller
             $result = DB::transaction(function () use ($course_work, $actor, $importer, $report, $pdfs, $uploads, $data, &$createdPaths): array {
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
                 $preview = $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $report, $pdfs);
                 if (! ($data['apply'] ?? false)) {
                     return ['preview' => $preview];
@@ -350,6 +360,8 @@ class CourseWorkController extends Controller
         }
         $validated['maximum_plus'] = $maximumPlus;
         $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
+        $validated['status']['automation_enabled'] = (bool) ($validated['automation_enabled'] ?? true);
+        unset($validated['automation_enabled']);
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id);
 
@@ -436,6 +448,13 @@ class CourseWorkController extends Controller
             $validated['groups'] = $course_work->groups;
         }
 
+        if (array_key_exists('automation_enabled', $validated) || array_key_exists('status', $validated)) {
+            $validated['status'] ??= $course_work->status ?? [];
+            $validated['status']['automation_enabled'] = array_key_exists('automation_enabled', $validated)
+                ? (bool) $validated['automation_enabled'] : $course_work->automationEnabled();
+        }
+        unset($validated['automation_enabled']);
+
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id, $course_work->is_group_work);
 
         $course_work->update($validated);
@@ -477,6 +496,7 @@ class CourseWorkController extends Controller
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1024',
             'is_group_work' => 'sometimes|boolean',
+            'automation_enabled' => 'sometimes|boolean',
             'group_size' => "nullable|integer|min:2|max:{$maximumGroupSize}",
             'is_random_groups' => 'sometimes|boolean',
             'date_for_all_groups' => 'nullable|date',

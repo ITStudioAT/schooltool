@@ -203,6 +203,8 @@
                             :error-messages="workMaximumError" :disabled="is_saving" />
                         <template v-if="action === 'new_course_work' || details_editable">
                             <v-text-field v-model="work_form.title" label="Titel" />
+                            <v-checkbox v-model="work_form.automation_enabled" label="Automatik" :disabled="is_saving" hide-details />
+                            <div class="text-caption text-medium-emphasis mb-2">Mit Automatik: Ordner, Import und Versand-/Abgabestatus. Ohne Automatik: manuell beurteilen.</div>
                             <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                             <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
                                 <v-chip v-for="date in nextDates" :key="date.id" size="x-small" variant="outlined" class="cursor-pointer" @click="selectDate(date.date)">
@@ -831,6 +833,7 @@ import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 import WorkAiExport from './WorkAiExport.vue'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 
 export default {
     components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
@@ -1176,6 +1179,7 @@ export default {
     methods: {
         formatImportDate: formatViennaDateTime,
         openImport(work, quick = false) {
+            if (!workAutomationEnabled(work)) return
             if (quick) this.$refs.evaluationImport.openImport(work, true)
             else this.$refs.evaluationImport.openImport(work)
         },
@@ -1544,6 +1548,7 @@ export default {
                 title: '',
                 description: '',
                 is_group_work: false,
+                automation_enabled: true,
                 group_size: null,
                 is_random_groups: false,
                 date_for_all_groups: '',
@@ -1599,6 +1604,7 @@ export default {
             this.work_form = {
                 ...this.emptyWorkForm(),
                 ...work,
+                automation_enabled: workAutomationEnabled(work),
             }
             this.work_form.is_group_work = this.toBoolean(this.work_form.is_group_work)
             this.work_form.is_random_groups = this.toBoolean(this.work_form.is_random_groups)

@@ -1,5 +1,5 @@
 <template>
-    <v-btn v-if="work?.id" size="small" variant="tonal" prepend-icon="mdi-robot-outline" :disabled="!isCurrentWork || loading" @click.stop="openExport">KI-Export</v-btn>
+    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-robot-outline" :disabled="!isCurrentWork || loading" @click.stop="openExport">KI-Export</v-btn>
     <v-dialog v-model="open" scrollable max-width="900">
         <v-card>
             <v-card-title class="text-wrap text-body-1 font-weight-bold">KI-Export · {{ result?.context?.work?.title || 'Auftrag laden' }}</v-card-title>
@@ -29,6 +29,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
@@ -42,7 +43,7 @@ const exportText = ref(null)
 const copyMessage = ref('')
 const copySucceeded = ref(false)
 let requestSequence = 0
-const isCurrentWork = computed(() => Boolean(props.work?.id && courseStore.selected_course?.id
+const isCurrentWork = computed(() => Boolean(workAutomationEnabled(props.work) && props.work?.id && courseStore.selected_course?.id
     && String(props.work.teaching_course_id) === String(courseStore.selected_course.id)))
 
 function clearExport() {
@@ -108,7 +109,7 @@ async function copyExport() {
     }
 }
 
-watch(() => [props.work?.id, props.work?.teaching_course_id, courseStore.selected_course?.id], () => {
+watch(() => [props.work?.id, props.work?.teaching_course_id, courseStore.selected_course?.id, workAutomationEnabled(props.work)], () => {
     open.value = false
     clearExport()
 })

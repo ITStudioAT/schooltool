@@ -234,10 +234,7 @@
                                                     <v-icon size="12">mdi-account-multiple</v-icon>
                                                     {{ work.affectedStudentCount }}
                                                 </span>
-                                                <span class="d-inline-flex align-center ga-1" :data-testid="`work-dispatch-${work.work.id}`">
-                                                    <WorkDispatchStatus :work="work.work" aggregate compact />
-                                                </span>
-                                                <WorkFolderStatus :work="work.work" />
+                                                <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" />
                                             </div>
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
@@ -258,12 +255,13 @@
                                                 <v-icon size="11" class="mr-1">mdi-folder-upload-outline</v-icon>
                                                 {{ workImportLabel(work.work) }}
                                             </span>
-                                            <span class="course-table-work-summary-progress"
+                                            <span v-if="workAutomationEnabled(work.work)" class="course-table-work-summary-progress"
                                                 :class="{ 'text-success font-weight-bold': work.completion.open === 0 && work.completion.completed > 0 }"
                                                 :aria-label="`${work.completion.completed} Leistungen erledigt, ${work.completion.open} offen`">
                                                 <v-icon v-if="work.completion.open === 0 && work.completion.completed > 0" size="11">mdi-check</v-icon>
                                                 <span>{{ work.completion.completed }} erledigt<span v-if="work.completion.open > 0"> · <span class="text-error">{{ work.completion.open }} offen</span></span></span>
                                             </span>
+                                            <span v-else-if="work.completion.completed" class="course-table-work-summary-progress">{{ work.completion.completed }} beurteilt</span>
                                         </div>
                                     </div>
                                     <v-tooltip
@@ -1097,9 +1095,11 @@
                                     <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="assignment.work" aggregate /></div>
                                     <div class="d-flex align-center ga-1 mt-2 text-caption" data-testid="work-detail-progress">
                                         <v-icon size="14">mdi-check</v-icon>
-                                        {{ assignment.completion.completed }} erledigt · {{ assignment.completion.open }} offen
+                                        <template v-if="workAutomationEnabled(assignment.work)">{{ assignment.completion.completed }} erledigt · {{ assignment.completion.open }} offen</template>
+                                        <template v-else>{{ assignment.completion.completed }} beurteilt</template>
                                     </div>
                                     <div class="work-import-actions d-flex flex-wrap align-start ga-2 mt-2">
+                                        <WorkContextCopy :work="assignment.work" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
                                         <WorkAiExport :work="assignment.work" />
                                         <WorkImportActions :work="assignment.work" @open="openImport" />
                                         <WorkEvaluationPdf :work="assignment.work" />
@@ -1218,8 +1218,10 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <v-text-field
-                                        v-model="workDialogForm.title"
+                                        <v-checkbox v-model="workDialogForm.automation_enabled" label="Automatik" :disabled="workSaving" hide-details />
+                                        <div class="text-caption text-medium-emphasis mb-2">Mit Automatik: Ordner, Import und Versand-/Abgabestatus. Ohne Automatik: manuell beurteilen.</div>
+                                        <v-text-field
+                                            v-model="workDialogForm.title"
                                         label="Titel"
                                         maxlength="255"
                                         :disabled="workSaving" />
@@ -1475,6 +1477,12 @@
                                                         @dragend="finishWorkGroupStudentDrag"
                                                         @click:close="removeWorkGroupStudent(groupIndex, internalItem.value)">
                                                         {{ internalItem.title }}
+                                                        <span
+                                                            v-if="workGroupOverviewStudentGrade(group, internalItem.value)"
+                                                            class="ml-1 font-weight-bold"
+                                                            :aria-label="`Leistung: ${workGroupOverviewStudentGrade(group, internalItem.value)}`">
+                                                            · {{ workGroupOverviewStudentGrade(group, internalItem.value) }}
+                                                        </span>
                                                     </v-chip>
                                                 </template>
                                             </v-autocomplete>
@@ -1494,6 +1502,12 @@
                                                     @dragend="finishWorkGroupStudentDrag"
                                                     @click:close="removeWorkGroupStudent(groupIndex, group.student_ids[studentIndex])">
                                                     {{ studentNameValue }}
+                                                    <span
+                                                        v-if="workGroupOverviewStudentGrade(group, group.student_ids[studentIndex])"
+                                                        class="ml-1 font-weight-bold"
+                                                        :aria-label="`Leistung: ${workGroupOverviewStudentGrade(group, group.student_ids[studentIndex])}`">
+                                                        · {{ workGroupOverviewStudentGrade(group, group.student_ids[studentIndex]) }}
+                                                    </span>
                                                 </v-chip>
                                             </div>
                                             <div v-else class="text-caption text-medium-emphasis">Keine Schüler:innen zugeordnet.</div>
@@ -1507,7 +1521,8 @@
                             <div v-if="workDialogForm.id" class="mt-2"><WorkDispatchStatus :work="savedWorkDialogWork" aggregate /></div>
                             <div v-if="savedWorkDialogWork" class="d-flex align-center ga-1 mt-2 text-caption" data-testid="work-detail-progress">
                                 <v-icon size="14">mdi-check</v-icon>
-                                {{ savedWorkDialogCompletion.completed }} erledigt · {{ savedWorkDialogCompletion.open }} offen
+                                <template v-if="workAutomationEnabled(savedWorkDialogWork)">{{ savedWorkDialogCompletion.completed }} erledigt · {{ savedWorkDialogCompletion.open }} offen</template>
+                                <template v-else>{{ savedWorkDialogCompletion.completed }} beurteilt</template>
                             </div>
                             <div v-if="workDialogForm.id" class="work-import-actions d-flex flex-wrap align-center ga-2 mt-4">
                                 <WorkImportActions :work="savedWorkDialogWork" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" />
@@ -2506,11 +2521,13 @@ import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkAiExport from './WorkAiExport.vue'
 import WorkImportActions from './WorkImportActions.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
+import WorkContextCopy from './WorkContextCopy.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 import WorkCellStatus from './WorkCellStatus.vue'
 import { workCellStatuses } from '@/helpers/workCellStatus'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -2526,7 +2543,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkFolderStatus, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkFolderStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -3214,6 +3231,7 @@ export default {
     },
 
     methods: {
+        workAutomationEnabled,
         scheduledWorkIconColor,
         cancellationHours: courseDateHours,
         isHourCancelled: isCourseDateHourCancelled,
@@ -3249,6 +3267,7 @@ export default {
         },
         formatImportDate: formatViennaDateTime,
         workImportLabel(work) {
+            if (!workAutomationEnabled(work)) return ''
             const importedAt = formatViennaDateTime(work?.status?.folder_imported_at)
             if (importedAt) {
                 const parts = new Intl.DateTimeFormat('de-AT', {
@@ -3607,6 +3626,7 @@ export default {
             }
         },
         openImport(work, quick = false) {
+            if (!workAutomationEnabled(work)) return
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
             if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
             if (quick) this.$refs.evaluationImport.openImport(savedWork, true)
@@ -3863,7 +3883,7 @@ export default {
             return {
                 affectedStudentCount,
                 completion: this.workCompletionCounts(work),
-                deadlineExpired: workDeadlineExpired(work, this.deadlineNow),
+                deadlineExpired: workAutomationEnabled(work) && workDeadlineExpired(work, this.deadlineNow),
                 evaluationsComplete: this.workEvaluationsComplete(work),
                 submissionCheckComplete: this.workSubmissionCheckComplete(work),
                 id: work.id,
@@ -3879,6 +3899,7 @@ export default {
             this.deadlineNow = Date.now()
         },
         workEvaluationsComplete(work) {
+            if (!workAutomationEnabled(work)) return false
             const counts = this.workCompletionCounts(work)
             if (!counts.completed || counts.open) return false
             const groups = Array.isArray(work?.groups) ? work.groups : []
@@ -3891,6 +3912,7 @@ export default {
             })
         },
         workSubmissionCheckComplete(work) {
+            if (!workAutomationEnabled(work)) return false
             const check = work.submission_check_status
             if (check?.complete !== true || !workDeadlineExpired(work, this.deadlineNow)
                 || check.deadline_date !== work.finish_until_date || check.deadline_time !== work.finish_until_time) return false
@@ -4143,6 +4165,7 @@ export default {
                 group_size: null,
                 id: null,
                 is_group_work: false,
+                automation_enabled: true,
                 is_random_groups: false,
                 status: [],
                 teaching_course_id: this.selected_course?.id || null,
@@ -4169,6 +4192,7 @@ export default {
             this.workDialogForm = {
                 ...this.emptyDateWorkForm(),
                 ...work,
+                automation_enabled: workAutomationEnabled(work),
                 date_for_all_groups: this.normalizeDateKey(work.date_for_all_groups),
                 description: String(work.description || ''),
                 finish_until_date: this.normalizeDateKey(work.finish_until_date),
@@ -4552,6 +4576,15 @@ export default {
             )
 
             return String(individualGrade?.grade ?? group?.grade ?? '')
+        },
+        workGroupOverviewStudentGrade(group, studentId) {
+            if (!Array.isArray(group?.student_ids)
+                || !group.student_ids.some((memberId) => String(memberId) === String(studentId))) return ''
+
+            return this.workGroupStudentGrade(
+                group.use_individual_grades ? { ...group, grade: null } : group,
+                studentId,
+            ).trim()
         },
         workGroupStudentComment(group, studentId) {
             const comments = Array.isArray(group?.comments)

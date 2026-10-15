@@ -1,8 +1,8 @@
 <template>
-    <span class="work-import-action" @click.stop>
+    <span v-if="workAutomationEnabled(work)" class="work-import-action" @click.stop>
         <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" :disabled="disabled" @click.stop="$emit('open', work, false)">Importieren</v-btn>
     </span>
-    <span class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
+    <span v-if="workAutomationEnabled(work)" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
         <v-btn class="work-quick-import" size="small" variant="flat" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled || !canQuickImport"
         :title="quickImportHint"
         @click.stop="$emit('open', work, true)">Quick-Import</v-btn>
@@ -12,6 +12,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxStates, workDropboxKey } from '@/helpers/workDropbox'
 
@@ -24,8 +25,9 @@ const canQuickImport = computed(() => Boolean(workDropboxStates.get(key.value)?.
 const quickImportHint = computed(() => directoryLoadError.value
     ? 'Dropbox-Verbindung konnte nicht geprüft werden. Bitte Importieren verwenden.'
     : (workDropboxStates.get(key.value)?.message || 'Dropbox-Verbindung prüfen …'))
-watch(() => [key.value, props.work?.status?.folder_imported_at], async ([value], previous) => {
+watch(() => [key.value, props.work?.status?.folder_imported_at, workAutomationEnabled(props.work)], async ([value], previous) => {
     directoryLoadError.value = false
+    if (!workAutomationEnabled(props.work)) return
     try {
         await loadWorkDropbox(value, props.work?.id, previous?.[0] === value)
         const parameters = new URLSearchParams(window.location.search)

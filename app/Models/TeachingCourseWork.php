@@ -45,6 +45,11 @@ class TeachingCourseWork extends Model
         return $this->belongsTo(TeachingCourse::class);
     }
 
+    public function automationEnabled(): bool
+    {
+        return ($this->status['automation_enabled'] ?? true) !== false;
+    }
+
     public function teachingCourseStudentEntries(): HasMany
     {
         return $this->hasMany(TeachingCourseStudentEntry::class);

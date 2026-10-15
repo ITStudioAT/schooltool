@@ -16,6 +16,7 @@ use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
@@ -1043,6 +1044,51 @@ test('JSON assessment individual work binds group name to the course and uses on
 
 beforeEach(function () {
     $this->freezeTime();
+});
+
+test('work automation defaults to enabled and manual mode persists without losing historical evidence or grades', function () {
+    $work = prepareWorkDispatchImport($this);
+    $history = ['dispatch_logs' => [['sha256' => str_repeat('a', 64), 'file_path' => 'history.txt']],
+        'assessment_json_imports' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+    $work->update(['status' => $history]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $groups = $this->getJson($url)->assertOk()->assertJsonPath('data.automation_enabled', true)->json('data.groups');
+
+    $this->putJson($url, ['automation_enabled' => false])->assertOk()
+        ->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.groups', $groups);
+    expect($work->fresh()->status)->toBe($history + ['automation_enabled' => false]);
+
+    $this->putJson($url, ['title' => 'Manuelle Arbeit', 'status' => ['automation_enabled' => true]])->assertOk()
+        ->assertJsonPath('data.automation_enabled', false);
+    expect($work->fresh()->status['dispatch_logs'])->toBe($history['dispatch_logs']);
+    $this->putJson($url, ['automation_enabled' => true])->assertOk()->assertJsonPath('data.automation_enabled', true);
+    expect($work->fresh()->status['dispatch_logs'])->toBe($history['dispatch_logs'])
+        ->and($work->fresh()->status['folder_imported_at'])->toBe($history['folder_imported_at']);
+});
+
+test('work automation is validated on creation and supports manual work without an assigned folder', function () {
+    prepareWorkDispatchImport($this);
+    $payload = ['teaching_course_id' => $this->course->id, 'type' => 'MA', 'title' => 'Manuelle Arbeit'];
+    $this->postJson('/api/admin/teaching/course_works', $payload + ['automation_enabled' => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors('automation_enabled');
+    $this->postJson('/api/admin/teaching/course_works', $payload + ['automation_enabled' => false])
+        ->assertCreated()->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.status.automation_enabled', false);
+    $this->postJson('/api/admin/teaching/course_works', $payload)->assertCreated()->assertJsonPath('data.automation_enabled', true);
+});
+
+test('manual work blocks automation endpoints before importing or contacting Dropbox', function () {
+    $work = prepareWorkDispatchImport($this);
+    $work->update(['status' => [...$work->status, 'automation_enabled' => false]]);
+    $before = $work->fresh()->getAttributes();
+    Http::preventStrayRequests();
+    foreach (['import-json', 'import-folder', 'import-dispatch', 'import-evaluations', 'dropbox/connect', 'dropbox/folder', 'dropbox/import'] as $endpoint) {
+        $this->postJson("/api/admin/teaching/course_works/{$work->id}/{$endpoint}", [])
+            ->assertUnprocessable()->assertJsonPath('message', 'Automatik ist für diese Arbeit ausgeschaltet.');
+    }
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/ai-export")->assertUnprocessable()
+        ->assertJsonPath('message', 'Automatik ist für diese Arbeit ausgeschaltet.');
+    expect($work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
 });
 
 test('folder import records the latest successful import time and protects it from manual edits', function () {

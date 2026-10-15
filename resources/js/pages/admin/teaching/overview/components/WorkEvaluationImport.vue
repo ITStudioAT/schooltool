@@ -119,6 +119,7 @@ import { mapState } from 'pinia'
 import { markRaw } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { readWorkImportDirectory, saveWorkImportDirectory, supportsWorkImportDirectory, workImportDirectories, workImportDirectoryKey } from '@/helpers/workImportDirectory'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { assessmentTimeText, assessmentCompletionText } from '@/helpers/workAssessmentTimes'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { importFolder, importJson } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
@@ -148,7 +149,7 @@ export default {
         assessmentTimeText,
         assessmentCompletionText,
         isSelectedCourseWork(work) {
-            return Boolean(work?.id && this.selected_course?.id
+            return Boolean(workAutomationEnabled(work) && work?.id && this.selected_course?.id
                 && String(work.teaching_course_id) === String(this.selected_course.id))
         },
         openImport(work, quick = false) {

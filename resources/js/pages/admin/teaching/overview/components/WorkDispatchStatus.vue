@@ -20,6 +20,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord, workProvisionRecords, provisionNotificationText } from '@/helpers/workDispatch'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 
@@ -33,7 +34,7 @@ const props = defineProps({
 })
 const resultSentText = sentAt => dispatchNotificationText(sentAt)
     .replace('Über die Korrektur per E-Mail verständigt', props.aggregate ? 'Ergebnisbenachrichtigung zuletzt versandt' : 'Ergebnisbenachrichtigung versandt')
-const showAssessmentTimes = computed(() => !props.compact && !props.aggregate && props.showResultTime && props.work?.id && props.studentId)
+const showAssessmentTimes = computed(() => workAutomationEnabled(props.work) && !props.compact && !props.aggregate && props.showResultTime && props.work?.id && props.studentId)
 const assessment = computed(() => currentAssessmentRecord(props.work, props.studentId))
 function visibleText(item) {
     if (item.purpose === 'provision') return item.label
@@ -45,6 +46,7 @@ function visibleText(item) {
     return item.purpose === 'tasks' ? 'Kein bestätigter Aufgabenversand.' : 'Keine bestätigte Ergebnisbenachrichtigung.'
 }
 const records = computed(() => {
+    if (!workAutomationEnabled(props.work)) return []
     const provisionEvents = workProvisionRecords(props.work, props.studentId, props.aggregate)
     const provisions = ['download_release', 'direct_issue'].flatMap(method => {
         const events = provisionEvents.filter(event => event.method === method).sort((first, second) => Date.parse(first.available_at) - Date.parse(second.available_at))

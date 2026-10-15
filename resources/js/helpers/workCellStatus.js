@@ -1,4 +1,5 @@
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord, provisionNotificationText } from '@/helpers/workDispatch'
 import { personalWorkAssessment, personalWorkProvision, workSubmissionStatus } from '@/helpers/workSubmission'
 
@@ -27,6 +28,7 @@ export function workEvaluationStatus(work, studentId, now = Date.now()) {
 }
 
 export function workCellStatuses(work, studentId, now = Date.now()) {
+    if (!workAutomationEnabled(work)) return []
     const tasks = workDispatchRecord(work, studentId, 'tasks')
     const provision = personalWorkProvision(work, studentId)
     const direct = provision && tasks?.mode !== 'live'

@@ -31,7 +31,7 @@ class WorkDropboxController extends Controller
             ->orderByDesc('updated_at')->orderByDesc('id')->first()) : null;
         $plausibility = $suggested ? $dropbox->folderPlausibility($course_work, $suggested->folder_name) : null;
         $hasImport = filled($course_work->status['folder_imported_at'] ?? null);
-        $canPreview = $connected && $folder && $plausibility['status'] !== 'mismatch';
+        $canPreview = $course_work->automationEnabled() && $connected && $folder && $plausibility['status'] !== 'mismatch';
 
         return response()->json(['configured' => $configured, 'installed' => $installed, 'connected' => (bool) $connected,
             'folder' => $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null,
@@ -50,6 +50,7 @@ class WorkDropboxController extends Controller
     public function connect(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
     {
         $actor = $this->actor($course_work);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $state = bin2hex(random_bytes(32));
         $url = $dropbox->authorizationUrl($state);
         $request->session()->put('teaching_dropbox_oauth', ['state' => $state, 'user_id' => $actor->id,
@@ -66,6 +67,7 @@ class WorkDropboxController extends Controller
             && $pending['user_id'] === $request->user()?->id && $pending['expires_at'] >= now()->timestamp, 403, 'Dropbox-Verbindungsanfrage ist ungültig oder abgelaufen.');
         $work = TeachingCourseWork::query()->findOrFail($pending['work_id']);
         $actor = $this->actor($work);
+        abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $returnPath = '/admin/teaching?'.http_build_query(['panel' => 'table', 'course' => $work->teaching_course_id,
             'dropbox_work' => $work->id, 'dropbox' => $request->query('error') ? 'cancelled' : 'connected']);
         if ($request->query('error')) {
@@ -93,6 +95,7 @@ class WorkDropboxController extends Controller
     public function storeFolder(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
     {
         $actor = $this->actor($course_work);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/']]);
         $connection = $dropbox->connection($actor);
         $folder = $dropbox->metadata($connection, $data['folder_id']);
@@ -118,6 +121,7 @@ class WorkDropboxController extends Controller
     public function import(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
     {
         $actor = $this->actor($course_work);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
         $data = $request->validate(['apply' => ['sometimes', 'boolean'], 'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64']]);
 
         return $dropbox->withImportFiles($actor, $course_work, function (array $parameters, array $uploads) use ($request, $course_work, $data): JsonResponse {

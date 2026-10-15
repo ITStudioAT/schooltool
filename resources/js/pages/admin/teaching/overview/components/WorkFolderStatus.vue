@@ -1,17 +1,19 @@
 <template>
     <v-icon
+        v-if="workAutomationEnabled(work)"
         size="13"
         :color="color"
         :title="tooltip"
         :aria-label="tooltip"
         :aria-hidden="false"
         role="img">
-        mdi-folder-outline
+        mdi-link-variant
     </v-icon>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 
@@ -28,8 +30,9 @@ const tooltip = computed(() => {
     return loadError.value ? 'Ordnerverknüpfung konnte nicht geprüft werden' : 'Ordnerverknüpfung wird geprüft …'
 })
 
-watch(key, async value => {
+watch(() => [key.value, workAutomationEnabled(props.work)], async ([value, enabled]) => {
     loadError.value = false
+    if (!enabled) return
     try {
         await loadWorkDropbox(value, props.work.id)
     } catch {

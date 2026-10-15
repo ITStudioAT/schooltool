@@ -78,6 +78,7 @@ class TeachingCourseWorkEntrySyncService
     public function serializeWork(TeachingCourseWork $work): array
     {
         $payload = $work->toArray();
+        $payload['automation_enabled'] = $work->automationEnabled();
         $payload['groups'] = $this->groupsForWork($work);
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
 

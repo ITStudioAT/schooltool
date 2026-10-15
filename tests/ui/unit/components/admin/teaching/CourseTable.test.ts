@@ -364,7 +364,7 @@ describe('CourseTable evaluation PDF links', () => {
         expect(ctx.workCompletionCounts({ is_group_work: true, groups: [{ student_ids: [12, 13], grade: '2', use_individual_grades: true, grades: { 12: '1', 13: '' } }] })).toEqual({ completed: 1, open: 1 })
     })
 
-    it('shows independent task and result symbols on each work including gray task tests and refreshes after import', async () => {
+    it('keeps dispatch symbols in student cells and leaves only the count and folder link in work card headers after import', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-02' }
         useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }], course_dates: [date] } as never
@@ -381,22 +381,34 @@ describe('CourseTable evaluation PDF links', () => {
         try {
             await flushPromises()
             useCourseWorkStore(pinia).courseWorks = works as never
+            useCourseStudentEntryStore(pinia).courseEntries = works.map(work => ({
+                id: work.id, user_id: 12, date: date.date, type: work.type, source: 'course_work',
+                teaching_course_work_id: work.id, grade: 'NA',
+            })) as never
             await flushPromises()
-            for (const [index, purposes] of [[], ['Aufgabenversand'], ['Ergebnisbenachrichtigung'], ['Aufgabenversand', 'Ergebnisbenachrichtigung'], ['Aufgabenversand'], []].entries()) {
-                const card = wrapper.get(`[data-testid="work-dispatch-${65 + index}"]`)
-                const icons = card.findAll('[aria-label]')
-                expect(icons.map(icon => icon.attributes('aria-label').startsWith('Aufgabenversand') ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung')).toEqual(purposes)
-                expect(icons.every(icon => icon.attributes('aria-label').includes('04.10.2026 um 02:15'))).toBe(true)
-                expect(icons.every(icon => icon.attributes('color') === (index === 4 ? 'grey-darken-1' : 'success'))).toBe(true)
-                if (index === 4) expect(icons[0].attributes('aria-label')).toContain('Aufgabenversand · Test')
-                expect(card.text()).toBe('')
+            for (const card of wrapper.findAll('.course-table-work-summary')) {
+                const header = card.get('.course-table-work-summary-meta')
+                expect(header.get('.course-table-work-summary-count').attributes('aria-label')).toBe('1 betroffene Schüler:innen')
+                expect(header.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(true)
+                expect(header.findComponent(WorkDispatchStatus).exists()).toBe(false)
             }
             expect(wrapper.findAll('.course-table-work-summary')).toHaveLength(6)
+            const studentStatuses = wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')
+            expect(studentStatuses).toHaveLength(6)
+            expect(studentStatuses[1].attributes('color')).toBe('success')
             await (wrapper.vm as any).evaluationImported({ ...works[0], status: { ...works[0].status, dispatch_notifications: [notice('tasks'), notice('results')] } })
             await flushPromises()
-            expect(wrapper.get('[data-testid="work-dispatch-65"]').findAll('[aria-label]')).toHaveLength(2)
-            expect(wrapper.get('[data-testid="work-dispatch-66"]').findAll('[aria-label]')).toHaveLength(1)
-            expect(wrapper.get('[data-testid="work-dispatch-70"]').findAll('[aria-label]')).toHaveLength(0)
+            expect(wrapper.findAll('.course-table-work-summary-meta').every(header => !header.findComponent(WorkDispatchStatus).exists())).toBe(true)
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')[0].attributes('color')).toBe('success')
+            useCourseWorkStore(pinia).courseWorks = works.map(work => ({ ...work, automation_enabled: false })) as never
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-work-summary').every(card => !card.text().includes('offen'))).toBe(true)
+            expect(wrapper.findAll('.course-table-work-summary-meta').every(header => !header.findComponent({ name: 'WorkFolderStatus' }).exists())).toBe(true)
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status]')).toHaveLength(0)
+            expect(wrapper.findAll('.course-table-entry-cell-performance')).toHaveLength(6)
+            useCourseWorkStore(pinia).courseWorks = works as never
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')).toHaveLength(6)
         } finally { wrapper.unmount() }
     })
 
@@ -2885,6 +2897,45 @@ describe('CourseTable', () => {
             'Beispiel, Ben',
             'Schüler:in #9999',
         ])
+    })
+
+    it('shows each member assessment beside the name without filling missing individual grades from a group grade', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        useCourseStore(pinia).selected_course = { id: 18, course_dates: [], students_info: [
+            { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
+            { id: 998, user_id: 13, first_name: 'Ben', last_name: 'Beta' },
+            { id: 997, user_id: 14, first_name: 'Cora', last_name: 'Gamma' },
+            { id: 996, user_id: 15, first_name: 'Dora', last_name: 'Delta' },
+        ] } as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia], stubs: { WorkEvaluationImport: true, WorkContextCopy: true,
+                ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true,
+                CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+                'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+            },
+        } })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.startEditingDateWork({ id: 65, teaching_course_id: 18, type: 'A5', is_group_work: true, groups: [
+                { name: 'Einzelbeurteilungen', student_ids: [12, 13, 14], grade: '5', use_individual_grades: true,
+                    grades: [{ student_id: '12', grade: 0 }, { student_id: 13, grade: 'NA' }] },
+                { name: 'Gemeinsame Beurteilung', student_ids: [15], grade: '2', grades: [] },
+            ] })
+            vm.workDialogTab = 'groups'
+            await flushPromises()
+
+            const members = wrapper.get('[data-testid="course-table-work-group-card-0"]').findAll('.course-table-work-group-student-chip')
+            expect(members.map(member => member.text().replace(/\s+/g, ' ').trim())).toEqual(['Alpha, Ada · 0', 'Beta, Ben · NA', 'Gamma, Cora'])
+            expect(wrapper.get('[data-testid="course-table-work-group-card-1"]').get('.course-table-work-group-student-chip').text()).toContain('Delta, Dora')
+            expect(wrapper.get('[data-testid="course-table-work-group-card-1"]').get('[aria-label="Leistung: 2"]').exists()).toBe(true)
+
+            vm.workDialogForm.groups[0].grades = { 12: { grade: '1.5' }, 13: '' }
+            await flushPromises()
+            expect(members[0].get('[aria-label="Leistung: 1.5"]').exists()).toBe(true)
+            expect(members[1].find('[aria-label^="Leistung:"]').exists()).toBe(false)
+            expect(vm.workGroupOverviewStudentGrade(vm.workDialogForm.groups[0], 15)).toBe('')
+        } finally { wrapper.unmount() }
     })
 
     it('recognizes empty per-student bookkeeping records as generated individual-work groups', () => {
