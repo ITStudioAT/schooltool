@@ -42,18 +42,19 @@ beforeEach(function () {
         'title' => 'Datenschutz', 'description' => 'Datenschutzfälle aus den hinterlegten Materialien.', 'date_for_all_groups' => '2026-10-20',
         'finish_until_date' => '2026-10-21', 'finish_until_time' => '20:15', 'is_group_work' => false, 'groups' => [], 'status' => []]);
     $this->student = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
-        'first_name' => 'Änne', 'last_name' => 'Ćelebić', 'schoolclass' => 'Abend', 'email' => 'private@example.test']);
+        'first_name' => 'Änne', 'last_name' => 'Ćelebić', 'schoolclass' => 'Abend', 'email' => 'private@example.test', 'sex' => 'w']);
     $this->membership = TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'import116_id' => null, 'canceled_at' => null]);
     $this->url = '/api/admin/teaching/course_works/'.$this->work->id.'/ai-export';
     $this->actingAs($this->teacher, 'sanctum');
 });
 
-test('AI export uses the saved work and all current course assignments without personal assessment or contact data', function () {
+test('AI export includes student email addresses without personal assessment or family contact data', function () {
     Http::preventStrayRequests();
     $second = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'first_name' => 'Béa', 'last_name' => 'Beta', 'schoolclass' => 'Abend']);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $second->id, 'import116_id' => null, 'canceled_at' => null]);
     $alias = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->student->id,
-        'first_name' => $this->student->first_name, 'last_name' => $this->student->last_name, 'class' => $this->student->schoolclass]);
+        'first_name' => $this->student->first_name, 'last_name' => $this->student->last_name, 'class' => $this->student->schoolclass,
+        'mother_email' => 'mother@example.test', 'father_email' => 'father@example.test', 'sex' => 'w']);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => null, 'import116_id' => $alias->id, 'canceled_at' => null]);
     $this->work->update(['is_group_work' => true, 'groups' => [['name' => 'Gruppe A', 'student_ids' => [$this->student->id, $this->student->id], 'comments' => [['student_id' => $this->student->id, 'comment' => 'Private assessment']]],
         ['name' => 'Gruppe B', 'student_ids' => [$this->student->id]]]]);
@@ -63,7 +64,10 @@ test('AI export uses the saved work and all current course assignments without p
     expect(array_column($data['context']['course_roster']['participants'], 'last_name'))->toBe(['Beta', 'Ćelebić']);
     expect($data['context']['course_roster']['participants'][1]['course_assignments'])->toHaveCount(2);
     expect($data['context']['work']['groups'][0]['schooltool_student_ids'])->toBe([$this->student->id]);
-    expect($data['text'])->toContain('Änne')->not->toContain('private@example.test')->not->toContain('Private assessment');
+    expect($data['context']['course_roster']['participants'][1]['email'])->toBe('private@example.test');
+    expect($data['context']['course_roster']['participants'][1]['sex'])->toBe('w');
+    expect($data['text'])->toContain('Änne')->toContain('private@example.test')->not->toContain('Private assessment')
+        ->not->toContain('mother@example.test')->not->toContain('father@example.test');
     expect($data['context']['work']['scheduled_date'])->toBe('2026-10-20');
     expect($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15']);
     expect($data['context']['work']['communicated_deadline'])->toBeNull();
@@ -97,14 +101,56 @@ test('AI export preserves the course group for folder naming independently of wo
 test('AI export is freshly read and preserves imported-only members and cancelled membership context', function () {
     $first = $this->getJson($this->url)->assertOk()->json('data');
     expect($first['participants_count'])->toBe(1);
-    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'first_name' => 'Unbewertet', 'last_name' => 'Neu', 'class' => 'Abend', 'user_id' => null]);
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'first_name' => 'Unbewertet', 'last_name' => 'Neu', 'class' => 'Abend', 'user_id' => null, 'email' => 'neu@example.test', 'sex' => 'm']);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => null, 'import116_id' => $import->id, 'canceled_at' => null]);
     $this->membership->update(['canceled_at' => now()]);
     $data = $this->getJson($this->url)->assertOk()->json('data');
     expect($data['participants_count'])->toBe(2)->and($data['active_participants_count'])->toBe(1);
     $person = collect($data['context']['course_roster']['participants'])->firstWhere('import116_id', $import->id);
     expect($person['schooltool_person_id'])->toBeNull()->and($person['active'])->toBeTrue();
+    expect($person['email'])->toBe('neu@example.test');
+    expect($person['sex'])->toBe('m');
 });
+
+test('AI export uses the real account email or falls back to the verified import', function (string $accountEmail, ?string $importEmail, ?string $expected) {
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->student->id,
+        'first_name' => $this->student->first_name, 'last_name' => $this->student->last_name, 'class' => $this->student->schoolclass, 'email' => $importEmail]);
+    $this->student->update(['email' => $accountEmail, 'import116_id' => $import->id]);
+
+    $data = $this->getJson($this->url)->assertOk()->json('data');
+
+    expect($data['context']['course_roster']['participants'][0]['email'])->toBe($expected);
+    $missingEmailWarnings = array_values(array_filter($data['warnings'], fn (string $warning): bool => str_contains($warning, 'Fehlende E-Mail-Adressen')));
+    expect($missingEmailWarnings)->toHaveCount($expected === null ? 1 : 0);
+    expect($data['text'])->not->toContain('@schooltool.noemail');
+})->with([
+    'account address' => ['student@example.test', 'import@example.test', 'student@example.test'],
+    'empty account address' => ['', 'import@example.test', 'import@example.test'],
+    'placeholder account address' => ['noemail.student@schooltool.noemail', 'import@example.test', 'import@example.test'],
+    'missing import address' => ['noemail.student@schooltool.noemail', null, null],
+    'placeholder import address' => ['noemail.student@schooltool.noemail', 'noemail.import@schooltool.noemail', null],
+]);
+
+test('AI export resolves email for import memberships linked to an existing account', function () {
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->student->id,
+        'first_name' => $this->student->first_name, 'last_name' => $this->student->last_name, 'class' => $this->student->schoolclass]);
+    $this->membership->update(['user_id' => null, 'import116_id' => $import->id]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.context.course_roster.participants.0.email', 'private@example.test');
+});
+
+test('AI export preserves recorded sex and leaves missing values unknown', function (?string $accountSex, ?string $importSex, ?string $expected) {
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->student->id,
+        'first_name' => $this->student->first_name, 'last_name' => $this->student->last_name, 'class' => $this->student->schoolclass, 'sex' => $importSex]);
+    $this->student->update(['sex' => $accountSex, 'import116_id' => $import->id]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.context.course_roster.participants.0.sex', $expected);
+})->with([
+    'imported sex' => ['w', 'm', 'm'],
+    'account fallback' => ['w', null, 'w'],
+    'missing sex' => [null, null, null],
+    'empty sex' => ['', '', null],
+]);
 
 test('AI export keeps actual lesson slots materials and saved Dropbox binding without inventing a local path', function () {
     $date = TeachingCourseDate::query()->create(['teaching_course_id' => $this->course->id, 'date' => '2026-10-20', 'hours' => [8, 9]]);

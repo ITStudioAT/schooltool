@@ -6,6 +6,7 @@
 
 - Kurse exportieren für lokalen KI-Import
 - Ordner-Auswahl absichern
+- Arbeit: Korrektur Export
 
 ## 3.51.5
 
