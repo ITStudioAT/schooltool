@@ -48,6 +48,56 @@ test('unprocessed works leave existing performance semester and year calculation
         ->and($work->teachingCourseStudentEntries()->first()->grade)->toBeNull();
 })->with([false, true])->with([false, true])->with(['2026-10-05', null]);
 
+test('dispatch and preparation imports leave unassessed works out of semester and year calculations', function (array $status) {
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
+    evaluationEntry($this, $definition, '4.1');
+    evaluationEntry($this, $definition, '4.6', ['date' => '2027-03-01']);
+    $baseline = app(TeachingCourseEvaluationService::class)->report($this->course->fresh(), 3)['students'][0];
+    $work = TeachingCourseWork::factory()->create([
+        'teaching_course_id' => $this->course->id,
+        'type' => $definition->short_name,
+        'groups' => [],
+        'status' => $status,
+        'date_for_all_groups' => '2026-10-15',
+        'finish_until_date' => '2026-10-15',
+        'is_group_work' => false,
+    ]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/courses/{$this->course->id}/evaluations?semester=3")
+        ->assertOk();
+    $report = $response->json('data.students.0');
+
+    foreach ($baseline['semesters'] as $index => $semester) {
+        expect($report['semesters'][$index]['status'])->toBe('complete')
+            ->and($report['semesters'][$index]['result_exact'])->toBe($semester['result_exact'])
+            ->and($report['semesters'][$index]['parts'][0]['trace'])->toEqual($semester['parts'][0]['trace'])
+            ->and(collect($report['semesters'][$index]['excluded_entries'])->firstWhere('work_id', $work->id)['issues'][0]['code'])->toBe('unprocessed_work');
+    }
+    expect($report['year'])->toEqual($baseline['year']);
+    expect($this->roster->fresh()->sem_grade)->toBe('4');
+    expect($work->fresh()->status)->toEqual($status);
+    expect($work->teachingCourseStudentEntries()->first()->grade)->toBeNull();
+})->with([
+    'dispatch log' => [['dispatch_logs' => [['purpose' => 'tasks']]]],
+    'confirmed task dispatch' => [['dispatch_notifications' => [['purpose' => 'tasks']]]],
+    'dispatch attempt' => [['dispatch_attempts' => [['purpose' => 'tasks']]]],
+    'preparation import' => [['provision_events' => [['state' => 'prepared']], 'provision_imports' => [['state' => 'prepared']]]],
+    'folder import timestamp' => [['folder_imported_at' => '2026-10-15T12:00:00Z']],
+    'folder preparation and dispatch sources' => [[
+        'folder_import_sources' => ['Schooltool-Vorbereitung.json' => str_repeat('a', 64), 'Versand/Aufgaben/Versandprotokoll.txt' => str_repeat('b', 64)],
+    ]],
+    'complete task dispatch import' => [[
+        'folder_imported_at' => '2026-10-15T12:00:00Z',
+        'folder_import_sources' => ['Versand/Aufgaben/Versandprotokoll.txt' => str_repeat('a', 64)],
+        'dispatch_logs' => [['purpose' => 'tasks']],
+        'dispatch_notifications' => [['purpose' => 'tasks']],
+        'provision_events' => [['state' => 'prepared']],
+    ]],
+]);
+
 test('globally started works keep a missing individual result incomplete', function (array $status, array $groupValues, ?string $peerGrade) {
     $this->part->update(['points_assessment_mode' => 'sum_percent']);
     $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 5]);
@@ -68,13 +118,14 @@ test('globally started works keep a missing individual result incomplete', funct
 })->with([
     'peer assessment' => [[], [], '4'],
     'peer zero assessment' => [[], [], '0'],
+    'dispatched work with peer assessment' => [['dispatch_logs' => [['purpose' => 'tasks']]], [], '4'],
     'invalid peer assessment' => [[], [], 'unbekannt'],
     'group grade' => [[], ['grade' => '2'], null],
     'individual grade' => [[], ['grades' => [['grade' => '2']]], null],
     'zero points' => [[], ['points' => [['points' => 0]]], null],
     'personal comment' => [[], ['comments' => [['comment' => 'Bewertung begonnen']]], null],
     'group comment' => [[], ['comment' => 'Bewertung begonnen'], null],
-    'folder import' => [['folder_imported_at' => '2026-10-05T12:00:00Z'], [], null],
+    'folder assessment import' => [['folder_imported_at' => '2026-10-05T12:00:00Z', 'evaluation_pdfs' => [['origin' => 'evaluation_import']]], [], null],
     'open JSON assessment import' => [['assessment_json_imports' => [['record' => ['evaluation_state' => 'open']]]], [], null],
     'submission check import' => [['submission_checks' => [['check' => []]]], [], null],
     'evaluation PDF import' => [['evaluation_pdfs' => [['origin' => 'evaluation_import']]], [], null],

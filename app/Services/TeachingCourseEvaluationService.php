@@ -69,7 +69,7 @@ class TeachingCourseEvaluationService
             if ($entry->source === 'course_work' && in_array($entry->teaching_course_work_id, $unprocessedWorkIds, true)) {
                 $excluded[] = ['id' => $entry->id, 'work_id' => $entry->teaching_course_work_id, 'date' => $this->entryDate($entry),
                     'raw_value' => $entry->grade, 'type' => $entry->type,
-                    'issues' => [$this->issue('unprocessed_work', 'Die Arbeit ist noch völlig unbearbeitet und wird samt Gewicht nicht berücksichtigt.', 'info')]];
+                    'issues' => [$this->issue('unprocessed_work', 'Die Arbeit ist noch nicht beurteilt und wird samt Gewicht nicht berücksichtigt.', 'info')]];
 
                 continue;
             }
@@ -114,8 +114,7 @@ class TeachingCourseEvaluationService
     /** @param Collection<int, TeachingCourseStudentEntry> $entries */
     private function isUnprocessedWork(TeachingCourseWork $work, Collection $entries): bool
     {
-        foreach (['folder_imported_at', 'folder_import_sources', 'assessment_json_imports', 'assessment_json_packages',
-            'submission_checks', 'evaluation_pdfs', 'dispatch_logs', 'dispatch_notifications', 'dispatch_attempts'] as $field) {
+        foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'evaluation_pdfs'] as $field) {
             if (! empty($work->status[$field])) {
                 return false;
             }
