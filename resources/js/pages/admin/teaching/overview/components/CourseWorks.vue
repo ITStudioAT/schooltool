@@ -785,7 +785,7 @@
             </v-form>
         </v-card>
 
-        <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
+        <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" @deadline-updated="importDeadlineUpdated" />
         <v-dialog v-model="comment_dialog_open" persistent max-width="620">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -1190,6 +1190,12 @@ export default {
             await this.refreshWorks()
             this.editWork(work)
             this.show_points_grading_view = true
+        },
+        async importDeadlineUpdated(work) {
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            await this.refreshWorks()
+            if (String(work.teaching_course_id) !== String(this.selected_course?.id)) return
+            if (String(this.work_form.id) === String(work.id)) this.editWork(work)
         },
         openGroupDialog(index) {
             this.group_dialog_index = index

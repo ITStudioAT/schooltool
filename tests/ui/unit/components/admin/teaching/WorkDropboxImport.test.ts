@@ -12,6 +12,10 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const connected = { configured: true, installed: true, connected: true, can_quick_import: true, folder: { id: 'id:workfolder', name: 'Arbeit' }, message: 'Dropbox-Vorschau laden.' }
 const preview = { target_work: { title: 'E-Mails', course_title: 'Kurs' }, exercise: {}, rows: [], maximum_minor: 500, can_import: true, hash: 'a'.repeat(64) }
+const deadlineConflict = { ...preview, can_import: false, deadline_context: {
+    requires_review: true, state: 'changed', current_at: '2026-10-15T10:30:00Z',
+    source_at: '2026-10-15T09:45:00Z', message: 'Frist erneut prüfen.',
+} }
 
 function mountComponent(component: any, props = {}) {
     return mount(component, { props, global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
@@ -23,6 +27,135 @@ function mountComponent(component: any, props = {}) {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it.each(['dropbox', 'upload'])('resolves a deadline conflict from %s and rechecks the preview before applying anything', async source => {
+        const saved = { ...work, finish_until_date: '2026-10-15', finish_until_time: '11:45' }
+        const post = vi.fn().mockResolvedValueOnce({ data: { preview: deadlineConflict } })
+            .mockResolvedValueOnce({ data: { preview: { ...preview, hash: 'b'.repeat(64) } } })
+        const put = vi.fn().mockResolvedValue({ data: { data: saved } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post, put })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work, source === 'dropbox')
+            const file = new File(['{}'], 'Schooltool-Bewertungen.json')
+            if (source === 'upload') await vm.selectJson({ target: { files: [file] } })
+            await flushPromises()
+            const dialog = wrapper.findAll('v-dialog').find(dialog => dialog.text().includes('Abgabefrist klären'))!
+            expect(dialog.attributes('persistent')).toBeDefined()
+            expect(dialog.text()).toContain('15.10.2026, 12:30 Uhr')
+            expect(dialog.text()).toContain('15.10.2026, 11:45 Uhr')
+            expect(put).not.toHaveBeenCalled()
+            await dialog.findAll('button').find(button => button.text() === 'Paketfrist übernehmen')!.trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/65'), {
+                finish_until_date: '2026-10-15', finish_until_time: '11:45',
+            })
+            expect(post).toHaveBeenCalledTimes(2)
+            if (source === 'dropbox') expect(post.mock.calls[1][1]).toEqual({})
+            else {
+                expect(post.mock.calls[1][1].get('package').name).toBe(file.name)
+                expect(post.mock.calls[1][1].has('apply')).toBe(false)
+            }
+            expect(vm.json_preview.hash).toBe('b'.repeat(64))
+            expect(wrapper.text()).not.toContain('Abgabefrist klären')
+            expect(wrapper.emitted('deadline-updated')).toEqual([[saved]])
+            expect(wrapper.emitted('imported')).toBeUndefined()
+            expect(vm.import_summary).toBeNull()
+            expect(wrapper.findAll('button').find(button => button.text() === 'Angezeigte Änderungen übernehmen')!.attributes('disabled')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the stored deadline and cancels the import without saving or applying', async () => {
+        const post = vi.fn().mockResolvedValue({ data: { preview: deadlineConflict } })
+        const put = vi.fn()
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post, put })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work, true)
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === 'Gespeicherte Frist behalten und Import abbrechen')!.trigger('click')
+            expect(vm.import_open).toBe(false)
+            expect(vm.json_preview).toBeNull()
+            expect(put).not.toHaveBeenCalled()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(wrapper.emitted('deadline-updated')).toBeUndefined()
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the conflict open on a save error and retries without allowing duplicate saves', async () => {
+        let resolve: (value: unknown) => void = () => {}
+        const post = vi.fn().mockResolvedValueOnce({ data: { preview: deadlineConflict } })
+            .mockResolvedValueOnce({ data: { preview: { ...preview, can_import: false } } })
+        const put = vi.fn().mockRejectedValueOnce({ response: { data: { message: 'Speichern fehlgeschlagen.' } } })
+            .mockImplementationOnce(() => new Promise(done => { resolve = done }))
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post, put })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work, true)
+            await vm.acceptPackageDeadline()
+            await flushPromises()
+            expect(wrapper.text()).toContain('Speichern fehlgeschlagen.')
+            expect(wrapper.text()).toContain('Abgabefrist klären')
+            expect(post).toHaveBeenCalledTimes(1)
+            const pending = vm.acceptPackageDeadline()
+            await flushPromises()
+            await vm.acceptPackageDeadline()
+            vm.cancelDeadlineImport()
+            expect(vm.import_open).toBe(true)
+            expect(put).toHaveBeenCalledTimes(2)
+            resolve({ data: { data: work } })
+            await pending
+            await flushPromises()
+            expect(wrapper.text()).not.toContain('Speichern fehlgeschlagen.')
+            expect(vm.json_preview.can_import).toBe(false)
+            expect(wrapper.findAll('button').find(button => button.text() === 'Angezeigte Änderungen übernehmen')!.attributes('disabled')).toBeDefined()
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+
+    it('ignores a delayed deadline save after switching courses', async () => {
+        let resolve: (value: unknown) => void = () => {}
+        const post = vi.fn().mockResolvedValue({ data: { preview: deadlineConflict } })
+        const put = vi.fn().mockImplementation(() => new Promise(done => { resolve = done }))
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post, put })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work, true)
+            const pending = vm.acceptPackageDeadline()
+            useCourseStore().selected_course = { id: 3 } as any
+            await flushPromises()
+            resolve({ data: { data: work } })
+            await pending
+            expect(vm.import_open).toBe(false)
+            expect(vm.json_preview).toBeNull()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(wrapper.emitted('deadline-updated')).toBeUndefined()
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        ['2026-10-31T23:45:00Z', '2026-11-01', '00:45'],
+        ['2026-07-01T22:15:00Z', '2026-07-02', '00:15'],
+    ])('saves a missing target deadline using Vienna date and time for %s', async (source, date, time) => {
+        const post = vi.fn().mockResolvedValueOnce({ data: { preview: { ...deadlineConflict,
+            deadline_context: { requires_review: true, state: 'missing_target', source_at: source } } } })
+            .mockResolvedValueOnce({ data: { preview } })
+        const put = vi.fn().mockResolvedValue({ data: { data: work } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post, put })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work, true)
+            await vm.acceptPackageDeadline()
+            expect(put).toHaveBeenCalledExactlyOnceWith(expect.any(String), { finish_until_date: date, finish_until_time: time })
+        } finally { wrapper.unmount() }
+    })
+
     it('keeps Quick-Import disabled until apply while the initial Dropbox preview stays available', async () => {
         const initial = { ...connected, can_quick_import: false, can_preview: true, has_import: false,
             message: 'Quick-Import erst nach dem ersten erfolgreich übernommenen Import dieser Arbeit.' }

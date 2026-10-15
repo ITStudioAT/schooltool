@@ -25,6 +25,25 @@ describe('JSON assessment preview and separate apply', () => {
             previous: { points: 4.75, comments: 'Abgeschlossen' }, criteria: [], adjustments: [], pdf: null, will_replace: false }],
     }
 
+    it('refreshes a saved import deadline without opening the grading view or replacing a different selected work', async () => {
+        const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 },
+            work_form: { id: 65 }, show_points_grading_view: false }
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.refreshWorks).toHaveBeenCalledOnce()
+        expect(parent.editWork).toHaveBeenCalledExactlyOnceWith(work)
+        expect(parent.show_points_grading_view).toBe(false)
+
+        parent.editWork.mockClear()
+        parent.work_form.id = 66
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.editWork).not.toHaveBeenCalled()
+
+        parent.refreshWorks.mockClear()
+        parent.selected_course.id = 3
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.refreshWorks).not.toHaveBeenCalled()
+    })
+
     it('renders separate statuses and previews before submitting the explicit apply hash', async () => {
         const post = vi.fn().mockResolvedValueOnce({ data: { preview } }).mockResolvedValueOnce({ data: { data: work } })
         vi.stubGlobal('axios', { post })

@@ -26,7 +26,7 @@
                     <v-btn class="work-import-folder-button" variant="outlined" prepend-icon="mdi-folder-open-outline" :disabled="import_busy" @click="chooseDirectory">Ordner auswählen</v-btn>
                     <p v-if="import_selection" class="work-import-selection mt-2">{{ import_selection }}</p>
                 </div>
-                <p v-if="import_busy" class="text-caption mt-2">{{ import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
+                <p v-if="import_busy" class="text-caption mt-2">{{ deadline_saving ? 'Abgabefrist speichern …' : import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
                 <v-alert v-if="import_error" type="error" variant="tonal" class="mt-2" density="compact">{{ import_error }}</v-alert>
                 <v-btn v-if="import_error && (json_uploads || import_source === 'dropbox')" class="mt-2" variant="outlined" size="small"
                     :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
@@ -112,6 +112,27 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+    <v-dialog v-if="deadline_conflict" :model-value="true" persistent scrollable max-width="600">
+        <v-card>
+            <v-card-title class="text-wrap text-body-1 font-weight-bold">Abgabefrist klären</v-card-title>
+            <v-card-text>
+                <p class="mb-3">Die gespeicherte Frist stimmt nicht mit der Frist im Importpaket überein.</p>
+                <p><strong>Gespeicherte Frist:</strong>
+                    <template v-if="deadline_conflict.current_at">{{ assessmentTimeText(deadline_conflict.current_at) }}</template>
+                    <template v-else>{{ deadline_conflict.current_date ?? 'Datum fehlt' }} · {{ deadline_conflict.current_time ?? 'Uhrzeit fehlt' }}</template>
+                </p>
+                <p><strong>Paketfrist:</strong> {{ assessmentTimeText(deadline_conflict.source_at) }}</p>
+                <p class="text-caption mb-3">Alle Uhrzeiten: Europe/Vienna.</p>
+                <p>Mit „Paketfrist übernehmen“ wird die Abgabefrist dieser Arbeit gespeichert und die Importvorschau erneut geprüft. Anschließend können Sie die angezeigten Bewertungen übernehmen.</p>
+                <v-alert v-if="deadline_error" type="error" variant="tonal" class="mt-3">{{ deadline_error }}</v-alert>
+            </v-card-text>
+            <v-card-actions class="work-import-actions">
+                <v-spacer />
+                <v-btn :disabled="import_busy" @click="cancelDeadlineImport">Gespeicherte Frist behalten und Import abbrechen</v-btn>
+                <v-btn color="primary" :disabled="import_busy || !package_deadline" :loading="deadline_saving" @click="acceptPackageDeadline">Paketfrist übernehmen</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -122,19 +143,36 @@ import { readWorkImportDirectory, saveWorkImportDirectory, supportsWorkImportDir
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { assessmentTimeText, assessmentCompletionText } from '@/helpers/workAssessmentTimes'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
-import { importFolder, importJson } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { importFolder, importJson, update } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { importMethod as importDropbox } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { loadWorkDropbox, workDropboxKey } from '@/helpers/workDropbox'
 import WorkDropboxSource from './WorkDropboxSource.vue'
 
 export default {
     components: { WorkDropboxSource },
-    emits: ['imported'],
+    emits: ['imported', 'deadline-updated'],
     data() {
-        return { import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null }
+        return { import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null, deadline_error: '', deadline_saving: false }
     },
     computed: {
         ...mapState(useCourseStore, ['selected_course']),
+        deadline_conflict() {
+            return this.import_open && this.json_preview?.deadline_context?.requires_review
+                ? this.json_preview.deadline_context : null
+        },
+        package_deadline() {
+            const value = this.deadline_conflict?.source_at
+            if (!value || Number.isNaN(new Date(value).getTime())) return null
+            const parts = new Intl.DateTimeFormat('de-AT', {
+                timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+            }).formatToParts(new Date(value))
+            const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+            return {
+                finish_until_date: `${values.year}-${values.month}-${values.day}`,
+                finish_until_time: `${values.hour}:${values.minute}`,
+            }
+        },
     },
     watch: {
         'selected_course.id'() {
@@ -146,6 +184,41 @@ export default {
         },
     },
     methods: {
+        cancelDeadlineImport() {
+            if (this.import_busy) return
+            this.import_open = false
+            this.json_preview = null
+            this.json_uploads = null
+            this.pending_directory = null
+            this.deadline_error = ''
+        },
+        async acceptPackageDeadline() {
+            const work = this.import_work
+            const fields = this.package_deadline
+            if (this.import_busy || !fields || !this.isSelectedCourseWork(work)) return
+            this.import_busy = true
+            this.deadline_saving = true
+            this.deadline_error = ''
+            let savedWork
+            try {
+                const response = await axios.put(update.url(work.id), fields)
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                this.import_work = response.data.data
+                savedWork = this.import_work
+                this.json_preview = null
+                this.$emit('deadline-updated', savedWork)
+            } catch (error) {
+                if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
+                    this.deadline_error = Object.values(error.response?.data?.errors || {}).flat().join(' ') || error.response?.data?.message || error.message || 'Die Abgabefrist konnte nicht gespeichert werden. Bitte erneut versuchen.'
+                }
+            } finally {
+                this.import_busy = false
+                this.deadline_saving = false
+            }
+            if (savedWork && this.import_open && this.import_work === savedWork && this.isSelectedCourseWork(savedWork)) {
+                await this.sendJson(false)
+            }
+        },
         assessmentTimeText,
         assessmentCompletionText,
         isSelectedCourseWork(work) {
@@ -155,6 +228,7 @@ export default {
         openImport(work, quick = false) {
             if (!this.isSelectedCourseWork(work) || this.import_busy) return
             this.import_work = work
+            this.deadline_error = ''
             this.import_error = ''
             this.import_summary = null
             this.import_selection = ''
