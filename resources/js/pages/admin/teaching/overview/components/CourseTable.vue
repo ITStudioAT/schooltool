@@ -237,6 +237,7 @@
                                                 <span class="d-inline-flex align-center ga-1" :data-testid="`work-dispatch-${work.work.id}`">
                                                     <WorkDispatchStatus :work="work.work" aggregate compact />
                                                 </span>
+                                                <WorkFolderStatus :work="work.work" />
                                             </div>
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
@@ -2504,6 +2505,7 @@ import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkAiExport from './WorkAiExport.vue'
 import WorkImportActions from './WorkImportActions.vue'
+import WorkFolderStatus from './WorkFolderStatus.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
@@ -2524,7 +2526,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkFolderStatus, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
