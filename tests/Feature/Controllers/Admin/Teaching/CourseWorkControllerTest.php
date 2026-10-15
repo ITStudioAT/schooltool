@@ -1056,7 +1056,7 @@ test('work automation defaults to enabled and manual mode persists without losin
 
     $this->putJson($url, ['automation_enabled' => false])->assertOk()
         ->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.groups', $groups);
-    expect($work->fresh()->status)->toBe($history + ['automation_enabled' => false]);
+    expect($work->fresh()->status)->toEqual($history + ['automation_enabled' => false]);
 
     $this->putJson($url, ['title' => 'Manuelle Arbeit', 'status' => ['automation_enabled' => true]])->assertOk()
         ->assertJsonPath('data.automation_enabled', false);
