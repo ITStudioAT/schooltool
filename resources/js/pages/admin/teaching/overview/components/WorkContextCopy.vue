@@ -29,6 +29,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { show } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 
 const props = defineProps({
     work: { type: Object, required: true },
@@ -62,7 +63,7 @@ const contextText = computed(() => {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(props.date) ? props.date.split('-').reverse().join('.') : 'nicht angegeben'
     const folder = folderState.value.folder
     const folderText = folder?.id
-        ? `${singleLine(folder.name)} (Dropbox-ID: ${singleLine(folder.id)}; kein Weblink gespeichert)`
+        ? `${folder.path ? `Dropbox: ${singleLine(folder.path)}` : singleLine(folder.name)} (Dropbox-ID: ${singleLine(folder.id)})`
         : 'nicht verknüpft'
 
     return `Arbeit: ${workTitle || 'Ohne Titel'} (ID: ${props.work.id})\nKurs: ${courseTitle || 'Ohne Bezeichnung'} (ID: ${props.course.id})\nDatum: ${date}\nOrdner: ${folderText}`
@@ -77,7 +78,19 @@ async function loadFolder() {
     loading.value = isCurrentWork.value
     if (!isCurrentWork.value) return
     try {
-        await loadWorkDropbox(key.value, props.work.id)
+        const currentKey = key.value
+        const state = await loadWorkDropbox(currentKey, props.work.id)
+        if (sequence !== current) return
+        if (state?.folder?.id && !state.folder.path) {
+            try {
+                const response = await axios.get(show.url(props.work.id), { params: { include_folder_path: 1 } })
+                if (sequence === current && response.data.folder?.id === state.folder.id) {
+                    workDropboxStates.set(currentKey, response.data)
+                }
+            } catch {
+                if (sequence === current) message.value = 'Ordnerpfad nicht verfügbar; Ordnername und Dropbox-ID werden kopiert.'
+            }
+        }
     } catch {
         if (sequence === current) loadError.value = true
     } finally {

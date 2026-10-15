@@ -94,6 +94,13 @@ class AdminNavigationService
                     'active_paths' => ['/admin/teaching'],
                     'is_active' => ($teachingLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht');
+                $menu[] = [
+                    'title' => 'Unterricht Tools',
+                    'icon' => 'mdi-tools',
+                    'to' => '/admin/teaching-tools/multiple-choice',
+                    'active_paths' => ['/admin/teaching-tools'],
+                    'is_active' => ($teachingLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht Tools');
             }
         }
 

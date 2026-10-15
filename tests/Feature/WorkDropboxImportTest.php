@@ -57,6 +57,25 @@ function dropboxConnectionForWork(object $context): DropboxConnection
     return $connection;
 }
 
+test('work context reads only the assigned Dropbox metadata path on explicit request without sharing a folder', function (): void {
+    dropboxConnectionForWork($this);
+    $this->getJson($this->url)->assertOk()->assertJsonMissingPath('folder.path');
+    Http::assertNothingSent();
+    Http::fake([
+        'https://api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'https://api.dropboxapi.com/2/files/get_metadata' => Http::response([
+            '.tag' => 'folder', 'id' => 'id:workfolder', 'name' => 'Leistungsarbeit',
+            'path_lower' => '/schule/leistungsarbeit', 'path_display' => '/Schule/Leistungsarbeit',
+        ]),
+    ]);
+
+    $this->getJson($this->url.'?include_folder_path=1')->assertOk()
+        ->assertJsonPath('folder.path', '/Schule/Leistungsarbeit')->assertJsonPath('folder.id', 'id:workfolder');
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/get_metadata') && $request['path'] === 'id:workfolder');
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/sharing/'));
+});
+
 /** @param array<string, string> $contents */
 function fakeDropboxWorkFiles(array $contents, ?Closure $downloadResponse = null, ?Factory $factory = null): void
 {

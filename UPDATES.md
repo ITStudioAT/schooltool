@@ -8,6 +8,10 @@
 - Ordner-Auswahl absichern
 - Arbeit: Korrektur Export
 
+### Multiple Choice
+
+- Multiple-Choice-Seite eingerichtet
+
 ## 3.51.5
 
 ### Accounts

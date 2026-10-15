@@ -32,9 +32,17 @@ class WorkDropboxController extends Controller
         $plausibility = $suggested ? $dropbox->folderPlausibility($course_work, $suggested->folder_name) : null;
         $hasImport = filled($course_work->status['folder_imported_at'] ?? null);
         $canPreview = $course_work->automationEnabled() && $connected && $folder && $plausibility['status'] !== 'mismatch';
+        $folderData = $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null;
+        if ($folder && request()->boolean('include_folder_path')) {
+            $metadata = $dropbox->metadata($connection, $folder->folder_id);
+            $path = $metadata['path_display'] ?? $metadata['path_lower'];
+            abort_unless($metadata['id'] === $folder->folder_id && is_string($path)
+                && str_starts_with($path, '/') && ! preg_match('/[\x00-\x1f]/u', $path), 422, 'Dropbox-Ordnerpfad konnte nicht eindeutig bestätigt werden.');
+            $folderData['path'] = $path;
+        }
 
         return response()->json(['configured' => $configured, 'installed' => $installed, 'connected' => (bool) $connected,
-            'folder' => $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null,
+            'folder' => $folderData,
             'suggested_folder' => $suggested ? ['id' => $suggested->folder_id, 'name' => $suggested->folder_name] : null,
             'folder_plausibility' => $plausibility,
             'has_import' => $hasImport,

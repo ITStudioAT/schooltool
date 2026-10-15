@@ -60,6 +60,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'tool-licensed:Lehrertool,auth,scope:tool_web_access',
     ]);
 
+    Route::get('/admin/teaching-tools/{any?}', function (): View {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware([
+        'auth:sanctum',
+        'web-allowed:scope:tool_web_access',
+        'tool-licensed:Lehrertool,auth,scope:tool_web_access',
+    ])->name('admin.teaching-tools');
+
     Route::get('/admin/materials/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([

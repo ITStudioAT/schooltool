@@ -27,7 +27,7 @@ afterEach(() => {
 })
 
 it('copies only four context lines with work and course identities and the clicked lesson date', async () => {
-    workDropboxStates.set('7:2:65', { folder: { id: 'id:example', name: 'Beispielordner' } })
+    workDropboxStates.set('7:2:65', { folder: { id: 'id:example', name: 'Beispielordner', path: '/Schule/Beispielordner' } })
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     const wrapper = mountCopy()
@@ -37,7 +37,7 @@ it('copies only four context lines with work and course identities and the click
         await wrapper.get('button').trigger('click')
         await flushPromises()
 
-        expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF – 5L2 – 1 (ID: 2)\nDatum: 15.10.2026\nOrdner: Beispielordner (Dropbox-ID: id:example; kein Weblink gespeichert)')
+        expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF – 5L2 – 1 (ID: 2)\nDatum: 15.10.2026\nOrdner: Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)')
         expect(wrapper.get('[role="status"]').text()).toBe('Arbeitskontext kopiert.')
     } finally { wrapper.unmount() }
 })
@@ -53,6 +53,27 @@ it('marks a missing assignment honestly and ignores another suggested folder', a
         await flushPromises()
 
         expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF (5L2) (ID: 2)\nDatum: 15.10.2026\nOrdner: nicht verknüpft')
+    } finally { wrapper.unmount() }
+})
+
+it.each([true, false])('reads an existing folder path when available (%s) and otherwise keeps the confirmed name and ID', async available => {
+    workDropboxStates.set('7:2:65', { folder: { id: 'id:example', name: 'Beispielordner' } })
+    const get = available
+        ? vi.fn().mockResolvedValue({ data: { folder: { id: 'id:example', name: 'Beispielordner', path: '/Schule/Beispielordner' } } })
+        : vi.fn().mockRejectedValue(new Error('Unavailable'))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('axios', { get })
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { params: { include_folder_path: 1 } })
+        expect(writeText.mock.calls[0][0].split('\n')[3]).toBe(available
+            ? 'Ordner: Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)'
+            : 'Ordner: Beispielordner (Dropbox-ID: id:example)')
     } finally { wrapper.unmount() }
 })
 

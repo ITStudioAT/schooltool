@@ -295,7 +295,7 @@ describe('dashboardMenu', function () {
             ->toHaveCount(6)
             ->and(collect($result)->pluck('title')->toArray())
             ->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
-            ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA');
+            ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Unterricht Tools', 'Materialien', 'Restaurant', 'ABA');
 
         expect($result[2])->toMatchArray([
             'to' => '/admin/profile',
@@ -343,6 +343,16 @@ describe('dashboardMenu', function () {
         expect($item)
             ->not->toBeNull()
             ->and($item['is_active'])->toBeTrue();
+
+        $toolsItem = collect($result)->firstWhere('title', 'Unterricht Tools');
+        $titles = array_column($result, 'title');
+
+        expect($toolsItem)->toMatchArray([
+            'to' => '/admin/teaching-tools/multiple-choice',
+            'active_paths' => ['/admin/teaching-tools'],
+            'is_active' => true,
+        ])
+            ->and(array_search('Unterricht Tools', $titles, true))->toBe(array_search('Unterricht', $titles, true) + 1);
     });
 
     it('shows the groups entry and capability only for the actual super_admin role', function (string $roleName, bool $allowed) {
@@ -801,6 +811,7 @@ describe('dashboardMenu', function () {
         $teachingItem = collect($result)->firstWhere('title', 'Unterricht');
 
         expect($teachingItem)->toBeNull();
+        expect(collect($result)->firstWhere('title', 'Unterricht Tools'))->toBeNull();
     });
 });
 

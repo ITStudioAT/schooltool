@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import router, { resolveAdminRouteAccess, routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {
+    it('opens Multiple Choice under teaching tools with teaching access', () => {
+        const resolvedRoute = router.resolve('/admin/teaching-tools/multiple-choice')
+
+        expect(resolvedRoute.matched).toHaveLength(1)
+        expect(resolveAdminRouteAccess(resolvedRoute.path)).toEqual({ public: false, capability: 'teaching' })
+        expect(routes.find((route) => route.path === '/admin/teaching-tools')?.redirect)
+            .toBe('/admin/teaching-tools/multiple-choice')
+    })
+
     it('protects the standalone groups page with its dedicated capability', () => {
         expect(router.resolve('/admin/groups?panel=groups_own').matched).toHaveLength(1)
         expect(resolveAdminRouteAccess('/admin/groups')).toEqual({ public: false, capability: 'groups' })
