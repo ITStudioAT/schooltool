@@ -9,9 +9,10 @@
             <v-icon
                 :icon="item.purpose === 'provision' ? 'mdi-file-check-outline' : item.purpose === 'tasks' ? 'mdi-file-send-outline' : item.record.mode === 'live' ? 'mdi-email-check-outline' : 'mdi-email-alert-outline'"
                 size="16"
-                :color="item.purpose === 'provision' ? 'info' : item.record.mode === 'live' ? 'success' : 'grey-darken-1'"
+                :color="item.purpose === 'provision' || item.ready ? 'info' : item.record.mode === 'live' ? 'success' : 'grey-darken-1'"
                 :title="nativeTitle ? item.label : undefined"
                 :aria-label="item.label" />
+            <v-chip v-if="item.ready && compact" size="x-small" color="info" variant="tonal">Versandbereit</v-chip>
             <span v-if="!compact && (aggregate || showResultTime)" class="text-caption">{{ visibleText(item) }}</span>
             </span>
         </template>
@@ -21,7 +22,7 @@
 <script setup>
 import { computed } from 'vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { dispatchNotificationText, workDispatchRecord, workProvisionRecords, provisionNotificationText } from '@/helpers/workDispatch'
+import { dispatchNotificationText, workDispatchRecord, workDispatchReady, workProvisionRecords, provisionNotificationText } from '@/helpers/workDispatch'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 
 const props = defineProps({
@@ -37,6 +38,7 @@ const resultSentText = sentAt => dispatchNotificationText(sentAt)
 const showAssessmentTimes = computed(() => workAutomationEnabled(props.work) && !props.compact && !props.aggregate && props.showResultTime && props.work?.id && props.studentId)
 const assessment = computed(() => currentAssessmentRecord(props.work, props.studentId))
 function visibleText(item) {
+    if (item.ready) return 'Aufgabenversand: Versandbereit – noch nicht versendet.'
     if (item.purpose === 'provision') return item.label
     if (item.record.mode === 'live' && item.purpose === 'results') return resultSentText(item.record.sent_at)
     if (item.record.mode === 'live') return dispatchNotificationText(item.record.sent_at, 'tasks').replace('Aufgaben per E-Mail versandt', 'Aufgabenversand')
@@ -56,6 +58,7 @@ const records = computed(() => {
     })
     const items = [...provisions, ...['tasks', 'results'].map(purpose => {
         const record = workDispatchRecord(props.work, props.studentId, purpose, props.aggregate)
+        const ready = purpose === 'tasks' && workDispatchReady(props.work, props.studentId, props.aggregate)
         const label = props.compact && record?.mode === 'live'
             ? `${purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'}: ${dispatchNotificationText(record.sent_at, purpose)}`
             : props.aggregate && record?.mode === 'live'
@@ -63,7 +66,7 @@ const records = computed(() => {
                 : props.compact && record?.mode === 'test'
                     ? dispatchNotificationText(record.sent_at, purpose, 'test').replace(': lokaler Mailpit-Test', ' · Test')
                     : dispatchNotificationText(['prepared', 'scheduled'].includes(record?.mode) ? record.planned_at : record?.sent_at, purpose, record?.mode)
-        return { purpose, record, label }
+        return { purpose, record, ready, label: ready ? 'Versandbereit – Aufgabenversand noch nicht erfolgt.' : label }
     })].filter(item => item.purpose !== 'tasks' || item.record || !provisions.length)
     if (!props.compact && (props.aggregate || props.showResultTime) && (items.some(item => item.record) || showAssessmentTimes.value)) {
         return items.map(item => item.record ? item : { ...item, record: { mode: 'unconfirmed' }, label: item.purpose === 'tasks' ? 'Kein bestätigter Aufgabenversand.' : 'Keine bestätigte Ergebnisbenachrichtigung.' })

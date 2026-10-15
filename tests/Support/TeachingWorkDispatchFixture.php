@@ -253,6 +253,20 @@ class TeachingWorkDispatchFixture
         return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
     }
 
+    public static function readyTasksText(): string
+    {
+        $package = json_decode(self::preparedTasksText(), true, flags: JSON_THROW_ON_ERROR);
+        unset($package['Termin']);
+        $package['Versandbereit'] = true;
+        $package['Textquelle_SHA256'] = str_repeat('a', 64);
+        $package['Empfaenger'][0]['Rolle'] = 'Schülerempfänger';
+        $package['Empfaenger'][0]['Nachricht_SHA256'] = str_repeat('b', 64);
+        $package['Empfaenger'][0]['AnhaengeGeprueft'] = true;
+        $package['Empfaenger'][0]['VorbereiteteAnhaenge'] = [['Dateiname' => 'Aufgaben.pdf', 'SHA256' => str_repeat('c', 64)]];
+
+        return json_encode($package, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    }
+
     public static function mailpitTasksText(): string
     {
         $text = self::combinedTasksText('Postmark');

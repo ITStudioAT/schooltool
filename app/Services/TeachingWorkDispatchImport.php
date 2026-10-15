@@ -41,6 +41,7 @@ class TeachingWorkDispatchImport
                     || ! is_array($preparation['Empfaenger'] ?? null)) {
                     $this->reject('Ungültiges Schooltool-Vorbereitungspaket.');
                 }
+                $this->validateDispatchReadiness($preparation);
                 $createdValue = $this->value($preparation, 'Erstellt');
                 $created = $this->providerTime($createdValue);
                 if ($created === null || (! str_ends_with($createdValue, 'Z')
@@ -326,6 +327,40 @@ class TeachingWorkDispatchImport
         return $recipients;
     }
 
+    /** @param array<string, mixed> $preparation */
+    private function validateDispatchReadiness(array $preparation): void
+    {
+        if (! array_key_exists('Versandbereit', $preparation)) {
+            return;
+        }
+        if (! is_bool($preparation['Versandbereit'])) {
+            $this->reject('Versandbereit muss ein eindeutiger Wahrheitswert sein.');
+        }
+        if (! $preparation['Versandbereit']) {
+            return;
+        }
+        if (! preg_match('/\A[0-9a-f]{64}\z/i', $this->value($preparation, 'Textquelle_SHA256')) || $preparation['Empfaenger'] === []) {
+            $this->reject('Versandbereit benötigt eine geprüfte Textquelle und vorbereitete Nachrichten.');
+        }
+        foreach ($preparation['Empfaenger'] as $recipient) {
+            if (! is_array($recipient) || ($recipient['Rolle'] ?? null) !== 'Schülerempfänger'
+                || ! preg_match('/\A[0-9a-f]{64}\z/i', $this->value($recipient, 'Nachricht_SHA256'))
+                || ($recipient['AnhaengeGeprueft'] ?? null) !== true
+                || ! is_array($recipient['VorbereiteteAnhaenge'] ?? null) || ! array_is_list($recipient['VorbereiteteAnhaenge'])) {
+                $this->reject('Versandbereit benötigt für jede Person eine geprüfte Nachricht und Anhangliste.');
+            }
+            $names = [];
+            foreach ($recipient['VorbereiteteAnhaenge'] as $attachment) {
+                if (! is_array($attachment) || ! preg_match('/\A[^\/\\\\\x00-\x1f:]+\z/u', $this->value($attachment, 'Dateiname'))
+                    || ! preg_match('/\A[0-9a-f]{64}\z/i', $this->value($attachment, 'SHA256'))
+                    || in_array($attachment['Dateiname'], $names, true)) {
+                    $this->reject('Versandbereit enthält eine ungültige oder doppelte Anhangreferenz.');
+                }
+                $names[] = $attachment['Dateiname'];
+            }
+        }
+    }
+
     /** @param array<string, mixed> $report
      * @return array<string, mixed>
      */
@@ -474,6 +509,9 @@ class TeachingWorkDispatchImport
             'purpose' => $report['purpose'], 'mode' => $report['mode'],
             'source_sha256' => $sha256,
             'log_info' => [
+                'dispatch_ready' => ! $blocked && $report['purpose'] === 'tasks' && ($report['metadata']['Versandbereit'] ?? false) === true
+                    && collect($rows)->every(fn (array $row): bool => $row['student_id'] !== null && $row['mode'] === 'prepared')
+                    && collect($rows)->pluck('student_id')->unique()->sort()->values()->all() === collect($members)->unique()->sort()->values()->all(),
                 'dispatch_at' => collect($rows)->where('accepted', true)->pluck('sent_at')->filter()->sort()->last(),
                 'prepared_at' => $this->providerTime($this->value($report['metadata'], 'Erstellt'))
                     ?? $this->providerTime($this->value($report['metadata'], 'VorbereitungAm')),

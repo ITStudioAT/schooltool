@@ -48,6 +48,30 @@ test('preparation packages retain their intended date and never authorize live e
         ->and($report['recipients'])->toHaveCount(1);
 });
 
+test('dispatch readiness requires checked messages and attachments without creating send evidence', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::readyTasksText());
+
+    expect($report['metadata']['Versandbereit'])->toBeTrue();
+    expect($report['mode'])->toBe('prepared');
+    expect($report['live'])->toBeFalse();
+    expect($report['recipients'][0])->not->toHaveKey('Office_Zustand');
+});
+
+test('dispatch readiness rejects incomplete or contradictory preparation evidence', function (string $case) {
+    $package = json_decode(TeachingWorkDispatchFixture::readyTasksText(), true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'text' => $package['Textquelle_SHA256'] = '',
+        'message' => $package['Empfaenger'][0]['Nachricht_SHA256'] = '',
+        'unchecked' => $package['Empfaenger'][0]['AnhaengeGeprueft'] = false,
+        'attachment' => $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0]['SHA256'] = '',
+        'duplicate' => $package['Empfaenger'][0]['VorbereiteteAnhaenge'][] = $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0],
+        'flag' => $package['Versandbereit'] = 'true',
+    };
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($package, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['text', 'message', 'unchecked', 'attachment', 'duplicate', 'flag']);
+
 test('prepared and scheduled tasks retain approved task subjects with a colon', function (bool $scheduled) {
     $text = str_replace('Leistungsfeststellung E-Mails – INF 1',
         'Leistungsfeststellung: Verantwortung, Datenschutz und Datensicherheit – INF 2 Abend, 13.10.2026',

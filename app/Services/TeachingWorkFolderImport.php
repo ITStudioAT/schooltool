@@ -100,8 +100,8 @@ class TeachingWorkFolderImport
         if (mb_strtolower($source) === 'schooltool-bereitstellung.json') {
             return ['source' => 'schooltool-bereitstellung.json', 'name' => 'Schooltool-Bereitstellung.json', 'kind' => 'provision', 'run' => 'Bereitstellung'];
         }
-        if (mb_strtolower($source) === 'schooltool-vorbereitung.json') {
-            return ['source' => 'schooltool-vorbereitung.json', 'name' => 'Schooltool-Vorbereitung.json', 'kind' => 'tasks', 'run' => 'Vorbereitung'];
+        if (in_array(mb_strtolower($source), ['schooltool-vorbereitung.json', 'schooltool-versandvorbereitung.json'], true)) {
+            return ['source' => mb_strtolower($source), 'name' => $source, 'kind' => 'tasks', 'run' => 'Vorbereitung'];
         }
         if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^\/_]+_[^\/_]+)\.(?:md|pdf))\z/iu', $source, $matches)) {
             return ['source' => mb_strtolower($source), 'name' => $matches[1], 'kind' => 'evaluation', 'run' => ''];

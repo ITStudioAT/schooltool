@@ -44,9 +44,20 @@ export function workDispatchRecord(work, studentId, purpose, aggregate = false) 
             && log.purpose === purpose && log.sha256 === attempt.log_sha256))
     const planning = attempts.filter(attempt => ['prepared', 'scheduled'].includes(attempt.mode))
         .sort((first, second) => Number(second.mode === 'scheduled') - Number(first.mode === 'scheduled')
+            || Number(isDispatchReadyRecord(work, second)) - Number(isDispatchReadyRecord(work, first))
             || (Date.parse(second.prepared_at) || 0) - (Date.parse(first.prepared_at) || 0))
 
     return planning[0] || attempts.at(-1) || null
+}
+
+function isDispatchReadyRecord(work, record) {
+    return record?.mode === 'prepared' && record.purpose === 'tasks'
+        && (work.status?.dispatch_logs || []).some(log => log.origin === 'dispatch_import' && log.purpose === 'tasks'
+            && log.sha256 === record.log_sha256 && log.dispatch_ready === true)
+}
+
+export function workDispatchReady(work, studentId = null, aggregate = false) {
+    return isDispatchReadyRecord(work, workDispatchRecord(work, studentId, 'tasks', aggregate))
 }
 
 export function dispatchNotificationText(sentAt, purpose = 'results', mode = 'live') {

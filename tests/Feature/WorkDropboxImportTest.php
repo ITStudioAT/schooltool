@@ -144,6 +144,35 @@ test('Dropbox and local upload preview and apply ungraded preparations and serve
         ->and($this->work->fresh()->status['dispatch_attempts'][0]['mode'])->toBe($scheduled ? 'scheduled' : 'prepared');
 })->with([false, true])->with(['dropbox', 'upload']);
 
+test('dispatch readiness is imported for complete preparation only without sending or changing grades', function (bool $complete, string $source): void {
+    dropboxConnectionForWork($this);
+    $this->course->update(['title' => 'INF 1']);
+    $student = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Ada',
+        'last_name' => 'Van Alpha', 'schoolclass' => '1A', 'email' => 'ada@example.test']);
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $members = [$student->id];
+    if (! $complete) {
+        $second = User::factory()->create(['school_id' => $this->school->id, 'schoolclass' => '1A']);
+        $this->course->teachingCourseStudents()->create(['user_id' => $second->id]);
+        $members[] = $second->id;
+    }
+    $this->work->update(['groups' => [['student_ids' => $members, 'grade' => '2']]]);
+    $text = TeachingWorkDispatchFixture::readyTasksText();
+    fakeDropboxWorkFiles(['Schooltool-Versandvorbereitung.json' => $text]);
+    $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $payload = $source === 'dropbox' ? [] : ['folder' => 'Leistungsarbeit', 'documents' => json_encode([['path' => 'Leistungsarbeit/Schooltool-Versandvorbereitung.json', 'text' => $text]])];
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.dispatches.0.log_info.dispatch_ready', $complete)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $status = $this->work->fresh()->status;
+    expect($status['dispatch_logs'][0]['dispatch_ready'])->toBe($complete);
+    expect($status['dispatch_notifications'])->toBe([]);
+    expect($status['dispatch_attempts'][0]['sent_at'])->toBeNull();
+    expect($this->work->fresh()->groups[0]['grade'])->toBe('2');
+})->with([true, false])->with(['dropbox', 'upload']);
+
 test('assignment-created preparations preview and import without email grades or release evidence', function (string $source): void {
     dropboxConnectionForWork($this);
     $this->course->update(['title' => 'INF 1']);
@@ -166,6 +195,7 @@ test('assignment-created preparations preview and import without email grades or
     expect($status['provision_events'] ?? [])->toBe([]);
     expect($status['dispatch_attempts'][0]['sent_at'])->toBeNull();
     expect($status['dispatch_attempts'][0]['planned_at'])->toBeNull();
+    expect($status['dispatch_logs'][0]['dispatch_ready'])->toBeFalse();
     expect($this->work->fresh()->groups[0]['grade'])->toBe('2');
     $fresh = $this->postJson($url, $payload)->assertOk()->json('preview');
     $this->postJson($url, $payload + ['apply' => true, 'hash' => $fresh['hash']])->assertOk();

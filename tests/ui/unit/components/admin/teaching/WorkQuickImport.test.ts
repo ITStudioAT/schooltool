@@ -35,8 +35,8 @@ function directory(name = 'Test') {
 afterEach(() => { directories.workImportDirectories.clear(); clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Quick-Import reuses only a proven per-work directory and always previews', () => {
-    it('inventories a root provision in a saved directory without requiring assessments or a Versand folder', async () => {
-        const provision = new File(['{}'], 'Schooltool-Bereitstellung.json')
+    it.each(['Schooltool-Bereitstellung.json', 'Schooltool-Versandvorbereitung.json'])('inventories %s in a saved directory without requiring assessments or a Versand folder', async filename => {
+        const provision = new File(['{}'], filename)
         const handle = directory('Geschichte')
         handle.getFileHandle.mockImplementation(async name => {
             if (name !== provision.name) throw new DOMException('Missing', 'NotFoundError')
@@ -45,7 +45,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
         const files = await directories.readWorkImportDirectory(handle)
         expect(files).toHaveLength(1)
         expect(files[0]).toBe(provision)
-        expect((files[0] as any)._relativePath).toBe('Geschichte/Schooltool-Bereitstellung.json')
+        expect((files[0] as any)._relativePath).toBe('Geschichte/' + filename)
     })
     it('absorbs disabled button clicks inside an actionable work card and routes enabled Quick-Import to its preview', async () => {
         vi.stubGlobal('showDirectoryPicker', vi.fn())
