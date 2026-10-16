@@ -38,6 +38,9 @@
                 </v-alert>
                 <div v-if="json_preview" class="mt-3 json-preview">
                     <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
+                    <v-alert v-if="json_preview.deadline_update" type="info" variant="tonal" density="compact" class="mt-2 mb-2">
+                        Prüfungsschluss aus Arbeitsordner: {{ assessmentTimeText(json_preview.deadline_update.at) }} (Europe/Vienna).
+                    </v-alert>
                     <details v-if="json_preview.exercise" class="text-caption mt-1 mb-2">
                         <summary>Quelle und Prüfnachweise</summary>
                         <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
@@ -157,7 +160,7 @@ export default {
     computed: {
         ...mapState(useCourseStore, ['selected_course']),
         deadline_conflict() {
-            return this.import_open && this.json_preview?.deadline_context?.requires_review
+            return this.import_open && !this.json_preview?.deadline_update && this.json_preview?.deadline_context?.requires_review
                 ? this.json_preview.deadline_context : null
         },
         package_deadline() {
@@ -394,7 +397,8 @@ export default {
                     return matches[0]
                 })
                 const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file))
-                    || /^[^/]+\/Schooltool-(?:Vorbereitung|Bereitstellung)\.json$/i.test(relativePath(file)))
+                    || /^[^/]+\/Schooltool-(?:Vorbereitung|Bereitstellung)\.json$/i.test(relativePath(file))
+                    || /^[^/]+\/Anlage_und_Quellen\.json$/i.test(relativePath(file)))
                 if (!packageFile && !protocols.length) throw new Error('Der Ordner enthält weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle.')
                 if (protocols.length > 30 || protocols.some(file => file.size > 1048576)
                     || [...packages, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {

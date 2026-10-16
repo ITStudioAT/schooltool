@@ -726,6 +726,7 @@ function git {
         'rev-parse --show-toplevel' { return (Get-Location).Path }
         'branch --show-current' { return 'main' }
         'pull' { $global:LASTEXITCODE = $script:pullExitCode; return }
+        'ls-files --unmerged' { return }
     }
     if ($args[0] -eq 'rev-parse' -and $args[1] -eq '--git-path') {
         return Join-Path (Get-Location).Path ('storage/framework/testing/pull-fixture-' + $args[2])

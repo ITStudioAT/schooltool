@@ -368,8 +368,9 @@ class DropboxWorkImport
             }
             $protocolCount = 0;
             foreach ($files as $relative => $entry) {
-                if (in_array($relative, ['schooltool-vorbereitung.json', 'schooltool-versandvorbereitung.json', 'schooltool-bereitstellung.json'], true)) {
+                if (in_array($relative, ['anlage_und_quellen.json', 'schooltool-vorbereitung.json', 'schooltool-versandvorbereitung.json', 'schooltool-bereitstellung.json'], true)) {
                     $name = match ($relative) {
+                        'anlage_und_quellen.json' => 'Anlage_und_Quellen.json',
                         'schooltool-vorbereitung.json' => 'Schooltool-Vorbereitung.json',
                         'schooltool-versandvorbereitung.json' => 'Schooltool-Versandvorbereitung.json',
                         default => 'Schooltool-Bereitstellung.json',

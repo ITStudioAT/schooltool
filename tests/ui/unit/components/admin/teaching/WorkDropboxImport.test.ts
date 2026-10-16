@@ -309,6 +309,29 @@ describe('Dropbox Quick-Import', () => {
             expect(wrapper.emitted('imported')).toBeUndefined()
         } finally { wrapper.unmount() }
     })
+    it.each([false, true])('previews the authoritative deadline without offering to restore a stale package deadline (stale: %s)', async stale => {
+        const post = vi.fn().mockResolvedValue({ data: { preview: { ...preview, exercise: null, dispatches: [], can_import: !stale,
+            deadline_context: stale ? { requires_review: true, current_at: '2026-10-15T12:55:00Z', source_at: '2026-10-15T14:00:00Z' } : null,
+            deadline_update: { at: '2026-10-15T14:55:00+02:00' } } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connected }), post })
+        const wrapper = mountComponent(WorkEvaluationImport)
+        try {
+            const vm = wrapper.vm as any
+            await vm.openImport(work)
+            const file = new File(['{}'], 'Anlage_und_Quellen.json')
+            Object.defineProperty(file, 'webkitRelativePath', { value: 'Arbeit/Anlage_und_Quellen.json' })
+            await vm.selectJsonFolder({ target: { files: [file], value: '' } })
+            await flushPromises()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1].get('documents')).toContain('Anlage_und_Quellen.json')
+            expect(post.mock.calls[0][1].get('apply')).not.toBe('1')
+            expect(wrapper.text()).toContain('Prüfungsschluss aus Arbeitsordner:')
+            expect(wrapper.text()).toContain('14:55')
+            expect(vm.deadline_conflict).toBeNull()
+            expect(wrapper.text()).not.toContain('Paketfrist übernehmen')
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
     it('enables only an owned mapped cloud folder without browser directory APIs', async () => {
         vi.stubGlobal('showDirectoryPicker', undefined)
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...connected, can_quick_import: false, folder: null } }) })

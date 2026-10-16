@@ -89,7 +89,7 @@ export async function readWorkImportDirectory(handle) {
             }
         }
     }
-    for (const name of ['Schooltool-Vorbereitung.json', 'Schooltool-Versandvorbereitung.json', 'Schooltool-Bereitstellung.json']) {
+    for (const name of ['Anlage_und_Quellen.json', 'Schooltool-Vorbereitung.json', 'Schooltool-Versandvorbereitung.json', 'Schooltool-Bereitstellung.json']) {
         try { await addFile(handle, name, name) }
         catch (error) { if (error.name !== 'NotFoundError') throw error }
     }

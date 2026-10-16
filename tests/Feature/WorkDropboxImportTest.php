@@ -126,6 +126,95 @@ function dropboxAssessmentPackage(object $context): array
     return TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::package());
 }
 
+test('deadline metadata is previewed and automatically imported without changing assessments', function (string $source, string $deadline): void {
+    dropboxConnectionForWork($this);
+    $groups = [['student_ids' => [], 'grade' => '2', 'comment' => 'Unverändert']];
+    $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00', 'groups' => $groups]);
+    $metadata = ['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+        'Abgabeschluss' => $deadline, 'Zeitzone' => 'Europe/Vienna'];
+    $text = json_encode($metadata, JSON_THROW_ON_ERROR);
+    fakeDropboxWorkFiles(['Anlage_und_Quellen.json' => $text]);
+    $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $payload = $source === 'dropbox' ? [] : ['folder' => 'Leistungsarbeit',
+        'documents' => json_encode([['path' => 'Leistungsarbeit/Anlage_und_Quellen.json', 'text' => $text]])];
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.deadline_update.at', '2026-10-15T14:55:00+02:00')->json('preview');
+    expect($this->work->fresh()->finish_until_time)->toBe('16:00');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    expect($this->work->fresh()->finish_until_date->format('Y-m-d'))->toBe('2026-10-15');
+    expect($this->work->fresh()->finish_until_time)->toBe('14:55');
+    expect($this->work->fresh()->groups)->toEqual($groups);
+    expect($this->work->fresh()->status['dispatch_notifications'] ?? [])->toBe([]);
+    expect($this->work->fresh()->status['folder_import_sources']['anlage_und_quellen.json'])->toBe(hash('sha256', $text));
+
+    $repeat = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $repeat['hash']])->assertOk();
+    expect($this->work->fresh()->finish_until_time)->toBe('14:55');
+    expect($this->work->fresh()->groups)->toEqual($groups);
+})->with(['dropbox', 'upload'])->with(['2026-10-15T14:55:00+02:00', '2026-10-15T12:55:00Z']);
+
+test('deadline metadata rejects foreign identities invalid times and inconsistent communicated deadlines', function (array $changes): void {
+    $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00']);
+    $metadata = array_replace(['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+        'Abgabeschluss' => '2026-10-15T14:55:00+02:00', 'Zeitzone' => 'Europe/Vienna'], $changes);
+    $payload = ['folder' => 'Leistungsarbeit', 'documents' => json_encode([
+        ['path' => 'Leistungsarbeit/Anlage_und_Quellen.json', 'text' => json_encode($metadata)],
+    ])];
+
+    $this->postJson('/api/admin/teaching/course_works/'.$this->work->id.'/import-json', $payload)->assertUnprocessable();
+
+    expect($this->work->fresh()->finish_until_time)->toBe('16:00');
+})->with([
+    'different work' => [['Schooltool_Arbeit_ID' => 99999]],
+    'different course' => [['Schooltool_Kurs_ID' => 99999]],
+    'missing identity' => [['Schooltool_Arbeit_ID' => null]],
+    'missing offset' => [['Abgabeschluss' => '2026-10-15T14:55:00']],
+    'invalid date' => [['Abgabeschluss' => '2026-02-30T14:55:00+01:00']],
+    'wrong Vienna offset' => [['Abgabeschluss' => '2026-10-15T14:55:00+01:00']],
+    'later communicated deadline' => [['MitgeteilteAbgabefrist' => '2026-10-15T15:00:00+02:00']],
+]);
+
+test('deadline metadata cannot overwrite a work changed after its preview', function (): void {
+    $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00']);
+    $payload = ['folder' => 'Leistungsarbeit', 'documents' => json_encode([
+        ['path' => 'Leistungsarbeit/Anlage_und_Quellen.json', 'text' => json_encode([
+            'Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+            'Abgabeschluss' => '2026-10-15T14:55:00+02:00', 'Zeitzone' => 'Europe/Vienna',
+        ])],
+    ])];
+    $url = '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->work->update(['finish_until_time' => '14:50']);
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+
+    expect($this->work->fresh()->finish_until_time)->toBe('14:50');
+});
+
+test('deadline metadata does not accept assessments based on a different deadline', function (): void {
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(dropboxAssessmentPackage($this));
+    $peer = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Bea', 'last_name' => 'Beta', 'schoolclass' => '3B']);
+    $this->course->teachingCourseStudents()->create(['user_id' => $peer->id]);
+    $groups = $this->work->fresh()->groups;
+    $groups[0]['student_ids'][] = $peer->id;
+    $this->work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00', 'groups' => $groups]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($this->work);
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => 'Leistungsarbeit',
+        'documents' => json_encode([['path' => 'Leistungsarbeit/Anlage_und_Quellen.json', 'text' => json_encode([
+            'Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+            'Abgabeschluss' => '2026-10-06T14:55:00+02:00', 'Zeitzone' => 'Europe/Vienna',
+        ])]])];
+    $url = '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+
+    $preview = $this->post($url, $payload, ['Accept' => 'application/json'])->assertOk()->assertJsonPath('preview.can_import', false)
+        ->assertJsonPath('preview.deadline_context.requires_review', true)->json('preview');
+    $this->post($url, $payload + ['apply' => true, 'hash' => $preview['hash']], ['Accept' => 'application/json'])->assertUnprocessable();
+
+    expect($this->work->fresh()->finish_until_time)->toBe('12:00');
+});
+
 test('Dropbox and local upload preview and apply ungraded preparations and server schedules without marking them sent', function (bool $scheduled, string $source): void {
     dropboxConnectionForWork($this);
     $this->course->update(['title' => 'INF 1']);

@@ -248,6 +248,9 @@ function gitpull {
     if ($LASTEXITCODE -ne 0) {
         throw "git pull failed with exit code $LASTEXITCODE."
     }
+    if (Invoke-SchooltoolGit ls-files --unmerged) {
+        throw 'git pull left unresolved conflicts. Resolve them before continuing; local dependency preparation was not run.'
+    }
     Assert-SchooltoolRepository
     Invoke-SchooltoolCommand 'Synchronizing locked local dependencies...' {
         php scripts/update.php --target=local --prepare
@@ -296,7 +299,7 @@ function Invoke-SchooltoolPublish {
         }
         $mainBeforeChecks = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
         if (-not (Test-SchooltoolAncestor $mainBeforeChecks HEAD)) {
-            throw 'main contains remote changes missing locally. Run gitmain then gitpull --ff-only, or resolve divergent commits explicitly. Nothing was merged.'
+            throw 'main contains remote changes missing locally. Run gitpull --ff-only --autostash, resolve any conflicts, then retry gitsave. Divergent commits require explicit reconciliation. Nothing was merged.'
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {

@@ -74,7 +74,7 @@ class CourseWorkController extends Controller
         if ($dispatchBundle !== null && $dispatchBundle['evaluation'] !== null) {
             throw ValidationException::withMessages(['documents' => 'Im JSON-Import sind nur Bereitstellungs-, Vorbereitungs- und Versandbelege als zusätzliche Textdateien erlaubt.']);
         }
-        if ($bundle === null && ($uploads !== [] || (($dispatchBundle['protocols'] ?? []) === [] && ($dispatchBundle['provisions'] ?? []) === []))) {
+        if ($bundle === null && ($uploads !== [] || (($dispatchBundle['protocols'] ?? []) === [] && ($dispatchBundle['provisions'] ?? []) === [] && ($dispatchBundle['deadline'] ?? null) === null))) {
             throw ValidationException::withMessages(['documents' => 'Ohne Bewertungsdatei mindestens eine Bereitstellung, Vorbereitung oder ein Versandprotokoll auswählen; Bewertungs-PDFs benötigen ihr JSON-Paket.']);
         }
         $createdPaths = [];
@@ -90,6 +90,9 @@ class CourseWorkController extends Controller
                 $work->teachingCourseWorkGroupStudents()->lockForUpdate()->get();
                 $dispatchPreviews = $dispatchBundle !== null ? $folderImporter->previewDispatches($work, $dispatchBundle) : [];
                 $provisionPreviews = $dispatchBundle !== null ? $folderImporter->previewProvisions($work, $dispatchBundle) : [];
+                $sourceSnapshot = $work->getAttributes();
+                $deadlineFields = $folderImporter->deadlineFields($work, $dispatchBundle ?? []);
+                $work->forceFill($deadlineFields);
                 $preview = $bundle !== null ? $importer->preview($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle,
                     $folderImporter->availabilitySources($work, $provisionPreviews, $dispatchPreviews)) : [
                         'target_work' => ['title' => $work->title, 'course_title' => $work->teachingCourse->title],
@@ -102,6 +105,7 @@ class CourseWorkController extends Controller
                     $preview['can_import'] = $preview['can_import'] && $dispatchPreview['can_import'];
                 }
                 $preview['provisions'] = $provisionPreviews;
+                $preview['deadline_update'] = $dispatchBundle['deadline'] ?? null;
                 foreach ($provisionPreviews as $provisionPreview) {
                     $preview['can_import'] = $preview['can_import'] && $provisionPreview['can_import'];
                     if ($bundle !== null) {
@@ -109,7 +113,7 @@ class CourseWorkController extends Controller
                     }
                 }
                 if ($dispatchBundle !== null) {
-                    $preview['hash'] = hash('sha256', json_encode([$preview['hash'], $dispatchBundle['sources'], $preview['dispatches'], $preview['provisions']], JSON_THROW_ON_ERROR));
+                    $preview['hash'] = hash('sha256', json_encode([$preview['hash'], $sourceSnapshot, $dispatchBundle['sources'], $preview['dispatches'], $preview['provisions']], JSON_THROW_ON_ERROR));
                 }
                 if (! ($data['apply'] ?? false)) {
                     return ['preview' => $preview];
@@ -118,7 +122,7 @@ class CourseWorkController extends Controller
                     ? $preview['deadline_context']['message'] : 'JSON-Paket enthält ungeklärte Zuordnungen.');
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
                 $messages = [];
-                if ($dispatchBundle !== null && ($dispatchBundle['protocols'] !== [] || $dispatchBundle['provisions'] !== [])) {
+                if ($dispatchBundle !== null && ($dispatchBundle['protocols'] !== [] || $dispatchBundle['provisions'] !== [] || ($dispatchBundle['deadline'] ?? null) !== null)) {
                     $messages = $folderImporter->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $dispatchBundle, $createdPaths)['messages'];
                 }
                 if ($bundle !== null) {

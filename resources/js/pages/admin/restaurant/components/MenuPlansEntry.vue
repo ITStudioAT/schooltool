@@ -1166,21 +1166,52 @@
                         </div>
                     </div>
 
-                    <div class="create-booking-dialog__section">
-                        <div class="create-booking-dialog__label">Anzahl</div>
+                    <div v-if="createBookingSelectedUser" class="create-booking-dialog__section">
+                        <div class="create-booking-dialog__label">Für wen wird gebucht?</div>
                         <div class="create-booking-dialog__choices">
                             <button
-                                v-for="quantity in [1, 2, 3]"
-                                :key="quantity"
                                 type="button"
                                 class="create-booking-choice"
-                                :class="{ 'is-active': createBookingForm.quantity === quantity }"
-                                :disabled="quantity > createBookingMaxQuantity"
-                                :data-testid="`create-booking-quantity-${quantity}`"
-                                @click="selectCreateBookingQuantity(quantity)">
-                                {{ quantity }}
+                                :class="{ 'is-active': createBookingForm.recipientType === 'self' }"
+                                :aria-pressed="createBookingForm.recipientType === 'self'"
+                                data-testid="create-booking-for-self"
+                                @click="selectCreateBookingRecipientType('self')">
+                                Für sich selbst
+                            </button>
+                            <button
+                                type="button"
+                                class="create-booking-choice"
+                                :class="{ 'is-active': createBookingForm.recipientType === 'child' }"
+                                :aria-pressed="createBookingForm.recipientType === 'child'"
+                                :disabled="!createBookingChildOptions.length"
+                                data-testid="create-booking-for-child"
+                                @click="selectCreateBookingRecipientType('child')">
+                                Für ein Kind
                             </button>
                         </div>
+                        <p v-if="!createBookingChildOptions.length" class="create-booking-dialog__status">
+                            Keine zugeordneten Kinder im aktuellen Schuljahr vorhanden.
+                        </p>
+                        <template v-if="createBookingForm.recipientType === 'child'">
+                            <div class="create-booking-dialog__label mt-3">Kinder auswählen (höchstens drei)</div>
+                            <div class="create-booking-dialog__choices">
+                                <button
+                                    v-for="child in createBookingChildOptions"
+                                    :key="child.id"
+                                    type="button"
+                                    class="create-booking-choice"
+                                    :class="{ 'is-active': createBookingForm.childIds.includes(child.id) }"
+                                    :aria-pressed="createBookingForm.childIds.includes(child.id)"
+                                    :disabled="createBookingForm.childIds.length >= 3 && !createBookingForm.childIds.includes(child.id)"
+                                    :data-testid="`create-booking-child-${child.id}`"
+                                    @click="toggleCreateBookingChild(child.id)">
+                                    {{ child.name }}<template v-if="child.schoolclass">, {{ child.schoolclass }}</template>
+                                </button>
+                            </div>
+                        </template>
+                        <p v-if="createBookingForm.recipientType" class="mt-3" data-testid="create-booking-quantity">
+                            Anzahl: {{ createBookingForm.quantity }}
+                        </p>
                     </div>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
@@ -1208,6 +1239,7 @@ import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import { useEatingTimeStore } from '@/stores/admin/restaurant/EatingTimeStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { searchEntryBookingUsers, storeEntryBooking } from '@/actions/App/Http/Controllers/Admin/Restaurant/RestaurantMenuPlanController'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
@@ -1277,6 +1309,8 @@ function emptyCreateBookingForm() {
         userId: null,
         restaurantEatingTimeId: null,
         quantity: 1,
+        recipientType: null,
+        childIds: [],
     }
 }
 
@@ -1877,10 +1911,8 @@ export default {
         bookingsDialogTotalQuantity() {
             return this.bookingsDialogData.reduce((sum, b) => sum + Number(b.quantity || 0), 0)
         },
-        createBookingMaxQuantity() {
-            const availableRecipientCount = Number(this.createBookingSelectedUser?.available_recipient_count || 1)
-
-            return Math.max(1, Math.min(3, availableRecipientCount))
+        createBookingChildOptions() {
+            return this.createBookingSelectedUser?.child_options || []
         },
         canSubmitCreateBooking() {
             if (! this.createBookingSelectedUser || ! this.createBookingForm.userId || this.createBookingSaving) {
@@ -1891,7 +1923,15 @@ export default {
                 return false
             }
 
-            return this.createBookingForm.quantity >= 1 && this.createBookingForm.quantity <= this.createBookingMaxQuantity
+            if (this.createBookingForm.recipientType === 'self') {
+                return this.createBookingForm.quantity === 1
+            }
+
+            return this.createBookingForm.recipientType === 'child'
+                && this.createBookingForm.childIds.length >= 1
+                && this.createBookingForm.childIds.length <= 3
+                && this.createBookingForm.quantity === this.createBookingForm.childIds.length
+                && this.createBookingForm.childIds.every((id) => this.createBookingChildOptions.some((child) => child.id === id))
         },
         deleteBoundaryDayLabel() {
             return isValidIsoDate(this.deleteBoundaryDayTargetIso) ? this.formatDate(this.deleteBoundaryDayTargetIso) : ''
@@ -2460,7 +2500,7 @@ export default {
 
             try {
                 const response = await axios.get(
-                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/booking-users`,
+                    searchEntryBookingUsers.url({ planId: this.planId, entryId: this.createBookingDialogEntryId }),
                     { params: { search_string: query } },
                 )
 
@@ -2487,21 +2527,31 @@ export default {
             this.createBookingUserSearch = `${user.name} <${user.email}>`
             this.createBookingSearchResults = []
 
-            if (this.createBookingForm.quantity > this.createBookingMaxQuantity) {
-                this.createBookingForm.quantity = this.createBookingMaxQuantity
-            }
+            this.createBookingForm.recipientType = null
+            this.createBookingForm.childIds = []
+            this.createBookingForm.quantity = 1
         },
 
         selectCreateBookingTime(timeId) {
             this.createBookingForm.restaurantEatingTimeId = timeId
         },
 
-        selectCreateBookingQuantity(quantity) {
-            if (quantity > this.createBookingMaxQuantity) {
-                return
-            }
+        selectCreateBookingRecipientType(recipientType) {
+            this.createBookingForm.recipientType = recipientType
+            this.createBookingForm.childIds = []
+            this.createBookingForm.quantity = recipientType === 'self' ? 1 : 0
+        },
 
-            this.createBookingForm.quantity = quantity
+        toggleCreateBookingChild(childId) {
+            if (this.createBookingForm.recipientType !== 'child') return
+
+            const selected = this.createBookingForm.childIds.includes(childId)
+            if (!selected && this.createBookingForm.childIds.length >= 3) return
+
+            this.createBookingForm.childIds = selected
+                ? this.createBookingForm.childIds.filter((id) => id !== childId)
+                : [...this.createBookingForm.childIds, childId]
+            this.createBookingForm.quantity = this.createBookingForm.childIds.length
         },
 
         async confirmCreateBooking() {
@@ -2513,7 +2563,7 @@ export default {
 
             try {
                 await axios.post(
-                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/bookings`,
+                    storeEntryBooking.url({ planId: this.planId, entryId: this.createBookingDialogEntryId }),
                     {
                         data: {
                             user_id: this.createBookingForm.userId,
@@ -2521,6 +2571,8 @@ export default {
                                 ? this.createBookingForm.restaurantEatingTimeId
                                 : null,
                             quantity: this.createBookingForm.quantity,
+                            recipient_type: this.createBookingForm.recipientType,
+                            child_ids: this.createBookingForm.recipientType === 'child' ? this.createBookingForm.childIds : [],
                         },
                     },
                 )

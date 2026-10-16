@@ -550,36 +550,69 @@ POWERSHELL;
     expect(file_get_contents($main.'/received.txt'))->toBe('Next main');
 })->with(['powershell', 'pwsh'])->with([false, true]);
 
-it('refuses updating main with unsaved or unpublished work and preserves its files', function (bool $committed): void {
+it('selects main with unsaved work and refuses updating unpublished commits while preserving files', function (string $state, bool $fromFeature, string $shell): void {
+    $main = $this->workflowPc;
+    if ($fromFeature) {
+        assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart dirty-main', $shell));
+        file_put_contents($this->workflowPc.'/feature-work.txt', 'Unfinished feature work');
+    }
+    $source = $this->workflowPc;
+    $this->workflowPc = $main;
+    $committed = $state === 'committed';
     file_put_contents($this->workflowPc.'/keep.txt', 'Preserved local work');
-    if ($committed) {
+    if ($state === 'unstaged') {
+        file_put_contents($main.'/shared.txt', 'Unstaged main work');
+    }
+    if ($state === 'staged' || $committed) {
         runBranchWorkflowGit($this->workflowPc, 'add', 'keep.txt');
+    }
+    if ($committed) {
         runBranchWorkflowGit($this->workflowPc, 'commit', '-m', 'Unpublished main work');
     }
     $head = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
+    $status = runBranchWorkflowGit($main, 'status', '--porcelain', '--untracked-files=all');
+    $trackingHead = runBranchWorkflowGit($main, 'rev-parse', 'origin/main');
     commitBranchWorkflowFile($this->workflowLaptop, 'received.txt', 'Remote main');
     runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
     $command = <<<'POWERSHELL'
 function Invoke-SchooltoolLocalPreparation { throw 'UNEXPECTED_PREPARATION' }
 function php { throw 'UNEXPECTED_CACHE_WRITE' }
-gitmain
 POWERSHELL;
+    if (! $committed) {
+        $command .= "\nfunction Update-SchooltoolRemote { throw 'UNEXPECTED_FETCH' }";
+    }
+    $this->workflowPc = $source;
 
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+    $result = runBranchWorkflowCommand($this->workflowPc, $command."\ngitmain", $shell);
 
-    expect($result->isSuccessful())->toBeFalse();
-    expect($result->getOutput())->toContain($committed ? 'local commits not saved on origin' : 'Unsaved changes exist');
-    expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($head);
-    expect(file_get_contents($this->workflowPc.'/keep.txt'))->toBe('Preserved local work');
-    expect(is_file($this->workflowPc.'/received.txt'))->toBeFalse();
-})->with([false, true]);
+    expect($result->isSuccessful())->toBe(! $committed, $result->getOutput().$result->getErrorOutput());
+    expect($result->getOutput())->toContain($committed ? 'local commits not saved on origin' : 'Main has unsaved changes. Update skipped');
+    expect($this->workflowPc)->toBe($committed ? $source : $main);
+    expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(runBranchWorkflowGit($main, 'status', '--porcelain', '--untracked-files=all'))->toBe($status);
+    expect(file_get_contents($main.'/keep.txt'))->toBe('Preserved local work');
+    expect(is_file($main.'/received.txt'))->toBeFalse();
+    if (! $committed) {
+        expect(runBranchWorkflowGit($main, 'rev-parse', 'origin/main'))->toBe($trackingHead);
+        $selection = json_decode(file_get_contents($main.'/.git/schooltool-dev/selection.json'), true, flags: JSON_THROW_ON_ERROR);
+        expect(str_replace('\\', '/', $selection['project']))->toBe($main);
+        expect($selection['branch'])->toBe('main');
+    }
+    if ($state === 'unstaged') {
+        expect(file_get_contents($main.'/shared.txt'))->toBe('Unstaged main work');
+    }
+    if ($fromFeature) {
+        expect(file_get_contents($source.'/feature-work.txt'))->toBe('Unfinished feature work');
+    }
+})->with(['untracked', 'unstaged', 'staged', 'committed'])->with([false, true])->with(['powershell', 'pwsh']);
 
 it('restores the source feature folder when updating main fails', function (string $failure): void {
     $main = $this->workflowPc;
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart failed-main-update'));
     $feature = $this->workflowPc;
     file_put_contents($feature.'/keep.txt', 'Unfinished feature work');
-    if ($failure === 'dirty main') {
+    if ($failure === 'dirty other branch') {
+        runBranchWorkflowGit($main, 'switch', '-c', 'feature/occupied-main');
         file_put_contents($main.'/keep.txt', 'Unfinished main work');
     }
     $override = match ($failure) {
@@ -604,7 +637,7 @@ POWERSHELL);
     });
     expect(file_get_contents($feature.'/keep.txt'))->toBe('Unfinished feature work');
     expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($this->workflowMain);
-})->with(['dirty main', 'fetch', 'preparation']);
+})->with(['dirty other branch', 'fetch', 'preparation']);
 
 it('preserves unsaved work while navigating between existing workspaces', function (bool $committed): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
@@ -769,6 +802,37 @@ POWERSHELL;
         expect($result->getOutput())->toContain('DEPENDENCY_INSTALL_REQUESTED', 'failed with exit code 9');
     }
 })->with(['pull', 'installation'])->with(['powershell', 'pwsh']);
+
+it('restores local edits after fast-forward pulling and stops preparation on autostash conflicts', function (bool $conflict, string $shell): void {
+    file_put_contents($this->workflowPc.'/shared.txt', "Unfinished local work\n");
+    file_put_contents($this->workflowPc.'/untracked.txt', 'Untracked local work');
+    $head = commitBranchWorkflowFile($this->workflowLaptop, $conflict ? 'shared.txt' : 'remote.txt', "Other device\n");
+    runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
+    $command = <<<'POWERSHELL'
+function php {
+    Write-Output 'DEPENDENCY_PREPARATION_REQUESTED'
+    $global:LASTEXITCODE = 0
+}
+gitpull --ff-only --autostash
+POWERSHELL;
+
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+
+    expect($result->isSuccessful())->toBe(! $conflict, $result->getOutput().$result->getErrorOutput());
+    expect(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($head);
+    expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($head);
+    expect(file_get_contents($this->workflowPc.'/untracked.txt'))->toBe('Untracked local work');
+    if ($conflict) {
+        expect($result->getOutput())->toContain('unresolved conflicts')->not->toContain('DEPENDENCY_PREPARATION_REQUESTED', 'Abgeschlossen:');
+        expect(runBranchWorkflowGit($this->workflowPc, 'diff', '--name-only', '--diff-filter=U'))->toBe('shared.txt');
+        expect(runBranchWorkflowGit($this->workflowPc, 'show', 'stash@{0}:shared.txt'))->toBe('Unfinished local work');
+    } else {
+        expect($result->getOutput())->toContain('DEPENDENCY_PREPARATION_REQUESTED', 'Abgeschlossen:');
+        expect(file_get_contents($this->workflowPc.'/shared.txt'))->toBe("Unfinished local work\n");
+        expect(file_get_contents($this->workflowPc.'/remote.txt'))->toBe("Other device\n");
+        expect(runBranchWorkflowGit($this->workflowPc, 'stash', 'list'))->toBe('');
+    }
+})->with([false, true])->with(['powershell', 'pwsh']);
 
 it('includes the latest main automatically in the isolated release candidate', function (): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
@@ -1440,7 +1504,7 @@ it('does not merge remote main into unsaved local changes', function (): void {
     $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitsave "Save correction"');
 
     expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('Nothing was merged')
+        ->and($result->getOutput())->toContain('Nothing was merged', 'gitpull --ff-only --autostash')
         ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix)
         ->and(file_get_contents($this->workflowPc.'/fix.txt'))->toBe("Keep my correction\n");

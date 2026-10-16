@@ -35,7 +35,7 @@ function directory(name = 'Test') {
 afterEach(() => { directories.workImportDirectories.clear(); clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Quick-Import reuses only a proven per-work directory and always previews', () => {
-    it.each(['Schooltool-Bereitstellung.json', 'Schooltool-Versandvorbereitung.json'])('inventories %s in a saved directory without requiring assessments or a Versand folder', async filename => {
+    it.each(['Anlage_und_Quellen.json', 'Schooltool-Bereitstellung.json', 'Schooltool-Versandvorbereitung.json'])('inventories %s in a saved directory without requiring assessments or a Versand folder', async filename => {
         const provision = new File(['{}'], filename)
         const handle = directory('Geschichte')
         handle.getFileHandle.mockImplementation(async name => {

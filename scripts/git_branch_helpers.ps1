@@ -554,7 +554,17 @@ function gitmain {
     Assert-SchooltoolRepository
     $source = (Get-Location).Path
     Set-Location -LiteralPath (Get-SchooltoolMainWorkspace)
-    try { Switch-SchooltoolBranch main }
+    try {
+        Assert-SchooltoolRepository
+        if ((Invoke-SchooltoolGit branch --show-current) -ceq 'main' -and
+            (Invoke-SchooltoolGit status --porcelain --untracked-files=all)) {
+            if (Select-SchooltoolExistingWorkspace main) {
+                Write-Host 'Main has unsaved changes. Update skipped; use gitpull --ff-only --autostash to receive remote changes before gitsave.' -ForegroundColor Yellow
+                return
+            }
+        }
+        Switch-SchooltoolBranch main
+    }
     catch { Set-Location -LiteralPath $source; throw }
 }
 

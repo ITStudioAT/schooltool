@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\TeachingCourseWork;
 use App\Models\User;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -34,12 +36,15 @@ class TeachingWorkFolderImport
         $provisions = [];
         $pdfs = [];
         $sources = [];
+        $deadline = null;
         foreach ($texts as $document) {
             if (! is_array($document) || ! is_string($document['path'] ?? null) || ! is_string($document['text'] ?? null)) {
                 $this->reject('Ungültige Textdatei im Ordnerimport.');
             }
             $file = $this->classify($folder, $document['path']);
-            if ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
+            if ($file['kind'] === 'deadline') {
+                $deadline = $this->parseDeadline($document['text']);
+            } elseif ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
                 if (strlen($document['text']) > 262144) {
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
                 }
@@ -86,7 +91,60 @@ class TeachingWorkFolderImport
         usort($protocols, fn (array $first, array $second): int => strcmp($first['source'], $second['source']));
 
         return ['folder' => $folder, 'evaluation' => $reports !== [] ? $this->evaluations->parse($reports) : null,
-            'protocols' => $protocols, 'provisions' => $provisions, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+            'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+    }
+
+    /** @return array{work_id: int, course_id: int, at: string} */
+    private function parseDeadline(string $text): array
+    {
+        try {
+            $metadata = json_decode($text, true, 32, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $this->reject('Anlage_und_Quellen.json: Ungültige Fristmetadaten.');
+        }
+        if (! is_array($metadata) || ($metadata['Zeitzone'] ?? null) !== 'Europe/Vienna'
+            || ! is_int($metadata['Schooltool_Arbeit_ID'] ?? null) || $metadata['Schooltool_Arbeit_ID'] < 1
+            || ! is_int($metadata['Schooltool_Kurs_ID'] ?? null) || $metadata['Schooltool_Kurs_ID'] < 1) {
+            $this->reject('Anlage_und_Quellen.json: Eindeutige Arbeits- und Kurskennung sowie Europe/Vienna erforderlich.');
+        }
+        $deadline = $this->deadlineInstant($metadata['Abgabeschluss'] ?? null);
+        if (isset($metadata['MitgeteilteAbgabefrist']) && $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) > $deadline) {
+            $this->reject('Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
+        }
+
+        return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'],
+            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
+    }
+
+    private function deadlineInstant(mixed $value): DateTimeImmutable
+    {
+        if (! is_string($value) || ! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:Z|[+-]\d{2}:\d{2})\z/', $value)) {
+            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss benötigt Datum, Uhrzeit und explizite Zeitzone.');
+        }
+        $instant = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', str_replace('Z', '+00:00', $value));
+        if ($instant === false || $instant->format('Y-m-d\TH:i:sP') !== str_replace('Z', '+00:00', $value)
+            || (! str_ends_with($value, 'Z') && $instant->getOffset() !== $instant->setTimezone(new DateTimeZone('Europe/Vienna'))->getOffset())) {
+            $this->reject('Anlage_und_Quellen.json: Ungültiger Zeitpunkt oder falscher Europe/Vienna-Offset.');
+        }
+
+        return $instant;
+    }
+
+    /** @param array<string, mixed> $bundle
+     * @return array<string, string>
+     */
+    public function deadlineFields(TeachingCourseWork $work, array $bundle): array
+    {
+        $deadline = $bundle['deadline'] ?? null;
+        if ($deadline === null) {
+            return [];
+        }
+        if ($deadline['work_id'] !== $work->id || $deadline['course_id'] !== $work->teaching_course_id) {
+            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss gehört zu einer anderen Arbeit oder einem anderen Kurs.');
+        }
+        $instant = new DateTimeImmutable($deadline['at']);
+
+        return ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
     }
 
     /** @return array{source: string, name: string, kind: string, run: string} */
@@ -97,6 +155,9 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
+        if (mb_strtolower($source) === 'anlage_und_quellen.json') {
+            return ['source' => 'anlage_und_quellen.json', 'name' => 'Anlage_und_Quellen.json', 'kind' => 'deadline', 'run' => 'Frist'];
+        }
         if (mb_strtolower($source) === 'schooltool-bereitstellung.json') {
             return ['source' => 'schooltool-bereitstellung.json', 'name' => 'Schooltool-Bereitstellung.json', 'kind' => 'provision', 'run' => 'Bereitstellung'];
         }
@@ -186,6 +247,14 @@ class TeachingWorkFolderImport
     public function apply(TeachingCourseWork $work, User $actor, array $bundle, array &$createdPaths): array
     {
         $messages = [];
+        $deadlineFields = $this->deadlineFields($work, $bundle);
+        if ($deadlineFields !== []) {
+            $work->forceFill($deadlineFields);
+            if ($work->isDirty(['finish_until_date', 'finish_until_time'])) {
+                $work->save();
+            }
+            $messages[] = 'Prüfungsschluss aus Arbeitsordner übernommen: '.(new DateTimeImmutable($bundle['deadline']['at']))->format('d.m.Y H:i').' Uhr (Europe/Vienna).';
+        }
         $missing = [];
         $dispatchPreviews = $this->previewDispatches($work, $bundle);
         foreach ($dispatchPreviews as $preview) {

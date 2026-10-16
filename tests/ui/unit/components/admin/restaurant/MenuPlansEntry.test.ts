@@ -608,10 +608,64 @@ describe('MenuPlans entry page', () => {
             userId: null,
             restaurantEatingTimeId: 4,
             quantity: 1,
+            recipientType: null,
+            childIds: [],
         })
         expect(ctx.createBookingUserSearch).toBe('')
         expect(ctx.createBookingSearchResults).toEqual([])
         expect(ctx.createBookingSelectedUser).toBe(null)
+    })
+
+    it('requires an explicit recipient and sends self without the linked child', async () => {
+        const wrapper = mountMenuPlansEntry({ mode: 'edit', plan_id: '17' })
+        const vm = wrapper.vm as any
+        vm.createBookingDialogEntryId = 23
+        vm.createBookingDialog = true
+        vm.selectCreateBookingUser({ id: 995, name: 'Petra Planer', email: 'petra@example.test', child_options: [
+            { id: 2489, name: 'Josef Khalil', schoolclass: '6L1' },
+        ] })
+        await vm.$nextTick()
+        expect(vm.canSubmitCreateBooking).toBe(false)
+        await wrapper.get('[data-testid="create-booking-for-child"]').trigger('click')
+        expect(vm.canSubmitCreateBooking).toBe(false)
+        await wrapper.get('[data-testid="create-booking-child-2489"]').trigger('click')
+        expect(vm.canSubmitCreateBooking).toBe(true)
+        expect(vm.createBookingForm.childIds).toEqual([2489])
+        await wrapper.get('[data-testid="create-booking-for-self"]').trigger('click')
+        expect(vm.createBookingForm.childIds).toEqual([])
+        expect(vm.createBookingForm.quantity).toBe(1)
+        expect(vm.canSubmitCreateBooking).toBe(true)
+        vm.loadExistingPlan = vi.fn().mockResolvedValue(undefined)
+        axiosMock.post.mockResolvedValueOnce({ data: {} })
+        await vm.confirmCreateBooking()
+        expect(axiosMock.post).toHaveBeenLastCalledWith('/api/admin/restaurant/menu-plans/17/entries/23/bookings', {
+            data: { user_id: 995, restaurant_eating_time_id: null, quantity: 1, recipient_type: 'self', child_ids: [] },
+        })
+        wrapper.unmount()
+    })
+
+    it('sends the chosen children and clears recipient choices when switching users', async () => {
+        const wrapper = mountMenuPlansEntry({ mode: 'edit', plan_id: '17' })
+        const vm = wrapper.vm as any
+        vm.createBookingDialogEntryId = 23
+        const children = [1, 2, 3, 4].map((id) => ({ id, name: `Kind ${id}`, schoolclass: '6L1' }))
+        vm.selectCreateBookingUser({ id: 995, name: 'Petra Planer', email: 'petra@example.test', child_options: children })
+        vm.selectCreateBookingRecipientType('child')
+        ;[2, 3, 4, 1].forEach((id) => vm.toggleCreateBookingChild(id))
+        expect(vm.createBookingForm.childIds).toEqual([2, 3, 4])
+        expect(vm.createBookingForm.quantity).toBe(3)
+        vm.toggleCreateBookingChild(3)
+        vm.loadExistingPlan = vi.fn().mockResolvedValue(undefined)
+        axiosMock.post.mockResolvedValueOnce({ data: {} })
+        await vm.confirmCreateBooking()
+        expect(axiosMock.post).toHaveBeenLastCalledWith('/api/admin/restaurant/menu-plans/17/entries/23/bookings', {
+            data: { user_id: 995, restaurant_eating_time_id: null, quantity: 2, recipient_type: 'child', child_ids: [2, 4] },
+        })
+        vm.selectCreateBookingUser({ id: 996, name: 'Andere Person', child_options: [] })
+        expect(vm.createBookingForm.recipientType).toBe(null)
+        expect(vm.createBookingForm.childIds).toEqual([])
+        expect(vm.canSubmitCreateBooking).toBe(false)
+        wrapper.unmount()
     })
 
     it('disables the editor immediately while the back navigation is pending', async () => {

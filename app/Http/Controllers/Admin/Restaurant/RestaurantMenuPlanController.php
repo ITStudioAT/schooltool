@@ -317,8 +317,8 @@ class RestaurantMenuPlanController extends Controller
             ->get(['id', 'school_id', 'first_name', 'last_name', 'email', 'schoolclass']);
 
         return response()->json([
-            'data' => $users->map(function (User $user) use ($bookingService): array {
-                $childOptions = $bookingService->getChildOptionsForUser($user);
+            'data' => $users->map(function (User $user) use ($bookingService, $authUser): array {
+                $childOptions = $bookingService->getChildOptionsForUser($user, $authUser->schoolyear_id);
 
                 return [
                     'id' => $user->id,
@@ -326,6 +326,7 @@ class RestaurantMenuPlanController extends Controller
                     'email' => (string) $user->email,
                     'schoolclass' => filled($user->schoolclass) ? (string) $user->schoolclass : null,
                     'available_recipient_count' => max(1, count($childOptions)),
+                    'child_options' => $childOptions,
                 ];
             })->values(),
         ], 200, $this->noStoreHeaders());
@@ -426,11 +427,11 @@ class RestaurantMenuPlanController extends Controller
         }
 
         $quantity = (int) $validated['quantity'];
-        $recipients = $this->recipientsForManualBooking($targetUser, $bookingService, $quantity);
+        $recipients = $this->recipientsForManualBooking($targetUser, $bookingService, $validated, $authUser->schoolyear_id);
 
         if ($recipients === null) {
             return response()->json([
-                'message' => 'Für die gewünschte Anzahl konnten nicht genügend Kinder aus Import116 gefunden werden.',
+                'message' => 'Bitte wählen Sie für sich selbst genau ein Menü oder für jedes Menü ein zugeordnetes Kind aus dem aktuellen Schuljahr.',
             ], 422);
         }
 
@@ -583,10 +584,27 @@ class RestaurantMenuPlanController extends Controller
     /**
      * @return array<int, array{name:string,type:string,import116_id:int|null}>|null
      */
-    private function recipientsForManualBooking(User $user, RestaurantBookingService $bookingService, int $quantity): ?array
+    private function recipientsForManualBooking(User $user, RestaurantBookingService $bookingService, array $data, ?int $schoolyearId): ?array
     {
-        $childRecipients = collect($bookingService->getChildOptionsForUser($user))
-            ->take($quantity)
+        $quantity = (int) $data['quantity'];
+
+        if ($data['recipient_type'] === 'self') {
+            return $quantity === 1 ? [[
+                'name' => $user->full_name,
+                'type' => 'self',
+                'import116_id' => null,
+            ]] : null;
+        }
+
+        $childIds = array_map('intval', $data['child_ids']);
+        $childOptions = collect($bookingService->getChildOptionsForUser($user, $schoolyearId))->keyBy('id');
+
+        if (count($childIds) !== $quantity || count(array_unique($childIds)) !== $quantity || array_diff($childIds, $childOptions->keys()->all()) !== []) {
+            return null;
+        }
+
+        return collect($childIds)
+            ->map(fn (int $id): array => $childOptions->get($id))
             ->map(function (array $child): array {
                 return [
                     'name' => $child['name'],
@@ -596,20 +614,6 @@ class RestaurantMenuPlanController extends Controller
             })
             ->values()
             ->all();
-
-        if ($childRecipients !== []) {
-            return count($childRecipients) === $quantity ? $childRecipients : null;
-        }
-
-        if ($quantity !== 1) {
-            return null;
-        }
-
-        return [[
-            'name' => $user->full_name,
-            'type' => 'self',
-            'import116_id' => null,
-        ]];
     }
 
     /**
@@ -620,6 +624,10 @@ class RestaurantMenuPlanController extends Controller
     {
         $bookingUsers = $bookings
             ->map(function (RestaurantMenuPlanBooking $booking): ?array {
+                if ($booking->child_type === 'self') {
+                    return null;
+                }
+
                 $firstName = $this->normalizeComparableString($booking->user?->first_name);
                 $lastName = $this->normalizeComparableString($booking->user?->last_name);
                 $email = $this->normalizeEmail($booking->user?->email);
