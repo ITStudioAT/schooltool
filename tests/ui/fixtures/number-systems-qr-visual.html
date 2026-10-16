@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Signal Null · QR-Prüfung mit Testdaten</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#e9edf2}.qa{padding:12px;background:#fff;color:#273244;display:flex;gap:12px;flex-wrap:wrap;align-items:center}.qa button{border:1px solid #6d7787;padding:8px 14px;border-radius:5px}#app{padding:16px}</style></head>
+<body><div class="qa"><strong>Isolierte Testdaten · QR lokal erzeugt · keine Klassenrunde angelegt</strong><button id="teacher">Lehrkraft</button><button id="team">Privates Team</button></div><div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { VApp, VMain } from 'vuetify/components'
+import vuetify from '/resources/plugins/admin.js'
+import axios from 'axios'
+import Teacher from '/resources/js/pages/admin/teachingTools/NumberSystemsGame.vue'
+import Player from '/resources/js/pages/components/numberSystems/NumberSystemPlayer.vue'
+import invitations from './number-systems-invitations.json'
+const view=ref('teacher')
+const session={id:999999986,title:'Signal Null · QR-Test',status:'waiting',planned_minutes:40,difficulty:2,mode:'teams',join_code:'ABCDEF1234'}
+const monitor={session,enrolled:24,runs:[],invitation:invitations.class}
+const run={id:999999985,revision:0,position:0,total:18,solved:false,completed:false,history:[],draft:{},hints:0,hint_texts:[],feedback:null,mission:null,team_name:'Testteam Nord',team_code:'1234ABCD',members:['Testperson A','Testperson B'],session,invitation:invitations.team}
+axios.get=async url=>({data:JSON.parse(JSON.stringify(String(url).includes('/runs/')?{run}:String(url).includes('/sessions/')?monitor:{available:true,courses:[{id:1,title:'Synthetischer Testkurs'}],sessions:[session]}))})
+axios.post=async()=>({data:monitor})
+document.querySelector('#teacher').onclick=()=>view.value='teacher'
+document.querySelector('#team').onclick=()=>view.value='team'
+createApp({render:()=>h(VApp,{},()=>h(VMain,{},()=>view.value==='teacher'?h(Teacher):h(Player,{runId:run.id})))}).use(vuetify).mount('#app')
+</script></body></html>

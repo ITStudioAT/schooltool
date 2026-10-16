@@ -31,6 +31,8 @@ use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
 use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Admin\NavigationController;
+use App\Http\Controllers\Admin\NumberSystemGameController;
+use App\Http\Controllers\Admin\NumberSystemLocalProbeController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
 use App\Http\Controllers\Admin\RegisterPrintController;
@@ -222,6 +224,25 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
+
+    Route::prefix('/admin/number-systems')->middleware([
+        'auth:sanctum', 'api-allowed:admin,teaching_admin,teacher',
+        'tool-licensed:Lehrertool,auth,admin,teaching_admin,teacher',
+    ])->name('admin.number-systems.')->group(function (): void {
+        Route::prefix('/local-probes')->name('local-probes.')->group(function (): void {
+            Route::post('/', [NumberSystemLocalProbeController::class, 'create'])->middleware('throttle:10,1')->name('create');
+            Route::get('/{probe}', [NumberSystemLocalProbeController::class, 'show'])->whereUuid('probe')->name('show');
+            Route::post('/{probe}/control', [NumberSystemLocalProbeController::class, 'control'])->whereUuid('probe')->name('control');
+            Route::delete('/{probe}', [NumberSystemLocalProbeController::class, 'remove'])->whereUuid('probe')->name('remove');
+            Route::get('/{probe}/players/{participant}', [NumberSystemLocalProbeController::class, 'player'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('player');
+            Route::post('/{probe}/players/{participant}/join', [NumberSystemLocalProbeController::class, 'join'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('join');
+            Route::post('/{probe}/players/{participant}/run', [NumberSystemLocalProbeController::class, 'update'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('update');
+        });
+        Route::get('/', [NumberSystemGameController::class, 'index'])->name('index');
+        Route::post('/sessions', [NumberSystemGameController::class, 'create'])->middleware('throttle:10,1')->name('create');
+        Route::get('/sessions/{session}', [NumberSystemGameController::class, 'show'])->name('show');
+        Route::post('/sessions/{session}/control', [NumberSystemGameController::class, 'control'])->name('control');
+    });
 
     Route::prefix('/admin/multiple-choice')->middleware([
         'auth:sanctum', 'api-allowed:admin,teaching_admin,teacher',

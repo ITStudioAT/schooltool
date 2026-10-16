@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Signal Null · isolierte Oberflächenprüfung</title>
+<style>body {margin:0;background:#e9edf2;font-family:system-ui,sans-serif} .qa {padding:12px;background:#fff;color:#273244;font-size:13px;display:flex;gap:12px;flex-wrap:wrap;align-items:center} .qa select,.qa button {padding:8px;border:1px solid #a0a9b9;border-radius:5px} #app {padding:16px}</style></head>
+<body><div class="qa"><strong>Isolierte Testdaten · echte Spielkomponente · keine Schuldaten</strong><label>Mission <select id="mission"></select></label><button id="pause">Pause / Fortsetzen</button><button id="reset">Neu beginnen</button></div><div id="app"></div>
+<script type="module">
+import { createApp, h } from 'vue'
+import axios from 'axios'
+import Player from '/resources/js/pages/components/numberSystems/NumberSystemPlayer.vue'
+import missions from './number-systems-data.json'
+import 'vuetify/styles'
+const key = 'number-systems-isolated-visual-state'
+const clone = value => JSON.parse(JSON.stringify(value))
+const initial = mission => Object.fromEntries(mission.fields.flatMap(field => Object.hasOwn(field, 'initial') ? [[field.name, field.initial]] : field.widget === 'bits' ? [[field.name, '0'.repeat(field.width)]] : field.widget === 'weights' ? [[field.name, []]] : []))
+const fresh = () => ({ id: 999999987, revision: 0, position: 0, total: missions.length, solved: false, completed: false, draft: initial(missions[0]), hints: 0, history: [], feedback: null, session: {id: 999999987, title:'Signal Null · Testabenteuer', status:'running', mode:'solo', difficulty:2, planned_minutes:30}, members:['Testperson'], team_name:null, team_code:null })
+let state = JSON.parse(localStorage.getItem(key) || 'null') || fresh()
+function response() {
+ const {solution,hints,explanation,private_clues,...mission} = clone(missions[state.position])
+ return {data:{run:clone({...state,mission,hint_texts:hints.slice(0,state.hints)})}}
+}
+function save() { localStorage.setItem(key,JSON.stringify(state)); document.querySelector('#mission').value=String(state.position) }
+function number(value,base) { const raw=String(value??'').trim().replace(/\s*\(dual\)$/i,'').replace(/^#|^0x|^0b/i,'').replace(/\s/g,''); return new RegExp(base===2?'^[01]+$':base===16?'^[0-9a-f]+$':'^[0-9]+$','i').test(raw)?parseInt(raw,base):NaN }
+function correct(draft) {
+ return Object.entries(missions[state.position].solution).every(([name,spec]) => {
+  const value=draft[name]
+  if(spec.type==='number') return number(value,spec.base)===spec.value && (!spec.width || String(value).replace(/\s/g,'').length===spec.width)
+  if(spec.type==='weights') return JSON.stringify([...(value??[])].map(Number).sort((a,b)=>a-b))===JSON.stringify([...spec.value].sort((a,b)=>a-b))
+  if(spec.type==='bytes') return JSON.stringify(String(value??'').trim().split(/\s+/).map(token=>number(token,spec.base)))===JSON.stringify(spec.value)
+  return String(value??'').replace(/\s/g,'').toUpperCase()===String(spec.value).replace(/\s/g,'').toUpperCase()
+ })
+}
+axios.get=async()=>response()
+axios.post=async(url,payload)=>{
+ if(payload.revision!==state.revision) throw {response:{status:409,data:{message:'Ein anderes Testfenster hat den Spielstand verändert.'}}}
+ if(payload.action==='draft') state.draft=clone(payload.draft)
+ if(payload.action==='hint') state.hints=Math.min(3,state.hints+1)
+ if(payload.action==='answer') {
+  state.draft=clone(payload.draft);state.solved=correct(payload.draft)
+  state.feedback={correct:state.solved,message:state.solved?missions[state.position].explanation:'Die Darstellungen passen noch nicht zusammen. Prüfe Stellenwerte und Rechenschritt.'}
+  if(state.solved)state.history.push({id:missions[state.position].id,directions:missions[state.position].directions,hints:state.hints})
+ }
+ if(payload.action==='advance'&&state.solved){
+  if(state.position===missions.length-1)state.completed=true
+  else{state.position++;state.solved=false;state.feedback=null;state.hints=0;state.draft=initial(missions[state.position])}
+ }
+ state.revision++;save();return response()
+}
+const select=document.querySelector('#mission')
+missions.forEach((mission,index)=>select.add(new Option((index+1)+': '+mission.title,index)))
+select.onchange=()=>{state.position=Number(select.value);state.solved=false;state.completed=false;state.hints=0;state.feedback=null;state.draft=initial(missions[state.position]);state.revision++;save();location.reload()}
+document.querySelector('#pause').onclick=()=>{state.session.status=state.session.status==='running'?'paused':'running';save()}
+document.querySelector('#reset').onclick=()=>{state=fresh();save();location.reload()}
+save();createApp({render:()=>h(Player,{runId:state.id})}).mount('#app')
+</script></body></html>

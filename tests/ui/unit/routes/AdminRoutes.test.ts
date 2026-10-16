@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest'
 import router, { resolveAdminRouteAccess, routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {
+    it.each([
+        ['/admin/teaching-tools/games', { section: 'games' }],
+        ['/admin/teaching-tools/games/number-systems', { section: 'games', game: 'number-systems' }],
+    ])('opens %s with the existing teaching capability', (path, props) => {
+        const resolvedRoute = router.resolve(path)
+
+        expect(resolvedRoute.matched).toHaveLength(1)
+        expect(resolveAdminRouteAccess(path)).toEqual({ public: false, capability: 'teaching' })
+        expect(resolvedRoute.matched[0].props.default).toEqual(props)
+    })
+
     it('opens Multiple Choice under teaching tools with teaching access', () => {
         const resolvedRoute = router.resolve('/admin/teaching-tools/multiple-choice')
 

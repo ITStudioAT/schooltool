@@ -301,6 +301,7 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import { numberSystemLoginReturn } from '@/pages/components/numberSystems/numberSystemLoginReturn'
 import '../../../../css/student.css'
 
 export default {
@@ -316,7 +317,7 @@ export default {
                 return
             }
 
-            this.$router.replace('/student/overview')
+            this.$router.replace(numberSystemLoginReturn(this.$route?.query))
             return
         }
         await this.studentStore.loadConfig()
@@ -529,7 +530,7 @@ export default {
                     this.login_step = 'select_student'
                 } else if (status === 'login_ok') {
                     // Erfolgreicher Login - Weiterleitung zum Unterrichtsbereich
-                    this.$router.push('/student/overview')
+                    this.$router.push(numberSystemLoginReturn(this.$route?.query))
                 }
             }
         },
@@ -539,7 +540,7 @@ export default {
 
             if (await this.studentStore.loginStepParentStudent(this.selected_parent_student_id)) {
                 if (this.studentStore.data?.status === 'login_ok') {
-                    this.$router.push('/student/overview')
+                    this.$router.push(numberSystemLoginReturn(this.$route?.query))
                 }
             }
         },
@@ -556,7 +557,7 @@ export default {
                     this.show_error_dialog = true
                 } else if (status === 'login_ok') {
                     // Erfolgreicher Login - Weiterleitung zum Unterrichtsbereich
-                    this.$router.push('/student/overview')
+                    this.$router.push(numberSystemLoginReturn(this.$route?.query))
                 }
             }
         },

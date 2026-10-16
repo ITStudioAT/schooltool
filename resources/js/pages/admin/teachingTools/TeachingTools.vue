@@ -3,26 +3,43 @@
         <AdminPageHeader class="mb-3" location="Unterricht Tools" />
 
         <v-sheet class="teaching-nav mb-2" aria-label="Unterricht Tools">
-            <v-btn-toggle model-value="multiple-choice" mandatory divided color="primary" class="teaching-nav__buttons">
+            <v-btn-toggle :model-value="section" mandatory divided color="primary" class="teaching-nav__buttons">
                 <v-btn
                     value="multiple-choice"
                     to="/admin/teaching-tools/multiple-choice"
                     prepend-icon="mdi-format-list-checks"
-                    :aria-pressed="true"
+                    :aria-pressed="section === 'multiple-choice'"
                     class="teaching-nav__button">
                     <span class="teaching-nav__button-copy">
                         <span class="teaching-nav__button-title">Multiple Choice</span>
                     </span>
                 </v-btn>
+                <v-btn
+                    value="games"
+                    to="/admin/teaching-tools/games"
+                    prepend-icon="mdi-controller-classic-outline"
+                    :aria-pressed="section === 'games'"
+                    class="teaching-nav__button">
+                    <span class="teaching-nav__button-copy">
+                        <span class="teaching-nav__button-title">Spiele</span>
+                    </span>
+                </v-btn>
             </v-btn-toggle>
         </v-sheet>
-        <MultipleChoiceWorkspace />
+        <TeachingGames v-if="section === 'games'" :game="game" />
+        <MultipleChoiceWorkspace v-else />
     </v-container>
 </template>
 
 <script setup>
 import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import MultipleChoiceWorkspace from './MultipleChoiceWorkspace.vue'
+import TeachingGames from './TeachingGames.vue'
+
+defineProps({
+    section: { type: String, default: 'multiple-choice' },
+    game: { type: String, default: null },
+})
 </script>
 
 <style scoped>

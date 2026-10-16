@@ -30,6 +30,11 @@
                 <v-list-item-subtitle>Deine zugewiesenen Tests</v-list-item-subtitle>
             </v-list-item>
 
+            <v-list-item v-if="viewer_type !== 'parent' && currentRoute !== 'number-systems'" prepend-icon="mdi-controller-classic-outline" to="/student/games/number-systems" @click="drawerModel = false">
+                <v-list-item-title>Zahlensysteme</v-list-item-title>
+                <v-list-item-subtitle>Klassenrunde und gespeicherte Abenteuer</v-list-item-subtitle>
+            </v-list-item>
+
             <v-list-item data-testid="student-drawer-change-child" v-if="viewer_type === 'parent'" prepend-icon="mdi-account-switch" @click="handleParentStudentChange">
                 <v-list-item-title>Kind wechseln</v-list-item-title>
                 <v-list-item-subtitle>Unterrichtsbereich eines anderen Kindes öffnen</v-list-item-subtitle>
