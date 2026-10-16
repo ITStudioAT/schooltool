@@ -37,13 +37,16 @@ class TeachingWorkFolderImport
         $pdfs = [];
         $sources = [];
         $deadline = null;
+        $workIdentity = null;
         foreach ($texts as $document) {
             if (! is_array($document) || ! is_string($document['path'] ?? null) || ! is_string($document['text'] ?? null)) {
                 $this->reject('Ungültige Textdatei im Ordnerimport.');
             }
             $file = $this->classify($folder, $document['path']);
             if ($file['kind'] === 'deadline') {
-                $deadline = $this->parseDeadline($document['text']);
+                $metadata = $this->parseDeadline($document['text']);
+                $workIdentity = ['work_id' => $metadata['work_id'], 'course_id' => $metadata['course_id']];
+                $deadline = $metadata['at'] === null ? null : $metadata;
             } elseif ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
                 if (strlen($document['text']) > 262144) {
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
@@ -91,10 +94,10 @@ class TeachingWorkFolderImport
         usort($protocols, fn (array $first, array $second): int => strcmp($first['source'], $second['source']));
 
         return ['folder' => $folder, 'evaluation' => $reports !== [] ? $this->evaluations->parse($reports) : null,
-            'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+            'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'work_identity' => $workIdentity, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
     }
 
-    /** @return array{work_id: int, course_id: int, at: string} */
+    /** @return array{work_id: int, course_id: int, at: ?string} */
     private function parseDeadline(string $text): array
     {
         try {
@@ -107,7 +110,14 @@ class TeachingWorkFolderImport
             || ! is_int($metadata['Schooltool_Kurs_ID'] ?? null) || $metadata['Schooltool_Kurs_ID'] < 1) {
             $this->reject('Anlage_und_Quellen.json: Eindeutige Arbeits- und Kurskennung sowie Europe/Vienna erforderlich.');
         }
-        $deadline = $this->deadlineInstant($metadata['Abgabeschluss'] ?? null);
+        if (($metadata['Abgabeschluss'] ?? null) === null) {
+            if (isset($metadata['MitgeteilteAbgabefrist'])) {
+                $this->reject('Anlage_und_Quellen.json: Zur mitgeteilten Frist fehlt der interne Prüfungsschluss.');
+            }
+
+            return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'], 'at' => null];
+        }
+        $deadline = $this->deadlineInstant($metadata['Abgabeschluss']);
         if (isset($metadata['MitgeteilteAbgabefrist']) && $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) > $deadline) {
             $this->reject('Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
         }
@@ -136,11 +146,12 @@ class TeachingWorkFolderImport
     public function deadlineFields(TeachingCourseWork $work, array $bundle): array
     {
         $deadline = $bundle['deadline'] ?? null;
+        $identity = $bundle['work_identity'] ?? $deadline;
+        if ($identity !== null && ($identity['work_id'] !== $work->id || $identity['course_id'] !== $work->teaching_course_id)) {
+            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss gehört zu einer anderen Arbeit oder einem anderen Kurs.');
+        }
         if ($deadline === null) {
             return [];
-        }
-        if ($deadline['work_id'] !== $work->id || $deadline['course_id'] !== $work->teaching_course_id) {
-            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss gehört zu einer anderen Arbeit oder einem anderen Kurs.');
         }
         $instant = new DateTimeImmutable($deadline['at']);
 
