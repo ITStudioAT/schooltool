@@ -736,6 +736,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { defineAsyncComponent } from 'vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
@@ -1019,8 +1020,7 @@ export default {
             )
         },
         semesterCount() {
-            const grading = this.selectedCourseSchema?.grading || {}
-            return grading?.semester_count || 1
+            return teachingSemesterCount(this.selected_course, this.selectedCourseSchema)
         },
         sem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null

@@ -8,7 +8,7 @@
             </div>
             <div v-else class="text-caption text-medium-emphasis">Kein Datum</div>
         </template>
-        <v-card class="mt-3 mb-3" color="primary" variant="tonal" data-testid="course-students-semester-selection">
+        <v-card v-if="semesterCount === 2" class="mt-3 mb-3" color="primary" variant="tonal" data-testid="course-students-semester-selection">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
                 <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary" variant="tonal">
@@ -41,10 +41,10 @@
                 <v-icon start>{{ isDayOverviewMode ? 'mdi-close' : 'mdi-view-list' }}</v-icon>
                 {{ isDayOverviewMode ? 'Heute schließen' : 'Heute' }}
             </v-btn>
-            <v-btn v-if="!isDayOverviewMode" size="small" color="primary"
-                :variant="showCalculatedGrade ? 'flat' : 'outlined'" :aria-pressed="showCalculatedGrade"
+            <v-btn v-if="!isDayOverviewMode" size="default" :color="showCalculatedGrade ? 'success' : 'primary'"
+                :variant="showCalculatedGrade ? 'flat' : 'outlined'" :prepend-icon="showCalculatedGrade ? 'mdi-check' : 'mdi-calculator'" class="font-weight-bold" :aria-pressed="showCalculatedGrade"
                 :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings"
-                @click="toggleCalculatedGrade">Note berechnen</v-btn>
+                @click="toggleCalculatedGrade">Note berechnen: {{ showCalculatedGrade ? 'Ein' : 'Aus' }}</v-btn>
             <v-spacer />
             <v-btn-toggle
                 v-if="!isDayOverviewMode"
@@ -238,6 +238,9 @@
                                                     {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
                                                 </v-icon>
                                             </div>
+                                            <div class="student-meta-line text-caption" title="Anteil der anwesenden Termine mit erfasster Anwesenheit im gewählten Zeitraum.">
+                                                Anwesenheit: {{ Number.isFinite(studentPresencePercentages[student.id]) ? `${studentPresencePercentages[student.id]} %` : '—' }}
+                                            </div>
                                             <div
                                                 v-if="selected_course?.teaching_show_student_age && studentBirthDetails(student)"
                                                 class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
@@ -347,7 +350,8 @@ import axios from 'axios'
 import { show as showCourseEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseEvaluationController'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
-import { teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
+import { isInTeachingSemester, teachingSemesterCount, teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
+import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
@@ -381,6 +385,9 @@ export default {
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
         this.students_sort_mode = this.courseStore?.students_sort_mode || this.students_sort_mode
+        if (['class_last_name', 'last_name_first_name'].includes(this.$route?.query?.student_sort)) {
+            this.students_sort_mode = this.$route.query.student_sort
+        }
         this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
@@ -397,6 +404,9 @@ export default {
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
         if (this.selected_course?.id) {
             await this.loadStudentPerformance(this.selected_course.id)
+        }
+        if (this.$route?.query?.student_view === 'day_overview' && this.selectedCourseDateForCourse) {
+            this.students_view_mode = 'day_overview'
         }
     },
 
@@ -482,8 +492,7 @@ export default {
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
         semesterCount() {
-            const grading = this.selectedCourseSchema?.grading || {}
-            return Number(grading.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedCourseSchema)
         },
         teachingWorks() {
             const assignedEntryArea = this.selected_course?.teaching_entry_area || null
@@ -721,7 +730,7 @@ export default {
             if (!teachingCourseMatchesSchoolyear(this.selected_course, this.config?.selected_schoolyear)) return []
             const dateKey = this.selectedCourseDateKey
             if (!dateKey) return []
-            if (teachingPerformanceDateScope(dateKey, this.activeSemester, this.countSem2StartDate, this.config?.selected_schoolyear) !== 'included') return []
+            if (teachingPerformanceDateScope(dateKey, this.semesterCount === 1 ? 3 : this.activeSemester, this.countSem2StartDate, this.config?.selected_schoolyear) !== 'included') return []
 
             const entriesByStudent = {}
             const studentEntries = this.entryStore?.courseEntries || []
@@ -781,6 +790,17 @@ export default {
                     return ha - hb
                 })
         },
+        studentPresencePercentages() {
+            const semester = this.semesterCount === 2 ? this.activeSemester : 3
+            const boundary = this.schoolSem2StartDate || this.countSem2StartDate
+            const dates = this.sortedCourseDates.filter(courseDate => courseDate.id
+                && !(Array.isArray(courseDate.status) ? courseDate.status : []).some(status => ['free', 'entfaellt'].includes(status))
+                && isInTeachingSemester(courseDate.date, semester, boundary))
+                .map(courseDate => ({ attendance: this.getAttendanceMap(courseDate), checked: attendanceChecked(courseDate) }))
+            return Object.fromEntries((this.selected_course?.students_info || []).map(student => [student.id,
+                attendancePercentage(dates.map(date => attendanceState(date.attendance, student.id, date.checked))),
+            ]))
+        },
         selectedCourseDateIndex() {
             if (!this.selectedCourseDateForCourse?.id) return -1
             return this.sortedCourseDates.findIndex((d) => String(d?.id) === String(this.selectedCourseDateForCourse.id))
@@ -837,12 +857,20 @@ export default {
             }
         },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
+        },
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
         },
         selected_course: {
             handler(course) {
@@ -913,7 +941,16 @@ export default {
                 || this.impersonatingStudentId !== null || this.hasUnsavedAttendanceChanges || this.show_bulk_entry) return
             this.impersonatingStudentId = student.user_id
             try {
-                if (await this.adminStore.startImpersonation(student.user_id)) {
+                const returnUrl = this.$router.resolve({
+                    path: this.$route.path,
+                    query: {
+                        ...this.$route.query, course: String(this.selected_course.id), panel: 'students',
+                        student_sort: this.students_sort_mode, student_view: this.students_view_mode,
+                        ...(this.selectedCourseDateForCourse?.id ? { date: String(this.selectedCourseDateForCourse.id) } : {}),
+                    },
+                    hash: this.$route.hash,
+                }).href
+                if (await this.adminStore.startImpersonation(student.user_id, { teachingCourseId: this.selected_course.id, returnUrl })) {
                     window.location.href = `/student/course/${this.selected_course.id}`
                 }
             } finally {
@@ -937,7 +974,7 @@ export default {
             return {
                 ...student,
                 user_id: matchesSchoolyear ? student.user_id : null,
-                stars: matchesSchoolyear ? (student.stars || []).filter((star) => teachingStarDateScope(star.date, this.activeSemester, this.countSem2StartDate) === 'included') : [],
+                stars: matchesSchoolyear ? (student.stars || []).filter((star) => teachingStarDateScope(star.date, this.semesterCount === 1 ? 3 : this.activeSemester, this.countSem2StartDate) === 'included') : [],
             }
         },
         async loadStudentPerformance(courseId) {

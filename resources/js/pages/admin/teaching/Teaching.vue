@@ -702,20 +702,6 @@ export default {
                 const query = this.$route?.query || {}
                 const courseId = Number(query.course)
                 if (!courseId) {
-                    const gradesParam = query.grades
-                    if (gradesParam) {
-                        this._urlRestored = true
-                        const gradeValues = String(gradesParam).split(',').map(v => v.trim())
-                        courseStore.infos_show_grade_sem1 = gradeValues.includes('sem1')
-                        courseStore.infos_show_grade_sem2 = gradeValues.includes('sem2')
-                        courseStore.infos_show_grade_year = gradeValues.includes('year')
-                        const firstCourse = courseList[0]
-                        if (firstCourse) {
-                            courseStore.selected_course = firstCourse
-                            courseStore.selected_course_id = firstCourse.id
-                        }
-                        return
-                    }
                     this.resetTeachingOverviewSelection()
                     this._urlRestored = true
                     return
@@ -903,7 +889,6 @@ export default {
             this.selected_course = course
             this.selected_course_id = course.id
             const query = { course: String(course.id), panel: 'table' }
-            if (this.$route.query.grades) query.grades = this.$route.query.grades
             this.$router.replace({ query }).catch(() => {})
         },
         handleCourseClear() {
@@ -912,7 +897,6 @@ export default {
             this.selected_course_id = null
             this.selected_courseDate = null
             const query = returnState ? { ...returnState.query } : {}
-            if (!returnState && this.$route.query.grades) query.grades = this.$route.query.grades
             this.$router.replace({ query }).catch(() => {})
         },
         async handleDeleteCourse() {

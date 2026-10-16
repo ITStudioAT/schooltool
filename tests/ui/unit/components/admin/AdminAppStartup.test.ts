@@ -22,11 +22,11 @@ describe('Admin app startup', () => {
 
     it.each([
         ['logout', 'executeLogout', '/admin/login'],
-        ['stopImpersonationAndReturn', 'stopImpersonation', '/admin'],
+        ['stopImpersonationAndReturn', 'stopImpersonation', '/admin/teaching/overview?course=17&panel=students'],
     ])('discards cached account data through document navigation after %s', async (method, action, target) => {
         const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
         const context = {
-            adminStore: { [action]: vi.fn().mockResolvedValue(true) },
+            adminStore: { [action]: vi.fn().mockResolvedValue(action === 'stopImpersonation' ? target : true) },
             $router: { replace: vi.fn() },
         }
 

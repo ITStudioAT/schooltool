@@ -334,12 +334,8 @@ export default {
             if (!school_id) return
             const email = typeof emailOverride === 'string' && emailOverride.trim() !== '' ? emailOverride.trim() : this.switch_email
             if (!(await this.schoolStore.switchSchool(school_id, email))) return
-            await this.adminStore.loadConfig()
-            this.switch_email = this.currentUserEmail
-            this.switch_last_name = this.currentUserLastName
-            await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
-
-            this.action = ''
+            const nextConfig = await this.adminStore.loadConfig({ navigationOnly: true })
+            window.location.assign(nextConfig?.roles?.includes('super_admin') ? this.$route.fullPath : '/admin')
         },
 
         async doAddLicence(data) {

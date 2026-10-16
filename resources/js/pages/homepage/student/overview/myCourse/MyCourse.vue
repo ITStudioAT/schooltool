@@ -75,6 +75,7 @@
                         </v-btn>
                     </nav>
 
+
                     <v-tabs-window v-model="currentTab" style="margin-top: 20px">
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
@@ -91,7 +92,7 @@
                                     <strong>{{ openNotifications.length }}</strong>
                                     <small>{{ openNotifications.length ? 'Weiter unten im Überblick' : 'Du bist auf dem Laufenden' }}</small>
                                 </div>
-                                <div class="student-summary-card student-summary-card--stars">
+                                <div v-if="showStarsEnabled" class="student-summary-card student-summary-card--stars">
                                     <v-icon size="24">mdi-star-outline</v-icon>
                                     <span>Deine Sterne</span>
                                     <strong>{{ courseStars.length }}</strong>
@@ -206,7 +207,7 @@
                             </details>
 
                             <!-- Grades Section (last) -->
-                            <div v-if="showSemesterGrade || showBehaviourGrade || showCalculatedGradesSection || showMissingRequiredNaHint" class="profile-section" style="margin-top: 20px">
+                            <div v-if="showSemesterGrade || showBehaviourGrade || showMissingRequiredNaHint" class="profile-section" style="margin-top: 20px">
                                 <h3 class="profile-section-title">
                                     <v-icon size="20">mdi-chart-line</v-icon>
                                     Noten
@@ -231,47 +232,32 @@
                                     </div>
                                 </div>
 
-                                <div v-if="showCalculatedGradesSection" class="calculated-grades-section">
-                                    <h4 class="calculated-grades-title">
-                                        <v-icon size="18">mdi-calculator</v-icon>
-                                        Berechnete Noten
-                                    </h4>
-                                    <v-alert
-                                        type="info"
-                                        variant="tonal"
-                                        density="compact"
-                                        icon="mdi-information-outline"
-                                        class="calculated-grades-note">
-                                        Dient ausschließlich zur Information/als Richtwert. Die Beurteilung erfolgt immer durch den/die Lehrer:in.
-                                    </v-alert>
-                                    <div class="grades-display">
-                                        <template v-if="hasTwoSemesters">
-                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem1">
-                                                <div class="grade-label">1. Semester</div>
-                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem1)">{{ calcFormatGrade(calculatedGradeValues.sem1) }}</div>
-                                            </div>
-                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem2">
-                                                <div class="grade-label">2. Semester</div>
-                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem2)">{{ calcFormatGrade(calculatedGradeValues.sem2) }}</div>
-                                            </div>
-                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeYear">
-                                                <div class="grade-label">Gesamt (1+2)</div>
-                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.year)">{{ calcFormatGrade(calculatedGradeValues.year) }}</div>
-                                            </div>
-                                        </template>
-                                        <template v-else>
-                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem1">
-                                                <div class="grade-label">Berechnung</div>
-                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem1)">{{ calcFormatGrade(calculatedGradeValues.sem1) }}</div>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </div>
                             </div>
                         </v-tabs-window-item>
 
                         <!-- Leistungen Tab -->
                         <v-tabs-window-item value="entries">
+                            <section v-if="course.show_points_progress === true" class="student-points-progress" aria-label="Dein Punktefortschritt">
+                                <h3>Punktefortschritt</h3>
+                                <p v-if="loadingEntries" class="text-medium-emphasis">Punktefortschritt wird geladen…</p>
+                                <p v-else-if="!studentPointsProgress.length" class="text-medium-emphasis">Noch keine auswertbare Punktebasis vorhanden.</p>
+                                <div v-for="part in studentPointsProgress" :key="`${part.semester}-${part.id}`" class="student-points-progress-part">
+                                    <div class="student-points-progress-heading"><strong>{{ part.name }}</strong><span v-if="hasTwoSemesters">{{ part.semester }}. Semester</span></div>
+                                    <template v-if="part.percent !== null">
+                                        <div class="student-points-progress-values">Erreicht: {{ formatEntryValue(part.sum) }} Punkte · Maximal möglich: {{ formatEntryValue(part.maximum) }} Punkte</div>
+                                        <div class="student-points-progress-track">
+                                            <v-progress-linear :model-value="part.fill" height="36" rounded color="transparent" :aria-label="`${part.name}, ${part.semester}. Semester`" :aria-valuetext="`${formatEntryValue(part.sum)} von ${formatEntryValue(part.maximum)} Punkten, ${formatEntryValue(part.percent)} Prozent`" />
+                                            <div class="student-points-progress-fill" aria-hidden="true"
+                                                :style="{ backgroundImage: part.gradient, clipPath: `inset(0 ${100 - part.fill}% 0 0)` }" />
+                                            <span v-for="boundary in part.boundaries" :key="boundary" class="student-points-grade-boundary"
+                                                :style="{ left: `${boundary}%` }" aria-hidden="true" />
+                                            <strong class="student-points-progress-percent" aria-hidden="true">{{ formatEntryValue(part.percent) }} %</strong>
+                                        </div>
+                                        <span v-if="part.percent < 0 || part.percent > 100" class="text-caption">Außerhalb 0–100 %</span>
+                                    </template>
+                                    <p v-else class="text-medium-emphasis">{{ part.status === 'empty' ? 'Noch keine bewerteten Leistungen in diesem Zeitraum.' : 'Punktebasis derzeit nicht vollständig berechenbar.' }}</p>
+                                </div>
+                            </section>
                             <header class="feedback-intro">
                                 <div>
                                     <span class="feedback-eyebrow">DEIN FEEDBACK</span>
@@ -346,15 +332,19 @@
                                                                         {{ formatDate(entry.date) }}
                                                                     </v-chip>
                                                                     <div class="entry-main text-caption">
-                                                                        <div v-if="entryTitle(entry)" class="entry-title-row">
+                                                                        <div class="entry-title-row">
                                                                             <v-icon size="22" :color="getEntryStatusColor(entry)">{{ getEntryIcon(entry.type) }}</v-icon>
-                                                                            <div class="entry-title">{{ entryTitle(entry) }}</div>
+                                                                            <div v-if="entryTitle(entry)" class="entry-title">{{ entryTitle(entry) }}</div>
+                                                                            <v-chip v-if="entry.type" size="small" variant="outlined" class="entry-type-chip">
+                                                                                {{ entryTypeChipLabel(entry.type) }}
+                                                                            </v-chip>
                                                                         </div>
-                                                                        <div v-if="entry.work && (entry.work.description || entry.work.is_group_work)" class="entry-work-toggle">
-                                                                            <v-btn size="x-small" variant="tonal" color="primary" @click="toggleEntryExpansion(entry.id)">
+                                                                        <div v-if="entry.work && (entry.work.description || entry.work.is_group_work || entry.work.evaluation_pdf)" class="entry-actions">
+                                                                            <v-btn v-if="entry.work.description || entry.work.is_group_work" size="small" variant="tonal" color="primary" @click="toggleEntryExpansion(entry.id)">
                                                                                 <v-icon start size="small">{{ expandedEntries[entry.id] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
                                                                                 Aufgaben-Details
                                                                             </v-btn>
+                                                                            <v-btn v-if="entry.work.evaluation_pdf" class="entry-pdf-action" size="small" variant="tonal" prepend-icon="mdi-file-pdf-box" :href="evaluationPdfUrl(entry)" :title="entry.work.evaluation_pdf.name" target="_blank" rel="noopener">Auswertung (PDF)</v-btn>
                                                                         </div>
                                                                         <div v-if="entry.work && expandedEntries[entry.id]" class="entry-work-details">
                                                                             <div v-if="entry.work.description" class="work-detail-item">
@@ -377,16 +367,17 @@
                                                                         <div v-if="!entry.work && entryDescription(entry)" class="entry-description">
                                                                             {{ entryDescription(entry) }}
                                                                         </div>
-                                                                        <div v-if="entryComment(entry)" class="entry-comment">
+                                                                        <div v-if="!entry.work?.evaluation_pdf && entryComment(entry)" class="entry-comment">
                                                                             {{ entryComment(entry) }}
                                                                         </div>
-                                                                        <v-btn v-if="entry.work?.evaluation_pdf" size="small" variant="tonal" prepend-icon="mdi-file-pdf-box" :href="evaluationPdfUrl(entry)" :title="entry.work.evaluation_pdf.name" target="_blank" rel="noopener">Auswertung (PDF)</v-btn>
                                                                     </div>
-                                                                    <v-chip v-if="entry.type" size="small" variant="outlined">
-                                                                        {{ entryTypeChipLabel(entry.type) }}
-                                                                    </v-chip>
-                                                                    <v-chip class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(entry)">
-                                                                        {{ entry.grade || 'offen' }}
+                                                                    <div v-if="entry.work" class="entry-result" :class="{ 'entry-result--open': entryGradeChipColor(entry) === 'error' }">
+                                                                        <span class="entry-result-label">{{ entry.properties_mode === 'points' ? 'Erreicht' : 'Bewertung' }}</span>
+                                                                        <strong class="entry-result-value">{{ formatEntryValue(entry.grade, entry.properties_mode === 'points' ? 2 : 0) }}<small v-if="entry.properties_mode === 'points' && isNumericEntryValue(entry.grade)"> Punkte</small></strong>
+                                                                        <span v-if="entry.properties_mode === 'points'" class="entry-result-maximum">Maximal möglich: {{ entryMaximumPoints(entry) === null ? 'nicht hinterlegt' : `${formatEntryValue(entryMaximumPoints(entry))} Punkte` }}</span>
+                                                                    </div>
+                                                                    <v-chip v-else class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(entry)">
+                                                                        {{ formatEntryValue(entry.grade) }}
                                                                     </v-chip>
                                                                 </div>
                                                             </div>
@@ -520,11 +511,12 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
 import { useCourseStore } from '@/stores/student/CourseStore'
 import { parseLocalDate } from '@/helpers/date'
-import { computeStudentGrades, formatGrade as formatGradeValue, gradeClass as gradeClassHelper } from '@/helpers/gradeCalculation'
+import { percentageProgressGradient } from '@/helpers/gradeCalculation'
 import {
     normalizeTeachingCategoryEvaluationValueItems,
     teachingCategoryEvaluationColorForValue,
@@ -594,6 +586,22 @@ export default {
     computed: {
         ...mapWritableState(useStudentStore, ['user']),
 
+        studentPointsProgress() {
+            const progress = this.courseStore?.pointsProgress
+            if (this.course?.show_points_progress !== true || String(progress?.course_id) !== String(this.courseId)) return []
+            return (progress.parts || []).filter(part => this.selectedSemester === 3 || part.semester === this.selectedSemester).map(part => {
+                const valid = part.status === 'complete' && Number.isFinite(part.sum)
+                    && Number.isFinite(part.maximum) && part.maximum > 0
+                const percent = valid ? part.sum / part.maximum * 100 : null
+                const boundaries = valid && Array.isArray(part.grade_boundaries)
+                    && part.grade_boundaries.length === 4
+                    && part.grade_boundaries.every((value, index, values) => Number.isFinite(value) && value >= 0 && value <= 100
+                        && (index === 0 || value > values[index - 1])) ? part.grade_boundaries : []
+                return { ...part, percent, fill: percent === null ? 0 : Math.max(0, Math.min(100, percent)),
+                    gradient: percentageProgressGradient, boundaries }
+            })
+        },
+
         currentTab: {
             get() {
                 const panel = this.$route?.query?.panel
@@ -624,7 +632,10 @@ export default {
         },
 
         courseStars() {
-            return this.course?.stars || []
+            return this.showStarsEnabled ? (this.course?.stars || []) : []
+        },
+        showStarsEnabled() {
+            return this.course?.show_stars !== false
         },
 
         courseNotifications() {
@@ -755,50 +766,6 @@ export default {
             return requiredNaCount === 1
         },
 
-        courseSchema() {
-            return this.course?.teaching_schema || this.currentTeachingSchema || null
-        },
-        calculatedGrades() {
-            if (!this.entries.length || !this.courseSchema) return null
-            const works = this.courseSchema?.works || []
-            const grading = this.courseSchema?.grading || {}
-            const semCount = Number(grading?.semester_count) === 2 ? 2 : 1
-            const studentProxy = {
-                sem_1_grade: this.course?.sem_1_grade || null,
-                sem_2_grade: this.course?.sem_2_grade || null,
-                sem_grade: this.course?.sem_grade || null,
-            }
-            return computeStudentGrades(studentProxy, this.entries, works, grading, semCount, this.semesterBoundary)
-        },
-        calculatedGradeValues() {
-            return {
-                sem1: this.calculatedGrades?.sem1 ?? null,
-                sem2: this.calculatedGrades?.sem2 ?? null,
-                year: this.calculatedGrades?.year ?? null,
-            }
-        },
-        teacherCalculatedGradeColumns() {
-            const columns = this.course?.teacher_teaching_student_grade_columns ?? this.course?.teacher_teaching_grade_columns
-
-            return {
-                show_sem1: Boolean(columns?.show_sem1),
-                show_sem2: Boolean(columns?.show_sem2),
-                show_year: Boolean(columns?.show_year),
-            }
-        },
-        showCalculatedGradeSem1() {
-            return Boolean(this.teacherCalculatedGradeColumns.show_sem1)
-        },
-        showCalculatedGradeSem2() {
-            return Boolean(this.hasTwoSemesters && this.teacherCalculatedGradeColumns.show_sem2)
-        },
-        showCalculatedGradeYear() {
-            return Boolean(this.hasTwoSemesters && this.teacherCalculatedGradeColumns.show_year)
-        },
-        showCalculatedGradesSection() {
-            return this.showCalculatedGradeSem1 || this.showCalculatedGradeSem2 || this.showCalculatedGradeYear
-        },
-
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
         },
@@ -807,9 +774,7 @@ export default {
         },
 
         hasTwoSemesters() {
-            const schema = this.currentTeachingSchema
-            if (!schema) return false
-            return Number(schema?.grading?.semester_count) === 2
+            return teachingSemesterCount(this.course, this.currentTeachingSchema) === 2
         },
 
         currentTeachingSchema() {
@@ -929,7 +894,7 @@ export default {
 
         // Filter dates by selected semester
         filteredDates() {
-            if (this.selectedSemesterDates === 3) {
+            if (this.hasTwoSemesters === false || this.selectedSemesterDates === 3) {
                 return this.courseDates
             }
 
@@ -1045,6 +1010,15 @@ export default {
     },
 
     watch: {
+        hasTwoSemesters: {
+            immediate: true,
+            handler(hasTwo) {
+                if (!hasTwo) {
+                    this.selectedSemester = 1
+                    this.selectedSemesterDates = 1
+                }
+            },
+        },
         currentTab(newTab) {
             if (newTab === 'behaviour') {
                 this.currentTab = 'entries'
@@ -1078,7 +1052,7 @@ export default {
             }
         },
         filterEntriesBySemester(entries) {
-            if (this.selectedSemester === 3) {
+            if (this.hasTwoSemesters === false || this.selectedSemester === 3) {
                 return entries
             }
 
@@ -1097,12 +1071,6 @@ export default {
             this.$router.push('/student')
         },
 
-        calcFormatGrade(value) {
-            return formatGradeValue(value)
-        },
-        calcGradeClass(value) {
-            return gradeClassHelper(value)
-        },
         toggleSortByType() {
             this.sortByType = !this.sortByType
         },
@@ -1232,6 +1200,23 @@ export default {
         entryTypeChipLabel(type) {
             if (!type) return ''
             return `${type} - ${this.getEntryTypeLabel(type)}`
+        },
+
+        isNumericEntryValue(value) {
+            return /^\d+(?:[.,]\d+)?$/.test(String(value ?? '').trim())
+                && Number.isFinite(Number(String(value).replace(',', '.')))
+        },
+
+        formatEntryValue(value, minimumFractionDigits = 0) {
+            if (!this.isNumericEntryValue(value)) return String(value ?? '').trim() || 'offen'
+            return new Intl.NumberFormat('de-AT', { minimumFractionDigits, maximumFractionDigits: 10 })
+                .format(Number(String(value).replace(',', '.')))
+        },
+
+        entryMaximumPoints(entry) {
+            if (entry.properties_mode !== 'points' || !this.isNumericEntryValue(entry.maximum_points)) return null
+            const maximum = Number(String(entry.maximum_points).replace(',', '.'))
+            return maximum > 0 ? maximum : null
         },
 
         entryCategory(entry) {
@@ -1790,15 +1775,133 @@ export default {
 }
 
 .entry-title {
+    overflow-wrap: anywhere;
     font-size: 1rem;
     font-weight: 700;
     line-height: 1.35;
 }
 
 .entry-title-row {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+}
+
+.entry-title-row .entry-type-chip {
+    grid-column: 2;
+    justify-self: start;
+    height: auto;
+    min-height: 26px;
+    max-width: 100%;
+    white-space: normal;
+}
+
+.entry-type-chip :deep(.v-chip__content) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding-block: 3px;
+}
+
+.entry-result {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-left: auto;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #e8f4f1;
+    color: #155b50;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.entry-result--open {
+    background: #fff3e0;
+    color: #8a4b10;
+}
+
+.entry-result-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.entry-result-value {
+    font-size: 1.7rem;
+    line-height: 1.2;
+}
+
+.entry-result-value small {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.entry-result-maximum {
+    font-size: 0.8rem;
+}
+
+.student-points-progress {
+    padding: clamp(16px, 3vw, 24px);
+    margin-top: 20px;
+    margin-bottom: 20px;
+    border-radius: 14px;
+    border: 1px solid #dbe6e4;
+    background: #f4f9f7;
+}
+
+.student-points-progress-part {
+    margin-top: 16px;
+}
+
+.student-points-progress-heading {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    justify-content: space-between;
+}
+
+.student-points-progress-values {
+    margin: 8px 0 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.student-points-progress-track {
+    position: relative;
+    height: 36px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #e6ebea;
+}
+
+.student-points-progress-fill {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.student-points-progress-percent {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    color: #123e2b;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-shadow: 0 0 4px #fff, 0 0 8px #fff;
+    pointer-events: none;
+}
+
+.student-points-grade-boundary {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    transform: translateX(-50%);
+    background: #fff;
+    pointer-events: none;
 }
 
 .entry-category-chip {
@@ -1828,7 +1931,11 @@ export default {
     font-style: italic;
 }
 
-.entry-work-toggle {
+.entry-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     margin-top: 8px;
 }
 
@@ -2096,61 +2203,6 @@ export default {
     font-size: 2rem;
     font-weight: 700;
     color: #c62828;
-}
-
-.calculated-grades-section {
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px dashed rgba(49, 77, 93, 0.2);
-}
-
-.calculated-grades-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #546e7a;
-    margin-bottom: 6px;
-}
-
-.calculated-grades-note {
-    margin-bottom: 10px;
-}
-
-.calculated-grades-note :deep(.v-alert__content) {
-    font-size: 0.78rem;
-    line-height: 1.35;
-}
-
-.grade-item.grade-calculated {
-    background: linear-gradient(135deg, #e8eaf6 0%, #e3f2fd 100%);
-    border: 2px solid #7986cb;
-    min-width: 130px;
-    padding: 12px;
-}
-
-.grade-calculated .grade-value {
-    font-size: 1.7rem;
-    font-weight: 700;
-    color: #1e40af;
-}
-
-.grade-calculated .grade-label {
-    font-size: 0.82rem;
-    margin-bottom: 6px;
-}
-
-.grade-calculated .grade-value.grade--na {
-    color: #c62828;
-}
-
-.grade-calculated .grade-value.grade--nb {
-    color: #e65100;
-}
-
-.grade-calculated .grade-value.grade--empty {
-    color: rgba(16, 38, 58, 0.35);
 }
 
 .behaviour-value {
@@ -2487,6 +2539,66 @@ export default {
 }
 
 @media (max-width: 700px) {
+    .student-course-page .feedback-panel--assessment :deep(.v-list-item) {
+        padding-inline: 10px;
+    }
+
+    .student-course-page .feedback-panel--assessment :deep(.v-list-item__content) {
+        min-width: 0;
+    }
+
+    .student-course-page .feedback-panel--assessment .entry-category-group-list {
+        margin-top: 0;
+    }
+
+    .student-course-page .feedback-panel--assessment .entry-row {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .student-course-page .feedback-panel--assessment .entry-main {
+        flex: none;
+        width: 100%;
+    }
+
+    .entry-row > .v-chip {
+        align-self: flex-start;
+    }
+
+    .entry-title-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr);
+        align-items: start;
+        gap: 8px;
+    }
+
+    .entry-title {
+        max-width: none;
+        overflow-wrap: anywhere;
+    }
+
+    .entry-title-row .entry-type-chip {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+
+    .entry-pdf-action {
+        max-width: 100%;
+    }
+
+    .entry-pdf-action :deep(.v-btn__content) {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .student-course-page .feedback-panel--assessment .entry-result {
+        width: 100%;
+        align-self: stretch;
+        box-sizing: border-box;
+    }
+
     .course-tabs-desktop {
         display: none;
     }
@@ -2522,7 +2634,8 @@ export default {
         flex-basis: 100%;
     }
 
-    .entry-grade {
+    .entry-grade,
+    .entry-result {
         margin-left: 0;
     }
 

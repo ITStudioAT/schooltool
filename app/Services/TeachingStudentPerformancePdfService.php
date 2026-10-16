@@ -67,7 +67,7 @@ class TeachingStudentPerformancePdfService
             ->all();
 
         $grading = is_array($schema?->grading) ? $schema->grading : [];
-        $semesterCount = max(1, (int) ($grading['semester_count'] ?? 1));
+        $semesterCount = $course->semesterCount(['grading' => $grading]);
         $semesterTwoStart = $course->schoolyear?->sem_2_start
             ? (string) $course->schoolyear->sem_2_start
             : null;
@@ -263,7 +263,7 @@ class TeachingStudentPerformancePdfService
 
         $grading = is_array($schema?->grading) ? $schema->grading : [];
 
-        return (int) ($grading['semester_count'] ?? 2) === 1 ? 1 : 2;
+        return $course->semesterCount(['grading' => $grading]);
     }
 
     /**

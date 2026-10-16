@@ -1,7 +1,7 @@
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord, provisionNotificationText } from '@/helpers/workDispatch'
-import { personalWorkAssessment, personalWorkProvision, workSubmissionStatus } from '@/helpers/workSubmission'
+import { personalWorkAssessment, personalWorkProvision, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
 
 function notificationLabel(record, purpose) {
     if (!record) return `${purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'}: kein bestätigter E-Mail-Versand.`
@@ -54,4 +54,83 @@ export function workCellStatuses(work, studentId, now = Date.now()) {
             color: results?.mode === 'live' ? 'success' : 'orange-darken-2',
             state: notificationState(results), label: notificationLabel(results, 'results') },
     ]
+}
+
+export function workParticipantIds(work, students = []) {
+    const assigned = new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))
+    return [...new Set(students.filter(student => !student.canceled_at && !student.deleted_at)
+        .map(student => Object.prototype.hasOwnProperty.call(student, 'user_id') ? student.user_id : student.id)
+        .filter(id => id && assigned.has(String(id))).map(String))]
+}
+
+export function workAggregateStatuses(work, students = [], now = Date.now()) {
+    const studentIds = workParticipantIds(work, students)
+    const personal = studentIds.map(studentId => workCellStatuses(work, studentId, now))
+    const collection = workCollectionEvidence(work, studentIds)
+    const definitions = {
+        tasks: 'Aufgabenbereitstellung / Versand', submission: 'Abgabenstatus',
+        evaluation: 'Bewertung', results: 'Ergebnisbenachrichtigung',
+    }
+    const actions = {
+        tasks: 'mit belegter Bereitstellung oder bestätigtem E-Mail-Versand', submission: 'mit belegtem Abgabeneingang',
+        evaluation: 'mit abgeschlossener Bewertung', results: 'mit bestätigter Ergebnis-E-Mail',
+    }
+    return workCellStatuses(work, null, now).map(base => {
+        const statuses = personal.map(items => items.find(item => item.purpose === base.purpose))
+        const count = statuses.filter(item => item.color === 'success').length
+        const total = studentIds.length
+        const scheduled = statuses.filter(item => item.state === 'scheduled').length
+        const prepared = statuses.filter(item => item.state === 'prepared').length
+        const missing = statuses.filter(item => item.state === 'not_received').length
+        const dispatchAction = ['tasks', 'results'].includes(base.purpose) && count > 0
+        const collected = base.purpose === 'submission' && collection
+        const complete = total > 0 && (count === total || dispatchAction || collected)
+        const partial = !complete && (count > 0 || (scheduled > 0 && scheduled < total) || (prepared > 0 && prepared < total))
+        const state = complete ? 'complete' : partial ? 'partial' : scheduled === total && total ? 'scheduled'
+            : prepared === total && total ? 'prepared' : missing === total && total ? 'not_received' : 'unknown'
+        const label = collected ? `Abholung durchgeführt; ${count} von ${total} Abgaben vorhanden.`
+            : `${definitions[base.purpose]}: ${count} von ${total} Personen ${actions[base.purpose]}.`
+        const details = [partial ? 'Teilstand; Gesamtabschluss nicht belegt.' : '',
+            !total ? 'Keine aktiven Personen dieser Arbeit zugeordnet.' : '',
+            missing ? `${missing} bestätigte Nichtabgabe${missing === 1 ? '' : 'n'}.` : '',
+            scheduled ? `${scheduled} serverseitig geplant; Versand nicht bestätigt.` : '',
+            prepared ? `${prepared} vorbereitet; Versand nicht bestätigt.` : '',
+            collected && collection === 'local' ? 'Belegter lokaler Abschlussbestand; keine Aussage über eine vollständige Serversuche.' : '',
+        ].filter(Boolean).join(' ')
+        const successful = statuses.find(item => item.color === 'success')
+        return { ...base, state, count, total,
+            icon: complete && successful ? successful.icon : scheduled ? 'mdi-clock-outline' : base.icon,
+            color: complete ? 'success' : missing ? 'error' : partial ? 'warning' : total ? 'orange-darken-2' : 'grey-darken-1',
+            label: `${label}${details ? ` ${details}` : ''}` }
+    })
+}
+
+function statusCategory(status) {
+    if (status.color === 'success') return 'complete'
+    if (['scheduled', 'prepared', 'partial', 'not_received'].includes(status.state)) return status.state
+    return 'unknown'
+}
+
+export function workCellDeviationStatuses(work, studentId, students, now = Date.now()) {
+    const aggregate = workAggregateStatuses(work, students, now)
+    return workCellStatuses(work, studentId, now).filter(item => {
+        const common = aggregate.find(status => status.purpose === item.purpose)
+        return !common || statusCategory(item) !== statusCategory(common)
+    })
+}
+
+export function workFullyComplete(work, students, now = Date.now()) {
+    if (!workAutomationEnabled(work)) return false
+    const studentIds = workParticipantIds(work, students)
+    return studentIds.length > 0 && studentIds.every(studentId => {
+        const result = workDispatchRecord(work, studentId, 'results')
+        if (workEvaluationStatus(work, studentId, now).state !== 'complete' || result?.mode !== 'live') return false
+        const completedAt = Date.parse(personalWorkAssessment(work, studentId)?.evaluation_completed_at)
+        return !Number.isFinite(completedAt) || Date.parse(result.sent_at) >= completedAt
+    })
+}
+
+export function workMarkedComplete(work, students, now = Date.now()) {
+    const override = work?.status?.completion_override
+    return typeof override === 'boolean' ? override : workFullyComplete(work, students, now)
 }

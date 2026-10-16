@@ -556,7 +556,7 @@ describe('CourseWorks title rendering', () => {
         watcher.call(ctx, ctx.work_form.finish_until_date)
 
         expect(source).toContain('v-model="work_form.finish_until_date" clearable label="Fertig bis"')
-        expect(source).toContain('Fertig bis {{ formatDate(work.finish_until_date) }}')
+        expect(source).toContain('<template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}')
         expect(ctx.work_form.finish_until_date).toBe('2026-05-20')
     })
 

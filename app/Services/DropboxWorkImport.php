@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 
@@ -149,43 +150,265 @@ class DropboxWorkImport
             && mb_strtoupper(trim($parts[1])) === $classes[0]) {
             $group = (int) $parts[2];
         }
-        $recognized = preg_match('/(?:\A|_)([0-9]+[A-Z][A-Z0-9]*)(?:_Gruppe-([1-9][0-9]*))?\z/ui', $name, $parts) === 1;
+        $recognized = preg_match('/(?:\A|_)([0-9]+[A-Z][A-Z0-9]*(?:[-_][0-9]+[A-Z][A-Z0-9]*)*)(?:_Gruppe-([1-9][0-9]*))?(?:_(?:Tag|Abend))?(?:_[A-Z][A-Z0-9]*)?\z/ui', $name, $parts) === 1;
         if (! $recognized) {
             $recognized = preg_match('/(?:\A|_)[A-Z][A-Z0-9]*-([0-9]+[A-Z][A-Z0-9]*)-([1-9][0-9]*)(?:_(?:Tag|Abend))?\z/ui', $name, $parts) === 1;
         }
         if (! $recognized || $classes === []) {
-            return ['status' => 'unknown', 'message' => 'Klasse und Kursgruppe sind im Ordnernamen nicht eindeutig erkennbar. Bitte den Inhalt beim Import prüfen.'];
+            return ['status' => 'unknown', 'message' => 'Der Ordnername enthält keine eindeutige Kursangabe. Die Zuordnung wird anhand der Importdateien geprüft.'];
         }
-        $folderClass = mb_strtoupper($parts[1]);
-        $folderGroup = isset($parts[2]) ? (int) $parts[2] : null;
-        if (! in_array($folderClass, $classes, true) || ($group !== null && $folderGroup !== null && $folderGroup !== $group)) {
+        $folderClasses = preg_split('/[-_]/u', mb_strtoupper($parts[1]));
+        $folderGroup = isset($parts[2]) && $parts[2] !== '' ? (int) $parts[2] : null;
+        if (array_diff($classes, $folderClasses) === [] && array_diff($folderClasses, $classes) !== []
+            && ! ($group !== null && $folderGroup !== null && $folderGroup !== $group)) {
+            return ['status' => 'unknown', 'message' => 'Der Ordner nennt zusätzliche Klassen. Die genaue Arbeits- und Personenzuordnung wird anhand der Importdateien geprüft.'];
+        }
+        if (array_diff($folderClasses, $classes) !== [] || ($group !== null && $folderGroup !== null && $folderGroup !== $group)) {
             return ['status' => 'mismatch', 'message' => "Ordner passt nicht zum Kurs {$course->title}: {$name}. Bitte den passenden Dropbox-Ordner wählen!"];
         }
         if ($group !== null && $folderGroup === null) {
             return ['status' => 'unknown', 'message' => "Die Kursgruppe {$group} fehlt im Ordnernamen. Bitte den Inhalt beim Import prüfen."];
         }
 
-        return ['status' => 'match', 'message' => 'Klasse und Kursgruppe passen zum aktuellen Kurs.'];
+        return ['status' => 'match', 'message' => $group === null
+            ? 'Die Klassenangaben passen zum aktuellen Kurs.'
+            : 'Klasse und Kursgruppe passen zum aktuellen Kurs.'];
     }
 
-    /** @return array{folders: list<array{id:string,name:string}>, cursor: ?string, parent: ?array{id:string,name:string}} */
+    /** @return array{suggested_folder: ?array, suggestions: list<array>, start_folder: ?array, message: string} */
+    public function suggestFolders(DropboxConnection $connection, TeachingCourseWork $work): array
+    {
+        $budget = 16;
+        $partial = false;
+        $read = function (string $endpoint, array $parameters, bool $download = false) use ($connection, &$budget, &$partial): mixed {
+            if ($budget-- <= 0) {
+                $partial = true;
+
+                return $download ? '' : [];
+            }
+            $response = $this->api($connection, $endpoint, $parameters, $download);
+            if ($download) {
+                return $response->body();
+            }
+
+            return $response->json();
+        };
+        $search = function (string $query, string $path = '') use ($read, &$partial, &$budget): array {
+            $data = $read('files/search_v2', ['query' => $query, 'options' => [
+                'filename_only' => true, 'max_results' => 50, 'file_status' => 'active', 'file_categories' => ['folder'],
+            ] + ($path !== '' ? ['path' => $path] : [])]);
+            $matches = $data['matches'] ?? [];
+            for ($page = 1; ($data['has_more'] ?? false) && is_string($data['cursor'] ?? null) && $page < 3 && $budget > 5; $page++) {
+                $data = $read('files/search/continue_v2', ['cursor' => $data['cursor']]);
+                $matches = array_merge($matches, $data['matches'] ?? []);
+            }
+            $partial = $partial || ($data['has_more'] ?? false);
+
+            return array_values(array_filter(array_map(fn (array $match): array => $match['metadata']['metadata'] ?? [], $matches),
+                fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && is_string($entry['id'] ?? null)
+                    && is_string($entry['name'] ?? null) && is_string($entry['path_lower'] ?? null)));
+        };
+        $list = function (string $id) use ($read, &$partial, &$budget): array {
+            $data = $read('files/list_folder', ['path' => $id, 'recursive' => false, 'limit' => 200]);
+            $entries = $data['entries'] ?? [];
+            if (($data['has_more'] ?? false) && is_string($data['cursor'] ?? null) && $budget > 5) {
+                $data = $read('files/list_folder/continue', ['cursor' => $data['cursor']]);
+                $entries = array_merge($entries, $data['entries'] ?? []);
+            }
+            $partial = $partial || ($data['has_more'] ?? false);
+
+            return $entries;
+        };
+        $roots = array_values(array_filter($search('Lerninhalte'), fn (array $entry): bool => preg_match('#/materialien/lerninhalte\z#u', $entry['path_lower']) === 1
+                && ! preg_match('#/(?:archiv|archive|papierkorb)/#u', $entry['path_lower'])));
+        usort($roots, fn (array $first, array $second): int => strcmp($first['path_lower'], $second['path_lower']));
+        $start = isset($roots[0]) ? $this->suggestionFolder($roots[0]) : null;
+        $tokens = array_values(array_filter(explode(' ', $this->folderWords((string) $work->title)), fn (string $word): bool => strlen($word) >= 3
+            && ! in_array($word, ['leistungsfeststellung', 'uebung', 'ubung', 'arbeit', 'teil', 'praktische', 'pruefung', 'prufung'], true)));
+        $candidates = [];
+        if ($tokens !== []) {
+            usort($tokens, fn (string $first, string $second): int => strlen($second) <=> strlen($first));
+            $partial = $partial || count($roots) > 2;
+            foreach (array_slice($roots, 0, 2) as $root) {
+                $topics = array_values(array_filter($search($tokens[0], $root['path_lower']), fn (array $entry): bool => str_starts_with($entry['path_lower'], $root['path_lower'].'/')
+                        && $this->matchesFolderTopic($entry['name'], $tokens)));
+                if ($topics === []) {
+                    $queue = [[$root, 0]];
+                    $visited = [];
+                    while ($queue !== [] && count($visited) < 8 && $budget > 5) {
+                        [$parent, $depth] = array_shift($queue);
+                        if (isset($visited[$parent['id']])) {
+                            continue;
+                        }
+                        $visited[$parent['id']] = true;
+                        foreach ($list($parent['id']) as $entry) {
+                            if (($entry['.tag'] ?? null) !== 'folder' || ! is_string($entry['id'] ?? null)
+                                || ! is_string($entry['name'] ?? null) || ! is_string($entry['path_lower'] ?? null)
+                                || ! str_starts_with($entry['path_lower'], $root['path_lower'].'/')
+                                || preg_match('/\A(?:\.|pdfs?(?:_|\z)|assets\z|images\z|archiv\z|archive\z|papierkorb\z)/iu', $entry['name'])) {
+                                continue;
+                            }
+                            if ($this->matchesFolderTopic($entry['name'], $tokens)) {
+                                $topics[$entry['id']] = $entry;
+                            } elseif ($depth < 2) {
+                                $queue[] = [$entry, $depth + 1];
+                            } else {
+                                $partial = true;
+                            }
+                        }
+                    }
+                    $partial = $partial || $queue !== [];
+                    $topics = array_values($topics);
+                }
+                usort($topics, fn (array $first, array $second): int => substr_count($first['path_lower'], '/') <=> substr_count($second['path_lower'], '/'));
+                $partial = $partial || count($topics) > 3;
+                foreach (array_slice($topics, 0, 3) as $topic) {
+                    if (preg_match('#/(?:leistungsfeststellung|uebungen|übungen)/[^/]+\z#u', $topic['path_lower'])) {
+                        $candidates[$topic['id']] = $topic;
+
+                        continue;
+                    }
+                    foreach ($list($topic['id']) as $collection) {
+                        if (($collection['.tag'] ?? null) !== 'folder'
+                            || ! in_array($this->folderWords($collection['name']), ['leistungsfeststellung', 'uebungen', 'ubungen', 'uebung', 'ubung'], true)) {
+                            continue;
+                        }
+                        foreach ($list($collection['id']) as $candidate) {
+                            if (($candidate['.tag'] ?? null) === 'folder' && is_string($candidate['id'] ?? null)
+                                && is_string($candidate['name'] ?? null) && is_string($candidate['path_lower'] ?? null)
+                                && str_starts_with($candidate['path_lower'], $root['path_lower'].'/')) {
+                                $candidates[$candidate['id']] = $candidate;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $ranked = [];
+        foreach ($candidates as $candidate) {
+            $score = $this->scoreFolderSuggestion($work, $candidate);
+            if ($score !== null) {
+                $ranked[] = $candidate + $score;
+            }
+        }
+        usort($ranked, fn (array $first, array $second): int => $second['score'] <=> $first['score'] ?: strcmp($first['path_lower'], $second['path_lower']));
+        $partial = $partial || count($ranked) > 5;
+        $checked = [];
+        foreach (array_slice($ranked, 0, 5) as $candidate) {
+            try {
+                $metadataFile = collect($list($candidate['id']))->first(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
+                    && mb_strtolower($entry['name'] ?? '') === 'anlage_und_quellen.json');
+                if ($metadataFile !== null) {
+                    $candidate['strong'] = false;
+                    if (is_int($metadataFile['size'] ?? null) && $metadataFile['size'] <= 262144 && is_string($metadataFile['rev'] ?? null)) {
+                        $text = $read('files/download', ['path' => 'rev:'.$metadataFile['rev']], true);
+                        $metadata = json_decode(str_starts_with($text, "\xEF\xBB\xBF") ? substr($text, 3) : $text, true, 32, JSON_THROW_ON_ERROR);
+                        $workId = $metadata['Schooltool_Arbeit_ID'] ?? null;
+                        $courseId = $metadata['Schooltool_Kurs_ID'] ?? null;
+                        if (($workId !== null && $workId !== $work->id) || ($courseId !== null && $courseId !== $work->teaching_course_id)) {
+                            continue;
+                        }
+                        if ($workId === $work->id && $courseId === $work->teaching_course_id) {
+                            $candidate['score'] += 200;
+                            $candidate['strong'] = true;
+                            $candidate['reason'] = 'Arbeits- und Kurskennung stimmen mit dieser Arbeit überein.';
+                        }
+                    }
+                }
+            } catch (ValidationException|JsonException) {
+                $candidate['strong'] = false;
+                $candidate['reason'] .= ' Importmetadaten konnten nicht geprüft werden.';
+            }
+            $checked[] = $candidate;
+        }
+        usort($checked, fn (array $first, array $second): int => $second['score'] <=> $first['score'] ?: strcmp($first['path_lower'], $second['path_lower']));
+        $best = $checked[0] ?? null;
+        $uniqueBest = $best && $best['strong'] && (! isset($checked[1]) || $best['score'] - $checked[1]['score'] >= 25);
+        $clear = ! $partial && $uniqueBest;
+
+        return ['suggested_folder' => $clear ? $this->suggestionFolder($best) : null,
+            'suggestions' => array_map($this->suggestionFolder(...), $checked), 'start_folder' => $partial && $uniqueBest ? $this->suggestionFolder($best) : $start,
+            'message' => $partial ? 'Begrenzte Suche: Bitte die Vorschläge prüfen oder den Ordner manuell wählen.'
+                : ($checked === [] ? ($start ? 'Kein passender Arbeitsordner gefunden. Bitte im Lerninhalte-Bereich auswählen.'
+                    : 'Lerninhalte-Bereich nicht gefunden. Bitte den Ordner manuell auswählen.')
+                    : 'Ordner vorgeschlagen – erst mit „Diesen Ordner zuordnen“ wird die Zuordnung gespeichert.')];
+    }
+
+    /** @param array<string, mixed> $entry
+     * @return array<string, mixed>
+     */
+    private function suggestionFolder(array $entry): array
+    {
+        return ['id' => $entry['id'], 'name' => $entry['name'], 'path' => $entry['path_display'] ?? $entry['path_lower']]
+            + (isset($entry['reason']) ? ['reason' => $entry['reason']] : []);
+    }
+
+    private function folderWords(string $value): string
+    {
+        $value = preg_replace('/(?<![\p{L}\p{N}])e[\s_-]*mails?(?![\p{L}\p{N}])/iu', 'emails', $value);
+
+        return trim(preg_replace('/[^a-z0-9]+/', ' ', strtolower(Str::ascii($value))));
+    }
+
+    /** @param list<string> $tokens */
+    private function matchesFolderTopic(string $name, array $tokens): bool
+    {
+        $words = explode(' ', $this->folderWords($name));
+
+        return array_diff($tokens, $words) === []
+            || str_replace(' ', '', $this->folderWords($name)) === implode('', $tokens);
+    }
+
+    /** @param array<string, mixed> $folder
+     * @return ?array{score: int, strong: bool, reason: string}
+     */
+    private function scoreFolderSuggestion(TeachingCourseWork $work, array $folder): ?array
+    {
+        $plausibility = $this->folderPlausibility($work, $folder['name']);
+        if ($plausibility['status'] === 'mismatch') {
+            return null;
+        }
+        $words = explode(' ', $this->folderWords($folder['name']));
+        $classes = array_map($this->folderWords(...), $work->teachingCourse->classes ?? []);
+        $folderClasses = array_filter($words, fn (string $word): bool => preg_match('/\A[0-9]+[a-z][a-z0-9]*\z/', $word) === 1);
+        $classMatch = $classes !== [] && array_diff($classes, $folderClasses) === [] && array_diff($folderClasses, $classes) === [];
+        $dates = array_filter([$work->date_for_all_groups?->format('Y-m-d'), ...array_column($work->groups ?? [], 'date')]);
+        $dateMatch = count(array_filter($dates, fn (string $date): bool => str_starts_with($folder['name'], $date.'_'))) > 0;
+        $subject = explode(' ', $this->folderWords((string) $work->teachingCourse->title))[0];
+        $subject = ['inf' => 'informatik', 'dgb' => 'digitale', 'winf' => 'wirtschaftsinformatik', 'medi' => 'medieninformatik'][$subject] ?? $subject;
+        $courseMatch = in_array($subject, $words, true);
+        if (preg_match('/\A(?:\.|pdfs?(?:_|\z)|assets\z|images\z|archiv\z|archive\z|papierkorb\z)/iu', $folder['name'])) {
+            return null;
+        }
+
+        return ['score' => 40 + ($classMatch ? 40 : 0) + ($dateMatch ? 60 : 0) + ($courseMatch ? 15 : 0)
+                + ($plausibility['status'] === 'match' ? 20 : 0),
+            'strong' => $classMatch && $dateMatch && $plausibility['status'] === 'match',
+            'reason' => 'Thema passt'.($classMatch ? ', Klassen passen' : '').($courseMatch ? ', Kurs passt' : '').($dateMatch ? ', Termin passt' : '').'. Bitte bestätigen.'
+                .($plausibility['status'] === 'unknown' ? ' '.$plausibility['message'] : '')];
+    }
+
+    /** @return array{folders: list<array>, cursor: ?string, parent: ?array, current: ?array} */
     public function folders(DropboxConnection $connection, string $id = '', ?string $cursor = null): array
     {
         $data = $this->api($connection, $cursor ? 'files/list_folder/continue' : 'files/list_folder',
             $cursor ? ['cursor' => $cursor] : ['path' => $id, 'recursive' => false, 'limit' => 200])->json();
         $parent = null;
+        $currentFolder = null;
         if ($id !== '') {
             $current = $this->metadata($connection, $id);
+            $currentFolder = $this->suggestionFolder($current);
             $parentPath = dirname($current['path_lower']);
             if ($parentPath !== '/' && $parentPath !== '.') {
                 $parentFolder = $this->metadata($connection, $parentPath);
-                $parent = ['id' => $parentFolder['id'], 'name' => $parentFolder['name']];
+                $parent = $this->suggestionFolder($parentFolder);
             }
         }
 
         return ['folders' => collect($data['entries'] ?? [])->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder')
-            ->map(fn (array $entry): array => ['id' => $entry['id'], 'name' => $entry['name']])->values()->all(),
-            'cursor' => ($data['has_more'] ?? false) ? ($data['cursor'] ?? null) : null, 'parent' => $parent];
+            ->map(fn (array $entry): array => ['id' => $entry['id'], 'name' => $entry['name']]
+                + (isset($entry['path_lower']) ? ['path' => $entry['path_display'] ?? $entry['path_lower']] : []))->values()->all(),
+            'cursor' => ($data['has_more'] ?? false) ? ($data['cursor'] ?? null) : null, 'parent' => $parent, 'current' => $currentFolder];
     }
 
     private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false): Response
@@ -350,6 +573,9 @@ class DropboxWorkImport
             }
             $directory = $packagePath !== null && str_starts_with($packagePath, 'beurteilungen/') ? 'beurteilungen/' : '';
             $downloads = [];
+            if ($package !== null && isset($files['schooltool_arbeitsdaten.json'])) {
+                $downloads['identity_export'] = ['entry' => $files['schooltool_arbeitsdaten.json'], 'name' => 'Schooltool_Arbeitsdaten.json', 'limit' => 1048576];
+            }
             $pdfNames = [];
             foreach ($references as $reference) {
                 $name = $reference['filename'] ?? null;
@@ -392,9 +618,12 @@ class DropboxWorkImport
             $responses = $this->downloadFiles($connection, $downloads, $total);
             $pdfs = [];
             $documents = [];
+            $identityExport = null;
             foreach ($downloads as $key => $file) {
                 $upload = $saveDownload($file['entry'], $file['name'], $file['limit'], $responses[$key]->body());
-                if (isset($file['path'])) {
+                if ($key === 'identity_export') {
+                    $identityExport = $upload;
+                } elseif (isset($file['path'])) {
                     $documents[] = ['path' => $file['path'], 'text' => $upload->get()];
                 } else {
                     $pdfs[] = $upload;
@@ -406,7 +635,7 @@ class DropboxWorkImport
             }
 
             return $consume(['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
-                array_filter(['package' => $package, 'pdfs' => $pdfs]));
+                array_filter(['package' => $package, 'pdfs' => $pdfs, 'identity_export' => $identityExport]));
         } finally {
             foreach ($temporaryPaths as $path) {
                 if (is_file($path)) {

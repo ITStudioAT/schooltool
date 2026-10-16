@@ -30,11 +30,23 @@ describe('Admin store config loading', () => {
                 ? await store.startImpersonation(9)
                 : await store.stopImpersonation()
 
-            expect(result).toBe(true)
+            expect(result).toBe(action === 'startImpersonation' ? true : '/admin')
             expect(loadConfig).not.toHaveBeenCalled()
             expect(store.config?.user.id).toBe(7)
         },
     )
+
+    it('passes the course context and exact return target and uses the server return target after stopping', async () => {
+        const store = useAdminStore()
+        const returnUrl = '/admin/teaching/overview?course=17&panel=students#students'
+        vi.mocked(globalThis.axios.post).mockResolvedValueOnce({ data: {} } as never)
+        expect(await store.startImpersonation(42, { teachingCourseId: 17, returnUrl })).toBe(true)
+        expect(globalThis.axios.post).toHaveBeenCalledWith('/api/admin/impersonation/start', {
+            user_id: 42, teaching_course_id: 17, return_url: returnUrl,
+        })
+        vi.mocked(globalThis.axios.post).mockResolvedValueOnce({ data: { redirect: returnUrl } } as never)
+        expect(await store.stopImpersonation()).toBe(returnUrl)
+    })
 
     it('finishes logout after server confirmation without another fallible cookie request', async () => {
         const store = useAdminStore()
@@ -70,6 +82,20 @@ describe('Admin store config loading', () => {
         expect(store.config).toEqual(payload)
         expect(store.selected_school).toEqual(payload.selected_school)
         expect(store.selected_schoolyear).toEqual(payload.selected_schoolyear)
+    })
+
+    it('reads target permissions for navigation without applying the new identity to the old stores or reusing old requests', async () => {
+        const store = useAdminStore()
+        const oldConfig = { user: { id: 7 }, selected_school: { id: 1 } }
+        const nextConfig = { user: { id: 42 }, capabilities: { teaching: true } }
+        store.config = oldConfig as never
+        store.selected_school = { id: 1 } as never
+        store.config_request_promise = Promise.resolve(oldConfig) as never
+        vi.mocked(globalThis.axios.get).mockResolvedValueOnce({ data: nextConfig } as never)
+        expect(await store.loadConfig({ navigationOnly: true })).toEqual(nextConfig)
+        expect(globalThis.axios.get).toHaveBeenCalledWith('/api/admin/config', { __authContextNavigation: true })
+        expect(store.config).toEqual(oldConfig)
+        expect(store.selected_school).toEqual({ id: 1 })
     })
 
     it('requests expensive dashboard config only when asked', async () => {

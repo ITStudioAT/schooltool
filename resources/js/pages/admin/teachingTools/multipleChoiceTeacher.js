@@ -14,6 +14,40 @@ export function newOption() {
     return { id: crypto.randomUUID(), text: '' }
 }
 
+export function detectImportFormat(text, { name = '', type = '' } = {}) {
+    const extension = name.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? ''
+    const mime = type.toLowerCase().split(';')[0].trim()
+    const jsonMime = ['application/json', 'text/json'].includes(mime)
+    const textMime = ['text/plain', 'text/markdown', 'text/x-markdown'].includes(mime)
+    if ((extension && !['md', 'txt', 'json'].includes(extension))
+        || (mime && !jsonMime && !textMime && mime !== 'application/octet-stream')) {
+        throw new Error('Bitte wähle eine Markdown-, Text- oder JSON-Datei (.md, .txt, .json).')
+    }
+    const source = text.replace(/^\uFEFF/, '').trim()
+    if (!source) {
+        if (name) {
+            throw new Error('Die ausgewählte Datei ist leer.')
+        }
+        return null
+    }
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(source)) {
+        throw new Error('Die Datei enthält keine lesbare Textvorlage. Bitte verwende UTF-8-Text, Markdown oder JSON.')
+    }
+    try {
+        JSON.parse(source)
+        return 'json'
+    } catch {
+        if (extension === 'json' || jsonMime || /^\s*(?:\{|\[\s*(?:\{|\[|"|\]))/.test(source)) {
+            throw new Error('Die Vorlage sieht wie JSON aus, enthält aber kein gültiges JSON. Bitte prüfe den Inhalt.')
+        }
+    }
+    if (name && !extension && !jsonMime && !textMime
+        && !/^\s*(?:#{1,6}\s+(?:Frage\s*)?\d+\s*[.:)\-]|\d+\s*[.)]\s+)/imu.test(source)) {
+        throw new Error('Das Dateiformat ist nicht eindeutig. Bitte verwende eine Datei mit .md, .txt oder .json.')
+    }
+    return 'markdown'
+}
+
 export function questionProblems(question) {
     const problems = []
     const options = question.options ?? []

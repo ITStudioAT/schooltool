@@ -4,6 +4,58 @@ import axios from 'axios'
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 
+describe('CourseStudents presence in the selected period', () => {
+    it.each([1, 2])('uses assigned area semester count %s and normalizes unavailable stored filters', (count) => {
+        const component = CourseStudents as any
+        const state = { selected_course: { semester_count: count }, selectedCourseSchema: { grading: { semester_count: 2 } }, activeSemester: 3 }
+        expect(component.computed.semesterCount.call(state)).toBe(count)
+        component.watch.semesterCount.handler.call(state, count)
+        expect(state.activeSemester).toBe(count === 1 ? 1 : 3)
+    })
+    function context(overrides = {}) {
+        const methods = (CourseStudents as any).methods
+        return {
+            semesterCount: 2, activeSemester: 1, schoolSem2StartDate: '2026-02-09', countSem2StartDate: null,
+            selected_course: { students_info: [{ id: 10 }, { id: 20 }] },
+            sortedCourseDates: [
+                { id: 1, date: '2026-01-12', attendance: { s_10: true, s_20: null }, attendance_checked: true },
+                { id: 2, date: '2026-01-19', attendance: { s_10: false, s_20: null }, attendance_checked: true },
+                { id: 3, date: '2026-02-16', attendance: { s_10: true, s_20: false } },
+                { id: 4, date: '2026-02-23', attendance: {}, attendance_checked: false },
+                { id: 5, date: '2026-01-26', status: ['free'], attendance: { s_10: false } },
+                { id: 6, date: '2026-02-02', status: ['entfaellt'], attendance: { s_10: false } },
+            ],
+            getAttendanceMap: methods.getAttendanceMap, normalizeIndexedAttendance: methods.normalizeIndexedAttendance,
+            sanitizeAttendanceMap: methods.sanitizeAttendanceMap, isAttendancePresentValue: methods.isAttendancePresentValue,
+            ...overrides,
+        }
+    }
+
+    it.each([
+        [1, { 10: 50, 20: null }],
+        [2, { 10: 100, 20: 0 }],
+        [3, { 10: 67, 20: 0 }],
+    ])('uses known attendance in semester selection %s and preserves unknown people', (semester, expected) => {
+        const state = context({ activeSemester: semester })
+        expect((CourseStudents as any).computed.studentPresencePercentages.call(state)).toEqual(expected)
+    })
+
+    it('shows no percentage for an empty or wholly unchecked period', () => {
+        for (const dates of [[], [{ id: 7, date: '2026-01-12', attendance_checked: false, attendance: {} }]]) {
+            expect((CourseStudents as any).computed.studentPresencePercentages.call(context({ sortedCourseDates: dates })))
+                .toEqual({ 10: null, 20: null })
+        }
+    })
+
+    it('reuses whole-date confirmation and explicit unknown precedence for legacy attendance', () => {
+        const state = context({ sortedCourseDates: [
+            { id: 1, date: '2026-01-12', status: ['att_checked:1', 'att:10:0', 'att:20:null'] },
+            { id: 2, date: '2026-01-19', status: ['att_checked:1'] },
+        ] })
+        expect((CourseStudents as any).computed.studentPresencePercentages.call(state)).toEqual({ 10: 50, 20: 100 })
+    })
+})
+
 describe('CourseStudents account switching', () => {
     it.each([
         [['super_admin'], false, true],
@@ -24,6 +76,10 @@ describe('CourseStudents account switching', () => {
             impersonatingStudentId: null,
             hasUnsavedAttendanceChanges: false,
             show_bulk_entry: false,
+            students_sort_mode: 'class_last_name',
+            students_view_mode: 'students',
+            $route: { path: '/admin/teaching/overview', query: { course: '17', panel: 'students', grades: 'sem1' }, hash: '#students' },
+            $router: { resolve: vi.fn().mockReturnValue({ href: '/admin/teaching/overview?course=17&panel=students&grades=sem1&student_sort=class_last_name#students' }) },
             adminStore: { startImpersonation: vi.fn().mockResolvedValue(true) },
             ...overrides,
         }
@@ -35,7 +91,12 @@ describe('CourseStudents account switching', () => {
         vi.stubGlobal('window', { location })
         try {
             await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
-            expect(state.adminStore.startImpersonation).toHaveBeenCalledWith(42)
+            expect(state.$router.resolve).toHaveBeenCalledWith({
+                path: '/admin/teaching/overview', query: { course: '17', panel: 'students', grades: 'sem1', student_sort: 'class_last_name', student_view: 'students' }, hash: '#students',
+            })
+            expect(state.adminStore.startImpersonation).toHaveBeenCalledWith(42, {
+                teachingCourseId: 17, returnUrl: '/admin/teaching/overview?course=17&panel=students&grades=sem1&student_sort=class_last_name#students',
+            })
             expect(location.href).toBe('/student/course/17')
         } finally {
             vi.unstubAllGlobals()
@@ -51,6 +112,15 @@ describe('CourseStudents account switching', () => {
         const state = context(overrides)
         await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
         expect(state.adminStore.startImpersonation).not.toHaveBeenCalled()
+    })
+
+    it('keeps the selected lesson and day overview in the return target', async () => {
+        const state = context({ students_view_mode: 'day_overview', selectedCourseDateForCourse: { id: 55 },
+            adminStore: { startImpersonation: vi.fn().mockResolvedValue(false) } })
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 42 })
+        expect(state.$router.resolve).toHaveBeenCalledWith(expect.objectContaining({ query: {
+            course: '17', panel: 'students', grades: 'sem1', student_sort: 'class_last_name', student_view: 'day_overview', date: '55',
+        } }))
     })
 
     it('never uses an import ID as the account ID', async () => {

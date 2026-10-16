@@ -180,12 +180,6 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             try {
                 const response = await axios.post(saveTeachingSettings.url(), settings)
                 this.settings = response.data.settings
-                if (homepageStore.config?.user && response?.data?.settings?.teaching_grade_columns) {
-                    homepageStore.config.user.teaching_grade_columns = response.data.settings.teaching_grade_columns
-                }
-                if (homepageStore.config?.user && response?.data?.settings?.teaching_student_grade_columns) {
-                    homepageStore.config.user.teaching_student_grade_columns = response.data.settings.teaching_student_grade_columns
-                }
                 if (notifySuccess) {
                     notification.notify({
                         message: 'Einstellungen gespeichert.',

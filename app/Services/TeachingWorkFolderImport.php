@@ -97,7 +97,7 @@ class TeachingWorkFolderImport
             'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'work_identity' => $workIdentity, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
     }
 
-    /** @return array{work_id: int, course_id: int, at: ?string} */
+    /** @return array{work_id: int, course_id: int, at: ?string, communicated_at?: ?string} */
     private function parseDeadline(string $text): array
     {
         if (str_starts_with($text, "\xEF\xBB\xBF")) {
@@ -121,12 +121,14 @@ class TeachingWorkFolderImport
             return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'], 'at' => null];
         }
         $deadline = $this->deadlineInstant($metadata['Abgabeschluss']);
-        if (isset($metadata['MitgeteilteAbgabefrist']) && $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) > $deadline) {
+        $communicated = isset($metadata['MitgeteilteAbgabefrist']) ? $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) : null;
+        if ($communicated !== null && $communicated > $deadline) {
             $this->reject('Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
         }
 
         return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'],
-            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
+            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP'),
+            'communicated_at' => $communicated?->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
     }
 
     private function deadlineInstant(mixed $value): DateTimeImmutable
@@ -144,7 +146,7 @@ class TeachingWorkFolderImport
     }
 
     /** @param array<string, mixed> $bundle
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function deadlineFields(TeachingCourseWork $work, array $bundle): array
     {
@@ -158,7 +160,12 @@ class TeachingWorkFolderImport
         }
         $instant = new DateTimeImmutable($deadline['at']);
 
-        return ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
+        $fields = ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
+        if (($deadline['communicated_at'] ?? null) !== null) {
+            $fields['status'] = array_merge($work->status ?? [], ['communicated_deadline_at' => $deadline['communicated_at']]);
+        }
+
+        return $fields;
     }
 
     /** @return array{source: string, name: string, kind: string, run: string} */
@@ -199,13 +206,13 @@ class TeachingWorkFolderImport
     /** @param array<string, mixed> $bundle
      * @return list<array<string, mixed>>
      */
-    public function previewDispatches(TeachingCourseWork $work, array $bundle): array
+    public function previewDispatches(TeachingCourseWork $work, array $bundle, ?array $identityBinding = null): array
     {
         $additions = $this->dispatches->participantAdditions($work, array_column($bundle['protocols'], 'report'));
         $previews = [];
         foreach ($bundle['protocols'] as $file) {
             $previews[] = ['source' => $file['source']] + $this->dispatches->preview($work, $file['report'], $file['sha256'],
-                requireMatchingTitle: false, participantAdditions: $additions);
+                requireMatchingTitle: false, participantAdditions: $identityBinding !== null ? [] : $additions, identityBinding: $identityBinding);
         }
 
         return $previews;
@@ -214,9 +221,9 @@ class TeachingWorkFolderImport
     /** @param array<string, mixed> $bundle
      * @return list<array<string, mixed>>
      */
-    public function previewProvisions(TeachingCourseWork $work, array $bundle): array
+    public function previewProvisions(TeachingCourseWork $work, array $bundle, ?array $identityBinding = null): array
     {
-        return array_map(fn (array $file): array => ['source' => $file['source']] + $this->provisions->preview($work, $file['report'], $file['sha256']), $bundle['provisions'] ?? []);
+        return array_map(fn (array $file): array => ['source' => $file['source']] + $this->provisions->preview($work, $file['report'], $file['sha256'], $identityBinding), $bundle['provisions'] ?? []);
     }
 
     /** @param list<array<string, mixed>> $provisions
@@ -243,6 +250,9 @@ class TeachingWorkFolderImport
             if ($preview['purpose'] !== 'tasks' || ! $preview['can_import']) {
                 continue;
             }
+            $revalidatedStudentIds = array_map('intval', array_column(array_filter($preview['rows'], fn (array $row): bool => $row['accepted']), 'student_id'));
+            $sources = array_values(array_filter($sources, fn (array $source): bool => ! ($source['method'] === 'email_dispatch'
+                && in_array((int) $source['student_id'], $revalidatedStudentIds, true) && $source['log_sha256'] === $preview['source_sha256'])));
             foreach ($preview['rows'] as $row) {
                 if ($row['accepted']) {
                     $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['sent_at'], 'log_sha256' => $preview['source_sha256']];
@@ -258,19 +268,19 @@ class TeachingWorkFolderImport
      * @param  list<string>  $createdPaths
      * @return array{messages: list<string>, missing: list<string>}
      */
-    public function apply(TeachingCourseWork $work, User $actor, array $bundle, array &$createdPaths): array
+    public function apply(TeachingCourseWork $work, User $actor, array $bundle, array &$createdPaths, ?array $identityBinding = null): array
     {
         $messages = [];
         $deadlineFields = $this->deadlineFields($work, $bundle);
         if ($deadlineFields !== []) {
             $work->forceFill($deadlineFields);
-            if ($work->isDirty(['finish_until_date', 'finish_until_time'])) {
+            if ($work->isDirty(['finish_until_date', 'finish_until_time', 'status'])) {
                 $work->save();
             }
             $messages[] = 'Prüfungsschluss aus Arbeitsordner übernommen: '.(new DateTimeImmutable($bundle['deadline']['at']))->format('d.m.Y H:i').' Uhr (Europe/Vienna).';
         }
         $missing = [];
-        $dispatchPreviews = $this->previewDispatches($work, $bundle);
+        $dispatchPreviews = $this->previewDispatches($work, $bundle, $identityBinding);
         foreach ($dispatchPreviews as $preview) {
             if (! $preview['can_import']) {
                 $bad = collect($preview['rows'])->first(fn (array $row): bool => str_contains($row['status'], 'gesperrt'));
@@ -279,7 +289,7 @@ class TeachingWorkFolderImport
         }
         $this->dispatches->applyParticipantAdditions($work, $dispatchPreviews[0]['participant_additions'] ?? []);
         foreach ($bundle['provisions'] ?? [] as $file) {
-            $preview = $this->provisions->preview($work, $file['report'], $file['sha256']);
+            $preview = $this->provisions->preview($work, $file['report'], $file['sha256'], $identityBinding);
             $this->provisions->apply($work, $preview, $file['text'], $createdPaths);
             $messages[] = 'Bereitstellung: '.count($preview['records']).' personenbezogene Verfügbarkeitsbelege geprüft; kein individueller Download bestätigt.';
         }
@@ -325,7 +335,7 @@ class TeachingWorkFolderImport
             $tests = [];
             foreach ($protocols as $file) {
                 try {
-                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
+                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false, participantAdditions: $identityBinding !== null ? [] : null, identityBinding: $identityBinding);
                 } catch (ValidationException $exception) {
                     $this->reject($file['path'].': '.implode(' ', collect($exception->errors())->flatten()->all()));
                 }

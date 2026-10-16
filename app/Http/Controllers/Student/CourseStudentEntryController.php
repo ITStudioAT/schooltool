@@ -10,6 +10,7 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\TeachingCourseEvaluationService;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingService;
 use App\Services\TeachingWorkMarkdownImport;
@@ -183,6 +184,9 @@ class CourseStudentEntryController extends Controller
                 'category' => $entryDefinitions->get($entry->type)?->category ?? 'Benotung',
                 'date' => $entry->date?->format('Y-m-d'),
                 'grade' => $entry->grade,
+                'properties_mode' => $entryDefinitions->get($entry->type)?->properties_mode,
+                'maximum_points' => $entryDefinitions->get($entry->type)?->properties_mode === 'points'
+                    ? $entryDefinitions->get($entry->type)?->maximum_points : null,
                 'status' => $entry->status,
                 'created_at' => $entry->created_at,
                 'work' => $work,
@@ -329,7 +333,43 @@ class CourseStudentEntryController extends Controller
             'category_evaluation_values' => $categoryEvaluationValues,
             'category_evaluation_default_value' => $categoryEvaluationDefaultValue !== '' ? $categoryEvaluationDefaultValue : null,
             'type_labels' => $typeLabels,
+            'points_progress' => $this->pointsProgressForStudent($course, $auth_user),
         ], 200);
+    }
+
+    /** @return array{course_id: int, semester_count: int, parts: list<array<string, mixed>>}|null */
+    private function pointsProgressForStudent(TeachingCourse $course, User $student): ?array
+    {
+        if (! ($course->teaching_student_grade_columns['show_points_progress'] ?? false)) {
+            return null;
+        }
+
+        $evaluation = app(TeachingCourseEvaluationService::class);
+        $report = $evaluation->report($course, 3);
+        $personal = collect($report['students'])->firstWhere('user_id', $student->id);
+        $parts = [];
+        foreach ($personal['semesters'] ?? [] as $semester) {
+            foreach ($semester['parts'] as $part) {
+                if (! in_array($part['trace']['method'] ?? null, ['sum_percent', 'overall_points'], true)) {
+                    continue;
+                }
+
+                $trace = $part['trace'];
+                $available = $part['status'] === 'complete'
+                    && is_numeric($trace['sum'] ?? null) && is_finite((float) $trace['sum'])
+                    && is_numeric($trace['maximum'] ?? null) && is_finite((float) $trace['maximum']) && $trace['maximum'] > 0
+                    && ! collect($semester['issues'])->contains(fn (array $issue): bool => in_array($issue['code'] ?? null, ['invalid_period', 'unassigned_date', 'duplicate_work'], true));
+                $parts[] = [
+                    'id' => $part['id'], 'name' => $part['name'], 'semester' => $semester['semester'],
+                    'status' => $available ? 'complete' : ($part['status'] === 'empty' ? 'empty' : 'incomplete'),
+                    'sum' => $available ? $trace['sum'] : null,
+                    'maximum' => $available ? $trace['maximum'] : null,
+                    'grade_boundaries' => $available ? $evaluation->pointsProgressBoundaries($part) : [],
+                ];
+            }
+        }
+
+        return ['course_id' => $course->id, 'semester_count' => $report['semester_count'], 'parts' => $parts];
     }
 
     /**

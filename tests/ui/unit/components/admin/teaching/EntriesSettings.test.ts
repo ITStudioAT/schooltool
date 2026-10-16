@@ -2489,6 +2489,8 @@ describe('Teaching entries settings', () => {
             semesterDrafts: { 10: {} },
             semesterValidationMessage: '',
             isSavingSemesters: false,
+            courseStore: { courses: [{ id: 1, teaching_entry_area_id: 10, semester_count: 2 }, { id: 2, teaching_entry_area_id: 20, semester_count: 2 }],
+                selected_course: { id: 1, teaching_entry_area_id: 10, semester_count: 2 } },
             notifyError: vi.fn(),
         }
         try {
@@ -2500,6 +2502,9 @@ describe('Teaching entries settings', () => {
                 semester_2_weight: saved.semester_2_weight,
             })
             expect(ctx.areas[0]).toEqual(saved)
+            expect(ctx.courseStore.courses[0].semester_count).toBe(count)
+            expect(ctx.courseStore.selected_course.semester_count).toBe(count)
+            expect(ctx.courseStore.courses[1].semester_count).toBe(2)
             expect(ctx.semesterDrafts[10]).toBeUndefined()
             expect(ctx.isSavingSemesters).toBe(false)
         } finally {

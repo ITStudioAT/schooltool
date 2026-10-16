@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import MyCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 import { useCourseStore } from '@/stores/student/CourseStore'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import { percentageProgressGradient } from '@/helpers/gradeCalculation'
 
 const activeWindowKey = Symbol('activeStudentTestWindow')
 const toggleUpdateKey = Symbol('studentTestToggleUpdate')
@@ -64,7 +65,7 @@ const ButtonStub = defineComponent({
 
 const wrappers: ReturnType<typeof mount>[] = []
 
-async function mountFeedback({ showBehaviour = true, includeAssessments = true, courseOverrides = {}, entryOverrides = [], url = '/student/course/18' } = {}) {
+async function mountFeedback({ showBehaviour = true, includeAssessments = true, courseOverrides = {}, entryOverrides = [], pointsProgress = null, url = '/student/course/18' } = {}) {
     const assessmentEntries = includeAssessments ? [
         { id: 101, date: '2026-10-12', category: 'Benotung', type: 'MA', title: 'Mitarbeit Herbst', grade: '1' },
         { id: 102, date: '2027-03-15', category: 'Benotung', type: 'MA', title: 'Mitarbeit Frühling', grade: '2' },
@@ -77,6 +78,7 @@ async function mountFeedback({ showBehaviour = true, includeAssessments = true, 
                 viewer_type: 'student',
             },
             StudentCourseStore: {
+                pointsProgress,
                 course: {
                     id: 18,
                     title: 'Digitale Grundbildung',
@@ -143,6 +145,169 @@ afterEach(() => {
 })
 
 describe('student combined performance and behaviour page', () => {
+    it.each([undefined, true, false])('applies stars visibility %s to the header, summary and details independently of points', async (visible) => {
+        const wrapper = await mountFeedback({ courseOverrides: { show_stars: visible, show_points_progress: true,
+            stars: [{ id: 'star-1', value: 1, comment: 'Besonderer Einsatz', date: '2026-10-01' }] },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 5, maximum: 10 }] } })
+        expect(wrapper.find('.stars-inline').exists()).toBe(visible !== false)
+        expect(wrapper.find('.student-summary-card--stars').exists()).toBe(visible !== false)
+        expect(wrapper.find('.stars-beautiful-list').exists()).toBe(visible !== false)
+        expect(wrapper.text().includes('Besonderer Einsatz')).toBe(visible !== false)
+        expect(wrapper.find('.student-points-progress').exists()).toBe(false)
+        await openFeedback(wrapper)
+        expect(wrapper.get('.student-points-progress').text()).toContain('50 %')
+    })
+
+    it.each([1, 2])('uses the assigned area semester count %s despite an older two-semester schema', async (count) => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { semester_count: count } })
+        expect(wrapper.vm.hasTwoSemesters).toBe(count === 2)
+        expect(wrapper.find('[aria-label="Semester für Leistungen und Verhalten"]').exists()).toBe(count === 2)
+        expect(wrapper.vm.selectedSemester).toBe(count === 1 ? 1 : 3)
+        expect(wrapper.vm.selectedSemesterDates).toBe(count === 1 ? 1 : 3)
+        expect(wrapper.get('#student-performance').text()).toContain('Mitarbeit Herbst')
+        expect(wrapper.get('#student-performance').text()).toContain('Mitarbeit Frühling')
+    })
+    it('completely omits points progress when disabled and retains the performance list', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: false } })
+        expect(wrapper.find('.student-points-progress').exists()).toBe(false)
+        expect(wrapper.get('#student-performance').text()).toContain('Mitarbeit Herbst')
+    })
+
+    it('shows the canonical points basis in its selected semester, including a real zero', async () => {
+        const options = { url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, semester_count: 2, parts: [
+                { id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 7.75, maximum: 10 },
+                { id: 7, name: 'Basis', semester: 2, status: 'complete', sum: 0, maximum: 15 },
+            ] } }
+        const wrapper = await mountFeedback(options)
+        expect(wrapper.findAll('.student-points-progress-part')).toHaveLength(2)
+        expect(wrapper.get('.student-points-progress').text()).toContain('Erreicht: 7,75 Punkte · Maximal möglich: 10 Punkte')
+        expect(wrapper.get('.student-points-progress').text()).toContain('77,5 %')
+        const secondSemester = wrapper.findAll('button').find(button => button.attributes('data-toggle-value') === '2')!
+        await secondSemester.trigger('click')
+        await flushPromises()
+        expect(wrapper.findAll('.student-points-progress-part')).toHaveLength(1)
+        expect(wrapper.get('.student-points-progress').text()).not.toContain('7,75')
+        expect(wrapper.get('.student-points-progress').text()).toContain('Erreicht: 0 Punkte · Maximal möglich: 15 Punkte')
+        expect(wrapper.findAll('.student-points-progress v-progress-linear')).toHaveLength(1)
+        const reload = await mountFeedback(options)
+        expect(reload.find('.student-points-progress').exists()).toBe(true)
+    })
+
+    it('shows points exclusively in the performance tab across navigation and reloads', async () => {
+        const options = { courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 7.75, maximum: 10 }] } }
+        const wrapper = await mountFeedback(options)
+        expect(wrapper.vm.currentTab).toBe('overview')
+        expect(wrapper.find('.student-points-progress').exists()).toBe(false)
+        await openFeedback(wrapper)
+        expect(wrapper.get('.student-points-progress').text()).toContain('77,5 %')
+        expect(wrapper.get('.student-points-progress v-progress-linear').attributes('aria-valuetext')).toBe('7,75 von 10 Punkten, 77,5 Prozent')
+        for (const label of ['Übersicht', 'Weitere', 'Termine']) {
+            const tab = wrapper.findAll('nav button').find((button) => button.text().includes(label))!
+            await tab.trigger('click')
+            await flushPromises()
+            expect(wrapper.find('.student-points-progress').exists()).toBe(false)
+        }
+        const reload = await mountFeedback({ ...options, url: '/student/course/18?panel=entries' })
+        expect(reload.get('.student-points-progress').text()).toContain('77,5 %')
+    })
+
+    it('uses the admin gradient with points and percentage without direct grade assignments', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 20, maximum: 40 }] } })
+        expect(wrapper.get('.student-points-progress-percent').text()).toBe('50 %')
+        expect(wrapper.get('.student-points-progress-fill').attributes('style')).toContain(percentageProgressGradient)
+        expect(wrapper.get('.student-points-progress-values').text()).toContain('Erreicht: 20 Punkte · Maximal möglich: 40 Punkte')
+        expect(wrapper.find('.student-points-grade-scale').exists()).toBe(false)
+        expect(wrapper.find('.student-points-grade-boundary').exists()).toBe(false)
+        expect(wrapper.get('.student-points-progress').text()).not.toMatch(/Sehr gut|Nicht genügend|Befriedigend|Notengrenzen/)
+        expect(wrapper.find('.student-points-progress [title]').exists()).toBe(false)
+        expect(wrapper.find('.calculated-grades-section').exists()).toBe(false)
+    })
+
+    it('shows independent points bases with their own sums and maxima instead of combining them', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [
+                { id: 7, name: 'Grundlagen', semester: 1, status: 'complete', sum: 7.75, maximum: 10 },
+                { id: 8, name: 'Praxis', semester: 1, status: 'complete', sum: 7, maximum: 35 },
+            ] } })
+        const areas = wrapper.findAll('.student-points-progress-part')
+        expect(areas).toHaveLength(2)
+        expect(areas[0].text()).toContain('Grundlagen')
+        expect(areas[0].text()).toContain('Erreicht: 7,75 Punkte · Maximal möglich: 10 Punkte')
+        expect(areas[1].text()).toContain('Praxis')
+        expect(areas[1].text()).toContain('Erreicht: 7 Punkte · Maximal möglich: 35 Punkte')
+        expect(wrapper.findAll('.student-points-progress v-progress-linear')).toHaveLength(2)
+    })
+
+    it('shows only unlabelled ticks at the actual boundaries without exposing a grade legend or tooltips', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 20, maximum: 40,
+                grade_boundaries: [20, 45, 75, 95],
+            }] } })
+        const ticks = wrapper.findAll('.student-points-grade-boundary')
+        expect(ticks.map((tick) => tick.attributes('style'))).toEqual(['left: 20%;', 'left: 45%;', 'left: 75%;', 'left: 95%;'])
+        expect(ticks.every((tick) => tick.text() === '' && !tick.attributes('title'))).toBe(true)
+        expect(wrapper.get('.student-points-progress-percent').text()).toBe('50 %')
+        expect(wrapper.find('.student-points-grade-scale').exists()).toBe(false)
+        expect(wrapper.get('.student-points-progress').text()).not.toMatch(/Sehr gut|Nicht genügend|Befriedigend|Notengrenzen/)
+    })
+
+    it.each([
+        { course_id: 99, parts: [{ id: 7, name: 'Fremder Kurs', semester: 1, status: 'complete', sum: 5, maximum: 5 }] },
+        { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'incomplete', sum: null, maximum: null }] },
+        { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 0, maximum: 0 }] },
+    ])('never invents a progress bar for foreign or incomplete points data %s', async (progress) => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true }, pointsProgress: progress })
+        expect(wrapper.find('.student-points-progress v-progress-linear').exists()).toBe(false)
+        expect(wrapper.get('.student-points-progress').text()).not.toContain('Fremder Kurs')
+        expect(wrapper.get('.student-points-progress').text()).not.toContain('0/0')
+    })
+
+    it('keeps the type beside the title, hides PDF-backed inline feedback and shows actual points without changing data', async () => {
+        const comment = 'Ausführliche persönliche Bewertung nur im PDF.'
+        const entry = { id: 109, date: '2026-10-02', category: 'Benotung', type: 'A5', title: 'Dateimanagement',
+            grade: '3.40', properties_mode: 'points', maximum_points: 12.5, comment,
+            work: { id: 8, evaluation_pdf: { name: 'personal.pdf', sha256: 'b'.repeat(64) } } }
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', entryOverrides: [entry] })
+        const row = wrapper.findAll('.entry-row').find(item => item.text().includes('Dateimanagement'))!
+        expect(row.get('.entry-title-row').text()).toContain('DateimanagementA5 - A5')
+        expect(row.find('.entry-comment').exists()).toBe(false)
+        expect(row.text()).not.toContain(comment)
+        expect(row.get('.entry-result').text()).toContain('Erreicht3,40 PunkteMaximal möglich: 12,5 Punkte')
+        expect(row.get('[href*="/works/8/evaluations/"]').text()).toBe('Auswertung (PDF)')
+        expect(entry.comment).toBe(comment)
+        expect(entry.grade).toBe('3.40')
+    })
+
+    it.each([
+        ['0', null, '0,00 Punkte', 'nicht hinterlegt'],
+        ['', 20, 'offen', '20 Punkte'],
+        ['NA', 20, 'NA', '20 Punkte'],
+        ['4,35', 5, '4,35 Punkte', '5 Punkte'],
+    ])('renders saved points %s and maximum %s honestly, preserving feedback without a PDF', async (grade, maximum, value, maximumText) => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', entryOverrides: [
+            { id: 109, date: '2026-10-02', category: 'Benotung', type: 'A5', title: 'Auftrag', grade,
+                properties_mode: 'points', maximum_points: maximum, comment: 'Noch ohne PDF.', work: { id: 8 } },
+        ] })
+        const row = wrapper.findAll('.entry-row').find(item => item.text().includes('Auftrag'))!
+        expect(row.get('.entry-result-value').text()).toBe(value)
+        expect(row.get('.entry-result-maximum').text()).toBe(`Maximal möglich: ${maximumText}`)
+        expect(row.get('.entry-comment').text()).toBe('Noch ohne PDF.')
+        expect(row.find('[href*="/evaluations/"]').exists()).toBe(false)
+    })
+
+    it('does not relabel ordinary grades as points or infer a maximum from the type name', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', entryOverrides: [
+            { id: 109, date: '2026-10-02', category: 'Benotung', type: 'A5', title: 'Schularbeit', grade: '2',
+                properties_mode: 'fixed', maximum_points: null, work: { id: 8 } },
+        ] })
+        const row = wrapper.findAll('.entry-row').find(item => item.text().includes('Schularbeit'))!
+        expect(row.get('.entry-result').text()).toBe('Bewertung2')
+        expect(row.find('.entry-result-maximum').exists()).toBe(false)
+    })
+
     it('renders the personal evaluation link on Leistungen and preserves it after a reload', async () => {
         const sha256 = 'b'.repeat(64)
         const options = {
@@ -297,7 +462,7 @@ describe('student assigned grade visibility', () => {
         expect(grades.find('.behaviour-value').exists()).toBe(false)
     })
 
-    it('keeps configured calculated grades visible when both assigned grade types are hidden', async () => {
+    it('does not resurrect the removed calculated grade display from historical settings', async () => {
         const wrapper = await mountFeedback({
             courseOverrides: {
                 ...assignedGrades,
@@ -312,8 +477,8 @@ describe('student assigned grade visibility', () => {
         })
 
         expect(wrapper.find('[data-testid="student-assigned-grades"]').exists()).toBe(false)
-        expect(wrapper.get('.calculated-grades-section').text()).toContain('Berechnete Noten')
-        expect(wrapper.findAll('.calculated-grades-section .grade-calculated')).toHaveLength(3)
+        expect(wrapper.find('.calculated-grades-section').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Berechnete Noten')
     })
 
     it('keeps modern and legacy behaviour feedback when only the assigned behaviour grade is hidden', async () => {

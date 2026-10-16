@@ -5,8 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RestrictStudentsTimetablesImpersonation;
 use App\Http\Resources\Admin\PaginateResource;
+use App\Models\Import116;
 use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\TeachingCourse;
 use App\Models\User;
+use App\Services\ParentStudentAccessService;
+use App\Services\StudentService;
 use App\Traits\HasRoleTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +20,8 @@ use Lab404\Impersonate\Services\ImpersonateManager;
 class ImpersonationController extends Controller
 {
     use HasRoleTrait;
+
+    private const RETURN_URL_SESSION_KEY = 'impersonation.return_url';
 
     public function status(Request $request, ImpersonateManager $manager)
     {
@@ -175,6 +182,8 @@ class ImpersonationController extends Controller
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'teaching_course_id' => ['nullable', 'integer', 'exists:teaching_courses,id'],
+            'return_url' => ['nullable', 'string', 'max:4096'],
         ]);
 
         if ($manager->isImpersonating()) {
@@ -193,6 +202,46 @@ class ImpersonationController extends Controller
             abort(422, 'Dieser Benutzer kann nicht übernommen werden.');
         }
 
+        if (isset($validated['teaching_course_id'])) {
+            $activeSchoolyearId = SchoolTool::query()
+                ->where('school_id', $targetUser->school_id)
+                ->value('active_schoolyear_id') ?? $targetUser->schoolyear_id;
+            $course = TeachingCourse::query()
+                ->whereKey($validated['teaching_course_id'])
+                ->where('school_id', $targetUser->school_id)
+                ->where('schoolyear_id', $activeSchoolyearId)
+                ->first();
+            $courseStudent = $course?->teachingCourseStudents()
+                ->where('user_id', $targetUser->id)
+                ->whereNull('canceled_at')
+                ->first();
+
+            if (! $courseStudent) {
+                abort(422, 'Dieser Schüleraccount kann den gewählten Kurs nicht öffnen. Der Accountwechsel wurde nicht gestartet.');
+            }
+
+            if (! app(ParentStudentAccessService::class)->isActiveStudentUser($targetUser)) {
+                if ($targetUser->roles()->exists() && $targetUser->is_active !== null && ! (bool) $targetUser->is_active) {
+                    abort(422, 'Dieser Account ist nicht als aktiver Schüleraccount freigeschaltet. Der Accountwechsel wurde nicht gestartet.');
+                }
+
+                $importStudent = Import116::query()
+                    ->whereKey($courseStudent->import116_id)
+                    ->where('id', $targetUser->import116_id)
+                    ->where('user_id', $targetUser->id)
+                    ->where('school_id', $targetUser->school_id)
+                    ->where('schoolyear_id', $activeSchoolyearId)
+                    ->whereNotNull('exists_date')
+                    ->first();
+
+                if (! $importStudent) {
+                    abort(422, 'Für diesen Account fehlt die eindeutige aktuelle Schülerzuordnung. Der Accountwechsel wurde nicht gestartet.');
+                }
+
+                $targetUser = app(StudentService::class)->createUserFromImport116($importStudent, preserveExistingProfile: true);
+            }
+        }
+
         if (! $manager->take($authUser, $targetUser, 'web')) {
             $manager->clear();
             abort(500, 'Benutzer-Übernahme konnte nicht gestartet werden.');
@@ -202,6 +251,7 @@ class ImpersonationController extends Controller
             RestrictStudentsTimetablesImpersonation::SESSION_KEY,
             RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
         ]);
+        $request->session()->put(self::RETURN_URL_SESSION_KEY, $this->adminReturnUrl($validated['return_url'] ?? null));
         $request->session()->forget([
             'auth.password_confirmed_at',
             'login.id',
@@ -230,12 +280,13 @@ class ImpersonationController extends Controller
 
         $returnUrl = (string) $request->session()->get(
             RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
-            '/admin',
+            $this->adminReturnUrl($request->session()->get(self::RETURN_URL_SESSION_KEY)),
         );
 
         if (! $manager->leave()) {
             $manager->clear();
             $request->session()->forget([
+                self::RETURN_URL_SESSION_KEY,
                 RestrictStudentsTimetablesImpersonation::SESSION_KEY,
                 RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
             ]);
@@ -243,6 +294,7 @@ class ImpersonationController extends Controller
         }
 
         $request->session()->forget([
+            self::RETURN_URL_SESSION_KEY,
             RestrictStudentsTimetablesImpersonation::SESSION_KEY,
             RestrictStudentsTimetablesImpersonation::RETURN_URL_SESSION_KEY,
         ]);
@@ -261,5 +313,21 @@ class ImpersonationController extends Controller
             'message' => 'Benutzer-Übernahme beendet.',
             'redirect' => $returnUrl,
         ], 200);
+    }
+
+    private function adminReturnUrl(?string $returnUrl): string
+    {
+        $returnUrl = (string) $returnUrl;
+        if ($returnUrl === '' || preg_match('/[\x00-\x20\x7F\\\\]/', $returnUrl) === 1) {
+            return '/admin';
+        }
+
+        $parts = parse_url($returnUrl);
+        if (! is_array($parts) || isset($parts['scheme']) || isset($parts['host'])
+            || preg_match('/\A\/admin(?:\/[a-zA-Z0-9_-]+)*\/?\z/', $parts['path'] ?? '') !== 1) {
+            return '/admin';
+        }
+
+        return $returnUrl;
     }
 }

@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
 import WorkAiExport from '@/pages/admin/teaching/overview/components/WorkAiExport.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2, title: 'Ungespeicherter Entwurf' }
 const text = 'Auftrag für Datenschutz\nÄnne Ćelebić · Béa Beta\n' + 'Vollständige Arbeitsdaten\n'.repeat(100)
@@ -13,7 +15,7 @@ const data = { work_id: 65, course_id: 2, roster_complete: true, participants_co
 
 function mountExport() {
     return mount(WorkAiExport, { props: { work }, attachTo: document.body, global: {
-        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } } } }), createVuetify({ components: { VBtn } })],
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminCourseStore: { selected_course: { id: 2 } }, AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false },
     } })
 }
@@ -22,9 +24,67 @@ function button(wrapper: any, title: string) {
     return wrapper.findAll('button').find((item: any) => item.text() === title)!
 }
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+beforeEach(() => { clearWorkDropboxStates(); workDropboxStates.set('7:2:65', { folder: null }) })
+afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 describe('Work AI export', () => {
+    it.each([true, false])('uses only a confirmed folder ID to hide the creation action, assigned %s', async assigned => {
+        workDropboxStates.set('7:2:65', { folder: assigned ? { id: 'id:confirmed', name: 'Arbeit' } : { name: 'Noch keine Zuordnung' },
+            suggested_folder: { id: 'id:proposal', name: 'Vorschlag' } })
+        const get = vi.fn()
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountExport()
+        try {
+            await flushPromises()
+            expect(Boolean(button(wrapper, 'Ordner anlegen (KI)'))).toBe(!assigned)
+            expect(get).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['unassigned', 'assigned', 'missing', 'incomplete', 'failed'])('waits for a confirmed status without flashing the action: %s', async state => {
+        clearWorkDropboxStates()
+        let resolve: (value: any) => void = () => {}
+        let reject: (value: any) => void = () => {}
+        const get = vi.fn().mockImplementation(() => new Promise((done, fail) => { resolve = done; reject = fail }))
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountExport()
+        try {
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            if (state === 'failed') reject(new Error('Nicht erreichbar'))
+            else resolve({ data: state === 'missing' ? null : (state === 'incomplete' ? {} : { folder: state === 'assigned' ? { id: 'id:confirmed' } : null }) })
+            await flushPromises()
+            expect(Boolean(button(wrapper, 'Ordner anlegen (KI)'))).toBe(state === 'unassigned')
+            expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000 })
+        } finally { wrapper.unmount() }
+    })
+
+    it('hides immediately after assigning this work and keeps assignments scoped to the user and work', async () => {
+        const get = vi.fn()
+        vi.stubGlobal('axios', { get })
+        workDropboxStates.set('7:2:66', { folder: { id: 'id:other-work' } })
+        workDropboxStates.set('8:2:65', { folder: { id: 'id:other-user' } })
+        const wrapper = mountExport()
+        try {
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            workDropboxStates.set('7:2:65', { folder: { id: 'id:just-assigned' } })
+            await flushPromises()
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            workDropboxStates.set('7:2:65', { folder: null })
+            await flushPromises()
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            useAdminStore().config.user.id = 8
+            await flushPromises()
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            useAdminStore().config.user.id = 7
+            await flushPromises()
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            await wrapper.setProps({ work: { ...work, id: 66 } })
+            await flushPromises()
+            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            expect(get).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
     it('loads the selected saved work freshly and copies the entire rendered export only on click', async () => {
         const get = vi.fn().mockResolvedValue({ data: { data } })
         const writeText = vi.fn().mockResolvedValue(undefined)
@@ -33,7 +93,8 @@ describe('Work AI export', () => {
         const wrapper = mountExport()
         try {
             expect(get).not.toHaveBeenCalled()
-            await button(wrapper, 'KI-Export').trigger('click')
+            expect(button(wrapper, 'Ordner anlegen (KI)').attributes()).toMatchObject({ title: 'Ordner anlegen (KI) öffnen', 'aria-label': 'Ordner anlegen (KI)' })
+            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
             await flushPromises()
             expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export')
             expect(wrapper.text()).toContain('Gespeicherte Datenschutzarbeit')
@@ -57,7 +118,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'KI-Export').trigger('click')
+            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
             await flushPromises()
             await button(wrapper, 'Auftrag kopieren').trigger('click')
             await flushPromises()
@@ -72,7 +133,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: mode === 'rejected' ? { writeText: vi.fn().mockRejectedValue(new Error('Denied')) } : undefined })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'KI-Export').trigger('click')
+            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
             await flushPromises()
             await button(wrapper, 'Auftrag kopieren').trigger('click')
             await flushPromises()
@@ -89,7 +150,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('axios', { get: vi.fn().mockImplementation(() => new Promise(done => { resolve = done })) })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'KI-Export').trigger('click')
+            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
             useCourseStore().selected_course = { id: 3 } as any
             await flushPromises()
             resolve({ data: { data } })
@@ -103,7 +164,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { data: { ...data, ...change } } }) })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'KI-Export').trigger('click')
+            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
             await flushPromises()
             expect(wrapper.find('textarea').exists()).toBe(false)
             expect(button(wrapper, 'Auftrag kopieren').attributes('disabled')).toBeDefined()

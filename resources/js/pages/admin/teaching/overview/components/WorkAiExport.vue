@@ -1,8 +1,8 @@
 <template>
-    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-robot-outline" :disabled="!isCurrentWork || loading" @click.stop="openExport">KI-Export</v-btn>
+    <v-btn v-if="canCreateFolder" size="small" variant="tonal" prepend-icon="mdi-robot-outline" title="Ordner anlegen (KI) öffnen" aria-label="Ordner anlegen (KI)" :disabled="loading" @click.stop="openExport">Ordner anlegen (KI)</v-btn>
     <v-dialog v-model="open" scrollable max-width="900">
         <v-card>
-            <v-card-title class="text-wrap text-body-1 font-weight-bold">KI-Export · {{ result?.context?.work?.title || 'Auftrag laden' }}</v-card-title>
+            <v-card-title class="text-wrap text-body-1 font-weight-bold">Ordner anlegen (KI) · {{ result?.context?.work?.title || 'Auftrag laden' }}</v-card-title>
             <v-card-text>
                 <p class="text-caption mb-2">Frisch geladene, gespeicherte Arbeitsdaten und vollständiger Kursbestand. Ungespeicherte Änderungen zuerst speichern.</p>
                 <p v-if="loading" role="status">Arbeitsdaten und Kursliste laden …</p>
@@ -32,9 +32,18 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 
 const props = defineProps({ work: { type: Object, default: null } })
 const courseStore = useCourseStore()
+const admin = useAdminStore()
+const directoryLoading = ref(true)
+const directoryLoadError = ref(false)
+const directoryKey = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
+const directoryState = computed(() => workDropboxStates.get(directoryKey.value))
+const canCreateFolder = computed(() => Boolean(isCurrentWork.value && !directoryLoading.value && !directoryLoadError.value
+    && directoryState.value && Object.hasOwn(directoryState.value, 'folder') && !directoryState.value.folder?.id))
 const open = ref(false)
 const loading = ref(false)
 const result = ref(null)
@@ -56,7 +65,7 @@ function clearExport() {
 }
 
 async function openExport() {
-    if (!isCurrentWork.value) return
+    if (!canCreateFolder.value) return
     open.value = true
     await loadExport()
 }
@@ -81,7 +90,7 @@ async function loadExport() {
     } catch (exception) {
         if (sequence === requestSequence) {
             error.value = Object.values(exception.response?.data?.errors || {}).flat().join(' ')
-                || exception.message || 'KI-Export konnte nicht geladen werden.'
+                || exception.message || 'Ordner anlegen (KI) konnte nicht geladen werden.'
         }
     } finally {
         if (sequence === requestSequence) loading.value = false
@@ -109,10 +118,23 @@ async function copyExport() {
     }
 }
 
-watch(() => [props.work?.id, props.work?.teaching_course_id, courseStore.selected_course?.id, workAutomationEnabled(props.work)], () => {
+watch(() => [directoryKey.value, courseStore.selected_course?.id, workAutomationEnabled(props.work)], () => {
     open.value = false
     clearExport()
 })
+watch(() => [directoryKey.value, props.work?.status?.folder_imported_at, isCurrentWork.value], async ([key], previous) => {
+    directoryLoadError.value = false
+    const fresh = previous?.[0] === key
+    directoryLoading.value = fresh || !workDropboxStates.has(key)
+    if (!isCurrentWork.value || !key) return
+    try {
+        await loadWorkDropbox(key, props.work.id, fresh)
+    } catch {
+        if (directoryKey.value === key) directoryLoadError.value = true
+    } finally {
+        if (directoryKey.value === key) directoryLoading.value = false
+    }
+}, { immediate: true })
 watch(open, value => { if (!value) clearExport() })
 onBeforeUnmount(clearExport)
 </script>

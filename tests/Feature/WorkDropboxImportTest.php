@@ -155,6 +155,37 @@ test('deadline metadata is previewed and automatically imported without changing
     expect($this->work->fresh()->groups)->toEqual($groups);
 })->with(['dropbox', 'upload'])->with(['2026-10-15T14:55:00+02:00', '2026-10-15T12:55:00Z']);
 
+test('optional first deadline is previewed read only and retained through older packages and ordinary edits', function (string $source): void {
+    dropboxConnectionForWork($this);
+    $this->work->update(['status' => ['dispatch_notifications' => [], 'automation_enabled' => true]]);
+    $metadata = ['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+        'Abgabeschluss' => '2026-10-15T14:55:00+02:00', 'MitgeteilteAbgabefrist' => '2026-10-15T12:00:00Z', 'Zeitzone' => 'Europe/Vienna'];
+    $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
+    $deadline = ['at' => '2026-10-15T14:00:00+02:00', 'date' => '2026-10-15', 'time' => '14:00'];
+    foreach (['present', 'absent', 'null'] as $case) {
+        if ($case === 'absent') {
+            unset($metadata['MitgeteilteAbgabefrist']);
+        } elseif ($case === 'null') {
+            $metadata['MitgeteilteAbgabefrist'] = null;
+        }
+        $text = json_encode($metadata, JSON_THROW_ON_ERROR);
+        fakeDropboxWorkFiles(['Anlage_und_Quellen.json' => $text]);
+        $payload = $source === 'dropbox' ? [] : ['folder' => 'Leistungsarbeit',
+            'documents' => json_encode([['path' => 'Leistungsarbeit/Anlage_und_Quellen.json', 'text' => $text]])];
+        $before = $this->work->fresh()->getAttributes();
+        $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+        expect($this->work->fresh()->getAttributes())->toBe($before);
+        $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()
+            ->assertJsonPath('data.communicated_deadline', $deadline)->assertJsonPath('data.finish_until_time', '14:55');
+        expect($this->work->fresh()->communicatedDeadline())->toBe($deadline)
+            ->and($this->work->fresh()->status['automation_enabled'])->toBeTrue()
+            ->and($this->work->fresh()->status['dispatch_notifications'])->toBe([]);
+    }
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['status' => ['communicated_deadline_at' => '2026-10-15T13:00:00+02:00']])
+        ->assertOk()->assertJsonPath('data.communicated_deadline', $deadline);
+    expect($this->work->fresh()->communicatedDeadline())->toBe($deadline);
+})->with(['dropbox', 'upload']);
+
 test('deadline metadata rejects foreign identities invalid times and inconsistent communicated deadlines', function (array $changes): void {
     $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00']);
     $metadata = array_replace(['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
@@ -426,7 +457,7 @@ test('folder assignment validates Dropbox identity and is private to the user an
         ->assertJsonPath('can_quick_import', false)->assertJsonPath('can_preview', true)->assertJsonPath('has_import', false);
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
     $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()->assertJsonPath('can_quick_import', false)
-        ->assertJsonPath('folder', null)->assertJsonPath('suggested_folder.id', 'id:folder');
+        ->assertJsonPath('folder', null)->assertJsonPath('suggested_folder', null)->assertJsonPath('folder_plausibility', null);
     $this->postJson($this->url.'/folder', ['folder_id' => 'https://unrelated.example'])->assertUnprocessable();
     $this->actingAs(User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('admin'), 'sanctum');
     $this->getJson($this->url)->assertOk()->assertJsonPath('connected', false)->assertJsonPath('folder', null)->assertJsonPath('suggested_folder', null);
@@ -438,17 +469,215 @@ test('folder picker resolves the actual parent of a restored Dropbox folder', fu
     Http::fake(['api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
         'api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [], 'has_more' => false]),
         'api.dropboxapi.com/2/files/get_metadata' => function (Request $request) {
-            return Http::response($request['path'] === 'id:last' ? ['.tag' => 'folder', 'id' => 'id:last', 'name' => 'Arbeit', 'path_lower' => '/materialien/arbeit']
+            return Http::response($request['path'] === 'id:last' ? ['.tag' => 'folder', 'id' => 'id:last', 'name' => 'Arbeit', 'path_lower' => '/materialien/arbeit', 'path_display' => '/Materialien/Arbeit']
                 : ['.tag' => 'folder', 'id' => 'id:parent', 'name' => 'Materialien', 'path_lower' => '/materialien']);
         }]);
 
-    $this->getJson($this->url.'/folders?folder_id=id:last')->assertOk()->assertJsonPath('parent.id', 'id:parent');
+    $this->getJson($this->url.'/folders?folder_id=id:last')->assertOk()->assertJsonPath('parent.id', 'id:parent')
+        ->assertJsonPath('current.path', '/Materialien/Arbeit')->assertJsonPath('parent.path', '/materialien');
+});
+
+/** @param list<array<string, mixed>> $candidates
+ * @param  array<string, string>  $metadata
+ */
+function fakeDropboxSuggestions(array $candidates, string $topic = 'dateimanagement', array $metadata = [], bool $partial = false, string $discovery = 'indexed'): void
+{
+    $root = '/schule2020_2027/materialien/lerninhalte';
+    $folder = fn (string $id, string $name, string $path): array => ['.tag' => 'folder', 'id' => $id, 'name' => $name, 'path_lower' => $path];
+    Http::fake(function (Request $request) use ($root, $topic, $folder, $candidates, $metadata, $partial, $discovery) {
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test-access']);
+        }
+        if (str_ends_with($request->url(), '/files/search_v2')) {
+            if ($request['query'] !== 'Lerninhalte' && in_array($discovery, ['unindexed', 'broad', 'listing pages'], true)) {
+                return Http::response(['has_more' => false, 'matches' => []]);
+            }
+            if ($request['query'] !== 'Lerninhalte' && $discovery === 'search pages') {
+                return Http::response(['has_more' => true, 'cursor' => 'topic-page-2', 'matches' => []]);
+            }
+            $entry = $request['query'] === 'Lerninhalte' ? $folder('id:learning', 'Lerninhalte', $root)
+                : $folder('id:topic', $topic, $root.'/it_grundlagen/'.$topic);
+
+            return Http::response(['has_more' => false, 'matches' => [['metadata' => ['.tag' => 'metadata', 'metadata' => $entry]]]]);
+        }
+        if (str_ends_with($request->url(), '/files/search/continue_v2')) {
+            return Http::response(['has_more' => false, 'matches' => [['metadata' => ['.tag' => 'metadata',
+                'metadata' => $folder('id:topic', $topic, $root.'/it_grundlagen/'.$topic)]]]]);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder')) {
+            $path = $request['path'];
+            if ($path === 'id:collection' && $discovery === 'listing pages') {
+                return Http::response(['has_more' => true, 'cursor' => 'collection-page-2', 'entries' => []]);
+            }
+            $entries = match ($path) {
+                'id:learning' => $discovery === 'broad'
+                    ? array_map(fn (int $number): array => $folder('id:branch'.$number, 'Fachbereich'.$number, $root.'/fachbereich'.$number), range(1, 20))
+                    : [$folder('id:subject', 'IT_Grundlagen', $root.'/it_grundlagen'),
+                        $folder('id:helper', '.quarto', $root.'/.quarto'), $folder('id:pdfs', 'pdfs_multiple_choice', $root.'/pdfs_multiple_choice')],
+                'id:subject' => [$folder('id:topic', $topic, $root.'/it_grundlagen/'.$topic)],
+                'id:topic' => [$folder('id:collection', 'Leistungsfeststellung', $root.'/it_grundlagen/'.$topic.'/leistungsfeststellung')],
+                'id:collection' => array_map(fn (array $entry): array => $entry + ['.tag' => 'folder',
+                    'path_lower' => $root.'/it_grundlagen/'.$topic.'/leistungsfeststellung/'.mb_strtolower($entry['name'])], $candidates),
+                default => isset($metadata[$path]) ? [['.tag' => 'file', 'name' => 'Anlage_und_Quellen.json',
+                    'size' => strlen($metadata[$path]), 'rev' => substr($path, 3)]] : [],
+            };
+
+            return Http::response(['entries' => $entries, 'has_more' => $partial && $path === 'id:collection']);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder/continue')) {
+            return Http::response(['has_more' => false, 'entries' => array_map(fn (array $entry): array => $entry + ['.tag' => 'folder',
+                'path_lower' => $root.'/it_grundlagen/'.$topic.'/leistungsfeststellung/'.mb_strtolower($entry['name'])], $candidates)]);
+        }
+        if (str_ends_with($request->url(), '/files/download')) {
+            $argument = json_decode($request->header('Dropbox-API-Arg')[0], true);
+
+            return Http::response($metadata['id:'.substr($argument['path'], 4)]);
+        }
+
+        throw new RuntimeException('Unexpected Dropbox suggestion request: '.$request->url());
+    });
+}
+
+test('folder suggestions find the topic and rank this course classes group and scheduled date without saving a binding', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF - 5L1 - 1', 'classes' => ['5L1']]);
+    $this->work->update(['title' => 'Dateimanagement', 'date_for_all_groups' => '2026-10-19']);
+    fakeDropboxSuggestions([
+        ['id' => 'id:quarto', 'name' => '.quarto'],
+        ['id' => 'id:generated', 'name' => 'pdfs_multiple_choice'],
+        ['id' => 'id:wrongclass', 'name' => '2026-10-19_Informatik_5L2_Gruppe-1'],
+        ['id' => 'id:wronggroup', 'name' => '2026-10-19_Informatik_5L1_Gruppe-2'],
+        ['id' => 'id:older', 'name' => '2026-10-12_Informatik_5L1_Gruppe-1'],
+        ['id' => 'id:matching', 'name' => '2026-10-19_Informatik_5L1_Gruppe-1'],
+    ]);
+    $this->getJson($this->url)->assertOk()->assertJsonPath('suggested_folder', null);
+    Http::assertNothingSent();
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder.id', 'id:matching')
+        ->assertJsonPath('start_folder.id', 'id:learning')->assertJsonCount(2, 'suggestions');
+
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/search_v2')
+        && $request['query'] === 'dateimanagement' && $request['options']['path'] === '/schule2020_2027/materialien/lerninhalte'
+        && $request['options']['filename_only'] === true && $request['options']['file_categories'] === ['folder']);
+});
+
+test('folder suggestions reach the real nested Dateimanagement work through subject folders and search pages', function (string $discovery): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F']]);
+    $this->work->update(['title' => 'Dateimanagement', 'date_for_all_groups' => '2026-10-16']);
+    fakeDropboxSuggestions([['id' => 'id:VVgOdhU8r9sAAAAAAF5xVg', 'name' => '2026-10-16_Informatik_1A_1F']], discovery: $discovery);
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()
+        ->assertJsonPath('suggested_folder.id', 'id:VVgOdhU8r9sAAAAAAF5xVg')
+        ->assertJsonPath('suggested_folder.path', '/schule2020_2027/materialien/lerninhalte/it_grundlagen/dateimanagement/leistungsfeststellung/2026-10-16_informatik_1a_1f');
+
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder') && in_array($request['path'], ['id:helper', 'id:pdfs'], true));
+    if ($discovery === 'search pages') {
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/search/continue_v2') && $request['cursor'] === 'topic-page-2');
+    } elseif ($discovery === 'listing pages') {
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder/continue') && $request['cursor'] === 'collection-page-2');
+    } else {
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder') && $request['path'] === 'id:subject');
+    }
+    expect(Http::recorded(fn (Request $request): bool => ! str_ends_with($request->url(), '/oauth2/token'))->count())->toBeLessThanOrEqual(16);
+})->with(['unindexed', 'search pages', 'listing pages']);
+
+test('folder suggestion exploration stays bounded when a broad tree contains no indexed topic', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->work->update(['title' => 'Dateimanagement']);
+    fakeDropboxSuggestions([], discovery: 'broad');
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder', null)
+        ->assertJsonPath('start_folder.id', 'id:learning')->assertJsonCount(0, 'suggestions');
+
+    expect(Http::recorded(fn (Request $request): bool => str_contains($request->url(), '/files/'))->count())->toBeLessThanOrEqual(16);
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('folder suggestions normalize E-Mails and support multiple classes using import identity when present', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F']]);
+    $this->work->update(['title' => 'Praktische Übung: E-Mails', 'date_for_all_groups' => '2026-10-16']);
+    $metadata = "\xEF\xBB\xBF".json_encode(['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
+        'Zusaetzliche_Metadaten' => true], JSON_THROW_ON_ERROR);
+    fakeDropboxSuggestions([['id' => 'id:matching', 'name' => '2026-10-16_Informatik_1A_1F']], 'emails', ['id:matching' => $metadata]);
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder.id', 'id:matching')
+        ->assertJsonPath('suggestions.0.reason', 'Arbeits- und Kurskennung stimmen mit dieser Arbeit überein.');
+
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/search_v2') && $request['query'] === 'emails');
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('folder suggestions find the October email work across punctuation and extra source classes without assigning it', function (string $topic): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F']]);
+    $this->work->update(['title' => 'E-Mails', 'date_for_all_groups' => '2026-10-02']);
+    $name = '2026-10-02_E-Mail_1A-1F-4U-5F_Abend_INF1';
+    fakeDropboxSuggestions([['id' => 'id:email-work', 'name' => $name]], $topic, discovery: 'unindexed');
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()
+        ->assertJsonPath('suggested_folder', null)->assertJsonPath('suggestions.0.id', 'id:email-work')
+        ->assertJsonPath('suggestions.0.path', '/schule2020_2027/materialien/lerninhalte/it_grundlagen/'.$topic.'/leistungsfeststellung/'.mb_strtolower($name));
+
+    expect(app(DropboxWorkImport::class)->folderPlausibility($this->work->fresh(), $name)['status'])->toBe('unknown');
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder') && $request['path'] === 'id:subject');
+})->with(['E-Mail', 'E-Mails', 'emails', 'E-Mail_Grundlagen']);
+
+test('folder suggestions keep an unstructured themed work available for explicit manual review', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F']]);
+    $this->work->update(['title' => 'E-Mails', 'date_for_all_groups' => '2026-10-02']);
+    fakeDropboxSuggestions([['id' => 'id:legacy', 'name' => 'Abendgruppe Herbst'],
+        ['id' => 'id:pdfs', 'name' => 'pdfs_multiple_choice']], 'E-Mail_Grundlagen');
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder', null)
+        ->assertJsonPath('suggestions.0.id', 'id:legacy')->assertJsonCount(1, 'suggestions');
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('ambiguous partial or invalid identity results stay suggestions and never become a saved or definite binding', function (string $case): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'INF - 5L1 - 1', 'classes' => ['5L1']]);
+    $this->work->update(['title' => 'Dateimanagement', 'date_for_all_groups' => '2026-10-19']);
+    $candidates = [['id' => 'id:matching', 'name' => '2026-10-19_Informatik_5L1_Gruppe-1']];
+    if ($case === 'ambiguous') {
+        $candidates[] = ['id' => 'id:duplicate', 'name' => '2026-10-19_Informatik_5L1_Gruppe-1_Kopie'];
+    }
+    $metadata = match ($case) {
+        'wrong identity' => ['id:matching' => json_encode(['Schooltool_Arbeit_ID' => $this->work->id + 1, 'Schooltool_Kurs_ID' => $this->course->id])],
+        'invalid JSON' => ['id:matching' => '{invalid'],
+        default => [],
+    };
+    fakeDropboxSuggestions($candidates, metadata: $metadata, partial: $case === 'partial');
+
+    $response = $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder', null)
+        ->assertJsonPath('start_folder.id', $case === 'partial' ? 'id:matching' : 'id:learning');
+
+    expect($response->json('suggestions'))->toHaveCount($case === 'wrong identity' ? 0 : ($case === 'ambiguous' ? 2 : 1));
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+})->with(['ambiguous', 'partial', 'wrong identity', 'invalid JSON']);
+
+test('folder suggestions fall back to Lerninhalte when the topic is absent', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->work->update(['title' => 'Unbekanntes Thema']);
+    fakeDropboxSuggestions([], 'dateimanagement');
+
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('suggested_folder', null)
+        ->assertJsonPath('start_folder.id', 'id:learning')->assertJsonCount(0, 'suggestions');
+
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder') && $request['path'] === 'id:learning');
 });
 
 test('foreign teachers schools and students cannot access Dropbox work endpoints', function (string $case): void {
     $attributes = $case === 'school' ? [] : ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id];
     $this->actingAs(User::factory()->create($attributes)->assignRole($case === 'student' ? 'student' : 'teacher'), 'sanctum');
     $this->getJson($this->url)->assertForbidden();
+    $this->getJson($this->url.'/folders?suggest=1')->assertForbidden();
     $this->postJson($this->url.'/connect')->assertForbidden();
     $this->postJson($this->url.'/folder', ['folder_id' => 'id:folder'])->assertForbidden();
     $this->postJson($this->url.'/import')->assertForbidden();
@@ -488,7 +717,7 @@ test('Dropbox checks the suggested folder against this course and blocks an assi
         ->assertJsonPath('can_quick_import', $status !== 'mismatch')->assertJsonPath('can_preview', $status !== 'mismatch');
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
     $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox')->assertOk()
-        ->assertJsonPath('suggested_folder.name', $name)->assertJsonPath('folder_plausibility.status', $status)
+        ->assertJsonPath('suggested_folder', null)->assertJsonPath('folder_plausibility', null)
         ->assertJsonPath('can_quick_import', false);
     Http::assertNothingSent();
 })->with([
@@ -502,6 +731,24 @@ test('Dropbox checks the suggested folder against this course and blocks an assi
     'legacy other group' => ['2026-10-19_Dateimanagement_INF-5L1-2', 'mismatch'],
     'missing group' => ['2026-10-19_Informatik_5L1', 'unknown'],
     'unstructured legacy folder' => ['Leistungsarbeit', 'unknown'],
+]);
+
+test('Dropbox recognizes multiple class folder names without inventing a course group', function (string $name, string $status): void {
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F', '4U', '5F']]);
+    $this->work->update(['status' => ['folder_imported_at' => now()->toISOString()]]);
+    $connection = dropboxConnectionForWork($this);
+    TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)->update(['folder_name' => $name]);
+
+    $this->getJson($this->url)->assertOk()->assertJsonPath('folder_plausibility.status', $status)
+        ->assertJsonPath('can_quick_import', $status !== 'mismatch')->assertJsonPath('can_preview', $status !== 'mismatch');
+    Http::assertNothingSent();
+})->with([
+    'reported evening folder' => ['2026-10-02_E-Mail_1A-1F-4U-5F_Abend_INF1', 'match'],
+    'underscore separated classes' => ['2026-10-16_Informatik_1A_1F', 'match'],
+    'different class order and case' => ['2026-10-02_E-Mail_5f-4u-1f-1a_Abend_INF1', 'match'],
+    'multiple classes with explicit group' => ['2026-10-02_E-Mail_1A-1F_Gruppe-1', 'match'],
+    'foreign class in list' => ['2026-10-02_E-Mail_1A-1F-4U-5M_Abend_INF1', 'mismatch'],
+    'foreign class after underscore' => ['2026-10-16_Informatik_1A_5L1', 'mismatch'],
 ]);
 
 test('Dropbox rejects wrong course folders at assignment and checks live names again before reading import files', function (): void {

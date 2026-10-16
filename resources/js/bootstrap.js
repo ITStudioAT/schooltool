@@ -17,6 +17,7 @@ window.axios.interceptors.request.use((config) => {
 });
 
 let csrfRefreshPromise = null;
+const impersonationTransition = startImpersonationTransition({ axiosClient: window.axios });
 
 function clearCsrfHeaders(config) {
     if (!config?.headers) {
@@ -78,7 +79,6 @@ window.axios.interceptors.response.use(
 );
 
 const deploymentNotice = startDeploymentNotice({ axiosClient: window.axios });
-const impersonationTransition = startImpersonationTransition({ axiosClient: window.axios });
 
 if (import.meta.hot) {
     import.meta.hot.dispose(() => {

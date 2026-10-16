@@ -79,6 +79,7 @@ class TeachingCourseWorkEntrySyncService
     {
         $payload = $work->toArray();
         $payload['automation_enabled'] = $work->automationEnabled();
+        $payload['communicated_deadline'] = $work->communicatedDeadline();
         $payload['groups'] = $this->groupsForWork($work);
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
 

@@ -365,7 +365,7 @@ class TeachingWorkDispatchImport
      * @return array<string, mixed>
      */
     /** @param array<string, array<string, mixed>>|null $participantAdditions */
-    public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true, ?array $participantAdditions = null): array
+    public function preview(TeachingCourseWork $work, array $report, string $sha256, bool $requireMatchingTitle = true, ?array $participantAdditions = null, ?array $identityBinding = null): array
     {
         $course = $work->teachingCourse;
         $documentPreparation = ($report['metadata']['kind'] ?? null) === 'schooltool.preparation' && ($report['metadata']['schema_version'] ?? null) === 2;
@@ -392,6 +392,8 @@ class TeachingWorkDispatchImport
         $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
         $members = array_map('intval', collect($groups)->flatMap(fn (array $group): array => is_array($group['student_ids'] ?? null) ? $group['student_ids'] : [])->all());
         $existing = $work->status['dispatch_notifications'] ?? [];
+        $logs = $work->status['dispatch_logs'] ?? [];
+        $alreadyImported = collect($logs)->contains('sha256', $sha256);
         $rows = [];
         $blocked = false;
         $providers = [];
@@ -426,12 +428,20 @@ class TeachingWorkDispatchImport
             $key = TeachingWorkMarkdownImport::identity($row['person'], $row['class']);
             $matches = collect($identities[$key] ?? [])->unique('student_id')->values()->all();
             $email = mb_strtolower($this->value($recipient, 'To'));
+            $boundId = $recipient['SchooltoolPersonId'] ?? null;
+            if ($identityBinding !== null) {
+                $boundId = app(TeachingWorkJsonImport::class)->boundStudentId([
+                    'schooltool_person_id' => $boundId, 'first_name' => $this->value($recipient, 'Vorname'),
+                    'last_name' => $this->value($recipient, 'Nachname'), 'class_name' => $row['class'],
+                ], $identityBinding, $email !== '' ? $email : null);
+            }
             $addition = $participantAdditions[$key] ?? null;
             $pending = $addition !== null && $email === $addition['email'];
             if ($role !== 'Schülerempfänger' || $this->value($recipient, 'Vorname') === '' || $this->value($recipient, 'Nachname') === '' || $row['class'] === ''
                 || $this->normalize($this->value($recipient, 'Kurs')) !== $this->normalize((string) $course->title)
                 || (! $pending && (count($matches) !== 1 || ! in_array($matches[0]['student_id'] ?? null, $members, true)
-                    || ($documentPreparation ? (($recipient['SchooltoolPersonId'] ?? null) !== null && (string) $matches[0]['student_id'] !== $recipient['SchooltoolPersonId'])
+                    || ($identityBinding !== null && (string) $matches[0]['student_id'] !== $boundId)
+                    || ($documentPreparation ? ($boundId !== null && (string) $matches[0]['student_id'] !== $boundId)
                         : ! in_array($email, $matches[0]['emails'] ?? [], true))))
                 || (! $documentPreparation && ! filter_var($email, FILTER_VALIDATE_EMAIL))) {
                 $row['status'] = 'Kurs, Person, Klasse, Arbeitszuordnung oder E-Mail nicht eindeutig – Import gesperrt';
@@ -481,7 +491,7 @@ class TeachingWorkDispatchImport
                 $notification = ['student_id' => $row['student_id'], 'sent_at' => $sentAt, 'provider_id' => $row['provider_id']];
                 $previous = collect($existing)->firstWhere('provider_id', $row['provider_id']);
                 if ((isset($providers[$row['provider_id']]) && $providers[$row['provider_id']] !== $notification)
-                    || ($previous && ((int) $previous['student_id'] !== $notification['student_id'] || $previous['sent_at'] !== $notification['sent_at']
+                    || ($previous && ((int) $previous['student_id'] !== $notification['student_id'] || ! $this->sameImportedProviderTime($previous, $notification['sent_at'], $sha256, $alreadyImported)
                         || ($previous['purpose'] ?? 'results') !== $report['purpose']))) {
                     $row['status'] = 'Widersprüchliche Providerkennung – Import gesperrt';
                     $blocked = true;
@@ -499,8 +509,6 @@ class TeachingWorkDispatchImport
             }
             $rows[] = $row;
         }
-        $logs = $work->status['dispatch_logs'] ?? [];
-        $alreadyImported = collect($logs)->contains('sha256', $sha256);
         if (! $alreadyImported && collect($logs)->where('origin', 'dispatch_import')->count() >= 30) {
             $this->reject('Für diese Arbeit sind bereits 30 Versandprotokolle gespeichert.');
         }
@@ -512,10 +520,10 @@ class TeachingWorkDispatchImport
                 'dispatch_ready' => ! $blocked && $report['purpose'] === 'tasks' && ($report['metadata']['Versandbereit'] ?? false) === true
                     && collect($rows)->every(fn (array $row): bool => $row['student_id'] !== null && $row['mode'] === 'prepared')
                     && collect($rows)->pluck('student_id')->unique()->sort()->values()->all() === collect($members)->unique()->sort()->values()->all(),
-                'dispatch_at' => collect($rows)->where('accepted', true)->pluck('sent_at')->filter()->sort()->last(),
+                'dispatch_at' => collect($rows)->where('accepted', true)->pluck('sent_at')->filter()->sortBy($this->providerTimeSortKey(...))->last(),
                 'prepared_at' => $this->providerTime($this->value($report['metadata'], 'Erstellt'))
                     ?? $this->providerTime($this->value($report['metadata'], 'VorbereitungAm')),
-                'planned_at' => collect($rows)->pluck('planned_at')->filter()->sort()->last(),
+                'planned_at' => collect($rows)->pluck('planned_at')->filter()->sortBy($this->providerTimeSortKey(...))->last(),
                 'mode' => collect($rows)->contains('accepted', true) ? 'live'
                     : (collect($rows)->contains('mode', 'scheduled') ? 'scheduled' : (collect($rows)->contains('mode', 'prepared') ? 'prepared' : $report['mode'])),
                 'recipient_scope' => collect($report['recipients'])->every(fn (array $recipient): bool => $this->value($recipient, 'Rolle') === 'Lehrperson') ? 'teacher' : 'students',
@@ -523,6 +531,7 @@ class TeachingWorkDispatchImport
             'title' => $work->title, 'date' => $report['date'], 'rows' => $rows, 'already_imported' => $alreadyImported,
             'can_import' => ! $blocked,
             'participant_additions' => $participantAdditions,
+            'identity_binding' => $identityBinding,
             'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $candidates->toArray(), $identities, $groups, $participantAdditions, $sha256], JSON_THROW_ON_ERROR)),
         ];
     }
@@ -661,7 +670,8 @@ class TeachingWorkDispatchImport
         $status = $work->status ?? [];
         $logs = $status['dispatch_logs'] ?? [];
         if (! collect($logs)->contains('sha256', $sha256)) {
-            $logs[] = ['name' => $name, 'sha256' => $sha256, 'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'dispatch_import', 'purpose' => $preview['purpose']];
+            $logs[] = ['name' => $name, 'sha256' => $sha256, 'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'dispatch_import', 'purpose' => $preview['purpose'],
+                ...(isset($preview['identity_binding']) ? ['identity_binding' => $preview['identity_binding']] : [])];
         }
         foreach ($logs as &$log) {
             if ($log['sha256'] === $sha256) {
@@ -683,7 +693,15 @@ class TeachingWorkDispatchImport
                     $attempts[$index] = array_replace($attempts[$index], $parsedAttempt);
                 }
             }
-            if (! $row['accepted'] || collect($notifications)->contains('provider_id', $row['provider_id'])) {
+            if (! $row['accepted']) {
+                continue;
+            }
+            $notificationIndex = collect($notifications)->search(fn (array $notification): bool => $notification['provider_id'] === $row['provider_id']);
+            if ($notificationIndex !== false) {
+                if (($notifications[$notificationIndex]['log_sha256'] ?? null) === $sha256) {
+                    $notifications[$notificationIndex]['sent_at'] = $row['sent_at'];
+                }
+
                 continue;
             }
             $notifications[] = [
@@ -752,9 +770,10 @@ class TeachingWorkDispatchImport
 
     private function providerTime(string $value): ?string
     {
-        if (! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})\z/', $value)) {
+        if (! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,7}))?(?:Z|[+-]\d{2}:\d{2})\z/', $value, $matches)) {
             return null;
         }
+        $fraction = rtrim($matches[1] ?? '', '0');
         $value = preg_replace('/\.\d+(?=Z|[+-])/', '', $value);
         $date = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', str_replace('Z', '+00:00', $value));
         $errors = DateTimeImmutable::getLastErrors();
@@ -762,7 +781,27 @@ class TeachingWorkDispatchImport
             return null;
         }
 
-        return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+        return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s').($fraction === '' ? '' : '.'.$fraction).'Z';
+    }
+
+    /** @param array<string, mixed> $previous */
+    private function sameImportedProviderTime(array $previous, string $sentAt, string $sha256, bool $alreadyImported): bool
+    {
+        if ($previous['sent_at'] === $sentAt) {
+            return true;
+        }
+
+        return $alreadyImported && ($previous['origin'] ?? null) === 'dispatch_import'
+            && ($previous['log_sha256'] ?? null) === $sha256
+            && preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/', $previous['sent_at']) === 1
+            && str_starts_with($sentAt, substr($previous['sent_at'], 0, -1).'.');
+    }
+
+    private function providerTimeSortKey(string $time): string
+    {
+        $parts = explode('.', substr($time, 0, -1), 2);
+
+        return $parts[0].'.'.str_pad($parts[1] ?? '', 7, '0');
     }
 
     private function plannedTime(array $recipient, array $metadata): ?string

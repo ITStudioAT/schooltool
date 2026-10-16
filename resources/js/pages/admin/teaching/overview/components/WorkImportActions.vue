@@ -2,11 +2,10 @@
     <span v-if="workAutomationEnabled(work)" class="work-import-action" @click.stop>
         <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-upload-outline" :disabled="disabled" @click.stop="$emit('open', work, false)">Importieren</v-btn>
     </span>
-    <span v-if="workAutomationEnabled(work)" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
-        <v-btn class="work-quick-import" size="small" variant="flat" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled || !canQuickImport"
+    <span v-if="workAutomationEnabled(work) && canQuickImport" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
+        <v-btn class="work-quick-import" size="small" variant="flat" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled"
         :title="quickImportHint"
         @click.stop="$emit('open', work, true)">Quick-Import</v-btn>
-        <span v-if="!canQuickImport" class="work-quick-import-hint" role="status">{{ quickImportHint }}</span>
     </span>
 </template>
 
@@ -19,20 +18,30 @@ import { loadWorkDropbox, workDropboxStates, workDropboxKey } from '@/helpers/wo
 const props = defineProps({ work: Object, disabled: Boolean })
 const emit = defineEmits(['open'])
 const admin = useAdminStore()
-const directoryLoadError = ref(false)
+const confirmedKey = ref(null)
+const statusLoading = ref(false)
+let statusRequestVersion = 0
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
-const canQuickImport = computed(() => Boolean(workDropboxStates.get(key.value)?.can_quick_import))
-const quickImportHint = computed(() => directoryLoadError.value
-    ? 'Dropbox-Verbindung konnte nicht geprüft werden. Bitte Importieren verwenden.'
-    : (workDropboxStates.get(key.value)?.message || 'Dropbox-Verbindung prüfen …'))
+const canQuickImport = computed(() => !statusLoading.value && confirmedKey.value === key.value
+    && workDropboxStates.get(key.value)?.can_quick_import === true)
+const quickImportHint = computed(() => workDropboxStates.get(key.value)?.message || 'Dropbox-Ordner erneut lesen und Vorschau öffnen.')
 watch(() => [key.value, props.work?.status?.folder_imported_at, workAutomationEnabled(props.work)], async ([value], previous) => {
-    directoryLoadError.value = false
-    if (!workAutomationEnabled(props.work)) return
+    const requestVersion = ++statusRequestVersion
+    confirmedKey.value = null
+    statusLoading.value = false
+    if (!value || !workAutomationEnabled(props.work)) return
+    statusLoading.value = true
     try {
         await loadWorkDropbox(value, props.work?.id, previous?.[0] === value)
+        if (requestVersion !== statusRequestVersion || key.value !== value) return
+        confirmedKey.value = value
         const parameters = new URLSearchParams(window.location.search)
         if (value && key.value === value && parameters.get('dropbox_work') === String(props.work?.id)) emit('open', props.work, false)
-    } catch { if (key.value === value) directoryLoadError.value = true }
+    } catch {
+        if (requestVersion === statusRequestVersion) confirmedKey.value = null
+    } finally {
+        if (requestVersion === statusRequestVersion) statusLoading.value = false
+    }
 }, { immediate: true })
 </script>
 
@@ -42,18 +51,6 @@ watch(() => [key.value, props.work?.status?.folder_imported_at, workAutomationEn
     display: inline-flex;
     max-width: 100%;
     vertical-align: top;
-}
-.work-quick-import-action {
-    flex-direction: column;
-    align-items: flex-start;
-}
-.work-quick-import-hint {
-    margin-top: 4px;
-    max-width: 32rem;
-    color: #334155;
-    font-size: 0.75rem;
-    line-height: 1.4;
-    white-space: normal;
 }
 .work-quick-import {
     background-color: #244c81;

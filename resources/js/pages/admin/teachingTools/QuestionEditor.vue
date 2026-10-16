@@ -50,22 +50,8 @@
                 <ul v-if="questionProblems(question).length" class="question-editor__problems text-error mt-3">
                     <li v-for="problem in questionProblems(question)" :key="problem">{{ problem }}</li>
                 </ul>
-                <div class="question-editor__flags mt-4">
-                    <label>
-                        <input type="checkbox" :checked="question.active" @change="change(index, { active: $event.target.checked }, false)" />
-                        Aktiv für neue Tests
-                    </label>
-                    <label>
-                        <input
-                            type="checkbox"
-                            :checked="question.reviewed"
-                            :disabled="questionProblems(question).length > 0"
-                            @change="change(index, { reviewed: $event.target.checked }, false)" />
-                        Inhalt und Lösungen geprüft
-                    </label>
-                </div>
                 <p class="text-caption text-medium-emphasis mt-2">
-                    Änderungen an Frage, Antworten oder Lösung setzen die Prüfung zurück. Bereits freigegebene Tests bleiben unverändert.
+                    Änderungen werden beim Übernehmen oder Speichern bestätigt. Unvollständige Fragen bleiben für Tests gesperrt.
                 </p>
             </div>
         </details>
@@ -81,9 +67,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:questions'])
 
-function change(index, updates, resetReview = true) {
+function change(index, updates) {
     const questions = props.questions.map((question, questionIndex) => questionIndex === index
-        ? { ...question, ...updates, ...(resetReview ? { reviewed: false } : {}) }
+        ? { ...question, ...updates, reviewed: false }
         : question)
     emit('update:questions', questions)
 }
@@ -138,8 +124,6 @@ textarea { resize: vertical; }
 legend { font-size: .86rem; color: #4d5d70; margin-bottom: 8px; }
 .question-editor__option { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
 input[type='checkbox'], input[type='radio'] { width: 19px; height: 19px; accent-color: #2563a6; flex-shrink: 0; }
-.question-editor__flags { display: flex; gap: 14px 28px; flex-wrap: wrap; font-size: .86rem; }
-.question-editor__flags label { display: flex; align-items: center; gap: 8px; }
 .question-editor__problems { padding-left: 18px; font-size: .84rem; }
 :focus-visible { outline: 3px solid #3b82b8; outline-offset: 3px; }
 @media (max-width: 700px) { .question-editor__body { padding: 0 12px 16px; } summary { padding: 12px; gap: 8px; } }

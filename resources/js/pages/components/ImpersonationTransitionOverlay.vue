@@ -9,7 +9,7 @@
         <v-card rounded="xl" class="pa-6 text-center" role="status" aria-live="assertive" aria-busy="true">
             <LoadingAnimation />
             <div class="text-h6 mt-2">
-                {{ impersonationTransition === 'stop' ? 'Sie wechseln zurück …' : 'Benutzer-Übernahme wird gestartet …' }}
+                {{ impersonationTransition === 'stop' ? 'Sie wechseln zurück …' : impersonationTransition === 'switch' ? 'Konto wird gewechselt …' : 'Benutzer-Übernahme wird gestartet …' }}
             </div>
             <div class="text-body-2 text-medium-emphasis mt-2">Der Account wird geöffnet. Bitte kurz warten.</div>
         </v-card>

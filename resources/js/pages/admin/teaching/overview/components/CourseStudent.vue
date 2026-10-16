@@ -892,6 +892,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
@@ -1158,8 +1159,7 @@ export default {
             return this.teachingSchemas.find((schema) => schema.id === schemaId) || null
         },
         semesterCount() {
-            const grading = this.selectedSchema?.grading || {}
-            return Number(grading.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedSchema)
         },
         schoolSem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || null
@@ -1455,13 +1455,21 @@ export default {
     },
 
     watch: {
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
+        },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
         },
         'settings.teaching_show_behaviour'(newValue) {
             if (newValue !== false) {

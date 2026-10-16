@@ -54,6 +54,7 @@ class CourseWorkController extends Controller
         abort_if((int) $request->server('CONTENT_LENGTH', 0) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
         $data = $request->validate([
             'package' => ['required_without:documents', 'file', 'extensions:json', 'max:256'],
+            'identity_export' => ['sometimes', 'file', 'extensions:json', 'max:1024'],
             'pdfs' => ['sometimes', 'array', 'max:20'],
             'pdfs.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:6144'],
             'folder' => ['required_with:documents', 'nullable', 'string', 'max:255'],
@@ -63,13 +64,15 @@ class CourseWorkController extends Controller
         ]);
         $uploads = $request->file('pdfs', []);
         $text = $request->file('package')?->get() ?? '';
-        $payloadSize = strlen($text) + strlen($data['documents'] ?? '') + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
+        $identityExportText = $request->file('identity_export')?->get();
+        abort_if($identityExportText !== null && ! $request->hasFile('package'), 422, 'Arbeitsdatenexport benötigt das unveränderte Bewertungspaket.');
+        $payloadSize = strlen($text) + strlen($identityExportText ?? '') + strlen($data['documents'] ?? '') + array_sum(array_map(fn ($file): int => $file->getSize(), $uploads));
         $transportSize = (int) $request->server('CONTENT_LENGTH', 0);
         if ($transportSize === 0) {
-            $transportSize = $payloadSize + strlen(http_build_query($request->except(['package', 'pdfs']))) + (count($uploads) + 3) * 256;
+            $transportSize = $payloadSize + strlen(http_build_query($request->except(['package', 'pdfs', 'identity_export']))) + (count($uploads) + 4) * 256;
         }
         abort_if(max($transportSize, $payloadSize, strlen($request->getContent())) > 6 * 1024 * 1024, 422, 'Upload einschließlich Transportverpackung überschreitet 6 MiB.');
-        $bundle = $request->hasFile('package') ? $importer->parse($text, $uploads) : null;
+        $bundle = $request->hasFile('package') ? $importer->parse($text, $uploads, $identityExportText) : null;
         $dispatchBundle = isset($data['documents']) ? $folderImporter->parse($data['folder'], $data['documents'], '[]', []) : null;
         if ($dispatchBundle !== null && $dispatchBundle['evaluation'] !== null) {
             throw ValidationException::withMessages(['documents' => 'Im JSON-Import sind nur Bereitstellungs-, Vorbereitungs- und Versandbelege als zusätzliche Textdateien erlaubt.']);
@@ -88,8 +91,9 @@ class CourseWorkController extends Controller
                 $users = User::query()->whereIn('id', $enrollments->pluck('user_id'))->lockForUpdate()->get();
                 Import116::query()->whereIn('id', $enrollments->pluck('import116_id')->merge($users->pluck('import116_id'))->filter())->lockForUpdate()->get();
                 $work->teachingCourseWorkGroupStudents()->lockForUpdate()->get();
-                $dispatchPreviews = $dispatchBundle !== null ? $folderImporter->previewDispatches($work, $dispatchBundle) : [];
-                $provisionPreviews = $dispatchBundle !== null ? $folderImporter->previewProvisions($work, $dispatchBundle) : [];
+                $identityBinding = isset($bundle['identity_export']) ? $importer->identityBinding($work, $this->teachingCourseActor($actor, $work->teachingCourse), $bundle) : null;
+                $dispatchPreviews = $dispatchBundle !== null ? $folderImporter->previewDispatches($work, $dispatchBundle, $identityBinding) : [];
+                $provisionPreviews = $dispatchBundle !== null ? $folderImporter->previewProvisions($work, $dispatchBundle, $identityBinding) : [];
                 $sourceSnapshot = $work->getAttributes();
                 $deadlineFields = $folderImporter->deadlineFields($work, $dispatchBundle ?? []);
                 $work->forceFill($deadlineFields);
@@ -123,7 +127,7 @@ class CourseWorkController extends Controller
                 abort_unless(hash_equals($preview['hash'], $data['hash'] ?? ''), 409, 'Arbeit, Teilnehmer oder Paket geändert. Bitte Vorschau erneut laden.');
                 $messages = [];
                 if ($dispatchBundle !== null && ($dispatchBundle['protocols'] !== [] || $dispatchBundle['provisions'] !== [] || ($dispatchBundle['deadline'] ?? null) !== null)) {
-                    $messages = $folderImporter->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $dispatchBundle, $createdPaths)['messages'];
+                    $messages = $folderImporter->apply($work, $this->teachingCourseActor($actor, $work->teachingCourse), $dispatchBundle, $createdPaths, $identityBinding)['messages'];
                 }
                 if ($bundle !== null) {
                     $importer->apply($work, $bundle, $preview, $uploads, $createdPaths);
@@ -359,6 +363,8 @@ class CourseWorkController extends Controller
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
             unset($validated['status']['submission_checks']);
+            unset($validated['status']['communicated_deadline_at']);
+            unset($validated['status']['completion_override']);
             unset($validated['status']['provision_events'], $validated['status']['provision_imports']);
             unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
         }
@@ -429,7 +435,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports'] as $field) {
+            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'completion_override'] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -442,6 +448,11 @@ class CourseWorkController extends Controller
                 unset($validated['status']['folder_imported_at']);
             }
         }
+        if (array_key_exists('completion_override', $validated)) {
+            $validated['status'] ??= $course_work->status ?? [];
+            $validated['status']['completion_override'] = (bool) $validated['completion_override'];
+        }
+        unset($validated['completion_override']);
         $validated['maximum_plus'] = $maximumPlus;
 
         if (! array_key_exists('groups', $validated)) {
@@ -527,6 +538,8 @@ class CourseWorkController extends Controller
 
         if ($isStore) {
             $rules['teaching_course_id'] = 'required|integer|exists:teaching_courses,id';
+        } else {
+            $rules['completion_override'] = 'sometimes|boolean';
         }
 
         return $rules;

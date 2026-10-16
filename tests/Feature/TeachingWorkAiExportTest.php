@@ -76,6 +76,19 @@ test('AI export includes student email addresses without personal assessment or 
     Http::assertNothingSent();
 });
 
+test('AI export keeps the optional first deadline separate without claiming communication', function () {
+    $this->work->update(['status' => ['communicated_deadline_at' => '2026-10-20T20:00:00+02:00']]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url)->assertOk()->json('data');
+
+    expect($data['context']['work']['communicated_deadline'])->toBe([
+        'at' => '2026-10-20T20:00:00+02:00', 'date' => '2026-10-20', 'time' => '20:00',
+    ])->and($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15'])
+        ->and($data['text'])->toContain('kein Nachweis einer tatsächlichen Mitteilung')
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+});
+
 test('AI export preserves the course group for folder naming independently of work groups', function (string $title, array $classes, ?int $number, ?string $folderGroup) {
     $this->course->update(['title' => $title, 'classes' => $classes]);
     $this->work->update(['is_group_work' => false, 'groups' => [['name' => 'Arbeitsgruppe 9', 'student_ids' => [$this->student->id]]]]);

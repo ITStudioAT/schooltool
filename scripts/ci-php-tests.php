@@ -6,6 +6,11 @@ use SebastianBergmann\CodeCoverage\CodeCoverage;
 use SebastianBergmann\CodeCoverage\Report\Clover;
 use Symfony\Component\Process\Process;
 
+use function SchoolTool\WorkflowTests\createDatabase;
+use function SchoolTool\WorkflowTests\removeDatabase;
+
+require_once __DIR__.'/workflow-test-database.php';
+
 class CiPhpTests
 {
     private const SqliteTests = ['tests/Feature/TeachingBackupCurriculumAttachmentsTest.php', 'tests/Feature/TeachingBackupEntryAreasTest.php'];
@@ -108,6 +113,19 @@ class CiPhpTests
         return [PHP_BINARY, 'vendor/bin/pest', '--compact', '--display-warnings', '--exclude-group=integration'];
     }
 
+    /** @param callable(array<string, string>): mixed $execute */
+    public static function withOwnedDatabase(string $receiptPath, callable $execute): mixed
+    {
+        $owned = createDatabase($receiptPath);
+        try {
+            return $execute(['DB_CONNECTION' => 'mysql', 'DB_HOST' => '127.0.0.1', 'DB_PORT' => '3306',
+                'DB_DATABASE' => $owned['database'], 'DB_DATABASE_TEST' => $owned['database'],
+                'SCHOOLTOOL_MC_TEST_RECEIPT' => $owned['receipt']]);
+        } finally {
+            removeDatabase($owned['receipt'], $owned['database']);
+        }
+    }
+
     /** @param list<string> $arguments */
     public static function main(array $arguments): int
     {
@@ -128,48 +146,56 @@ class CiPhpTests
             mkdir($directory, 0700, true);
             $coverage = null;
 
-            self::executeBatches($batches, function (array $files, int $number) use ($root, $directory, $mode, &$coverage): int {
-                $prefix = $directory.'/batch-'.$number;
-                file_put_contents($prefix.'.json', json_encode($files, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
-                $command = self::testCommand();
-                $environment = ['TEST_TOKEN' => 'ci-batch-'.$number];
+            $run = function (array $databaseEnvironment) use ($batches, $root, $directory, $mode, &$coverage): void {
+                self::executeBatches($batches, function (array $files, int $number) use ($root, $directory, $mode, $databaseEnvironment, &$coverage): int {
+                    $prefix = $directory.'/batch-'.$number;
+                    file_put_contents($prefix.'.json', json_encode($files, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+                    $command = self::testCommand();
+                    $environment = ['TEST_TOKEN' => 'ci-batch-'.$number, ...$databaseEnvironment];
 
-                if ($mode === 'coverage') {
-                    $command[] = '--coverage-php='.$prefix.'.coverage.php';
+                    if ($mode === 'coverage') {
+                        $command[] = '--coverage-php='.$prefix.'.coverage.php';
 
-                    if (array_intersect($files, self::SqliteTests) !== []) {
-                        $environment += ['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:', 'DB_DATABASE_TEST' => ':memory:'];
-                        $command[] = '--fail-on-skipped';
+                        if (array_intersect($files, self::SqliteTests) !== []) {
+                            $environment = array_replace($environment, ['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:', 'DB_DATABASE_TEST' => ':memory:']);
+                            $command[] = '--fail-on-skipped';
+                        }
+
+                        if (array_intersect($files, self::SnapshotTests) !== []) {
+                            $environment['SCHOOLTOOL_SNAPSHOT_MYSQL_TEST'] = '1';
+                            $command[] = '--fail-on-skipped';
+                        }
                     }
 
-                    if (array_intersect($files, self::SnapshotTests) !== []) {
-                        $environment['SCHOOLTOOL_SNAPSHOT_MYSQL_TEST'] = '1';
-                        $command[] = '--fail-on-skipped';
+                    $process = new Process([...$command, ...$files], $root, $environment, timeout: null);
+                    $output = fopen($prefix.'.log', 'wb');
+
+                    try {
+                        $exit = $process->run(function (string $type, string $text) use ($output): void {
+                            fwrite($output, $text);
+                            fwrite(STDOUT, $text);
+                        });
+                    } finally {
+                        fclose($output);
                     }
-                }
 
-                $process = new Process([...$command, ...$files], $root, $environment, timeout: null);
-                $output = fopen($prefix.'.log', 'wb');
+                    if ($exit !== 0) {
+                        return $exit;
+                    }
 
-                try {
-                    $exit = $process->run(function (string $type, string $text) use ($output): void {
-                        fwrite($output, $text);
-                        fwrite(STDOUT, $text);
-                    });
-                } finally {
-                    fclose($output);
-                }
+                    if ($mode === 'coverage') {
+                        $coverage = self::mergeCoverage($coverage, $prefix.'.coverage.php');
+                    }
 
-                if ($exit !== 0) {
-                    return $exit;
-                }
+                    return 0;
+                });
+            };
 
-                if ($mode === 'coverage') {
-                    $coverage = self::mergeCoverage($coverage, $prefix.'.coverage.php');
-                }
-
-                return 0;
-            });
+            if ($mode === 'coverage') {
+                self::withOwnedDatabase($directory.'/database-ownership.json', $run);
+            } else {
+                $run([]);
+            }
 
             if ($mode === 'coverage') {
                 if (! $coverage instanceof CodeCoverage) {

@@ -19,7 +19,7 @@ class TeachingWorkProvisionImport
     /** @param array<string, mixed> $provision
      * @return array<string, mixed>
      */
-    public function preview(TeachingCourseWork $work, array $provision, string $sha256): array
+    public function preview(TeachingCourseWork $work, array $provision, string $sha256, ?array $identityBinding = null): array
     {
         $participants = $this->assessments->participants($work->teachingCourse);
         $groups = $this->entries->groupsForWork($work);
@@ -28,6 +28,7 @@ class TeachingWorkProvisionImport
         $targets = [];
         foreach ($provision['participants'] as $person) {
             $identity = $person['identity'];
+            $boundId = $identityBinding !== null ? $this->assessments->boundStudentId($identity, $identityBinding) : $identity['schooltool_person_id'];
             $matches = array_values(array_filter($participants, function (array $participant) use ($identity): bool {
                 foreach (['first_name', 'last_name', 'class_name'] as $field) {
                     if (SchooltoolAssessmentJson::normalize($participant[$field]) !== SchooltoolAssessmentJson::normalize($identity[$field])) {
@@ -45,7 +46,7 @@ class TeachingWorkProvisionImport
             $old = collect($previous)->first(fn (array $record): bool => $record['exercise_id'] === $provision['exercise_id'] && $record['participant_id'] === $person['participant_id']);
             $valid = $studentId !== null && count($memberGroups) === 1 && ! in_array($studentId, $targets, true)
                 && SchooltoolAssessmentJson::normalize((string) $groupName) === SchooltoolAssessmentJson::normalize($identity['group_name'])
-                && ($identity['schooltool_person_id'] === null || $identity['schooltool_person_id'] === (string) $studentId)
+                && ($boundId === null || $boundId === (string) $studentId)
                 && ($old === null || (int) $old['student_id'] === $studentId);
             $targets[] = $studentId;
             $rows[] = ['participant_id' => $person['participant_id'], 'identity' => $identity, 'student_id' => $studentId,
@@ -66,6 +67,7 @@ class TeachingWorkProvisionImport
         sort($bound, SORT_NUMERIC);
 
         return ['exercise_id' => $provision['exercise_id'], 'exercise' => $provision['exercise'], 'rows' => $rows, 'records' => $records,
+            'identity_binding' => $identityBinding,
             'sha256' => $sha256, 'already_imported' => collect($work->status['dispatch_logs'] ?? [])->contains('sha256', $sha256),
             'roster_matches' => $expected === $bound, 'can_import' => collect($rows)->every('valid') && $expected === $bound,
             'hash' => hash('sha256', json_encode([$work->getAttributes(), $work->teachingCourse->getAttributes(), $participants, $groups, $provision, $sha256], JSON_THROW_ON_ERROR))];
@@ -88,6 +90,7 @@ class TeachingWorkProvisionImport
         }
         $status['dispatch_logs'][] = ['name' => 'Schooltool-Bereitstellung.json', 'sha256' => $preview['sha256'], 'file_path' => $path,
             'storage_disk' => 'local', 'origin' => 'provision_import', 'purpose' => 'provision',
+            ...(isset($preview['identity_binding']) ? ['identity_binding' => $preview['identity_binding']] : []),
             'available_at' => collect($preview['records'])->pluck('available_at')->sort()->last()];
         $status['provision_events'] = array_merge($status['provision_events'] ?? [], $preview['records']);
         foreach ($preview['rows'] as $row) {

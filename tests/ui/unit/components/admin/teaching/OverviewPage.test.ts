@@ -8,7 +8,7 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
-    it('places Auswertungen after students and renders the dedicated report when selected or restored', async () => {
+    it('places Auswertungen after works and renders the dedicated report when selected or restored', async () => {
         setActivePinia(createPinia())
         const courseStore = useCourseStore()
         const replace = vi.fn().mockResolvedValue(undefined)
@@ -28,7 +28,7 @@ describe('Teaching overview controls', () => {
         try {
             await nextTick()
             const vm = wrapper.vm as any
-            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'evaluations', 'infos', 'works', 'print', 'lists'])
+            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'infos', 'works', 'evaluations', 'print', 'lists'])
             expect(vm.functionalPanelSelection).toBe('evaluations')
             expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
             expect(wrapper.findComponent({ name: 'CourseEvaluations' }).props('course').id).toBe(18)

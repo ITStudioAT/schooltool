@@ -71,48 +71,63 @@
                     </div>
                     <v-card border rounded="lg" class="mt-3">
                     <v-card-text>
-                        <v-text-field v-model="catalog.title" label="Bezeichnung des Katalogs" variant="outlined"
-                            hide-details />
+                        <form v-if="catalogRenaming" @submit.prevent="saveCatalogTitle">
+                            <v-text-field v-model="catalogTitleDraft" label="Bezeichnung des Katalogs" variant="outlined"
+                                autofocus maxlength="255" :disabled="!!busy" :error-messages="catalogTitleError"
+                                :hide-details="!catalogTitleError" />
+                            <div class="mc-toolbar mt-2">
+                                <v-btn type="submit" color="primary" variant="flat" :disabled="!!busy"
+                                    :loading="busy === 'catalog-title'">Bezeichnung speichern</v-btn>
+                                <v-btn :disabled="!!busy" @click="cancelCatalogRename">Abbrechen</v-btn>
+                            </div>
+                        </form>
+                        <div v-else class="mc-toolbar">
+                            <h2 class="text-break">{{ catalog.title }}</h2>
+                            <v-btn icon="mdi-pencil-outline" size="small" variant="text" :disabled="!!busy"
+                                aria-label="Katalog umbenennen" title="Katalog umbenennen" @click="startCatalogRename" />
+                        </div>
                         <div class="mc-toolbar mt-4">
                             <p class="text-body-2">{{ catalog.questions.length }} Fragen · {{ catalogReadyCount }} aktiv
                                 und geprüft</p>
                             <v-spacer />
-                            <v-btn :variant="!catalog.questions.length ? 'flat' : 'text'"
+                            <v-btn v-if="!showImport" :variant="!catalog.questions.length ? 'flat' : 'text'"
                                 :color="!catalog.questions.length ? 'primary' : undefined" prepend-icon="mdi-file-import-outline"
-                                @click="showImport = !showImport">Vorlage importieren</v-btn>
-                            <v-btn variant="outlined" prepend-icon="mdi-plus"
+                                @click="showImport = true">Vorlage importieren</v-btn>
+                            <v-btn v-if="!showImport" variant="outlined" prepend-icon="mdi-plus"
                                 @click="catalog.questions.push(newQuestion())">Frage hinzufügen</v-btn>
                         </div>
-                        <p class="text-caption text-medium-emphasis mt-2">Entwürfe können gespeichert werden. Nur
-                            aktive, vollständige und ausdrücklich geprüfte Fragen stehen für neue Tests bereit.</p>
+                        <p class="text-caption text-medium-emphasis mt-2">Mit dem Übernehmen oder Speichern bestätigst du deine
+                            importierten oder bearbeiteten vollständigen Fragen für neue Tests. Unvollständige Fragen bleiben Entwürfe.</p>
                         <div v-if="showImport" class="mc-import mt-4">
-                            <h2>Fragen aus einer Vorlage</h2>
-                            <p class="text-body-2 mb-3">Vollständige Multiple-Choice-Fragen mit markierten Lösungen
-                                direkt übernehmen oder aus Fragen mit Musterantworten einen prüfbaren Entwurf erzeugen.
-                            </p>
-                            <div class="mc-toolbar">
-                                <label class="mc-file">Datei auswählen <input type="file"
-                                        accept=".md,.txt,.json,text/plain,application/json" @change="readSourceFile" />
-                                </label>
-                                <v-select v-model="importFormat"
-                                    :items="[{ title: 'Markdown / Text', value: 'markdown' }, { title: 'JSON', value: 'json' }]"
-                                    label="Format" hide-details variant="outlined" density="compact" class="mc-format"
-                                    @update:model-value="importPreview = null" />
+                            <div class="mc-toolbar mb-2">
+                                <h2>Fragen aus einer Vorlage</h2>
+                                <v-spacer />
+                                <v-btn variant="text" prepend-icon="mdi-close" :disabled="!!busy"
+                                    @click="cancelImport">Import abbrechen</v-btn>
                             </div>
+                            <p class="text-body-2 mb-3">Lies deine fertigen Fragen mit Antwortoptionen und markierten Lösungen ein.
+                                Prüfe die Vorschau, bevor du sie in den Katalog übernimmst.
+                            </p>
+                            <FilePond name="mc-template" :allow-multiple="false" :max-files="1"
+                                :instant-upload="false" :allow-process="false" :allow-revert="false"
+                                :allow-replace="true" :allow-paste="false" :server="null" :credits="false" :disabled="!!busy"
+                                label-idle="<strong>Vorlage hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span></strong>"
+                                label-file-loading="Datei wird gelesen" label-file-load-error="Datei konnte nicht gelesen werden"
+                                label-tap-to-retry="Erneut versuchen" label-tap-to-cancel="Abbrechen"
+                                label-button-remove-item="Datei entfernen" @updatefiles="readSourceFiles" />
+                            <p class="text-caption text-medium-emphasis mt-2">Markdown (.md), Text (.txt) oder JSON (.json) in UTF-8. Das Format wird automatisch erkannt.</p>
+                            <v-alert v-if="importError" type="error" variant="tonal" class="mt-3" role="alert">{{ importError }}</v-alert>
+                            <p v-else-if="importDetection.format" class="text-caption mt-2" role="status">
+                                Erkanntes Format: {{ importDetection.format === 'json' ? 'JSON' : 'Markdown / Text' }}
+                            </p>
                             <label class="mc-native-field mt-3">
                                 <span>Vorlage</span>
-                                <textarea v-model="importText" rows="8"
-                                    placeholder="Fragen und Antworten hier einfügen …" @input="importPreview = null" />
+                                <textarea v-model="importText" rows="8" :disabled="importReading"
+                                    placeholder="Fragen und Antworten hier einfügen …" @input="editImportText" />
                             </label>
-                            <label class="mc-check mt-3">
-                                <input v-model="generateWithAi" type="checkbox" @change="importPreview = null" />Aus
-                                Musterantworten mit KI Antwortoptionen erstellen</label>
-                            <p v-if="generateWithAi" class="text-caption mt-2">Die KI arbeitet mit dieser Vorlage. Alle
-                                erzeugten Fragen bleiben ungeprüfte Entwürfe; Inhalt, Distraktoren und Lösungen bitte
-                                einzeln prüfen.</p>
                             <v-btn class="mt-3" variant="outlined" :loading="busy === 'import'"
-                                :disabled="!importText.trim() || !!busy"
-                                @click="previewSource">{{ generateWithAi ? 'Entwurf erzeugen' : 'Import prüfen' }}</v-btn>
+                                :disabled="!importText.trim() || !!importError || importReading || !!busy"
+                                @click="previewSource">Import prüfen</v-btn>
                             <div v-if="importPreview" class="mt-4">
                                 <v-alert v-for="(item, position) in importPreview.errors ?? []"
                                     :key="`error-${position}`" type="error" variant="tonal"
@@ -123,7 +138,8 @@
                                 <p class="text-body-2 mb-2">Vorschau: {{ importPreview.questions?.length ?? 0 }} Fragen.
                                     Die Übernahme ergänzt den geöffneten Katalog.</p>
                                 <QuestionEditor v-model:questions="importPreview.questions" id-prefix="import" />
-                                <v-btn class="mt-3" color="primary" :disabled="!importPreview.questions?.length"
+                                <v-btn class="mt-3" color="primary" :disabled="!importPreview.questions?.length || !!busy"
+                                    :loading="busy === 'import-adopt'"
                                     @click="adoptImport">Entwurf in Katalog übernehmen</v-btn>
                             </div>
                         </div>
@@ -131,9 +147,9 @@
                     </v-card-text>
                     <v-card-actions class="pa-4 pt-0">
                         <v-spacer />
-                        <v-btn color="primary" :variant="canPrepareCatalog ? 'outlined' : 'flat'" prepend-icon="mdi-content-save-outline"
+                        <v-btn v-if="catalogQuestionsChanged" color="primary" variant="flat" prepend-icon="mdi-content-save-outline"
                             :loading="busy === 'catalog'" :disabled="!catalog.title.trim() || !!busy"
-                            @click="saveCatalog">Katalog speichern</v-btn>
+                            @click="saveCatalog">Fragen speichern</v-btn>
                         <v-btn v-if="canPrepareCatalog" color="primary" variant="flat"
                             prepend-icon="mdi-clipboard-play-outline" :disabled="!!busy" @click="prepareCatalogTest">
                             Test vorbereiten
@@ -514,6 +530,8 @@ import {
     ref
 } from 'vue'
 import axios from 'axios'
+import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
+import 'filepond/dist/filepond.min.css'
 import {
     index,
     createCatalog,
@@ -530,11 +548,15 @@ import {
 import QuestionEditor from './QuestionEditor.vue'
 import {
     messageText,
+    detectImportFormat,
     newQuestion,
+    questionProblems,
     readyQuestions,
     requestError,
     statusLabel
 } from './multipleChoiceTeacher'
+
+const FilePond = vueFilePond()
 
 const sections = [{
     id: 'catalogs',
@@ -564,6 +586,15 @@ const catalog = ref({
     questions: []
 })
 const catalogEditing = ref(false)
+const catalogRenaming = ref(false)
+const catalogTitleDraft = ref('')
+const catalogTitleAttempted = ref(false)
+const catalogTitleError = computed(() => {
+    if (catalogTitleAttempted.value && !catalogTitleDraft.value.trim()) {
+        return 'Bitte gib eine Bezeichnung ein.'
+    }
+    return catalogTitleDraft.value.trim().length > 255 ? 'Die Bezeichnung darf höchstens 255 Zeichen lang sein.' : ''
+})
 const newCatalogDialog = ref(false)
 const newCatalogTitle = ref('')
 const newCatalogAttempted = ref(false)
@@ -575,9 +606,19 @@ const newCatalogTitleError = computed(() => {
     return newCatalogTitle.value.trim().length > 255 ? 'Die Bezeichnung darf höchstens 255 Zeichen lang sein.' : ''
 })
 const showImport = ref(false)
-const importFormat = ref('markdown')
 const importText = ref('')
-const generateWithAi = ref(false)
+const importReading = ref(false)
+const importFileError = ref('')
+let importSourceFile = null
+let importReadSequence = 0
+const importDetection = computed(() => {
+    try {
+        return { format: detectImportFormat(importText.value), error: '' }
+    } catch (failure) {
+        return { format: null, error: failure.message }
+    }
+})
+const importError = computed(() => importFileError.value || importDetection.value.error)
 const importPreview = ref(null)
 const rosterCsv = ref('')
 const rosterFileName = ref('')
@@ -612,9 +653,14 @@ let monitorLoading = false
 let disposed = false
 
 const catalogReadyCount = computed(() => readyQuestions(catalog.value.questions).length)
+const catalogQuestionsChanged = computed(() => {
+    const saved = catalogs.value.find((item) => item.id === catalog.value.id)
+    return Boolean(saved && JSON.stringify(saved.questions) !== JSON.stringify(catalog.value.questions))
+})
+const catalogTitleChanged = computed(() => catalogRenaming.value && catalogTitleDraft.value.trim() !== catalog.value.title)
 const canPrepareCatalog = computed(() => {
     const saved = catalogs.value.find((item) => item.id === catalog.value.id)
-    return Boolean(saved && catalogReadyCount.value > 0 && saved.title === catalog.value.title
+    return Boolean(saved && catalogReadyCount.value > 0 && !catalogTitleChanged.value && saved.title === catalog.value.title
         && JSON.stringify(saved.questions) === JSON.stringify(catalog.value.questions))
 })
 const selectedCatalogTitle = computed(() => catalogs.value.find((item) => item.id === testDraft.catalog_id)?.title ?? '')
@@ -697,6 +743,7 @@ onMounted(() => {
     }, 500)
 })
 onBeforeUnmount(() => {
+    importReadSequence++
     disposed = true
     window.clearInterval(pollInterval)
     window.clearInterval(tickInterval)
@@ -779,19 +826,18 @@ function openCatalog(id) {
     const selected = catalogs.value.find((item) => item.id === id)
     if (selected) {
         catalog.value = JSON.parse(JSON.stringify(selected))
+        cancelCatalogRename()
         catalogEditing.value = true
         showImport.value = false
         importPreview.value = null
-        importText.value = ''
-        generateWithAi.value = false
+        resetImportSource()
         error.value = ''
         notice.value = ''
     }
 }
 
 function backToCatalogs() {
-    const saved = catalogs.value.find((item) => item.id === catalog.value.id)
-    if (saved && (saved.title !== catalog.value.title || JSON.stringify(saved.questions) !== JSON.stringify(catalog.value.questions))) {
+    if (catalogTitleChanged.value || catalogQuestionsChanged.value) {
         discardCatalogDialog.value = true
         return
     }
@@ -799,6 +845,7 @@ function backToCatalogs() {
 }
 
 function leaveCatalog() {
+    cancelCatalogRename()
     discardCatalogDialog.value = false
     catalogEditing.value = false
     error.value = ''
@@ -819,11 +866,55 @@ function prepareCatalogTest() {
     notice.value = ''
 }
 
+function startCatalogRename() {
+    catalogTitleDraft.value = catalog.value.title
+    catalogTitleAttempted.value = false
+    catalogRenaming.value = true
+    error.value = ''
+    notice.value = ''
+}
+
+function cancelCatalogRename() {
+    catalogRenaming.value = false
+    catalogTitleDraft.value = ''
+    catalogTitleAttempted.value = false
+}
+
+async function saveCatalogTitle() {
+    catalogTitleAttempted.value = true
+    if (catalogTitleError.value) {
+        return
+    }
+    if (!catalogTitleChanged.value) {
+        cancelCatalogRename()
+        return
+    }
+    const saved = catalogs.value.find((item) => item.id === catalog.value.id)
+    await task('catalog-title', async () => {
+        const { data } = await axios.patch(updateCatalog.url(saved.id), {
+            title: catalogTitleDraft.value.trim(),
+            questions: saved.questions,
+        })
+        rememberCatalog(data.catalog)
+        catalog.value.title = data.catalog.title
+        cancelCatalogRename()
+        notice.value = 'Bezeichnung gespeichert.'
+    })
+}
+
 async function saveCatalog() {
     await task('catalog', async () => {
+        const savedQuestions = catalogs.value.find((item) => item.id === catalog.value.id)?.questions ?? []
         const payload = {
             title: catalog.value.title,
-            questions: catalog.value.questions
+            questions: catalog.value.questions.map((question) => {
+                const saved = savedQuestions.find((item) => item.id === question.id)
+                const changed = !saved || JSON.stringify(saved) !== JSON.stringify(question)
+                return {
+                    ...question,
+                    reviewed: changed ? Boolean(question.active && !questionProblems(question).length) : question.reviewed,
+                }
+            })
         }
         const {
             data
@@ -833,37 +924,89 @@ async function saveCatalog() {
             catalog.value = JSON.parse(JSON.stringify(data.catalog))
             rememberCatalog(data.catalog)
         }
-        notice.value = 'Katalog gespeichert. Entwürfe bleiben bis zu deiner Prüfung für Tests gesperrt.'
+        notice.value = 'Fragen gespeichert. Vollständige bearbeitete Fragen sind für neue Tests bestätigt.'
     })
 }
 
-async function readSourceFile(event) {
-    const file = event.target.files?.[0]
-    if (file) {
+function resetImportSource() {
+    importReadSequence++
+    importSourceFile = null
+    importText.value = ''
+    importFileError.value = ''
+    importReading.value = false
+}
+
+function editImportText() {
+    importPreview.value = null
+    importFileError.value = ''
+}
+
+function cancelImport() {
+    if (busy.value) {
+        return
+    }
+    resetImportSource()
+    importPreview.value = null
+    showImport.value = false
+    error.value = ''
+}
+
+async function readSourceFiles(items) {
+    const file = items[0]?.file ?? null
+    if (file === importSourceFile) {
+        return
+    }
+    resetImportSource()
+    importPreview.value = null
+    importSourceFile = file
+    if (!file) {
+        return
+    }
+    const sequence = importReadSequence
+    importReading.value = true
+    try {
+        let buffer
         try {
-            importText.value = await file.text()
-            importFormat.value = file.name.toLowerCase().endsWith('.json') ? 'json' : 'markdown'
-            importPreview.value = null
+            buffer = await file.arrayBuffer()
         } catch {
-            error.value = 'Die Datei konnte nicht gelesen werden. Bitte erneut auswählen.'
+            throw new Error('Die Datei konnte nicht gelesen werden. Bitte wähle sie erneut aus.')
+        }
+        let text
+        try {
+            text = new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+        } catch {
+            throw new Error('Bitte speichere die Vorlage als UTF-8 und wähle sie erneut aus.')
+        }
+        detectImportFormat(text, file)
+        if (sequence === importReadSequence) {
+            importText.value = text
+        }
+    } catch (failure) {
+        if (sequence === importReadSequence) {
+            importFileError.value = failure.message || 'Die Datei konnte nicht gelesen werden. Bitte erneut auswählen.'
+        }
+    } finally {
+        if (sequence === importReadSequence) {
+            importReading.value = false
         }
     }
 }
 
 async function previewSource() {
+    if (importReading.value || importError.value || !importDetection.value.format) {
+        return
+    }
     await task('import', async () => {
         const text = importText.value
-        const format = importFormat.value
-        const generate = generateWithAi.value
+        const format = importDetection.value.format
         const {
             data
         } = await axios.post(previewImport.url(), {
             text,
             format,
-            generate
+            generate: false
         })
-        if (text === importText.value && format === importFormat.value && generate === generateWithAi
-            .value) {
+        if (showImport.value && text === importText.value && format === importDetection.value.format) {
             importPreview.value = {
                 ...data,
                 questions: (data.questions ?? []).map((question) => ({
@@ -875,20 +1018,34 @@ async function previewSource() {
     })
 }
 
-function adoptImport() {
-    const ids = new Set(catalog.value.questions.map((question) => question.id))
-    const imported = JSON.parse(JSON.stringify(importPreview.value.questions)).map((question) => {
-        if (ids.has(question.id)) {
-            question.id = crypto.randomUUID()
+async function adoptImport() {
+    if (!importPreview.value?.questions?.length) {
+        return
+    }
+    await task('import-adopt', async () => {
+        const { data } = await axios.post(previewImport.url(), {
+            text: JSON.stringify({ questions: importPreview.value.questions }),
+            format: 'json',
+            generate: false,
+        })
+        importPreview.value = data
+        if (!data.valid) {
+            return
         }
-        ids.add(question.id)
-        return question
+        const ids = new Set(catalog.value.questions.map((question) => question.id))
+        const imported = JSON.parse(JSON.stringify(data.questions)).map((question) => {
+            if (ids.has(question.id)) {
+                question.id = crypto.randomUUID()
+            }
+            ids.add(question.id)
+            return { ...question, active: true, reviewed: true }
+        })
+        catalog.value.questions = [...catalog.value.questions, ...imported]
+        resetImportSource()
+        importPreview.value = null
+        showImport.value = false
+        notice.value = 'Fragen in den Katalog übernommen und für neue Tests bestätigt. Speichere jetzt deine Änderungen.'
     })
-    catalog.value.questions = [...catalog.value.questions, ...imported]
-    importPreview.value = null
-    showImport.value = false
-    notice.value =
-        'Fragen in den bearbeitbaren Katalog übernommen. Bitte Inhalt und Lösungen prüfen und anschließend speichern.'
 }
 
 async function readRosterFile(event) {
@@ -1169,11 +1326,6 @@ h3 {
 .mc-picker {
     flex: 1 1 260px;
     max-width: 520px;
-    min-width: 180px;
-}
-
-.mc-format {
-    flex: 0 1 240px;
     min-width: 180px;
 }
 

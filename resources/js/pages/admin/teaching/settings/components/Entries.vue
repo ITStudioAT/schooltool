@@ -2659,6 +2659,13 @@ export default {
                 })
                 const index = this.areas.findIndex((area) => area.id === areaId)
                 if (index !== -1) this.areas.splice(index, 1, response.data.data)
+                const saved = response.data.data
+                const courses = [...(this.courseStore?.courses || []), this.courseStore?.selected_course].filter(Boolean)
+                for (const course of courses) {
+                    if (String(course.teaching_entry_area_id) !== String(areaId)) continue
+                    course.semester_count = saved.semester_count
+                    if (course.teaching_entry_area) course.teaching_entry_area.semester_count = saved.semester_count
+                }
                 delete this.semesterDrafts[areaId]
             } catch (error) {
                 this.notifyError(error)

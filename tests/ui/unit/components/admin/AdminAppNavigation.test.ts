@@ -331,7 +331,8 @@ describe('Admin app navigation', () => {
 
     it('switches to a hopper account from the dashboard menu', async () => {
         const switchHopperAccount = vi.fn().mockResolvedValue(true)
-        const loadConfig = vi.fn().mockResolvedValue(true)
+        const nextConfig = { capabilities: { materials: true } }
+        const loadConfig = vi.fn().mockResolvedValue(nextConfig)
         const nextTick = vi.fn().mockResolvedValue(undefined)
         const redirectToPostHopTarget = vi.fn()
 
@@ -348,9 +349,9 @@ describe('Admin app navigation', () => {
         )
 
         expect(switchHopperAccount).toHaveBeenCalledWith(42)
-        expect(loadConfig).toHaveBeenCalledOnce()
-        expect(nextTick).toHaveBeenCalledOnce()
-        expect(redirectToPostHopTarget).toHaveBeenCalledWith('/admin/materials?tab=cards')
+        expect(loadConfig).toHaveBeenCalledWith({ navigationOnly: true })
+        expect(nextTick).not.toHaveBeenCalled()
+        expect(redirectToPostHopTarget).toHaveBeenCalledWith('/admin/materials?tab=cards', nextConfig)
     })
 
     it('keeps the current route after hopping when the new account still has access', () => {

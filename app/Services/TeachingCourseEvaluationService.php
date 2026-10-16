@@ -18,6 +18,39 @@ use Illuminate\Support\Collection;
 
 class TeachingCourseEvaluationService
 {
+    private const PERCENTAGE_GRADE_RATIOS = [1 => '0.875', 2 => '0.75', 3 => '0.625', 4 => '0.5'];
+
+    /**
+     * @param  array<string, mixed>  $part
+     * @return list<float>
+     */
+    public function pointsProgressBoundaries(array $part): array
+    {
+        $maximum = $part['trace']['maximum'] ?? null;
+        if (! is_numeric($maximum) || ! is_finite((float) $maximum) || $maximum <= 0) {
+            return [];
+        }
+        if (($part['trace']['method'] ?? null) === 'sum_percent') {
+            return array_values(array_reverse(array_map(fn (string $ratio): float => $this->number($ratio)->multipliedBy(100)->toFloat(), self::PERCENTAGE_GRADE_RATIOS)));
+        }
+        if (($part['trace']['method'] ?? null) !== 'overall_points') {
+            return [];
+        }
+
+        $thresholds = (array) ($part['config']['overall_points_grade_thresholds'] ?? []);
+        $boundaries = [];
+        foreach ([4, 3, 2, 1] as $grade) {
+            $minimum = $thresholds[$grade] ?? null;
+            if (! is_numeric($minimum) || ! is_finite((float) $minimum) || $minimum < 0 || $minimum > $maximum
+                || ($grade < 4 && $thresholds[$grade + 1] >= $minimum)) {
+                return [];
+            }
+            $boundaries[] = $this->number($minimum)->dividedBy($maximum)->multipliedBy(100)->toFloat();
+        }
+
+        return $boundaries;
+    }
+
     public function report(TeachingCourse $course, int $semester): array
     {
         $course->loadMissing(['user', 'teachingCourseStudents.user', 'teachingCourseStudents.import116']);
@@ -648,7 +681,7 @@ class TeachingCourseEvaluationService
 
     private function percentageGrade(BigRational $ratio): int
     {
-        foreach ([1 => '0.875', 2 => '0.75', 3 => '0.625', 4 => '0.5'] as $grade => $threshold) {
+        foreach (self::PERCENTAGE_GRADE_RATIOS as $grade => $threshold) {
             if ($ratio->compareTo($this->number($threshold)) >= 0) {
                 return $grade;
             }

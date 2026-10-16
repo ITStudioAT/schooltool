@@ -28,12 +28,14 @@ class CourseResource extends JsonResource
         unset($data['user']);
 
         return array_merge($data, [
+            'semester_count' => $this->resource->semesterCount($this->teacher_teaching_schema),
             'students' => $this->students ?? [],
             'students_deleted' => $this->students_deleted ?? [],
             'scheduled_work_dates' => app(TeachingCourseDateService::class)->scheduledWorkDates($this->resource),
             'teaching_entry_area' => $this->whenLoaded('teachingEntryArea', fn (): ?array => $this->teachingEntryArea ? [
                 'id' => (int) $this->teachingEntryArea->id,
                 'name' => $this->teachingEntryArea->name,
+                'semester_count' => $this->teachingEntryArea->semester_count,
                 'entry_definitions' => TeachingEntryDefinitionResource::collection(
                     $this->teachingEntryArea->relationLoaded('entryDefinitions')
                         ? $this->teachingEntryArea->entryDefinitions

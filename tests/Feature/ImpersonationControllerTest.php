@@ -3,11 +3,159 @@
 use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+test('course account switching provisions only a proven current import placeholder and preserves performance identity', function (string $case) {
+    Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
+    $this->targetUser->syncRoles(match ($case) {
+        'blocked student' => ['student'],
+        'other role', 'active other role' => ['teacher'],
+        default => [],
+    });
+    $this->targetUser->forceFill(['is_active' => in_array($case, ['active placeholder', 'active other role'], true)])->save();
+    $import = Import116::factory()->create([
+        'school_id' => $case === 'foreign import' ? School::factory()->create()->id : $this->school->id,
+        'schoolyear_id' => $case === 'old import' ? Schoolyear::factory()->create(['school_id' => $this->school->id])->id : $this->schoolyear->id,
+        'user_id' => $case === 'broken forward link' ? $this->superAdmin->id : $this->targetUser->id,
+        'email' => $case === 'changed import email' ? 'new.import.email@example.test' : $this->targetUser->email,
+        'exists_date' => $case === 'missing current import' ? null : now(),
+    ]);
+    $this->targetUser->update(['import116_id' => $case === 'broken reverse link' ? null : $import->id]);
+    $originalPassword = $this->targetUser->password;
+    $originalEmail = $this->targetUser->email;
+    $course = TeachingCourse::factory()->forSchool($this->school)->forSchoolyear($this->schoolyear)
+        ->forTeacher($this->superAdmin)->create();
+    $course->teachingCourseStudents()->create([
+        'user_id' => $this->targetUser->id,
+        'import116_id' => $case === 'missing enrollment import' ? null : $import->id,
+    ]);
+    $entry = TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $course->id, 'user_id' => $this->targetUser->id,
+        'type' => 'MA', 'grade' => '2', 'date' => '2026-10-01',
+    ]);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
+    grantSchoolToolLicenceForTests($this->school, 'Lehrertool');
+    $accountCount = User::query()->count();
+    $this->actingAs($this->superAdmin);
+
+    $response = $this->postJson('/api/admin/impersonation/start', [
+        'user_id' => $this->targetUser->id, 'teaching_course_id' => $course->id,
+    ]);
+
+    if (! in_array($case, ['inactive placeholder', 'active placeholder', 'active other role', 'changed import email'], true)) {
+        $response->assertUnprocessable();
+        $this->assertAuthenticatedAs($this->superAdmin, 'web');
+        expect((bool) $this->targetUser->fresh()->is_active)->toBeFalse();
+        expect($this->targetUser->fresh()->hasRole('student'))->toBe($case === 'blocked student');
+
+        return;
+    }
+
+    $response->assertOk();
+    expect((bool) $this->targetUser->fresh()->is_active)->toBeTrue();
+    expect($this->targetUser->fresh()->getRoleNames()->sort()->values()->all())->toBe($case === 'active other role' ? ['student', 'teacher'] : ['student']);
+    expect($this->targetUser->fresh()->password)->toBe($originalPassword);
+    expect($this->targetUser->fresh()->email)->toBe($originalEmail);
+    expect(User::query()->count())->toBe($accountCount);
+    expect((int) $import->fresh()->user_id)->toBe($this->targetUser->id);
+    expect((int) $entry->fresh()->user_id)->toBe($this->targetUser->id);
+    app('auth')->forgetGuards();
+    $this->getJson('/api/homepage/student/user')->assertOk()->assertJsonPath('user.id', $this->targetUser->id);
+    $this->getJson('/api/homepage/student/courses/'.$course->id.'/entries')->assertOk()
+        ->assertJsonCount(1, 'entries')->assertJsonPath('entries.0.id', $entry->id)->assertJsonPath('entries.0.grade', '2');
+})->with(['inactive placeholder', 'active placeholder', 'active other role', 'changed import email', 'blocked student', 'other role', 'foreign import', 'old import', 'missing current import', 'broken forward link', 'broken reverse link', 'missing enrollment import']);
+
+test('course account switching checks student access before changing the session', function (string $case) {
+    Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
+    $this->targetUser->syncRoles($case === 'missing role' ? [] : ['student']);
+    $this->targetUser->forceFill(['is_active' => $case !== 'inactive'])->save();
+    enableSchoolToolModuleForTests($this->school, 'teaching');
+    grantSchoolToolLicenceForTests($this->school, 'Lehrertool');
+    $course = TeachingCourse::factory()->forSchool($this->school)->forSchoolyear($this->schoolyear)
+        ->forTeacher($this->superAdmin)->create();
+    $course->teachingCourseStudents()->create([
+        'user_id' => $case === 'other enrollment' ? $this->superAdmin->id : $this->targetUser->id,
+        'canceled_at' => $case === 'canceled enrollment' ? now() : null,
+    ]);
+    if ($case === 'foreign school') {
+        $course->update(['school_id' => School::factory()->create()->id]);
+    }
+    if ($case === 'inactive year') {
+        $course->update(['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id]);
+    }
+    $returnUrl = '/admin/teaching/overview?course='.$course->id.'&panel=students&student_sort=class_last_name#students';
+
+    $this->actingAs($this->superAdmin);
+    $response = $this->postJson('/api/admin/impersonation/start', [
+        'user_id' => $this->targetUser->id,
+        'teaching_course_id' => $course->id,
+        'return_url' => $returnUrl,
+    ]);
+
+    if ($case !== 'active student') {
+        $response->assertUnprocessable();
+        $this->assertAuthenticatedAs($this->superAdmin, 'web');
+        $this->getJson('/api/admin/impersonation/status')->assertJsonPath('is_impersonating', false);
+        expect($this->targetUser->fresh()->is_active)->toEqual($case !== 'inactive');
+        expect($this->targetUser->fresh()->hasRole('student'))->toBe($case !== 'missing role');
+
+        return;
+    }
+
+    $response->assertOk();
+    $ownEntry = TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $course->id, 'user_id' => $this->targetUser->id,
+        'type' => 'MA', 'grade' => '1', 'description' => 'Eigene Leistung', 'date' => '2026-10-01',
+    ]);
+    $foreignEntry = TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $course->id, 'user_id' => $this->superAdmin->id,
+        'type' => 'MA', 'grade' => '5', 'description' => 'Fremde Leistung', 'date' => '2026-10-01',
+    ]);
+    app('auth')->forgetGuards();
+    $this->getJson('/api/homepage/student/user')->assertOk()
+        ->assertJsonPath('user.id', $this->targetUser->id)
+        ->assertJsonPath('viewer_type', 'student');
+    $this->getJson('/api/homepage/student/courses/'.$course->id)->assertOk()
+        ->assertJsonPath('course.id', $course->id);
+    $this->getJson('/api/homepage/student/courses/'.$course->id.'/entries')->assertOk()
+        ->assertJsonCount(1, 'entries')
+        ->assertJsonPath('entries.0.id', $ownEntry->id)
+        ->assertJsonPath('entries.0.grade', '1')
+        ->assertJsonMissing(['id' => $foreignEntry->id, 'comment' => 'Fremde Leistung']);
+    $this->getJson('/api/admin/impersonation/status')->assertOk()
+        ->assertJsonPath('current_user.school_id', $this->school->id);
+    $this->postJson('/api/admin/impersonation/stop')->assertOk()->assertJsonPath('redirect', $returnUrl)
+        ->assertSessionMissing('impersonation.return_url');
+    $this->assertAuthenticatedAs($this->superAdmin, 'web');
+})->with(['active student', 'inactive', 'missing role', 'foreign school', 'inactive year', 'other enrollment', 'canceled enrollment']);
+
+test('ordinary impersonation stores only safe internal admin return targets', function (?string $returnUrl, string $expected) {
+    $this->actingAs($this->superAdmin);
+    $this->postJson('/api/admin/impersonation/start', [
+        'user_id' => $this->targetUser->id,
+        'return_url' => $returnUrl,
+    ])->assertOk();
+    app('auth')->forgetGuards();
+    $this->getJson('/api/admin/impersonation/status')->assertOk()->assertJsonPath('is_impersonating', true);
+    $this->postJson('/api/admin/impersonation/stop')->assertOk()->assertJsonPath('redirect', $expected);
+})->with([
+    'original course and filters' => ['/admin/teaching/overview?course=17&panel=students&grades=sem1#students', '/admin/teaching/overview?course=17&panel=students&grades=sem1#students'],
+    'external URL' => ['https://example.com/admin', '/admin'],
+    'protocol relative URL' => ['//example.com/admin', '/admin'],
+    'backslash' => ['/admin/\\example.com', '/admin'],
+    'traversal' => ['/admin/../homepage', '/admin'],
+    'encoded traversal' => ['/admin/%2e%2e/homepage', '/admin'],
+    'different area' => ['/homepage/student', '/admin'],
+    'similar prefix' => ['/administrator', '/admin'],
+    'control character' => ["/admin/teach\ning", '/admin'],
+    'missing target' => [null, '/admin'],
+]);
 
 beforeEach(function () {
     $this->school = School::factory()->create();

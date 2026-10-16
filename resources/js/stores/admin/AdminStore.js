@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { update as updateAdminShellColorPreference } from '@/actions/App/Http/Controllers/Admin/AdminShellColorPreferenceController'
+import { start as startImpersonation, stop as stopImpersonation } from '@/actions/App/Http/Controllers/Admin/ImpersonationController'
 import { createResourceStore } from './ResourceStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
@@ -47,6 +48,19 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         ...resourceStore.actions(),
 
         async loadConfig(options = {}) {
+            if (options.navigationOnly) {
+                try {
+                    const response = await axios.get('/api/admin/config', { __authContextNavigation: true })
+                    return response.data
+                } catch (error) {
+                    useNotificationStore().notify({
+                        status: error.response?.status || 500,
+                        message: error.response?.data?.message || 'Fehler passiert.',
+                        type: 'error',
+                    })
+                    return false
+                }
+            }
             if (this.config_request_promise) {
                 return this.config_request_promise
             }
@@ -176,11 +190,15 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async startImpersonation(user_id) {
+        async startImpersonation(user_id, options = {}) {
             const notification = useNotificationStore()
             this.is_loading++
             try {
-                await axios.post('/api/admin/impersonation/start', { user_id })
+                await axios.post(startImpersonation.url(), {
+                    user_id,
+                    return_url: options.returnUrl ?? `${window.location.pathname}${window.location.search}${window.location.hash}`,
+                    ...(options.teachingCourseId ? { teaching_course_id: options.teachingCourseId } : {}),
+                })
                 notification.notify({
                     message: 'Benutzer-Übernahme gestartet.',
                     type: 'success',
@@ -204,13 +222,13 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             const notification = useNotificationStore()
             this.is_loading++
             try {
-                await axios.post('/api/admin/impersonation/stop')
+                const response = await axios.post(stopImpersonation.url())
                 notification.notify({
                     message: 'Benutzer-Übernahme beendet.',
                     type: 'success',
                     timeout: 3000,
                 })
-                return true
+                return response.data?.redirect || '/admin'
             } catch (error) {
                 notification.notify({
                     status: error.response?.status || 500,

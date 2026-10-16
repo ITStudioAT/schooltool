@@ -32,6 +32,34 @@ function matchesDeadline(work, deadline) {
         && `${values.hour}:${values.minute}` === work.finish_until_time && values.second === '00'
 }
 
+export function workCollectionEvidence(work, studentIds) {
+    if (!studentIds.length) return null
+    const receipts = studentIds.map(studentId => {
+        const receipt = (work.status?.assessment_json_imports || []).findLast(item => String(item.student_id) === String(studentId))
+        return personalWorkAssessment(work, studentId) ? receipt : null
+    })
+    if (receipts.some(receipt => !receipt)) return null
+    const finalDownloads = receipts.every(receipt => {
+        const saved = (work.status?.assessment_json_packages || []).findLast(item => item.exercise_id === receipt.exercise_id)
+        const download = saved?.final_download
+        return download?.exercise_id === receipt.exercise_id && /^[a-f0-9]{64}$/.test(download.download_checksum || '')
+            && Number.isFinite(Date.parse(saved.imported_at)) && Number.isFinite(Date.parse(receipt.imported_at))
+            && Date.parse(saved.imported_at) >= Date.parse(receipt.imported_at)
+            && matchesDeadline(work, download.deadline_at)
+            && Date.parse(download.download_completed_at) > Date.parse(download.deadline_at)
+            && download.participants?.some(person => person.participant_id === receipt.participant_id && Array.isArray(person.submission_sha256))
+    })
+    if (finalDownloads) return 'local'
+    const status = work.submission_check_status
+    const check = (work.status?.submission_checks || []).at(-1)?.check
+    if (status?.complete !== true || status.deadline_date !== work.finish_until_date
+        || status.deadline_time !== work.finish_until_time || check?.state !== 'complete'
+        || check.checked_at !== status.checked_at || !Number.isFinite(Date.parse(check.checked_at))) return null
+    return receipts.every(receipt => receipt.exercise_id === check.exercise_id
+        && status.student_ids?.some(id => String(id) === String(receipt.student_id))
+        && check.participants?.some(person => person.participant_id === receipt.participant_id)) ? 'checked' : null
+}
+
 export function workSubmissionStatus(work, studentId, now = Date.now()) {
     const unknown = { state: 'unknown', color: 'orange-darken-2',
         label: 'Abgabestatus ungeklärt: kein bestätigter personenbezogener Abgabenachweis.' }

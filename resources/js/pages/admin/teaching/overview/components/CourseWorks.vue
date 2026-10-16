@@ -48,37 +48,45 @@
                 <v-list density="compact" class="work-list-grid">
                     <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
                         <div class="work-row w-100" :class="workEntryBackgroundClass(work)">
-                            <div class="work-meta-row">
-                                <div class="text-caption text-medium-emphasis work-type-first-line">
-                                    {{ workTypeModeLabel(work) }}
+                            <div class="work-card-header">
+                                <div class="work-meta-row">
+                                    <div class="text-caption text-medium-emphasis work-type-first-line">
+                                        {{ workTypeModeLabel(work) }}
+                                    </div>
+                                    <div class="work-meta-actions">
+                                        <v-chip
+                                            v-if="workHasUnassignedStudents(work)"
+                                            size="x-small"
+                                            variant="flat"
+                                            color="warning"
+                                            class="work-unassigned-chip"
+                                            title="Nicht alle Schüler:innen sind einer Gruppe zugeordnet">
+                                            !
+                                        </v-chip>
+                                        <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
+                                            {{ formatDate(workListDate(work)) }}
+                                        </v-chip>
+                                        <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                                    </div>
                                 </div>
-                                <div class="work-meta-actions">
-                                    <v-chip
-                                        v-if="workHasUnassignedStudents(work)"
-                                        size="x-small"
-                                        variant="flat"
-                                        color="warning"
-                                        class="work-unassigned-chip"
-                                        title="Nicht alle Schüler:innen sind einer Gruppe zugeordnet">
-                                        !
-                                    </v-chip>
-                                    <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
-                                        {{ formatDate(workListDate(work)) }}
-                                    </v-chip>
-                                    <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
-                                    <v-chip v-if="work.finish_until_date" size="x-small" variant="tonal" color="warning">
-                                        Fertig bis {{ formatDate(work.finish_until_date) }} · {{ work.finish_until_time || 'ohne Uhrzeit' }}
-                                    </v-chip>
+                                <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
+                                    {{ work.title || '—' }}
                                 </div>
-                            </div>
-                            <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
-                                {{ work.title || '—' }}
-                            </div>
-                            <div v-if="formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
-                                Zuletzt importiert: {{ formatImportDate(work.status.folder_imported_at) }}
-                            </div>
-                            <div v-if="work.description" class="text-caption work-description-line">
-                                {{ work.description }}
+                                <div class="text-caption" data-work-deadline="first">
+                                    <span class="d-inline-flex align-center ga-1" role="img" aria-label="1. Frist" title="1. Frist"><span aria-hidden="true">1.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.communicated_deadline?.date">{{ formatDate(work.communicated_deadline.date) }} · {{ work.communicated_deadline.time || 'ohne Uhrzeit' }}</template><template v-else>—</template>
+                                </div>
+                                <div class="text-caption" data-work-deadline="second">
+                                    <span class="d-inline-flex align-center ga-1" role="img" aria-label="2. Frist" title="2. Frist"><span aria-hidden="true">2.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }} · {{ work.finish_until_time || 'ohne Uhrzeit' }}</template><template v-else>—</template>
+                                </div>
+                                <div v-if="formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
+                                    Zuletzt importiert: {{ formatImportDate(work.status.folder_imported_at) }}
+                                </div>
+                                <div v-if="work.description" class="text-caption work-description-line">
+                                    {{ work.description }}
+                                </div>
+                                <div v-if="workAutomationEnabled(work)" class="work-card-status-row d-flex align-center ga-2 mt-1">
+                                    <WorkCellStatus class="w-100" :work="work" :students="activeCourseStudents" aggregate native-title />
+                                </div>
                             </div>
                             <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="work" aggregate /></div>
                             <div class="work-bottom-row">
@@ -818,6 +826,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate, formatViennaDateTime } from '@/helpers/date'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
@@ -832,11 +841,12 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
+import WorkCellStatus from './WorkCellStatus.vue'
 import WorkAiExport from './WorkAiExport.vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 
 export default {
-    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus },
+    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -935,8 +945,7 @@ export default {
             return this.activeCourseStudents.length > 0
         },
         semesterCount() {
-            const grading = this.selectedCourseSchema?.grading || {}
-            return grading?.semester_count || 1
+            return teachingSemesterCount(this.selected_course, this.selectedCourseSchema)
         },
         sem2StartDate() {
             const raw = this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
@@ -1177,6 +1186,7 @@ export default {
     },
 
     methods: {
+        workAutomationEnabled,
         formatImportDate: formatViennaDateTime,
         openImport(work, quick = false) {
             if (!workAutomationEnabled(work)) return
@@ -2444,8 +2454,12 @@ export default {
 </script>
 
 <style scoped>
+.work-card-status-row :deep(.v-icon) {
+    flex: 1 1 0;
+}
+
 :deep(.its-grid-box__icon-wrap .mdi-brain) {
-    color: rgb(var(--v-theme-error));
+    color: rgb(var(--v-theme-primary));
 }
 
 .course-works-deadline-fields {
@@ -2539,7 +2553,9 @@ export default {
     align-items: center;
     display: flex;
     flex: 0 0 auto;
+    flex-wrap: wrap;
     gap: 6px;
+    max-width: 100%;
 }
 
 .work-unassigned-chip {
@@ -2558,6 +2574,7 @@ export default {
 .work-meta-row {
     align-items: flex-start;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: space-between;
 }

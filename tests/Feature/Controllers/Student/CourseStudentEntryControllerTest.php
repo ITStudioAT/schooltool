@@ -10,8 +10,10 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingEntryGradingPart;
 use App\Models\TeachingSchema;
 use App\Models\User;
+use App\Services\TeachingCourseEvaluationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -203,6 +205,134 @@ test('index returns 403 for non enrolled student', function () {
     $this->actingAs($outsider)
         ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
         ->assertStatus(403);
+});
+
+test('index exposes the course definition points scale without deriving it from a label', function (string $mode, ?float $maximum) {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+    $area = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id,
+    ]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'A5', 'name' => 'Auftrag - 5 PKT',
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode, 'maximum_points' => $maximum,
+    ]);
+    TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'type' => 'A5', 'grade' => '3.40',
+    ]);
+    $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")->assertOk()
+        ->assertJsonPath('entries.0.grade', '3.40')
+        ->assertJsonPath('entries.0.properties_mode', $mode)
+        ->assertJsonPath('entries.0.maximum_points', $mode === 'points' ? $maximum : null);
+})->with([['points', 12.5], ['points', null], ['fixed', null]]);
+
+test('student points progress is opt in course scoped and projects only personal canonical point aggregates', function () {
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27', 'from' => '2026-09-01', 'until' => '2027-07-01', 'sem_2_start' => '2027-02-08']);
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id];
+    $outerGroup = '7e704aec-e04f-4d3d-a459-3ff3fa2ef088';
+    $innerGroup = 'e53bde58-052d-4eb0-935b-f9a8c2a8c7f4';
+    $area = TeachingEntryArea::factory()->create($scope + ['semester_count' => 2, 'grading_part_groups' => [
+        ['id' => $outerGroup, 'name' => 'Notenmittel'],
+        ['id' => $innerGroup, 'name' => 'Anpassung', 'parent_group_id' => $outerGroup],
+    ]]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $part = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'name' => 'Basis', 'grading_group_id' => $innerGroup, 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'sum_percent', 'weight' => 1]);
+    foreach (['A5' => 5, 'PP' => 15, 'TK' => 35] as $type => $maximum) {
+        TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+            'teaching_entry_grading_part_id' => $part->id, 'short_name' => $type, 'category' => 'Benotung',
+            'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => $maximum]);
+    }
+    $signs = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'name' => 'Mitarbeit', 'grading_group_id' => $innerGroup, 'allowed_entry_types' => 'signs', 'points_assessment_mode' => 'sign_adjust']);
+    TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'teaching_entry_grading_part_id' => $signs->id, 'short_name' => 'MA', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $project = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'name' => 'Projekt', 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'grade_mean', 'weight' => 1]);
+    TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'teaching_entry_grading_part_id' => $project->id, 'short_name' => 'TV', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 35]);
+    foreach ([[$this->student->id, 'A5', '3.40', '2026-10-02'], [$this->student->id, 'A5', '4.35', '2026-10-16'],
+        [$this->student->id, 'PP', '12.5', '2027-03-01'], [$this->student->id, 'TV', '7', '2026-10-02'], [$this->peer->id, 'A5', '1', '2026-10-02']] as [$studentId, $type, $grade, $date]) {
+        TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $studentId,
+            'type' => $type, 'grade' => $grade, 'date' => $date]);
+    }
+    $url = "/api/homepage/student/courses/{$this->course->id}/entries";
+    $this->actingAs($this->student)->getJson($url)->assertOk()->assertJsonPath('points_progress', null);
+    $this->course->update(['teaching_student_grade_columns' => ['show_points_progress' => true]]);
+    $response = $this->getJson($url)->assertOk();
+    $progress = $response->json('points_progress');
+    $canonical = collect(app(TeachingCourseEvaluationService::class)->report($this->course->fresh(), 3)['students'])->firstWhere('user_id', $this->student->id);
+    expect($progress['course_id'])->toBe($this->course->id)->and($progress['parts'])->toHaveCount(2)
+        ->and($progress['parts'][0]['name'])->toBe('Basis')
+        ->and($progress['parts'][0]['sum'])->toEqual($canonical['semesters'][0]['parts'][0]['trace']['sum'])
+        ->and($progress['parts'][0]['sum'])->toEqual(7.75)->and($progress['parts'][0]['maximum'])->toEqual(10)
+        ->and($progress['parts'][1]['name'])->toBe('Basis')->and($progress['parts'][1]['sum'])->toEqual(12.5)->and($progress['parts'][1]['maximum'])->toEqual(15)
+        ->and(array_keys($progress['parts'][0]))->toBe(['id', 'name', 'semester', 'status', 'sum', 'maximum', 'grade_boundaries']);
+    expect($progress['parts'][0]['grade_boundaries'])->toEqual([50, 62.5, 75, 87.5]);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.show_points_progress', true);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.semester_count', 2);
+    $this->actingAs($this->peer)->getJson($url)->assertOk()
+        ->assertJsonPath('points_progress.parts.0.sum', 1)->assertJsonPath('points_progress.parts.0.maximum', 5)
+        ->assertJsonPath('points_progress.parts.1.sum', null)->assertJsonPath('points_progress.parts.1.maximum', null);
+    $area->update(['semester_count' => 1, 'semester_1_weight' => 100, 'semester_2_weight' => 0]);
+    $this->actingAs($this->student)->getJson($url)->assertOk()
+        ->assertJsonPath('points_progress.semester_count', 1)->assertJsonCount(1, 'points_progress.parts')
+        ->assertJsonPath('points_progress.parts.0.sum', 20.25)->assertJsonPath('points_progress.parts.0.maximum', 25);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.semester_count', 1);
+    $this->course->update(['teaching_student_grade_columns' => ['show_points_progress' => false]]);
+    $this->getJson($url)->assertOk()->assertJsonPath('points_progress', null);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.show_points_progress', false);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
+    $this->actingAs($this->teacher)->getJson("/api/admin/teaching/courses/{$this->course->id}")->assertOk()
+        ->assertJsonPath('data.semester_count', 1)->assertJsonPath('data.teaching_entry_area.semester_count', 1);
+    $this->getJson("/api/admin/teaching/courses/{$this->course->id}/evaluations?semester=2")->assertOk()
+        ->assertJsonPath('data.semester', 1)->assertJsonPath('data.semester_count', 1);
+});
+
+test('student points progress preserves every independent point to grade basis without combining them', function () {
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id];
+    $area = TeachingEntryArea::factory()->create($scope);
+    $this->course->update(['teaching_entry_area_id' => $area->id, 'teaching_student_grade_columns' => ['show_points_progress' => true]]);
+    foreach (['Grundlagen', 'Praxis', 'Projekt'] as $index => $name) {
+        $part = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+            'name' => $name, 'allowed_entry_types' => 'points', 'points_assessment_mode' => $index === 2 ? 'overall' : 'sum_percent']);
+        TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+            'teaching_entry_grading_part_id' => $part->id, 'short_name' => 'P'.$index, 'category' => 'Benotung',
+            'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 10]);
+    }
+
+    $this->actingAs($this->student)->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
+        ->assertOk()->assertJsonCount(3, 'points_progress.parts')
+        ->assertJsonPath('points_progress.parts.0.name', 'Grundlagen')
+        ->assertJsonPath('points_progress.parts.1.name', 'Praxis')
+        ->assertJsonPath('points_progress.parts.2.name', 'Projekt')
+        ->assertJsonPath('points_progress.parts.0.sum', null);
+});
+
+test('student points progress uses actual overall boundaries and omits invalid or labelled grade details', function () {
+    $this->schoolyear->update(['from' => '2026-09-01', 'until' => '2027-07-01']);
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id];
+    $area = TeachingEntryArea::factory()->create($scope);
+    $part = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'name' => 'Gesamtpunkte', 'allowed_entry_types' => 'points', 'points_assessment_mode' => 'overall',
+        'overall_points_grade_thresholds' => [1 => 38, 2 => 30, 3 => 18, 4 => 8]]);
+    TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'teaching_entry_grading_part_id' => $part->id, 'short_name' => 'GP', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 40]);
+    $this->course->update(['teaching_entry_area_id' => $area->id, 'teaching_student_grade_columns' => ['show_points_progress' => true]]);
+    TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $this->student->id,
+        'type' => 'GP', 'grade' => '20', 'date' => '2026-10-01']);
+    $url = "/api/homepage/student/courses/{$this->course->id}/entries";
+    $this->actingAs($this->student)->getJson($url)->assertOk()
+        ->assertJsonPath('points_progress.parts.0.grade_boundaries', [20, 45, 75, 95])
+        ->assertJsonMissingPath('points_progress.parts.0.grade_thresholds');
+    $part->update(['overall_points_grade_thresholds' => [1 => 38, 2 => 30, 3 => 18, 4 => 18]]);
+    $this->getJson($url)->assertOk()->assertJsonPath('points_progress.parts.0.grade_boundaries', [])
+        ->assertJsonPath('points_progress.parts.0.sum', null);
 });
 
 test('index classifies entry area definitions and respects behaviour visibility', function (bool $showBehaviour) {

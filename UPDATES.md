@@ -1,10 +1,17 @@
 # UPDATES
 
-## 3.51.7 !!!
+## 3.51.7
 
 ### Unterricht
 
 - Arbeiten: Import
+- Import-Informationen: Zusammenfassung der Kernergebnisse
+- Arbeiten-Überschrift: Neue Symbole
+
+## Schüler
+
+- Fortschrittsbalken wird angezeigt
+- Sterne sind ausblendbar
 
 ## 3.51.6
 

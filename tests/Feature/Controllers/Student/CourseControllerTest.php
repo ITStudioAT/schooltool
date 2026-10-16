@@ -297,7 +297,6 @@ test('course grade visibility independently controls assigned grades in detail a
         ->assertOk()
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_semester_grade', $showSemesterGrade ?? true)
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_behaviour_grade', $showBehaviourGrade ?? true)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', true)
         ->assertJsonPath('course.show_behaviour', $showBehaviour)
         ->assertJsonCount($showBehaviour ? 1 : 0, 'course.behaviour_entries');
     $overview = $this->getJson('/api/homepage/student/courses')->assertOk();
@@ -316,6 +315,28 @@ test('course grade visibility independently controls assigned grades in detail a
     'both hidden' => [false, false, true],
     'teacher behaviour override' => [true, true, false],
 ]);
+
+test('course stars visibility defaults to visible and hides personal stars in detail and overview without changing records', function (?bool $visible) {
+    $stars = [['id' => 'star-1', 'date' => '2026-10-01', 'value' => 1, 'comment' => 'Besonderer Einsatz']];
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->activeSchoolyear->id, 'user_id' => $this->teacher->id,
+        'teaching_student_grade_columns' => $visible === null ? null : ['show_stars' => $visible],
+        'students' => [['id' => $this->studentA->id, 'stars' => $stars]],
+    ]);
+    $other = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->activeSchoolyear->id, 'user_id' => $this->teacher->id,
+        'students' => [['id' => $this->studentA->id, 'stars' => $stars]],
+    ]);
+
+    $this->actingAs($this->studentA)->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()->assertJsonPath('course.show_stars', $visible ?? true)
+        ->assertJsonPath('course.stars', $visible === false ? [] : $stars);
+    $overview = $this->getJson('/api/homepage/student/courses')->assertOk();
+    $byId = collect($overview->json('courses'))->keyBy('id');
+    expect($byId[$course->id]['stars'])->toBe($visible === false ? [] : $stars);
+    expect($byId[$other->id]['stars'])->toBe($stars);
+    expect($course->teachingCourseStudents()->where('user_id', $this->studentA->id)->first()->stars)->toBe($stars);
+})->with([null, true, false]);
 
 test('show hides behaviour data when teacher disables behaviour visibility', function () {
     $this->teacher->forceFill([
@@ -424,93 +445,6 @@ test('show returns schoolyear scoped teacher notification definitions for the ac
     $response->assertOk()
         ->assertJsonPath('course.teacher_teaching_notifications.0.short_name', 'INFO')
         ->assertJsonPath('course.teacher_teaching_notifications.0.name', 'Aktive Notification');
-});
-
-test('show returns schoolyear scoped teacher grade column visibility', function () {
-    $this->teacher->forceFill([
-        'teaching_grade_columns_by_schoolyear' => [
-            (string) $this->activeSchoolyear->id => [
-                'show_sem1' => true,
-                'show_sem2' => false,
-                'show_year' => true,
-            ],
-            (string) $this->oldSchoolyear->id => [
-                'show_sem1' => false,
-                'show_sem2' => true,
-                'show_year' => false,
-            ],
-        ],
-        'teaching_student_grade_columns_by_schoolyear' => [
-            (string) $this->activeSchoolyear->id => [
-                'show_sem1' => false,
-                'show_sem2' => true,
-                'show_year' => true,
-            ],
-            (string) $this->oldSchoolyear->id => [
-                'show_sem1' => true,
-                'show_sem2' => false,
-                'show_year' => false,
-            ],
-        ],
-    ])->save();
-
-    $course = TeachingCourse::factory()->create([
-        'school_id' => $this->school->id,
-        'schoolyear_id' => $this->activeSchoolyear->id,
-        'user_id' => $this->teacher->id,
-        'students' => [
-            [
-                'id' => $this->studentA->id,
-            ],
-        ],
-    ]);
-
-    $response = $this->actingAs($this->studentA)
-        ->getJson("/api/homepage/student/courses/{$course->id}");
-
-    $response->assertOk()
-        ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem1', true)
-        ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem2', false)
-        ->assertJsonPath('course.teacher_teaching_grade_columns.show_year', true)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', false)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem2', true)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
-});
-
-test('show prefers course scoped student grade column visibility', function () {
-    $this->teacher->forceFill([
-        'teaching_student_grade_columns_by_schoolyear' => [
-            (string) $this->activeSchoolyear->id => [
-                'show_sem1' => true,
-                'show_sem2' => true,
-                'show_year' => false,
-            ],
-        ],
-    ])->save();
-
-    $course = TeachingCourse::factory()->create([
-        'school_id' => $this->school->id,
-        'schoolyear_id' => $this->activeSchoolyear->id,
-        'user_id' => $this->teacher->id,
-        'teaching_student_grade_columns' => [
-            'show_sem1' => false,
-            'show_sem2' => false,
-            'show_year' => true,
-        ],
-        'students' => [
-            [
-                'id' => $this->studentA->id,
-            ],
-        ],
-    ]);
-
-    $response = $this->actingAs($this->studentA)
-        ->getJson("/api/homepage/student/courses/{$course->id}");
-
-    $response->assertOk()
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', false)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem2', false)
-        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
 });
 
 test('show returns student attachment urls and enrolled student can open visible attachment', function () {

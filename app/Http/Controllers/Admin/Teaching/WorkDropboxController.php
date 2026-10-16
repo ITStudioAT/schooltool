@@ -27,8 +27,7 @@ class WorkDropboxController extends Controller
         $connected = $configured && $connection && ! $connection->revoked_at;
         $folder = $connected ? TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
             ->where('teaching_course_work_id', $course_work->id)->first() : null;
-        $suggested = $connected ? ($folder ?? TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
-            ->orderByDesc('updated_at')->orderByDesc('id')->first()) : null;
+        $suggested = $folder;
         $plausibility = $suggested ? $dropbox->folderPlausibility($course_work, $suggested->folder_name) : null;
         $hasImport = filled($course_work->status['folder_imported_at'] ?? null);
         $canPreview = $course_work->automationEnabled() && $connected && $folder && $plausibility['status'] !== 'mismatch';
@@ -95,7 +94,10 @@ class WorkDropboxController extends Controller
     {
         $actor = $this->actor($course_work);
         $data = $request->validate(['folder_id' => ['nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
-            'cursor' => ['nullable', 'string', 'max:4096']]);
+            'cursor' => ['nullable', 'string', 'max:4096'], 'suggest' => ['sometimes', 'boolean']]);
+        if ($request->boolean('suggest')) {
+            return response()->json($dropbox->suggestFolders($dropbox->connection($actor), $course_work));
+        }
 
         return response()->json($dropbox->folders($dropbox->connection($actor), $data['folder_id'] ?? '', $data['cursor'] ?? null));
     }

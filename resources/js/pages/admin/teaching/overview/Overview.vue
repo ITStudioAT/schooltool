@@ -193,6 +193,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -310,7 +311,7 @@ export default {
             return this.teachingSchemas.find((s) => String(s.id) === String(schemaId)) || null
         },
         semesterCount() {
-            return Number(this.selectedSchema?.grading?.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedSchema)
         },
         sem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
@@ -463,9 +464,9 @@ export default {
                 panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
-                panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })
+                panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
                 panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
@@ -650,12 +651,20 @@ export default {
             },
         },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore?.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
+        },
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
         },
     },
 

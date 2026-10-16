@@ -7,6 +7,29 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+test('dispatch precision revalidates only the same task original and preserves multiple confirmed sends', function () {
+    $original = str_repeat('a', 64);
+    $otherOriginal = str_repeat('b', 64);
+    $work = (new TeachingCourseWork)->forceFill(['status' => [
+        'dispatch_logs' => array_map(fn (string $sha256): array => ['sha256' => $sha256, 'origin' => 'dispatch_import', 'purpose' => 'tasks'], [$original, $otherOriginal]),
+        'dispatch_notifications' => [
+            ['student_id' => 12, 'purpose' => 'tasks', 'origin' => 'dispatch_import', 'sent_at' => '2026-10-04T13:36:20Z', 'log_sha256' => $original],
+            ['student_id' => 12, 'purpose' => 'tasks', 'origin' => 'dispatch_import', 'sent_at' => '2026-10-03T12:00:00Z', 'log_sha256' => $otherOriginal],
+        ],
+    ]]);
+
+    $sources = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], [[
+        'purpose' => 'tasks', 'can_import' => true, 'source_sha256' => $original, 'rows' => [
+            ['student_id' => 12, 'accepted' => true, 'sent_at' => '2026-10-04T13:36:20.367Z'],
+            ['student_id' => 12, 'accepted' => true, 'sent_at' => '2026-10-04T13:36:20.9Z'],
+        ],
+    ]]);
+
+    expect(array_column($sources, 'available_at'))->toBe([
+        '2026-10-03T12:00:00Z', '2026-10-04T13:36:20.367Z', '2026-10-04T13:36:20.9Z',
+    ])->and(array_count_values(array_column($sources, 'log_sha256')))->toBe([$otherOriginal => 1, $original => 2]);
+});
+
 test('prepares a folder without a fixed deadline and preserves the existing work deadline', function (array $deadline, string $prefix) {
     $folder = '2026-10-16_Informatik_1A_1F';
     $metadata = $deadline + [
@@ -43,8 +66,13 @@ test('imports an explicitly specified deadline with its Vienna offset', function
     ], JSON_THROW_ON_ERROR), '[]', []);
     $work = (new TeachingCourseWork)->forceFill(['id' => 80, 'teaching_course_id' => 27]);
 
-    expect($parser->deadlineFields($work, $bundle))->toBe([
+    $fields = $parser->deadlineFields($work, $bundle);
+    expect(collect($fields)->except('status')->all())->toBe([
         'finish_until_date' => '2026-10-16', 'finish_until_time' => '17:50',
+    ]);
+    $work->forceFill($fields);
+    expect($work->communicatedDeadline())->toBe($communicated === [] ? null : [
+        'at' => '2026-10-16T17:00:00+02:00', 'date' => '2026-10-16', 'time' => '17:00',
     ]);
 })->with(['plain UTF-8' => [''], 'UTF-8 BOM' => ["\xEF\xBB\xBF"]])
     ->with(['single deadline' => [[]], 'earlier communicated deadline' => [['MitgeteilteAbgabefrist' => '2026-10-16T17:00:00+02:00']]]);
