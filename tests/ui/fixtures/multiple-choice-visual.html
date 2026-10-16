@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Isolierte Multiple-Choice-Darstellungsprüfung</title>
+    <style>body { margin: 0; font-family: system-ui, sans-serif; } * { box-sizing: border-box; }</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+    import { createApp } from 'vue'
+    import { createPinia } from 'pinia'
+    import { createRouter, createMemoryHistory } from 'vue-router'
+    import axios from 'axios'
+    import MultipleChoice from '/resources/js/pages/homepage/multipleChoice/MultipleChoice.vue'
+
+    // This fixture mounts the production component; all API calls remain in this page's memory.
+    const state = new URL(location.href).searchParams.get('state') || 'active'
+    const now = Date.now()
+    const questions = [
+        { id: 'q1', prompt: 'Welche Funktion hat die Betreffzeile einer E-Mail?', type: 'single', options: [
+            { id: 'a', text: 'Sie fasst das Thema der Nachricht kurz zusammen.' },
+            { id: 'b', text: 'Sie enthält das Passwort des Absenders.' },
+            { id: 'c', text: 'Sie ersetzt den Nachrichtentext.' },
+        ] },
+        { id: 'q2', prompt: 'Welche Angaben gehören zu einer vollständigen E-Mail-Adresse?', type: 'multiple', options: [
+            { id: 'a', text: 'Ein lokaler Name vor dem @-Zeichen' },
+            { id: 'b', text: 'Eine Domain nach dem @-Zeichen' },
+            { id: 'c', text: 'Die Telefonnummer der empfangenden Person' },
+        ] },
+        { id: 'q3', prompt: 'Was sollten Sie vor dem Versenden eines Anhangs prüfen?', type: 'single', options: [
+            { id: 'a', text: 'Ob die richtige Datei tatsächlich angehängt ist.' },
+            { id: 'b', text: 'Ob alle Personen im Internet Zugriff haben.' },
+        ] },
+    ]
+    const attempt = {
+        id: 999999991, test_id: 999999991, title: 'E-Mails: isolierte Darstellungsprüfung',
+        question_count: 3, total_points: '10.00', duration_seconds: 1200, lead_seconds: 60,
+        starts_at: new Date(state === 'waiting' ? now + 60000 : now - 30000).toISOString(),
+        ends_at: new Date(now + 1170000).toISOString(), server_now: new Date(now).toISOString(),
+        status: state === 'waiting' ? 'ready' : 'in_progress', ready_at: new Date(now).toISOString(),
+        started_at: state === 'waiting' ? null : new Date(now - 30000).toISOString(), completed_at: null,
+        questions: state === 'waiting' ? [] : questions, answers: {}, result: null,
+    }
+    function response() {
+        return { data: { attempt: structuredClone({ ...attempt, server_now: new Date().toISOString() }) } }
+    }
+    axios.get = async () => response()
+    axios.put = async (url, data) => {
+        attempt.answers = { ...attempt.answers, ...data.answers }
+        return response()
+    }
+    axios.post = async (url) => {
+        if (url.endsWith('/submit')) {
+            attempt.status = 'submitted'
+            attempt.completed_at = new Date().toISOString()
+        }
+        return response()
+    }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/multiple-choice', component: MultipleChoice }] })
+    await router.push('/multiple-choice#access=isolated-visual-fixture')
+    await router.isReady()
+    createApp(MultipleChoice).use(createPinia()).use(router).mount('#app')
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
 use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\MultipleChoiceParticipantController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
@@ -166,6 +167,19 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     Route::get('/student/{any?}', function () {
         return view('homepage');
     })->where('any', '.*')->middleware('students-timetables-impersonation');
+
+    Route::get('/multiple-choice', function (): View {
+        return view('homepage');
+    })->middleware('students-timetables-impersonation')->name('multiple-choice.entry');
+
+    Route::prefix('/api/multiple-choice')->middleware(['students-timetables-impersonation', 'throttle:180,1'])->name('multiple-choice.')->group(function (): void {
+        Route::get('/attempts', [MultipleChoiceParticipantController::class, 'index'])->name('index');
+        Route::get('/access', [MultipleChoiceParticipantController::class, 'access'])->middleware('throttle:30,1')->name('access');
+        Route::get('/attempts/{attempt}', [MultipleChoiceParticipantController::class, 'show'])->name('show');
+        Route::post('/attempts/{attempt}/ready', [MultipleChoiceParticipantController::class, 'ready'])->name('ready');
+        Route::put('/attempts/{attempt}/answers', [MultipleChoiceParticipantController::class, 'save'])->name('save');
+        Route::post('/attempts/{attempt}/submit', [MultipleChoiceParticipantController::class, 'submit'])->name('submit');
+    });
 
     Route::get('/students-timetables/{any?}', function () {
         return view('homepage');

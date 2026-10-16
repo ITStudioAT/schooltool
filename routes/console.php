@@ -58,3 +58,8 @@ Schedule::command('teaching:send-reminders')
     ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping();
+
+Schedule::command('multiple-choice:finalize-expired')
+    ->everyMinute()
+    ->onOneServer()
+    ->withoutOverlapping();

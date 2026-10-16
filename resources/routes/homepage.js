@@ -10,6 +10,7 @@ const StudentOverview = () => import('@/pages/homepage/student/overview/Overview
 const StudentPassword = () => import('@/pages/homepage/student/password/Password.vue')
 const StudentProfile = () => import('@/pages/homepage/student/profile/Profile.vue')
 const StudentCourse = () => import('@/pages/homepage/student/overview/myCourse/MyCourse.vue')
+const MultipleChoice = () => import('@/pages/homepage/multipleChoice/MultipleChoice.vue')
 const StudentTimetables = () => import('@/pages/homepage/studentsTimetables/StudentTimetables.vue')
 const StudentTimetablesOverview = () => import('@/pages/homepage/studentsTimetables/overview/Overview.vue')
 const StudentTimetablesOverviewV2 = () => import('@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue')
@@ -33,6 +34,8 @@ const routes = [
     { path: '/student/password', component: StudentPassword },
     { path: '/student/profile', component: StudentProfile },
     { path: '/student/course/:id', component: StudentCourse },
+    { path: '/student/multiple-choice/:attempt?', component: MultipleChoice },
+    { path: '/multiple-choice', component: MultipleChoice },
     { path: '/homepage/students-timetables', component: StudentTimetables },
     { path: '/students-timetables', component: StudentTimetables },
     { path: '/students-timetables/overview', component: StudentTimetablesOverviewV2 },

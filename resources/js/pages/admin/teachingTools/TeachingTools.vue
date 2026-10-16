@@ -16,11 +16,13 @@
                 </v-btn>
             </v-btn-toggle>
         </v-sheet>
+        <MultipleChoiceWorkspace />
     </v-container>
 </template>
 
 <script setup>
 import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
+import MultipleChoiceWorkspace from './MultipleChoiceWorkspace.vue'
 </script>
 
 <style scoped>

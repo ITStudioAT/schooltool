@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2CategoryController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
+use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
@@ -221,6 +222,23 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
+
+    Route::prefix('/admin/multiple-choice')->middleware([
+        'auth:sanctum', 'api-allowed:admin,teaching_admin,teacher',
+        'tool-licensed:Lehrertool,auth,admin,teaching_admin,teacher',
+    ])->name('admin.multiple-choice.')->group(function (): void {
+        Route::get('/', [MultipleChoiceController::class, 'index'])->name('index');
+        Route::post('/catalogs', [MultipleChoiceController::class, 'createCatalog'])->name('catalogs.create');
+        Route::patch('/catalogs/{catalog}', [MultipleChoiceController::class, 'updateCatalog'])->name('catalogs.update');
+        Route::post('/import-preview', [MultipleChoiceController::class, 'previewImport'])->middleware('throttle:10,1')->name('import-preview');
+        Route::post('/roster-preview', [MultipleChoiceController::class, 'rosterPreview'])->name('roster-preview');
+        Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
+        Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
+        Route::post('/tests/{test}/countdown', [MultipleChoiceController::class, 'countdown'])->name('tests.countdown');
+        Route::get('/tests/{test}/invitations', [MultipleChoiceController::class, 'invitations'])->name('tests.invitations');
+        Route::post('/tests/{test}/invitations', [MultipleChoiceController::class, 'sendInvitations'])->middleware('throttle:5,1')->name('tests.invite');
+        Route::post('/tests/{test}/release-results', [MultipleChoiceController::class, 'releaseResults'])->name('tests.release');
+    });
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
