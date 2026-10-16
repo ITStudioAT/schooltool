@@ -2713,6 +2713,50 @@ describe('CourseTable', () => {
         expect(ctx.workDialogForm.finish_until_time).toBe('16:45')
     })
 
+    it.each(['manual', 'random'])('saves selected %s groups for a points-based work before grading', async (creation) => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue({ data: { id: 65 } })
+        const ctx = {
+            ...methods,
+            canSaveDateWork: true,
+            selected_course: { id: 18 },
+            sortedSelectedStudents: [{ id: 12, user_id: 12 }, { id: 13, user_id: 13 }],
+            courseWorkGradeInputModeForType: () => 'points',
+            courseWorkStore: { update },
+            applySavedCourseWork: vi.fn(),
+            loadCourseTableData: vi.fn().mockResolvedValue(true),
+            cancelDateWorkForm: vi.fn(),
+            workDialog: { courseDate: { date: '2026-10-16' }, open: true },
+            workDialogForm: {
+                id: 65, type: 'A5', title: 'Erster Podcast', is_group_work: true,
+                date_for_all_groups: '2026-10-16', groups: [],
+            },
+            workSaving: false,
+        }
+
+        if (creation === 'manual') {
+            ctx.addWorkDialogGroup()
+            ;(ctx.workDialogForm.groups as any[])[0].student_ids = [12, 13]
+        } else {
+            ctx.generateRandomWorkDialogGroups(2)
+        }
+        const draft = structuredClone(ctx.workDialogForm)
+
+        await ctx.saveDateWork()
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 65,
+            groups: [expect.objectContaining({
+                student_ids: expect.arrayContaining([12, 13]),
+                date: '2026-10-16', grades: [], comments: [], points: [],
+            })],
+        }))
+        expect(ctx.loadCourseTableData).toHaveBeenCalledWith(18, true)
+        expect(ctx.cancelDateWorkForm).toHaveBeenCalledOnce()
+        expect(ctx.workDialogForm).toEqual(draft)
+        expect(ctx.workSaving).toBe(false)
+    })
+
     it('updates a work while preserving its group assignments', async () => {
         const methods = (CourseTable as any).methods
         const update = vi.fn().mockResolvedValue({ data: { id: 12 } })
@@ -3280,9 +3324,9 @@ describe('CourseTable', () => {
             date: '2026-05-16',
             comment: '',
             grade: '',
-            grades: {},
-            comments: {},
-            points: {},
+            grades: [],
+            comments: [],
+            points: [],
             use_individual_grades: false,
         }])
     })
