@@ -16,19 +16,19 @@ it('requires multiple correct answers for a multiple-selection question', () => 
 const button = defineComponent({
     props: ['disabled'],
     setup(props, { slots, attrs }) {
-        return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
+        return () => h('button', { ...attrs, type: attrs.type ?? 'button', disabled: props.disabled }, slots.default?.())
     },
 })
 const field = defineComponent({
-    props: ['modelValue', 'label'],
+    props: ['modelValue', 'label', 'errorMessages'],
     emits: ['update:modelValue'],
     setup(props, { emit, attrs }) {
-        return () => h('input', {
+        return () => h('div', [h('input', {
             ...attrs,
             'aria-label': props.label,
             value: props.modelValue,
             onInput: (event) => emit('update:modelValue', event.target.value),
-        })
+        }), props.errorMessages ? h('p', { role: 'alert' }, props.errorMessages) : null])
     },
 })
 const select = defineComponent({
@@ -89,6 +89,117 @@ afterEach(() => {
 })
 
 describe('Multiple Choice teacher workflow', () => {
+    it('starts with a catalog overview and only opens a catalog deliberately', async () => {
+        const wrapper = renderWorkspace({ catalogs: [
+            { id: 4, title: 'Netzwerke', questions: [validQuestion()] },
+            { id: 5, title: 'E-Mail', questions: [] },
+        ] })
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Meine Fragenkataloge')
+        expect(wrapper.text()).toContain('Netzwerke')
+        expect(wrapper.text()).toContain('E-Mail')
+        expect(wrapper.find('[aria-label="Bezeichnung des Katalogs"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Fragenkatalog auswählen"]').exists()).toBe(false)
+        expect(wrapper.findComponent(QuestionEditor).exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Vorlage importieren')
+        expect(axios.post).not.toHaveBeenCalled()
+
+        await wrapper.find('[aria-label="Katalog öffnen: Netzwerke"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[aria-label="Bezeichnung des Katalogs"]').element.value).toBe('Netzwerke')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
+        await clickText(wrapper, 'Zur Katalogübersicht')
+        expect(wrapper.text()).toContain('Meine Fragenkataloge')
+        expect(wrapper.findComponent(QuestionEditor).exists()).toBe(false)
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
+
+    it('offers a quiet empty overview and validates the name before creation or editing', async () => {
+        const wrapper = renderWorkspace()
+        await flushPromises()
+        expect(wrapper.text()).toContain('Noch keine Fragenkataloge')
+        expect(wrapper.findAll('input')).toHaveLength(0)
+        await clickText(wrapper, 'Neuer Katalog')
+        const modal = wrapper.find('[role="dialog"]')
+        expect(modal.findAll('input')).toHaveLength(1)
+        expect(modal.text()).not.toContain('Vorlage importieren')
+        expect(wrapper.findComponent(QuestionEditor).exists()).toBe(false)
+
+        await modal.find('input').setValue('   ')
+        await modal.find('form').trigger('submit')
+        await flushPromises()
+        expect(modal.text()).toContain('Bitte gib eine Bezeichnung ein.')
+        await modal.find('input').setValue('A'.repeat(256))
+        await modal.find('form').trigger('submit')
+        await flushPromises()
+        expect(modal.text()).toContain('höchstens 255 Zeichen')
+        expect(axios.post).not.toHaveBeenCalled()
+        await clickText(wrapper, 'Abbrechen')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.findComponent(QuestionEditor).exists()).toBe(false)
+        expect(wrapper.text()).toContain('Noch keine Fragenkataloge')
+    })
+
+    it('creates the named empty draft first and updates the overview after saving its questions', async () => {
+        const wrapper = renderWorkspace()
+        await flushPromises()
+        await clickText(wrapper, 'Neuer Katalog')
+        await wrapper.find('[aria-label="Bezeichnung"]').setValue('  E-Mail  ')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { catalog: { id: 8, title: 'E-Mail', questions: [] } } })
+
+        await wrapper.find('[role="dialog"] form').trigger('submit')
+        await flushPromises()
+
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs', { title: 'E-Mail', questions: [] })
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Bezeichnung des Katalogs"]').element.value).toBe('E-Mail')
+        expect(wrapper.text()).toContain('Vorlage importieren')
+        expect(wrapper.text()).toContain('Frage hinzufügen')
+        expect(wrapper.text()).not.toContain('Test vorbereiten')
+        await clickText(wrapper, 'Frage hinzufügen')
+        const questions = wrapper.findComponent(QuestionEditor).props('questions')
+        expect(questions).toHaveLength(1)
+        expect(questions[0].reviewed).toBe(false)
+        vi.mocked(axios.patch).mockResolvedValueOnce({ data: { catalog: { id: 8, title: 'E-Mail', questions } } })
+        await clickText(wrapper, 'Katalog speichern')
+        await clickText(wrapper, 'Zur Katalogübersicht')
+        expect(wrapper.text()).toContain('E-Mail')
+        expect(wrapper.text()).toContain('1 Frage · 0 aktiv und geprüft')
+        await clickText(wrapper, 'Katalog öffnen')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual(questions)
+    })
+
+    it('keeps a failed creation in the dialog without exposing an editor', async () => {
+        const wrapper = renderWorkspace()
+        await flushPromises()
+        await clickText(wrapper, 'Neuer Katalog')
+        await wrapper.find('[aria-label="Bezeichnung"]').setValue('E-Mail')
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { message: 'Speichern fehlgeschlagen.' } } })
+        await wrapper.find('[role="dialog"] form').trigger('submit')
+        await flushPromises()
+        expect(wrapper.find('[role="dialog"]').text()).toContain('Speichern fehlgeschlagen.')
+        expect(wrapper.find('[aria-label="Bezeichnung"]').element.value).toBe('E-Mail')
+        expect(wrapper.findComponent(QuestionEditor).exists()).toBe(false)
+    })
+
+    it('preserves saved contents when unsaved edits are deliberately discarded', async () => {
+        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        await wrapper.find('[aria-label="Bezeichnung des Katalogs"]').setValue('Ungespeichert')
+        await clickText(wrapper, 'Zur Katalogübersicht')
+        expect(wrapper.find('[role="dialog"]').text()).toContain('Ungespeicherte Änderungen')
+        await clickText(wrapper, 'Weiterbearbeiten')
+        expect(wrapper.find('[aria-label="Bezeichnung des Katalogs"]').element.value).toBe('Ungespeichert')
+        await clickText(wrapper, 'Zur Katalogübersicht')
+        await clickText(wrapper, 'Änderungen verwerfen')
+        await clickText(wrapper, 'Katalog öffnen')
+        expect(wrapper.find('[aria-label="Bezeichnung des Katalogs"]').element.value).toBe('Katalog')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
+
     it('opens without writes and shows an actionable activation state', async () => {
         const wrapper = renderWorkspace({ available: false, message: 'Die Administration muss Multiple Choice aktivieren.' })
         await flushPromises()
@@ -100,8 +211,9 @@ describe('Multiple Choice teacher workflow', () => {
     })
 
     it('previews AI questions without saving or marking them as reviewed', async () => {
-        const wrapper = renderWorkspace()
+        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [] }] })
         await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
         vi.mocked(axios.post).mockResolvedValue({ data: { questions: [validQuestion()], errors: [], warnings: ['Bitte Distraktoren prüfen.'], valid: true } })
         await clickText(wrapper, 'Vorlage importieren')
         await wrapper.find('textarea').setValue('Frage: Was ist ein Bit? Antwort: Eine binäre Ziffer.')
@@ -170,7 +282,7 @@ describe('Multiple Choice teacher workflow', () => {
         const catalog = { id: 4, title: 'Katalog', questions: [question] }
         const wrapper = renderWorkspace({ catalogs: [catalog] })
         await flushPromises()
-        await wrapper.find('[aria-label="Fragenkatalog auswählen"]').setValue('4')
+        await clickText(wrapper, 'Katalog öffnen')
         await wrapper.find('[aria-label="Bezeichnung des Katalogs"]').setValue('Überarbeiteter Katalog')
         expect(axios.patch).not.toHaveBeenCalled()
         vi.mocked(axios.patch).mockResolvedValue({ data: { catalog: { ...catalog, title: 'Überarbeiteter Katalog' } } })
@@ -184,7 +296,7 @@ describe('Multiple Choice teacher workflow', () => {
     it('prepares a test from a saved reviewed catalog without publishing or losing unsaved changes', async () => {
         const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Netzwerke', questions: [validQuestion()] }] })
         await flushPromises()
-        await wrapper.find('[aria-label="Fragenkatalog auswählen"]').setValue('4')
+        await clickText(wrapper, 'Katalog öffnen')
         expect(wrapper.text()).toContain('Dein Katalog ist bereit.')
         await wrapper.find('[aria-label="Bezeichnung des Katalogs"]').setValue('Noch nicht gespeichert')
         expect(wrapper.findAll('button').some((item) => item.text() === 'Test vorbereiten')).toBe(false)

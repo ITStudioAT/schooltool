@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Isolierte Mitarbeit-Darstellungsprüfung</title>
+    <style>
+        body { margin: 0; }
+        .fill-preview { max-width: 1120px; padding: 28px; margin: auto; }
+        .fill-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+        .fill-example { display: flex; align-items: center; padding: 16px; border: 1px solid #dde2ea; border-radius: 10px; background: white; }
+        .fill-preview .fill-example .performance-details { display: none; }
+        .points-example { flex-wrap: wrap; gap: 12px; }
+        .points-example > span { flex: 1; }
+        @media (max-width: 600px) { .fill-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+    import { createApp, h } from 'vue'
+    import { VApp, VMain } from 'vuetify/components'
+    import vuetify from '/resources/plugins/admin.js'
+    import CourseStudentPerformance from '/resources/js/pages/admin/teaching/overview/components/CourseStudentPerformance.vue'
+
+    // Render the actual card from synthetic reports only. No stores, HTTP calls or real entries.
+    const balances = [1, -1, 2, -2, 3, -3, 4, -4, 0, 0, 8, -8]
+    const course = { id: 900001, schoolyear_id: 900001 }
+    const schoolyear = { id: 900001, from: '2026-09-01', until: '2027-08-31' }
+    function example(balance, index) {
+        const student = { user_id: 900001 + index, first_name: 'Darstellung', last_name: String(index + 1) }
+        return h('div', { class: 'fill-example' }, [
+            h('span', {}, index === 9 ? 'Noch keine Einträge' : balance === 0 ? 'Neutral' : `${balance > 0 ? '+' : ''}${balance}: ${Math.min(Math.abs(balance), 4) * 25} % von unten`),
+            h(CourseStudentPerformance, {
+                student, course, schoolyear, activeSemester: 1,
+                gradingReport: { course_id: course.id, schoolyear_id: schoolyear.id, semester_count: 2, students: [{ user_id: student.user_id,
+                    semesters: [{ semester: 1, parts: [{ id: 7, name: 'Mitarbeit', status: 'incomplete', result: null,
+                        trace: { method: 'plus_minus', purpose: 'adjust_grade', balance: index === 9 ? null : balance,
+                            balance_status: index === 9 ? 'empty' : 'complete' } }] }],
+                }] },
+            }),
+        ])
+    }
+    function pointExample(percent, index) {
+        const student = { user_id: 900101 + index, first_name: 'Farbdarstellung', last_name: String(index + 1) }
+        return h('div', { class: 'fill-example points-example' }, [
+            h('span', {}, percent === null ? 'Ohne aussagekräftigen Wert' : `${percent} %`),
+            h(CourseStudentPerformance, {
+                student, course, schoolyear, activeSemester: 1,
+                gradingReport: { course_id: course.id, schoolyear_id: schoolyear.id, semester_count: 2, students: [{ user_id: student.user_id,
+                    semesters: [{ semester: 1, parts: [{ id: 8, name: 'Leistungsfeststellungen', status: percent === null ? 'empty' : 'complete', result: null,
+                        trace: { method: 'sum_percent', sum: percent ?? 0, maximum: percent === null ? 0 : 100 } }] }],
+                }] },
+            }),
+        ])
+    }
+    createApp({ render: () => h(VApp, {}, () => h(VMain, {}, () => h('main', { class: 'fill-preview' }, [
+        h('h1', {}, 'Mitarbeit: Füllung von unten'),
+        h('p', {}, 'Isolierte Darstellungsprüfung · ausschließlich Beispieldaten'),
+        h('div', { class: 'fill-grid' }, balances.map(example)),
+        h('h2', { style: 'margin-top: 32px' }, 'Leistungsfeststellungen: aktuelle Endfarbe der Fortschrittsanzeige'),
+        h('div', { class: 'fill-grid' }, [0, 40, 50, 56.25, 62.5, 70, 75, 81.25, 87.5, 100, null].map(pointExample)),
+    ]))) }).use(vuetify).mount('#app')
+</script>
+</body>
+</html>

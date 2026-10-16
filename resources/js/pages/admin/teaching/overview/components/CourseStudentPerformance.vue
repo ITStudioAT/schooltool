@@ -10,8 +10,12 @@
                 :style="{ '--grading-part-columns': gradingPartColumns.length, '--grading-mobile-columns': Math.min(gradingPartColumns.length, 2) }">
                 <div v-for="part in gradingPartSummaries" :key="part.key" class="grading-part-card"
                     :title="part.hint"
-                    :style="{ ...gradingPartCardPosition(part), '--calculated-grade-color': part.gradeColor }"
-                    :class="[{ 'grading-part-card--incomplete': part.incomplete && !part.balanceTone, 'grading-part-card--note': part.id === 'calculated-semester-grade', 'grading-part-card--calculated-note': part.calculatedGrade }, part.balanceTone ? `grading-part-card--${part.balanceTone}` : null]">
+                    :style="{ ...gradingPartCardPosition(part), '--calculated-grade-color': part.gradeColor,
+                        '--assignment-color': assignmentCardColors[part.id],
+                        '--balance-fill': `${Math.min(Math.abs(part.trace?.balance ?? 0), 4) * 25}%` }"
+                    :class="[{ 'grading-part-card--incomplete': part.incomplete && !part.balanceTone, 'grading-part-card--note': part.id === 'calculated-semester-grade', 'grading-part-card--calculated-note': part.calculatedGrade,
+                        'grading-part-card--points': ['sum_percent', 'overall_points'].includes(part.trace?.method),
+                        'grading-part-card--full-balance': part.balanceTone && Math.abs(part.trace?.balance ?? 0) >= 4 }, part.balanceTone ? `grading-part-card--${part.balanceTone}` : null]">
                     <span class="grading-part-card-title">{{ part.label }}:</span>
                     <strong class="grading-part-card-value">{{ part.value }}</strong>
                     <span v-if="part.detail" class="text-caption">{{ part.detail }}</span>
@@ -274,6 +278,23 @@ const assignmentsProgress = computed(() => {
     })
 })
 
+const assignmentCardColors = computed(() => Object.fromEntries(assignmentsProgress.value
+    .filter((progress) => Number.isFinite(progress.percent))
+    .map((progress) => {
+        const failingBand = standardPercentageGrades.at(-1)
+        // At the shared stop, the clipped bar still ends on the preceding red segment.
+        if (progress.fill <= failingBand.max) {
+            return [progress.id, failingBand.color]
+        }
+        const band = percentageGradeBand(progress.fill)
+        const nextBand = standardPercentageGrades[standardPercentageGrades.indexOf(band) - 1]
+        if (!nextBand) {
+            return [progress.id, band.color]
+        }
+        const blend = (progress.fill - band.min) / (nextBand.min - band.min) * 100
+        return [progress.id, `color-mix(in srgb, ${band.color}, ${nextBand.color} ${blend}%)`]
+    })))
+
 const assignmentGradeBoundaries = standardPercentageGrades.filter((band) => band.grade < 5)
 const assignmentGradeDescription = `Notengrenzen: ${[...assignmentGradeBoundaries].reverse().map((band) => `${formatResult(band.min)} % ${band.label}`).join(', ')}`
 
@@ -497,15 +518,38 @@ const performanceRows = computed(() => [
 }
 
 .grading-part-card--positive {
+    --balance-color: 22, 163, 74;
     border-color: rgba(22, 163, 74, 0.45);
     color: rgb(var(--v-theme-on-surface));
-    background: linear-gradient(135deg, rgba(22, 163, 74, 0.24), rgba(22, 163, 74, 0.14));
 }
 
 .grading-part-card--negative {
+    --balance-color: var(--v-theme-error);
     border-color: rgba(var(--v-theme-error), 0.2);
     color: rgb(var(--v-theme-on-surface));
-    background: linear-gradient(135deg, rgba(var(--v-theme-error), 0.14), rgba(var(--v-theme-error), 0.04));
+}
+
+.grading-part-card--positive,
+.grading-part-card--negative {
+    --balance-softness: 20%;
+    background: linear-gradient(to top,
+        rgba(var(--balance-color), 0.34) max(0%, calc(var(--balance-fill) - var(--balance-softness))),
+        transparent min(100%, calc(var(--balance-fill) + var(--balance-softness)))),
+        rgb(var(--v-theme-surface));
+}
+
+.grading-part-card--full-balance {
+    --balance-softness: 0%;
+}
+
+.grading-part-card--neutral {
+    background: rgb(var(--v-theme-surface));
+}
+
+.grading-part-card--points {
+    border-color: color-mix(in srgb, var(--assignment-color, rgb(var(--v-theme-primary))) 42%, rgb(var(--v-theme-surface)));
+    color: rgb(var(--v-theme-on-surface));
+    background: color-mix(in srgb, var(--assignment-color, rgb(var(--v-theme-surface))) 24%, rgb(var(--v-theme-surface)));
 }
 
 .grading-part-card-title {

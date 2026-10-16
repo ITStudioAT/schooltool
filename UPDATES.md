@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.51.6 !!!
+## 3.51.6
 
 ### Unterricht
 

@@ -20,7 +20,7 @@
                     :aria-pressed="section === item.id" @click="section = item.id">{{ item.label }}</v-btn>
             </nav>
 
-            <div class="mc-guide mb-4" aria-label="Nächster Schritt">
+            <div v-if="section !== 'catalogs' || catalogEditing" class="mc-guide mb-4" aria-label="Nächster Schritt">
                 <ol class="mc-steps" aria-label="Ablauf">
                     <li :class="{ 'is-current': section === 'catalogs' }">1 Fragen</li>
                     <li :class="{ 'is-current': section === 'tests' && (!selectedTest || preparingTest) }">2 Test</li>
@@ -31,13 +31,45 @@
             </div>
 
             <section v-if="section === 'catalogs'" aria-label="Fragenkataloge">
-                <div class="mc-toolbar">
-                    <v-select :model-value="catalog.id" :items="catalogs" item-title="title" item-value="id"
-                        label="Fragenkatalog auswählen" hide-details variant="outlined" density="comfortable"
-                        class="mc-picker" @update:model-value="openCatalog" />
-                    <v-btn variant="outlined" prepend-icon="mdi-plus" @click="newCatalog">Neuer Katalog</v-btn>
-                </div>
-                <v-card border rounded="lg" class="mt-4">
+                <template v-if="!catalogEditing">
+                    <div class="mc-toolbar mc-catalog-heading">
+                        <div>
+                            <h2>Meine Fragenkataloge</h2>
+                            <p class="text-body-2 text-medium-emphasis mt-1">{{ catalogs.length }} {{ catalogs.length === 1 ? 'Katalog' : 'Kataloge' }}</p>
+                        </div>
+                        <v-spacer />
+                        <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" :disabled="!!busy"
+                            @click="newCatalog">Neuer Katalog</v-btn>
+                    </div>
+                    <v-sheet v-if="!catalogs.length" border rounded="lg" class="mc-catalog-empty">
+                        <v-icon icon="mdi-bookshelf" size="36" color="primary" aria-hidden="true" />
+                        <h3>Noch keine Fragenkataloge</h3>
+                        <p>Beginne mit „Neuer Katalog“.</p>
+                    </v-sheet>
+                    <ul v-else class="mc-catalog-list" aria-label="Vorhandene Fragenkataloge">
+                        <li v-for="item in catalogs" :key="item.id">
+                            <v-card border rounded="lg" class="mc-catalog-card">
+                                <v-card-text>
+                                    <v-chip size="small" :color="readyQuestions(item.questions ?? []).length ? 'success' : undefined" variant="tonal">
+                                        {{ readyQuestions(item.questions ?? []).length ? 'Für Tests bereit' : 'Entwurf' }}
+                                    </v-chip>
+                                    <h3 class="mt-4">{{ item.title }}</h3>
+                                    <p class="text-body-2 text-medium-emphasis mt-2">{{ item.questions?.length ?? 0 }} {{ item.questions?.length === 1 ? 'Frage' : 'Fragen' }} · {{ readyQuestions(item.questions ?? []).length }} aktiv und geprüft</p>
+                                </v-card-text>
+                                <v-card-actions class="pa-4 pt-0">
+                                    <v-btn color="primary" variant="text" append-icon="mdi-arrow-right"
+                                        :aria-label="`Katalog öffnen: ${item.title}`" @click="openCatalog(item.id)">Katalog öffnen</v-btn>
+                                </v-card-actions>
+                            </v-card>
+                        </li>
+                    </ul>
+                </template>
+                <template v-else>
+                    <div class="mc-toolbar">
+                        <v-btn color="primary" variant="text" prepend-icon="mdi-arrow-left" :disabled="!!busy"
+                            @click="backToCatalogs">Zur Katalogübersicht</v-btn>
+                    </div>
+                    <v-card border rounded="lg" class="mt-3">
                     <v-card-text>
                         <v-text-field v-model="catalog.title" label="Bezeichnung des Katalogs" variant="outlined"
                             hide-details />
@@ -107,7 +139,8 @@
                             Test vorbereiten
                         </v-btn>
                     </v-card-actions>
-                </v-card>
+                    </v-card>
+                </template>
             </section>
 
             <section v-if="section === 'tests'" aria-label="Tests vorbereiten">
@@ -373,6 +406,37 @@
             </section>
         </template>
 
+        <v-dialog v-model="newCatalogDialog" persistent max-width="500" aria-labelledby="mc-new-catalog-title">
+            <v-card>
+                <form @submit.prevent="confirmNewCatalog">
+                    <v-card-title id="mc-new-catalog-title">Neuer Katalog</v-card-title>
+                    <v-card-text>
+                        <p class="text-body-2 text-medium-emphasis mb-4">Gib deinem Katalog eine Bezeichnung. Die Fragen ergänzt du im nächsten Schritt.</p>
+                        <v-text-field v-model="newCatalogTitle" label="Bezeichnung" autofocus maxlength="255"
+                            variant="outlined" :hide-details="!newCatalogTitleError" :error-messages="newCatalogTitleError"
+                            :disabled="!!busy" @update:model-value="error = ''" />
+                        <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
+                    </v-card-text>
+                    <v-card-actions class="pa-4 pt-0">
+                        <v-btn :disabled="!!busy" @click="cancelNewCatalog">Abbrechen</v-btn>
+                        <v-spacer />
+                        <v-btn type="submit" color="primary" variant="flat" :loading="busy === 'new-catalog'"
+                            :disabled="!!busy">Katalog anlegen</v-btn>
+                    </v-card-actions>
+                </form>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="discardCatalogDialog" persistent max-width="480" aria-labelledby="mc-discard-catalog-title">
+            <v-card>
+                <v-card-title id="mc-discard-catalog-title">Ungespeicherte Änderungen</v-card-title>
+                <v-card-text>Speichere deine Änderungen im Katalog oder verwirf sie, um zur Übersicht zurückzukehren.</v-card-text>
+                <v-card-actions class="pa-4 pt-0">
+                    <v-btn @click="discardCatalogDialog = false">Weiterbearbeiten</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" @click="leaveCatalog">Änderungen verwerfen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog v-model="publishDialog" max-width="560">
             <v-card>
                 <v-card-title>Test freigeben?</v-card-title>
@@ -498,6 +562,17 @@ const catalog = ref({
     id: null,
     title: '',
     questions: []
+})
+const catalogEditing = ref(false)
+const newCatalogDialog = ref(false)
+const newCatalogTitle = ref('')
+const newCatalogAttempted = ref(false)
+const discardCatalogDialog = ref(false)
+const newCatalogTitleError = computed(() => {
+    if (newCatalogAttempted.value && !newCatalogTitle.value.trim()) {
+        return 'Bitte gib eine Bezeichnung ein.'
+    }
+    return newCatalogTitle.value.trim().length > 255 ? 'Die Bezeichnung darf höchstens 255 Zeichen lang sein.' : ''
 })
 const showImport = ref(false)
 const importFormat = ref('markdown')
@@ -668,21 +743,66 @@ async function loadIndex() {
 }
 
 function newCatalog() {
-    catalog.value = {
-        id: null,
-        title: '',
-        questions: []
-    }
+    newCatalogTitle.value = ''
+    newCatalogAttempted.value = false
+    newCatalogDialog.value = true
     error.value = ''
     notice.value = ''
+}
+
+function cancelNewCatalog() {
+    if (!busy.value) {
+        newCatalogDialog.value = false
+        error.value = ''
+    }
+}
+
+function rememberCatalog(saved) {
+    catalogs.value = [...catalogs.value.filter((item) => item.id !== saved.id), saved]
+        .sort((first, second) => first.title.localeCompare(second.title, 'de'))
+}
+
+async function confirmNewCatalog() {
+    newCatalogAttempted.value = true
+    if (newCatalogTitleError.value) {
+        return
+    }
+    await task('new-catalog', async () => {
+        const { data } = await axios.post(createCatalog.url(), { title: newCatalogTitle.value.trim(), questions: [] })
+        rememberCatalog(data.catalog)
+        openCatalog(data.catalog.id)
+        newCatalogDialog.value = false
+    })
 }
 
 function openCatalog(id) {
     const selected = catalogs.value.find((item) => item.id === id)
     if (selected) {
         catalog.value = JSON.parse(JSON.stringify(selected))
+        catalogEditing.value = true
+        showImport.value = false
+        importPreview.value = null
+        importText.value = ''
+        generateWithAi.value = false
+        error.value = ''
         notice.value = ''
     }
+}
+
+function backToCatalogs() {
+    const saved = catalogs.value.find((item) => item.id === catalog.value.id)
+    if (saved && (saved.title !== catalog.value.title || JSON.stringify(saved.questions) !== JSON.stringify(catalog.value.questions))) {
+        discardCatalogDialog.value = true
+        return
+    }
+    leaveCatalog()
+}
+
+function leaveCatalog() {
+    discardCatalogDialog.value = false
+    catalogEditing.value = false
+    error.value = ''
+    notice.value = ''
 }
 
 function prepareCatalogTest() {
@@ -711,8 +831,8 @@ async function saveCatalog() {
             await axios.post(createCatalog.url(), payload)
         if (data.catalog) {
             catalog.value = JSON.parse(JSON.stringify(data.catalog))
+            rememberCatalog(data.catalog)
         }
-        await loadIndex()
         notice.value = 'Katalog gespeichert. Entwürfe bleiben bis zu deiner Prüfung für Tests gesperrt.'
     })
 }
@@ -979,6 +1099,21 @@ h3 {
     background: #f1f5f8;
     border-radius: 4px;
 }
+
+.mc-catalog-heading { margin: 8px 0 20px; }
+.mc-catalog-empty { text-align: center; padding: 46px 20px; color: #68768a; }
+.mc-catalog-empty h3 { color: #243447; margin: 14px 0 6px; }
+.mc-catalog-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 18px;
+    list-style: none;
+    padding: 0;
+}
+.mc-catalog-list li, .mc-catalog-card { min-width: 0; height: 100%; }
+.mc-catalog-card { display: flex; flex-direction: column; }
+.mc-catalog-card :deep(.v-card-text) { flex: 1; }
+.mc-catalog-card h3 { font-size: 1.08rem; overflow-wrap: anywhere; }
 
 .mc-steps {
     display: flex;
