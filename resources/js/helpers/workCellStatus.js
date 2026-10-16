@@ -9,6 +9,11 @@ function notificationLabel(record, purpose) {
         purpose, record.mode)
 }
 
+function notificationState(record) {
+    if (record?.mode === 'live') return 'sent'
+    return ['prepared', 'scheduled'].includes(record?.mode) ? record.mode : 'unknown'
+}
+
 export function workEvaluationStatus(work, studentId, now = Date.now()) {
     const record = personalWorkAssessment(work, studentId)
     const unknown = { state: 'unknown', color: 'orange-darken-2', label: 'Bewertungsabschluss nicht belegt.' }
@@ -37,16 +42,16 @@ export function workCellStatuses(work, studentId, now = Date.now()) {
             label: provision.method === 'download_release'
                 ? `Aufgabe zum Download bereitgestellt; tatsächlicher Download nicht bekannt. Verfügbar seit ${assessmentTimeText(provision.available_at)}.`
                 : provisionNotificationText(provision) }
-        : { icon: 'mdi-file-send-outline', color: tasks?.mode === 'live' ? 'success' : 'orange-darken-2',
-            state: tasks?.mode === 'live' ? 'sent' : 'unknown', label: notificationLabel(tasks, 'tasks')
+        : { icon: tasks?.mode === 'scheduled' ? 'mdi-clock-outline' : 'mdi-file-send-outline', color: tasks?.mode === 'live' ? 'success' : 'orange-darken-2',
+            state: notificationState(tasks), label: notificationLabel(tasks, 'tasks')
                 + (provision ? ` ${provisionNotificationText(provision)}` : '') }
     const results = workDispatchRecord(work, studentId, 'results')
     return [
         { purpose: 'tasks', ...output },
         { purpose: 'submission', icon: 'mdi-inbox-arrow-down', ...workSubmissionStatus(work, studentId, now) },
         { purpose: 'evaluation', icon: 'mdi-file-check-outline', ...workEvaluationStatus(work, studentId, now) },
-        { purpose: 'results', icon: results?.mode === 'live' ? 'mdi-email-check-outline' : 'mdi-email-outline',
+        { purpose: 'results', icon: results?.mode === 'live' ? 'mdi-email-check-outline' : results?.mode === 'scheduled' ? 'mdi-clock-outline' : 'mdi-email-outline',
             color: results?.mode === 'live' ? 'success' : 'orange-darken-2',
-            state: results?.mode === 'live' ? 'sent' : 'unknown', label: notificationLabel(results, 'results') },
+            state: notificationState(results), label: notificationLabel(results, 'results') },
     ]
 }

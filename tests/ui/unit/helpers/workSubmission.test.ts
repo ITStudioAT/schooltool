@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { workSubmissionStatus } from '@/helpers/workSubmission'
 import WorkSubmissionStatus from '@/pages/admin/teaching/overview/components/WorkSubmissionStatus.vue'
 import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
-import { workEvaluationStatus } from '@/helpers/workCellStatus'
+import { workCellStatuses, workEvaluationStatus } from '@/helpers/workCellStatus'
 
 const now = Date.parse('2026-10-14T10:00:00Z')
 
@@ -244,6 +244,38 @@ describe('Personal table status icon sequence', () => {
         try {
             expect(wrapper.get('[data-work-status="tasks"]').attributes('color')).toBe('orange-darken-2')
             expect(wrapper.get('[data-work-status="tasks"]').attributes('aria-label')).not.toContain('Aufgaben per E-Mail versandt')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['tasks', 'results'])('replaces the %s clock only with saved send evidence for that recipient', async purpose => {
+        const work = fixture()
+        const log = { origin: 'dispatch_import', purpose, sha256: 'b'.repeat(64) }
+        const scheduled = { origin: 'dispatch_import', purpose, student_id: 12, mode: 'scheduled',
+            log_sha256: log.sha256, planned_at: '2026-10-01T10:00:00Z', sent_at: null }
+        work.status.dispatch_logs = [log]
+        work.status.dispatch_attempts = [scheduled]
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now } })
+
+        try {
+            const status = () => wrapper.get(`[data-work-status="${purpose}"]`)
+            expect(workCellStatuses(work, 12, now).find(item => item.purpose === purpose)?.state).toBe('scheduled')
+            expect(status().attributes('icon')).toBe('mdi-clock-outline')
+            expect(status().attributes('aria-label')).toContain('01.10.2026 um 12:00 Uhr. Versand noch nicht bestätigt.')
+
+            const notification = { ...scheduled, student_id: 13, sent_at: '2026-10-01T10:00:04Z' }
+            const partial = { ...work, status: { ...work.status, dispatch_notifications: [notification] } }
+            await wrapper.setProps({ work: partial })
+            expect(status().attributes('icon')).toBe('mdi-clock-outline')
+
+            const sent = { ...partial, status: { ...partial.status, dispatch_notifications: [{ ...notification, student_id: 12 }] } }
+            await wrapper.setProps({ work: sent })
+            expect(workCellStatuses(sent, 12, now).find(item => item.purpose === purpose)?.state).toBe('sent')
+            expect(status().attributes('color')).toBe('success')
+            expect(status().attributes('icon')).not.toBe('mdi-clock-outline')
+            expect(status().attributes('aria-label')).not.toContain('geplant')
+
+            await wrapper.setProps({ work: { ...sent, status: { ...sent.status, dispatch_logs: [] } } })
+            expect(status().attributes('color')).toBe('orange-darken-2')
         } finally { wrapper.unmount() }
     })
 })

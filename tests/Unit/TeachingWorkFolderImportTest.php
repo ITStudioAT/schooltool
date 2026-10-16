@@ -7,7 +7,7 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-test('prepares a folder without a fixed deadline and preserves the existing work deadline', function (array $deadline) {
+test('prepares a folder without a fixed deadline and preserves the existing work deadline', function (array $deadline, string $prefix) {
     $folder = '2026-10-16_Informatik_1A_1F';
     $metadata = $deadline + [
         'Schooltool_Arbeit_ID' => 80,
@@ -17,7 +17,7 @@ test('prepares a folder without a fixed deadline and preserves the existing work
     ];
     $parser = app(TeachingWorkFolderImport::class);
     $bundle = $parser->parse($folder, json_encode([
-        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => json_encode($metadata, JSON_THROW_ON_ERROR)],
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => $prefix.json_encode($metadata, JSON_THROW_ON_ERROR)],
     ], JSON_THROW_ON_ERROR), '[]', []);
     $work = (new TeachingCourseWork)->forceFill([
         'id' => 80, 'teaching_course_id' => 27,
@@ -28,22 +28,49 @@ test('prepares a folder without a fixed deadline and preserves the existing work
         ->and($parser->deadlineFields($work, $bundle))->toBe([])
         ->and($work->finish_until_time)->toBe('17:50')
         ->and($bundle['sources'])->toHaveKey('anlage_und_quellen.json');
-})->with(['absent' => [[]], 'null' => [['Abgabeschluss' => null]]]);
+})->with(['absent' => [[]], 'null' => [['Abgabeschluss' => null]]])
+    ->with(['plain UTF-8' => [''], 'UTF-8 BOM' => ["\xEF\xBB\xBF"]]);
 
-test('imports an explicitly specified deadline with its Vienna offset', function () {
+test('imports an explicitly specified deadline with its Vienna offset', function (string $prefix, array $communicated) {
     $folder = '2026-10-16_Informatik_1A_1F';
     $parser = app(TeachingWorkFolderImport::class);
     $bundle = $parser->parse($folder, json_encode([
-        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => $prefix.json_encode([
             'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
             'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => '2026-10-16T17:50:00+02:00',
-        ], JSON_THROW_ON_ERROR)],
+            'Zusaetzliche_Quellen' => ['version' => 2, 'Hinweis' => 'Ergänzende Metadaten bleiben kompatibel.'],
+        ] + $communicated, JSON_THROW_ON_ERROR)],
     ], JSON_THROW_ON_ERROR), '[]', []);
     $work = (new TeachingCourseWork)->forceFill(['id' => 80, 'teaching_course_id' => 27]);
 
     expect($parser->deadlineFields($work, $bundle))->toBe([
         'finish_until_date' => '2026-10-16', 'finish_until_time' => '17:50',
     ]);
+})->with(['plain UTF-8' => [''], 'UTF-8 BOM' => ["\xEF\xBB\xBF"]])
+    ->with(['single deadline' => [[]], 'earlier communicated deadline' => [['MitgeteilteAbgabefrist' => '2026-10-16T17:00:00+02:00']]]);
+
+test('rejects malformed JSON even with a UTF-8 BOM', function () {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => "\xEF\xBB\xBF".'{"Schooltool_Arbeit_ID":80,}'],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class, 'Anlage_und_Quellen.json: Ungültige Fristmetadaten.');
+});
+
+test('rejects a later communicated deadline even with a UTF-8 BOM', function () {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => "\xEF\xBB\xBF".json_encode([
+            'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
+            'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => '2026-10-16T17:50:00+02:00',
+            'MitgeteilteAbgabefrist' => '2026-10-16T18:00:00+02:00',
+        ], JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class, 'Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
 });
 
 test('rejects malformed explicit deadlines instead of treating them as unset', function (string $deadline) {

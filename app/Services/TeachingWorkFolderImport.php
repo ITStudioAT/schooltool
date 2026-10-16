@@ -100,6 +100,9 @@ class TeachingWorkFolderImport
     /** @return array{work_id: int, course_id: int, at: ?string} */
     private function parseDeadline(string $text): array
     {
+        if (str_starts_with($text, "\xEF\xBB\xBF")) {
+            $text = substr($text, 3);
+        }
         try {
             $metadata = json_decode($text, true, 32, JSON_THROW_ON_ERROR);
         } catch (JsonException) {

@@ -84,6 +84,31 @@ describe('Imported work dispatch notifications', () => {
             expect(workDispatchNotification(work, 12, 'tasks')).toBeNull()
         } finally { wrapper.unmount() }
     })
+
+    it.each(['tasks', 'results'])('keeps outstanding %s recipients visible beside a confirmed aggregate send', async purpose => {
+        const log = { origin: 'dispatch_import', purpose, sha256: 'd'.repeat(64) }
+        const attempt = { origin: 'dispatch_import', purpose, log_sha256: log.sha256, student_id: 12,
+            mode: 'scheduled', planned_at: '2026-10-13T06:40:00Z', sent_at: null }
+        const work = { id: 65, status: { dispatch_logs: [log],
+            dispatch_attempts: [attempt, { ...attempt, student_id: 13 }, { ...attempt, student_id: 14, mode: 'prepared' }],
+            dispatch_notifications: [{ ...attempt, sent_at: '2026-10-13T06:40:04Z' }] } }
+        const wrapper = mount(WorkDispatchStatus, { props: { work, aggregate: true } })
+
+        try {
+            expect(wrapper.text()).toContain('1 Person weiterhin serverseitig geplant. Versand noch nicht bestätigt.')
+            expect(wrapper.text()).toContain('1 Person weiterhin vorbereitet. Versand noch nicht bestätigt.')
+            expect(wrapper.find('[icon="mdi-clock-outline"]').exists()).toBe(true)
+            expect(wrapper.findAll('[color="success"]')).toHaveLength(1)
+
+            await wrapper.setProps({ compact: true })
+            expect(wrapper.get('[icon="mdi-clock-outline"]').attributes('aria-label')).toContain('1 Person weiterhin serverseitig geplant')
+            await wrapper.setProps({ compact: false, work: { ...work, status: { ...work.status,
+                dispatch_notifications: [12, 13, 14].map(student_id => ({ ...attempt, student_id, sent_at: '2026-10-13T06:40:04Z' })) } } })
+            expect(wrapper.text()).not.toContain('weiterhin')
+            expect(wrapper.find('[icon="mdi-clock-outline"]').exists()).toBe(false)
+            expect(work.status.dispatch_attempts).toHaveLength(3)
+        } finally { wrapper.unmount() }
+    })
     const log = { sha256: 'a'.repeat(64), origin: 'dispatch_import' }
     const notification = { student_id: 12, sent_at: '2026-10-04T00:15:39Z', origin: 'dispatch_import', log_sha256: log.sha256 }
     const work = { id: 65, status: { dispatch_logs: [log], dispatch_notifications: [notification] } }

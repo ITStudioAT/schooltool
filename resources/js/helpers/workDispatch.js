@@ -50,6 +50,15 @@ export function workDispatchRecord(work, studentId, purpose, aggregate = false) 
     return planning[0] || attempts.at(-1) || null
 }
 
+export function workDispatchPlanningRecords(work, purpose) {
+    const studentIds = [...new Set((work?.status?.dispatch_attempts || [])
+        .filter(attempt => attempt.purpose === purpose && attempt.student_id)
+        .map(attempt => String(attempt.student_id)))]
+
+    return studentIds.map(studentId => workDispatchRecord(work, studentId, purpose))
+        .filter(record => ['prepared', 'scheduled'].includes(record?.mode))
+}
+
 function isDispatchReadyRecord(work, record) {
     return record?.mode === 'prepared' && record.purpose === 'tasks'
         && (work.status?.dispatch_logs || []).some(log => log.origin === 'dispatch_import' && log.purpose === 'tasks'
