@@ -374,6 +374,141 @@ test('reassessment reuses legacy checks only for the same secured submission inv
     expect($status['assessment_json_packages'][0]['final_download'])->toBe($status['assessment_json_packages'][1]['final_download']);
 })->with(['feedback', 'submission bytes', 'submission bytes with unchanged fingerprint', 'collection time', 'no secured inventory']);
 
+/** @return array{package: array<string, mixed>, documents: string, folder: string, pdf_paths: string, pdfs: array} */
+function inventoryAssessmentPayload(object $context, TeachingCourseWork $work, bool $includeHashes = true): array
+{
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($context, $work), 'open');
+    $package['submission_check']['deadline_at'] = '2026-10-09T18:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    if ($includeHashes) {
+        $package = TeachingWorkJsonFixture::withSubmissionHashes($package);
+    }
+    $package['records'][0]['total_minor'] = 495;
+    $package['records'][0]['criteria'][0]['earned_minor'] = 495;
+    $work->update(['finish_until_date' => '2026-10-09', 'finish_until_time' => '20:00']);
+
+    return ['package' => $package] + workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+}
+
+test('personal submission bindings allow assessment completion before the deadline without a new checkpoint', function () {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work);
+    $package = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $firstStatus = $work->fresh()->status;
+    $firstReceipt = $firstStatus['assessment_json_imports'][0];
+    $package['records'][1]['evaluation_state'] = 'complete';
+    $package['records'][1]['total_minor'] = 465;
+    $package['records'][1]['criteria'][0]['earned_minor'] = 465;
+    $package['records'][1]['evaluation_note'] = 'Abgeschlossen';
+    $package['records'][1]['comment'] = 'Endgültige Bewertung: 4,65 von 5.';
+    $package['records'][1]['evaluation_completed_at'] = '2026-10-08T10:00:00Z';
+    $package['records'][1]['source_fingerprint'] = hash('sha256', 'Genuine new evaluation completion proof');
+    $pdf = workEvaluationPdf('Beurteilung_Bea.pdf');
+    $package['records'][1]['pdf'] = ['filename' => $pdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $pdf->getRealPath())];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $payload['pdfs'] = [$pdf];
+    $before = $work->fresh()->getAttributes();
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()
+        ->assertJsonPath('data.submission_check_status.complete', false)
+        ->assertJsonPath('data.submission_check_status.checked_at', $package['submission_check']['checked_at']);
+    $fresh = $work->fresh();
+    expect($fresh->groups[0]['points'][0]['points'])->toBe(4.95);
+    expect($fresh->groups[1]['points'][0]['points'])->toBe(4.65);
+    expect($fresh->status['assessment_json_imports'][0])->toBe($firstReceipt);
+    expect($fresh->status['assessment_json_imports'][1]['history'])->toHaveCount(1);
+    expect($fresh->status['submission_checks'])->toBe($firstStatus['submission_checks']);
+    expect($fresh->status['submission_checks'][0]['binding_kind'])->toBe('submission_sha256');
+    $beforeRepeat = $fresh->getAttributes();
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    expect($work->fresh()->getAttributes())->toBe($beforeRepeat);
+});
+
+test('personal submission bindings reject unreviewed inventory collection identity and format changes atomically', function (string $change) {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work);
+    $package = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $before = $work->fresh()->getAttributes();
+    switch ($change) {
+        case 'changed file': $package['records'][1]['submission_sha256'][0] = str_repeat('f', 64);
+            break;
+        case 'removed file': array_pop($package['records'][1]['submission_sha256']);
+            break;
+        case 'collection': $package['records'][1]['email_collected_at'] = '2026-10-05T10:00:00Z';
+            break;
+        case 'identity': $package['records'][1]['identity']['class_name'] = 'OTHER';
+            break;
+        case 'legacy downgrade':
+            foreach ($package['records'] as &$record) {
+                unset($record['submission_sha256']);
+            }
+            unset($record);
+            break;
+        case 'saved inventory changed':
+            $status = $work->fresh()->status;
+            $status['assessment_json_imports'][1]['record']['submission_sha256'][0] = str_repeat('f', 64);
+            $work->update(['status' => $status]);
+            $before = $work->fresh()->getAttributes();
+            $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', null);
+            break;
+    }
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+
+    $this->postJson($url, $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+})->with(['changed file', 'removed file', 'collection', 'identity', 'legacy downgrade', 'saved inventory changed']);
+
+test('historical submission bindings change only with a newer checkpoint and retain the original binding history', function () {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work, false);
+    $legacy = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($legacy);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $status = $work->fresh()->status;
+    unset($status['submission_checks'][0]['binding_kind']);
+    $work->update(['status' => $status]);
+    $historical = $status['submission_checks'][0];
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', $legacy['submission_check']['checked_at']);
+    $package = TeachingWorkJsonFixture::withSubmissionHashes($legacy);
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('package');
+    expect($work->fresh()->status['submission_checks'])->toBe([$historical]);
+    $package['submission_check']['checked_at'] = '2026-10-06T10:02:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $checks = $work->fresh()->status['submission_checks'];
+    expect($checks)->toHaveCount(2);
+    expect($checks[0])->toBe($historical);
+    expect($checks[1]['binding_kind'])->toBe('submission_sha256');
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', '2026-10-06T10:02:00Z');
+    $payload['package'] = TeachingWorkJsonFixture::upload($legacy);
+    $this->postJson($url, $payload)->assertUnprocessable();
+});
+
 test('JSON submission checkpoint preserves history rejects older proofs and requires a fresh proof for changed submissions', function () {
     $work = prepareWorkDispatchImport($this);
     $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));

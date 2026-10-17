@@ -373,6 +373,14 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
+        "submission_sha256": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
         "pdf": {
           "$ref": "#/$defs/pdf"
         },

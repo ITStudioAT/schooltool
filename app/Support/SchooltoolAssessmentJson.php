@@ -27,6 +27,8 @@ class SchooltoolAssessmentJson
         $schema = json_decode(file_get_contents(__DIR__."/schooltool-json-v{$version}.schema.json"), true, flags: JSON_THROW_ON_ERROR);
         $this->structure($object, $schema, $schema, '$');
         $package = json_decode(json_encode($object, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $inventoryCount = count(array_filter($package['records'], fn (array $record): bool => array_key_exists('submission_sha256', $record)));
+        $this->check($inventoryCount === 0 || $inventoryCount === count($package['records']), 'Abgabeprüfsummen müssen für alle Personen oder für keine Person enthalten sein.');
         $download = $package['final_download'] ?? null;
         if ($download !== null) {
             $this->finalDownload($download, $package['exercise_id'], $package['records']);
@@ -41,6 +43,19 @@ class SchooltoolAssessmentJson
         $ids = $identities = $personIds = $pdfs = [];
         $this->pdf($package['overview_pdf'], $pdfs);
         foreach ($package['records'] as $record) {
+            if (array_key_exists('submission_sha256', $record)) {
+                $hashes = $record['submission_sha256'];
+                $this->check(count(array_unique($hashes)) === count($hashes), 'Doppelte persönliche Abgabeprüfsummen.');
+                $this->check(($record['submission_state'] !== 'received' || $hashes !== [])
+                    && ($record['submission_state'] !== 'not_received' || $hashes === []), 'Persönliche Abgabeprüfsummen widersprechen dem Abgabestatus.');
+                if ($download !== null) {
+                    $person = collect($download['participants'])->firstWhere('participant_id', $record['participant_id']);
+                    $downloadHashes = $person['submission_sha256'];
+                    sort($hashes, SORT_STRING);
+                    sort($downloadHashes, SORT_STRING);
+                    $this->check($hashes === $downloadHashes, 'Persönliche Abgabeprüfsummen widersprechen dem Abschlussdownload.');
+                }
+            }
             foreach (['email_collected_at', 'evaluation_completed_at'] as $field) {
                 $time = $record[$field] ?? null;
                 if ($time !== null) {

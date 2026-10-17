@@ -29,6 +29,19 @@ class TeachingWorkJsonFixture
         return UploadedFile::fake()->createWithContent('Schooltool-Bewertungen.json', json_encode(self::sign($package), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
     }
 
+    public static function withSubmissionHashes(array $package): array
+    {
+        $package['schema_version'] = 2;
+        foreach ($package['records'] as &$record) {
+            $record['submission_sha256'] = $record['submission_state'] === 'received'
+                ? [hash('sha256', $record['participant_id'].' message'), hash('sha256', $record['participant_id'].' attachment')]
+                : [];
+        }
+        unset($record);
+
+        return $package;
+    }
+
     /** @return array<string, mixed> */
     public static function provision(?array $package = null): array
     {

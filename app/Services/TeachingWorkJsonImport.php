@@ -16,6 +16,10 @@ use JsonException;
 
 class TeachingWorkJsonImport
 {
+    private const LEGACY_BINDING = 'source_fingerprint';
+
+    private const SUBMISSION_BINDING = 'submission_sha256';
+
     public function __construct(private SchooltoolAssessmentJson $parser, private TeachingCourseStudentEntryService $entries, private TeachingCourseWorkEntrySyncService $sync, private TeachingWorkMarkdownImport $markdown, private TeachingWorkAiExport $identityExport) {}
 
     /** @param list<UploadedFile> $uploads */
@@ -199,6 +203,9 @@ class TeachingWorkJsonImport
                 $nextTime = $this->parser->instant($submissionCheck['checked_at']);
                 $this->parser->check($nextTime > $previousTime || ($nextTime == $previousTime && $submissionCheck['check_checksum'] === $previousCheck['check']['check_checksum']), 'Abgabeprüfung ist älter oder widerspricht dem gespeicherten Prüfstand.');
                 if ($nextTime == $previousTime) {
+                    $bindingKind = $this->bindingKind($package['records']);
+                    $previousKind = $previousCheck['binding_kind'] ?? self::LEGACY_BINDING;
+                    $this->parser->check($bindingKind === $previousKind, 'Wechsel der Abgabebindung benötigt einen tatsächlich neueren Prüfstand.');
                     $this->parser->check($previousCheck['work_id'] === (int) $work->id && $previousCheck['course_id'] === (int) $course->id
                         && ($previousCheck['roster'] === $this->rosterBinding($work)
                             || $previousCheck['roster'] === $this->rosterBinding($work, false)
@@ -208,13 +215,13 @@ class TeachingWorkJsonImport
                         $incoming = array_values(array_filter($incoming, fn (array $receipt): bool => $receipt['exercise_id'] !== $package['exercise_id'] || $receipt['participant_id'] !== $record['participant_id']));
                         $incoming[] = ['exercise_id' => $package['exercise_id'], 'participant_id' => $record['participant_id'], 'student_id' => $rows[$index]['student_id'], 'record' => $record];
                     }
-                    $sameSubmissions = $previousCheck['bindings'] === $this->recordBindings($incoming);
-                    if ($previousDownload !== null && isset($package['final_download'])) {
+                    $sameSubmissions = $previousCheck['bindings'] === $this->recordBindings($incoming, bindingKind: $bindingKind);
+                    if ($bindingKind === self::LEGACY_BINDING && $previousDownload !== null && isset($package['final_download'])) {
                         $this->parser->finalDownload($previousDownload, $package['exercise_id'], array_column(array_values(array_filter($receipts,
                             fn (array $receipt): bool => $receipt['exercise_id'] === $package['exercise_id'])), 'record'));
                         $sameSubmissions = $this->recordBindings($receipts, $previousDownload) === $this->recordBindings($incoming, $package['final_download']);
                     }
-                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($receipts) && $sameSubmissions, 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
+                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($receipts, bindingKind: $previousKind) && $sameSubmissions, 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
                 }
             }
         }
@@ -289,12 +296,14 @@ class TeachingWorkJsonImport
         $status['assessment_json_imports'] = $receipts;
         if (isset($package['submission_check'])) {
             $checks = $status['submission_checks'] ?? [];
-            $bindings = $this->recordBindings($receipts);
+            $bindingKind = $this->bindingKind($package['records']);
+            $bindings = $this->recordBindings($receipts, bindingKind: $bindingKind);
             $last = collect($checks)->last();
             if (! $last || $last['check']['check_checksum'] !== $package['submission_check']['check_checksum'] || $last['bindings'] !== $bindings
+                || ($last['binding_kind'] ?? self::LEGACY_BINDING) !== $bindingKind
                 || $last['roster'] !== $this->rosterBinding($work)) {
                 $checks[] = ['check' => $package['submission_check'], 'work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id,
-                    'roster' => $this->rosterBinding($work), 'bindings' => $bindings, 'imported_at' => now()->toISOString()];
+                    'roster' => $this->rosterBinding($work), 'bindings' => $bindings, 'binding_kind' => $bindingKind, 'imported_at' => now()->toISOString()];
             }
             $status['submission_checks'] = $checks;
         }
@@ -505,13 +514,26 @@ class TeachingWorkJsonImport
         return SchooltoolAssessmentJson::digest([$people, (string) $work->teachingCourse->title, (bool) $work->is_group_work, $groups]);
     }
 
-    /** @return array<int, string> */
-    private function recordBindings(array $receipts, ?array $download = null): array
+    /** @param list<array<string, mixed>> $records */
+    private function bindingKind(array $records): string
     {
+        return array_key_exists('submission_sha256', $records[0]) ? self::SUBMISSION_BINDING : self::LEGACY_BINDING;
+    }
+
+    /** @return array<int, string> */
+    private function recordBindings(array $receipts, ?array $download = null, string $bindingKind = self::LEGACY_BINDING): array
+    {
+        $this->parser->check(in_array($bindingKind, [self::LEGACY_BINDING, self::SUBMISSION_BINDING], true), 'Unbekannte Abgabebindung.');
         $bindings = [];
         foreach ($receipts as $receipt) {
             $record = $receipt['record'];
             $source = $record['source_fingerprint'] ?? null;
+            if ($bindingKind === self::SUBMISSION_BINDING) {
+                $this->parser->check(isset($record['submission_sha256']) && is_array($record['submission_sha256']), 'Gespeicherte persönliche Abgabeprüfsummen fehlen.');
+                $hashes = $record['submission_sha256'];
+                sort($hashes, SORT_STRING);
+                $source = ['submission_sha256' => $hashes];
+            }
             if ($download !== null && $download['exercise_id'] === $receipt['exercise_id']) {
                 $person = collect($download['participants'])->firstWhere('participant_id', $receipt['participant_id']);
                 $this->parser->check($person !== null, 'Abschlussbestand enthält nicht alle gebundenen Personen.');
@@ -590,7 +612,7 @@ class TeachingWorkJsonImport
             $imports = $work->status['assessment_json_imports'] ?? [];
             $this->parser->check($receipt['work_id'] === (int) $work->id && $receipt['course_id'] === (int) $work->teaching_course_id
                 && in_array($receipt['roster'], [$this->rosterBinding($work), $this->rosterBinding($work, false)], true)
-                && $receipt['bindings'] === $this->recordBindings($imports), 'Abgabeprüfung: Zielbasis geändert.');
+                && $receipt['bindings'] === $this->recordBindings($imports, bindingKind: $receipt['binding_kind'] ?? self::LEGACY_BINDING), 'Abgabeprüfung: Zielbasis geändert.');
             $records = array_column(array_values(array_filter($imports, fn (array $item): bool => $item['exercise_id'] === $check['exercise_id'])), 'record');
             $package = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $item): bool => $item['exercise_id'] === $check['exercise_id']);
             $absenceIds = $package['teacher_absence_decision']['participant_ids'] ?? [];
