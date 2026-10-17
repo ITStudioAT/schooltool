@@ -10,6 +10,10 @@
 
 - Verbesserungen, Klärungen
 
+### Schülerinnen-Übersicht
+
+- Kursleistungen pro Kurs freigeben
+
 ## 3.51.7
 
 ### Unterricht

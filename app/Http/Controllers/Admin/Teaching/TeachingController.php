@@ -188,7 +188,7 @@ class TeachingController extends Controller
             'teaching_student_grade_columns.show_behaviour_grade' => ['sometimes', 'boolean'],
             'teaching_student_grade_columns.show_points_progress' => ['sometimes', 'boolean'],
             'teaching_student_grade_columns.show_stars' => ['sometimes', 'boolean'],
-            'teaching_course_id' => 'required_with:teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade,teaching_student_grade_columns.show_points_progress,teaching_student_grade_columns.show_stars|nullable|integer',
+            'teaching_course_id' => 'required_with:teaching_show_calculated_grade,teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade,teaching_student_grade_columns.show_points_progress,teaching_student_grade_columns.show_stars|nullable|integer',
         ]);
 
         if (isset($validated['teaching_schemas'])) {
@@ -246,10 +246,13 @@ class TeachingController extends Controller
             $auth_user->teaching_show_behaviour = (bool) $validated['teaching_show_behaviour'];
         }
         if (array_key_exists('teaching_show_calculated_grade', $validated)) {
+            $course = TeachingCourse::query()->findOrFail((int) $validated['teaching_course_id']);
+            $this->authorizeTeachingCourseAccess($course, $auth_user);
+
             $gradeColumns = is_array($auth_user->teaching_grade_columns_by_schoolyear)
                 ? $auth_user->teaching_grade_columns_by_schoolyear
                 : [];
-            $gradeColumns[(string) $auth_user->schoolyear_id]['show_calculated_grade'] = (bool) $validated['teaching_show_calculated_grade'];
+            $gradeColumns[(string) $auth_user->schoolyear_id]['show_calculated_grade_by_course'][(string) $course->id] = (bool) $validated['teaching_show_calculated_grade'];
             $auth_user->teaching_grade_columns_by_schoolyear = $gradeColumns;
         }
         if (array_key_exists('teaching_student_grade_columns', $validated)) {
@@ -656,6 +659,7 @@ class TeachingController extends Controller
             'teaching_notifications_usage_counts' => $this->teachingCourseBehaviourEntryCountsByTypeForKind($user, $user->schoolyear_id, 'notification'),
             'teaching_show_behaviour' => $user->teaching_show_behaviour ?? true,
             'teaching_show_calculated_grade' => (bool) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade", false),
+            'teaching_show_calculated_grade_by_course' => (object) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade_by_course", []),
         ];
     }
 

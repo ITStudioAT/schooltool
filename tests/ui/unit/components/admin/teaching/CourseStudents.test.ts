@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 import axios from 'axios'
+import { computed, reactive } from 'vue'
 
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 
@@ -156,28 +157,73 @@ describe('CourseStudents account switching', () => {
 })
 
 describe('CourseStudents complete performance loading', () => {
-    it.each([true, false])('reloads the calculated note preference %s', (value) => {
-        const context = { showCalculatedGrade: !value }
-        ;(CourseStudents as any).watch['settings.teaching_show_calculated_grade'].handler.call(context, value)
-        expect(context.showCalculatedGrade).toBe(value)
+    it('restores each course preference on course changes and fresh settings loads', () => {
+        const context = reactive({
+            selected_course: { id: 17 },
+            settings: { teaching_show_calculated_grade: true, teaching_show_calculated_grade_by_course: { 17: false, 18: true } },
+        })
+        const visible = computed(() => (CourseStudents as any).computed.showCalculatedGrade.call(context))
+        expect(visible.value).toBe(false)
+        context.selected_course = { id: 18 }
+        expect(visible.value).toBe(true)
+        context.selected_course = { id: 17 }
+        expect(visible.value).toBe(false)
+        context.settings = JSON.parse(JSON.stringify(context.settings))
+        expect(visible.value).toBe(false)
+    })
+
+    it.each([true, false])('uses the previous preference %s only for courses without a saved choice', (value) => {
+        const context = { selected_course: { id: 17 }, settings: { teaching_show_calculated_grade: value } }
+        expect((CourseStudents as any).computed.showCalculatedGrade.call(context)).toBe(value)
     })
 
     it.each([[false, true], [true, false]])('persists calculated note visibility from %s to %s', async (previous, value) => {
         const saveSettings = vi.fn().mockResolvedValue(true)
-        const context = { showCalculatedGrade: previous, savingCalculatedGradePreference: false, teachingStore: { saveSettings } }
+        const context = { selected_course: { id: 17 }, settings: {}, showCalculatedGrade: previous,
+            savingCalculatedGradePreference: false, teachingStore: { saveSettings } }
         await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
-        expect(saveSettings).toHaveBeenCalledWith({ teaching_show_calculated_grade: value }, { notifySuccess: false })
-        expect(context.showCalculatedGrade).toBe(value)
+        expect(saveSettings).toHaveBeenCalledWith({ teaching_course_id: 17, teaching_show_calculated_grade: value }, { notifySuccess: false })
         expect(context.savingCalculatedGradePreference).toBe(false)
     })
 
     it('retains the calculated note preference when saving fails', async () => {
-        const context = { showCalculatedGrade: true, savingCalculatedGradePreference: false,
+        const context = { selected_course: { id: 17 }, settings: {}, showCalculatedGrade: true, savingCalculatedGradePreference: false,
             teachingStore: { saveSettings: vi.fn().mockResolvedValue(false) } }
         await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
         expect(context.showCalculatedGrade).toBe(true)
         expect(context.savingCalculatedGradePreference).toBe(false)
     })
+
+    it('keeps the newly selected course visible when the previous course finishes saving', async () => {
+        let complete: () => void
+        const context: any = reactive({ selected_course: { id: 17 }, savingCalculatedGradePreference: false,
+            settings: { teaching_show_calculated_grade_by_course: { 17: false, 18: false } },
+            teachingStore: { saveSettings: vi.fn(() => new Promise<boolean>((resolve) => {
+                complete = () => {
+                    context.settings = { teaching_show_calculated_grade_by_course: { 17: true, 18: false } }
+                    resolve(true)
+                }
+            })) },
+        })
+        Object.defineProperty(context, 'showCalculatedGrade', {
+            get: () => (CourseStudents as any).computed.showCalculatedGrade.call(context),
+        })
+        const pending = (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        context.selected_course = { id: 18 }
+        complete!()
+        await pending
+        expect(context.showCalculatedGrade).toBe(false)
+        context.selected_course = { id: 17 }
+        expect(context.showCalculatedGrade).toBe(true)
+    })
+
+    it.each([{ selected_course: null, settings: {} }, { selected_course: { id: 17 }, settings: null }])(
+        'does not save without a selected course and loaded settings', async (state) => {
+            const saveSettings = vi.fn()
+            await (CourseStudents as any).methods.toggleCalculatedGrade.call({ ...state, teachingStore: { saveSettings } })
+            expect(saveSettings).not.toHaveBeenCalled()
+        },
+    )
     it.each([18, 99])('loads the shared grading report and rejects a mismatched course %s', async (reportCourseId) => {
         const report = { course_id: reportCourseId, schoolyear_id: 3, students: [] }
         vi.mocked(axios.get).mockResolvedValueOnce({ data: { data: report } })

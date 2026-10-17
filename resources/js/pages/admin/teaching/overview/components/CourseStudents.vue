@@ -43,7 +43,7 @@
             </v-btn>
             <v-btn v-if="!isDayOverviewMode" size="default" :color="showCalculatedGrade ? 'success' : 'primary'"
                 :variant="showCalculatedGrade ? 'flat' : 'outlined'" :prepend-icon="showCalculatedGrade ? 'mdi-check' : 'mdi-calculator'" class="font-weight-bold" :aria-pressed="showCalculatedGrade"
-                :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings"
+                :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings || !selected_course?.id"
                 @click="toggleCalculatedGrade">Note berechnen: {{ showCalculatedGrade ? 'Ein' : 'Aus' }}</v-btn>
             <v-spacer />
             <v-btn-toggle
@@ -426,7 +426,6 @@ export default {
             performanceLoadFailed: false,
             performanceRequestId: 0,
             performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null },
-            showCalculatedGrade: false,
             savingCalculatedGradePreference: false,
             schoolHourStore: null,
             teachingStore: null,
@@ -452,6 +451,11 @@ export default {
     },
 
     computed: {
+        showCalculatedGrade() {
+            if (!this.selected_course?.id) return false
+            return (this.settings?.teaching_show_calculated_grade_by_course?.[this.selected_course.id]
+                ?? this.settings?.teaching_show_calculated_grade) === true
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students', 'uses_entry_areas_for_grading_schema']),
@@ -838,12 +842,6 @@ export default {
     },
 
     watch: {
-        'settings.teaching_show_calculated_grade': {
-            immediate: true,
-            handler(value) {
-                this.showCalculatedGrade = value === true
-            },
-        },
         'config.selected_schoolyear.id'(value, previous) {
             if (value === previous) return
             this.performanceRequestId++
@@ -958,12 +956,14 @@ export default {
             }
         },
         async toggleCalculatedGrade() {
-            if (this.savingCalculatedGradePreference) return
+            if (this.savingCalculatedGradePreference || !this.settings || !this.selected_course?.id) return
             this.savingCalculatedGradePreference = true
             try {
                 const value = !this.showCalculatedGrade
-                const saved = await this.teachingStore.saveSettings({ teaching_show_calculated_grade: value }, { notifySuccess: false })
-                if (saved) this.showCalculatedGrade = value
+                await this.teachingStore.saveSettings({
+                    teaching_course_id: this.selected_course.id,
+                    teaching_show_calculated_grade: value,
+                }, { notifySuccess: false })
             } finally {
                 this.savingCalculatedGradePreference = false
             }
