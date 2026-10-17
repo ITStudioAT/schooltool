@@ -424,8 +424,8 @@ test('personal submission bindings allow assessment completion before the deadli
         ->assertJsonPath('data.submission_check_status.complete', false)
         ->assertJsonPath('data.submission_check_status.checked_at', $package['submission_check']['checked_at']);
     $fresh = $work->fresh();
-    expect($fresh->groups[0]['points'][0]['points'])->toBe(4.95);
-    expect($fresh->groups[1]['points'][0]['points'])->toBe(4.65);
+    expect((string) $fresh->groups[0]['points'][0]['points'])->toBe('4.95');
+    expect((string) $fresh->groups[1]['points'][0]['points'])->toBe('4.65');
     expect($fresh->status['assessment_json_imports'][0])->toBe($firstReceipt);
     expect($fresh->status['assessment_json_imports'][1]['history'])->toHaveCount(1);
     expect($fresh->status['submission_checks'])->toBe($firstStatus['submission_checks']);
