@@ -179,6 +179,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::post('/lookup', [NumberSystemPlayerController::class, 'lookup'])->middleware('throttle:20,1')->name('lookup');
         Route::get('/runs/{run}', [NumberSystemPlayerController::class, 'show'])->name('show');
         Route::post('/runs/{run}', [NumberSystemPlayerController::class, 'update'])->name('update');
+        Route::post('/runs/{run}/presence', [NumberSystemPlayerController::class, 'presence'])->name('presence');
     });
 
     Route::get('/multiple-choice', function (): View {

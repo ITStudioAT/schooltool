@@ -237,11 +237,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             Route::get('/{probe}/players/{participant}', [NumberSystemLocalProbeController::class, 'player'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('player');
             Route::post('/{probe}/players/{participant}/join', [NumberSystemLocalProbeController::class, 'join'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('join');
             Route::post('/{probe}/players/{participant}/run', [NumberSystemLocalProbeController::class, 'update'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('update');
+            Route::post('/{probe}/players/{participant}/presence', [NumberSystemLocalProbeController::class, 'presence'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->middleware('throttle:30,1')->name('presence');
         });
         Route::get('/', [NumberSystemGameController::class, 'index'])->name('index');
         Route::post('/sessions', [NumberSystemGameController::class, 'create'])->middleware('throttle:10,1')->name('create');
         Route::get('/sessions/{session}', [NumberSystemGameController::class, 'show'])->name('show');
         Route::post('/sessions/{session}/control', [NumberSystemGameController::class, 'control'])->name('control');
+        Route::delete('/sessions/{session}', [NumberSystemGameController::class, 'remove'])->name('remove');
     });
 
     Route::prefix('/admin/multiple-choice')->middleware([

@@ -6,7 +6,7 @@ import NumberSystemPuzzle from '@/pages/components/numberSystems/NumberSystemPuz
 import NumberSystemsGame from '@/pages/admin/teachingTools/NumberSystemsGame.vue'
 import { useNumberSystemPlayer } from '@/pages/components/numberSystems/useNumberSystemPlayer'
 
-vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 const wrappers = []
 const state = (changes = {}) => ({ id: 7, revision: 0, position: 0, total: 12, solved: false, completed: false,
     mission: { id: 'mission-a', fields: [] }, draft: {}, session: { status: 'running' }, ...changes })
@@ -20,6 +20,18 @@ beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); localStorage.clear() 
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
 
 describe('Number systems interaction and persistence', () => {
+    it('signals connection even in a background tab without changing or overwriting a draft', async () => {
+        const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        vi.mocked(axios.get).mockResolvedValue(reply(state({ revision: 5, draft: { answer: 'saved' } })))
+        vi.mocked(axios.post).mockResolvedValue({ data: { recorded: true } })
+        const api = player(); await flushPromises()
+        await vi.advanceTimersByTimeAsync(15000)
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/number-systems/runs/7/presence')
+        expect(api.run.value.revision).toBe(5)
+        expect(api.draft.value.answer).toBe('saved')
+        expect(api.error.value).toBe('')
+        hidden.mockRestore()
+    })
     it('keeps two local participant drafts and request identities separate despite sharing browser storage', async () => {
         vi.mocked(axios.get).mockResolvedValue(reply(state()))
         const probeId = '00000000-0000-4000-8000-000000000001'
@@ -128,15 +140,36 @@ describe('Number systems interaction and persistence', () => {
     })
 
     it('accepts a teacher pause from polling without discarding a local unsaved draft', async () => {
-        vi.mocked(axios.get).mockResolvedValueOnce(reply(state())).mockResolvedValue(reply(state({ session: { status: 'paused' } })))
+        vi.mocked(axios.get).mockResolvedValueOnce(reply(state({ clock: { mode: 'elapsed', elapsed_seconds: 10, ticking: true } }))).mockResolvedValue(reply(state({ session: { status: 'paused' }, clock: { mode: 'elapsed', elapsed_seconds: 15, ticking: false } })))
         vi.mocked(axios.post).mockRejectedValue(new Error('offline'))
         const api = player(); await flushPromises()
         api.edit({ answer: 'local' })
         await vi.advanceTimersByTimeAsync(3500)
         expect(api.run.value.session.status).toBe('paused')
+        expect(api.run.value.clock).toMatchObject({ elapsed_seconds: 15, ticking: false })
         expect(api.canPlay.value).toBe(false)
         expect(api.draft.value.answer).toBe('local')
     })
+})
+
+it('names the round and consequences before deletion and preserves the list when cancelled', async () => {
+    let sessions = [{ id: 4, title: 'Eigene Proberunde', status: 'ended', planned_minutes: 30, difficulty: 1, runs_count: 2 }]
+    vi.mocked(axios.get).mockImplementation(async () => ({ data: { available: true, courses: [], sessions } }))
+    vi.mocked(axios.delete).mockImplementation(async () => { sessions = []; return { data: { deleted: true } } })
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper)
+    await flushPromises()
+    await wrapper.get('[aria-label="Klassenrunde Eigene Proberunde löschen"]').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('„Eigene Proberunde“ löschen?')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('2 Spielständen')
+    expect(axios.delete).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button[type="button"]').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Eigene Proberunde')
+    await wrapper.get('[aria-label="Klassenrunde Eigene Proberunde löschen"]').trigger('click')
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(axios.delete).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/sessions/4', { data: { confirmation: 'Eigene Proberunde' } })
+    expect(wrapper.text()).not.toContain('Eigene Proberunde')
 })
 
 it('lets a teacher prepare a separate new round and start pause resume and end it', async () => {

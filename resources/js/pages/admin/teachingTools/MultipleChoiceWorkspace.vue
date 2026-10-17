@@ -1,5 +1,5 @@
 <template>
-    <div class="mc-workspace">
+    <div class="mc-workspace" :class="{ 'mc-catalog-detail': section === 'catalogs' && catalogEditing, 'mc-test-create': section === 'tests' && preparingTest }">
         <section class="mc-heading">
             <div>
                 <h1>Multiple Choice</h1>
@@ -14,13 +14,17 @@
         <v-alert v-if="!available" type="info" variant="tonal"
             class="mb-3">{{ unavailableMessage || 'Multiple Choice muss für diese lokale Anwendung noch aktiviert werden.' }}</v-alert>
         <template v-if="available">
-            <nav class="mc-sections" aria-label="Multiple-Choice-Bereiche">
-                <v-btn v-for="item in sections" :key="item.id" :variant="section === item.id ? 'flat' : 'text'"
-                    :color="section === item.id ? 'primary' : undefined" :prepend-icon="item.icon"
-                    :aria-pressed="section === item.id" @click="section = item.id">{{ item.label }}</v-btn>
-            </nav>
+            <div v-if="section !== 'catalogs'" class="mc-toolbar mb-4" aria-label="Zurücknavigation">
+                <v-btn v-if="section === 'results'" color="primary" variant="text" prepend-icon="mdi-arrow-left"
+                    :disabled="!!busy" @click="selectTest(selectedTestId)">Zurück zum Test</v-btn>
+                <v-btn v-else-if="selectedTestId || preparingTest" color="primary" variant="text" prepend-icon="mdi-arrow-left"
+                    :disabled="!!busy" @click="showCatalogTests">Zur Testübersicht</v-btn>
+                <v-btn v-else color="primary" variant="text" prepend-icon="mdi-arrow-left"
+                    :disabled="!!busy" @click="openCatalog(catalog.id)">Zum Fragenkatalog</v-btn>
+                <span class="text-body-2 text-medium-emphasis">{{ catalog.title }}<template v-if="selectedTest"> · {{ selectedTest.title }}</template></span>
+            </div>
 
-            <div v-if="section !== 'catalogs' || catalogEditing" class="mc-guide mb-4" aria-label="Nächster Schritt">
+            <div v-if="section !== 'catalogs' || catalogEditing" class="mc-guide" :class="preparingTest ? 'mb-3' : 'mb-4'" aria-label="Nächster Schritt">
                 <ol class="mc-steps" aria-label="Ablauf">
                     <li :class="{ 'is-current': section === 'catalogs' }">1 Fragen</li>
                     <li :class="{ 'is-current': section === 'tests' && (!selectedTest || preparingTest) }">2 Test</li>
@@ -68,6 +72,9 @@
                     <div class="mc-toolbar">
                         <v-btn color="primary" variant="text" prepend-icon="mdi-arrow-left" :disabled="!!busy"
                             @click="backToCatalogs">Zur Katalogübersicht</v-btn>
+                        <v-spacer />
+                        <v-btn color="primary" variant="flat" prepend-icon="mdi-clipboard-play-outline" :disabled="!!busy"
+                            @click="showCatalogTests">Tests zu diesem Katalog ({{ catalogTests.length }})</v-btn>
                     </div>
                     <v-card border rounded="lg" class="mt-3">
                     <v-card-text>
@@ -83,20 +90,23 @@
                         </form>
                         <div v-else class="mc-toolbar">
                             <h2 class="text-break">{{ catalog.title }}</h2>
-                            <v-btn icon="mdi-pencil-outline" size="small" variant="text" :disabled="!!busy"
+                            <v-btn v-if="editingQuestions" icon="mdi-pencil-outline" size="small" variant="text" :disabled="!!busy"
                                 aria-label="Katalog umbenennen" title="Katalog umbenennen" @click="startCatalogRename" />
+                            <v-spacer />
+                            <v-btn v-if="!editingQuestions" color="primary" variant="outlined" prepend-icon="mdi-pencil-outline"
+                                :disabled="!!busy" @click="editingQuestions = true">Bearbeiten</v-btn>
                         </div>
                         <div class="mc-toolbar mt-4">
                             <p class="text-body-2">{{ catalog.questions.length }} Fragen · {{ catalogReadyCount }} aktiv
                                 und geprüft</p>
                             <v-spacer />
-                            <v-btn v-if="!showImport" :variant="!catalog.questions.length ? 'flat' : 'text'"
+                            <v-btn v-if="editingQuestions && !showImport" :variant="!catalog.questions.length ? 'flat' : 'text'"
                                 :color="!catalog.questions.length ? 'primary' : undefined" prepend-icon="mdi-file-import-outline"
-                                @click="showImport = true">Vorlage importieren</v-btn>
-                            <v-btn v-if="!showImport" variant="outlined" prepend-icon="mdi-plus"
+                                @click="navigateTo('import')">Vorlage importieren</v-btn>
+                            <v-btn v-if="editingQuestions && !showImport" variant="outlined" prepend-icon="mdi-plus"
                                 @click="catalog.questions.push(newQuestion())">Frage hinzufügen</v-btn>
                         </div>
-                        <p class="text-caption text-medium-emphasis mt-2">Mit dem Übernehmen oder Speichern bestätigst du deine
+                        <p v-if="editingQuestions || showImport" class="text-caption text-medium-emphasis mt-2">Mit dem Übernehmen oder Speichern bestätigst du deine
                             importierten oder bearbeiteten vollständigen Fragen für neue Tests. Unvollständige Fragen bleiben Entwürfe.</p>
                         <div v-if="showImport" class="mc-import mt-4">
                             <div class="mc-toolbar mb-2">
@@ -120,11 +130,6 @@
                             <p v-else-if="importDetection.format" class="text-caption mt-2" role="status">
                                 Erkanntes Format: {{ importDetection.format === 'json' ? 'JSON' : 'Markdown / Text' }}
                             </p>
-                            <label class="mc-native-field mt-3">
-                                <span>Vorlage</span>
-                                <textarea v-model="importText" rows="8" :disabled="importReading"
-                                    placeholder="Fragen und Antworten hier einfügen …" @input="editImportText" />
-                            </label>
                             <v-btn class="mt-3" variant="outlined" :loading="busy === 'import'"
                                 :disabled="!importText.trim() || !!importError || importReading || !!busy"
                                 @click="previewSource">Import prüfen</v-btn>
@@ -143,42 +148,68 @@
                                     @click="adoptImport">Entwurf in Katalog übernehmen</v-btn>
                             </div>
                         </div>
-                        <QuestionEditor v-model:questions="catalog.questions" />
+                        <QuestionEditor v-model:questions="catalog.questions" :readonly="!editingQuestions" />
                     </v-card-text>
-                    <v-card-actions class="pa-4 pt-0">
-                        <v-spacer />
-                        <v-btn v-if="catalogQuestionsChanged" color="primary" variant="flat" prepend-icon="mdi-content-save-outline"
+                    <v-card-actions class="mc-catalog-actions pa-4 pt-0 justify-end flex-wrap ga-2">
+                        <v-btn v-if="editingQuestions" variant="text" :disabled="!!busy" @click="cancelQuestionEditing">Bearbeitung abbrechen</v-btn>
+                        <v-btn v-if="editingQuestions && catalogQuestionsChanged" color="primary" variant="flat" prepend-icon="mdi-content-save-outline"
                             :loading="busy === 'catalog'" :disabled="!catalog.title.trim() || !!busy"
                             @click="saveCatalog">Fragen speichern</v-btn>
-                        <v-btn v-if="canPrepareCatalog" color="primary" variant="flat"
-                            prepend-icon="mdi-clipboard-play-outline" :disabled="!!busy" @click="prepareCatalogTest">
-                            Test vorbereiten
-                        </v-btn>
                     </v-card-actions>
                     </v-card>
                 </template>
             </section>
 
-            <section v-if="section === 'tests'" aria-label="Tests vorbereiten">
+            <section v-if="section === 'tests' && !preparingTest && !selectedTestId" aria-label="Tests des Fragenkatalogs">
+                <div class="mc-toolbar mb-3">
+                    <div>
+                        <h2>Tests zu „{{ catalog.title }}“</h2>
+                        <p class="text-body-2 text-medium-emphasis mt-1">{{ catalogTests.length }} {{ catalogTests.length === 1 ? 'Test' : 'Tests' }}</p>
+                    </div>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" prepend-icon="mdi-plus"
+                        :disabled="!canPrepareCatalog || !!busy" @click="prepareCatalogTest">Neuen Test anlegen</v-btn>
+                </div>
+                <p v-if="!canPrepareCatalog" class="text-body-2 text-medium-emphasis mb-3">Prüfe und speichere zuerst die Fragen im Katalog. Danach kannst du einen Test anlegen.</p>
+                <v-sheet v-if="!catalogTests.length" border rounded="lg" class="pa-6 text-medium-emphasis">
+                    <p>Zu diesem Fragenkatalog gibt es noch keine Tests.</p>
+                </v-sheet>
+                <ul v-else class="mc-catalog-list" aria-label="Tests dieses Katalogs">
+                    <li v-for="item in catalogTests" :key="item.id">
+                        <v-card border rounded="lg">
+                            <v-card-text>
+                                <h3>{{ item.title }}</h3>
+                                <p class="text-body-2 text-medium-emphasis mt-2">{{ item.question_count }} Fragen · {{ item.total_points }} Punkte · {{ Math.round(item.duration_seconds / 60) }} Minuten</p>
+                                <p class="text-caption text-medium-emphasis mt-1">{{ item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
+                            </v-card-text>
+                            <v-card-actions class="pa-4 pt-0">
+                                <v-btn color="primary" variant="text" append-icon="mdi-arrow-right" :disabled="!!busy"
+                                    :aria-label="`Test öffnen: ${item.title}`" @click="selectTest(item.id)">Test öffnen</v-btn>
+                            </v-card-actions>
+                        </v-card>
+                    </li>
+                </ul>
+            </section>
+
+            <section v-if="section === 'tests' && preparingTest" aria-label="Tests vorbereiten">
                 <v-card border rounded="lg">
-                    <v-card-title>Neuen Test vorbereiten</v-card-title>
-                    <v-card-text>
+                    <v-card-title class="px-4 pt-3 pb-1 text-subtitle-1 font-weight-bold">Neuen Test vorbereiten</v-card-title>
+                    <v-card-text class="pt-2">
+                        <p class="text-body-2 mb-3">Fragenkatalog: <strong>{{ catalog.title }}</strong></p>
                         <div class="mc-form-grid">
-                            <v-text-field v-model="testDraft.title" label="Testbezeichnung" variant="outlined"
+                            <v-text-field v-model="testDraft.title" label="Testbezeichnung" variant="outlined" density="compact" class="mc-test-title"
                                 hide-details />
-                            <v-select v-model="testDraft.catalog_id" :items="catalogChoices" item-title="label"
-                                item-value="id" label="Gespeicherter Fragenkatalog" variant="outlined" hide-details />
                             <v-text-field v-model.number="testDraft.question_count" type="number" min="1"
                                 :max="selectedCatalogReadyCount || undefined" label="Fragen pro Schüler"
-                                variant="outlined" hide-details />
+                                variant="outlined" density="compact" hide-details />
                             <v-text-field v-model.number="testDraft.total_points" type="number" min="0.01" step="0.01"
-                                label="Erreichbare Gesamtpunkte" variant="outlined" hide-details />
+                                label="Erreichbare Gesamtpunkte" variant="outlined" density="compact" hide-details />
                             <v-text-field v-model.number="testDraft.duration_minutes" type="number" min="1"
-                                label="Bearbeitungsdauer in Minuten" variant="outlined" hide-details />
+                                label="Bearbeitungsdauer in Minuten" variant="outlined" density="compact" hide-details />
                             <v-text-field v-model.number="testDraft.lead_seconds" type="number" min="0"
-                                label="Vorlaufzeit in Sekunden" variant="outlined" hide-details />
+                                label="Vorlaufzeit in Sekunden" variant="outlined" density="compact" hide-details />
                         </div>
-                        <details class="mc-more mt-4">
+                        <details class="mc-more mt-3">
                             <summary>Weitere Einstellungen</summary>
                             <div class="mc-checks mt-3">
                             <label class="mc-check">
@@ -192,28 +223,33 @@
                                 mischen</label>
                             </div>
                         </details>
-                        <v-alert type="info" variant="tonal" class="mt-4 text-body-2">Jede Frage zählt gleich viel.
+                        <v-alert type="info" variant="tonal" density="compact" class="mt-3 text-body-2">Jede Frage zählt gleich viel.
                             Punkte gibt es nur für die exakt richtige Auswahl; sonst null Punkte. Gerundet wird erst die
                             Gesamtpunktzahl.<span v-if="testDraft.balance_types"> Der Anteil beider Antworttypen folgt
                                 dem Katalog und bleibt pro Person möglichst gleich.</span>
                         </v-alert>
-                        <h3 class="mt-6 mb-2">Schülerliste prüfen</h3>
-                        <p class="text-body-2 mb-3">CSV mit Vorname, Nachname, E-Mail, Kurs und Klasse. Die gesamte
+                        <h3 class="mt-4 mb-1">Schülerliste prüfen</h3>
+                        <p class="text-body-2 mb-2">CSV mit Vorname, Nachname, E-Mail, Kurs und Klasse. Die gesamte
                             Liste wird mit bestehenden Schülerkonten abgeglichen. Unklare Zuordnungen müssen zuerst
                             korrigiert werden.</p>
-                        <label class="mc-file">CSV auswählen <input type="file" accept=".csv,text/csv"
-                                @change="readRosterFile" />
-                        </label>
+                        <FilePond name="mc-roster" :allow-multiple="false" :max-files="1"
+                            :instant-upload="false" :allow-process="false" :allow-revert="false"
+                            :allow-replace="true" :allow-paste="false" :server="null" :credits="false" :disabled="!!busy"
+                            label-idle="<strong>Schülerliste hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span></strong>"
+                            label-file-loading="Datei wird gelesen" label-file-load-error="Datei konnte nicht gelesen werden"
+                            label-tap-to-retry="Erneut versuchen" label-tap-to-cancel="Abbrechen"
+                            label-button-remove-item="Datei entfernen" @updatefiles="readRosterFiles" />
+                        <v-alert v-if="rosterFileError" type="error" variant="tonal" class="mt-3" role="alert">{{ rosterFileError }}</v-alert>
                         <p v-if="rosterFileName" class="text-caption text-medium-emphasis mt-2">Ausgewählt: {{ rosterFileName }}</p>
-                        <details class="mc-more mt-3">
+                        <details class="mc-more mt-2">
                             <summary>CSV als Text einfügen oder bearbeiten</summary>
                             <label class="mc-native-field mt-3">
                                 <span>Schülerliste als CSV</span>
-                                <textarea v-model="rosterCsv" rows="5" @input="roster = null; rosterFileName = ''" />
+                                <textarea v-model="rosterCsv" rows="5" @input="editRosterCsv" />
                             </label>
                         </details>
-                        <v-btn class="mt-3" variant="outlined" prepend-icon="mdi-account-check-outline"
-                            :loading="busy === 'roster'" :disabled="!rosterCsv.trim() || !!busy"
+                        <v-btn class="mt-2" size="small" variant="outlined" prepend-icon="mdi-account-check-outline"
+                            :loading="busy === 'roster' || rosterReading" :disabled="!rosterCsv.trim() || rosterReading || !!rosterFileError || !!busy"
                             @click="previewRoster">Zuordnung prüfen</v-btn>
                         <div v-if="roster" class="mt-4">
                             <v-alert v-for="(item, position) in roster.errors ?? []" :key="`roster-error-${position}`"
@@ -248,11 +284,12 @@
                                 </table>
                             </div>
                         </div>
-                        <p class="text-caption text-medium-emphasis mt-4">Mit der Freigabe werden Fragen, Lösungen und
+                        <p class="text-caption text-medium-emphasis mt-3">Mit der Freigabe werden Fragen, Lösungen und
                             persönliche Zuteilungen fest gespeichert. Der Test wartet danach auf deinen gemeinsamen
                             Start. Es wird noch keine E-Mail versandt.</p>
                     </v-card-text>
                     <v-card-actions class="pa-4 pt-0">
+                        <v-btn variant="text" :disabled="!!busy" @click="cancelNewTest">Abbrechen</v-btn>
                         <v-spacer />
                         <v-btn color="primary" variant="flat" :disabled="!canPublish || !!busy"
                             :loading="busy === 'publish'" @click="publishDialog = true">Test freigeben</v-btn>
@@ -260,25 +297,13 @@
                 </v-card>
             </section>
 
-            <section v-if="section !== 'catalogs'" class="mt-4" aria-label="Freigegebene Tests">
-                <div class="mc-toolbar mb-3">
-                    <h2>{{ section === 'results' ? 'Ergebnisse' : 'Freigegebene Tests' }}</h2>
-                    <v-spacer />
-                    <v-select :model-value="selectedTestId" :items="tests" item-title="title" item-value="id"
-                        label="Test auswählen" :disabled="!!busy" variant="outlined" hide-details density="comfortable"
-                        class="mc-picker" @update:model-value="selectTest" />
-                </div>
+            <section v-if="selectedTestId && !preparingTest && section !== 'catalogs'" class="mt-4" aria-label="Geöffneter Test">
+                <h2 v-if="section === 'results'" class="mb-3">Ergebnisse zu „{{ selectedTest?.title }}“</h2>
                 <v-alert v-if="monitorError && !selectedTest" type="warning" variant="tonal"
                     class="mb-3">{{ monitorError }} <v-btn variant="text" @click="refreshMonitor">Erneut laden</v-btn>
                 </v-alert>
-                <v-sheet v-if="!tests.length" border rounded="lg" class="pa-6 text-medium-emphasis">
-                    <p>Noch kein Test freigegeben. Wähle einen geprüften Katalog und deine Schülerliste – danach kann es losgehen.</p>
-                    <v-btn v-if="section === 'results'" class="mt-3" color="primary" variant="flat"
-                        @click="section = catalogs.length ? 'tests' : 'catalogs'">
-                        {{ catalogs.length ? 'Ersten Test vorbereiten' : 'Fragenkatalog anlegen' }}
-                    </v-btn>
-                </v-sheet>
-                <v-card v-else-if="selectedTest" border rounded="lg">
+                <v-progress-linear v-if="!selectedTest && !monitorError" indeterminate color="primary" aria-label="Test wird geladen" />
+                <v-card v-if="selectedTest" border rounded="lg">
                     <v-card-text>
                         <div class="mc-toolbar">
                             <div>
@@ -310,7 +335,9 @@
                         </div>
                         <p v-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
                             {{ dateLabel(selectedTest.starts_at) }} · Ende: {{ dateLabel(selectedTest.ends_at) }}</p>
-                        <div class="mc-toolbar mt-4">
+                        <div v-if="section === 'tests'" class="mc-toolbar mt-4">
+                            <v-btn color="primary" variant="outlined" prepend-icon="mdi-chart-box-outline"
+                                :disabled="!!busy" @click="navigateTo('results')">Ergebnisse ansehen</v-btn>
                             <v-btn v-if="!selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
                                 :loading="busy === 'countdown'" :disabled="!!busy" @click="startDialog = true">Countdown
                                 starten ({{ selectedTest.lead_seconds }} s)</v-btn>
@@ -318,7 +345,7 @@
                                 :disabled="!!busy" @click="previewInvitations">Einladungen vorbereiten</v-btn>
                             <span class="text-caption text-medium-emphasis">Status wird automatisch aktualisiert.</span>
                         </div>
-                        <div v-if="invitationPreview" class="mc-import mt-4">
+                        <div v-if="invitationPreview && section === 'tests'" class="mc-import mt-4">
                             <h3>Empfängervorschau</h3>
                             <p class="text-body-2 my-2">Jede Person erhält ihren persönlichen Testzugang. Bereits
                                 versandte Einladungen werden übersprungen.</p>
@@ -387,7 +414,7 @@
                                             <td>{{ isScored(attempt) ? `${attempt.percentage ?? 0} %` : '—' }}</td>
                                             <td v-if="section === 'results'">
                                                 <v-btn v-if="isScored(attempt)" variant="text" size="small"
-                                                    @click="expandedAttempt = expandedAttempt === attempt.id ? null : attempt.id">{{ expandedAttempt === attempt.id ? 'Schließen' : 'Fragen ansehen' }}</v-btn>
+                                                    @click="toggleAttempt(attempt.id)">{{ expandedAttempt === attempt.id ? 'Schließen' : 'Fragen ansehen' }}</v-btn>
                                             </td>
                                         </tr>
                                         <tr v-if="section === 'results' && expandedAttempt === attempt.id">
@@ -447,7 +474,7 @@
                 <v-card-title id="mc-discard-catalog-title">Ungespeicherte Änderungen</v-card-title>
                 <v-card-text>Speichere deine Änderungen im Katalog oder verwirf sie, um zur Übersicht zurückzukehren.</v-card-text>
                 <v-card-actions class="pa-4 pt-0">
-                    <v-btn @click="discardCatalogDialog = false">Weiterbearbeiten</v-btn>
+                    <v-btn @click="cancelDiscardNavigation">Weiterbearbeiten</v-btn>
                     <v-spacer />
                     <v-btn color="primary" @click="leaveCatalog">Änderungen verwerfen</v-btn>
                 </v-card-actions>
@@ -527,8 +554,10 @@ import {
     onBeforeUnmount,
     onMounted,
     reactive,
-    ref
+    ref,
+    watch
 } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
@@ -557,20 +586,10 @@ import {
 } from './multipleChoiceTeacher'
 
 const FilePond = vueFilePond()
+const route = useRoute()
+const router = useRouter()
+const workspacePath = route.path
 
-const sections = [{
-    id: 'catalogs',
-    label: 'Fragenkataloge',
-    icon: 'mdi-bookshelf'
-}, {
-    id: 'tests',
-    label: 'Tests',
-    icon: 'mdi-clipboard-play-outline'
-}, {
-    id: 'results',
-    label: 'Ergebnisse',
-    icon: 'mdi-chart-box-outline'
-}]
 const section = ref('catalogs')
 const catalogs = ref([])
 const tests = ref([])
@@ -586,6 +605,7 @@ const catalog = ref({
     questions: []
 })
 const catalogEditing = ref(false)
+const editingQuestions = ref(false)
 const catalogRenaming = ref(false)
 const catalogTitleDraft = ref('')
 const catalogTitleAttempted = ref(false)
@@ -622,8 +642,12 @@ const importError = computed(() => importFileError.value || importDetection.valu
 const importPreview = ref(null)
 const rosterCsv = ref('')
 const rosterFileName = ref('')
+const rosterReading = ref(false)
+const rosterFileError = ref('')
+let rosterSourceFile = null
+let rosterReadSequence = 0
 const roster = ref(null)
-const testDraft = reactive({
+const defaultTestDraft = {
     title: '',
     catalog_id: null,
     question_count: 10,
@@ -633,7 +657,8 @@ const testDraft = reactive({
     balance_types: true,
     shuffle_questions: true,
     shuffle_options: true
-})
+}
+const testDraft = reactive({ ...defaultTestDraft })
 const selectedTestId = ref(null)
 const preparingTest = ref(false)
 const selectedTest = ref(null)
@@ -649,10 +674,14 @@ const serverOffset = ref(0)
 const now = ref(Date.now())
 let pollInterval = null
 let tickInterval = null
-let monitorLoading = false
+let monitorLoading = null
 let disposed = false
+let indexLoaded = false
+let pendingNavigation = null
+let discardNavigationAllowed = false
 
 const catalogReadyCount = computed(() => readyQuestions(catalog.value.questions).length)
+const catalogTests = computed(() => tests.value.filter((item) => String(item.catalog_id) === String(catalog.value.id)))
 const catalogQuestionsChanged = computed(() => {
     const saved = catalogs.value.find((item) => item.id === catalog.value.id)
     return Boolean(saved && JSON.stringify(saved.questions) !== JSON.stringify(catalog.value.questions))
@@ -667,17 +696,23 @@ const selectedCatalogTitle = computed(() => catalogs.value.find((item) => item.i
 const nextStepHint = computed(() => {
     if (section.value === 'catalogs') {
         if (canPrepareCatalog.value) {
-            return 'Dein Katalog ist bereit. Mit „Test vorbereiten“ wählst du Umfang, Zeit und Schülerliste.'
+            return 'Dein Katalog ist bereit. Öffne „Tests zu diesem Katalog“, um einen neuen Test anzulegen oder einen vorhandenen Test zu öffnen.'
         }
         return catalog.value.questions.length
             ? 'Prüfe Fragen und Lösungen und speichere deinen Katalog. Danach bereitest du den Test vor.'
             : 'Starte mit einer Vorlage oder füge deine erste Frage hinzu. Danach prüfst und speicherst du den Katalog.'
     }
     if (section.value === 'results') {
-        return 'Wähle einen Test, sieh dir die Ergebnisse an und gib Punkte oder Lösungen bewusst für die Schüler frei.'
+        return 'Sieh dir die Ergebnisse dieses Tests an und gib Punkte oder Lösungen bewusst für die Schüler frei.'
     }
-    if (!selectedTest.value || preparingTest.value) {
-        return 'Wähle deinen Katalog, lege Umfang und Zeit fest und prüfe die Schülerliste. Mit der Freigabe öffnet sich der Warteraum.'
+    if (preparingTest.value) {
+        return 'Lege Umfang und Zeit für diesen Katalog fest und prüfe die Schülerliste. Mit der Freigabe öffnet sich der Warteraum.'
+    }
+    if (!selectedTestId.value) {
+        return 'Öffne einen Test dieses Katalogs oder bereite einen neuen Test vor. Die Ergebnisse findest du im jeweiligen Test.'
+    }
+    if (!selectedTest.value) {
+        return 'Der gewählte Test wird geladen.'
     }
     if (testEnded.value) {
         return 'Die Bearbeitungszeit ist beendet. Unter „Ergebnisse“ findest du Punkte und die Auswertung jeder Frage.'
@@ -686,10 +721,6 @@ const nextStepHint = computed(() => {
         ? 'Der gemeinsame Start steht fest. Behalte hier die Teilnahme im Blick; alle haben dieselbe Endzeit.'
         : 'Bereite die Einladungen vor oder lass die Schüler ihren Bereich öffnen. Sobald die Klasse bereit ist, startest du gemeinsam.'
 })
-const catalogChoices = computed(() => catalogs.value.map((item) => ({
-    ...item,
-    label: `${item.title} (${readyQuestions(item.questions ?? []).length} bereit)`
-})))
 const selectedCatalogReadyCount = computed(() => readyQuestions(catalogs.value.find((item) => item.id === testDraft
     .catalog_id)?.questions ?? []).length)
 const rosterMatchedCount = computed(() => (roster.value?.rows ?? []).filter((row) => row.status === 'matched').length)
@@ -742,6 +773,13 @@ onMounted(() => {
         now.value = Date.now()
     }, 500)
 })
+watch(() => route.fullPath, () => {
+    if (indexLoaded && route.path === workspacePath) {
+        restoreLocation()
+    }
+})
+onBeforeRouteUpdate(guardCatalogNavigation)
+onBeforeRouteLeave(guardCatalogNavigation)
 onBeforeUnmount(() => {
     importReadSequence++
     disposed = true
@@ -779,8 +817,9 @@ async function loadIndex() {
         unavailableMessage.value = data.message ?? ''
         catalogs.value = data.catalogs ?? []
         tests.value = data.tests ?? []
-        if (!selectedTestId.value && tests.value.length) {
-            await selectTest(tests.value[0].id)
+        indexLoaded = true
+        if (available.value) {
+            await restoreLocation()
         }
     } catch (failure) {
         error.value = requestError(failure)
@@ -822,10 +861,128 @@ async function confirmNewCatalog() {
     })
 }
 
+function queryId(value) {
+    return typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value))
+        ? Number(value) : null
+}
+
+function navigationLocation(view, catalogId = catalog.value.id, testId = selectedTestId.value, attemptId = null) {
+    const query = { ...route.query }
+    for (const key of ['catalog', 'view', 'test', 'attempt']) {
+        delete query[key]
+    }
+    if (view !== 'catalogs') {
+        query.catalog = String(catalogId)
+        if (view !== 'catalog') {
+            query.view = view
+        }
+        if (['test', 'results'].includes(view)) {
+            query.test = String(testId)
+        }
+        if (view === 'results' && attemptId) {
+            query.attempt = String(attemptId)
+        }
+    }
+    return { path: workspacePath, query }
+}
+
+function navigateTo(view, catalogId = catalog.value.id, testId = selectedTestId.value, attemptId = null) {
+    error.value = ''
+    notice.value = ''
+    return router.push(navigationLocation(view, catalogId, testId, attemptId))
+}
+
+async function unavailableLocation(view, catalogId, message) {
+    await router.replace(navigationLocation(view, catalogId))
+    error.value = message
+}
+
+async function restoreLocation() {
+    const location = route.fullPath
+    const catalogId = queryId(route.query.catalog)
+    if (!catalogId) {
+        clearSelectedTest()
+        catalogEditing.value = false
+        editingQuestions.value = false
+        preparingTest.value = false
+        section.value = 'catalogs'
+        cancelCatalogRename()
+        if (['catalog', 'view', 'test', 'attempt'].some((key) => route.query[key] !== undefined)) {
+            await unavailableLocation('catalogs', null, 'Der Fragenkatalog wurde nicht gefunden oder ist nicht zugänglich.')
+        }
+        return
+    }
+    const saved = catalogs.value.find((item) => item.id === catalogId)
+    if (!saved) {
+        await unavailableLocation('catalogs', null, 'Der Fragenkatalog wurde nicht gefunden oder ist nicht zugänglich.')
+        return
+    }
+    if (!catalogEditing.value || catalog.value.id !== saved.id) {
+        loadCatalog(saved.id)
+    }
+    const view = route.query.view ?? 'catalog'
+    if (!['catalog', 'import', 'tests', 'new-test', 'test', 'results'].includes(view)) {
+        await unavailableLocation('catalog', catalogId, 'Diese Ansicht ist nicht verfügbar.')
+        return
+    }
+    showImport.value = view === 'import'
+    preparingTest.value = view === 'new-test'
+    section.value = ['catalog', 'import'].includes(view) ? 'catalogs' : view === 'results' ? 'results' : 'tests'
+    if (view === 'new-test') {
+        if (!canPrepareCatalog.value) {
+            await unavailableLocation('tests', catalogId, 'Prüfe und speichere zuerst die Fragen im Katalog, bevor du einen neuen Test anlegst.')
+            return
+        }
+        initializeTestDraft()
+    }
+    if (['test', 'results'].includes(view)) {
+        const testId = queryId(route.query.test)
+        if (!catalogTests.value.some((item) => item.id === testId)) {
+            clearSelectedTest()
+            await unavailableLocation('tests', catalogId, 'Der Test wurde nicht gefunden oder gehört nicht zu diesem Katalog.')
+            return
+        }
+        if (selectedTestId.value !== testId) {
+            await loadSelectedTest(testId)
+        }
+        if (route.fullPath === location) {
+            const attemptId = queryId(route.query.attempt)
+            expandedAttempt.value = view === 'results' && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
+        }
+    } else {
+        clearSelectedTest()
+    }
+}
+
+function guardCatalogNavigation(to) {
+    if (discardNavigationAllowed) {
+        discardNavigationAllowed = false
+        return true
+    }
+    const staysInCatalog = to.path === workspacePath && queryId(to.query.catalog) === catalog.value.id
+    if (catalogEditing.value && !staysInCatalog && (catalogTitleChanged.value || catalogQuestionsChanged.value)) {
+        pendingNavigation = to.fullPath
+        discardCatalogDialog.value = true
+        return false
+    }
+    return true
+}
+
+function cancelDiscardNavigation() {
+    discardCatalogDialog.value = false
+    pendingNavigation = null
+}
+
 function openCatalog(id) {
+    return navigateTo('catalog', id)
+}
+
+function loadCatalog(id) {
     const selected = catalogs.value.find((item) => item.id === id)
     if (selected) {
+        section.value = 'catalogs'
         catalog.value = JSON.parse(JSON.stringify(selected))
+        editingQuestions.value = false
         cancelCatalogRename()
         catalogEditing.value = true
         showImport.value = false
@@ -837,33 +994,64 @@ function openCatalog(id) {
 }
 
 function backToCatalogs() {
-    if (catalogTitleChanged.value || catalogQuestionsChanged.value) {
-        discardCatalogDialog.value = true
-        return
-    }
-    leaveCatalog()
+    return navigateTo('catalogs')
 }
 
 function leaveCatalog() {
-    cancelCatalogRename()
     discardCatalogDialog.value = false
-    catalogEditing.value = false
-    error.value = ''
-    notice.value = ''
+    discardNavigationAllowed = true
+    const target = pendingNavigation ?? navigationLocation('catalogs')
+    pendingNavigation = null
+    return router.push(target)
+}
+
+function clearSelectedTest() {
+    selectedTestId.value = null
+    selectedTest.value = null
+    attempts.value = []
+    invitationPreview.value = null
+    expandedAttempt.value = null
+    monitorError.value = ''
+    startDialog.value = false
+    mailDialog.value = false
+    releaseMode.value = null
+}
+
+function showCatalogTests() {
+    return navigateTo('tests')
 }
 
 function prepareCatalogTest() {
     if (!canPrepareCatalog.value) {
         return
     }
+    return navigateTo('new-test')
+}
+
+function initializeTestDraft() {
+    const previousCatalogId = testDraft.catalog_id
     testDraft.catalog_id = catalog.value.id
     testDraft.question_count = Math.min(Number(testDraft.question_count) || 10, catalogReadyCount.value)
-    if (!testDraft.title.trim()) {
+    if (previousCatalogId !== catalog.value.id || !testDraft.title.trim()) {
         testDraft.title = `${catalog.value.title} – Test`
     }
-    section.value = 'tests'
-    preparingTest.value = true
+}
+
+function cancelNewTest() {
+    if (busy.value) {
+        return
+    }
+    Object.assign(testDraft, defaultTestDraft)
+    editRosterCsv()
+    rosterCsv.value = ''
+    publishDialog.value = false
+    error.value = ''
     notice.value = ''
+    return router.replace(navigationLocation('tests'))
+}
+
+function toggleAttempt(id) {
+    return navigateTo('results', catalog.value.id, selectedTestId.value, expandedAttempt.value === id ? null : id)
 }
 
 function startCatalogRename() {
@@ -872,6 +1060,18 @@ function startCatalogRename() {
     catalogRenaming.value = true
     error.value = ''
     notice.value = ''
+}
+
+function cancelQuestionEditing() {
+    const saved = catalogs.value.find((item) => item.id === catalog.value.id)
+    if (saved) {
+        catalog.value = JSON.parse(JSON.stringify(saved))
+    }
+    editingQuestions.value = false
+    cancelCatalogRename()
+    resetImportSource()
+    importPreview.value = null
+    return navigateTo('catalog')
 }
 
 function cancelCatalogRename() {
@@ -923,6 +1123,7 @@ async function saveCatalog() {
         if (data.catalog) {
             catalog.value = JSON.parse(JSON.stringify(data.catalog))
             rememberCatalog(data.catalog)
+            editingQuestions.value = false
         }
         notice.value = 'Fragen gespeichert. Vollständige bearbeitete Fragen sind für neue Tests bestätigt.'
     })
@@ -936,11 +1137,6 @@ function resetImportSource() {
     importReading.value = false
 }
 
-function editImportText() {
-    importPreview.value = null
-    importFileError.value = ''
-}
-
 function cancelImport() {
     if (busy.value) {
         return
@@ -949,6 +1145,7 @@ function cancelImport() {
     importPreview.value = null
     showImport.value = false
     error.value = ''
+    navigateTo('catalog')
 }
 
 async function readSourceFiles(items) {
@@ -1041,27 +1238,62 @@ async function adoptImport() {
             return { ...question, active: true, reviewed: true }
         })
         catalog.value.questions = [...catalog.value.questions, ...imported]
+        editingQuestions.value = true
         resetImportSource()
         importPreview.value = null
         showImport.value = false
+        await navigateTo('catalog')
         notice.value = 'Fragen in den Katalog übernommen und für neue Tests bestätigt. Speichere jetzt deine Änderungen.'
     })
 }
 
-async function readRosterFile(event) {
-    const file = event.target.files?.[0]
-    if (file) {
-        try {
-            rosterCsv.value = await file.text()
+function editRosterCsv() {
+    rosterReadSequence++
+    rosterSourceFile = null
+    rosterReading.value = false
+    rosterFileError.value = ''
+    rosterFileName.value = ''
+    roster.value = null
+}
+
+async function readRosterFiles(items) {
+    const file = items[0]?.file ?? null
+    if (file === rosterSourceFile) {
+        return
+    }
+    editRosterCsv()
+    rosterCsv.value = ''
+    rosterSourceFile = file
+    if (!file) {
+        return
+    }
+    if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') {
+        rosterFileError.value = 'Bitte wähle eine CSV-Datei (.csv) aus.'
+        return
+    }
+    const sequence = rosterReadSequence
+    rosterReading.value = true
+    try {
+        const csv = await file.text()
+        if (sequence === rosterReadSequence) {
+            rosterCsv.value = csv
             rosterFileName.value = file.name
-            roster.value = null
-        } catch {
-            error.value = 'Die CSV-Datei konnte nicht gelesen werden. Bitte erneut auswählen.'
+        }
+    } catch {
+        if (sequence === rosterReadSequence) {
+            rosterFileError.value = 'Die CSV-Datei konnte nicht gelesen werden. Bitte erneut auswählen.'
+        }
+    } finally {
+        if (sequence === rosterReadSequence) {
+            rosterReading.value = false
         }
     }
 }
 
 async function previewRoster() {
+    if (rosterReading.value || rosterFileError.value || !rosterCsv.value.trim()) {
+        return
+    }
     await task('roster', async () => {
         const csv = rosterCsv.value
         const {
@@ -1102,9 +1334,17 @@ async function publishTest() {
 }
 
 async function selectTest(id) {
+    if (!catalogTests.value.some((item) => item.id === id)) {
+        return
+    }
+    return navigateTo('test', catalog.value.id, id)
+}
+
+async function loadSelectedTest(id) {
     preparingTest.value = false
     selectedTestId.value = id
     selectedTest.value = null
+    monitorError.value = ''
     attempts.value = []
     invitationPreview.value = null
     expandedAttempt.value = null
@@ -1115,11 +1355,11 @@ async function selectTest(id) {
 }
 
 async function refreshMonitor() {
-    if (!selectedTestId.value || monitorLoading) {
+    if (!selectedTestId.value || monitorLoading === selectedTestId.value) {
         return
     }
-    monitorLoading = true
     const id = selectedTestId.value
+    monitorLoading = id
     try {
         const {
             data
@@ -1129,6 +1369,8 @@ async function refreshMonitor() {
         }
         selectedTest.value = data.test
         attempts.value = data.attempts ?? []
+        const attemptId = queryId(route.query.attempt)
+        expandedAttempt.value = route.query.view === 'results' && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
         if (data.server_now) {
             serverOffset.value = Date.parse(data.server_now) - Date.now()
         }
@@ -1138,7 +1380,9 @@ async function refreshMonitor() {
             monitorError.value = requestError(failure)
         }
     } finally {
-        monitorLoading = false
+        if (monitorLoading === id) {
+            monitorLoading = null
+        }
     }
 }
 
@@ -1236,20 +1480,6 @@ h3 {
     margin-top: 4px;
 }
 
-.mc-sections {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    border-bottom: 1px solid #dce2ea;
-    padding: 0 0 12px;
-    margin-bottom: 20px;
-}
-
-.mc-sections :deep(.v-btn) {
-    text-transform: none;
-    letter-spacing: 0;
-}
-
 .mc-guide {
     padding: 13px 16px;
     border-left: 3px solid #6e96b5;
@@ -1257,6 +1487,14 @@ h3 {
     border-radius: 4px;
 }
 
+.mc-catalog-detail { width: 100%; max-width: 960px; }
+.mc-test-create { width: 100%; max-width: 880px; }
+.mc-test-create .mc-heading { padding-bottom: 12px; }
+.mc-test-create .mc-guide { padding: 10px 14px; }
+.mc-test-create .mc-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.mc-test-title { grid-column: 1 / -1; }
+.mc-catalog-actions :deep(.v-btn) { max-width: 100%; height: auto; min-height: 36px; }
+.mc-catalog-actions :deep(.v-btn__content) { white-space: normal; text-align: center; }
 .mc-catalog-heading { margin: 8px 0 20px; }
 .mc-catalog-empty { text-align: center; padding: 46px 20px; color: #68768a; }
 .mc-catalog-empty h3 { color: #243447; margin: 14px 0 6px; }
@@ -1323,12 +1561,6 @@ h3 {
     flex-wrap: wrap;
 }
 
-.mc-picker {
-    flex: 1 1 260px;
-    max-width: 520px;
-    min-width: 180px;
-}
-
 .mc-form-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1359,19 +1591,6 @@ h3 {
     resize: vertical;
     color: #243447;
     font-weight: 400;
-}
-
-.mc-file {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: .86rem;
-    flex-wrap: wrap;
-}
-
-.mc-file input {
-    max-width: 100%;
-    font-size: .85rem;
 }
 
 .mc-checks {
@@ -1465,6 +1684,14 @@ h3 {
     }
 }
 
+@media (max-width: 900px) {
+    .mc-test-create .mc-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+    .mc-test-create .mc-form-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 700px) {
     .mc-form-grid {
         grid-template-columns: 1fr;
@@ -1472,10 +1699,6 @@ h3 {
 
     .mc-import {
         padding: 14px;
-    }
-
-    .mc-picker {
-        max-width: none;
     }
 
     .mc-table td,

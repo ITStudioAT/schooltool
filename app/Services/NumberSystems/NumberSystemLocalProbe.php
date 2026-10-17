@@ -77,6 +77,7 @@ class NumberSystemLocalProbe
                     $table->softDeletes();
                 });
                 (require database_path('migrations/2026_10_16_225024_create_number_system_game_tables.php'))->up();
+                $this->upgradeTiming();
                 DB::table('schools')->insert(['id' => 1]);
                 foreach ([1 => 'Test-Lehrkraft', 2 => 'Testperson A', 3 => 'Testperson B'] as $id => $name) {
                     DB::table('users')->insert(['id' => $id, 'school_id' => 1, 'first_name' => $name, 'last_name' => '']);
@@ -86,7 +87,7 @@ class NumberSystemLocalProbe
                     DB::table('teaching_course_students')->insert(['teaching_course_id' => 1, 'user_id' => $student]);
                 }
                 $session = $this->games->create(User::findOrFail(1), TeachingCourse::findOrFail(1), [
-                    'title' => 'Lokaler Probelauf', 'planned_minutes' => $data['planned_minutes'], 'difficulty' => $data['difficulty'], 'mode' => $data['mode']]);
+                    ...$data, 'title' => 'Lokaler Probelauf']);
                 $session->update(['join_code' => 'P-'.strtoupper(bin2hex(random_bytes(4)))]);
             });
             $receipt['state'] = 'ready';
@@ -105,12 +106,16 @@ class NumberSystemLocalProbe
             $session = NumberSystemGameSession::firstOrFail();
             $runs = NumberSystemGameRun::with('members')->get();
             $teamCode = $runs->first()?->team_code;
+            $results = app(NumberSystemGameResults::class);
+            $presence = app(NumberSystemPresence::class);
+            $seen = $presence->snapshot($session);
 
             return ['id' => $probe, 'short' => $receipt['short'], 'session' => $session->toArray(),
+                'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
                 'players' => array_map(fn (int $participant): array => ['participant' => $participant, 'label' => $participant === 1 ? 'Testperson A' : 'Testperson B',
                     'url' => $this->url($probe, ['participant' => $participant, 'code' => $session->join_code, ...($participant === 2 && $teamCode ? ['team_code' => $teamCode] : [])])], [1, 2]),
                 'runs' => $runs->map(fn ($run): array => ['name' => $run->team_name ?: $run->members->first()?->first_name,
-                    'members' => $run->members->pluck('first_name')->all(), 'solved' => count($run->history ?? []), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null])->all()];
+                    'members' => $run->members->pluck('first_name')->all(), 'solved' => count($run->history ?? []), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null, 'clock' => $results->clock($session, $run), 'presence' => $presence->members($run, $seen)])->all()];
         });
     }
 
@@ -126,6 +131,9 @@ class NumberSystemLocalProbe
         return $this->within($owner, $probe, function (array $receipt) use ($probe, $participant): array {
             $student = $this->student($participant);
             $membership = DB::table('number_system_game_members')->where('user_id', $student->id)->first();
+            if ($membership) {
+                app(NumberSystemPresence::class)->record(NumberSystemGameRun::findOrFail($membership->run_id), $student);
+            }
 
             return ['id' => $probe, 'participant' => $participant, 'label' => $student->first_name, 'short' => $receipt['short'],
                 'session' => NumberSystemGameSession::firstOrFail()->toArray(),
@@ -138,6 +146,7 @@ class NumberSystemLocalProbe
         return $this->within($owner, $probe, function (array $receipt) use ($probe, $participant, $data): array {
             $student = $this->student($participant);
             $run = $this->games->join($student, $data['code'], $data['team_name'] ?? null, $data['team_code'] ?? null);
+            app(NumberSystemPresence::class)->record($run, $student);
             if ($run->team_code && ctype_xdigit($run->team_code)) {
                 $run->update(['team_code' => 'P'.strtoupper(substr(bin2hex(random_bytes(4)), 0, 7))]);
             }
@@ -162,6 +171,17 @@ class NumberSystemLocalProbe
             $this->games->mutate($run, $student, $data['action'], $data);
 
             return $this->state($run->fresh(), $student, $probe, $participant);
+        });
+    }
+
+    public function presence(int $owner, string $probe, int $participant): array
+    {
+        return $this->within($owner, $probe, function () use ($participant): array {
+            $student = $this->student($participant);
+            $member = DB::table('number_system_game_members')->where('user_id', $student->id)->first();
+            abort_unless($member, 404);
+
+            return ['recorded' => app(NumberSystemPresence::class)->record(NumberSystemGameRun::findOrFail($member->run_id), $student)];
         });
     }
 
@@ -205,7 +225,11 @@ class NumberSystemLocalProbe
             $receipt = $this->receipt($directory, $owner, $probe);
             abort_unless($receipt['state'] === 'ready', 404);
 
-            return $this->connection($directory, fn () => $callback($receipt));
+            return $this->connection($directory, function () use ($callback, $receipt): mixed {
+                $this->upgradeTiming();
+
+                return $callback($receipt);
+            });
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
@@ -235,6 +259,16 @@ class NumberSystemLocalProbe
     private function root(int $owner): string
     {
         return storage_path('app/private/number-system-probes/'.$owner);
+    }
+
+    private function upgradeTiming(): void
+    {
+        if (! Schema::hasColumn('number_system_game_sessions', 'timer_mode')) {
+            (require database_path('migrations/2026_10_17_143636_add_timing_to_number_system_games.php'))->up();
+        }
+        if (! Schema::hasColumn('number_system_game_members', 'last_seen_at')) {
+            (require database_path('migrations/2026_10_17_144456_add_presence_to_number_system_game_members.php'))->up();
+        }
     }
 
     private function directory(int $owner, string $probe): string

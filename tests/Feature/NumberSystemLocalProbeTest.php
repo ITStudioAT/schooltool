@@ -67,9 +67,10 @@ test('local probe is unavailable in production from remote addresses and to stud
 });
 
 test('a local probe persists separate identities and real game progression without touching the normal database or login', function () {
+    $this->freezeTime();
     $before = probeNormalCounts();
     $normalDatabase = DB::connection()->getDatabaseName();
-    $id = $this->postJson($this->base, $this->payload)->assertCreated()->json('id');
+    $id = $this->postJson($this->base, [...$this->payload, 'timer_mode' => 'elapsed', 'ranking_enabled' => true])->assertCreated()->json('id');
     $root = $this->base.'/'.$id;
     $overview = $this->getJson($root)->assertOk()->json();
     expect($overview['session']['join_code'])->toStartWith('P-');
@@ -78,9 +79,11 @@ test('a local probe persists separate identities and real game progression witho
     $runB = $this->postJson($root.'/players/2/join', ['code' => $overview['session']['join_code'], 'team_code' => $runA['team_code']])->assertOk()->json('run');
     expect($runB['id'])->toBe($runA['id']);
     $this->postJson($root.'/control', ['action' => 'start'])->assertOk();
+    $this->travel(30)->seconds();
     $a = $this->getJson($root.'/players/1')->assertOk()->json('run');
     $b = $this->getJson($root.'/players/2')->assertOk()->json('run');
     expect($a['mission']['role_cards'])->not->toBe($b['mission']['role_cards']);
+    expect($a['clock']['elapsed_seconds'])->toBe(30)->and($a['clock'])->toBe($b['clock'])->and($a['ranking']['final'])->toBeFalse();
     expect(array_merge($a['mission']['role_cards'], $b['mission']['role_cards']))->toHaveCount(4);
     expect($a['invitation']['url'])->toContain('local/'.$id, 'participant=2', 'code=P-', 'team_code=P');
     $saved = $this->postJson($root.'/players/1/run', ['action' => 'draft', 'revision' => $a['revision'], 'mission_id' => $a['mission']['id'], 'draft' => ['lock0' => '#2A']])->assertOk()->json('run');
@@ -88,6 +91,11 @@ test('a local probe persists separate identities and real game progression witho
     $this->getJson($root.'/players/2')->assertJsonPath('run.draft.lock0', '#2A');
     $this->postJson($root.'/players/2/run', ['action' => 'draft', 'revision' => $b['revision'], 'mission_id' => $b['mission']['id'], 'draft' => ['lock1' => '50']])->assertConflict();
     $this->postJson($root.'/control', ['action' => 'pause'])->assertOk();
+    $this->travel(120)->seconds();
+    $this->getJson($root)->assertOk()->assertJsonPath('runs.0.presence.0.status', 'disconnected')->assertJsonPath('runs.0.presence.1.status', 'disconnected');
+    $this->postJson($root.'/players/2/presence')->assertOk()->assertJsonPath('recorded', true);
+    $this->getJson($root)->assertOk()->assertJsonPath('runs.0.presence.0.status', 'disconnected')->assertJsonPath('runs.0.presence.1.status', 'connected');
+    $this->getJson($root.'/players/2')->assertJsonPath('run.clock.elapsed_seconds', 30)->assertJsonPath('run.clock.ticking', false);
     $this->postJson($root.'/players/1/run', ['action' => 'answer', 'revision' => $saved['revision'], 'mission_id' => $saved['mission']['id'], 'draft' => []])->assertUnprocessable();
     $this->postJson($root.'/control', ['action' => 'resume'])->assertOk();
     foreach (range(0, 2) as $position) {
@@ -105,7 +113,9 @@ test('a local probe persists separate identities and real game progression witho
         $this->postJson($root.'/players/2/run', $answer)->assertConflict();
         $this->postJson($root.'/players/1/run', ['action' => 'advance', 'revision' => $solved['revision'], 'mission_id' => $solved['mission']['id']])->assertOk();
     }
-    $this->getJson($root.'/players/2')->assertOk()->assertJsonPath('run.completed', true)->assertJsonCount(3, 'run.history');
+    $this->travel(10)->seconds();
+    $this->getJson($root.'/players/2')->assertOk()->assertJsonPath('run.completed', true)->assertJsonPath('run.clock.elapsed_seconds', 30)->assertJsonPath('run.clock.ticking', false)->assertJsonCount(3, 'run.history');
+    $this->postJson($root.'/control', ['action' => 'end'])->assertOk()->assertJsonPath('ranking.entries.0.rank', 1)->assertJsonPath('ranking.entries.0.seconds', 30);
     expect(probeNormalCounts())->toBe($before)->and(DB::connection()->getDatabaseName())->toBe($normalDatabase)->and(Schema::hasColumn('users', 'email'))->toBeTrue();
     expect(auth('web')->id())->toBe($this->teacher->id);
     $this->deleteJson($root)->assertOk();

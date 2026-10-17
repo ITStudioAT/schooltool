@@ -11,6 +11,7 @@
         <template v-if="info && !participant">
             <section class="ns-panel ns-stack" style="margin-top:22px">
                 <div class="ns-toolbar"><h2>Fenster für zwei Testpersonen</h2><span>{{ statusLabels[info.session.status] }}</span></div>
+                <NumberSystemClock :clock="info.clock" />
                 <p>Öffne A und B über die Links in getrennten Fenstern oder Tabs. A gründet ein Team; B tritt mit dessen privatem Teamcode bei. Die Links für B werden nach dem ersten Beitritt automatisch vorbelegt.</p>
                 <div class="ns-toolbar"><a v-for="person in info.players" :key="person.participant" :href="person.url" class="ns-button ns-button-secondary" target="_blank" rel="noopener noreferrer">{{ person.label }} öffnen</a></div>
                 <p class="ns-small ns-muted">Ein dupliziertes Fenster bleibt derselben Testperson zugeordnet. Ein neuer Probelauf erhält eine neue Kennung; alte Fenster bleiben bei ihrer Runde.</p>
@@ -24,9 +25,11 @@
             </section>
             <section class="ns-panel ns-stack" style="margin-top:20px"><h2>Gespeicherter Fortschritt</h2>
                 <p v-if="!info.runs.length" class="ns-muted">Noch keine Testperson beigetreten.</p>
-                <div v-for="(run, index) in info.runs" :key="index"><strong>{{ run.name }}</strong> · {{ run.members.join(', ') }} · {{ run.solved }} / {{ run.total }} bestätigt {{ run.completed ? '· abgeschlossen' : '' }}<progress class="ns-progress" :value="run.solved" :max="run.total" /></div>
+                <div v-for="(run, index) in info.runs" :key="index"><strong>{{ run.name }}</strong> · {{ run.members.join(', ') }} · {{ run.solved }} / {{ run.total }} bestätigt {{ run.completed ? '· abgeschlossen' : '' }}<progress class="ns-progress" :value="run.solved" :max="run.total" /><NumberSystemClock :clock="run.clock" compact /><NumberSystemPresence :people="run.presence" /></div>
+                <p class="ns-small ns-muted">Ohne Signal nach 45 Sekunden: „Signal verzögert“; nach 90 Sekunden: „Verbindung unterbrochen“. Der Grund ist nicht sicher erkennbar. Beim Wiederverbinden bleibt der Fortschritt erhalten.</p>
             </section>
-            <details class="ns-panel" style="margin-top:20px"><summary>Eigene Probedaten entfernen</summary><p style="margin:12px 0">Entfernt ausschließlich diese Proberunde und ihre lokale Datei. Offene Testfenster können danach nicht mehr fortsetzen.</p><button class="ns-button ns-button-quiet" @click="removeDialog = true">Diesen Probelauf entfernen</button></details>
+            <NumberSystemRanking :ranking="info.ranking" />
+            <section class="ns-panel ns-stack" style="margin-top:20px"><h2>Probelauf verwalten</h2><p class="ns-small ns-muted">Dieser gespeicherte Probelauf {{ probe.slice(0, 8) }} hat eine eigene lokale Datei. Beim Löschen gehen seine Testpersonen, Fortschritte, Zeitdaten und Ergebnisse verloren.</p><div><button class="ns-button ns-button-quiet" :disabled="busy" @click="removeDialog = true">Probelauf löschen</button></div></section>
         </template>
         <template v-else-if="info && participant">
             <section v-if="!info.run" class="ns-panel ns-stack" style="margin-top:22px">
@@ -44,7 +47,7 @@
             <NumberSystemPlayer v-else :key="`${probe}-${participant}`" :run-id="info.run.id" :probe-id="probe" :participant="participant" @back="teacherView" />
         </template>
         <v-dialog v-model="endDialog" max-width="500"><v-card class="ns-dialog"><form @submit.prevent="control('end'); endDialog = false"><h2>Proberunde beenden?</h2><p>Für eine Unterbrechung genügt Pause. Nach dem Beenden bleiben die Ergebnisse sichtbar.</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="endDialog = false">Zurück</button><button class="ns-button">Beenden</button></div></form></v-card></v-dialog>
-        <v-dialog v-model="removeDialog" max-width="500"><v-card class="ns-dialog"><form @submit.prevent="remove"><h2>Diesen Probelauf entfernen?</h2><p>Nur die synthetischen Daten dieser Runde werden gelöscht.</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="removeDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy">Probedaten entfernen</button></div></form></v-card></v-dialog>
+        <v-dialog v-model="removeDialog" persistent max-width="520"><v-card class="ns-dialog"><form @submit.prevent="remove"><h2>Probelauf {{ probe.slice(0, 8) }} löschen?</h2><p>Die eigene lokale Datei dieses Probelaufs wird endgültig entfernt, einschließlich Testpersonen, Spielständen, Zeitdaten und Ergebnissen. Offene Testfenster können danach nicht mehr fortsetzen.</p><p>Andere Probeläufe, echte Klassenrunden und deine normale Anmeldung bleiben erhalten.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="removeDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy">{{ busy ? 'Wird gelöscht …' : 'Probelauf endgültig löschen' }}</button></div></form></v-card></v-dialog>
     </div>
 </template>
 
@@ -54,6 +57,9 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { show, player, join as joinProbe, control as controlProbe, remove as removeProbe } from '@/actions/App/Http/Controllers/Admin/NumberSystemLocalProbeController'
 import NumberSystemPlayer from '@/pages/components/numberSystems/NumberSystemPlayer.vue'
+import NumberSystemClock from '@/pages/components/numberSystems/NumberSystemClock.vue'
+import NumberSystemRanking from '@/pages/components/numberSystems/NumberSystemRanking.vue'
+import NumberSystemPresence from '@/pages/components/numberSystems/NumberSystemPresence.vue'
 import '@/pages/components/numberSystems/game.css'
 const route = useRoute(), router = useRouter()
 const probe = computed(() => String(route.params.probe))
@@ -101,6 +107,6 @@ watch(() => [probe.value, route.query.participant, route.query.code, route.query
     teamChoice.value = teamCode.value ? 'existing' : 'new'; teamName.value = 'Testteam'
     void load()
 }, { immediate: true })
-const poll = setInterval(async () => { if (!document.hidden && !polling && !busy.value && !loading.value) { polling = true; try { await load(true) } finally { polling = false } } }, 3000)
+const poll = setInterval(async () => { if (!document.hidden && !polling && !busy.value && !loading.value && !(participant.value && info.value?.run)) { polling = true; try { await load(true) } finally { polling = false } } }, 3000)
 onBeforeUnmount(() => { disposed = true; ++generation; clearInterval(poll); document.title = previousTitle })
 </script>

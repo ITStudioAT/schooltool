@@ -12,6 +12,7 @@
         </div>
         <p v-if="loading" role="status">Spielstand wird geladen …</p>
         <template v-else-if="run">
+            <NumberSystemClock :clock="run.clock" style="margin:18px 0" />
             <div v-if="run.team_name" class="ns-small ns-muted">Team {{ run.team_name }} · {{ run.members.join(', ') }}<br />Teamcode für eure weiteren Mitglieder: <strong class="ns-code ns-code-small">{{ run.team_code }}</strong></div>
             <details v-if="run.invitation" class="ns-panel" style="margin-top:16px"><summary>Team einladen · QR-Code anzeigen</summary><NumberSystemInvitation :invitation="run.invitation" title="Deinem privaten Team beitreten" private-team :local-probe="Boolean(probeId)" /></details>
             <ol class="ns-path" aria-label="Rechenzentrum wiederherstellen">
@@ -78,6 +79,7 @@
                     </aside>
                 </div>
             </template>
+            <NumberSystemRanking :ranking="run.ranking" />
         </template>
     </div>
 </template>
@@ -86,6 +88,8 @@
 import { computed, nextTick, ref, toRef, watch } from 'vue'
 import NumberSystemPuzzle from './NumberSystemPuzzle.vue'
 import NumberSystemInvitation from './NumberSystemInvitation.vue'
+import NumberSystemClock from './NumberSystemClock.vue'
+import NumberSystemRanking from './NumberSystemRanking.vue'
 import { useNumberSystemPlayer } from './useNumberSystemPlayer'
 import './game.css'
 const props = defineProps({ runId: { type: [Number, String], required: true }, probeId: String, participant: Number })

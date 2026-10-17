@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\NumberSystems\NumberSystemGameResults;
 use App\Services\NumberSystems\NumberSystemLocalProbe;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class NumberSystemLocalProbeController extends Controller
     {
         $owner = $this->owner($request);
         $data = $request->validate(['planned_minutes' => ['required', 'integer', Rule::in([30, 40, 60, 75])],
-            'difficulty' => ['required', 'integer', 'between:1,3'], 'mode' => ['required', Rule::in(['solo', 'teams'])], 'short' => ['required', 'boolean']]);
+            'difficulty' => ['required', 'integer', 'between:1,3'], 'mode' => ['required', Rule::in(['solo', 'teams'])], 'short' => ['required', 'boolean'], ...NumberSystemGameResults::rules()]);
 
         return $this->respond($this->probes->create($owner, $data), 201);
     }
@@ -57,6 +58,11 @@ class NumberSystemLocalProbeController extends Controller
         }
 
         return $this->respond(['run' => $this->probes->update($owner, $probe, $participant, $data)]);
+    }
+
+    public function presence(Request $request, string $probe, int $participant): JsonResponse
+    {
+        return $this->respond($this->probes->presence($this->owner($request), $probe, $participant));
     }
 
     public function remove(Request $request, string $probe): JsonResponse

@@ -7,6 +7,7 @@ use App\Models\NumberSystemGameSession;
 use App\Models\User;
 use App\Services\LicenceService;
 use App\Services\NumberSystems\NumberSystemGameService;
+use App\Services\NumberSystems\NumberSystemPresence;
 use App\Services\ParentStudentAccessService;
 use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Http\JsonResponse;
@@ -37,6 +38,7 @@ class NumberSystemPlayerController extends Controller
         $data = $request->validate(['code' => ['required', 'string', 'max:20'], 'team_name' => ['nullable', 'string', 'max:60'],
             'team_code' => ['nullable', 'string', 'max:12']]);
         $run = $this->games->join($student, $data['code'], $data['team_name'] ?? null, $data['team_code'] ?? null);
+        app(NumberSystemPresence::class)->record($run, $student);
 
         return $this->respond(['run' => $this->games->state($run, $student)]);
     }
@@ -54,9 +56,14 @@ class NumberSystemPlayerController extends Controller
     public function show(Request $request, NumberSystemGameRun $run): JsonResponse
     {
         $student = $this->student();
-        $this->games->authorizeRun($student, $run);
+        app(NumberSystemPresence::class)->record($run, $student);
 
         return $this->respond(['run' => $this->games->state($run, $student)]);
+    }
+
+    public function presence(Request $request, NumberSystemGameRun $run): JsonResponse
+    {
+        return $this->respond(['recorded' => app(NumberSystemPresence::class)->record($run, $this->student())]);
     }
 
     public function update(Request $request, NumberSystemGameRun $run): JsonResponse

@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
-import { show, update } from '@/actions/App/Http/Controllers/NumberSystemPlayerController'
-import { player as probePlayer, update as probeUpdate } from '@/actions/App/Http/Controllers/Admin/NumberSystemLocalProbeController'
+import { show, update, presence } from '@/actions/App/Http/Controllers/NumberSystemPlayerController'
+import { player as probePlayer, update as probeUpdate, presence as probePresence } from '@/actions/App/Http/Controllers/Admin/NumberSystemLocalProbeController'
 
 export function useNumberSystemPlayer(runId, context = {}) {
     const run = ref(null)
@@ -18,6 +18,7 @@ export function useNumberSystemPlayer(runId, context = {}) {
     let disposed = false
     let generation = 0
     let savingPromise = null
+    let presencePending = false
     const cacheKey = () => context.probeId ? `schooltool-number-system-probe-${context.probeId}-${context.participant}-${runId.value}` : `schooltool-number-system-draft-${runId.value}`
     const showUrl = () => context.probeId ? probePlayer.url({ probe: context.probeId, participant: context.participant }) : show.url(Number(runId.value))
     const updateUrl = () => context.probeId ? probeUpdate.url({ probe: context.probeId, participant: context.participant }) : update.url(Number(runId.value))
@@ -67,6 +68,8 @@ export function useNumberSystemPlayer(runId, context = {}) {
             if (disposed || currentGeneration !== generation || saving.value || busy.value || data.run.revision < run.value.revision) { return }
             if (dirty.value) {
                 run.value.session = data.run.session
+                run.value.clock = data.run.clock
+                run.value.ranking = data.run.ranking
                 if (data.run.revision !== run.value.revision) { conflict.value = true; error.value = 'Ein anderes Teammitglied oder Gerät hat den Stand verändert. Lade den gespeicherten Stand.' }
             } else { apply(data.run); error.value = '' }
         } catch (failure) { error.value = message(failure) }
@@ -107,9 +110,20 @@ export function useNumberSystemPlayer(runId, context = {}) {
     function beforeUnload(event) {
         if ((dirty.value || saving.value) && !run.value?.completed && run.value?.session.status !== 'ended') { event.preventDefault(); event.returnValue = '' }
     }
+    async function signalPresence() {
+        if (!run.value || disposed || presencePending) { return }
+        presencePending = true
+        try {
+            await axios.post(context.probeId ? probePresence.url({ probe: context.probeId, participant: context.participant }) : presence.url(Number(runId.value)))
+        } catch { /* The next signal retries independently of the saved game state. */ }
+        finally { presencePending = false }
+    }
+    function visibilityChanged() { if (!document.hidden) { void signalPresence() } }
     watch(runId, () => { run.value = null; dirty.value = false; void load() }, { immediate: true })
     poll = setInterval(() => void refresh(), 3500)
+    const presencePoll = setInterval(() => void signalPresence(), 15000)
+    document.addEventListener('visibilitychange', visibilityChanged)
     window.addEventListener('beforeunload', beforeUnload)
-    onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(timer); clearInterval(poll); window.removeEventListener('beforeunload', beforeUnload) })
+    onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(timer); clearInterval(poll); clearInterval(presencePoll); document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('beforeunload', beforeUnload) })
     return { run, draft, loading, saving, busy, dirty, conflict, error, storageUnavailable, canPlay, load, edit, flush, act }
 }

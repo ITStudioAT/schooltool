@@ -10,6 +10,8 @@ use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use App\Services\NumberSystems\NumberSystemEngine;
+use App\Services\NumberSystems\NumberSystemGameResults;
+use App\Services\NumberSystems\NumberSystemGameService;
 use App\Services\NumberSystems\NumberSystemInvitation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -73,6 +75,117 @@ function nsGameUpdate(NumberSystemGameRun $run, string $action, array $extra = [
 
     return ['action' => $action, 'revision' => $run->revision, 'mission_id' => $run->puzzles[$run->position]['id'], ...$extra];
 }
+
+test('timing and ranking are independent opt ins and invalid timing options are rejected', function () {
+    nsGameAs($this, $this->teacher);
+    $data = ['title' => 'Zeitprobe', 'course_id' => $this->course->id, 'planned_minutes' => 40, 'difficulty' => 1, 'mode' => 'solo'];
+    $this->postJson('/api/admin/number-systems/sessions', $data)->assertCreated()->assertJsonPath('session.timer_mode', 'none')->assertJsonPath('session.ranking_enabled', false);
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'timer_mode' => 'countdown'])->assertCreated()->assertJsonPath('session.countdown_seconds', 2400)->assertJsonPath('session.ranking_enabled', false);
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'ranking_enabled' => true])->assertCreated()->assertJsonPath('session.timer_mode', 'none')->assertJsonPath('session.ranking_enabled', true);
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'timer_mode' => 'invalid'])->assertUnprocessable();
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'timer_mode' => 'countdown', 'countdown_minutes' => 0])->assertUnprocessable();
+});
+
+test('server time survives pause reload overtime and completion with a shared team clock', function () {
+    $games = app(NumberSystemGameService::class);
+    $results = app(NumberSystemGameResults::class);
+    $this->freezeTime();
+    $this->session->update(['timer_mode' => 'countdown', 'countdown_seconds' => 60, 'mode' => 'teams']);
+    $run = $games->join($this->students[0], $this->session->join_code, 'Gemeinsame Uhr', null);
+    $games->join($this->students[1], $this->session->join_code, null, $run->team_code);
+    $games->control($this->session, 'start');
+    $this->travel(25)->seconds();
+    $paused = $games->control($this->session, 'pause');
+    $this->travel(120)->seconds();
+    expect($results->clock($paused)['elapsed_seconds'])->toBe(25);
+    $games->control($this->session, 'resume');
+    $this->travel(40)->seconds();
+    $a = $games->state($run->fresh(), $this->students[0]);
+    $b = $games->state($run->fresh(), $this->students[1]);
+    expect($a['clock'])->toBe($b['clock'])->and($a['clock']['elapsed_seconds'])->toBe(65)->and($a['clock']['expired'])->toBeTrue()->and($a['session']['status'])->toBe('running')->and($a['ranking'])->toBeNull();
+    $mission = $run->puzzles[0];
+    $run->update(['puzzles' => [$mission]]);
+    $solved = $games->mutate($run, $this->students[0], 'answer', nsGameUpdate($run, 'answer', ['draft' => nsGameDraft($mission)]));
+    expect($solved['solved'])->toBeTrue();
+    $finished = $games->mutate($run, $this->students[0], 'advance', nsGameUpdate($run, 'advance'));
+    $this->travel(15)->seconds();
+    expect($finished['clock']['elapsed_seconds'])->toBe(65)->and($games->state($run->fresh(), $this->students[1])['clock']['elapsed_seconds'])->toBe(65)->and($finished['clock']['ticking'])->toBeFalse();
+    $ended = $games->control($this->session, 'end');
+    $this->travel(80)->seconds();
+    expect($results->clock($ended)['elapsed_seconds'])->toBe(80);
+});
+
+test('final ranking is round scoped puts progress before speed and gives ties the same rank', function () {
+    $games = app(NumberSystemGameService::class);
+    $results = app(NumberSystemGameResults::class);
+    $runs = $this->students->take(4)->map(fn ($student) => $games->join($student, $this->session->join_code, null, null));
+    $this->session->update(['ranking_enabled' => true, 'timer_mode' => 'elapsed', 'status' => 'running']);
+    expect($results->ranking($this->session)['entries'])->toBe([]);
+    foreach ([0, 1] as $index) {
+        $runs[$index]->update(['completed_at' => now(), 'finished_seconds' => 120, 'history' => [['hints' => $index]]]);
+    }
+    $runs[2]->update(['history' => [[], [], []], 'finished_seconds' => 1]);
+    $runs[3]->update(['history' => [[]], 'finished_seconds' => 0]);
+    $this->session->update(['status' => 'ended']);
+    $ranking = $results->ranking($this->session, $runs[1]->id);
+    expect(array_column($ranking['entries'], 'rank'))->toBe([1, 1, 3, 4])->and(array_column($ranking['entries'], 'id'))->toBe($runs->pluck('id')->all())->and($ranking['entries'][1]['own'])->toBeTrue()->and($ranking['entries'][0]['label'])->toBe('Spielweg 1');
+    $this->session->update(['timer_mode' => 'none']);
+    $runs[1]->update(['finished_seconds' => 900]);
+    $ranking = $results->ranking($this->session);
+    expect($ranking['entries'][0]['seconds'])->toBeNull()->and($ranking['entries'][1]['rank'])->toBe(1);
+    $this->session->update(['ranking_enabled' => false]);
+    expect($results->ranking($this->session))->toBeNull();
+});
+
+test('connection signals identify each team member and recover without altering the saved run', function () {
+    $this->freezeTime();
+    $this->session->update(['mode' => 'teams']);
+    $run = nsGameAs($this, $this->students[0])->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'team_name' => 'Kontaktprobe'])->assertOk()->json('run');
+    nsGameAs($this, $this->students[1])->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'team_code' => $run['team_code']])->assertOk();
+    $heartbeat = '/api/number-systems/runs/'.$run['id'].'/presence';
+    $before = NumberSystemGameRun::findOrFail($run['id'])->getAttributes();
+    $this->travel(46)->seconds();
+    nsGameAs($this, $this->students[0])->postJson($heartbeat)->assertOk()->assertJsonPath('recorded', true);
+    $view = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertOk()->json('runs.0.presence');
+    expect(array_column($view, 'status'))->toBe(['connected', 'delayed']);
+    $this->travel(45)->seconds();
+    $view = $this->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertOk()->json('runs.0.presence');
+    expect(array_column($view, 'status'))->toBe(['connected', 'disconnected'])->and($view[1]['last_seen_at'])->not->toBeNull();
+    nsGameAs($this, $this->students[1])->postJson($heartbeat)->assertOk();
+    $view = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertOk()->json('runs.0.presence');
+    expect(array_column($view, 'status'))->toBe(['connected', 'connected'])->and(NumberSystemGameRun::findOrFail($run['id'])->getAttributes())->toBe($before);
+    $this->postJson($heartbeat)->assertUnauthorized();
+    nsGameAs($this, $this->students[2])->postJson($heartbeat)->assertNotFound();
+});
+
+test('deleting an owned inactive round removes only its linked runs and memberships', function (string $status) {
+    $games = app(NumberSystemGameService::class);
+    $run = $games->join($this->students[0], $this->session->join_code, null, null);
+    $other = NumberSystemGameSession::factory()->create(['teaching_course_id' => $this->course->id, 'school_id' => $this->school->id, 'teacher_id' => $this->teacher->id]);
+    $otherRun = $games->join($this->students[0], $other->join_code, null, null);
+    $this->session->update(['status' => $status]);
+    nsGameAs($this, $this->teacher)->deleteJson('/api/admin/number-systems/sessions/'.$this->session->id, ['confirmation' => $this->session->title])->assertOk()->assertJsonPath('deleted', true);
+    expect(NumberSystemGameSession::find($this->session->id))->toBeNull()->and(NumberSystemGameRun::find($run->id))->toBeNull();
+    expect(DB::table('number_system_game_members')->where('session_id', $this->session->id)->exists())->toBeFalse();
+    expect($other->fresh())->not->toBeNull()->and($otherRun->fresh())->not->toBeNull()->and($otherRun->members()->count())->toBe(1);
+    $this->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertNotFound();
+    nsGameAs($this, $this->students[0])->getJson('/api/number-systems/runs/'.$otherRun->id)->assertOk();
+})->with(['waiting', 'ended']);
+
+test('round deletion requires ownership exact confirmation and an inactive status', function () {
+    $path = '/api/admin/number-systems/sessions/'.$this->session->id;
+    $data = ['confirmation' => $this->session->title];
+    nsGameAs($this, $this->students[0])->deleteJson($path, $data)->assertForbidden();
+    $otherTeacher = User::factory()->create(['school_id' => $this->school->id, 'is_active' => true]);
+    $otherTeacher->assignRole('teacher');
+    nsGameAs($this, $otherTeacher)->deleteJson($path, $data)->assertNotFound();
+    nsGameAs($this, $this->teacher)->deleteJson($path, ['confirmation' => 'Andere Runde'])->assertUnprocessable();
+    foreach (['running', 'paused'] as $status) {
+        $this->session->update(['status' => $status]);
+        $this->deleteJson($path, $data)->assertConflict();
+        expect($this->session->fresh()->status)->toBe($status);
+    }
+});
 
 test('game administration and participation require the matching existing role', function () {
     $this->getJson('/api/admin/number-systems')->assertUnauthorized();

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { defineComponent, h } from 'vue'
 import axios from 'axios'
 import LocalProbe from '@/pages/admin/teachingTools/NumberSystemLocalProbe.vue'
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
@@ -12,7 +13,8 @@ afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.u
 async function render(query = '') {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/teaching-tools/games/number-systems/local/:probe', component: LocalProbe }, { path: '/admin/teaching-tools/games/number-systems', component: { template: '<div />' } }] })
     await router.push(`/admin/teaching-tools/games/number-systems/local/${id}${query}`); await router.isReady()
-    const wrapper = mount(LocalProbe, { global: { plugins: [router] } }); wrappers.push(wrapper); await flushPromises()
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(LocalProbe, { global: { plugins: [router], stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper); await flushPromises()
     return { wrapper, router }
 }
 it('joins with the identity from its own URL and clears old team codes when another invitation is opened', async () => {
@@ -40,4 +42,29 @@ it('teacher controls do not let an older polling response undo a pause', async (
     resolvePoll(response('running')); await flushPromises()
     expect(wrapper.text()).toContain('Pausiert')
     expect(wrapper.findAll('button').some(button => button.text() === 'Proberunde fortsetzen')).toBe(true)
+})
+
+it('lets the active player own refreshes instead of polling the same participant twice', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { label: 'Testperson A', short: true, session: { mode: 'solo', status: 'running' }, run: { id: 12 } } })
+    const { wrapper } = await render('?participant=1')
+    expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${id} · 1 · 12`)
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(axios.get).toHaveBeenCalledTimes(1)
+})
+
+it('names the saved probe and deletes its own file only after confirmation', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { short: true, session: { status: 'ended' }, players: [], runs: [] } })
+    vi.mocked(axios.delete).mockResolvedValue({ data: { removed: true } })
+    const { wrapper, router } = await render()
+    const open = () => wrapper.findAll('button').find(button => button.text() === 'Probelauf löschen').trigger('click')
+    await open()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Probelauf 00000000 löschen?')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('eigene lokale Datei')
+    expect(axios.delete).not.toHaveBeenCalled()
+    await wrapper.get('[role="dialog"] button[type="button"]').trigger('click')
+    expect(axios.delete).not.toHaveBeenCalled()
+    await open()
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(axios.delete).toHaveBeenCalledExactlyOnceWith(`/api/admin/number-systems/local-probes/${id}`)
+    expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/games/number-systems')
 })

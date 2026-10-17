@@ -8,11 +8,14 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Services\NumberSystems\NumberSystemEngine;
+use App\Services\NumberSystems\NumberSystemGameResults;
 use App\Services\NumberSystems\NumberSystemGameService;
 use App\Services\NumberSystems\NumberSystemInvitation;
 use App\Services\NumberSystems\NumberSystemLocalProbe;
+use App\Services\NumberSystems\NumberSystemPresence;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
@@ -35,7 +38,7 @@ class NumberSystemGameController extends Controller
         $probes = app(NumberSystemLocalProbe::class);
         $local = $probes->available($request);
 
-        return response()->json(['available' => true, 'courses' => $courses, 'sessions' => $sessions,
+        return response()->json(['available' => true, 'timing_available' => Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 'courses' => $courses, 'sessions' => $sessions,
             'local_probe_available' => $local, 'local_probes' => $local ? $probes->listing((int) $teacher->id) : []])->header('Cache-Control', 'private, no-store');
     }
 
@@ -43,9 +46,10 @@ class NumberSystemGameController extends Controller
     {
         $teacher = $this->teacher();
         abort_unless(Schema::hasTable('number_system_game_sessions'), 503, 'Das Spiel ist noch nicht aktiviert.');
+        abort_unless(Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 503, 'Die Erweiterung für Zeitmessung und Reihung muss noch lokal aktiviert werden. Bestehende Runden bleiben erhalten.');
         $data = $request->validate(['title' => ['required', 'string', 'max:120'], 'course_id' => ['required', 'integer'],
             'planned_minutes' => ['required', 'integer', Rule::in([30, 40, 60, 75])], 'difficulty' => ['required', 'integer', 'between:1,3'],
-            'mode' => ['required', Rule::in(['solo', 'teams'])]]);
+            'mode' => ['required', Rule::in(['solo', 'teams'])], ...NumberSystemGameResults::rules()]);
         $course = TeachingCourse::query()->findOrFail($data['course_id']);
         $session = $this->games->create($teacher, $course, $data);
 
@@ -58,17 +62,22 @@ class NumberSystemGameController extends Controller
         $session->load(['runs.members:id,first_name,last_name']);
         $enrolled = TeachingCourseStudent::query()->where('teaching_course_id', $session->teaching_course_id)
             ->whereNotNull('user_id')->whereNull('canceled_at')->count();
-        $runs = $session->runs->map(function ($run): array {
+        $results = app(NumberSystemGameResults::class);
+        $presence = app(NumberSystemPresence::class);
+        $seen = $presence->snapshot($session);
+        $runs = $session->runs->map(function ($run) use ($results, $session, $presence, $seen): array {
             $history = $run->history ?? [];
 
             return ['id' => $run->id, 'team_name' => $run->team_name, 'team_code' => $run->team_code,
                 'members' => $run->members->map(fn (User $member): string => trim($member->first_name.' '.$member->last_name))->values()->all(),
-                'solved' => count($history), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null,
+                'presence' => $presence->members($run, $seen),
+                'solved' => count($history), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null, 'clock' => $results->clock($session, $run),
                 'chapter' => $run->puzzles[$run->position]['chapter_title'], 'updated_at' => $run->updated_at->toIso8601String(),
                 'with_help' => count(array_filter($history, fn (array $item): bool => $item['hints'] > 0))];
         });
 
         return response()->json(['session' => $session->withoutRelations(), 'runs' => $runs, 'enrolled' => $enrolled,
+            'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
             'total' => $this->engine->count($session->planned_minutes),
             'invitation' => $session->status === 'ended' ? null : app(NumberSystemInvitation::class)->make($session->join_code)])->header('Cache-Control', 'private, no-store');
     }
@@ -80,6 +89,21 @@ class NumberSystemGameController extends Controller
         $this->games->control($session, $data['action']);
 
         return $this->show($request, $session->fresh());
+    }
+
+    public function remove(Request $request, NumberSystemGameSession $session): JsonResponse
+    {
+        $this->authorizeSession($session);
+        $data = $request->validate(['confirmation' => ['required', 'string', 'max:120']]);
+        DB::transaction(function () use ($session, $data): void {
+            $locked = NumberSystemGameSession::query()->lockForUpdate()->findOrFail($session->id);
+            $this->authorizeSession($locked);
+            abort_unless(hash_equals($locked->title, $data['confirmation']), 422, 'Die Bestätigung passt nicht zur aktuellen Runde. Bitte öffne den Löschdialog erneut.');
+            abort_unless(in_array($locked->status, ['waiting', 'ended'], true), 409, 'Beende die laufende oder pausierte Runde zuerst. Der Fortschritt bleibt bis dahin erhalten.');
+            $locked->delete();
+        }, 3);
+
+        return response()->json(['deleted' => true, 'id' => $session->id])->header('Cache-Control', 'private, no-store');
     }
 
     private function teacher(): User

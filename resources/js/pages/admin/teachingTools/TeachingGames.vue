@@ -104,7 +104,9 @@ defineProps({ game: { type: String, default: null } })
 }
 
 .game-tile__caption h2 { font-size: .75rem; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; text-align: center; }
-.teaching-games__back { display: inline-flex; align-items: center; gap: 8px; padding: 8px 0; margin-bottom: 16px; color: #3446af; text-underline-offset: 4px; }
+.teaching-games__back { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; max-width: 100%; padding: 10px 16px; margin-bottom: 18px; border: 1px solid #c7d0de; border-radius: 10px; background: #f4f6fa; color: #334760; font-size: .9rem; font-weight: 600; line-height: 1.4; text-decoration: none; box-shadow: 0 1px 2px rgb(23 28 40 / .06); }
+.teaching-games__back:hover { background: #e8edf5; border-color: #9aaac0; }
+@media (max-width: 480px) { .teaching-games__back { width: 100%; justify-content: flex-start; } }
 .game-placeholder { max-width: 660px; padding: clamp(28px, 6vw, 64px); border: 1px solid var(--game-line); border-radius: 18px; background: var(--game-night); color: var(--game-gold); }
 .game-placeholder__symbol { margin-bottom: 28px; font: 600 clamp(2.5rem, 8vw, 4rem)/1 Consolas, ui-monospace, monospace; letter-spacing: .08em; }
 .game-placeholder__symbol span { color: var(--game-brass); }

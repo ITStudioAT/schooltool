@@ -1,7 +1,7 @@
 <template>
     <div class="question-editor">
         <p v-if="!questions.length" class="text-medium-emphasis py-4">
-            Lege die erste Frage an oder übernimm Fragen aus einer Vorlage.
+            {{ readonly ? 'Noch keine Fragen. Wähle „Bearbeiten“, um Fragen hinzuzufügen oder eine Vorlage zu importieren.' : 'Lege die erste Frage an oder übernimm Fragen aus einer Vorlage.' }}
         </p>
         <details v-for="(question, index) in questions" :key="question.id" class="question-editor__question" :open="index === 0">
             <summary>
@@ -12,6 +12,17 @@
                 </span>
             </summary>
             <div class="question-editor__body">
+                <template v-if="readonly">
+                    <p class="question-editor__read-prompt">{{ question.prompt }}</p>
+                    <p class="text-caption text-medium-emphasis mb-3">{{ question.type === 'multiple' ? 'Mehrere richtige Antworten' : 'Eine richtige Antwort' }}</p>
+                    <ul class="question-editor__read-options">
+                        <li v-for="option in question.options" :key="option.id">
+                            <span>{{ option.text }}</span>
+                            <strong v-if="question.correct_option_ids.includes(option.id)" class="text-success"> · Richtig</strong>
+                        </li>
+                    </ul>
+                </template>
+                <template v-else>
                 <label class="question-editor__field">
                     <span>Frage {{ index + 1 }}</span>
                     <textarea :value="question.prompt" rows="3" @input="change(index, { prompt: $event.target.value })" />
@@ -53,6 +64,7 @@
                 <p class="text-caption text-medium-emphasis mt-2">
                     Änderungen werden beim Übernehmen oder Speichern bestätigt. Unvollständige Fragen bleiben für Tests gesperrt.
                 </p>
+                </template>
             </div>
         </details>
     </div>
@@ -64,10 +76,14 @@ import { newOption, questionProblems } from './multipleChoiceTeacher'
 const props = defineProps({
     questions: { type: Array, required: true },
     idPrefix: { type: String, default: 'catalog' },
+    readonly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:questions'])
 
 function change(index, updates) {
+    if (props.readonly) {
+        return
+    }
     const questions = props.questions.map((question, questionIndex) => questionIndex === index
         ? { ...question, ...updates, reviewed: false }
         : question)
@@ -116,6 +132,9 @@ details[open] > summary::before { transform: rotate(90deg); }
 .question-editor__summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .question-editor__state { font-size: .8rem; color: #697789; }
 .question-editor__body { padding: 0 20px 20px; }
+.question-editor__read-prompt { white-space: pre-wrap; margin-bottom: 8px; }
+.question-editor__read-options { list-style: none; padding: 0; }
+.question-editor__read-options li { padding: 8px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .question-editor__field { display: grid; gap: 7px; margin-bottom: 16px; font-size: .88rem; font-weight: 600; }
 .question-editor__type { max-width: 360px; }
 textarea, select, input[type='text'] { border: 1px solid #aebac7; border-radius: 5px; background: white; padding: 10px 12px; width: 100%; color: #243447; font-weight: 400; }

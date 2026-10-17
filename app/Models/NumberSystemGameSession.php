@@ -14,14 +14,16 @@ class NumberSystemGameSession extends Model
     use HasFactory;
 
     protected $fillable = ['school_id', 'teacher_id', 'teaching_course_id', 'title', 'join_code', 'seed',
-        'engine_version', 'planned_minutes', 'difficulty', 'mode', 'status', 'started_at', 'ended_at'];
+        'engine_version', 'planned_minutes', 'difficulty', 'mode', 'status', 'started_at', 'ended_at',
+        'timer_mode', 'countdown_seconds', 'ranking_enabled', 'active_seconds', 'active_since'];
 
     protected $hidden = ['seed'];
 
     protected function casts(): array
     {
         return ['started_at' => 'datetime', 'ended_at' => 'datetime', 'planned_minutes' => 'integer',
-            'difficulty' => 'integer', 'engine_version' => 'integer'];
+            'difficulty' => 'integer', 'engine_version' => 'integer', 'active_since' => 'datetime',
+            'active_seconds' => 'integer', 'countdown_seconds' => 'integer', 'ranking_enabled' => 'boolean'];
     }
 
     public function runs(): HasMany

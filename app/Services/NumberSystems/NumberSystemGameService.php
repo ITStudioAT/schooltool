@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class NumberSystemGameService
 {
-    public function __construct(private NumberSystemEngine $engine) {}
+    public function __construct(private NumberSystemEngine $engine, private NumberSystemGameResults $results) {}
 
     public function create(User $teacher, TeachingCourse $course, array $data): NumberSystemGameSession
     {
@@ -24,6 +24,8 @@ class NumberSystemGameService
             'title' => trim($data['title']), 'join_code' => strtoupper(bin2hex(random_bytes(5))),
             'seed' => bin2hex(random_bytes(32)), 'engine_version' => NumberSystemEngine::VERSION,
             'planned_minutes' => $data['planned_minutes'], 'difficulty' => $data['difficulty'], 'mode' => $data['mode'], 'status' => 'waiting',
+            'timer_mode' => $data['timer_mode'] ?? 'none', 'ranking_enabled' => $data['ranking_enabled'] ?? false,
+            'countdown_seconds' => ($data['timer_mode'] ?? 'none') === 'countdown' ? 60 * ($data['countdown_minutes'] ?? $data['planned_minutes']) : null,
         ]);
     }
 
@@ -34,6 +36,10 @@ class NumberSystemGameService
             $allowed = ['start' => ['waiting'], 'pause' => ['running'], 'resume' => ['paused'], 'end' => ['waiting', 'running', 'paused']];
             if (! in_array($locked->status, $allowed[$action] ?? [], true)) {
                 throw ValidationException::withMessages(['action' => ['Diese Aktion passt nicht zum aktuellen Rundenstatus. Bitte aktualisiere die Übersicht.']]);
+            }
+            if (array_key_exists('timer_mode', $locked->getAttributes())) {
+                $locked->active_seconds = $this->results->elapsed($locked);
+                $locked->active_since = in_array($action, ['start', 'resume'], true) ? now() : null;
             }
             $locked->status = match ($action) {
                 'start', 'resume' => 'running', 'pause' => 'paused', 'end' => 'ended'
@@ -145,6 +151,9 @@ class NumberSystemGameService
                 abort_unless($locked->solved, 422, 'Bestätige zuerst diesen Datenweg.');
                 if ($locked->position === count($locked->puzzles) - 1) {
                     $locked->completed_at = now();
+                    if (array_key_exists('timer_mode', $session->getAttributes())) {
+                        $locked->finished_seconds = $this->results->elapsed($session);
+                    }
                 } else {
                     $locked->position++;
                     $locked->solved = false;
@@ -189,6 +198,7 @@ class NumberSystemGameService
             'invitation' => $run->team_code && ! $run->completed_at && $session->status !== 'ended'
                 ? app(NumberSystemInvitation::class)->make($session->join_code, $run->team_code) : null,
             'members' => $members->map(fn (User $member): string => trim($member->first_name.' '.$member->last_name))->all(),
+            'clock' => $this->results->clock($session, $run), 'ranking' => $this->results->ranking($session, (int) $run->id),
             'session' => ['id' => $session->id, 'title' => $session->title, 'status' => $session->status,
                 'planned_minutes' => $session->planned_minutes, 'difficulty' => $session->difficulty, 'mode' => $session->mode]];
     }
