@@ -25,6 +25,11 @@ class FinalizeMultipleChoiceTest implements ShouldQueue
     public function handle(McTestService $tests): void
     {
         $test = McTest::query()->find($this->testId);
+        if ($test?->start_mode === 'individual') {
+            $tests->finalizeExpired($this->testId);
+
+            return;
+        }
         if (! $test?->ends_at) {
             return;
         }

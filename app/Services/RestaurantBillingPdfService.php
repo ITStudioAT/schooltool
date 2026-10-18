@@ -21,8 +21,8 @@ class RestaurantBillingPdfService
             'billing' => [
                 'title' => $billing->exists ? 'Abrechnung' : 'Abrechnungsvorschau',
                 'is_preview' => ! $billing->exists,
-                'period_label' => $this->periodLabel($billing->start_date, $billing->end_date),
-                'range_label' => $this->dateRangeLabel($billing->start_date, $billing->end_date),
+                'period_label' => $billing->selectedWeeksLabel() ?? $this->periodLabel($billing->start_date, $billing->end_date),
+                'range_label' => $billing->selectedDatesLabel() ?? $this->dateRangeLabel($billing->start_date, $billing->end_date),
                 'school_name' => (string) ($billing->school?->long_name ?: $billing->school?->short_name ?: ''),
                 'created_at' => $billing->created_at?->format('d.m.Y H:i') ?? now()->format('d.m.Y H:i'),
                 'bookings_count' => (int) $billing->bookings_count,

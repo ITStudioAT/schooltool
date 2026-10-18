@@ -1,6 +1,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import axios from 'axios'
-import { access, index, ready, save, show, submit } from '@/actions/App/Http/Controllers/MultipleChoiceParticipantController'
+import { useMcExamMode } from './useMcExamMode'
+import { rateLimitRetrySeconds } from './rateLimitRetry'
+import { access, index, ready, save, show, start, submit } from '@/actions/App/Http/Controllers/MultipleChoiceParticipantController'
 
 export function useMultipleChoiceSession(route) {
     const attempts = ref([])
@@ -15,6 +17,9 @@ export function useMultipleChoiceSession(route) {
     const storageUnavailable = ref(false)
     const expiredPending = ref(false)
     const now = ref(Date.now())
+    const accessBlocked = ref(false)
+    const retryUntil = ref(0)
+    const retrySeconds = computed(() => Math.max(0, Math.ceil((retryUntil.value - now.value) / 1000)))
     const serverOffset = ref(0)
     let token = ''
     let pollTimer
@@ -30,16 +35,19 @@ export function useMultipleChoiceSession(route) {
     const hasPending = computed(() => Object.keys(pending.value).length > 0)
     const remainingSeconds = computed(() => remaining(attempt.value?.ends_at))
     const countdownSeconds = computed(() => remaining(attempt.value?.starts_at))
-    const active = computed(() => Boolean(attempt.value?.questions?.length) && !finished.value
-        && Boolean(attempt.value?.ends_at) && remainingSeconds.value > 0 && countdownSeconds.value === 0)
+    const active = computed(() => Boolean(attempt.value?.questions?.length) && !attempt.value?.teacher_preview && !finished.value
+        && !attempt.value?.paused_at && Boolean(attempt.value?.ends_at) && remainingSeconds.value > 0 && countdownSeconds.value === 0)
     const answeredCount = computed(() => (attempt.value?.questions || []).filter(question => answers.value[question.id]?.length).length)
     const isPublic = computed(() => route.path === '/multiple-choice')
+
+    const exam = useMcExamMode(attempt, active, requestConfig, serverOffset)
+    const canAnswer = computed(() => active.value && (!exam.enabled.value || exam.fullscreen.value))
 
     function remaining(value) {
         if (!value) {
             return 0
         }
-        return Math.max(0, Math.ceil((Date.parse(value) - now.value - serverOffset.value) / 1000))
+        return Math.max(0, Math.ceil((Date.parse(value) - (attempt.value?.paused_at ? Date.parse(attempt.value.paused_at) : now.value + serverOffset.value)) / 1000))
     }
 
     function requestConfig() {
@@ -51,7 +59,7 @@ export function useMultipleChoiceSession(route) {
     }
 
     function persistPending() {
-        if (!attempt.value) {
+        if (!attempt.value || attempt.value.teacher_preview) {
             return
         }
         try {
@@ -74,7 +82,10 @@ export function useMultipleChoiceSession(route) {
             }
         }
         now.value = Date.now()
-        if (restore) {
+        if (value.teacher_preview) {
+            pending.value = {}
+        }
+        if (restore && !value.teacher_preview) {
             pending.value = {}
             try {
                 const stored = JSON.parse(window.localStorage.getItem(storageKey(value.id)) || '{}')
@@ -86,7 +97,9 @@ export function useMultipleChoiceSession(route) {
                 storageUnavailable.value = true
             }
         }
+        const wasFinished = finished.value
         attempt.value = value
+        if (wasFinished && !finished.value) expiredPending.value = false
         if (finished.value) {
             expiredPending.value ||= hasPending.value
             pending.value = {}
@@ -97,6 +110,20 @@ export function useMultipleChoiceSession(route) {
 
     function explainFailure(failure) {
         if ([401, 403, 404].includes(failure.response?.status)) {
+            persistPending()
+            accessBlocked.value = true
+            attempt.value = null
+            answers.value = {}
+            pending.value = {}
+        }
+        if (failure.response?.status === 429) {
+            retryUntil.value = Math.max(retryUntil.value, Date.now() + rateLimitRetrySeconds(failure.response.headers) * 1000)
+            return 'Die Verbindung wird kurz gedrosselt. Wir verbinden dich nach der Wartezeit automatisch erneut. Deine gespeicherten Antworten bleiben erhalten.'
+        }
+        if (failure.response?.status === 403 && failure.response?.data?.message) {
+            return failure.response.data.message
+        }
+        if ([401, 403, 404].includes(failure.response?.status)) {
             return token ? 'Dieser Zugang ist ungültig oder nicht mehr verfügbar. Bitte wende dich an deine Lehrperson.'
                 : 'Dieser Test ist für dein Konto nicht verfügbar. Bitte melde dich mit deinem Schülerkonto an.'
         }
@@ -104,6 +131,8 @@ export function useMultipleChoiceSession(route) {
     }
 
     async function load() {
+        if (Date.now() < retryUntil.value) return
+        accessBlocked.value = false
         const currentGeneration = ++generation
         loading.value = true
         error.value = ''
@@ -163,7 +192,7 @@ export function useMultipleChoiceSession(route) {
     }
 
     async function markReady() {
-        if (!attempt.value || submitting.value) {
+        if (!attempt.value || attempt.value.teacher_preview || submitting.value || Date.now() < retryUntil.value) {
             return
         }
         submitting.value = true
@@ -179,8 +208,23 @@ export function useMultipleChoiceSession(route) {
         }
     }
 
+    async function startAttempt() {
+        if (!attempt.value || attempt.value.teacher_preview || attempt.value.started_at || finished.value || submitting.value || Date.now() < retryUntil.value || (exam.enabled.value && !exam.fullscreen.value)) return
+        submitting.value = true
+        error.value = ''
+        try {
+            const { data } = await axios.post(start.url(attempt.value.id), {}, requestConfig())
+            answerRevision++
+            acceptAttempt(data.attempt)
+        } catch (failure) {
+            error.value = explainFailure(failure)
+        } finally {
+            submitting.value = false
+        }
+    }
+
     function selectAnswer(question, optionId, checked) {
-        if (!active.value || submitting.value) {
+        if (!canAnswer.value || submitting.value) {
             return
         }
         const current = answers.value[question.id] || []
@@ -197,6 +241,7 @@ export function useMultipleChoiceSession(route) {
 
     async function flush() {
         clearTimeout(saveTimer)
+        if (Date.now() < retryUntil.value) return !hasPending.value
         if (saveTask) {
             await saveTask
             return hasPending.value && !saveError.value && active.value ? flush() : !hasPending.value
@@ -227,6 +272,7 @@ export function useMultipleChoiceSession(route) {
             } catch (failure) {
                 if (currentGeneration === generation && !disposed) {
                     saveError.value = true
+                    if ([401, 403, 404, 429].includes(failure.response?.status)) error.value = explainFailure(failure)
                     if ([409, 422].includes(failure.response?.status)) {
                         error.value = explainFailure(failure)
                     }
@@ -244,7 +290,7 @@ export function useMultipleChoiceSession(route) {
     }
 
     async function submitAttempt() {
-        if (!active.value || submitting.value) {
+        if (!canAnswer.value || submitting.value || Date.now() < retryUntil.value) {
             return false
         }
         submitting.value = true
@@ -266,8 +312,10 @@ export function useMultipleChoiceSession(route) {
         }
     }
 
-    async function refresh() {
-        if (disposed || loading.value || saving.value || submitting.value) {
+    async function refresh(manual = false) {
+        if (manual === true && Date.now() >= retryUntil.value) accessBlocked.value = false
+        if (accessBlocked.value) return
+        if (disposed || loading.value || saving.value || submitting.value || Date.now() < retryUntil.value) {
             return
         }
         if (!attempt.value) {
@@ -308,13 +356,13 @@ export function useMultipleChoiceSession(route) {
 
     function schedulePoll() {
         clearTimeout(pollTimer)
-        if (disposed) {
+        if (disposed || accessBlocked.value) {
             return
         }
         pollTimer = setTimeout(async () => {
             await refresh()
             schedulePoll()
-        }, attempt.value && !active.value && !finished.value ? 2000 : 5000)
+        }, Math.max(attempt.value && !finished.value ? 2000 : 5000, retryUntil.value - Date.now()))
     }
 
     function preventLostWork(event) {
@@ -329,6 +377,7 @@ export function useMultipleChoiceSession(route) {
         if (!value && previous) {
             void refresh()
         }
+        if (value && hasPending.value) void flush()
     })
     watch(countdownSeconds, (value, previous) => {
         if (value === 0 && previous > 0 && !finished.value) {
@@ -351,7 +400,7 @@ export function useMultipleChoiceSession(route) {
         window.removeEventListener('beforeunload', preventLostWork)
     })
 
-    return { attempts, attempt, answers, pending, loading, saving, submitting, error, saveError, storageUnavailable, expiredPending,
-        finished, hasPending, active, remainingSeconds, countdownSeconds, answeredCount, isPublic,
-        load, openAttempt, markReady, selectAnswer, flush, submitAttempt, refresh }
+    return { exam, retrySeconds, attempts, attempt, answers, pending, loading, saving, submitting, error, saveError, storageUnavailable, expiredPending,
+        finished, hasPending, active, canAnswer, remainingSeconds, countdownSeconds, answeredCount, isPublic,
+        load, openAttempt, markReady, startAttempt, selectAnswer, flush, submitAttempt, refresh }
 }

@@ -45,7 +45,8 @@
                     Es stehen noch keine abrechenbaren Kalenderwochen zur Verfügung.
                 </v-alert>
 
-                <div v-else class="billing-reports-weeks">
+                <p v-if="sortedWeeks.length" class="text-body-2 mb-3">Kalenderwochen einzeln anklicken und erneut anklicken, um sie abzuwählen. Auch Wochen mit Abstand sind möglich.</p>
+                <div v-if="sortedWeeks.length" class="billing-reports-weeks">
                     <button
                         v-for="week in visibleWeeks"
                         :key="week.week_start"
@@ -53,9 +54,9 @@
                         class="billing-reports-week"
                         :class="{
                             'is-selected': isWeekSelected(week.week_start),
-                            'is-range-first': isRangeFirst(week.week_start),
-                            'is-range-last': isRangeLast(week.week_start),
                         }"
+                        :aria-pressed="isWeekSelected(week.week_start)"
+                        :disabled="isLoading || isCreating"
                         :data-testid="`restaurant-billing-week-${week.week_start}`"
                         @click="toggleWeek(week)">
                         <div class="billing-reports-week__title">
@@ -77,7 +78,7 @@
 
             <div class="billing-reports-footer">
                 <div class="billing-reports-footer__selection">
-                    <span class="billing-reports-footer__label">Zeitraum</span>
+                    <span class="billing-reports-footer__label">Ausgewählte Kalenderwochen</span>
                     <strong class="billing-reports-footer__value">
                         {{ selectedPeriodLabel }}
                     </strong>
@@ -194,11 +195,11 @@
         <v-dialog v-model="confirmDialog" max-width="520" persistent>
             <v-card rounded="xl">
                 <v-card-title class="text-h6 pt-5 px-5">
-                    Zeitraum abrechnen
+                    Ausgewählte Wochen abrechnen
                 </v-card-title>
                 <v-card-text class="px-5 pb-2">
                     <div class="billing-reports-dialog__copy">
-                        Soll der Zeitraum <strong>{{ selectedPeriodLabel }}</strong> wirklich abgerechnet werden?
+                        Sollen die ausgewählten Kalenderwochen <strong>{{ selectedPeriodLabel }}</strong> wirklich abgerechnet werden?
                     </div>
                     <div v-if="selectedRangeLabel" class="billing-reports-dialog__meta">
                         {{ selectedRangeLabel }}
@@ -259,9 +260,7 @@ export default {
             previewActionHidden: false,
             billingsWindowStart: 0,
             weeksWindowStart: 0,
-            selectionAnchor: null,
-            selectionStart: null,
-            selectionEnd: null,
+            selectedWeekStarts: [],
         }
     },
 
@@ -324,38 +323,15 @@ export default {
             return `${start}-${end} von ${this.sortedWeeks.length}`
         },
         selectedWeeks() {
-            if (!this.selectionStart || !this.selectionEnd) {
-                return []
-            }
-
-            const startIndex = this.sortedWeeks.findIndex((week) => week.week_start === this.selectionStart)
-            const endIndex = this.sortedWeeks.findIndex((week) => week.week_start === this.selectionEnd)
-
-            if (startIndex === -1 || endIndex === -1) {
-                return []
-            }
-
-            return this.sortedWeeks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
+            return this.sortedWeeks.filter(week => this.selectedWeekStarts.includes(week.week_start))
         },
         selectedPeriodLabel() {
-            if (!this.selectedWeeks.length) {
-                return 'Keine Kalenderwoche ausgewählt'
-            }
-
-            const firstWeek = this.selectedWeeks[0]
-            const lastWeek = this.selectedWeeks[this.selectedWeeks.length - 1]
-
-            return this.periodLabel(firstWeek.week_start, lastWeek.week_end)
+            return this.selectedWeeks.length
+                ? this.selectedWeeks.map(week => `${week.label}/${this.weekYearLabel(new Date(`${week.week_start}T00:00:00`))}`).join(' · ')
+                : 'Keine Kalenderwoche ausgewählt'
         },
         selectedRangeLabel() {
-            if (!this.selectedWeeks.length) {
-                return ''
-            }
-
-            const firstWeek = this.selectedWeeks[0]
-            const lastWeek = this.selectedWeeks[this.selectedWeeks.length - 1]
-
-            return `${this.formatDate(firstWeek.week_start)} - ${this.formatDate(lastWeek.week_end)}`
+            return this.selectedWeeks.map(week => `${this.formatDate(week.week_start)} – ${this.formatDate(week.week_end)}`).join(' · ')
         },
         canPreviewSelectedWeeks() {
             return this.selectedWeeks.length > 0 && !this.previewActionHidden
@@ -381,19 +357,13 @@ export default {
 
             if (!this.sortedWeeks.length) {
                 this.weeksWindowStart = 0
-                this.selectionAnchor = null
-                this.selectionStart = null
-                this.selectionEnd = null
+                this.selectedWeekStarts = []
                 return
             }
 
             this.weeksWindowStart = Math.max(0, Math.min(this.sortedWeeks.length - 4, this.weeksMaxWindowStart))
 
-            const firstWeek = this.sortedWeeks[0] || null
-
-            this.selectionAnchor = firstWeek?.week_start || null
-            this.selectionStart = firstWeek?.week_start || null
-            this.selectionEnd = firstWeek?.week_start || null
+            this.selectedWeekStarts = this.selectedWeekStarts.filter(value => this.sortedWeeks.some(week => week.week_start === value))
         },
         showPreviousBillingsWindow() {
             if (!this.hasPreviousBillingsWindow) {
@@ -424,46 +394,14 @@ export default {
             this.weeksWindowStart = Math.min(this.weeksMaxWindowStart, this.weeksWindowStart + 8)
         },
         toggleWeek(week) {
-            if (!week) {
-                return
-            }
-
+            if (!week || week.is_billed || this.isLoading || this.isCreating) return
             this.previewActionHidden = false
-
-            if (!this.selectionAnchor || this.isWeekSelected(week.week_start)) {
-                this.setSelection(week.week_start, week.week_start, week.week_start)
-                return
-            }
-
-            const anchorIndex = this.sortedWeeks.findIndex((item) => item.week_start === this.selectionAnchor)
-            const targetIndex = this.sortedWeeks.findIndex((item) => item.week_start === week.week_start)
-
-            if (anchorIndex === -1 || targetIndex === -1) {
-                this.setSelection(week.week_start, week.week_start, week.week_start)
-                return
-            }
-
-            const range = this.sortedWeeks.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1)
-
-            this.setSelection(
-                this.selectionAnchor,
-                range[0]?.week_start || week.week_start,
-                range[range.length - 1]?.week_start || week.week_start,
-            )
-        },
-        setSelection(anchor, start, end) {
-            this.selectionAnchor = anchor
-            this.selectionStart = start
-            this.selectionEnd = end
+            this.selectedWeekStarts = this.selectedWeekStarts.includes(week.week_start)
+                ? this.selectedWeekStarts.filter(value => value !== week.week_start)
+                : [...this.selectedWeekStarts, week.week_start]
         },
         isWeekSelected(weekStart) {
-            return this.selectedWeeks.some((week) => week.week_start === weekStart)
-        },
-        isRangeFirst(weekStart) {
-            return this.selectedWeeks.length > 0 && this.selectedWeeks[0].week_start === weekStart
-        },
-        isRangeLast(weekStart) {
-            return this.selectedWeeks.length > 0 && this.selectedWeeks[this.selectedWeeks.length - 1].week_start === weekStart
+            return this.selectedWeeks.some(week => week.week_start === weekStart)
         },
         weekStatePillClass(week) {
             return this.isWeekSelected(week.week_start)
@@ -709,37 +647,13 @@ export default {
     color: #0f766e;
 }
 
-.billing-reports-week.is-range-first {
-    position: relative;
-}
 
-.billing-reports-week.is-range-first::before {
-    content: 'VON';
-    position: absolute;
-    top: 6px;
-    right: 10px;
-    font-size: 0.6rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #0f766e;
-    opacity: 0.7;
-}
 
-.billing-reports-week.is-range-last:not(.is-range-first) {
-    position: relative;
-}
 
-.billing-reports-week.is-range-last:not(.is-range-first)::before {
-    content: 'BIS';
-    position: absolute;
-    top: 6px;
-    right: 10px;
-    font-size: 0.6rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #0f766e;
-    opacity: 0.7;
-}
+
+
+
+
 
 .billing-reports-week__state {
     margin-top: 10px;

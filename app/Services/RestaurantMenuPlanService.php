@@ -6,7 +6,9 @@ use App\Models\RestaurantBilling;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
+use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
@@ -126,19 +128,31 @@ class RestaurantMenuPlanService
 
     public function deleteForUser(User $authUser, int $id): ?bool
     {
-        $plan = RestaurantMenuPlan::query()
-            ->where('school_id', $authUser->school_id)
-            ->find($id);
+        return DB::transaction(function () use ($authUser, $id): ?bool {
+            School::query()->whereKey($authUser->school_id)->lockForUpdate()->firstOrFail();
+            $plan = RestaurantMenuPlan::query()->where('school_id', $authUser->school_id)->lockForUpdate()->find($id);
+            if (! $plan) {
+                return null;
+            }
+            $entries = $plan->entries()->lockForUpdate()->get();
+            if ($this->planIsBilled($plan)) {
+                return false;
+            }
+            RestaurantMenuPlanBooking::query()->whereIn('restaurant_menu_plan_entry_id', $entries->modelKeys())->delete();
+            foreach ($entries as $entry) {
+                $entry->eatingTimes()->detach();
+            }
+            $plan->entries()->delete();
 
-        if (! $plan) {
-            return null;
-        }
+            return (bool) $plan->delete();
+        }, 3);
+    }
 
-        if ($this->hasBookings($plan)) {
-            return false;
-        }
-
-        return (bool) $plan->delete();
+    private function planIsBilled(RestaurantMenuPlan $plan): bool
+    {
+        return RestaurantBilling::query()->where('school_id', $plan->school_id)->get()
+            ->contains(fn (RestaurantBilling $billing): bool => $billing->coversPeriod($plan->start_date, $plan->end_date)
+                || $plan->entries->contains(fn (RestaurantMenuPlanEntry $entry): bool => $billing->coversDate($entry->plan_date)));
     }
 
     private function syncEntries(RestaurantMenuPlan $plan, array $entries): void
@@ -582,8 +596,8 @@ class RestaurantMenuPlanService
         $hasBookings = $this->hasBookings($plan);
 
         $plan->setAttribute('has_bookings', $hasBookings);
-        $plan->setAttribute('can_delete', ! $hasBookings);
-        $plan->setAttribute('has_billed_entries', false);
+        $plan->setAttribute('can_delete', ! $this->planIsBilled($plan));
+        $plan->setAttribute('has_billed_entries', ! $plan->getAttribute('can_delete'));
 
         if ($plan->relationLoaded('entries')) {
             $hasBilledEntries = false;
@@ -598,7 +612,7 @@ class RestaurantMenuPlanService
                 $entry->setAttribute('can_manage_bookings', ! $isBilled);
             });
 
-            $plan->setAttribute('has_billed_entries', $hasBilledEntries);
+            $plan->setAttribute('has_billed_entries', $hasBilledEntries || ! $plan->getAttribute('can_delete'));
         }
 
         return $plan;
@@ -616,8 +630,7 @@ class RestaurantMenuPlanService
 
         return RestaurantBilling::query()
             ->where('school_id', $schoolId)
-            ->whereDate('start_date', '<=', $date->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $date->format('Y-m-d'))
+            ->coveringDate($date)
             ->exists();
     }
 

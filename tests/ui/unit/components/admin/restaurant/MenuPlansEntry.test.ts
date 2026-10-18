@@ -1,5 +1,6 @@
 import { createTestingPinia } from '@pinia/testing'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
 import { describe, expect, it, vi } from 'vitest'
 import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import MenuPlansEntry from '@/pages/admin/restaurant/components/MenuPlansEntry.vue'
@@ -156,14 +157,15 @@ describe('MenuPlans entry page', () => {
 
         expect(buttons).toHaveLength(3)
         expect(buttons[0].text()).toContain('Speichern')
-        expect(buttons[1].text()).toContain('L')
+        expect(buttons[1].text()).toBe('Menüplan löschen')
         expect(buttons[2].text()).toContain('Zur\u00fcck')
     })
 
-    it('allows deleting a saved menu plan only when no bookings exist', () => {
+    it('allows deleting booked menu plans until they have been billed', () => {
         const deletableContext = {
             planId: 3,
-            hasPlanBookings: false,
+            hasPlanBookings: true,
+            hasBilledPlanEntries: false,
             isDeletingPlan: false,
             isSaving: false,
         }
@@ -171,13 +173,14 @@ describe('MenuPlans entry page', () => {
         const blockedContext = {
             planId: 3,
             hasPlanBookings: true,
+            hasBilledPlanEntries: true,
             isDeletingPlan: false,
             isSaving: false,
         }
 
         expect((MenuPlansEntry as any).computed.canDeletePlan.call(deletableContext)).toBe(true)
         expect((MenuPlansEntry as any).computed.canDeletePlan.call(blockedContext)).toBe(false)
-        expect((MenuPlansEntry as any).computed.deletePlanHint.call(blockedContext)).toContain('Buchungen')
+        expect((MenuPlansEntry as any).computed.deletePlanHint.call(blockedContext)).toContain('verrechnet')
     })
 
     it('builds a new menu draft course by course with category first and food second', () => {
@@ -1311,4 +1314,27 @@ describe('MenuPlans entry page', () => {
             expect((wrapper.vm as any).freeDayCount).toBe(0)
         })
     })
+})
+
+
+it('requires exact typed confirmation in a persistent dialog before deleting a booked plan', async () => {
+    const wrapper = mountMenuPlansEntry({ mode: 'edit', plan_id: '17', start: '2026-03-23', end: '2026-03-27' })
+    const vm = wrapper.vm as any
+    const store = useMenuPlanStore()
+    store.destroy = vi.fn().mockResolvedValue(true)
+    vm.hasPlanBookings = true
+    vm.hasBilledPlanEntries = false
+    await wrapper.find('[data-testid="delete-menu-plan-button"]').trigger('click')
+    expect(vm.deletePlanDialog).toBe(true)
+    expect(wrapper.find('[data-testid="delete-menu-plan-dialog"]').attributes('persistent')).toBeDefined()
+    expect(wrapper.text()).toContain('sämtliche zugehörigen Bestellungen')
+    await wrapper.find('[aria-label="Menüplan-Löschung bestätigen"]').setValue('löschen')
+    await vm.confirmDeletePlan()
+    expect(store.destroy).not.toHaveBeenCalled()
+    await wrapper.find('[aria-label="Menüplan-Löschung bestätigen"]').setValue('MENÜPLAN LÖSCHEN')
+    await vm.confirmDeletePlan()
+    await flushPromises()
+    expect(store.destroy).toHaveBeenCalledWith(17, 'MENÜPLAN LÖSCHEN')
+    expect(vm.deletePlanDialog).toBe(false)
+    wrapper.unmount()
 })

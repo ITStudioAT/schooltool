@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\FinalizeMultipleChoiceTest;
 use App\Models\McAttempt;
 use App\Models\User;
 use App\Services\LicenceService;
+use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McTestService;
 use App\Services\ParentStudentAccessService;
 use App\Services\SchoolToolModuleStatusService;
@@ -24,7 +26,7 @@ class MultipleChoiceParticipantController extends Controller
         $this->assertLicensed($student);
         $attempts = McAttempt::query()->with('test')
             ->where('student_id', $student->id)
-            ->whereHas('test', fn ($query) => $query->where('school_id', $student->school_id)->where('status', 'published'))
+            ->whereHas('test', fn ($query) => $query->where('school_id', $student->school_id)->where('schoolyear_id', $student->schoolyear_id)->where('status', 'published'))
             ->latest('id')->get();
 
         return $this->respond(['attempts' => $attempts->map(fn (McAttempt $attempt): array => $this->serialize($attempt, false))->all()]);
@@ -42,7 +44,14 @@ class MultipleChoiceParticipantController extends Controller
 
     public function show(Request $request, McAttempt $attempt): JsonResponse
     {
-        $this->authorizeAttempt($request, $attempt);
+        $preview = $this->authorizeAttempt($request, $attempt, allowOwnerPreview: true);
+        if ($preview) {
+            return $this->respond(['attempt' => [
+                ...$this->serialize($attempt->load('test'), ownerPreview: true),
+                'teacher_preview' => true,
+                'student_name' => $attempt->student_name,
+            ]]);
+        }
         $this->tests->finalizeExpired((int) $attempt->test_id);
         $attempt = $this->tests->openAttempt($attempt->fresh());
 
@@ -55,6 +64,34 @@ class MultipleChoiceParticipantController extends Controller
         $attempt = $this->tests->markReady($attempt);
 
         return $this->respond(['attempt' => $this->serialize($attempt->load('test'))]);
+    }
+
+    public function start(Request $request, McAttempt $attempt): JsonResponse
+    {
+        $this->authorizeAttempt($request, $attempt);
+        $attempt = $this->tests->startIndividual($attempt)->load('test');
+        if ($attempt->completed_at === null) {
+            FinalizeMultipleChoiceTest::dispatch((int) $attempt->test_id)->delay($attempt->effectiveDeadline())->afterCommit();
+        }
+
+        return $this->respond(['attempt' => $this->serialize($attempt)]);
+    }
+
+    public function activity(Request $request, McAttempt $attempt): JsonResponse
+    {
+        $this->authorizeAttempt($request, $attempt);
+        $data = $request->validate([
+            'session' => ['required', 'uuid'],
+            'events' => ['required', 'array', 'min:1', 'max:100'],
+            'events.*.sequence' => ['required', 'integer', 'min:1', 'max:2147483647', 'distinct'],
+            'events.*.at' => ['required', 'date'],
+            'events.*.visible' => ['required', 'boolean'],
+            'events.*.focused' => ['required', 'boolean'],
+            'events.*.fullscreen' => ['required', 'boolean'],
+        ]);
+        app(McAttemptActivityService::class)->record($attempt, $data['session'], $data['events']);
+
+        return $this->respond(['recorded' => true]);
     }
 
     public function save(Request $request, McAttempt $attempt): JsonResponse
@@ -88,7 +125,7 @@ class MultipleChoiceParticipantController extends Controller
         return $student;
     }
 
-    private function authorizeAttempt(Request $request, McAttempt $attempt): void
+    private function authorizeAttempt(Request $request, McAttempt $attempt, bool $allowOwnerPreview = false): bool
     {
         $this->assertAvailable();
         $attempt->loadMissing(['test', 'student']);
@@ -96,18 +133,29 @@ class MultipleChoiceParticipantController extends Controller
         abort_unless($student && app(ParentStudentAccessService::class)->isActiveStudentUser($student), 404);
         abort_unless($attempt->test && $attempt->test->status === 'published' && (int) $attempt->test->school_id === (int) $student->school_id, 404);
 
+        $ownerPreview = false;
         $token = $this->token($request);
         if ($token !== null) {
             abort_unless(hash_equals((string) $attempt->access_token_hash, hash('sha256', $token)), 404);
+            abort_if($attempt->test->access_links_disabled_at !== null, 403, 'Der persönliche Zugangslink wurde deaktiviert. Bitte verwende deine Schüleranmeldung oder wende dich an deine Lehrperson.');
             $account = Auth::guard('web')->user();
-            abort_if($account && (int) $account->id !== (int) $student->id, 403, 'Dieser Link gehört zu einem anderen Schülerkonto. Bitte melde das andere Konto zuerst ab.');
             abort_if(app(ParentStudentAccessService::class)->isParentViewer(), 403);
+            if ($account && (int) $account->id !== (int) $student->id) {
+                $ownerPreview = $allowOwnerPreview
+                    && (int) $account->id === (int) $attempt->test->owner_id
+                    && (int) $account->school_id === (int) $attempt->test->school_id
+                    && $this->userHasRole(['admin', 'teaching_admin', 'teacher'])
+                    && app(LicenceService::class)->toolAccessStatusForUser($account, $account->selectedSchool, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']) === 'active';
+                abort_unless($ownerPreview, 403, 'Dieser Link gehört zu einem anderen Schülerkonto. Bitte melde das andere Konto zuerst ab.');
+            }
         } else {
             $account = $this->accountStudent();
             abort_unless((int) $account->id === (int) $student->id && (int) $account->school_id === (int) $attempt->test->school_id, 404);
         }
 
         $this->assertLicensed($student);
+
+        return $ownerPreview;
     }
 
     private function assertLicensed(User $student): void
@@ -131,26 +179,33 @@ class MultipleChoiceParticipantController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function serialize(McAttempt $attempt, bool $includeQuestions = true): array
+    private function serialize(McAttempt $attempt, bool $includeQuestions = true, bool $ownerPreview = false): array
     {
         $test = $attempt->test;
-        $released = $test->starts_at !== null && now()->greaterThanOrEqualTo($test->starts_at);
+        $clock = $test->paused_at ?? now();
+        $released = $ownerPreview || ($test->start_mode === 'individual' ? $attempt->started_at !== null : ($test->starts_at !== null && $clock->greaterThanOrEqualTo($test->starts_at)));
         $status = $attempt->completed_at
             ? ($attempt->completion_reason === 'submitted' ? 'submitted' : 'timeout')
             : ($attempt->started_at ? 'in_progress' : ($attempt->ready_at ? 'ready' : 'not_started'));
         $questions = $released && $includeQuestions ? $attempt->questions : [];
         $result = null;
         if ($attempt->completed_at && $test->results_released_at) {
-            $result = ['score' => $attempt->score, 'percentage' => $attempt->percentage, 'correct_count' => $attempt->correct_count];
-            if ($test->solutions_released_at && $includeQuestions) {
-                $result['question_results'] = array_map(function (array $question) use ($attempt): array {
+            $solutionsReleased = $test->solutions_released_at !== null;
+            $result = ['score' => $attempt->score, 'percentage' => $attempt->percentage, 'correct_count' => $attempt->correct_count,
+                'solutions_released' => $solutionsReleased];
+            if ($includeQuestions) {
+                $result['question_results'] = array_map(function (array $question) use ($attempt, $test, $solutionsReleased): array {
                     $selected = array_values($attempt->answers[$question['id']] ?? []);
                     $correct = array_values($question['correct_option_ids']);
                     sort($selected);
                     sort($correct);
 
-                    return ['question_id' => $question['id'], 'correct' => $selected === $correct,
-                        'selected_option_ids' => $selected, 'correct_option_ids' => $correct];
+                    $isCorrect = $selected === $correct;
+
+                    return ['question_id' => $question['id'], 'correct' => $isCorrect,
+                        'selected_option_ids' => $selected,
+                        'points' => $attempt->started_at ? ($isCorrect ? (float) $test->total_points / $test->question_count : 0) : null,
+                        ...($solutionsReleased ? ['correct_option_ids' => $correct] : [])];
                 }, $attempt->questions);
             }
         }
@@ -159,7 +214,10 @@ class MultipleChoiceParticipantController extends Controller
             'id' => $attempt->id, 'test_id' => $test->id, 'title' => $test->title,
             'question_count' => $test->question_count, 'total_points' => $test->total_points,
             'duration_seconds' => $test->duration_seconds, 'lead_seconds' => $test->lead_seconds,
-            'starts_at' => $test->starts_at?->toIso8601String(), 'ends_at' => $test->ends_at?->toIso8601String(),
+            'start_mode' => $test->start_mode ?? 'common',
+            'closes_at' => $attempt->closingDeadline($test)?->toIso8601String(),
+            'starts_at' => ($test->start_mode === 'individual' ? $attempt->started_at : $test->starts_at)?->toIso8601String(), 'ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(),
+            'exam_mode' => (bool) $test->exam_mode, 'paused_at' => $test->paused_at?->toIso8601String(),
             'server_now' => now()->toIso8601String(), 'status' => $status,
             'ready_at' => $attempt->ready_at?->toIso8601String(), 'started_at' => $attempt->started_at?->toIso8601String(),
             'completed_at' => $attempt->completed_at?->toIso8601String(),

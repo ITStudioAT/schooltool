@@ -18,11 +18,32 @@ vi.mock('@/actions/App/Http/Controllers/MultipleChoiceParticipantController', ()
     return {
         index: { url: () => '/api/multiple-choice/attempts' },
         access: { url: () => '/api/multiple-choice/access' },
-        show: endpoint(), ready: endpoint('/ready'), save: endpoint('/answers'), submit: endpoint('/submit'),
+        show: endpoint(), activity: endpoint('/activity'), start: endpoint('/start'), ready: endpoint('/ready'), save: endpoint('/answers'), submit: endpoint('/submit'),
     }
 })
 
 const wrappers = []
+const fullscreenRestores = []
+
+function mockFullscreen({ supported = true, reject = false } = {}) {
+    let element = null
+    const oldElement = Object.getOwnPropertyDescriptor(document, 'fullscreenElement')
+    const oldRequest = Object.getOwnPropertyDescriptor(document.documentElement, 'requestFullscreen')
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => element })
+    const request = vi.fn(async () => {
+        if (reject) throw new Error('denied')
+        element = document.documentElement
+        document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Object.defineProperty(document.documentElement, 'requestFullscreen', { configurable: true, value: supported ? request : undefined })
+    fullscreenRestores.push(() => {
+        if (oldElement) Object.defineProperty(document, 'fullscreenElement', oldElement)
+        else delete document.fullscreenElement
+        if (oldRequest) Object.defineProperty(document.documentElement, 'requestFullscreen', oldRequest)
+        else delete document.documentElement.requestFullscreen
+    })
+    return { request, exit: () => { element = null; document.dispatchEvent(new Event('fullscreenchange')) } }
+}
 
 function fixture(overrides = {}) {
     return {
@@ -70,7 +91,9 @@ beforeEach(() => {
 
 afterEach(() => {
     wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    fullscreenRestores.splice(0).forEach(restore => restore())
     vi.useRealTimers()
+    vi.unstubAllGlobals()
     vi.resetAllMocks()
     window.localStorage.clear()
 })
@@ -273,4 +296,362 @@ it('keeps a started attempt with a zero timeout score distinct from an unopened 
     expect(wrapper.text()).toContain('0 / 10 Punkte')
     expect(wrapper.find('#mc-finished-title').text()).toBe('Die Bearbeitungszeit ist vorbei.')
     expect(wrapper.text()).not.toContain('Nicht begonnen')
+})
+
+
+it('uses a changed common deadline on refresh while preserving saved student answers', async () => {
+    const session = mountSession()
+    await flushPromises()
+    const initialRemaining = session.remainingSeconds.value
+    const originalAnswers = { ...session.answers.value }
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { attempt: fixture({ ends_at: '2026-10-16T08:15:00Z' }) } })
+    await session.refresh()
+    expect(session.remainingSeconds.value).toBe(initialRemaining + 300)
+    expect(session.answers.value).toEqual(originalAnswers)
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { attempt: fixture({ status: 'timeout', completed_at: '2026-10-16T08:01:00Z', ends_at: '2026-10-16T08:01:00Z', questions: [], result: { score: 0, percentage: 0 } }) } })
+    await session.refresh()
+    expect(session.active.value).toBe(false)
+    expect(session.finished.value).toBe(true)
+})
+
+
+it('shows a read-only teacher preview without restoring or modifying a student draft', async () => {
+    const preview = fixture({ teacher_preview: true, student_name: 'Test Person' })
+    window.localStorage.setItem('schooltool:multiple-choice:pending:7', '{"q1":["b"]}')
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: preview } })
+    const session = mountSession()
+    await flushPromises()
+    expect(session.active.value).toBe(false)
+    expect(session.hasPending.value).toBe(false)
+    await session.markReady()
+    session.selectAnswer(preview.questions[0], 'a', true)
+    await session.flush()
+    await session.submitAttempt()
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.put).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('schooltool:multiple-choice:pending:7')).toBe('{"q1":["b"]}')
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.find('[aria-label="Schreibgeschützte Lehrkraft-Vorschau"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Lehrkraft-Vorschau für Test Person')
+    expect(wrapper.text()).toContain('Eine richtige Antwort?')
+    expect(wrapper.text()).toContain('Mehrere richtige Antworten?')
+    expect(wrapper.findAll('input')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Abgabe prüfen')
+})
+
+it('explains an account mismatch instead of calling a valid personal link invalid', async () => {
+    const message = 'Dieser Link gehört zu einem anderen Schülerkonto. Bitte melde das andere Konto zuerst ab.'
+    vi.mocked(axios.get).mockRejectedValueOnce({ response: { status: 403, data: { message } } })
+    const session = mountSession()
+    await flushPromises()
+    expect(session.error.value).toBe(message)
+})
+
+
+it('removes revoked solutions and then results from an already open student result view on refresh', async () => {
+    const completed = fixture({ status: 'submitted', result: { score: 5, percentage: 50, correct_count: 1, solutions_released: true, question_results: [{ question_id: 'q1', correct: false, selected_option_ids: ['b'], correct_option_ids: ['a'] }] } })
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: completed } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Deine Frageauswertung')
+    expect(wrapper.text()).toContain('Richtige Antwort')
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: { ...completed, result: { score: 5, percentage: 50, correct_count: 1, solutions_released: false, question_results: [{ question_id: 'q1', correct: false, selected_option_ids: ['b'] }] } } } })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(wrapper.text()).toContain('5 / 10 Punkte')
+    expect(wrapper.text()).toContain('Deine Frageauswertung')
+    expect(wrapper.text()).toContain('Musterlösungen sind noch nicht freigegeben')
+    expect(wrapper.text()).not.toContain('Richtige Antwort')
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: { ...completed, result: null } } })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('5 / 10 Punkte')
+    expect(wrapper.text()).toContain('gibt Ergebnisse und Lösungen gesondert frei')
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.put).not.toHaveBeenCalled()
+})
+
+
+it('shows personal questions and marked answers with results while keeping the solution key hidden', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({
+        status: 'submitted', result: { score: 10, percentage: 100, correct_count: 2, solutions_released: false,
+            question_results: [{ question_id: 'q1', correct: true, points: 5, selected_option_ids: ['a'] }, { question_id: 'q2', correct: true, points: 5, selected_option_ids: ['c', 'd'] }] },
+    }) } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Deine Frageauswertung')
+    expect(wrapper.text()).toContain('Eine richtige Antwort?')
+    expect(wrapper.text()).toContain('Einfach A')
+    expect(wrapper.text()).toContain('Ausgewählt')
+    expect(wrapper.text()).toContain('Musterlösungen sind noch nicht freigegeben')
+    expect(wrapper.text()).not.toContain('Richtige Antwort')
+    expect(wrapper.text()).not.toContain('Nicht richtig')
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.put).not.toHaveBeenCalled()
+})
+
+
+it('resumes a reopened completed attempt with saved answers and its own additional deadline', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ status: 'timeout', completed_at: '2026-10-16T08:00:59Z', ends_at: '2026-10-16T08:00:59Z', answers: { q1: ['a'] }, result: { score: 5, percentage: 50, correct_count: 1 } }) } })
+    const session = mountSession()
+    await flushPromises()
+    expect(session.finished.value).toBe(true)
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ ends_at: '2026-10-16T08:03:00Z', answers: { q1: ['a'] } }) } })
+    await session.refresh()
+    expect(session.finished.value).toBe(false)
+    expect(session.active.value).toBe(true)
+    expect(session.remainingSeconds.value).toBe(120)
+    expect(session.answers.value).toEqual({ q1: ['a'] })
+    expect(axios.put).not.toHaveBeenCalled()
+    expect(axios.post).not.toHaveBeenCalled()
+})
+
+
+it('shows an explicit individual start without starting on load or refresh and then resumes the timed attempt', async () => {
+    const waiting = fixture({ start_mode: 'individual', questions: [], starts_at: null, started_at: null, status: 'not_started', closes_at: '2026-10-16T09:00:00Z', ends_at: '2026-10-16T09:00:00Z' })
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: waiting } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Du bestimmst den Start.')
+    expect(wrapper.text()).toContain('Spätestes Testende:')
+    expect(wrapper.find('input').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(axios.post).not.toHaveBeenCalled()
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { attempt: fixture({ start_mode: 'individual', closes_at: waiting.closes_at }) } })
+    await wrapper.findAll('button').find(button => button.text() === 'Test jetzt starten').trigger('click')
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledWith('/api/multiple-choice/attempts/7/start', {}, expect.objectContaining({ headers: { 'X-MC-Access': 'personal-secret' } }))
+    expect(wrapper.find('input').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Test jetzt starten')
+})
+
+
+it('freezes the current question, selected answers and remaining clock during a teacher pause and resumes in place', async () => {
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Weiter').trigger('click')
+    await flushPromises()
+    const paused = fixture({ paused_at: '2026-10-16T08:01:00Z', answers: { q1: ['a'], q2: ['c'] } })
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: paused } })
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Der Test ist pausiert.')
+    expect(wrapper.find('legend').text()).toContain('Frage 2')
+    expect(wrapper.find('input[value="c"]').element.checked).toBe(true)
+    expect(wrapper.find('fieldset').element.disabled).toBe(true)
+    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
+    expect(axios.put).not.toHaveBeenCalled()
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ ends_at: '2026-10-16T08:10:30Z', server_now: '2026-10-16T08:01:30Z', answers: paused.answers }) } })
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Der Test ist pausiert.')
+    expect(wrapper.find('legend').text()).toContain('Frage 2')
+    expect(wrapper.find('input[value="c"]').element.checked).toBe(true)
+    expect(wrapper.find('fieldset').element.disabled).toBe(false)
+    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
+})
+
+it('records focus changes in exam mode without submitting or changing the running test and enters fullscreen only on click', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const { request: requestFullscreen } = mockFullscreen()
+    try {
+        vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true }) } })
+        const wrapper = mount(MultipleChoice)
+        wrappers.push(wrapper)
+        await flushPromises()
+        expect(wrapper.text()).toContain('Prüfungsmodus')
+        expect(requestFullscreen).not.toHaveBeenCalled()
+        expect(wrapper.find('input').exists()).toBe(false)
+        await wrapper.findAll('button').find(button => button.text() === 'Vollbild starten').trigger('click')
+        await flushPromises()
+        expect(requestFullscreen).toHaveBeenCalledOnce()
+        const end = wrapper.find('[role="timer"]').text()
+        focused.mockReturnValue(false)
+        window.dispatchEvent(new Event('blur'))
+        await flushPromises()
+        const record = vi.mocked(axios.post).mock.calls.find((call) => String(call[0]).endsWith('/activity') && call[1].events.some(event => !event.focused))
+        expect(record).toBeDefined()
+        expect(vi.mocked(axios.post).mock.calls.some(call => String(call[0]).endsWith('/submit'))).toBe(false)
+        expect(wrapper.find('[role="timer"]').text()).toBe(end)
+        expect(wrapper.find('input').element.disabled).toBe(false)
+
+    } finally {
+        focused.mockRestore()
+
+    }
+})
+
+
+it('recognizes a returned visible tab immediately even while document focus is still false and preserves that state on heartbeat', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    try {
+        vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true }) } })
+        const wrapper = mount(MultipleChoice)
+        wrappers.push(wrapper)
+        await flushPromises()
+        focused.mockReturnValue(false)
+        visibility.mockReturnValue('hidden')
+        window.dispatchEvent(new Event('blur'))
+        document.dispatchEvent(new Event('visibilitychange'))
+        await flushPromises()
+        visibility.mockReturnValue('visible')
+        document.dispatchEvent(new Event('visibilitychange'))
+        await flushPromises()
+        const latest = () => vi.mocked(axios.post).mock.calls.filter(call => String(call[0]).endsWith('/activity')).at(-1)[1].events.at(-1)
+        expect(latest()).toMatchObject({ visible: true, focused: true })
+        expect(document.hasFocus()).toBe(false)
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(latest()).toMatchObject({ visible: true, focused: true })
+        window.dispatchEvent(new Event('blur'))
+        await flushPromises()
+        expect(latest()).toMatchObject({ visible: true, focused: false })
+        window.dispatchEvent(new Event('focus'))
+        await flushPromises()
+        expect(latest()).toMatchObject({ visible: true, focused: true })
+        expect(vi.mocked(axios.post).mock.calls.some(call => String(call[0]).endsWith('/submit'))).toBe(false)
+    } finally {
+        focused.mockRestore()
+        visibility.mockRestore()
+    }
+})
+
+
+it('requires actual fullscreen before rendering questions and restores the same question and answers after exiting and reentering', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    const fullscreen = mockFullscreen()
+    const value = fixture({ exam_mode: true, answers: { q1: ['a'], q2: ['c'] } })
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: value } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Vollbild ist für diesen Test erforderlich.')
+    expect(wrapper.text()).not.toContain('Eine richtige Antwort?')
+    expect(wrapper.find('fieldset').exists()).toBe(false)
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(fullscreen.request).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === 'Vollbild starten').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('input[value="a"]').element.checked).toBe(true)
+    await wrapper.findAll('button').find(button => button.text() === 'Weiter').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('legend').text()).toContain('Frage 2')
+    fullscreen.exit()
+    await flushPromises()
+    expect(wrapper.find('fieldset').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Mehrere richtige Antworten?')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(vi.mocked(axios.post).mock.calls.some(call => String(call[0]).endsWith('/submit'))).toBe(false)
+    expect(axios.put).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === 'Vollbild starten').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('legend').text()).toContain('Frage 2')
+    expect(wrapper.find('input[value="c"]').element.checked).toBe(true)
+    expect(wrapper.find('[role="timer"]').text()).toContain('8:55')
+})
+
+it.each([{ supported: false, reject: false }, { supported: true, reject: true }])('does not expose questions when fullscreen is unavailable or rejected: %o', async (settings) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    mockFullscreen(settings)
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true }) } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    const button = wrapper.findAll('button').find(button => button.text() === 'Vollbild starten')
+    if (settings.supported) {
+        await button.trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Vollbild konnte nicht gestartet werden.')
+    } else {
+        expect(button).toBeUndefined()
+        expect(wrapper.text()).toContain('Dieser Browser unterstützt den benötigten Vollbildmodus nicht.')
+    }
+    expect(wrapper.find('fieldset').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Eine richtige Antwort?')
+})
+
+it('requires fullscreen before an individual start and observes fullscreen exit even before the timer has started', async () => {
+    const fullscreen = mockFullscreen()
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true, start_mode: 'individual', status: 'not_started', started_at: null, starts_at: null, questions: [] }) } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(false)
+    await wrapper.findAll('button').find(button => button.text() === 'Vollbild starten').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(true)
+    expect(axios.post).not.toHaveBeenCalled()
+    fullscreen.exit()
+    await flushPromises()
+    expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(false)
+    expect(wrapper.text()).toContain('Vollbild ist für diesen Test erforderlich.')
+})
+
+
+it('waits for Retry-After after a throttled reconnect instead of retrying on every poll or click', async () => {
+    vi.mocked(axios.get).mockRejectedValueOnce({ response: { status: 429, headers: { 'retry-after': '6' }, data: { message: 'Too Many Attempts.' } } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Wir verbinden dich nach der Wartezeit automatisch erneut.')
+    expect(wrapper.text()).not.toContain('Too Many Attempts')
+    expect(wrapper.findAll('button').find(button => button.text().includes('Automatisch erneut verbinden')).element.disabled).toBe(true)
+    window.dispatchEvent(new Event('online'))
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(axios.get).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1250)
+    expect(axios.get).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('fieldset').exists()).toBe(true)
+})
+
+it('buffers exam events during server throttling and retries them only after the requested delay', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true }) } })
+    vi.mocked(axios.post).mockRejectedValueOnce({ response: { status: 429, headers: { 'retry-after': '25' } } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledOnce()
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(24000)
+    expect(axios.post).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(6500)
+    expect(axios.post).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(axios.post).mock.calls[1][1].events.length).toBeGreaterThan(2)
+    expect(vi.mocked(axios.post).mock.calls.some(call => String(call[0]).endsWith('/submit'))).toBe(false)
+})
+
+
+it('hides questions after a link is revoked, preserves unsaved answers and reconnects only on demand', async () => {
+    const session = mountSession()
+    await flushPromises()
+    session.selectAnswer(session.attempt.value.questions[0], 'a', true)
+    vi.mocked(axios.get).mockRejectedValueOnce({ response: { status: 403, data: { message: 'Der persönliche Zugangslink wurde deaktiviert.' } } })
+    await session.refresh()
+    expect(session.attempt.value).toBeNull()
+    expect(session.answers.value).toEqual({})
+    expect(window.localStorage.getItem('schooltool:multiple-choice:pending:7')).toBe('{"q1":["a"]}')
+    const calls = vi.mocked(axios.get).mock.calls.length
+    await vi.advanceTimersByTimeAsync(12000)
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(axios.get).toHaveBeenCalledTimes(calls)
+    await session.refresh(true)
+    expect(session.attempt.value.id).toBe(7)
+    expect(session.answers.value.q1).toEqual(['a'])
 })

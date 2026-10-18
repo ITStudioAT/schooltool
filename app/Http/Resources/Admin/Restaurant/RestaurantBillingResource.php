@@ -20,8 +20,9 @@ class RestaurantBillingResource extends JsonResource
             'weeks_count' => (int) $this->weeks_count,
             'bookings_count' => (int) $this->bookings_count,
             'total_amount' => $this->total_amount !== null ? number_format((float) $this->total_amount, 2, '.', '') : '0.00',
-            'period_label' => $this->periodLabel($startDate, $endDate),
-            'date_range_label' => $startDate->format('d.m.Y').' - '.$endDate->format('d.m.Y'),
+            'period_label' => $this->resource->selectedWeeksLabel() ?? $this->periodLabel($startDate, $endDate),
+            'week_starts' => $this->resource->coveredWeekStarts(),
+            'date_range_label' => $this->resource->selectedDatesLabel() ?? $startDate->format('d.m.Y').' - '.$endDate->format('d.m.Y'),
             'created_at' => $this->created_at?->format('d.m.Y H:i'),
         ];
     }

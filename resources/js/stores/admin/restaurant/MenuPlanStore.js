@@ -185,14 +185,14 @@ export const useMenuPlanStore = defineStore('AdminRestaurantMenuPlanStore', {
             }
         },
 
-        async destroy(id) {
+        async destroy(id, confirmation) {
             const adminStore = useAdminStore()
             const notification = useNotificationStore()
 
             adminStore.is_loading++
 
             try {
-                await axios.delete(`/api/admin/restaurant/menu-plans/${id}`)
+                await axios.delete(`/api/admin/restaurant/menu-plans/${id}`, { data: { confirmation } })
                 this.plans = this.plans.filter((p) => p.id !== id)
 
                 notification.notify({

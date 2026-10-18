@@ -11,7 +11,7 @@
 
         <div v-if="error" class="mc-alert" role="alert">
             <p>{{ error }}</p>
-            <button class="mc-button mc-button-secondary" @click="refresh">Erneut verbinden</button>
+            <button class="mc-button mc-button-secondary" :disabled="retrySeconds > 0" @click="refresh(true)">{{ retrySeconds > 0 ? `Automatisch erneut verbinden in ${retrySeconds} Sekunden` : 'Erneut verbinden' }}</button>
             <a v-if="!isPublic && !attempt" href="/student" class="mc-login">Zur Schüleranmeldung</a>
         </div>
         <p v-if="loading" role="status" class="mc-empty">Deine Tests werden geladen …</p>
@@ -37,12 +37,33 @@
                     <div><dt>Fragen</dt><dd>{{ attempt.question_count }}</dd></div>
                     <div><dt>Gesamtpunkte</dt><dd>{{ formatNumber(attempt.total_points) }}</dd></div>
                     <div><dt>Bearbeitungsdauer</dt><dd>{{ minutes(attempt.duration_seconds) }} Minuten</dd></div>
+                    <div v-if="attempt.start_mode === 'individual'"><dt>Schlussfrist</dt><dd>{{ deadlineLabel(attempt.closes_at) }}</dd></div>
                 </dl>
             </section>
 
-            <section v-if="finished" class="mc-finished" aria-labelledby="mc-finished-title">
+            <div v-if="examEnabled && !finished" class="mc-exam-banner" role="status">
+                <div><strong>Prüfungsmodus</strong><p>Seitenwechsel, Fokusverlust, deren Häufigkeit und Dauer sowie das Verlassen des Vollbilds werden deiner Lehrperson angezeigt. Dein Test läuft dabei weiter.</p></div>
+                <span v-if="fullscreen">Vollbild aktiv</span>
+                <p v-if="monitoringError" class="mc-save-warning" role="alert">{{ monitoringError }}</p>
+            </div>
+            <div v-if="attempt.paused_at && !finished && !attempt.teacher_preview" class="mc-pause-banner" role="status"><strong>Der Test ist pausiert.</strong><p>Deine aktuelle Frage und Antworten bleiben erhalten. Eingaben und Restzeit sind eingefroren, bis deine Lehrperson den Test fortsetzt.</p></div>
+            <section v-if="attempt.teacher_preview" aria-label="Schreibgeschützte Lehrkraft-Vorschau">
+                <div class="mc-preview-banner" role="status">
+                    <strong>Lehrkraft-Vorschau für {{ attempt.student_name }}</strong>
+                    <p>Schreibgeschützt: Sie sehen die zugeteilten Fragen und die auf dem Server gespeicherten Antworten. Der Versuch wird dadurch weder gestartet noch verändert.</p>
+                </div>
+                <div class="mc-questions">
+                    <article v-for="(question, position) in attempt.questions" :key="question.id" class="mc-question mc-preview-question">
+                        <h3>{{ position + 1 }}. {{ question.prompt }}</h3>
+                        <div v-for="option in question.options" :key="option.id" class="mc-option" :class="{ selected: selected(question.id, option.id) }">
+                            <span>{{ selected(question.id, option.id) ? '✓ ' : '○ ' }}{{ option.text }}</span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+            <section v-else-if="finished" class="mc-finished" aria-labelledby="mc-finished-title">
                 <h2 id="mc-finished-title">{{ neverStarted ? 'Nicht begonnen' : attempt.status === 'timeout' ? 'Die Bearbeitungszeit ist vorbei.' : 'Dein Test ist abgegeben.' }}</h2>
-                <p v-if="neverStarted">Du hast diesen Test nicht begonnen. Die gemeinsame Bearbeitungszeit ist abgelaufen. Es wird kein Punkteergebnis angezeigt.</p>
+                <p v-if="neverStarted">Du hast diesen Test nicht begonnen. Die verfügbare Bearbeitungszeit ist abgelaufen. Es wird kein Punkteergebnis angezeigt.</p>
                 <p v-else>Deine gespeicherten Antworten wurden eingesammelt.</p>
                 <p v-if="expiredPending" class="mc-save-warning">Einige zuletzt auf diesem Gerät geänderte Antworten konnten vor Ablauf der Zeit nicht gespeichert werden. Gewertet werden die auf dem Server gespeicherten Antworten.</p>
                 <div v-if="!neverStarted && attempt.result" class="mc-result">
@@ -50,21 +71,32 @@
                     <p>{{ formatNumber(attempt.result.percentage) }} % · {{ attempt.result.correct_count }} von {{ attempt.question_count }} Fragen richtig</p>
                     <div v-if="attempt.result.question_results?.length" class="mc-review">
                         <h3>Deine Frageauswertung</h3>
-                        <article v-for="(result, position) in attempt.result.question_results" :key="result.question_id || position">
-                            <h4>Frage {{ position + 1 }}: {{ result.correct ? 'Richtig' : 'Nicht richtig' }}</h4>
-                            <p>{{ result.prompt || resultQuestion(result)?.prompt }}</p>
-                            <p>Deine Auswahl: {{ optionLabels(result, result.selected_option_ids) || 'Keine Antwort ausgewählt' }}</p>
-                            <p v-if="result.correct_option_ids?.length">Richtige Antwort{{ result.correct_option_ids.length === 1 ? '' : 'en' }}: {{ optionLabels(result, result.correct_option_ids) }}</p>
-                        </article>
+                        <p v-if="!attempt.result.solutions_released" class="mc-review-note">Du siehst deine Fragen, deine Auswahl und die Bewertung. Die Musterlösungen sind noch nicht freigegeben.</p>
+                        <McQuestionReview v-for="(result, position) in attempt.result.question_results" :key="result.question_id || position"
+                            :question="reviewQuestion(result)" :position="position" />
                     </div>
                 </div>
                 <p v-else-if="!neverStarted">Deine Lehrperson gibt Ergebnisse und Lösungen gesondert frei. Du kannst später hier wieder nachsehen.</p>
             </section>
 
-            <section v-else-if="!active" class="mc-waiting" aria-labelledby="mc-wait-title">
+            <section v-else-if="examEnabled && !fullscreen" class="mc-fullscreen-gate" aria-labelledby="mc-fullscreen-title">
+                <h2 id="mc-fullscreen-title">Vollbild ist für diesen Test erforderlich.</h2>
+                <p>Die Prüfungsfragen werden erst im Vollbild angezeigt. Beim Verlassen des Vollbilds bleiben deine Antworten erhalten und die Fragen werden ausgeblendet.</p>
+                <p v-if="attempt.started_at">Deine Bearbeitungszeit läuft weiter. Eine Pause kann nur deine Lehrperson auslösen.</p>
+                <button v-if="fullscreenAvailable" class="mc-button" @click="enterFullscreen">Vollbild starten</button>
+                <p v-else class="mc-save-warning">Dieser Browser unterstützt den benötigten Vollbildmodus nicht. Verwende einen Browser mit Vollbildunterstützung oder wende dich an deine Lehrperson.</p>
+            </section>
+            <section v-else-if="!active && !attempt.paused_at" class="mc-waiting" aria-labelledby="mc-wait-title">
                 <template v-if="attempt.ends_at && remainingSeconds === 0">
                     <h2 id="mc-wait-title">Die Bearbeitungszeit ist vorbei.</h2>
                     <p>Antworten können nicht mehr geändert werden. Der Server schließt deinen Versuch ab.</p>
+                </template>
+                <template v-else-if="attempt.start_mode === 'individual' && !attempt.started_at">
+                    <h2 id="mc-wait-title">Du bestimmst den Start.</h2>
+                    <p>Du kannst diesen Test einmal starten. Ab deinem Klick hast du {{ minutes(attempt.duration_seconds) }} Minuten. Die Zeit läuft auch weiter, wenn du die Seite verlässt.</p>
+                    <p><strong>Spätestes Testende: {{ deadlineLabel(attempt.closes_at) }}</strong></p>
+                    <p class="mc-description">Bei einem späten Start bleibt weniger Zeit. Nach der Schlussfrist oder nach Ablauf deiner Bearbeitungszeit sind keine Änderungen mehr möglich.</p>
+                    <button class="mc-button" :disabled="submitting" @click="startAttempt">{{ submitting ? 'Test wird gestartet …' : 'Test jetzt starten' }}</button>
                 </template>
                 <template v-else>
                     <h2 id="mc-wait-title">{{ attempt.starts_at ? 'Gleich geht es los.' : 'Willkommen im Warteraum.' }}</h2>
@@ -88,14 +120,14 @@
                     <nav class="mc-question-nav" aria-label="Fragenübersicht">
                         <button v-for="(question, position) in attempt.questions" :key="question.id"
                             :class="{ answered: answers[question.id]?.length }" :aria-current="currentQuestion === position ? 'step' : undefined"
-                            :aria-label="`Frage ${position + 1}${answers[question.id]?.length ? ', beantwortet' : ', noch offen'}`"
+                            :aria-label="`Frage ${position + 1}${answers[question.id]?.length ? ', beantwortet' : ', noch offen'}`" :disabled="!active"
                             @click="goToQuestion(position)">{{ position + 1 }}</button>
                     </nav>
                     <p class="mc-save-state" :class="{ 'mc-save-warning': hasPending || saveError }" role="status" aria-live="polite">
-                        {{ saveError ? 'Noch nicht gespeichert. Antworten bleiben auf diesem Gerät vorgemerkt.' : saving ? 'Wird gespeichert …' : hasPending ? 'Änderungen noch nicht gespeichert …' : 'Alle Antworten gespeichert.' }}
+                        {{ attempt.paused_at ? 'Pausiert. Vorgemerkte Änderungen bleiben erhalten.' : saveError ? 'Noch nicht gespeichert. Antworten bleiben auf diesem Gerät vorgemerkt.' : saving ? 'Wird gespeichert …' : hasPending ? 'Änderungen noch nicht gespeichert …' : 'Alle Antworten gespeichert.' }}
                     </p>
                     <p v-if="storageUnavailable" class="mc-save-warning">Der lokale Zwischenspeicher ist nicht verfügbar. Schließe diese Seite erst, wenn alle Antworten gespeichert sind.</p>
-                    <button v-if="hasPending || saveError" class="mc-button mc-button-secondary" :disabled="saving" @click="flush">Speichern erneut versuchen</button>
+                    <button v-if="hasPending || saveError" class="mc-button mc-button-secondary" :disabled="saving || !active" @click="flush">Speichern erneut versuchen</button>
                 </aside>
 
                 <div class="mc-questions">
@@ -111,10 +143,10 @@
                         </fieldset>
                     </template>
                     <nav class="mc-question-actions" aria-label="Frage wechseln">
-                        <button class="mc-button mc-button-secondary" :disabled="currentQuestion === 0 || submitting" @click="goToQuestion(currentQuestion - 1)">Zurück</button>
+                        <button class="mc-button mc-button-secondary" :disabled="currentQuestion === 0 || submitting || !active" @click="goToQuestion(currentQuestion - 1)">Zurück</button>
                         <span>{{ currentQuestion + 1 }} von {{ attempt.question_count }}</span>
-                        <button v-if="currentQuestion < attempt.questions.length - 1" class="mc-button" :disabled="submitting" @click="goToQuestion(currentQuestion + 1)">Weiter</button>
-                        <button v-else class="mc-button" :disabled="submitting" @click="showSubmitDialog = true">Abgabe prüfen</button>
+                        <button v-if="currentQuestion < attempt.questions.length - 1" class="mc-button" :disabled="submitting || !active" @click="goToQuestion(currentQuestion + 1)">Weiter</button>
+                        <button v-else class="mc-button" :disabled="submitting || !active" @click="showSubmitDialog = true">Abgabe prüfen</button>
                     </nav>
                 </div>
             </section>
@@ -126,7 +158,7 @@
                 <p>{{ answeredCount }} von {{ attempt?.question_count }} Fragen sind beantwortet. Nach der Abgabe kannst du nichts mehr ändern.</p>
                 <p v-if="error" class="mc-save-warning" role="alert">{{ error }}</p>
                 <div class="mc-dialog-actions">
-                    <button type="button" class="mc-button mc-button-secondary" :disabled="submitting" @click="showSubmitDialog = false">Weiterarbeiten</button>
+                    <button type="button" class="mc-button mc-button-secondary" :disabled="submitting || !active" @click="showSubmitDialog = false">Weiterarbeiten</button>
                     <button class="mc-button" :disabled="submitting">{{ submitting ? 'Abgabe läuft …' : 'Jetzt abgeben' }}</button>
                 </div>
             </form>
@@ -139,17 +171,19 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStudentStore } from '@/stores/student/StudentStore'
 import StudentNavigationDrawer from '../student/components/StudentNavigationDrawer.vue'
+import McQuestionReview from '@/components/McQuestionReview.vue'
 import { useMultipleChoiceSession } from './useMultipleChoiceSession'
 
 const route = useRoute()
 const router = useRouter()
-const { attempts, attempt, answers, loading, saving, submitting, error, saveError, storageUnavailable, expiredPending,
-    finished, hasPending, active, remainingSeconds, countdownSeconds, answeredCount, isPublic,
-    load, openAttempt, markReady, selectAnswer, flush, submitAttempt, refresh } = useMultipleChoiceSession(route)
+const { exam, retrySeconds, attempts, attempt, answers, loading, saving, submitting, error, saveError, storageUnavailable, expiredPending,
+    finished, hasPending, active, canAnswer, remainingSeconds, countdownSeconds, answeredCount, isPublic,
+    load, openAttempt, markReady, startAttempt, selectAnswer, flush, submitAttempt, refresh } = useMultipleChoiceSession(route)
 const showDrawer = ref(false)
 const currentQuestion = ref(0)
 const showSubmitDialog = ref(false)
 const submitDialog = ref(null)
+const { enabled: examEnabled, fullscreen, fullscreenAvailable, monitoringError, enterFullscreen } = exam
 const neverStarted = computed(() => attempt.value?.status === 'timeout' && !attempt.value?.started_at)
 
 onMounted(() => {
@@ -170,11 +204,15 @@ watch(showSubmitDialog, async (value) => {
     }
 })
 watch(finished, value => { if (value) { showSubmitDialog.value = false } })
-watch(active, value => { if (!value) { showSubmitDialog.value = false } })
+watch(canAnswer, value => { if (!value) { showSubmitDialog.value = false } })
 watch(() => attempt.value?.id, () => { currentQuestion.value = 0 })
 
 function formatNumber(value) {
     return new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 }).format(Number(value || 0))
+}
+
+function deadlineLabel(value) {
+    return value ? new Intl.DateTimeFormat('de-AT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
 }
 
 function minutes(seconds) {
@@ -202,7 +240,7 @@ function selected(questionId, optionId) {
 }
 
 async function goToQuestion(position) {
-    if (position < 0 || position >= (attempt.value?.questions?.length || 0)) {
+    if (!canAnswer.value || position < 0 || position >= (attempt.value?.questions?.length || 0)) {
         return
     }
     currentQuestion.value = position
@@ -219,6 +257,7 @@ async function confirmSubmit() {
 }
 
 async function backToTests() {
+    exam.leave()
     if (route.params.attempt) {
         await router.push('/student/multiple-choice')
     } else {
@@ -230,16 +269,25 @@ function resultQuestion(result) {
     return attempt.value.questions?.find(item => String(item.id) === String(result.question_id))
 }
 
-function optionLabels(result, ids = []) {
-    const question = resultQuestion(result)
-    return ids.map(id => {
-        const option = question?.options?.find(item => String(item.id) === String(id))
-        return option?.text || option?.label || id
-    }).join('; ')
+function reviewQuestion(result) {
+    return { ...resultQuestion(result), ...result }
 }
 </script>
 
 <style scoped>
+.mc-fullscreen-gate { margin: 24px 0; padding: 28px; border: 1px solid #cfdfda; border-radius: 14px; background: #fff; }
+.mc-fullscreen-gate h2 { margin-top: 0; }
+.mc-fullscreen-gate p { line-height: 1.6; margin: 12px 0 20px; }
+.mc-exam-banner, .mc-pause-banner { padding: 18px 22px; margin: 18px 0; border: 1px solid #cfdfda; border-radius: 12px; background: #eff6f3; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.mc-exam-banner > div { flex: 1 1 360px; }
+.mc-exam-banner p, .mc-pause-banner p { margin: 6px 0 0; }
+.mc-pause-banner { display: block; background: #fff5df; border-color: #e4c991; }
+
+.mc-preview-banner { padding: 18px 22px; border: 1px solid #cbded6; border-radius: 14px; background: #eef6f2; margin-bottom: 20px; }
+.mc-preview-banner p { margin-top: 8px; line-height: 1.6; }
+.mc-preview-question h3 { margin-bottom: 18px; line-height: 1.5; }
+.mc-preview-question .mc-option { cursor: default; }
+
 .mc-page { --mc-blue: #4056d6; --mc-ink: #18243b; --mc-muted: #536176; max-width: 1260px; padding: 36px 32px 64px; margin: 0 auto; color: var(--mc-ink); }
 .mc-header, .mc-test-row, .mc-dialog-actions, .mc-question-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .mc-header { margin-bottom: 34px; }
@@ -300,7 +348,8 @@ progress { width: 100%; height: 8px; accent-color: var(--mc-blue); }
 .mc-result { margin-top: 25px; }
 .mc-result > strong { font-size: 2rem; color: #245d49; }
 .mc-review { margin-top: 32px; }
-.mc-review article { border-top: 1px solid #dce2ed; padding: 18px 0; }
+.mc-review > h3 { margin-bottom: 18px; }
+.mc-review-note { color: var(--mc-muted); margin: -6px 0 20px; max-width: 75ch; }
 .mc-dialog { border: 0; border-radius: 16px; padding: 28px; max-width: 550px; width: calc(100% - 32px); color: var(--mc-ink); margin: auto; }
 .mc-dialog::backdrop { background: rgb(24 36 59 / .45); }
 .mc-dialog-actions { margin-top: 24px; justify-content: flex-end; flex-wrap: wrap; }

@@ -939,14 +939,14 @@ test('destroy deletes plan and cascades entries', function () {
     ]);
 
     $this->actingAs($this->admin, 'sanctum')
-        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}")
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])
         ->assertOk();
 
     expect(RestaurantMenuPlan::query()->find($plan->id))->toBeNull();
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(0);
 });
 
-test('destroy returns conflict when menu plan has bookings', function () {
+test('destroy removes a menu plan including its unbilled bookings', function () {
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $this->school->id,
         'start_date' => '2026-04-07',
@@ -970,11 +970,12 @@ test('destroy returns conflict when menu plan has bookings', function () {
     ]);
 
     $this->actingAs($this->admin, 'sanctum')
-        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}")
-        ->assertStatus(409)
-        ->assertJsonPath('message', 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.');
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])
+        ->assertOk();
 
-    expect(RestaurantMenuPlan::query()->find($plan->id))->not->toBeNull();
+    expect(RestaurantMenuPlan::query()->find($plan->id))->toBeNull();
+    expect(RestaurantMenuPlanEntry::query()->find($entry->id))->toBeNull();
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $entry->id)->exists())->toBeFalse();
 });
 
 test('entry bookings use a fallback display name and omit prices', function () {
@@ -1682,4 +1683,36 @@ test('cannot print plan from another school', function () {
     $this->actingAs($this->admin, 'sanctum')
         ->get("/api/admin/restaurant/menu-plans/{$plan->id}/print")
         ->assertNotFound();
+});
+
+test('whole plan deletion requires exact typed confirmation and restaurant administration in the same school', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $url = "/api/admin/restaurant/menu-plans/{$plan->id}";
+    $this->deleteJson($url, ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertUnauthorized();
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson($url, ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertForbidden();
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url)->assertUnprocessable();
+    $this->deleteJson($url, ['confirmation' => 'löschen'])->assertUnprocessable();
+    expect($plan->fresh())->not->toBeNull();
+    $foreign = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id]);
+    $this->deleteJson("/api/admin/restaurant/menu-plans/{$foreign->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertNotFound();
+    expect($foreign->fresh())->not->toBeNull();
+});
+
+test('a stale delete confirmation cannot remove a partly billed plan or any of its bookings', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-03-23', 'end_date' => '2026-04-03']);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'restaurant_menu_id' => $this->menu->id, 'plan_date' => '2026-03-24']);
+    $entry->eatingTimes()->attach($this->eatingTime->id);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id, 'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 5, 'quantity' => 2, 'booked_at' => now()]);
+    $this->actingAs($this->admin, 'sanctum')->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")->assertOk()->assertJsonPath('data.can_delete', true);
+    RestaurantBilling::factory()->create(['school_id' => $this->school->id, 'created_by_user_id' => $this->admin->id, 'start_date' => '2026-03-30', 'end_date' => '2026-04-05']);
+    $this->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertConflict();
+    expect($plan->fresh())->not->toBeNull()->and($booking->fresh())->not->toBeNull()->and($entry->fresh()->eatingTimes()->count())->toBe(1);
+    $this->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")->assertJsonPath('data.can_delete', false)->assertJsonPath('data.has_billed_entries', true);
+});
+
+test('even an empty menu plan in an already billed period cannot be deleted', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-03-23', 'end_date' => '2026-03-27']);
+    RestaurantBilling::factory()->create(['school_id' => $this->school->id, 'created_by_user_id' => $this->admin->id, 'start_date' => '2026-03-23', 'end_date' => '2026-03-29']);
+    $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertConflict();
+    expect($plan->fresh())->not->toBeNull();
 });

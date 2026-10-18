@@ -66,7 +66,7 @@ class RestaurantMenuPlanController extends Controller
             ->get();
 
         $recipients = $this->bookingListRecipients($bookings, $authUser);
-        $billings = RestaurantBilling::query()->where('school_id', $authUser->school_id)->get(['start_date', 'end_date']);
+        $billings = RestaurantBilling::query()->where('school_id', $authUser->school_id)->get(['start_date', 'end_date', 'snapshot']);
 
         $rows = $bookings->map(function (RestaurantMenuPlanBooking $booking) use ($recipients, $billings): array {
             $recipient = $recipients[$booking->id] ?? null;
@@ -99,7 +99,7 @@ class RestaurantMenuPlanController extends Controller
                 'menu' => $booking->menuPlanEntry->menu_title,
                 'plan_id' => $booking->menuPlanEntry->restaurant_menu_plan_id,
                 'entry_id' => $booking->restaurant_menu_plan_entry_id,
-                'can_delete' => ! $billings->contains(fn (RestaurantBilling $billing): bool => $booking->menuPlanEntry->plan_date->betweenIncluded($billing->start_date, $billing->end_date)),
+                'can_delete' => ! $billings->contains(fn (RestaurantBilling $billing): bool => $billing->coversDate($booking->menuPlanEntry->plan_date)),
                 'last_name' => $lastName,
                 'first_name' => $firstName,
             ];
@@ -229,11 +229,13 @@ class RestaurantMenuPlanController extends Controller
         ]);
     }
 
-    public function destroy(int $id, RestaurantMenuPlanService $service): JsonResponse
+    public function destroy(Request $request, int $id, RestaurantMenuPlanService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $request->validate(['confirmation' => ['required', 'string', 'in:MENÜPLAN LÖSCHEN']]);
 
         $deleted = $service->deleteForUser($authUser, $id);
 
@@ -243,7 +245,7 @@ class RestaurantMenuPlanController extends Controller
 
         if ($deleted === false) {
             return response()->json([
-                'message' => 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.',
+                'message' => 'Menüplan kann nicht gelöscht werden, da er bereits ganz oder teilweise verrechnet wurde.',
             ], 409);
         }
 
@@ -543,8 +545,7 @@ class RestaurantMenuPlanController extends Controller
 
         $query = RestaurantBilling::query()
             ->where('school_id', $schoolId)
-            ->whereDate('start_date', '<=', $date->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $date->format('Y-m-d'));
+            ->coveringDate($date);
 
         return $lock ? $query->lockForUpdate()->first(['id']) !== null : $query->exists();
     }

@@ -15,9 +15,7 @@
             class="mb-3">{{ unavailableMessage || 'Multiple Choice muss für diese lokale Anwendung noch aktiviert werden.' }}</v-alert>
         <template v-if="available">
             <div v-if="section !== 'catalogs'" class="mc-toolbar mb-4" aria-label="Zurücknavigation">
-                <v-btn v-if="section === 'results'" color="primary" variant="text" prepend-icon="mdi-arrow-left"
-                    :disabled="!!busy" @click="selectTest(selectedTestId)">Zurück zum Test</v-btn>
-                <v-btn v-else-if="selectedTestId || preparingTest" color="primary" variant="text" prepend-icon="mdi-arrow-left"
+                <v-btn v-if="selectedTestId || preparingTest" color="primary" variant="text" prepend-icon="mdi-arrow-left"
                     :disabled="!!busy" @click="showCatalogTests">Zur Testübersicht</v-btn>
                 <v-btn v-else color="primary" variant="text" prepend-icon="mdi-arrow-left"
                     :disabled="!!busy" @click="openCatalog(catalog.id)">Zum Fragenkatalog</v-btn>
@@ -28,8 +26,8 @@
                 <ol class="mc-steps" aria-label="Ablauf">
                     <li :class="{ 'is-current': section === 'catalogs' }">1 Fragen</li>
                     <li :class="{ 'is-current': section === 'tests' && (!selectedTest || preparingTest) }">2 Test</li>
-                    <li :class="{ 'is-current': section === 'tests' && selectedTest && !preparingTest }">3 Gemeinsam starten</li>
-                    <li :class="{ 'is-current': section === 'results' }">4 Ergebnisse</li>
+                    <li :class="{ 'is-current': section === 'tests' && selectedTest && !preparingTest && !testEnded }">3 {{ selectedTest?.start_mode === 'individual' ? 'Selbstständig starten' : 'Gemeinsam starten' }}</li>
+                    <li :class="{ 'is-current': selectedTest && testEnded }">4 Ergebnisse</li>
                 </ol>
                 <p>{{ nextStepHint }}</p>
             </div>
@@ -95,6 +93,7 @@
                             <v-spacer />
                             <v-btn v-if="!editingQuestions" color="primary" variant="outlined" prepend-icon="mdi-pencil-outline"
                                 :disabled="!!busy" @click="editingQuestions = true">Bearbeiten</v-btn>
+                            <v-btn v-if="catalog.id" variant="text" color="error" :disabled="!!busy" @click="openDeletion('catalog', catalog)">Katalog löschen</v-btn>
                         </div>
                         <div class="mc-toolbar mt-4">
                             <p class="text-body-2">{{ catalog.questions.length }} Fragen · {{ catalogReadyCount }} aktiv
@@ -164,12 +163,16 @@
                 <div class="mc-toolbar mb-3">
                     <div>
                         <h2>Tests zu „{{ catalog.title }}“</h2>
-                        <p class="text-body-2 text-medium-emphasis mt-1">{{ catalogTests.length }} {{ catalogTests.length === 1 ? 'Test' : 'Tests' }}</p>
+                        <p class="text-body-2 text-medium-emphasis mt-1">{{ catalogTests.length }} {{ catalogTests.length === 1 ? 'Test' : 'Tests' }} · {{ showUnassignedTests ? 'Altbestand ohne Schuljahrzuordnung' : schoolyearLabel }}</p>
                     </div>
                     <v-spacer />
                     <v-btn color="primary" variant="flat" prepend-icon="mdi-plus"
                         :disabled="!canPrepareCatalog || !!busy" @click="prepareCatalogTest">Neuen Test anlegen</v-btn>
                 </div>
+                <div class="mc-toolbar mb-3" v-if="unassignedTests.some(test => test.catalog_id === catalog.id)">
+                    <label><input type="checkbox" v-model="showUnassignedTests"> Altbestand ohne eindeutiges Schuljahr anzeigen</label>
+                </div>
+                <p class="text-caption text-medium-emphasis mb-3">Fragenkataloge bleiben über Schuljahre hinweg erhalten. Die Testliste folgt dem oben in Schooltool gewählten Schuljahr.</p>
                 <p v-if="!canPrepareCatalog" class="text-body-2 text-medium-emphasis mb-3">Prüfe und speichere zuerst die Fragen im Katalog. Danach kannst du einen Test anlegen.</p>
                 <v-sheet v-if="!catalogTests.length" border rounded="lg" class="pa-6 text-medium-emphasis">
                     <p>Zu diesem Fragenkatalog gibt es noch keine Tests.</p>
@@ -178,13 +181,18 @@
                     <li v-for="item in catalogTests" :key="item.id">
                         <v-card border rounded="lg">
                             <v-card-text>
-                                <h3>{{ item.title }}</h3>
+                                <div class="mc-test-heading-title">
+                                    <h3>{{ item.title }}</h3>
+                                    <v-btn icon="mdi-pencil-outline" size="small" variant="text" :disabled="!!busy"
+                                        :aria-label="`Test umbenennen: ${item.title}`" title="Test umbenennen" @click="openTestRename(item)" />
+                                </div>
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ item.question_count }} Fragen · {{ item.total_points }} Punkte · {{ Math.round(item.duration_seconds / 60) }} Minuten</p>
-                                <p class="text-caption text-medium-emphasis mt-1">{{ item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
+                                <p class="text-caption text-medium-emphasis mt-1">{{ item.start_mode === 'individual' ? `Selbstständiger Start · Schlussfrist: ${dateLabel(item.closes_at)}` : item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
                             </v-card-text>
-                            <v-card-actions class="pa-4 pt-0">
+                            <v-card-actions class="mc-test-card-actions pa-4 pt-0">
                                 <v-btn color="primary" variant="text" append-icon="mdi-arrow-right" :disabled="!!busy"
                                     :aria-label="`Test öffnen: ${item.title}`" @click="selectTest(item.id)">Test öffnen</v-btn>
+                                <v-btn variant="text" color="error" :disabled="!!busy" :aria-label="`Test löschen: ${item.title}`" @click="openDeletion('test', item)">Löschen</v-btn>
                             </v-card-actions>
                         </v-card>
                     </li>
@@ -206,9 +214,25 @@
                                 label="Erreichbare Gesamtpunkte" variant="outlined" density="compact" hide-details />
                             <v-text-field v-model.number="testDraft.duration_minutes" type="number" min="1"
                                 label="Bearbeitungsdauer in Minuten" variant="outlined" density="compact" hide-details />
-                            <v-text-field v-model.number="testDraft.lead_seconds" type="number" min="0"
+                            <fieldset class="mc-start-modes" aria-label="Start des Tests" :disabled="!!busy">
+                            <legend>Start des Tests</legend>
+                            <div class="mc-start-mode-options">
+                                <label v-for="option in startModes" :key="option.value" class="mc-start-mode" :class="{ 'is-selected': testDraft.start_mode === option.value }">
+                                    <input v-model="testDraft.start_mode" type="radio" name="mc-start-mode-new" :value="option.value" :aria-label="option.title">
+                                    <span><strong>{{ option.title }}</strong><span class="mc-start-mode-description">{{ option.description }}</span></span>
+                                </label>
+                            </div>
+                        </fieldset>
+                            <button v-if="testDraft.start_mode === 'individual'" type="button" class="mc-deadline-trigger" aria-label="Schlussfrist für alle" :disabled="!!busy" @click="openDeadlinePicker('new')">
+                                <span class="mc-deadline-label">Schlussfrist für alle</span>
+                                <strong>{{ testDraft.closes_at ? dateLabel(testDraft.closes_at) : 'Datum und Uhrzeit auswählen' }}</strong>
+                                <span class="mc-deadline-action">{{ testDraft.closes_at ? 'Ändern' : 'Auswählen' }} <v-icon icon="mdi-calendar-month-outline" size="20" aria-hidden="true" /></span>
+                            </button>
+                            <v-text-field v-if="testDraft.start_mode === 'common'" v-model.number="testDraft.lead_seconds" type="number" min="0"
                                 label="Vorlaufzeit in Sekunden" variant="outlined" density="compact" hide-details />
                         </div>
+                        <p v-if="testDraft.start_mode === 'individual'" class="text-body-2 mt-3">Jede Person startet einmal selbst. Ab dann läuft die Zeit ohne Pause, spätestens bis zur Schlussfrist. Einzelne Fristen kannst du später in der Schülerliste anpassen.</p>
+                        <label class="mc-check mt-3"><input v-model="testDraft.exam_mode" type="checkbox" aria-label="Prüfungsmodus aktivieren" />Prüfungsmodus: Seitenwechsel, Dauer und Vollbild protokollieren</label>
                         <details class="mc-more mt-3">
                             <summary>Weitere Einstellungen</summary>
                             <div class="mc-checks mt-3">
@@ -298,7 +322,6 @@
             </section>
 
             <section v-if="selectedTestId && !preparingTest && section !== 'catalogs'" class="mt-4" aria-label="Geöffneter Test">
-                <h2 v-if="section === 'results'" class="mb-3">Ergebnisse zu „{{ selectedTest?.title }}“</h2>
                 <v-alert v-if="monitorError && !selectedTest" type="warning" variant="tonal"
                     class="mb-3">{{ monitorError }} <v-btn variant="text" @click="refreshMonitor">Erneut laden</v-btn>
                 </v-alert>
@@ -307,13 +330,19 @@
                     <v-card-text>
                         <div class="mc-toolbar">
                             <div>
-                                <h2>{{ selectedTest.title }}</h2>
+                                <div class="mc-test-heading-title">
+                                    <h2>{{ selectedTest.title }}</h2>
+                                    <v-btn icon="mdi-pencil-outline" size="small" variant="text" :disabled="!!busy"
+                                        aria-label="Test umbenennen" title="Test umbenennen" @click="openTestRename(selectedTest)" />
+                                </div>
+
                                 <p class="text-body-2 text-medium-emphasis">{{ selectedTest.question_count }} Fragen ·
                                     {{ selectedTest.total_points }} Punkte ·
                                     {{ Math.round(selectedTest.duration_seconds / 60) }} Minuten</p>
                             </div>
                             <v-spacer />
                             <v-chip :color="testPhase.color" variant="tonal">{{ testPhase.label }}</v-chip>
+                            <v-btn variant="outlined" prepend-icon="mdi-cog-outline" :disabled="!!busy" @click="openTestSettings">Einstellungen bearbeiten</v-btn>
                         </div>
                         <div class="mc-monitor mt-4" role="status">
                             <div>
@@ -333,19 +362,154 @@
                                 <span>zugewiesen</span>
                             </div>
                         </div>
-                        <p v-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
+                        <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">Selbstständiger Start · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
+                        <p v-else-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
                             {{ dateLabel(selectedTest.starts_at) }} · Ende: {{ dateLabel(selectedTest.ends_at) }}</p>
-                        <div v-if="section === 'tests'" class="mc-toolbar mt-4">
-                            <v-btn color="primary" variant="outlined" prepend-icon="mdi-chart-box-outline"
-                                :disabled="!!busy" @click="navigateTo('results')">Ergebnisse ansehen</v-btn>
-                            <v-btn v-if="!selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
-                                :loading="busy === 'countdown'" :disabled="!!busy" @click="startDialog = true">Countdown
-                                starten ({{ selectedTest.lead_seconds }} s)</v-btn>
-                            <v-btn variant="outlined" prepend-icon="mdi-email-outline" :loading="busy === 'invitations'"
-                                :disabled="!!busy" @click="previewInvitations">Einladungen vorbereiten</v-btn>
-                            <span class="text-caption text-medium-emphasis">Status wird automatisch aktualisiert.</span>
+                        <div v-if="section === 'tests'" class="mc-control-grid mt-5">
+                            <section class="mc-control-section" aria-label="Prüfung steuern">
+                                <h3>Prüfung steuern</h3>
+                                <div class="mc-toolbar mt-3">
+                                    <v-btn v-if="selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
+                                        :loading="busy === 'countdown'" :disabled="!!busy" @click="startDialog = true">Countdown starten ({{ selectedTest.lead_seconds }} s)</v-btn>
+                                    <v-btn v-if="selectedTest.paused_at" color="primary" variant="flat" prepend-icon="mdi-play" :disabled="!!busy" @click="setTestPause(false)">Test fortsetzen</v-btn>
+                                    <v-btn v-else-if="canPauseTest" variant="outlined" prepend-icon="mdi-pause" :disabled="!!busy" @click="setTestPause(true)">Alle pausieren</v-btn>
+                                    <v-btn v-if="testRunning" variant="outlined" :disabled="!!busy" @click="openRemainingTime">Restzeit ändern</v-btn>
+                                    <v-btn v-if="testRunning" color="error" variant="text" :disabled="!!busy" @click="closeTestDialog = true">Test vorzeitig schließen</v-btn>
+                                </div>
+                                <p v-if="testEnded && !hasPersonalRunningAttempts" class="text-body-2 mt-3">Die Bearbeitung ist abgeschlossen. Einzelne Abgaben kannst du unten wieder öffnen.</p>
+                                <div class="mc-toolbar mt-3">
+                                    <v-btn variant="text" :disabled="!!busy" :prepend-icon="selectedTest.exam_mode ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click="toggleExamMode">{{ selectedTest.exam_mode ? 'Prüfungsmodus deaktivieren' : 'Prüfungsmodus aktivieren' }}</v-btn>
+                                </div>
+                                <p class="text-caption text-medium-emphasis mt-2">Status wird automatisch aktualisiert.</p>
+                            </section>
+                            <section class="mc-control-section" aria-label="Zugang und Einladungen">
+                                <h3>Zugang und Einladungen</h3>
+                                <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
+                                <div class="mc-toolbar mt-3">
+                                    <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
+                                    <v-btn variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
+                                </div>
+                                <p v-if="selectedTest.access_links_disabled_at" class="text-caption mt-2">Die Sperre gilt auch für bereits geöffnete persönliche Links.</p>
+                            </section>
                         </div>
-                        <div v-if="invitationPreview && section === 'tests'" class="mc-import mt-4">
+                        <v-alert v-if="selectedTest.paused_at" type="warning" variant="tonal" class="mt-4">Pausiert: Alle Eingaben und die Restzeit sind eingefroren. Beim Fortsetzen verschieben sich auch die Schlussfristen um die Pausendauer.</v-alert>
+                        <p v-if="selectedTest.exam_mode" class="text-caption text-medium-emphasis mt-3">Das Prüfungsprotokoll zeigt Browsermeldungen, keine automatische Bewertung. Bei fehlender Verbindung wird der Status als unklar angezeigt.</p>
+                        <v-alert v-if="monitorError" type="warning" variant="tonal" class="mt-4">{{ monitorError }}
+                            Angezeigte Daten können veraltet sein.</v-alert>
+                        <section v-if="testEnded" class="mc-results-section mt-5" aria-label="Ergebnisse und Lösungen">
+                            <h3 class="mb-3">Ergebnisse und Lösungen</h3>
+                            <v-alert :type="selectedTest.results_released_at ? 'success' : 'info'" variant="tonal"
+                                class="mb-3">{{ selectedTest.results_released_at ? 'Ergebnisse sind für Schüler freigegeben.' : 'Ergebnisse sind für Schüler noch verborgen.' }}
+                                {{ selectedTest.solutions_released_at ? 'Auch Lösungen sind freigegeben.' : 'Lösungen sind noch verborgen.' }}</v-alert>
+                            <div class="mc-toolbar mb-4">
+                                <v-btn v-if="!selectedTest.results_released_at" variant="outlined"
+                                    :disabled="!testEnded || hasPersonalRunningAttempts || !!busy" @click="releaseMode = 'results'">Ergebnisse
+                                    freigeben</v-btn>
+                                <v-btn v-if="!selectedTest.solutions_released_at" variant="outlined"
+                                    :disabled="!testEnded || hasPersonalRunningAttempts || !selectedTest.results_released_at || !!busy" @click="releaseMode = 'solutions'">Lösungen freigeben</v-btn>
+                                <v-btn v-if="selectedTest.solutions_released_at" variant="text" prepend-icon="mdi-eye-off-outline"
+                                    :disabled="!!busy" @click="revokeMode = 'solutions'">Lösungen verbergen</v-btn>
+                                <v-btn v-if="selectedTest.results_released_at" variant="text" prepend-icon="mdi-eye-off-outline"
+                                    :disabled="!!busy" @click="revokeMode = 'results'">Ergebnisse verbergen</v-btn>
+                                <span v-if="hasPersonalRunningAttempts" class="text-caption text-medium-emphasis">Eine persönliche Zusatzzeit läuft noch.</span>
+                                <span v-if="!testEnded" class="text-caption text-medium-emphasis">Freigabe nach Ende der
+                                    Bearbeitungszeit möglich.</span>
+                            </div>
+                        </section>
+                        <h3 class="mt-5">Schülerübersicht</h3>
+                        <div v-if="reopenSelectionEnabled" class="mc-toolbar mt-4">
+                            <span class="text-body-2">{{ selectedReopenAttempts.length }} ausgewählt</span>
+                            <v-btn color="primary" variant="flat" prepend-icon="mdi-lock-open-outline"
+                                :disabled="!selectedReopenAttempts.length || !!busy" @click="openSelectedReopen">Wieder öffnen</v-btn>
+                        </div>
+                        <div class="mc-table-wrap mt-4">
+                            <table class="mc-table">
+                                <thead>
+                                    <tr>
+                                        <th v-if="reopenSelectionEnabled"><label class="d-inline-flex align-center ga-2"><input type="checkbox" aria-label="Alle Schüler zum Wiederöffnen auswählen"
+                                            :checked="allReopenSelected" :indeterminate="selectedReopenAttempts.length > 0 && !allReopenSelected"
+                                            :disabled="!!busy || !eligibleReopenAttempts.length" @change="selectAllReopen($event.target.checked)"><span>Alle auswählen</span></label></th>
+                                        <th>Schüler</th>
+                                        <th>Zugang</th>
+                                        <th>Status</th>
+                                        <th v-if="showActivity">Prüfungsprotokoll</th>
+                                        <th>Punkte</th>
+                                        <th>Prozent</th>
+                                        <th :title="selectedTest.start_mode === 'individual' ? 'Zeit seit dem persönlichen Teststart' : 'Zeit seit dem gemeinsamen Teststart'">Abgabe nach</th>
+                                        <th>Auswertung</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template v-for="attempt in attempts" :key="attempt.id">
+                                        <tr>
+                                            <td v-if="reopenSelectionEnabled"><input type="checkbox" :aria-label="`Test zum Wiederöffnen auswählen: ${attempt.student_name}`"
+                                                :checked="selectedReopenIds.includes(attempt.id)" :disabled="!!busy || !canSelectReopen(attempt)"
+                                                @change="selectReopen(attempt.id, $event.target.checked)"></td>
+                                            <td>
+                                                <strong>{{ attempt.student_name }}</strong>
+                                                <div class="text-caption text-medium-emphasis">{{ attempt.email }}</div>
+                                            </td>
+                                            <td class="mc-access-cell">
+                                                <v-btn v-if="attempt.access_url" :href="attempt.access_url" target="_blank" rel="noopener noreferrer"
+                                                    icon="mdi-open-in-new" size="small" variant="tonal" color="primary"
+                                                    :aria-label="`Persönlichen Test von ${attempt.student_name} öffnen`" title="Persönlichen Testzugang öffnen" />
+                                                <v-btn v-if="attempt.access_url" icon="mdi-content-copy" size="small" variant="text" color="primary" :aria-label="`Zugangslink von ${attempt.student_name} kopieren`" title="Zugangslink kopieren" @click="copyAccessLink(attempt)" />
+                                                <span v-else>—</span>
+                                            </td>
+                                            <td>{{ statusLabel(attempt.status) }}
+                                                <div v-if="selectedTest.start_mode === 'individual'" class="text-caption text-medium-emphasis">
+                                                    Schlussfrist: {{ dateLabel(attempt.closing_deadline) }}<span v-if="attempt.closes_at"> · Ausnahme</span>
+                                                    <v-btn icon="mdi-pencil-outline" size="x-small" variant="text" :disabled="!!busy" :aria-label="`Schlussfrist für ${attempt.student_name} ändern`" title="Persönliche Schlussfrist ändern" @click="openClosingDeadline(attempt)" />
+                                                </div>
+                                                <div v-if="attempt.reopened_until && !attempt.completed_at" class="text-caption text-medium-emphasis">{{ personalTimeLabel(attempt) }}</div>
+                                            </td>
+                                            <td v-if="showActivity" class="mc-activity-cell">
+                                                <span class="mc-activity-state" :class="`mc-activity-${attempt.activity?.state || 'not_reported'}`">{{ activityStateLabel(attempt.activity) }}</span>
+                                                <div class="text-caption mt-1">{{ attempt.activity?.away_count || 0 }} Wechsel · {{ activityDuration(attempt.activity?.away_seconds) }} außerhalb</div>
+                                                <div class="text-caption text-medium-emphasis">Vollbild verlassen: {{ attempt.activity?.fullscreen_exit_count || 0 }}×</div>
+                                                <v-btn variant="text" size="small" :aria-label="`Prüfungsprotokoll von ${attempt.student_name} ansehen`" @click="activityExpandedAttempt = activityExpandedAttempt === attempt.id ? null : attempt.id">{{ activityExpandedAttempt === attempt.id ? 'Protokoll schließen' : 'Protokoll ansehen' }}</v-btn>
+                                            </td>
+                                            <td>{{ scoreLabel(attempt) }}</td>
+                                            <td>{{ isScored(attempt) ? `${attempt.percentage ?? 0} %` : '—' }}</td>
+                                            <td>{{ completionTimeLabel(attempt) }}</td>
+                                            <td>
+                                                <v-btn v-if="isScored(attempt)" variant="text" size="small"
+                                                    @click="toggleAttempt(attempt.id)">{{ expandedAttempt === attempt.id ? 'Schließen' : 'Fragen ansehen' }}</v-btn>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="showActivity && activityExpandedAttempt === attempt.id"><td :colspan="tableColumnCount" class="mc-evaluation">
+                                            <strong>Prüfungsprotokoll · {{ attempt.student_name }}</strong>
+                                            <p class="text-body-2 my-2">{{ attempt.activity?.away_count || 0 }} Wechsel, insgesamt {{ activityDuration(attempt.activity?.away_seconds) }}. Vollbild verlassen: {{ attempt.activity?.fullscreen_exit_count || 0 }}×.</p>
+                                            <p v-if="!attempt.activity?.periods?.length" class="text-body-2">Bisher keine Abwesenheit protokolliert.</p>
+                                            <ul v-else class="ml-5"><li v-for="(period, index) in attempt.activity.periods" :key="index">{{ dateLabel(period.left_at) }} → {{ (period.returned_at || period.ended_at) ? dateLabel(period.returned_at || period.ended_at) : 'noch außerhalb' }} · {{ activityDuration(period.seconds) }} · {{ period.reason === 'hidden' ? 'Testseite ausgeblendet' : 'Fenster ohne Fokus' }}</li></ul>
+                                            <p v-if="attempt.activity?.fullscreen_exits?.length" class="text-body-2 mt-3">Vollbild verlassen: {{ attempt.activity.fullscreen_exits.map(dateLabel).join(' · ') }}</p>
+                                            <p v-if="attempt.activity?.truncated" class="text-caption">Es werden die letzten 2.000 Zeiträume angezeigt; die Gesamtsumme bleibt vollständig.</p>
+                                        </td></tr>
+                                        <tr v-if="expandedAttempt === attempt.id">
+                                            <td :colspan="tableColumnCount" class="mc-evaluation">
+                                                <McQuestionReview v-for="(question, position) in attempt.question_results ?? attempt.evaluation ?? []"
+                                                    :key="question.question_id ?? question.id" :question="question" :position="position" />
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                        <details class="mc-test-maintenance mt-5"><summary>Test verwalten</summary><p class="text-body-2 my-3">Das Löschen entfernt auch Abgaben, Ergebnisse und persönliche Links dieses Tests.</p><v-btn variant="outlined" color="error" :disabled="!!busy" @click="openDeletion('test', selectedTest)">Test löschen</v-btn></details>
+                    </v-card-text>
+                </v-card>
+            </section>
+        </template>
+
+        <v-dialog v-model="invitationDialog" persistent max-width="1000" scrollable>
+            <v-card>
+                <v-card-title>Einladungen vorbereiten</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 mb-4">Wähle zuerst die Ansprache. Danach prüfst du Empfänger und Nachricht; versendet wird erst nach deiner Bestätigung.</p>
+                    <v-select v-model="invitationAddressForm" label="Ansprache der Einladungen" :items="[{ title: 'Sie-Form', value: 'sie' }, { title: 'Du-Form', value: 'du' }]" density="compact" variant="outlined" :disabled="!!busy" hide-details @update:model-value="resetInvitationPreview" />
+                    <v-btn class="mt-4" color="primary" variant="outlined" :disabled="!!busy" :loading="busy === 'invitations'" @click="previewInvitations">Empfänger und E-Mail prüfen</v-btn>
+                    <v-alert v-if="error" type="error" class="mt-3">{{ error }}</v-alert>
+                        <div v-if="invitationPreview" class="mt-4">
                             <h3>Empfängervorschau</h3>
                             <p class="text-body-2 my-2">Jede Person erhält ihren persönlichen Testzugang. Bereits
                                 versandte Einladungen werden übersprungen.</p>
@@ -353,102 +517,175 @@
                                 <table class="mc-table">
                                     <thead>
                                         <tr>
+                                            <th><input type="checkbox" aria-label="Alle noch nicht eingeladenen Schüler auswählen" :checked="allInvitationsSelected" :disabled="!!busy || !availableInvitationRecipients.length" @change="selectAllInvitations($event.target.checked)"></th>
                                             <th>Name</th>
                                             <th>E-Mail</th>
                                             <th>Einladung</th>
+                                            <th>E-Mail-Vorschau</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-for="recipient in invitationPreview.recipients"
                                             :key="recipient.attempt_id">
+                                            <td><input type="checkbox" :aria-label="`Einladung auswählen: ${recipient.student_name}`" :checked="selectedInvitationIds.includes(recipient.attempt_id)" :disabled="!!busy || !!recipient.invited_at" @change="selectInvitation(recipient.attempt_id, $event.target.checked)"></td>
                                             <td>{{ recipient.student_name }}</td>
                                             <td>{{ recipient.email }}</td>
-                                            <td>{{ recipient.invited_at ? `Versandt: ${dateLabel(recipient.invited_at)}` : 'Noch nicht versandt' }}
-                                            </td>
+                                            <td>{{ recipient.invited_at ? `Versandt: ${dateLabel(recipient.invited_at)}` : 'Noch nicht versandt' }}</td>
+                                            <td><v-btn size="small" variant="text" @click="invitationRecipientId = recipient.attempt_id">E-Mail ansehen</v-btn></td>
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                            <div v-if="invitationRecipient" class="mt-4" aria-label="Einladungsinhalt">
+                                <h3>E-Mail an {{ invitationRecipient.student_name }}</h3>
+                                <p class="text-body-2 my-2">Betreff und Text können für diese Person angepasst werden. Der persönliche Zugangsbutton wird automatisch ergänzt.</p>
+                                <v-text-field v-model="invitationRecipient.subject" label="Betreff der Einladung" variant="outlined"
+                                    maxlength="255" :disabled="!!busy" hide-details class="my-3" />
+                                <v-textarea v-model="invitationRecipient.body" label="Nachrichtentext der Einladung" variant="outlined"
+                                    rows="9" auto-grow maxlength="20000" :disabled="!!busy" hide-details class="mb-3" />
+                                <iframe :srcdoc="invitationRecipientHtml" sandbox="" referrerpolicy="no-referrer" title="Vorschau der persönlichen Einladung" style="width: 100%; height: 340px; border: 1px solid #d7e1df; background: white;"></iframe>
                             </div>
                             <v-btn class="mt-3" color="primary" variant="flat"
                                 :disabled="!unsentInvitationCount || !!busy"
                                 @click="mailDialog = true">{{ unsentInvitationCount }} Einladungen per E-Mail
                                 senden</v-btn>
                         </div>
-                        <v-alert v-if="monitorError" type="warning" variant="tonal" class="mt-4">{{ monitorError }}
-                            Angezeigte Daten können veraltet sein.</v-alert>
-                        <div v-if="section === 'results'" class="mt-5">
-                            <v-alert :type="selectedTest.results_released_at ? 'success' : 'info'" variant="tonal"
-                                class="mb-3">{{ selectedTest.results_released_at ? 'Ergebnisse sind für Schüler freigegeben.' : 'Ergebnisse sind für Schüler noch verborgen.' }}
-                                {{ selectedTest.solutions_released_at ? 'Auch Lösungen sind freigegeben.' : 'Lösungen sind noch verborgen.' }}</v-alert>
-                            <div class="mc-toolbar mb-4">
-                                <v-btn v-if="!selectedTest.results_released_at" variant="outlined"
-                                    :disabled="!testEnded || !!busy" @click="releaseMode = 'results'">Ergebnisse
-                                    freigeben</v-btn>
-                                <v-btn v-if="!selectedTest.solutions_released_at" variant="outlined"
-                                    :disabled="!testEnded || !!busy" @click="releaseMode = 'solutions'">Ergebnisse und
-                                    Lösungen freigeben</v-btn>
-                                <span v-if="!testEnded" class="text-caption text-medium-emphasis">Freigabe nach Ende der
-                                    Bearbeitungszeit möglich.</span>
+                </v-card-text>
+                <v-card-actions><v-spacer /><v-btn :disabled="!!busy" @click="invitationDialog = false">Schließen</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="testSettingsDialog" persistent max-width="760" scrollable>
+            <v-card>
+                <v-card-title>Testeinstellungen</v-card-title>
+                <v-card-text>
+                    <v-alert v-if="!canEditTestSettings" type="info" variant="tonal" class="mb-4">Der Test wurde bereits gestartet oder pausiert. Fragen und Bewertungsgrundlagen bleiben geschützt. Restzeit, persönliche Schlussfristen und Wiederöffnen steuerst du in der Übersicht.</v-alert>
+                    <p v-else class="text-body-2 mb-4">Änderungen gelten für alle noch nicht gestarteten Personen. Bei geändertem Fragenumfang oder geänderter Mischung werden Fragen aus dem ursprünglichen Katalogstand neu zugeteilt. Zugangslinks bleiben erhalten; Einladungen bitte neu vorbereiten.</p>
+                    <fieldset class="mc-settings-fields" :disabled="!canEditTestSettings || !!busy">
+                        <v-text-field v-model="settingsDraft.title" label="Testbezeichnung" variant="outlined" :disabled="!canEditTestSettings || !!busy" maxlength="255" />
+                        <div class="mc-form-grid">
+                            <v-text-field v-model.number="settingsDraft.question_count" type="number" label="Anzahl der Fragen" :min="1" :max="settingsPoolCount" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
+                            <v-text-field v-model.number="settingsDraft.total_points" type="number" label="Gesamtpunkte" min="0.01" step="0.01" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
+                            <v-text-field v-model.number="settingsDraft.duration_minutes" type="number" label="Bearbeitungszeit in Minuten" min="1" max="1440" step="0.1" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
+                        </div>
+                        <fieldset class="mc-start-modes" aria-label="Startart" :disabled="!canEditTestSettings || !!busy">
+                            <legend>Startart</legend>
+                            <div class="mc-start-mode-options">
+                                <label v-for="option in startModes" :key="option.value" class="mc-start-mode" :class="{ 'is-selected': settingsDraft.start_mode === option.value }">
+                                    <input v-model="settingsDraft.start_mode" type="radio" name="mc-start-mode-settings" :value="option.value" :aria-label="option.title">
+                                    <span><strong>{{ option.title }}</strong><span class="mc-start-mode-description">{{ option.description }}</span></span>
+                                </label>
                             </div>
-                        </div>
-                        <div class="mc-table-wrap mt-4">
-                            <table class="mc-table">
-                                <thead>
-                                    <tr>
-                                        <th>Schüler</th>
-                                        <th>Status</th>
-                                        <th>Punkte</th>
-                                        <th>Prozent</th>
-                                        <th v-if="section === 'results'">Auswertung</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template v-for="attempt in attempts" :key="attempt.id">
-                                        <tr>
-                                            <td>
-                                                <strong>{{ attempt.student_name }}</strong>
-                                                <div class="text-caption text-medium-emphasis">{{ attempt.email }}</div>
-                                            </td>
-                                            <td>{{ statusLabel(attempt.status) }}</td>
-                                            <td>{{ scoreLabel(attempt) }}</td>
-                                            <td>{{ isScored(attempt) ? `${attempt.percentage ?? 0} %` : '—' }}</td>
-                                            <td v-if="section === 'results'">
-                                                <v-btn v-if="isScored(attempt)" variant="text" size="small"
-                                                    @click="toggleAttempt(attempt.id)">{{ expandedAttempt === attempt.id ? 'Schließen' : 'Fragen ansehen' }}</v-btn>
-                                            </td>
-                                        </tr>
-                                        <tr v-if="section === 'results' && expandedAttempt === attempt.id">
-                                            <td colspan="5" class="mc-evaluation">
-                                                <div v-for="(question, position) in attempt.question_results ?? attempt.evaluation ?? []"
-                                                    :key="question.question_id ?? question.id" class="mb-4">
-                                                    <p>
-                                                        <strong>{{ position + 1 }}. {{ question.prompt }}</strong>
-                                                    </p>
-                                                    <p :class="question.correct ? 'text-success' : 'text-error'">
-                                                        {{ question.correct ? 'Exakt richtig' : 'Nicht exakt richtig' }}
-                                                        · {{ question.points ?? 0 }} Punkte</p>
-                                                    <ul class="ml-5 mt-1">
-                                                        <li v-for="option in question.options ?? []" :key="option.id">
-                                                            {{ option.text }} <strong
-                                                                v-if="question.selected_option_ids?.includes(option.id)">
-                                                                · ausgewählt</strong>
-                                                            <span
-                                                                v-if="question.correct_option_ids?.includes(option.id)"
-                                                                class="text-success"> · richtig</span>
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
+                        </fieldset>
+                        <button v-if="settingsDraft.start_mode === 'individual'" type="button" class="mc-deadline-trigger mb-4" aria-label="Letzter Abgabezeitpunkt" :disabled="!canEditTestSettings || !!busy" @click="openDeadlinePicker('settings')">
+                            <span class="mc-deadline-label">Letzter Abgabezeitpunkt</span>
+                            <strong>{{ settingsDraft.closes_at ? dateLabel(settingsDraft.closes_at) : 'Datum und Uhrzeit auswählen' }}</strong>
+                            <span class="mc-deadline-action">{{ settingsDraft.closes_at ? 'Ändern' : 'Auswählen' }} <v-icon icon="mdi-calendar-month-outline" size="20" aria-hidden="true" /></span>
+                        </button>
+                        <v-text-field v-else v-model.number="settingsDraft.lead_seconds" type="number" label="Countdown in Sekunden" min="0" max="86400" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.exam_mode"> Prüfungsmodus mit Vollbild und Protokoll</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.balance_types"> Fragentypen ausgewogen verteilen</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_questions"> Fragen mischen</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_options"> Antwortmöglichkeiten mischen</label>
+                    </fieldset>
+                    <v-alert v-if="settingsError" type="error" class="mt-3">{{ settingsError }}</v-alert>
+                </v-card-text>
+                <v-card-actions><v-btn :disabled="!!busy" @click="testSettingsDialog = false">{{ canEditTestSettings ? 'Abbrechen' : 'Schließen' }}</v-btn><v-spacer /><v-btn v-if="canEditTestSettings" color="primary" variant="flat" :disabled="!!busy" :loading="busy === 'settings'" @click="saveTestSettings">Einstellungen speichern</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog :model-value="!!deadlinePickerTarget" persistent max-width="440" scrollable>
+            <v-card>
+                <form @submit.prevent="confirmDeadlinePicker">
+                    <v-card-title>Schlussfrist auswählen</v-card-title>
+                    <v-card-text class="mc-deadline-dialog">
+                        <v-date-picker v-model="deadlinePickerDate" :min="deadlinePickerMinimum" color="primary" hide-header :first-day-of-week="1" aria-label="Datum der Schlussfrist" />
+                        <v-text-field v-model="deadlinePickerTime" type="time" step="60" label="Uhrzeit der Schlussfrist" variant="outlined" hide-details class="mt-3" />
+                        <p class="text-body-2 mt-3" aria-live="polite">{{ deadlinePickerValue ? dateLabel(deadlinePickerValue) : 'Bitte Datum und Uhrzeit wählen.' }}</p>
+                        <p v-if="deadlinePickerValue && !deadlinePickerValid" class="text-body-2 text-error mt-2">Die Schlussfrist muss in der Zukunft liegen.</p>
                     </v-card-text>
-                </v-card>
-            </section>
-        </template>
-
+                    <v-card-actions><v-btn type="button" @click="deadlinePickerTarget = null">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" variant="flat" :disabled="!deadlinePickerValid">OK</v-btn></v-card-actions>
+                </form>
+            </v-card>
+        </v-dialog>
+        <v-dialog :model-value="!!deletionTarget" persistent max-width="520">
+            <v-card>
+                <v-card-title>{{ deletionTarget?.kind === 'catalog' ? 'Fragenkatalog' : 'Test' }} dauerhaft löschen?</v-card-title>
+                <v-card-text>
+                    <p><strong>{{ deletionTarget?.title }}</strong></p>
+                    <p class="mt-3" v-if="deletionTarget?.kind === 'catalog'">Der Fragenkatalog und seine {{ deletionTarget.testIds.length }} zugehörigen Tests aus allen Schuljahren werden einschließlich aller Abgaben und Ergebnisse dauerhaft gelöscht.</p>
+                    <p class="mt-3" v-else>Dieser Test wird einschließlich aller persönlichen Zugangslinks, Abgaben und Ergebnisse dauerhaft gelöscht. Der Fragenkatalog bleibt erhalten.</p>
+                    <v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert>
+                </v-card-text>
+                <v-card-actions><v-btn :disabled="!!busy" @click="deletionTarget = null">Abbrechen</v-btn><v-spacer /><v-btn color="error" :loading="busy === 'delete'" :disabled="!!busy" @click="confirmDeletion">Dauerhaft löschen</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog :model-value="!!testRenameTarget" persistent max-width="500" aria-labelledby="mc-rename-test-title">
+            <v-card>
+                <form @submit.prevent="saveTestTitle">
+                    <v-card-title id="mc-rename-test-title">Test umbenennen</v-card-title>
+                    <v-card-text>
+                        <v-text-field v-model="testTitleDraft" label="Neue Testbezeichnung" :error-messages="testTitleError" :disabled="!!busy" autofocus maxlength="255" />
+                        <v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert>
+                    </v-card-text>
+                    <v-card-actions><v-btn :disabled="!!busy" @click="testRenameTarget = null">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" :loading="busy === 'rename-test'" :disabled="!!busy">Speichern</v-btn></v-card-actions>
+                </form>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="remainingTimeDialog" persistent max-width="500">
+            <v-card>
+                <form @submit.prevent="saveRemainingTime">
+                    <v-card-title>Restzeit für alle ändern</v-card-title>
+                    <v-card-text>
+                        <p class="mb-3">Die neue Restzeit gilt ab dem Speichern für alle. Bereits abgegebene Versuche bleiben abgeschlossen.</p>
+                        <v-text-field v-model="remainingMinutes" type="number" min="0" max="1440" step="1" label="Verbleibende Minuten" :disabled="!!busy" />
+                        <v-text-field v-model="remainingSeconds" type="number" min="0" max="59" step="1" label="Zusätzliche Sekunden" :disabled="!!busy" />
+                        <p v-if="!validRemainingTime" role="alert">Bitte eine Restzeit zwischen einer Sekunde und 24 Stunden eingeben.</p>
+                        <v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert>
+                    </v-card-text>
+                    <v-card-actions><v-btn :disabled="!!busy" @click="remainingTimeDialog = false">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" :disabled="!!busy || !validRemainingTime" :loading="busy === 'remaining-time'">Restzeit übernehmen</v-btn></v-card-actions>
+                </form>
+            </v-card>
+        </v-dialog>
+        <v-dialog :model-value="!!deadlineTarget" max-width="540" @update:model-value="deadlineTarget = null">
+            <v-card v-if="deadlineTarget">
+                <form @submit.prevent="saveClosingDeadline(false)">
+                    <v-card-title>Persönliche Schlussfrist</v-card-title>
+                    <v-card-text>
+                        <p class="mb-3">{{ deadlineTarget.student_name }}</p>
+                        <p class="text-body-2 mb-3">Für alle: {{ dateLabel(selectedTest.closes_at) }}. Eine Ausnahme gilt nur für diese Person. Eine laufende Bearbeitungsdauer wird dadurch nicht neu gestartet; abgeschlossene Abgaben bleiben geschlossen.</p>
+                        <v-text-field v-model="deadlineDraft" type="datetime-local" label="Persönliche Schlussfrist" :disabled="!!busy" />
+                    </v-card-text>
+                    <v-card-actions><v-btn :disabled="!!busy" @click="deadlineTarget = null">Abbrechen</v-btn><v-btn :disabled="!!busy || !deadlineTarget.closes_at" @click="saveClosingDeadline(true)">Frist für alle übernehmen</v-btn><v-spacer /><v-btn type="submit" color="primary" :disabled="!!busy || !validDeadline">Speichern</v-btn></v-card-actions>
+                </form>
+            </v-card>
+        </v-dialog>
+        <v-dialog :model-value="!!copyFallback" max-width="620" @update:model-value="copyFallback = null">
+            <v-card v-if="copyFallback"><v-card-title>Zugangslink kopieren</v-card-title><v-card-text><p class="mb-3">Der Browser erlaubt kein automatisches Kopieren. Markiere den Link und kopiere ihn.</p><v-text-field :model-value="copyFallback.access_url" readonly label="Persönlicher Zugangslink" @focus="$event.target.select()" /></v-card-text><v-card-actions><v-btn @click="copyFallback = null">Schließen</v-btn></v-card-actions></v-card>
+        </v-dialog>
+        <v-dialog :model-value="reopenTargets.length > 0" persistent max-width="560" @update:model-value="reopenTargets = []">
+            <v-card><form @submit.prevent="savePersonalReopen">
+                <v-card-title>Ausgewählte Tests wieder öffnen?</v-card-title>
+                <v-card-text>
+                    <p class="mb-2">{{ reopenTargets.length }} ausgewählte Person{{ reopenTargets.length === 1 ? '' : 'en' }}:</p>
+                    <ul class="mb-3 ml-5" style="max-height: 180px; overflow-y: auto;"><li v-for="person in reopenTargets" :key="person.id">{{ person.student_name }}</li></ul>
+                    <p class="mb-3">Die Zusatzzeit gilt ab dem Bestätigen ausschließlich für die markierten Personen. Die bisherigen Fragen und gespeicherten Antworten bleiben erhalten. Nicht ausgewählte Abgaben werden nicht verändert.</p>
+                    <p class="mb-3">Bei bereits laufender Zusatzzeit wird die verbleibende Zeit neu gesetzt. Nach erneuter Abgabe oder Zeitablauf wird die Bewertung neu berechnet; der bisherige Stand bleibt im Verlauf gespeichert.</p>
+                    <v-alert v-if="selectedTest?.solutions_released_at" type="warning" variant="tonal" class="mb-3">Die Musterlösungen waren bereits freigegeben. Die ausgewählten Personen könnten sie schon gesehen haben.</v-alert>
+                    <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mb-3">Die persönliche Schlussfrist bleibt verbindlich. Falls nötig, verlängere sie vor dem Wiederöffnen mit dem Stift in der Schülerliste.</p>
+                    <v-text-field v-model="reopenMinutes" type="number" min="0" max="1440" step="1" label="Persönliche Zusatzzeit in Minuten" :disabled="!!busy" />
+                    <v-text-field v-model="reopenSeconds" type="number" min="0" max="59" step="1" label="Persönliche zusätzliche Sekunden" :disabled="!!busy" />
+                    <p v-if="!validReopenTime" role="alert">Bitte eine Zusatzzeit zwischen einer Sekunde und 24 Stunden eingeben.</p>
+                    <v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert>
+                </v-card-text>
+                <v-card-actions><v-btn :disabled="!!busy" @click="reopenTargets = []">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" :disabled="!!busy || !validReopenTime" :loading="busy === 'reopen-attempt'">Zusatzzeit freigeben</v-btn></v-card-actions>
+            </form></v-card>
+        </v-dialog>
+        <v-dialog v-model="closeTestDialog" persistent max-width="500">
+            <v-card>
+                <v-card-title>Laufenden Test jetzt schließen?</v-card-title>
+                <v-card-text>Alle offenen Versuche werden mit den bisher gespeicherten Antworten abgeschlossen und bewertet. Danach sind keine weiteren Antworten möglich.<v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert></v-card-text>
+                <v-card-actions><v-btn :disabled="!!busy" @click="closeTestDialog = false">Abbrechen</v-btn><v-spacer /><v-btn color="error" :disabled="!!busy" :loading="busy === 'close-test'" @click="finishTestEarly">Jetzt schließen</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog v-model="newCatalogDialog" persistent max-width="500" aria-labelledby="mc-new-catalog-title">
             <v-card>
                 <form @submit.prevent="confirmNewCatalog">
@@ -490,9 +727,10 @@
                         <dt>Teilnehmer</dt><dd>{{ rosterMatchedCount }} eindeutig zugeordnet</dd>
                         <dt>Pro Person</dt><dd>{{ testDraft.question_count }} Fragen · {{ testDraft.total_points }} Punkte</dd>
                         <dt>Bearbeitungszeit</dt><dd>{{ testDraft.duration_minutes }} Minuten</dd>
-                        <dt>Countdown</dt><dd>{{ testDraft.lead_seconds }} Sekunden</dd>
+                        <dt>Start</dt><dd>{{ testDraft.start_mode === 'individual' ? 'Selbstständig, einmal pro Person' : `Countdown: ${testDraft.lead_seconds} Sekunden` }}</dd>
+                        <template v-if="testDraft.start_mode === 'individual'"><dt>Schlussfrist für alle</dt><dd>{{ dateLabel(testDraft.closes_at) }}</dd></template>
                     </dl>
-                    <p class="mt-4">Die persönliche Zuteilung bleibt danach unverändert. Den Countdown startest du separat; E-Mails werden noch nicht versandt.</p>
+                    <p class="mt-4">Die persönliche Zuteilung bleibt danach unverändert. {{ testDraft.start_mode === 'individual' ? 'Die Personen können bis zur Schlussfrist selbst starten.' : 'Den Countdown startest du separat.' }} E-Mails werden noch nicht versandt.</p>
                 </v-card-text>
                 <v-card-actions>
                     <v-btn @click="publishDialog = false">Zurück</v-btn>
@@ -520,7 +758,7 @@
         <v-dialog v-model="mailDialog" max-width="520">
             <v-card>
                 <v-card-title>Einladungen jetzt senden?</v-card-title>
-                <v-card-text>Es werden {{ unsentInvitationCount }} echte E-Mails an die Personen in der
+                <v-card-text>Es werden {{ unsentInvitationCount }} echte E-Mails ausschließlich an die markierten Personen in der
                     Empfängervorschau gesendet. Jede Einladung enthält ausschließlich den persönlichen Zugang zu diesem
                     Test.</v-card-text>
                 <v-card-actions>
@@ -531,12 +769,27 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+        <v-dialog :model-value="!!revokeMode" max-width="520" persistent @update:model-value="revokeMode = null">
+            <v-card>
+                <v-card-title>{{ revokeMode === 'solutions' ? 'Lösungen wieder verbergen?' : 'Ergebnisse wieder verbergen?' }}</v-card-title>
+                <v-card-text>{{ revokeMode === 'solutions'
+                    ? 'Die richtigen Antworten und die Frageauswertung werden für Schüler wieder verborgen. Ihre Punkte bleiben sichtbar.'
+                    : 'Die Punkte und die Lösungen werden für Schüler wieder verborgen.' }}
+                    Bewertungen und gespeicherte Antworten bleiben erhalten. Die Freigabe ist später erneut möglich.</v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="!!busy" @click="revokeMode = null">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" :loading="busy === 'revoke'" :disabled="!!busy" @click="revoke">Freigabe zurücknehmen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog :model-value="!!releaseMode" max-width="520" @update:model-value="releaseMode = null">
             <v-card>
-                <v-card-title>{{ releaseMode === 'solutions' ? 'Ergebnisse und Lösungen freigeben?' : 'Ergebnisse freigeben?' }}</v-card-title>
-                <v-card-text>Schüler können danach ihre eigenen
-                    Punkte{{ releaseMode === 'solutions' ? ' und die richtigen Antworten' : '' }} ansehen. Es erfolgt
-                    keine Übernahme in andere Leistungsbeurteilungen.</v-card-text>
+                <v-card-title>{{ releaseMode === 'solutions' ? 'Lösungen freigeben?' : 'Ergebnisse freigeben?' }}</v-card-title>
+                <v-card-text>{{ releaseMode === 'solutions'
+                    ? 'Schüler können danach die richtigen Antworten und ihre Frageauswertung ansehen.'
+                    : 'Schüler können danach ihre Punkte und Prozente sehen. Die Musterlösungen bleiben verborgen.' }}
+                    Es erfolgt keine Übernahme in andere Leistungsbeurteilungen.</v-card-text>
                 <v-card-actions>
                     <v-btn @click="releaseMode = null">Zurück</v-btn>
                     <v-spacer />
@@ -569,12 +822,26 @@ import {
     rosterPreview,
     createTest,
     showTest,
+    renameTest,
+    deleteTest,
+    deleteCatalog,
+    closeTest,
+    pauseTest,
+    resumeTest,
+    setExamMode,
+    updateTestSettings,
+    setAccessLinks,
+    changeRemainingTime,
+    reopenAttempts,
+    changeClosingDeadline,
     countdown,
     invitations,
     sendInvitations,
-    releaseResults
+    releaseResults,
+    revokeRelease
 } from '@/actions/App/Http/Controllers/Admin/MultipleChoiceController'
 import QuestionEditor from './QuestionEditor.vue'
+import McQuestionReview from '@/components/McQuestionReview.vue'
 import {
     messageText,
     detectImportFormat,
@@ -593,6 +860,10 @@ const workspacePath = route.path
 const section = ref('catalogs')
 const catalogs = ref([])
 const tests = ref([])
+const unassignedTests = ref([])
+const selectedSchoolyear = ref(null)
+const showUnassignedTests = ref(false)
+const schoolyearLabel = computed(() => selectedSchoolyear.value?.name || (selectedSchoolyear.value?.from ? `${new Date(selectedSchoolyear.value.from).getFullYear()}/${new Date(selectedSchoolyear.value.until).getFullYear()}` : 'ausgewähltes Schuljahr'))
 const available = ref(true)
 const unavailableMessage = ref('')
 const loading = ref(false)
@@ -647,6 +918,10 @@ const rosterFileError = ref('')
 let rosterSourceFile = null
 let rosterReadSequence = 0
 const roster = ref(null)
+const startModes = [
+    { value: 'common', title: 'Gemeinsam starten', description: 'Die Lehrkraft startet den Countdown.' },
+    { value: 'individual', title: 'Selbstständig starten', description: 'Jede Person startet ihre eigene Bearbeitungszeit.' },
+]
 const defaultTestDraft = {
     title: '',
     catalog_id: null,
@@ -654,6 +929,9 @@ const defaultTestDraft = {
     total_points: 10,
     duration_minutes: 20,
     lead_seconds: 60,
+    exam_mode: false,
+    start_mode: 'common',
+    closes_at: '',
     balance_types: true,
     shuffle_questions: true,
     shuffle_options: true
@@ -664,12 +942,75 @@ const preparingTest = ref(false)
 const selectedTest = ref(null)
 const attempts = ref([])
 const expandedAttempt = ref(null)
+const activityExpandedAttempt = ref(null)
+const tableColumnCount = computed(() => 7 + (reopenSelectionEnabled.value ? 1 : 0) + (showActivity.value ? 1 : 0))
+const invitationAddressForm = ref('sie')
 const invitationPreview = ref(null)
+const selectedInvitationIds = ref([])
+const invitationRecipientId = ref(null)
+const invitationRecipient = computed(() => invitationPreview.value?.recipients?.find((recipient) => recipient.attempt_id === invitationRecipientId.value) ?? invitationPreview.value?.recipients?.[0])
+const invitationRecipientHtml = computed(() => {
+    const recipient = invitationRecipient.value
+    if (!recipient || typeof recipient.body !== 'string') return recipient?.html ?? ''
+    const escape = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')
+    const body = recipient.body.replace(/\r\n|\r/g, '\n').trim().split(/\n\s*\n/)
+        .map(paragraph => `<p>${escape(paragraph).replace(/\n/g, '<br>')}</p>`).join('')
+    return recipient.html.replace(/<div data-mc-message="true">[\s\S]*?<\/div>/, () => `<div data-mc-message="true">${body}</div>`)
+})
+const availableInvitationRecipients = computed(() => (invitationPreview.value?.recipients ?? []).filter((recipient) => !recipient.invited_at))
+const allInvitationsSelected = computed(() => availableInvitationRecipients.value.length > 0 && availableInvitationRecipients.value.every((recipient) => selectedInvitationIds.value.includes(recipient.attempt_id)))
+const deletionTarget = ref(null)
+const testRenameTarget = ref(null)
+const testTitleDraft = ref('')
+const testTitleError = ref('')
+const testSettingsDialog = ref(false)
+const canEditTestSettings = ref(false)
+const settingsPoolCount = ref(0)
+const settingsDraft = reactive({ ...defaultTestDraft })
+const settingsError = ref('')
+const invitationDialog = ref(false)
+const showActivity = computed(() => Boolean(selectedTest.value?.exam_mode || attempts.value.some(person => person.activity)))
+const closeTestDialog = ref(false)
+const remainingTimeDialog = ref(false)
+const canReopenAttempts = ref(false)
+const reopenTargets = ref([])
+const selectedReopenIds = ref([])
+const reopenSelectionEnabled = computed(() => (testEnded.value || selectedTest.value?.start_mode === 'individual') && canReopenAttempts.value)
+const selectedReopenAttempts = computed(() => attempts.value.filter(attempt => selectedReopenIds.value.includes(attempt.id)))
+const eligibleReopenAttempts = computed(() => attempts.value.filter(canSelectReopen))
+const allReopenSelected = computed(() => eligibleReopenAttempts.value.length > 0 && eligibleReopenAttempts.value.every(person => selectedReopenIds.value.includes(person.id)))
+const reopenMinutes = ref(5)
+const reopenSeconds = ref(0)
+const reopenTimeValue = computed(() => Number(reopenMinutes.value) * 60 + Number(reopenSeconds.value))
+const validReopenTime = computed(() => Number.isInteger(Number(reopenMinutes.value)) && Number(reopenMinutes.value) >= 0 && Number.isInteger(Number(reopenSeconds.value)) && Number(reopenSeconds.value) >= 0 && Number(reopenSeconds.value) < 60 && reopenTimeValue.value > 0 && reopenTimeValue.value <= 86400)
+const hasPersonalRunningAttempts = computed(() => attempts.value.some(personalAttemptRunning))
+const deadlineTarget = ref(null)
+const deadlineDraft = ref('')
+const copyFallback = ref(null)
+const deadlinePickerTarget = ref(null)
+const deadlinePickerDate = ref(null)
+const deadlinePickerTime = ref('18:00')
+const deadlinePickerMinimum = computed(() => localDateTime(serverNow.value).slice(0, 10))
+const deadlinePickerValue = computed(() => {
+    const date = deadlinePickerDate.value
+    if (!(date instanceof Date) || !Number.isFinite(date.getTime()) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(deadlinePickerTime.value)) return ''
+    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return `${day}T${deadlinePickerTime.value}`
+})
+const deadlinePickerValid = computed(() => Boolean(deadlinePickerValue.value && Date.parse(deadlinePickerValue.value) > serverNow.value))
+const validDeadline = computed(() => Number.isFinite(Date.parse(deadlineDraft.value)) && Date.parse(deadlineDraft.value) > serverNow.value)
+const remainingMinutes = ref(0)
+const remainingSeconds = ref(0)
+const remainingTimeValue = computed(() => Number(remainingMinutes.value) * 60 + Number(remainingSeconds.value))
+const validRemainingTime = computed(() => Number.isInteger(Number(remainingMinutes.value)) && Number(remainingMinutes.value) >= 0 && Number.isInteger(Number(remainingSeconds.value)) && Number(remainingSeconds.value) >= 0 && Number(remainingSeconds.value) < 60 && remainingTimeValue.value > 0 && remainingTimeValue.value <= 86400)
+const canPauseTest = computed(() => Boolean(selectedTest.value && !selectedTest.value.paused_at && (!testEnded.value || hasPersonalRunningAttempts.value) && (selectedTest.value.start_mode === 'individual' || selectedTest.value.starts_at)))
+const testRunning = computed(() => Boolean(!selectedTest.value?.paused_at && selectedTest.value?.start_mode !== 'individual' && selectedTest.value?.starts_at && Date.parse(selectedTest.value.starts_at) <= serverNow.value && !testEnded.value))
 const monitorError = ref('')
 const publishDialog = ref(false)
 const startDialog = ref(false)
 const mailDialog = ref(false)
 const releaseMode = ref(null)
+const revokeMode = ref(null)
 const serverOffset = ref(0)
 const now = ref(Date.now())
 let pollInterval = null
@@ -681,7 +1022,7 @@ let pendingNavigation = null
 let discardNavigationAllowed = false
 
 const catalogReadyCount = computed(() => readyQuestions(catalog.value.questions).length)
-const catalogTests = computed(() => tests.value.filter((item) => String(item.catalog_id) === String(catalog.value.id)))
+const catalogTests = computed(() => (showUnassignedTests.value ? unassignedTests.value : tests.value).filter((item) => String(item.catalog_id) === String(catalog.value.id)))
 const catalogQuestionsChanged = computed(() => {
     const saved = catalogs.value.find((item) => item.id === catalog.value.id)
     return Boolean(saved && JSON.stringify(saved.questions) !== JSON.stringify(catalog.value.questions))
@@ -706,7 +1047,7 @@ const nextStepHint = computed(() => {
         return 'Sieh dir die Ergebnisse dieses Tests an und gib Punkte oder Lösungen bewusst für die Schüler frei.'
     }
     if (preparingTest.value) {
-        return 'Lege Umfang und Zeit für diesen Katalog fest und prüfe die Schülerliste. Mit der Freigabe öffnet sich der Warteraum.'
+        return testDraft.start_mode === 'individual' ? 'Lege Bearbeitungsdauer und Schlussfrist fest und prüfe die Schülerliste. Nach der Freigabe kann jede Person selbst starten.' : 'Lege Umfang und Zeit für diesen Katalog fest und prüfe die Schülerliste. Mit der Freigabe öffnet sich der Warteraum.'
     }
     if (!selectedTestId.value) {
         return 'Öffne einen Test dieses Katalogs oder bereite einen neuen Test vor. Die Ergebnisse findest du im jeweiligen Test.'
@@ -714,8 +1055,14 @@ const nextStepHint = computed(() => {
     if (!selectedTest.value) {
         return 'Der gewählte Test wird geladen.'
     }
+    if (selectedTest.value.start_mode === 'individual') {
+        return 'Die Personen starten selbst. Die Zeit läuft ab dem einmaligen Start ohne Pause. Persönliche Schlussfristen passt du mit dem Stift in der Schülerliste an.'
+    }
+    if (hasPersonalRunningAttempts.value) {
+        return 'Die gemeinsame Bearbeitungszeit ist beendet. Einzelne Personen arbeiten mit ihrer persönlichen Zusatzzeit weiter; du steuerst diese direkt in der jeweiligen Schülerzeile.'
+    }
     if (testEnded.value) {
-        return 'Die Bearbeitungszeit ist beendet. Unter „Ergebnisse“ findest du Punkte und die Auswertung jeder Frage.'
+        return 'Die Bearbeitungszeit ist beendet. Punkte und die Auswertung jeder Frage findest du direkt in der Schülerliste.'
     }
     return selectedTest.value.starts_at
         ? 'Der gemeinsame Start steht fest. Behalte hier die Teilnahme im Blick; alle haben dieselbe Endzeit.'
@@ -728,19 +1075,26 @@ const canPublish = computed(() => Boolean(testDraft.title.trim() && testDraft.ca
         testDraft.question_count)) && testDraft.question_count > 0 && testDraft.question_count <=
     selectedCatalogReadyCount.value && Number(testDraft.total_points) > 0 && Number(testDraft
     .duration_minutes) >= 1 && Number.isInteger(Number(testDraft.lead_seconds)) && Number(testDraft
-        .lead_seconds) >= 0 && roster.value?.valid && rosterMatchedCount.value > 0))
-const unsentInvitationCount = computed(() => (invitationPreview.value?.recipients ?? []).filter((recipient) => !
-    recipient.invited_at).length)
-const serverNow = computed(() => now.value + serverOffset.value)
-const testEnded = computed(() => Boolean(selectedTest.value?.ends_at && Date.parse(selectedTest.value.ends_at) <=
-    serverNow.value))
+        .lead_seconds) >= 0 && (testDraft.start_mode !== 'individual' || (Number.isFinite(Date.parse(testDraft.closes_at)) && Date.parse(testDraft.closes_at) > serverNow.value)) && roster.value?.valid && rosterMatchedCount.value > 0))
+const unsentInvitationCount = computed(() => availableInvitationRecipients.value.filter((recipient) => selectedInvitationIds.value.includes(recipient.attempt_id)).length)
+const serverNow = computed(() => selectedTest.value?.paused_at ? Date.parse(selectedTest.value.paused_at) : now.value + serverOffset.value)
+const testEnded = computed(() => selectedTest.value?.start_mode === 'individual'
+    ? attempts.value.length > 0 && attempts.value.every(person => person.completed_at || (person.effective_ends_at && Date.parse(person.effective_ends_at) <= serverNow.value))
+    : Boolean(selectedTest.value?.ends_at && Date.parse(selectedTest.value.ends_at) <= serverNow.value))
 const testPhase = computed(() => {
     const test = selectedTest.value
+    if (test?.paused_at) return { label: 'Test pausiert', color: 'warning' }
+    if (test?.start_mode === 'individual') {
+        return { label: testEnded.value ? 'Bearbeitungszeit beendet' : 'Selbstständiger Start möglich', color: testEnded.value ? 'secondary' : 'success' }
+    }
     if (!test?.starts_at) {
         return {
             label: 'Warteraum geöffnet',
             color: 'info'
         }
+    }
+    if (hasPersonalRunningAttempts.value) {
+        return { label: 'Persönliche Zusatzzeit läuft', color: 'success' }
     }
     if (testEnded.value) {
         return {
@@ -817,6 +1171,9 @@ async function loadIndex() {
         unavailableMessage.value = data.message ?? ''
         catalogs.value = data.catalogs ?? []
         tests.value = data.tests ?? []
+        unassignedTests.value = data.unassigned_tests ?? []
+        selectedSchoolyear.value = data.schoolyear ?? null
+        if (!unassignedTests.value.some(test => test.catalog_id === catalog.value.id)) showUnassignedTests.value = false
         indexLoaded = true
         if (available.value) {
             await restoreLocation()
@@ -879,7 +1236,7 @@ function navigationLocation(view, catalogId = catalog.value.id, testId = selecte
         if (['test', 'results'].includes(view)) {
             query.test = String(testId)
         }
-        if (view === 'results' && attemptId) {
+        if (['test', 'results'].includes(view) && attemptId) {
             query.attempt = String(attemptId)
         }
     }
@@ -927,7 +1284,7 @@ async function restoreLocation() {
     }
     showImport.value = view === 'import'
     preparingTest.value = view === 'new-test'
-    section.value = ['catalog', 'import'].includes(view) ? 'catalogs' : view === 'results' ? 'results' : 'tests'
+    section.value = ['catalog', 'import'].includes(view) ? 'catalogs' : 'tests'
     if (view === 'new-test') {
         if (!canPrepareCatalog.value) {
             await unavailableLocation('tests', catalogId, 'Prüfe und speichere zuerst die Fragen im Katalog, bevor du einen neuen Test anlegst.')
@@ -937,6 +1294,7 @@ async function restoreLocation() {
     }
     if (['test', 'results'].includes(view)) {
         const testId = queryId(route.query.test)
+        showUnassignedTests.value = unassignedTests.value.some(test => test.id === testId)
         if (!catalogTests.value.some((item) => item.id === testId)) {
             clearSelectedTest()
             await unavailableLocation('tests', catalogId, 'Der Test wurde nicht gefunden oder gehört nicht zu diesem Katalog.')
@@ -947,7 +1305,7 @@ async function restoreLocation() {
         }
         if (route.fullPath === location) {
             const attemptId = queryId(route.query.attempt)
-            expandedAttempt.value = view === 'results' && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
+            expandedAttempt.value = ['test', 'results'].includes(view) && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
         }
     } else {
         clearSelectedTest()
@@ -1008,6 +1366,12 @@ function leaveCatalog() {
 function clearSelectedTest() {
     selectedTestId.value = null
     selectedTest.value = null
+    canEditTestSettings.value = false
+    testSettingsDialog.value = false
+    invitationDialog.value = false
+    canReopenAttempts.value = false
+    reopenTargets.value = []
+    selectedReopenIds.value = []
     attempts.value = []
     invitationPreview.value = null
     expandedAttempt.value = null
@@ -1015,6 +1379,7 @@ function clearSelectedTest() {
     startDialog.value = false
     mailDialog.value = false
     releaseMode.value = null
+    revokeMode.value = null
 }
 
 function showCatalogTests() {
@@ -1025,6 +1390,7 @@ function prepareCatalogTest() {
     if (!canPrepareCatalog.value) {
         return
     }
+    showUnassignedTests.value = false
     return navigateTo('new-test')
 }
 
@@ -1051,7 +1417,7 @@ function cancelNewTest() {
 }
 
 function toggleAttempt(id) {
-    return navigateTo('results', catalog.value.id, selectedTestId.value, expandedAttempt.value === id ? null : id)
+    return navigateTo('test', catalog.value.id, selectedTestId.value, expandedAttempt.value === id ? null : id)
 }
 
 function startCatalogRename() {
@@ -1320,6 +1686,7 @@ async function publishTest() {
             data
         } = await axios.post(createTest.url(), {
             ...settings,
+            closes_at: settings.start_mode === 'individual' ? new Date(settings.closes_at).toISOString() : null,
             duration_seconds: Math.round(Number(durationMinutes) * 60),
             roster_csv: rosterCsv.value
         })
@@ -1329,7 +1696,7 @@ async function publishTest() {
             await selectTest(data.test.id)
         }
         notice.value =
-            'Test freigegeben. Die Schüler können den Warteraum öffnen; du startest den Countdown.'
+            data.test?.start_mode === 'individual' ? 'Test freigegeben. Jede Person kann einmal selbst starten, spätestens bis zu ihrer Schlussfrist.' : 'Test freigegeben. Die Schüler können den Warteraum öffnen; du startest den Countdown.'
     })
 }
 
@@ -1344,6 +1711,12 @@ async function loadSelectedTest(id) {
     preparingTest.value = false
     selectedTestId.value = id
     selectedTest.value = null
+    canEditTestSettings.value = false
+    testSettingsDialog.value = false
+    invitationDialog.value = false
+    canReopenAttempts.value = false
+    reopenTargets.value = []
+    selectedReopenIds.value = []
     monitorError.value = ''
     attempts.value = []
     invitationPreview.value = null
@@ -1351,6 +1724,7 @@ async function loadSelectedTest(id) {
     startDialog.value = false
     mailDialog.value = false
     releaseMode.value = null
+    revokeMode.value = null
     await refreshMonitor()
 }
 
@@ -1369,8 +1743,12 @@ async function refreshMonitor() {
         }
         selectedTest.value = data.test
         attempts.value = data.attempts ?? []
+        selectedReopenIds.value = selectedReopenIds.value.filter(id => attempts.value.some(attempt => attempt.id === id))
+        canReopenAttempts.value = Boolean(data.can_reopen_attempts)
+        canEditTestSettings.value = Boolean(data.can_edit_settings)
+        settingsPoolCount.value = data.question_pool_count ?? data.test.question_count
         const attemptId = queryId(route.query.attempt)
-        expandedAttempt.value = route.query.view === 'results' && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
+        expandedAttempt.value = ['test', 'results'].includes(route.query.view) && attempts.value.some((item) => item.id === attemptId && isScored(item)) ? attemptId : null
         if (data.server_now) {
             serverOffset.value = Date.parse(data.server_now) - Date.now()
         }
@@ -1395,25 +1773,56 @@ async function startCountdown() {
     })
 }
 
+function resetInvitationPreview() {
+    invitationPreview.value = null
+    selectedInvitationIds.value = []
+    invitationRecipientId.value = null
+    mailDialog.value = false
+}
+
 async function previewInvitations() {
     await task('invitations', async () => {
         const {
             data
-        } = await axios.get(invitations.url(selectedTestId.value))
+        } = await axios.get(invitations.url(selectedTestId.value), { params: { address_form: invitationAddressForm.value } })
         invitationPreview.value = data
+        selectedInvitationIds.value = []
+        invitationRecipientId.value = null
     })
+}
+
+function editedInvitationMessages() {
+    const messages = (invitationPreview.value?.recipients ?? [])
+        .filter(recipient => selectedInvitationIds.value.includes(recipient.attempt_id) && typeof recipient.subject === 'string' && typeof recipient.body === 'string')
+        .map(recipient => ({ attempt_id: recipient.attempt_id, subject: recipient.subject, body: recipient.body }))
+    return messages.length ? { messages } : {}
 }
 
 async function sendMail() {
     await task('mail', async () => {
         const {
             data
-        } = await axios.post(sendInvitations.url(selectedTestId.value))
+        } = await axios.post(sendInvitations.url(selectedTestId.value), {
+            attempt_ids: [...selectedInvitationIds.value],
+            address_form: invitationPreview.value?.address_form ?? invitationAddressForm.value,
+            ...editedInvitationMessages(),
+        })
         mailDialog.value = false
-        const preview = await axios.get(invitations.url(selectedTestId.value))
+        const preview = await axios.get(invitations.url(selectedTestId.value), { params: { address_form: invitationAddressForm.value } })
         invitationPreview.value = preview.data
+        selectedInvitationIds.value = []
         notice.value =
             `${data.sent ?? 0} Einladungen versandt; ${data.skipped ?? 0} bereits versandte Einladungen übersprungen.`
+    })
+}
+
+async function revoke() {
+    await task('revoke', async () => {
+        const scope = revokeMode.value
+        await axios.delete(revokeRelease.url(selectedTestId.value), { data: { scope } })
+        revokeMode.value = null
+        await refreshMonitor()
+        notice.value = scope === 'solutions' ? 'Lösungen sind wieder verborgen. Punkte bleiben sichtbar.' : 'Ergebnisse und Lösungen sind wieder verborgen.'
     })
 }
 
@@ -1425,8 +1834,281 @@ async function release() {
         })
         releaseMode.value = null
         await refreshMonitor()
-        notice.value = solutions ? 'Ergebnisse und Lösungen freigegeben.' : 'Ergebnisse freigegeben.'
+        notice.value = solutions ? 'Lösungen freigegeben.' : 'Ergebnisse freigegeben.'
     })
+}
+
+function openDeletion(kind, item) {
+    deletionTarget.value = { kind, id: item.id, title: item.title, testIds: item.test_ids ?? [...tests.value, ...unassignedTests.value].filter((test) => test.catalog_id === item.id).map((test) => test.id) }
+    error.value = ''
+}
+
+async function confirmDeletion() {
+    await task('delete', async () => {
+        const target = deletionTarget.value
+        if (target.kind === 'catalog') {
+            await axios.delete(deleteCatalog.url(target.id), { data: { test_ids: target.testIds } })
+            deletionTarget.value = null
+            catalogEditing.value = false
+            editingQuestions.value = false
+            discardNavigationAllowed = true
+            await loadIndex()
+            await navigateTo('catalogs')
+        } else {
+            await axios.delete(deleteTest.url(target.id))
+            deletionTarget.value = null
+            clearSelectedTest()
+            await loadIndex()
+            await navigateTo('tests')
+        }
+        notice.value = 'Gelöscht.'
+    })
+}
+
+function openTestRename(test) {
+    testRenameTarget.value = { id: test.id }
+    testTitleDraft.value = test.title
+    testTitleError.value = ''
+    error.value = ''
+}
+
+async function saveTestTitle() {
+    const title = testTitleDraft.value.trim()
+    if (!title || title.length > 255) {
+        testTitleError.value = 'Bitte eine Bezeichnung mit höchstens 255 Zeichen eingeben.'
+        return
+    }
+    await task('rename-test', async () => {
+        const id = testRenameTarget.value.id
+        const { data } = await axios.patch(renameTest.url(id), { title })
+        tests.value = tests.value.map((test) => test.id === id ? { ...test, title: data.test.title } : test)
+        if (selectedTest.value?.id === id) {
+            selectedTest.value = { ...selectedTest.value, title: data.test.title }
+            invitationPreview.value = null
+        }
+        testRenameTarget.value = null
+        notice.value = 'Testbezeichnung gespeichert.'
+    })
+}
+
+function selectInvitation(id, checked) {
+    selectedInvitationIds.value = checked ? [...new Set([...selectedInvitationIds.value, id])] : selectedInvitationIds.value.filter((item) => item !== id)
+}
+
+function selectAllInvitations(checked) {
+    selectedInvitationIds.value = checked ? availableInvitationRecipients.value.map((recipient) => recipient.attempt_id) : []
+}
+
+function openDeadlinePicker(target) {
+    if (busy.value || (target === 'settings' && !canEditTestSettings.value)) return
+    const saved = target === 'settings' ? settingsDraft.closes_at : testDraft.closes_at
+    let date = saved ? new Date(saved) : null
+    if (!date || !Number.isFinite(date.getTime())) {
+        date = new Date(serverNow.value)
+        date.setDate(date.getDate() + 1)
+        date.setHours(18, 0, 0, 0)
+    }
+    deadlinePickerDate.value = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    deadlinePickerTime.value = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    deadlinePickerTarget.value = target
+}
+
+function confirmDeadlinePicker() {
+    if (!deadlinePickerValid.value || busy.value) return
+    if (deadlinePickerTarget.value === 'new') testDraft.closes_at = deadlinePickerValue.value
+    else if (deadlinePickerTarget.value === 'settings' && canEditTestSettings.value) settingsDraft.closes_at = deadlinePickerValue.value
+    deadlinePickerTarget.value = null
+}
+
+function localDateTime(value) {
+    if (!value) return ''
+    const date = new Date(value)
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+}
+
+function openClosingDeadline(attempt) {
+    deadlineTarget.value = { ...attempt }
+    deadlineDraft.value = localDateTime(attempt.closing_deadline || selectedTest.value.closes_at)
+}
+
+async function saveClosingDeadline(reset) {
+    if (!deadlineTarget.value || (!reset && !validDeadline.value)) return
+    await task('closing-deadline', async () => {
+        await axios.patch(changeClosingDeadline.url({ test: selectedTestId.value, attempt: deadlineTarget.value.id }), { closes_at: reset ? null : new Date(deadlineDraft.value).toISOString() })
+        deadlineTarget.value = null
+        await refreshMonitor()
+        notice.value = 'Die persönliche Schlussfrist wurde gespeichert.'
+    })
+}
+
+function activityDuration(value) {
+    const seconds = Math.max(0, Math.floor(Number(value || 0)))
+    return `${Math.floor(seconds / 60)} Min. ${String(seconds % 60).padStart(2, '0')} Sek.`
+}
+
+function activityStateLabel(activity) {
+    return { present: activity?.fullscreen ? 'Im Test · Vollbild' : 'Im Test', away: 'Testseite verlassen', unknown: 'Verbindung unklar', paused: 'Pausiert', expired: 'Zeit abgelaufen', finished: 'Abgeschlossen' }[activity?.state] || 'Noch nicht gemeldet'
+}
+
+async function setTestPause(paused) {
+    await task(paused ? 'pause-test' : 'resume-test', async () => {
+        await axios.post((paused ? pauseTest : resumeTest).url(selectedTestId.value))
+        await refreshMonitor()
+        notice.value = paused ? 'Der gesamte Test ist pausiert.' : 'Der Test läuft mit der verbliebenen Zeit weiter.'
+    })
+}
+
+function openInvitationDialog() {
+    error.value = ''
+    invitationDialog.value = true
+}
+
+function openTestSettings() {
+    const test = selectedTest.value
+    Object.assign(settingsDraft, ...Object.keys(defaultTestDraft).map(key => ({ [key]: test[key] ?? defaultTestDraft[key] })), {
+        duration_minutes: test.duration_seconds / 60,
+        closes_at: test.closes_at ? localDateTime(test.closes_at) : '',
+    })
+    settingsError.value = ''
+    testSettingsDialog.value = true
+}
+
+async function saveTestSettings() {
+    if (!canEditTestSettings.value) return
+    settingsError.value = ''
+    const closing = settingsDraft.start_mode === 'individual' ? new Date(settingsDraft.closes_at) : null
+    if (closing && !Number.isFinite(closing.getTime())) {
+        settingsError.value = 'Bitte wähle einen gültigen letzten Abgabezeitpunkt.'
+        return
+    }
+    await task('settings', async () => {
+        try {
+            const { duration_minutes, catalog_id, ...draft } = settingsDraft
+            const { data } = await axios.patch(updateTestSettings.url(selectedTestId.value), {
+                ...draft, title: draft.title.trim(), duration_seconds: Math.round(Number(duration_minutes) * 60), closes_at: closing?.toISOString() ?? null,
+            })
+            tests.value = tests.value.map(test => test.id === data.test.id ? { ...test, ...data.test } : test)
+            resetInvitationPreview()
+            testSettingsDialog.value = false
+            await refreshMonitor()
+            notice.value = 'Testeinstellungen gespeichert.'
+        } catch (failure) {
+            settingsError.value = requestError(failure)
+            throw failure
+        }
+    })
+}
+
+async function toggleAccessLinks() {
+    await task('access-links', async () => {
+        const enabled = Boolean(selectedTest.value.access_links_disabled_at)
+        await axios.patch(setAccessLinks.url(selectedTestId.value), { enabled })
+        resetInvitationPreview()
+        copyFallback.value = null
+        invitationDialog.value = false
+        await refreshMonitor()
+        notice.value = enabled ? 'Persönliche Zugangslinks sind wieder aktiv.' : 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.'
+    })
+}
+
+async function toggleExamMode() {
+    await task('exam-mode', async () => {
+        await axios.patch(setExamMode.url(selectedTestId.value), { enabled: !selectedTest.value.exam_mode })
+        await refreshMonitor()
+    })
+}
+
+async function copyAccessLink(attempt) {
+    try {
+        await navigator.clipboard.writeText(attempt.access_url)
+        notice.value = `Zugangslink für ${attempt.student_name} kopiert.`
+    } catch {
+        copyFallback.value = { ...attempt }
+    }
+}
+
+function personalAttemptRunning(attempt) {
+    return Boolean(attempt && !attempt.completed_at && (attempt.reopened_until || (selectedTest.value?.start_mode === 'individual' && attempt.started_at)) && Date.parse(attempt.effective_ends_at || attempt.reopened_until) > serverNow.value)
+}
+
+function personalTimeLabel(attempt) {
+    const seconds = Math.max(0, Math.ceil((Date.parse(attempt.effective_ends_at || attempt.reopened_until) - serverNow.value) / 1000))
+    return seconds ? `Zusatzzeit: ${Math.floor(seconds / 60)} Min. ${String(seconds % 60).padStart(2, '0')} Sek.` : 'Zusatzzeit abgelaufen'
+}
+
+function canSelectReopen(attempt) {
+    return selectedTest.value?.start_mode !== 'individual' || Boolean(attempt.started_at && (attempt.completed_at || (attempt.effective_ends_at && Date.parse(attempt.effective_ends_at) <= serverNow.value)))
+}
+
+function selectReopen(id, checked) {
+    selectedReopenIds.value = checked ? [...new Set([...selectedReopenIds.value, id])] : selectedReopenIds.value.filter(value => value !== id)
+}
+
+function selectAllReopen(checked) {
+    selectedReopenIds.value = checked ? eligibleReopenAttempts.value.map(attempt => attempt.id) : []
+}
+
+function openSelectedReopen() {
+    if (!selectedReopenAttempts.value.length) return
+    reopenTargets.value = selectedReopenAttempts.value.map(attempt => ({ ...attempt }))
+    const single = reopenTargets.value.length === 1 ? reopenTargets.value[0] : null
+    const seconds = personalAttemptRunning(single) ? Math.max(1, Math.ceil((Date.parse(single.effective_ends_at || single.reopened_until) - serverNow.value) / 1000)) : 300
+    reopenMinutes.value = Math.floor(seconds / 60)
+    reopenSeconds.value = seconds % 60
+    error.value = ''
+}
+
+async function savePersonalReopen() {
+    if (!validReopenTime.value || !reopenTargets.value.length) return
+    const targets = reopenTargets.value.map(person => person.id)
+    await task('reopen-attempt', async () => {
+        await axios.post(reopenAttempts.url(selectedTestId.value), { attempt_ids: targets, remaining_seconds: reopenTimeValue.value })
+        reopenTargets.value = []
+        selectedReopenIds.value = selectedReopenIds.value.filter(id => !targets.includes(id))
+        await refreshMonitor()
+        notice.value = `Zusatzzeit für ${targets.length} ausgewählte Person${targets.length === 1 ? '' : 'en'} freigegeben.`
+    })
+}
+
+function openRemainingTime() {
+    const seconds = Math.max(1, Math.ceil((Date.parse(selectedTest.value.ends_at) - serverNow.value) / 1000))
+    remainingMinutes.value = Math.floor(seconds / 60)
+    remainingSeconds.value = seconds % 60
+    error.value = ''
+    remainingTimeDialog.value = true
+}
+
+async function saveRemainingTime() {
+    if (!validRemainingTime.value) {
+        return
+    }
+    await task('remaining-time', async () => {
+        await axios.patch(changeRemainingTime.url(selectedTestId.value), { remaining_seconds: remainingTimeValue.value })
+        remainingTimeDialog.value = false
+        await refreshMonitor()
+        notice.value = 'Die verbleibende Zeit wurde für alle geändert.'
+    })
+}
+
+async function finishTestEarly() {
+    await task('close-test', async () => {
+        await axios.post(closeTest.url(selectedTestId.value))
+        closeTestDialog.value = false
+        await refreshMonitor()
+        notice.value = 'Der Test ist geschlossen. Offene Versuche wurden bewertet.'
+    })
+}
+
+function completionTimeLabel(attempt) {
+    if (!isScored(attempt) || !(selectedTest.value?.start_mode === 'individual' ? attempt.started_at : selectedTest.value?.starts_at) || !attempt.completed_at) {
+        return '—'
+    }
+    const milliseconds = Date.parse(attempt.completed_at) - Date.parse(selectedTest.value.start_mode === 'individual' ? attempt.started_at : selectedTest.value.starts_at) - Number(attempt.pause_seconds || 0) * 1000
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+        return '—'
+    }
+    const seconds = Math.floor(milliseconds / 1000)
+    return `${Math.floor(seconds / 60)} Min. ${String(seconds % 60).padStart(2, '0')} Sek.${attempt.status === 'timeout' ? ' (automatisch)' : ''}`
 }
 
 function dateLabel(value) {
@@ -1446,6 +2128,45 @@ function scoreLabel(attempt) {
 </script>
 
 <style scoped>
+.mc-deadline-trigger { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 18px; width: 100%; min-width: 0; text-align: left; padding: 14px 16px; border: 1px solid #aebfce; border-radius: 6px; background: #fff; color: #243c52; cursor: pointer; }
+.mc-deadline-label { grid-column: 1 / -1; font-size: .85rem; color: #52697e; }
+.mc-deadline-trigger strong { font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.mc-deadline-action { display: flex; align-items: center; gap: 8px; color: #245b89; font-size: .9rem; }
+.mc-deadline-trigger:focus-visible { outline: 2px solid #3879af; outline-offset: 2px; }
+.mc-deadline-trigger:disabled { cursor: default; opacity: .65; }
+.mc-deadline-dialog :deep(.v-picker) { width: 100%; max-width: 100%; }
+@media (max-width: 420px) { .mc-deadline-trigger { grid-template-columns: 1fr; } }
+
+.mc-start-modes { grid-column: 1 / -1; min-width: 0; border: 0; padding: 0; margin: 0 0 16px; }
+.mc-start-modes legend { margin-bottom: 8px; padding: 0; font-size: .875rem; font-weight: 600; color: #425b70; }
+.mc-start-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mc-start-mode { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 11px; padding: 14px; border: 1px solid #c6d4e2; border-radius: 6px; cursor: pointer; }
+.mc-start-mode.is-selected { border-color: #3879af; background: #f0f6fc; }
+.mc-start-mode:focus-within { outline: 2px solid #3879af; outline-offset: 2px; }
+.mc-start-mode input { margin-top: 4px; width: 18px; height: 18px; accent-color: #245b89; }
+.mc-start-mode strong { display: block; font-size: .95rem; line-height: 1.4; overflow-wrap: anywhere; }
+.mc-start-mode-description { display: block; margin-top: 4px; font-size: .85rem; color: #52697e; line-height: 1.5; }
+.mc-start-modes:disabled .mc-start-mode { cursor: default; opacity: .65; }
+@media (max-width: 700px) { .mc-start-mode-options { grid-template-columns: 1fr; } }
+
+.mc-workspace :deep(.v-btn) { text-transform: none; letter-spacing: .01em; }
+.mc-control-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; border-block: 1px solid #dce4ed; padding-block: 22px; }
+.mc-control-section h3, .mc-results-section h3 { font-size: 1rem; color: #28465e; }
+.mc-control-section :deep(.v-btn), .mc-results-section :deep(.v-btn) { text-transform: none; letter-spacing: .01em; }
+.mc-control-section + .mc-control-section { border-left: 1px solid #dce4ed; padding-left: 28px; }
+.mc-settings-fields { border: 0; min-width: 0; padding: 0; }
+.mc-setting-check { display: flex; gap: 10px; align-items: center; padding: 9px 0; }
+.mc-setting-check input { width: 17px; height: 17px; accent-color: #245b89; }
+.mc-test-maintenance { border-top: 1px solid #dce4ed; padding-top: 18px; }
+.mc-test-maintenance summary { cursor: pointer; color: #586b7d; font-size: .9rem; }
+@media (max-width: 900px) { .mc-control-grid { grid-template-columns: 1fr; gap: 20px; } .mc-control-section + .mc-control-section { border-left: 0; border-top: 1px solid #dce4ed; padding-left: 0; padding-top: 20px; } }
+
+.mc-activity-cell { min-width: 200px; }
+.mc-activity-state { display: inline-block; padding: 4px 9px; border-radius: 7px; background: #eef2f3; font-size: 0.8rem; font-weight: 600; }
+.mc-activity-present { color: #205a46; background: #e9f5ee; }
+.mc-activity-away { color: #855315; background: #fff0d8; }
+.mc-activity-unknown { color: #63566b; background: #f2edf6; }
+
 .mc-workspace {
     padding: 0 2px 24px;
     color: #243447;
@@ -1509,6 +2230,12 @@ h3 {
 .mc-catalog-card { display: flex; flex-direction: column; }
 .mc-catalog-card :deep(.v-card-text) { flex: 1; }
 .mc-catalog-card h3 { font-size: 1.08rem; overflow-wrap: anywhere; }
+
+.mc-access-cell { min-width: 102px; white-space: nowrap; text-align: center; }
+.mc-test-heading-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.mc-test-heading-title h2, .mc-test-heading-title h3 { min-width: 0; overflow-wrap: anywhere; }
+.mc-test-heading-title :deep(.v-btn) { flex: 0 0 auto; }
+.mc-test-card-actions { flex-wrap: wrap; gap: 4px; }
 
 .mc-steps {
     display: flex;

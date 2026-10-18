@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\RestaurantBilling;
 use App\Models\RestaurantMenuPlanBooking;
+use App\Models\School;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
@@ -35,70 +37,34 @@ class RestaurantBillingService
 
     public function createForUser(User $authUser, array $validated): RestaurantBilling
     {
-        $billing = $this->previewForUser($authUser, $validated);
+        return DB::transaction(function () use ($authUser, $validated): RestaurantBilling {
+            School::query()->whereKey($authUser->school_id)->lockForUpdate()->firstOrFail();
+            $billing = $this->previewForUser($authUser, $validated);
+            $billing->save();
 
-        $billing->save();
-
-        return $billing->load('school');
+            return $billing->load('school');
+        }, 3);
     }
 
     public function previewForUser(User $authUser, array $validated): RestaurantBilling
     {
         $selectedWeeks = $this->resolveSelectedWeeks($authUser, $validated);
-
-        /** @var array<string, mixed> $firstWeek */
         $firstWeek = $selectedWeeks->first();
-        /** @var array<string, mixed> $lastWeek */
         $lastWeek = $selectedWeeks->last();
-        $startDate = Carbon::createFromFormat('Y-m-d', (string) $firstWeek['week_start'])->startOfDay();
-        $endDate = Carbon::createFromFormat('Y-m-d', (string) $lastWeek['week_end'])->endOfDay();
-
-        $overlapExists = RestaurantBilling::query()
-            ->where('school_id', $authUser->school_id)
-            ->whereDate('start_date', '<=', $endDate->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $startDate->format('Y-m-d'))
-            ->exists();
-
-        if ($overlapExists) {
-            throw new ConflictHttpException('Für diesen Zeitraum existiert bereits eine Abrechnung.');
-        }
-
-        $snapshot = $this->buildSnapshot($authUser, $startDate, $endDate);
-
+        $snapshot = $this->buildSnapshot($authUser, $selectedWeeks->pluck('week_start')->all());
         $billing = new RestaurantBilling([
             'school_id' => $authUser->school_id,
             'created_by_user_id' => $authUser->id,
-            'start_date' => $startDate->format('Y-m-d'),
-            'end_date' => $endDate->format('Y-m-d'),
+            'start_date' => $firstWeek['week_start'],
+            'end_date' => $lastWeek['week_end'],
             'weeks_count' => $selectedWeeks->count(),
             'bookings_count' => (int) $snapshot['overall_total_quantity'],
             'total_amount' => $snapshot['overall_total_amount'],
             'snapshot' => $snapshot,
         ]);
-
         $billing->setRelation('school', $authUser->school);
 
         return $billing;
-    }
-
-    /**
-     * @param  Collection<int, array<string, mixed>>  $selectedWeeks
-     */
-    private function ensureWeeksAreContiguous(Collection $selectedWeeks): void
-    {
-        $previousWeekStart = null;
-
-        foreach ($selectedWeeks as $week) {
-            $currentWeekStart = Carbon::createFromFormat('Y-m-d', (string) $week['week_start'])->startOfDay();
-
-            if ($previousWeekStart && $previousWeekStart->copy()->addWeek()->ne($currentWeekStart)) {
-                throw ValidationException::withMessages([
-                    'weeks' => 'Bitte wählen Sie nur zusammenhängende Kalenderwochen aus.',
-                ]);
-            }
-
-            $previousWeekStart = $currentWeekStart;
-        }
     }
 
     /**
@@ -136,8 +102,6 @@ class RestaurantBillingService
             throw new ConflictHttpException('Mindestens eine Kalenderwoche wurde bereits abgerechnet.');
         }
 
-        $this->ensureWeeksAreContiguous($selectedWeeks);
-
         return $selectedWeeks;
     }
 
@@ -173,18 +137,12 @@ class RestaurantBillingService
         }
 
         foreach ($billings as $billing) {
-            $cursor = $billing->start_date->copy()->startOfWeek(Carbon::MONDAY);
-            $endWeekStart = $billing->end_date->copy()->startOfWeek(Carbon::MONDAY);
-
-            while ($cursor->lte($endWeekStart)) {
-                $weekKey = $cursor->format('Y-m-d');
+            foreach ($billing->coveredWeekStarts() as $weekKey) {
                 $weeks[$weekKey] = [
-                    ...($weeks[$weekKey] ?? $this->weekPayload($cursor)),
+                    ...($weeks[$weekKey] ?? $this->weekPayload(Carbon::parse($weekKey))),
                     'is_billed' => true,
                     'billing_id' => $billing->id,
                 ];
-
-                $cursor->addWeek();
             }
         }
 
@@ -231,14 +189,18 @@ class RestaurantBillingService
      *     overall_total_quantity: int
      * }
      */
-    private function buildSnapshot(User $authUser, Carbon $startDate, Carbon $endDate): array
+    private function buildSnapshot(User $authUser, array $weekStarts): array
     {
         $bookings = RestaurantMenuPlanBooking::query()
             ->with(['user:id,first_name,last_name,email'])
             ->where('school_id', $authUser->school_id)
-            ->whereHas('menuPlanEntry', function ($query) use ($startDate, $endDate): void {
-                $query->whereDate('plan_date', '>=', $startDate->format('Y-m-d'))
-                    ->whereDate('plan_date', '<=', $endDate->format('Y-m-d'));
+            ->whereHas('menuPlanEntry', function ($query) use ($weekStarts): void {
+                $query->where(function ($dates) use ($weekStarts): void {
+                    foreach ($weekStarts as $week) {
+                        $start = Carbon::parse($week);
+                        $dates->orWhereBetween('plan_date', [$start->toDateString(), $start->copy()->addDays(6)->toDateString()]);
+                    }
+                });
             })
             ->orderBy('user_id')
             ->orderBy('booked_at')
@@ -299,6 +261,7 @@ class RestaurantBillingService
         $overallQuantity = array_reduce($rows, fn (int $sum, array $row): int => $sum + (int) $row['total_quantity'], 0);
 
         return [
+            'week_starts' => $weekStarts,
             'rows' => $rows,
             'overall_total_amount' => number_format($overallTotal, 2, '.', ''),
             'overall_total_amount_label' => $this->formatPrice($overallTotal),

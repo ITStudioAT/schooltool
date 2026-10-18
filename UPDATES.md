@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.51.8 !!!
+## 3.52.0
 
 ### Spiel
 
@@ -9,10 +9,16 @@
 ### Multiple Choice Test
 
 - Verbesserungen, Klärungen
+- Absicherung der Tests
 
 ### Schülerinnen-Übersicht
 
 - Kursleistungen pro Kurs freigeben
+
+### Restaurant
+
+- Menüpläne mit Bestellungen löschbar
+- Ausdruck Menüpläne: Vergrößerung der Schrift
 
 ## 3.51.7
 

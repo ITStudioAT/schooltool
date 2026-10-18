@@ -253,14 +253,28 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/', [MultipleChoiceController::class, 'index'])->name('index');
         Route::post('/catalogs', [MultipleChoiceController::class, 'createCatalog'])->name('catalogs.create');
         Route::patch('/catalogs/{catalog}', [MultipleChoiceController::class, 'updateCatalog'])->name('catalogs.update');
+        Route::delete('/catalogs/{catalog}', [MultipleChoiceController::class, 'deleteCatalog'])->name('catalogs.delete');
         Route::post('/import-preview', [MultipleChoiceController::class, 'previewImport'])->middleware('throttle:10,1')->name('import-preview');
         Route::post('/roster-preview', [MultipleChoiceController::class, 'rosterPreview'])->name('roster-preview');
         Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
         Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
+        Route::patch('/tests/{test}', [MultipleChoiceController::class, 'renameTest'])->name('tests.rename');
+        Route::delete('/tests/{test}', [MultipleChoiceController::class, 'deleteTest'])->name('tests.delete');
+        Route::patch('/tests/{test}/attempts/{attempt}/closing-deadline', [MultipleChoiceController::class, 'changeClosingDeadline'])->name('attempts.closing-deadline');
+        Route::post('/tests/{test}/attempts/reopen', [MultipleChoiceController::class, 'reopenAttempts'])->name('attempts.reopen-selected');
+        Route::post('/tests/{test}/attempts/{attempt}/reopen', [MultipleChoiceController::class, 'reopenAttempt'])->name('attempts.reopen');
+        Route::patch('/tests/{test}/access-links', [MultipleChoiceController::class, 'setAccessLinks'])->name('tests.access-links');
+        Route::patch('/tests/{test}/settings', [MultipleChoiceController::class, 'updateTestSettings'])->name('tests.settings');
+        Route::patch('/tests/{test}/exam-mode', [MultipleChoiceController::class, 'setExamMode'])->name('tests.exam-mode');
+        Route::post('/tests/{test}/pause', [MultipleChoiceController::class, 'pauseTest'])->name('tests.pause');
+        Route::post('/tests/{test}/resume', [MultipleChoiceController::class, 'resumeTest'])->name('tests.resume');
+        Route::post('/tests/{test}/close', [MultipleChoiceController::class, 'closeTest'])->name('tests.close');
+        Route::patch('/tests/{test}/remaining-time', [MultipleChoiceController::class, 'changeRemainingTime'])->name('tests.remaining-time');
         Route::post('/tests/{test}/countdown', [MultipleChoiceController::class, 'countdown'])->name('tests.countdown');
         Route::get('/tests/{test}/invitations', [MultipleChoiceController::class, 'invitations'])->name('tests.invitations');
         Route::post('/tests/{test}/invitations', [MultipleChoiceController::class, 'sendInvitations'])->middleware('throttle:5,1')->name('tests.invite');
         Route::post('/tests/{test}/release-results', [MultipleChoiceController::class, 'releaseResults'])->name('tests.release');
+        Route::delete('/tests/{test}/release-results', [MultipleChoiceController::class, 'revokeRelease'])->name('tests.revoke-release');
     });
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {

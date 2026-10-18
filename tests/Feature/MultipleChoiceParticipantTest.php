@@ -8,9 +8,12 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
@@ -143,8 +146,184 @@ test('results and solutions are released separately and only for the personal at
     $this->actingAs($this->student)->getJson($this->url)->assertOk()->assertJsonPath('attempt.result', null);
     $test->update(['results_released_at' => now()]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('attempt.result.score', '10.00')
-        ->assertJsonMissingPath('attempt.result.question_results');
+        ->assertJsonCount(3, 'attempt.result.question_results')
+        ->assertJsonPath('attempt.result.solutions_released', false)
+        ->assertJsonPath('attempt.result.question_results.0.correct', true)
+        ->assertJsonMissingPath('attempt.result.question_results.0.correct_option_ids');
     $test->update(['solutions_released_at' => now()]);
     $this->getJson($this->url)->assertOk()->assertJsonCount(3, 'attempt.result.question_results')
-        ->assertJsonPath('attempt.result.question_results.0.correct', true);
+        ->assertJsonPath('attempt.result.question_results.0.correct', true)
+        ->assertJsonPath('attempt.result.solutions_released', true)
+        ->assertJsonPath('attempt.result.question_results.0.correct_option_ids.0', 'a');
+});
+
+test('the owning teacher can preview a personal link without entering or changing the student attempt', function (): void {
+    Role::findOrCreate('teacher', 'web');
+    $owner = User::query()->findOrFail($this->test->owner_id);
+    $owner->assignRole('teacher');
+    $before = $this->attempt->fresh()->getAttributes();
+    $testBefore = $this->test->fresh()->getAttributes();
+    $this->actingAs($owner)->withHeader('X-MC-Access', $this->attempt->access_token)
+        ->getJson('/api/multiple-choice/access')->assertOk()
+        ->assertJsonPath('attempt.teacher_preview', true)
+        ->assertJsonCount(3, 'attempt.questions')
+        ->assertJsonMissingPath('attempt.questions.0.correct_option_ids')
+        ->assertHeader('Cache-Control', 'no-store, private');
+    expect($this->attempt->fresh()->getAttributes())->toBe($before);
+    expect($this->test->fresh()->getAttributes())->toBe($testBefore);
+    $this->postJson($this->url.'/start')->assertForbidden();
+    $this->postJson($this->url.'/ready')->assertForbidden();
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertForbidden();
+    $this->postJson($this->url.'/submit')->assertForbidden();
+    expect($this->attempt->fresh()->getAttributes())->toBe($before);
+});
+
+test('owner preview preserves running saved answers and does not finalize an expired attempt', function (): void {
+    Role::findOrCreate('teacher', 'web');
+    $owner = User::query()->findOrFail($this->test->owner_id);
+    $owner->assignRole('teacher');
+    $test = $this->service->startCountdown($this->test);
+    $this->travelTo($test->starts_at);
+    $this->service->saveAnswers($this->attempt, ['q1' => ['a']]);
+    $before = $this->attempt->fresh()->getAttributes();
+    $this->actingAs($owner)->withHeader('X-MC-Access', $this->attempt->access_token)
+        ->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.answers.q1', ['a']);
+    $this->travelTo($test->ends_at->addSecond());
+    $this->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.teacher_preview', true);
+    expect($this->attempt->fresh()->getAttributes())->toBe($before);
+});
+
+test('teacher preview requires the real owner role and a valid personal token', function (): void {
+    Role::findOrCreate('teacher', 'web');
+    $owner = User::query()->findOrFail($this->test->owner_id);
+    $this->actingAs($owner)->withHeader('X-MC-Access', $this->attempt->access_token)->getJson('/api/multiple-choice/access')->assertForbidden();
+    $owner->assignRole('teacher');
+    $this->withHeader('X-MC-Access', str_repeat('f', 64))->getJson('/api/multiple-choice/access')->assertNotFound();
+    $foreign = User::factory()->create(['school_id' => $owner->school_id, 'schoolyear_id' => $owner->schoolyear_id]);
+    $foreign->assignRole('teacher');
+    $this->actingAs($foreign)->withHeader('X-MC-Access', $this->attempt->access_token)->getJson('/api/multiple-choice/access')->assertForbidden();
+    expect($this->attempt->fresh()->started_at)->toBeNull();
+});
+
+test('individual links conceal questions until an explicit authorized start and preserve time across account access', function () {
+    DB::table('mc_tests')->where('id', $this->test->id)->update(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $this->withHeader('X-MC-Access', $this->attempt->access_token);
+    $this->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.questions', [])->assertJsonPath('attempt.started_at', null);
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertUnprocessable();
+    $started = $this->postJson($this->url.'/start')->assertOk()->assertJsonCount(3, 'attempt.questions')->json('attempt');
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertOk();
+    $this->travel(20)->seconds();
+    $this->postJson($this->url.'/start')->assertOk()->assertJsonPath('attempt.ends_at', $started['ends_at']);
+    $this->flushHeaders();
+    $this->actingAs($this->student)->getJson($this->url)->assertOk()->assertJsonPath('attempt.ends_at', $started['ends_at'])->assertJsonPath('attempt.answers.q1', ['a']);
+    $this->travelTo(CarbonImmutable::parse($started['ends_at']));
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['b']]])->assertUnprocessable();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('attempt.status', 'timeout');
+});
+
+test('a foreign pupil cannot start another individual assignment', function () {
+    DB::table('mc_tests')->where('id', $this->test->id)->update(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $other = User::factory()->create(['school_id' => $this->student->school_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $this->actingAs($other)->postJson($this->url.'/start')->assertNotFound();
+    expect($this->attempt->fresh()->started_at)->toBeNull();
+});
+
+test('participant pause preserves answers and conceals questions during a frozen countdown', function () {
+    $test = $this->service->startCountdown($this->test);
+    $this->travel(10)->seconds();
+    $paused = $this->service->pause($test, $test->owner_id);
+    $this->travel(120)->seconds();
+    $this->actingAs($this->student)->getJson($this->url)->assertOk()->assertJsonPath('attempt.questions', [])->assertJsonPath('attempt.paused_at', $paused->paused_at->toIso8601String());
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertUnprocessable();
+    $this->postJson($this->url.'/submit')->assertUnprocessable();
+    expect($this->attempt->fresh()->completed_at)->toBeNull();
+    $resumed = $this->service->resume($test, $test->owner_id);
+    expect((int) now()->diffInSeconds($resumed->starts_at))->toBe(20);
+    expect($this->attempt->fresh()->pause_seconds)->toBe(0);
+});
+
+test('activity recording requires the correct pupil and enabled exam mode and never exposes private session state', function () {
+    $test = $this->service->startCountdown($this->test);
+    $this->travelTo($test->starts_at);
+    $this->service->openAttempt($this->attempt);
+    $data = ['session' => (string) Str::uuid(), 'events' => [['sequence' => 1, 'at' => now()->toIso8601String(), 'visible' => true, 'focused' => true, 'fullscreen' => false]]];
+    $this->actingAs($this->student)->postJson($this->url.'/activity', $data)->assertUnprocessable();
+    DB::table('mc_tests')->where('id', $test->id)->update(['exam_mode' => true]);
+    $this->postJson($this->url.'/activity', $data)->assertOk();
+    $this->postJson($this->url.'/activity', ['session' => 'invalid', 'events' => []])->assertUnprocessable();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('attempt.exam_mode', true)->assertJsonMissingPath('attempt.activity_state');
+    $other = User::factory()->create(['school_id' => $this->student->school_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $this->app['auth']->forgetGuards();
+    $this->actingAs($other)->postJson($this->url.'/activity', $data)->assertNotFound();
+});
+
+test('routine polling never consumes the separate personal-link reconnect allowance', function () {
+    $this->withHeader('X-MC-Access', $this->attempt->access_token);
+    foreach (range(1, 35) as $index) {
+        $this->getJson($this->url)->assertOk();
+    }
+    $this->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.id', $this->attempt->id);
+});
+
+test('invalid guest access attempts remain rate limited but cannot lock out a valid personal link on the same network', function () {
+    foreach (range(1, 30) as $index) {
+        $this->withHeader('X-MC-Access', str_pad(dechex($index), 64, '0', STR_PAD_LEFT))->getJson('/api/multiple-choice/access')->assertNotFound();
+    }
+    $this->getJson('/api/multiple-choice/access')->assertTooManyRequests()->assertHeader('Retry-After');
+    $this->withHeader('X-MC-Access', $this->attempt->access_token)->getJson('/api/multiple-choice/access')->assertOk();
+});
+
+test('valid guest links on the same school network have independent reconnect budgets', function () {
+    $second = User::factory()->create(['school_id' => $this->student->school_id, 'schoolyear_id' => $this->student->schoolyear_id, 'is_active' => true]);
+    $second->assignRole('student');
+    $draft = $this->test->replicate(['status', 'snapshot', 'starts_at', 'ends_at', 'results_released_at', 'solutions_released_at']);
+    $draft->status = 'draft';
+    $draft->save();
+    $secondTest = $this->service->publish($draft, [$second->id]);
+    $secondAttempt = $secondTest->attempts()->sole();
+    $this->withHeader('X-MC-Access', $this->attempt->access_token);
+    foreach (range(1, 30) as $index) {
+        $this->getJson('/api/multiple-choice/access')->assertOk();
+    }
+    $this->getJson('/api/multiple-choice/access')->assertTooManyRequests();
+    $this->withHeader('X-MC-Access', $secondAttempt->access_token)->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.id', $secondAttempt->id);
+});
+
+test('a class sharing one IP does not share the generic web and global counters for valid personal links', function () {
+    config(['spa.web_throttle' => 60, 'spa.global_throttle' => 60]);
+    $second = User::factory()->create(['school_id' => $this->student->school_id, 'schoolyear_id' => $this->student->schoolyear_id, 'is_active' => true]);
+    $second->assignRole('student');
+    $draft = $this->test->replicate(['status', 'snapshot', 'starts_at', 'ends_at', 'results_released_at', 'solutions_released_at']);
+    $draft->status = 'draft';
+    $draft->save();
+    $secondAttempt = $this->service->publish($draft, [$second->id])->attempts()->sole();
+    foreach ([$this->attempt, $secondAttempt] as $attempt) {
+        $this->withHeader('X-MC-Access', $attempt->access_token);
+        foreach (range(1, 35) as $index) {
+            $this->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertOk();
+        }
+    }
+    $this->withHeader('X-MC-Access', $this->attempt->access_token)->getJson('/api/multiple-choice/access')->assertOk();
+});
+
+test('revoking a personal link blocks existing read and write requests but keeps account access and the same token', function (): void {
+    $token = $this->attempt->access_token;
+    $this->withHeader('X-MC-Access', $token)->getJson('/api/multiple-choice/access')->assertOk();
+    McTest::query()->whereKey($this->test->id)->update(['access_links_disabled_at' => now()]);
+    $this->getJson('/api/multiple-choice/access')->assertForbidden();
+    $this->getJson($this->url)->assertForbidden();
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertForbidden();
+    $this->postJson($this->url.'/start')->assertForbidden();
+    $this->postJson($this->url.'/submit')->assertForbidden();
+    $this->postJson($this->url.'/activity', [])->assertForbidden();
+    $this->withHeader('X-MC-Access', str_repeat('f', 64))->getJson($this->url)->assertNotFound();
+    $this->flushHeaders();
+    $this->actingAs($this->student)->getJson($this->url)->assertOk();
+    expect($this->attempt->fresh()->answers)->toBe([])->and($this->attempt->fresh()->access_token)->toBe($token);
+    Auth::logout();
+    $this->app['auth']->forgetGuards();
+    McTest::query()->whereKey($this->test->id)->update(['access_links_disabled_at' => null]);
+    $this->withHeader('X-MC-Access', $token)->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.id', $this->attempt->id);
 });

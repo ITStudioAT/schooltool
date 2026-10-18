@@ -1,14 +1,17 @@
 <?php
 
+use App\Jobs\FinalizeMultipleChoiceTest;
 use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McTestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\Process\Process;
@@ -344,4 +347,302 @@ PHP;
             $connection->beginTransaction();
         }
     }
+});
+
+test('individual reopening preserves another submitted attempt and keeps the prior grade and answers in private history', function (): void {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['lead_seconds' => 0, 'duration_seconds' => 60]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->publish($test, [$student->id, $other->id]);
+    $test = $service->startCountdown($test);
+    $first = $test->attempts()->where('student_id', $student->id)->firstOrFail();
+    $second = $test->attempts()->where('student_id', $other->id)->firstOrFail();
+    $service->saveAnswers($first, ['q1' => ['a']]);
+    $service->submit($first);
+    $service->saveAnswers($second, ['q2' => ['a']]);
+    $service->submit($second);
+    $before = $first->fresh();
+    $otherBefore = $second->fresh()->getAttributes();
+    $this->travel(61)->seconds();
+    $test->update(['results_released_at' => now(), 'solutions_released_at' => now()]);
+    $testBefore = $test->fresh()->getAttributes();
+    $reopened = $service->reopenAttempt($first, 120, (int) $test->owner_id);
+    expect($reopened->completed_at)->toBeNull();
+    expect($reopened->score)->toBeNull();
+    expect($reopened->answers)->toBe($before->answers);
+    expect($reopened->questions)->toBe($before->questions);
+    expect($reopened->access_token)->toBe($before->access_token);
+    expect($reopened->started_at->equalTo($before->started_at))->toBeTrue();
+    expect($reopened->reopened_until->equalTo(now()->addSeconds(120)))->toBeTrue();
+    expect($reopened->reopen_history[0]['previous']['score'])->toBe('3.33');
+    expect($reopened->reopen_history[0]['previous']['answers'])->toBe($before->answers);
+    expect($reopened->toArray())->not->toHaveKey('reopen_history');
+    expect($second->fresh()->getAttributes())->toBe($otherBefore);
+    expect($test->fresh()->getAttributes())->toBe($testBefore);
+    expect($service->finalizeExpired($test->id))->toBe(0);
+    $service->saveAnswers($reopened, ['q2' => ['a']]);
+    expect($service->submit($reopened)->score)->toBe('6.67');
+    expect($second->fresh()->getAttributes())->toBe($otherBefore);
+});
+
+test('individual deadlines finish independently and can be changed without extending another person', function (): void {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['lead_seconds' => 0, 'duration_seconds' => 60]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->startCountdown($service->publish($test, [$student->id, $other->id]));
+    $first = $test->attempts()->where('student_id', $student->id)->firstOrFail();
+    $second = $test->attempts()->where('student_id', $other->id)->firstOrFail();
+    $service->saveAnswers($first, ['q1' => ['a']]);
+    $service->saveAnswers($second, ['q1' => ['a']]);
+    $this->travel(61)->seconds();
+    $first = $service->reopenAttempt($first, 120, (int) $test->owner_id);
+    expect($first->reopen_history[0]['previous']['completion_reason'])->toBe('timeout');
+    expect($first->reopen_history[0]['previous']['score'])->toBe('3.33');
+    $firstEnd = $first->reopened_until;
+    $second = $service->reopenAttempt($second, 240, (int) $test->owner_id);
+    $second = $service->reopenAttempt($second, 180, (int) $test->owner_id);
+    expect($second->reopen_history)->toHaveCount(2);
+    expect($first->fresh()->reopened_until->equalTo($firstEnd))->toBeTrue();
+    $this->travel(121)->seconds();
+    expect($service->finalizeExpired($test->id))->toBe(1);
+    expect($first->fresh()->completed_at->equalTo($firstEnd))->toBeTrue();
+    expect($second->fresh()->completed_at)->toBeNull();
+    $service->saveAnswers($second, ['q2' => ['a']]);
+    $service->closeEarly($test);
+    expect($second->fresh()->completed_at->equalTo(now()))->toBeTrue();
+    expect($second->fresh()->score)->toBe('6.67');
+});
+
+test('individual reopening requires an ended published test, its owner and a bounded duration', function (): void {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['lead_seconds' => 0, 'duration_seconds' => 60]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $test->attempts()->sole();
+    expect(fn () => $service->reopenAttempt($attempt, 120, (int) $test->owner_id))->toThrow(ValidationException::class);
+    $this->travel(61)->seconds();
+    foreach ([0, -1, 86401] as $seconds) {
+        expect(fn () => $service->reopenAttempt($attempt, $seconds, (int) $test->owner_id))->toThrow(ValidationException::class);
+    }
+    expect(fn () => $service->reopenAttempt($attempt, 120, (int) $student->id))->toThrow(ValidationException::class);
+    expect($attempt->fresh()->reopened_until)->toBeNull();
+    expect($attempt->fresh()->reopen_history)->toBeNull();
+});
+
+test('individual start is explicit once and resuming never resets a running personal deadline', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $test = $service->publish($test, [$student->id]);
+    $attempt = $test->attempts()->sole();
+    $service->openAttempt($attempt);
+    expect($attempt->fresh()->started_at)->toBeNull();
+    expect(fn () => $service->saveAnswers($attempt, ['q1' => ['a']]))->toThrow(ValidationException::class);
+    expect(fn () => $service->startCountdown($test))->toThrow(ValidationException::class);
+    $started = $service->startIndividual($attempt);
+    $deadline = $started->effectiveDeadline($test);
+    $service->saveAnswers($attempt, ['q1' => ['a']]);
+    $this->travel(300)->seconds();
+    expect($service->startIndividual($attempt)->effectiveDeadline($test)->equalTo($deadline))->toBeTrue();
+    expect($service->openAttempt($attempt)->answers)->toBe(['q1' => ['a']]);
+    $this->travelTo($deadline);
+    expect(fn () => $service->saveAnswers($attempt, ['q1' => ['b']]))->toThrow(ValidationException::class);
+    expect($service->finalizeExpired($test->id))->toBe(1);
+    $done = $service->startIndividual($attempt);
+    expect($done->completion_reason)->toBe('timeout');
+    expect($done->answers)->toBe(['q1' => ['a']]);
+    expect($done->completed_at->equalTo($deadline))->toBeTrue();
+});
+
+test('individual attempts keep independent starts and respect the hard closing deadline', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addMinutes(15)]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->publish($test, [$student->id, $other->id]);
+    [$first, $second] = $test->attempts()->orderBy('id')->get()->all();
+    $first = $service->startIndividual($first);
+    $this->travel(8)->minutes();
+    $second = $service->startIndividual($second);
+    expect($second->effectiveDeadline($test)->equalTo($test->closes_at))->toBeTrue();
+    $this->travelTo($first->effectiveDeadline($test));
+    expect($service->finalizeExpired($test->id))->toBe(1);
+    expect($second->fresh()->completed_at)->toBeNull();
+    $this->travelTo($test->closes_at);
+    (new FinalizeMultipleChoiceTest($test->id))->handle($service);
+    expect($second->fresh()->completion_reason)->toBe('timeout');
+});
+
+test('personal closing exceptions leave other students and already elapsed duration unchanged', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addMinutes(5)]);
+    $test = $service->publish($test, [$student->id]);
+    $attempt = $service->startIndividual($test->attempts()->sole());
+    $originalStart = $attempt->started_at;
+    $service->changeClosingDeadline($attempt, now()->addHour()->toIso8601String());
+    expect($test->fresh()->closes_at->equalTo($test->closes_at))->toBeTrue();
+    expect($attempt->fresh()->effectiveDeadline($test)->equalTo($originalStart->addSeconds(600)))->toBeTrue();
+    $this->travel(10)->minutes();
+    $service->finalizeExpired($test->id);
+    $service->changeClosingDeadline($attempt, now()->addHour()->toIso8601String());
+    expect($attempt->fresh()->completed_at)->not->toBeNull();
+    $reopened = $service->reopenAttempt($attempt, 120, $test->owner_id);
+    expect($reopened->started_at->equalTo($originalStart))->toBeTrue();
+    expect($reopened->effectiveDeadline($test)->equalTo(now()->addSeconds(120)))->toBeTrue();
+});
+
+test('unstarted individual assignments expire at closing and a teacher exception can allow their first start', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addMinute()]);
+    $test = $service->publish($test, [$student->id]);
+    $attempt = $test->attempts()->sole();
+    $this->travel(60)->seconds();
+    expect($service->startIndividual($attempt)->completion_reason)->toBe('timeout');
+    expect($attempt->fresh()->started_at)->toBeNull();
+    expect($attempt->fresh()->score)->toBeNull();
+    $service->changeClosingDeadline($attempt, now()->addHour()->toIso8601String());
+    expect($attempt->fresh()->completed_at)->toBeNull();
+    expect($service->startIndividual($attempt)->started_at)->not->toBeNull();
+});
+
+test('teacher pause freezes common attempts and resumes exactly once with preserved answers and remaining time', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $service->saveAnswers($attempt, ['q1' => ['a']]);
+    $this->travel(30)->seconds();
+    $paused = $service->pause($test, $test->owner_id);
+    $service->pause($test, $test->owner_id);
+    $this->travel(1200)->seconds();
+    expect($service->finalizeExpired($test->id))->toBe(0);
+    expect($service->openAttempt($attempt)->answers)->toBe(['q1' => ['a']]);
+    expect(fn () => $service->saveAnswers($attempt, ['q1' => ['b']]))->toThrow(ValidationException::class);
+    expect(fn () => $service->submit($attempt))->toThrow(ValidationException::class);
+    $resumed = $service->resume($test, $test->owner_id);
+    expect($resumed->paused_at)->toBeNull();
+    expect($resumed->ends_at->equalTo($test->ends_at->addSeconds(1200)))->toBeTrue();
+    expect((int) now()->diffInSeconds($resumed->ends_at))->toBe(570);
+    expect($attempt->fresh()->pause_seconds)->toBe(1200);
+    expect($service->resume($test, $test->owner_id)->ends_at->equalTo($resumed->ends_at))->toBeTrue();
+    expect($attempt->fresh()->answers)->toBe(['q1' => ['a']]);
+    expect($resumed->pause_history)->toHaveCount(1);
+});
+
+test('individual pause shifts personal timers and hard deadlines without starting unstarted pupils', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->publish($test, [$student->id, $other->id]);
+    [$first, $second] = $test->attempts()->orderBy('id')->get()->all();
+    $first = $service->startIndividual($first);
+    $service->changeClosingDeadline($first, now()->addHours(2)->toIso8601String());
+    $before = $first->fresh()->effectiveDeadline($test);
+    $this->travel(30)->seconds();
+    $service->pause($test, $test->owner_id);
+    $this->travel(120)->seconds();
+    expect(fn () => $service->startIndividual($second))->toThrow(ValidationException::class);
+    $resumed = $service->resume($test, $test->owner_id);
+    expect($first->fresh()->effectiveDeadline($resumed)->equalTo($before->addSeconds(120)))->toBeTrue();
+    expect($first->fresh()->closes_at->equalTo($test->closes_at->addHours(1)->addSeconds(120)))->toBeTrue();
+    expect($resumed->closes_at->equalTo($test->closes_at->addSeconds(120)))->toBeTrue();
+    expect($second->fresh()->started_at)->toBeNull();
+    expect($second->fresh()->pause_seconds)->toBe(0);
+    expect($service->startIndividual($second)->effectiveDeadline($resumed)->equalTo(now()->addSeconds(600)))->toBeTrue();
+});
+
+test('exam activity merges blur and hidden events and retries without grading or double counting', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['exam_mode' => true, 'lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $activity = app(McAttemptActivityService::class);
+    $session = (string) Str::uuid();
+    $event = fn (int $sequence, bool $visible, bool $focused, bool $fullscreen): array => compact('sequence', 'visible', 'focused', 'fullscreen') + ['at' => now()->toIso8601String()];
+    $activity->record($attempt, $session, [$event(1, true, true, true)]);
+    $this->travel(5)->seconds();
+    $left = $event(2, true, false, false);
+    $activity->record($attempt, $session, [$left, $event(3, false, false, false)]);
+    $this->travel(10)->seconds();
+    $activity->record($attempt, $session, [$left]);
+    $summary = $activity->summary($attempt->fresh(), $test);
+    expect($summary['away_count'])->toBe(1);
+    expect($summary['away_seconds'])->toBe(10);
+    expect($summary['fullscreen_exit_count'])->toBe(1);
+    $this->travel(10)->seconds();
+    $activity->record($attempt, $session, [$event(4, true, true, false)]);
+    $summary = $activity->summary($attempt->fresh(), $test);
+    expect($summary['away_count'])->toBe(1);
+    expect($summary['away_seconds'])->toBe(20);
+    expect($summary['periods'])->toHaveCount(1);
+    expect($attempt->fresh()->completed_at)->toBeNull();
+    expect($attempt->fresh()->score)->toBeNull();
+    expect($attempt->fresh()->answers)->toBe([]);
+    expect($attempt->fresh()->toArray())->not->toHaveKey('activity_state');
+});
+
+test('another active test window prevents false absence and teacher pauses add no absence duration', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['exam_mode' => true, 'lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $activity = app(McAttemptActivityService::class);
+    $first = (string) Str::uuid();
+    $second = (string) Str::uuid();
+    $event = fn (int $sequence, bool $present): array => ['sequence' => $sequence, 'at' => now()->toIso8601String(), 'visible' => $present, 'focused' => $present, 'fullscreen' => false];
+    $activity->record($attempt, $first, [$event(1, true)]);
+    $activity->record($attempt, $second, [$event(1, true)]);
+    $activity->record($attempt, $first, [$event(2, false)]);
+    expect($activity->summary($attempt->fresh(), $test)['away_count'])->toBe(0);
+    $activity->record($attempt, $second, [$event(2, false)]);
+    $this->travel(10)->seconds();
+    $service->pause($test, $test->owner_id);
+    $this->travel(60)->seconds();
+    expect($activity->summary($attempt->fresh(), $test->fresh())['away_seconds'])->toBe(10);
+    $resumed = $service->resume($test, $test->owner_id);
+    $activity->record($attempt, $first, [$event(3, true)]);
+    expect($activity->summary($attempt->fresh(), $resumed)['away_seconds'])->toBe(10);
+});
+
+test('a monitored attempt submits and preserves its final absence log without changing its protected assignment', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['exam_mode' => true, 'lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $questions = $attempt->questions;
+    $token = $attempt->access_token_hash;
+    $service->saveAnswers($attempt, ['q1' => ['a']]);
+    $activity = app(McAttemptActivityService::class);
+    $activity->record($attempt, (string) Str::uuid(), [['sequence' => 1, 'at' => now()->toIso8601String(), 'visible' => false, 'focused' => false, 'fullscreen' => false]]);
+    $this->travel(12)->seconds();
+    $submitted = $service->submit($attempt);
+    expect($submitted->completion_reason)->toBe('submitted');
+    expect($submitted->answers)->toBe(['q1' => ['a']]);
+    expect($submitted->questions)->toBe($questions);
+    expect($submitted->access_token_hash)->toBe($token);
+    $summary = $activity->summary($submitted, $test);
+    expect($summary['away_seconds'])->toBe(12);
+    expect($summary['periods'])->toHaveCount(1);
+    $submitted->forceFill(['activity_state' => []]);
+    expect(fn () => $submitted->save())->toThrow(ValidationException::class);
+});
+
+test('expired exam activity stops reporting current absence even before timeout finalization', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['exam_mode' => true, 'lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $activity = app(McAttemptActivityService::class);
+    $activity->record($attempt, (string) Str::uuid(), [['sequence' => 1, 'at' => now()->toIso8601String(), 'visible' => false, 'focused' => false, 'fullscreen' => false]]);
+    $this->travelTo($test->ends_at->addMinutes(2));
+    $summary = $activity->summary($attempt->fresh(), $test);
+    expect($attempt->fresh()->completed_at)->toBeNull();
+    expect($summary['state'])->toBe('expired');
+    expect($summary['away_seconds'])->toBe(600);
+    expect($summary['periods'][0]['ended_at'])->toBe($test->ends_at->toIso8601String());
+    $this->travel(60)->seconds();
+    expect($activity->summary($attempt->fresh(), $test)['away_seconds'])->toBe(600);
+    expect($service->finalizeExpired($test->id))->toBe(1);
+    expect($activity->summary($attempt->fresh(), $test)['state'])->toBe('finished');
 });

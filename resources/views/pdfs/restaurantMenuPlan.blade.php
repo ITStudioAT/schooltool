@@ -18,8 +18,8 @@
             font-family: DejaVu Sans, sans-serif;
             color: #1f2937;
             background: #ffffff;
-            font-size: 10px;
-            line-height: 1.15;
+            font-size: 12px;
+            line-height: 1.25;
         }
 
         .page {
@@ -27,8 +27,8 @@
         }
 
         .header {
-            margin-bottom: 3px;
-            padding: 4px 6px;
+            margin-bottom: 6px;
+            padding: 7px 9px;
             border: 1px solid #d6dce3;
             border-radius: 6px;
             background: #fff8e8;
@@ -36,7 +36,7 @@
 
         .eyebrow {
             margin-bottom: 2px;
-            font-size: 8px;
+            font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -45,14 +45,14 @@
 
         .title {
             margin: 0 0 2px;
-            font-size: 14px;
+            font-size: 22px;
             font-weight: 700;
             color: #111827;
         }
 
         .meta-row {
             margin-top: 1px;
-            font-size: 10px;
+            font-size: 11px;
             color: #4b5563;
         }
 
@@ -77,30 +77,30 @@
         }
 
         .week-day__header {
-            padding: 3px 4px;
+            padding: 5px 6px;
             border-bottom: 1px solid #e5e7eb;
             background: #f8fafc;
         }
 
         .week-day__title {
             margin: 0;
-            font-size: 10px;
+            font-size: 16px;
             font-weight: 700;
             color: #111827;
         }
 
         .week-day__date {
             margin-top: 1px;
-            font-size: 8px;
+            font-size: 11px;
             color: #6b7280;
         }
 
         .week-day__body {
-            padding: 3px 4px 4px;
+            padding: 5px 6px 6px;
         }
 
         .week-day__note {
-            font-size: 8.5px;
+            font-size: 12px;
             font-weight: 600;
             color: #475569;
         }
@@ -120,21 +120,23 @@
         }
 
         .entry-title {
-            font-size: 9.5px;
+            font-size: 15px;
             font-weight: 700;
             color: #111827;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .entry-price {
             margin-top: 1px;
-            font-size: 8.5px;
+            font-size: 12px;
             font-weight: 700;
             color: #92400e;
         }
 
         .entry-subline {
             margin-top: 1px;
-            font-size: 8px;
+            font-size: 11px;
             color: #4b5563;
         }
 
@@ -151,7 +153,7 @@
         }
 
         .food {
-            padding: 2px 3px;
+            padding: 4px 5px;
             border-radius: 4px;
             background: #fffbeb;
             border: 1px solid #fde68a;
@@ -159,7 +161,7 @@
 
         .food-course {
             margin-bottom: 1px;
-            font-size: 7.5px;
+            font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
@@ -167,15 +169,19 @@
         }
 
         .food-title {
-            font-size: 8.5px;
+            font-size: 14px;
             font-weight: 700;
             color: #111827;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .food-meta {
             margin-top: 1px;
-            font-size: 7.5px;
+            font-size: 12px;
             color: #4b5563;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
     </style>
 </head>
