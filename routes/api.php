@@ -258,6 +258,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/roster-preview', [MultipleChoiceController::class, 'rosterPreview'])->name('roster-preview');
         Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
         Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
+        Route::get('/tests/{test}/exercise-export', [MultipleChoiceController::class, 'exportExercise'])->name('tests.exercise-export');
         Route::patch('/tests/{test}', [MultipleChoiceController::class, 'renameTest'])->name('tests.rename');
         Route::delete('/tests/{test}', [MultipleChoiceController::class, 'deleteTest'])->name('tests.delete');
         Route::patch('/tests/{test}/attempts/{attempt}/closing-deadline', [MultipleChoiceController::class, 'changeClosingDeadline'])->name('attempts.closing-deadline');

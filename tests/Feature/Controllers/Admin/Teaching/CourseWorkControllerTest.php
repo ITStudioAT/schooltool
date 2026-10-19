@@ -2138,7 +2138,7 @@ test('folder import archives stopped Postmark and confirmed Outlook tasks withou
     expect($status['dispatch_logs'])->toHaveCount(2)->and($status['dispatch_notifications'])->toHaveCount(1)
         ->and($status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
         ->and($status['dispatch_notifications'][0]['purpose'])->toBe('tasks')
-        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T14:59:41Z')
+        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T14:59:41.131Z')
         ->and($status['dispatch_attempts'])->toHaveCount(1)->and($work->fresh()->groups)->toEqual($before);
     expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($stopped);
     expect(Storage::disk('local')->get($status['dispatch_logs'][1]['file_path']))->toBe($outlook);

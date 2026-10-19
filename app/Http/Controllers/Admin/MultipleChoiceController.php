@@ -22,6 +22,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -366,6 +367,82 @@ class MultipleChoiceController extends Controller
         FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->ends_at)->afterCommit();
 
         return response()->json(['test' => $test, 'server_now' => now()->toIso8601String()]);
+    }
+
+    public function exportExercise(Request $request, McTest $test): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $teacher = $this->teacher();
+        abort_unless($test->schoolyear_id !== null && (int) $test->schoolyear_id === (int) $teacher->schoolyear_id, 404);
+
+        if ($test->status !== 'published' || $test->access_links_disabled_at !== null) {
+            throw ValidationException::withMessages(['test' => 'Für den Export müssen der Test freigegeben und seine persönlichen Zugangslinks aktiviert sein.']);
+        }
+
+        $attempts = $test->attempts()->with('student:id,school_id,first_name,last_name,email')->orderBy('student_id')->get();
+        if ($attempts->isEmpty()) {
+            throw ValidationException::withMessages(['participants' => 'Für diesen Test sind keine Teilnehmer zugeordnet.']);
+        }
+
+        $participants = $attempts->map(function (McAttempt $attempt) use ($test): array {
+            $student = $attempt->student;
+            $email = trim((string) $attempt->email);
+            if ($student === null || (int) $student->school_id !== (int) $test->school_id
+                || ! filter_var($email, FILTER_VALIDATE_EMAIL) || strcasecmp($email, trim((string) $student->email)) !== 0) {
+                throw ValidationException::withMessages(['participants' => 'Die Teilnehmerkonten oder E-Mail-Adressen stimmen nicht mehr mit der Testzuordnung überein. Bitte prüfen Sie die Teilnehmer vor dem Export.']);
+            }
+
+            return [
+                'participant_id' => 'user:'.$attempt->student_id,
+                'schooltool_person_id' => (string) $attempt->student_id,
+                'first_name' => $student->first_name,
+                'last_name' => $student->last_name,
+                'email' => $email,
+                'attempt_id' => $attempt->id,
+                'access_url' => $this->invitationUrl($attempt),
+                'closes_at' => $attempt->closingDeadline($test)?->utc()->toIso8601String(),
+            ];
+        });
+        if ($participants->pluck('participant_id')->unique()->count() !== $participants->count()
+            || $participants->map(fn (array $participant): string => strtolower($participant['email']))->unique()->count() !== $participants->count()) {
+            throw ValidationException::withMessages(['participants' => 'Die Teilnehmer oder E-Mail-Adressen sind nicht eindeutig zugeordnet.']);
+        }
+
+        $filename = 'MC-Test_'.(Str::slug($test->title) ?: 'test').'_'.now()->timezone('Europe/Vienna')->format('Y-m-d').'_Nr-'.$test->id.'.json';
+
+        return response()->json([
+            'schema_version' => 1,
+            'kind' => 'schooltool.multiple_choice_links',
+            'exported_at' => now()->utc()->toIso8601String(),
+            'timezone' => 'Europe/Vienna',
+            'source' => [
+                'base_url' => url('/'),
+                'environment' => app()->environment(),
+                'is_preview' => app(FeaturePreviewService::class)->isPreview(),
+                'school_id' => (int) $test->school_id,
+                'schoolyear_id' => (int) $test->schoolyear_id,
+                'teacher_id' => (int) $test->owner_id,
+            ],
+            'test' => [
+                'id' => $test->id,
+                'title' => $test->title,
+                'catalog_id' => $test->catalog_id,
+                'status' => $test->status,
+                'question_count' => $test->question_count,
+                'total_points' => $test->total_points,
+                'duration_seconds' => $test->duration_seconds,
+                'lead_seconds' => $test->lead_seconds,
+                'start_mode' => $test->start_mode ?? 'common',
+                'starts_at' => $test->starts_at?->utc()->toIso8601String(),
+                'ends_at' => $test->ends_at?->utc()->toIso8601String(),
+                'closes_at' => $test->closes_at?->utc()->toIso8601String(),
+            ],
+            'participants' => $participants->all(),
+        ], 200, [
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     public function invitations(Request $request, McTest $test): JsonResponse

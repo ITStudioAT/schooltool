@@ -181,6 +181,82 @@ test('countdown is server stored and schedules automatic completion without chan
     Queue::assertPushed(FinalizeMultipleChoiceTest::class, fn ($job): bool => $job->delay->equalTo($test->fresh()->ends_at));
 });
 
+test('exercise export contains personal links without questions answers or side effects', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-19T08:00:00Z'));
+    $context = mcAdminContext();
+    $student = $context['student'];
+    $test = mcAdminPublished($context['teacher'], $student);
+    $attempt = $test->attempts()->sole();
+    $beforeTest = $test->fresh()->getAttributes();
+    $beforeAttempt = $attempt->getAttributes();
+    Mail::fake();
+    Queue::fake();
+
+    $response = $this->actingAs($context['teacher'])->getJson("/api/admin/multiple-choice/tests/{$test->id}/exercise-export")
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Content-Disposition', 'attachment; filename="MC-Test_grundlagen-test_2026-10-19_Nr-'.$test->id.'.json"')
+        ->assertJsonPath('schema_version', 1)->assertJsonPath('kind', 'schooltool.multiple_choice_links')
+        ->assertJsonPath('timezone', 'Europe/Vienna')->assertJsonPath('exported_at', '2026-10-19T08:00:00+00:00')
+        ->assertJsonPath('source.school_id', $context['school']->id)
+        ->assertJsonPath('source.schoolyear_id', $context['teacher']->schoolyear_id)
+        ->assertJsonPath('source.teacher_id', $context['teacher']->id)
+        ->assertJsonPath('source.environment', 'testing')->assertJsonPath('source.is_preview', false)
+        ->assertJsonPath('test.id', $test->id)->assertJsonPath('test.title', $test->title)
+        ->assertJsonPath('test.duration_seconds', 600)->assertJsonCount(1, 'participants');
+
+    expect(array_keys($response->json()))->toBe(['schema_version', 'kind', 'exported_at', 'timezone', 'source', 'test', 'participants']);
+    expect(array_keys($response->json('test')))->toBe(['id', 'title', 'catalog_id', 'status', 'question_count', 'total_points',
+        'duration_seconds', 'lead_seconds', 'start_mode', 'starts_at', 'ends_at', 'closes_at']);
+    expect($response->json('participants.0'))->toBe([
+        'participant_id' => 'user:'.$student->id, 'schooltool_person_id' => (string) $student->id,
+        'first_name' => $student->first_name, 'last_name' => $student->last_name, 'email' => $student->email,
+        'attempt_id' => $attempt->id, 'access_url' => url('/multiple-choice').'#access='.$attempt->access_token,
+        'closes_at' => null,
+    ]);
+    $again = $this->getJson("/api/admin/multiple-choice/tests/{$test->id}/exercise-export")->assertOk();
+    expect($again->json('participants'))->toBe($response->json('participants'));
+    expect($test->fresh()->getAttributes())->toBe($beforeTest);
+    expect($attempt->fresh()->getAttributes())->toBe($beforeAttempt);
+    Mail::assertNothingSent();
+    Queue::assertNothingPushed();
+});
+
+test('exercise export protects personal links by authentication ownership school and selected schoolyear', function () {
+    $context = mcAdminContext();
+    $test = mcAdminPublished($context['teacher'], $context['student']);
+    $url = "/api/admin/multiple-choice/tests/{$test->id}/exercise-export";
+    $this->getJson($url)->assertUnauthorized();
+    $this->actingAs($context['student'])->getJson($url)->assertForbidden();
+    $otherTeacher = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id]);
+    $otherTeacher->assignRole('teacher');
+    $this->actingAs($otherTeacher)->getJson($url)->assertNotFound();
+    $foreign = mcAdminContext();
+    $this->actingAs($foreign['teacher'])->getJson($url)->assertNotFound();
+    $otherYear = Schoolyear::factory()->create(['school_id' => $context['school']->id]);
+    $context['teacher']->update(['schoolyear_id' => $otherYear->id]);
+    $this->actingAs($context['teacher']->fresh())->getJson($url)->assertNotFound();
+});
+
+test('exercise export refuses unavailable links and stale or missing participants', function (string $problem) {
+    $context = mcAdminContext();
+    $test = mcAdminPublished($context['teacher'], $context['student']);
+    if ($problem === 'disabled links') {
+        DB::table('mc_tests')->where('id', $test->id)->update(['access_links_disabled_at' => now()]);
+    } elseif ($problem === 'draft') {
+        DB::table('mc_tests')->where('id', $test->id)->update(['status' => 'draft']);
+    } elseif ($problem === 'no participants') {
+        $test->attempts()->delete();
+    } elseif ($problem === 'changed email') {
+        $context['student']->update(['email' => 'changed@example.test']);
+    } else {
+        $foreignSchool = School::factory()->create();
+        $context['student']->update(['school_id' => $foreignSchool->id]);
+    }
+
+    $this->actingAs($context['teacher'])->getJson("/api/admin/multiple-choice/tests/{$test->id}/exercise-export")
+        ->assertUnprocessable()->assertJsonValidationErrors(in_array($problem, ['disabled links', 'draft'], true) ? 'test' : 'participants');
+})->with(['disabled links', 'draft', 'no participants', 'changed email', 'foreign student']);
+
 test('invitations preview never sends and an explicit send is duplicate safe', function () {
     $context = mcAdminContext();
     $test = mcAdminPublished($context['teacher'], $context['student']);

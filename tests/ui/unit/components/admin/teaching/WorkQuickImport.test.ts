@@ -51,20 +51,23 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
         vi.stubGlobal('showDirectoryPicker', vi.fn())
         vi.stubGlobal('indexedDB', {})
         workDropboxStates.set('7:2:65', { can_quick_import: false })
-        const wrapper = mountImport(WorkImportActions, { work })
+        const wrapper = mountImport(WorkImportActions, { work, disabled: true })
         const cardClick = vi.fn()
         const card = document.createElement('div')
         card.addEventListener('click', cardClick)
         card.appendChild(wrapper.element.parentElement || wrapper.element)
         try {
             await flushPromises()
-            const quick = wrapper.findAll('button')[1]
+            expect(wrapper.find('.work-quick-import').exists()).toBe(false)
+            workDropboxStates.set('7:2:65', { can_quick_import: true })
+            await flushPromises()
+            const quick = wrapper.get('.work-quick-import')
+            expect(quick.attributes('disabled')).toBeDefined()
             // Disabled Vuetify buttons pass pointer hits to their enclosing element.
             quick.element.parentElement!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
             expect(cardClick).not.toHaveBeenCalled()
             expect(wrapper.emitted('open')).toBeUndefined()
-            workDropboxStates.set('7:2:65', { can_quick_import: true })
-            await flushPromises()
+            await wrapper.setProps({ disabled: false })
             await quick.trigger('click')
             expect(wrapper.emitted('open')).toEqual([[work, true]])
             expect(cardClick).not.toHaveBeenCalled()
@@ -99,7 +102,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
         } finally { wrapper.unmount() }
     })
 
-    it('honors a renewed read permission request and disables reuse in unsupported browsers', async () => {
+    it('honors a renewed local read permission request and hides Quick-Import without a confirmed Dropbox folder', async () => {
         const handle = directory()
         handle.queryPermission.mockResolvedValue('prompt')
         handle.requestPermission.mockResolvedValue('granted')
@@ -116,8 +119,9 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             vi.stubGlobal('showDirectoryPicker', undefined)
             const actions = mountImport(WorkImportActions, { work })
             try {
-                expect(actions.findAll('button')[1].attributes('disabled')).toBeDefined()
-                expect(actions.findAll('button')[1].attributes('title')).toContain('Dropbox')
+                await flushPromises()
+                expect(actions.find('.work-quick-import').exists()).toBe(false)
+                expect(actions.get('button').text()).toBe('Importieren')
             } finally { actions.unmount() }
         } finally { wrapper.unmount() }
     })
@@ -196,9 +200,8 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             await flushPromises()
             expect(wrapper.text()).toContain('Für diese Arbeit ist noch kein Ordner gespeichert')
             expect(post).not.toHaveBeenCalled()
-            const quick = actions.findAll('button').find(button => button.text().includes('Quick-Import'))!
-            expect(quick.attributes('disabled')).toBeDefined()
-            expect(actions.find('[role="status"]').text()).toContain('Dropbox')
+            expect(actions.find('.work-quick-import').exists()).toBe(false)
+            expect(actions.find('[role="status"]').exists()).toBe(false)
             const normal = actions.findAll('button').find(button => button.text().includes('Importieren'))!
             expect(normal.attributes('disabled')).toBeUndefined()
         } finally { wrapper.unmount(); actions.unmount() }

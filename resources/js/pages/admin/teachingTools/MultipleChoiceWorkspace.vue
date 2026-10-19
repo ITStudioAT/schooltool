@@ -387,6 +387,7 @@
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
                                 <div class="mc-toolbar mt-3">
                                     <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
+                                    <v-btn variant="outlined" prepend-icon="mdi-download-outline" :loading="busy === 'exercise-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="downloadExerciseExport">Für Leistungsfeststellung exportieren</v-btn>
                                     <v-btn variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
                                 </div>
                                 <p v-if="selectedTest.access_links_disabled_at" class="text-caption mt-2">Die Sperre gilt auch für bereits geöffnete persönliche Links.</p>
@@ -822,6 +823,7 @@ import {
     rosterPreview,
     createTest,
     showTest,
+    exportExercise,
     renameTest,
     deleteTest,
     deleteCatalog,
@@ -2015,6 +2017,26 @@ async function toggleExamMode() {
     await task('exam-mode', async () => {
         await axios.patch(setExamMode.url(selectedTestId.value), { enabled: !selectedTest.value.exam_mode })
         await refreshMonitor()
+    })
+}
+
+async function downloadExerciseExport() {
+    const testId = selectedTestId.value
+    await task('exercise-export', async () => {
+        const { data, headers } = await axios.get(exportExercise.url(testId))
+        const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json;charset=utf-8' })
+        const objectUrl = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = objectUrl
+        anchor.download = headers?.['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || `MC-Test_${testId}.json`
+        document.body.appendChild(anchor)
+        try {
+            anchor.click()
+        } finally {
+            anchor.remove()
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+        }
+        notice.value = 'Export mit persönlichen Testlinks heruntergeladen. Die Datei bei der Leistungsfeststellung für den E-Mail-Versand bereitstellen.'
     })
 }
 

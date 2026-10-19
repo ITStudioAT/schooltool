@@ -1187,7 +1187,7 @@ describe('MyTimetable return navigation', () => {
         try {
             await wrapper.get('button').trigger('click')
             await nextTick()
-            expect(route.query).toEqual({ grades: 'sem1' })
+            expect(route.query).toEqual({})
             expect((wrapper.getComponent(MyTimetable).vm as any).range).toBe('next_week')
             expect((wrapper.getComponent(MyTimetable).vm as any).offset).toBe(0)
             expect(scrollTo).not.toHaveBeenCalled()

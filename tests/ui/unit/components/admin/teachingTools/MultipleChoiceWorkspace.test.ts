@@ -1689,12 +1689,70 @@ it('shows protected settings after a test has started', async () => {
     expect(axios.patch).not.toHaveBeenCalled()
 })
 
+it('downloads the selected test export without sending invitations or starting the test', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    const packageData = { schema_version: 1, kind: 'schooltool.multiple_choice_links', test: { id: 7 }, participants: [] }
+    const originalUrl = URL
+    const createObjectURL = vi.fn().mockReturnValue('blob:mc-export')
+    const revokeObjectURL = vi.fn()
+    let downloadedName = ''
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+        downloadedName = this.download
+        expect(this.href).toBe('blob:mc-export')
+    })
+    vi.stubGlobal('URL', class extends originalUrl {
+        static createObjectURL = createObjectURL
+        static revokeObjectURL = revokeObjectURL
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: packageData, headers: { 'content-disposition': 'attachment; filename="MC-Test_e-mails-test_2026-10-19_Nr-7.json"' } })
+    try {
+        await clickText(wrapper, 'Für Leistungsfeststellung exportieren')
+        expect(axios.get).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests/7/exercise-export')
+        expect(downloadedName).toBe('MC-Test_e-mails-test_2026-10-19_Nr-7.json')
+        const blob = createObjectURL.mock.calls[0][0]
+        const text = await new Promise<string>(resolve => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result))
+            reader.readAsText(blob)
+        })
+        expect(JSON.parse(text)).toEqual(packageData)
+        expect(axios.post).not.toHaveBeenCalled()
+        expect(wrapper.text()).toContain('Export mit persönlichen Testlinks heruntergeladen')
+        expect(document.querySelector('a[download="MC-Test_e-mails-test_2026-10-19_Nr-7.json"]')).toBeNull()
+        vi.advanceTimersByTime(1000)
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:mc-export')
+    } finally {
+        click.mockRestore()
+        vi.unstubAllGlobals()
+        vi.useRealTimers()
+    }
+})
+
+it('reports export failures without creating a download or sending mail', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    vi.mocked(axios.get).mockRejectedValueOnce({ response: { data: { message: 'Teilnehmerdaten prüfen.' } } })
+
+    await clickText(wrapper, 'Für Leistungsfeststellung exportieren')
+
+    expect(wrapper.text()).toContain('Teilnehmerdaten prüfen.')
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(document.querySelector('a[download]')).toBeNull()
+})
+
 it.each([false, true])('switches personal links explicitly and blocks invitations when disabled=%s', async disabled => {
     const test = { id: 7, catalog_id: 4, title: 'Test A', access_links_disabled_at: disabled ? '2026-10-18T12:00:00Z' : null }
     const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
     await flushPromises()
     await openExistingTest(wrapper)
     expect(wrapper.findAll('button').find(button => button.text() === 'Einladungen vorbereiten').element.disabled).toBe(disabled)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Für Leistungsfeststellung exportieren').element.disabled).toBe(disabled)
     vi.mocked(axios.patch).mockResolvedValueOnce({ data: { test } })
     await clickText(wrapper, disabled ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren')
     expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/access-links', { enabled: disabled })
