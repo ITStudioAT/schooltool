@@ -4,7 +4,6 @@ namespace App\Services\MultipleChoice;
 
 use App\Ai\Agents\MultipleChoiceDraftAgent;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use JsonException;
@@ -66,6 +65,34 @@ class McImportService
         array_unshift($warnings, 'KI-Entwurf: Alle Inhalte und Lösungen müssen von Ihnen fachlich geprüft werden.');
 
         return $this->result($questions, $this->validator->errors($questions), $warnings, 'ai');
+    }
+
+    /** @return array<string, mixed> */
+    public function workRosterPreview(array $export, int $schoolId): array
+    {
+        $participants = collect($export['course_roster']['participants']);
+        $active = $participants->filter(fn (array $person): bool => (bool) $person['active']);
+        $users = User::query()->where('school_id', $schoolId)
+            ->whereIn('id', $active->pluck('schooltool_person_id')->filter())->get(['id', 'email'])->keyBy('id');
+        $stream = fopen('php://temp', 'r+');
+        fputcsv($stream, ['Vorname', 'Nachname', 'E-Mail', 'Kurs', 'Klasse'], ';', '"', '');
+        foreach ($active as $person) {
+            fputcsv($stream, [$person['first_name'], $person['last_name'], $users->get($person['schooltool_person_id'] ?? null)?->email ?? '',
+                $export['course']['title'], $person['class_name'] ?? ''], ';', '"', '');
+        }
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+        $preview = $this->rosterPreview($csv, $schoolId);
+        if ($participants->count() !== $active->count()) {
+            $preview['warnings'][] = ($participants->count() - $active->count()).' abgemeldete Kursmitglied(er) wurden nicht übernommen.';
+        }
+
+        return [...$preview, 'csv' => $csv, 'source' => [
+            'work_id' => $export['work']['id'], 'work_title' => $export['work']['title'],
+            'course_id' => $export['course']['id'], 'course_title' => $export['course']['title'],
+            'scheduled_date' => $export['work']['scheduled_date'] ?? null,
+        ]];
     }
 
     /** @return array{rows: array, errors: array, warnings: array, valid: bool} */
@@ -137,17 +164,20 @@ class McImportService
         }
         $counts = array_count_values(array_column($rows, 'email'));
         $users = User::query()->where('school_id', $schoolId)
-            ->where(fn (Builder $query): Builder => $query->where('is_active', true)->orWhereNull('is_active'))
-            ->whereHas('roles', fn (Builder $query): Builder => $query->where('name', 'student')->where('guard_name', 'web'))
+            ->with('roles')
             ->whereIn(DB::raw('LOWER(TRIM(email))'), array_keys($counts))
-            ->get(['id', 'email', 'first_name', 'last_name', 'schoolclass'])
+            ->get(['id', 'email', 'first_name', 'last_name', 'schoolclass', 'is_active'])
             ->groupBy(fn (User $user): string => mb_strtolower(trim($user->email)));
         foreach ($rows as &$row) {
             if ($counts[$row['email']] > 1) {
                 $row['errors'][] = 'Die E-Mail-Adresse kommt mehrfach in der Datei vor.';
             }
-            $matches = $users->get($row['email'], collect());
-            if ($matches->count() !== 1) {
+            $accounts = $users->get($row['email'], collect());
+            $activeAccounts = $accounts->filter(fn (User $user): bool => $user->is_active === null || (bool) $user->is_active);
+            $matches = $activeAccounts->filter(fn (User $user): bool => $user->hasRole('student', 'web'));
+            if ($activeAccounts->isEmpty() && $accounts->isNotEmpty()) {
+                $row['errors'][] = 'Die E-Mail-Adresse ist vorhanden, aber das Konto ist deaktiviert. Bitte das Schülerkonto in der Schülerverwaltung einrichten bzw. aktivieren.';
+            } elseif ($matches->count() !== 1) {
                 $row['errors'][] = 'Kein eindeutig zuordenbares aktives Schülerkonto dieser Schule gefunden.';
             } else {
                 $user = $matches->first();

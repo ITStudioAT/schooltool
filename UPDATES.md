@@ -6,6 +6,9 @@
 
 - Export für Test
 
+### Stundenplan
+- Sondertermine löschbar
+
 ## 3.52.0
 
 ### Spiel

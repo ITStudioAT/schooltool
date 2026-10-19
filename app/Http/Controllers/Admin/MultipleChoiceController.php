@@ -88,6 +88,29 @@ class MultipleChoiceController extends Controller
     public function rosterPreview(Request $request): JsonResponse
     {
         $user = $this->teacher();
+        if ($request->has('work_export')) {
+            $data = $request->validate([
+                'work_export' => ['required', 'array'],
+                'work_export.schema_version' => ['required', 'integer', 'in:1'],
+                'work_export.kind' => ['required', 'in:schooltool.ai-work-export'],
+                'work_export.school.id' => ['required', 'integer', Rule::in([$user->school_id])],
+                'work_export.schoolyear.id' => ['required', 'integer', Rule::in([$user->schoolyear_id])],
+                'work_export.work.id' => ['required', 'integer', 'min:1'],
+                'work_export.work.title' => ['required', 'string', 'max:255'],
+                'work_export.work.scheduled_date' => ['nullable', 'date_format:Y-m-d'],
+                'work_export.course.id' => ['required', 'integer', 'min:1'],
+                'work_export.course.title' => ['required', 'string', 'max:255'],
+                'work_export.course_roster.complete' => ['required', 'accepted'],
+                'work_export.course_roster.participants' => ['required', 'array', 'min:1', 'max:1000'],
+                'work_export.course_roster.participants.*.schooltool_person_id' => ['nullable', 'integer', 'min:1'],
+                'work_export.course_roster.participants.*.first_name' => ['required', 'string', 'max:255'],
+                'work_export.course_roster.participants.*.last_name' => ['required', 'string', 'max:255'],
+                'work_export.course_roster.participants.*.class_name' => ['nullable', 'string', 'max:255'],
+                'work_export.course_roster.participants.*.active' => ['required', 'boolean'],
+            ]);
+
+            return response()->json($this->imports->workRosterPreview($data['work_export'], (int) $user->school_id));
+        }
         $data = $request->validate(['csv' => ['required', 'string', 'max:1048576']]);
 
         return response()->json($this->imports->rosterPreview($data['csv'], (int) $user->school_id));
@@ -534,11 +557,8 @@ class MultipleChoiceController extends Controller
         $data = $request->validate(['solutions' => ['required', 'boolean']]);
         DB::transaction(function () use ($test, $data): void {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
-            if ($locked->paused_at !== null || ($locked->start_mode !== 'individual' && ($locked->starts_at === null || $locked->starts_at->isFuture()))) {
-                throw ValidationException::withMessages(['test' => ['Ergebnisse können erst nach dem Test freigegeben werden.']]);
-            }
-            if ($locked->attempts()->whereNull('completed_at')->get()->contains(fn (McAttempt $attempt): bool => $attempt->effectiveDeadline($locked)?->isFuture() ?? false)) {
-                throw ValidationException::withMessages(['test' => ['Der Test läuft noch. Die Ergebnisfreigabe ist nach Testende oder der Abgabe aller Teilnehmer möglich.']]);
+            if ($locked->status !== 'published' || ! $locked->attempts()->whereNotNull('completed_at')->exists()) {
+                throw ValidationException::withMessages(['test' => ['Ergebnisse können freigegeben werden, sobald mindestens eine Abgabe abgeschlossen ist.']]);
             }
             if ($data['solutions']) {
                 if ($locked->results_released_at === null) {

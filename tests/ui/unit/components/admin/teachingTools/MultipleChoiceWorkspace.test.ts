@@ -161,6 +161,127 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
+describe('MC test folder import', () => {
+    const source = { schema_version: 1, kind: 'schooltool.ai-work-export', school: { id: 1 }, schoolyear: { id: 2 },
+        work: { id: 81, title: 'Dateimanagement', scheduled_date: '2026-10-19' }, course: { id: 21, title: 'INF - 5A - 1' },
+        course_roster: { complete: true, participants: [{ schooltool_person_id: '42', first_name: 'Alex', last_name: 'Beispiel', class_name: '5A', active: true }] },
+        materials: ['unrelated private document'],
+    }
+    const preview = { valid: true, csv: 'Vorname;Nachname;E-Mail;Kurs;Klasse\nAlex;Beispiel;alex@example.test;INF;5A',
+        rows: [{ first_name: 'Alex', last_name: 'Beispiel', email: 'alex@example.test', status: 'matched' }],
+        source: { work_title: 'Dateimanagement', course_title: 'INF - 5A - 1', scheduled_date: '2026-10-19' },
+    }
+
+    async function prepareFolderImport() {
+        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }] })
+        await flushPromises()
+        await openCatalogTests(wrapper)
+        await clickText(wrapper, 'Neuen Test anlegen')
+        return wrapper
+    }
+
+    function directoryFile(text = JSON.stringify(source), path = '2026-10-19_Informatik_5A_Gruppe-1/Schooltool_Arbeitsdaten.json') {
+        const file = new File([text], 'Schooltool_Arbeitsdaten.json', { type: 'application/json' })
+        Object.defineProperty(file, 'webkitRelativePath', { value: path })
+        return file
+    }
+
+    async function selectDirectoryFiles(wrapper, files) {
+        const input = wrapper.find('input[webkitdirectory]')
+        Object.defineProperty(input.element, 'files', { configurable: true, value: files })
+        await input.trigger('change')
+        await flushPromises()
+    }
+
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('copies the folder name and checked roster without creating or starting a test', async () => {
+        const wrapper = await prepareFolderImport()
+        const getFileHandle = vi.fn().mockResolvedValue({ getFile: async () => directoryFile() })
+        const picker = vi.fn().mockResolvedValue({ name: '2026-10-19_Informatik_5A_Gruppe-1', getFileHandle })
+        vi.stubGlobal('showDirectoryPicker', picker)
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+
+        await clickText(wrapper, 'Aus Testordner übernehmen')
+
+        expect(picker).toHaveBeenCalledExactlyOnceWith({ id: 'schooltool-mc-test-folder', mode: 'read' })
+        expect(getFileHandle).toHaveBeenCalledExactlyOnceWith('Schooltool_Arbeitsdaten.json')
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/roster-preview', { work_export: {
+            schema_version: 1, kind: source.kind, school: source.school, schoolyear: source.schoolyear,
+            work: source.work, course: source.course, course_roster: source.course_roster,
+        } })
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('2026-10-19_Informatik_5A_Gruppe-1')
+        expect(wrapper.find('textarea').element.value).toBe(preview.csv)
+        expect(wrapper.text()).toContain('Dateimanagement · INF - 5A - 1', 'Alex', '1 eindeutig zugeordnet')
+        expect(wrapper.findAll('button').find(item => item.text() === 'Test freigeben').element.disabled).toBe(false)
+        await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Eigener Testname')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Eigener Testname')
+    })
+
+    it('supports directory uploads in browsers without the directory picker and ignores nested work exports', async () => {
+        const wrapper = await prepareFolderImport()
+        vi.stubGlobal('showDirectoryPicker', undefined)
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+
+        await selectDirectoryFiles(wrapper, [directoryFile('not the export', 'Test/Archiv/Schooltool_Arbeitsdaten.json'), directoryFile()])
+
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('2026-10-19_Informatik_5A_Gruppe-1')
+        expect(axios.post).toHaveBeenCalledOnce()
+    })
+
+    it.each([
+        ['missing file', [], 'Im Testordner fehlt'],
+        ['malformed JSON', [() => directoryFile('{broken')], 'keine lesbaren JSON-Arbeitsdaten'],
+        ['other document', [() => directoryFile('{"kind":"other"}')], 'Bitte verwende einen Schooltool-Arbeitsdatenexport'],
+    ])('preserves the current draft for %s', async (_name, files, message) => {
+        const wrapper = await prepareFolderImport()
+        await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Eigener Test')
+        const selected = files.length ? files.map(create => create()) : [directoryFile('{}', 'Test/Archiv/Schooltool_Arbeitsdaten.json')]
+
+        await selectDirectoryFiles(wrapper, selected)
+
+        expect(wrapper.text()).toContain(message)
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Eigener Test')
+        expect(axios.post).not.toHaveBeenCalled()
+    })
+
+    it('keeps ambiguous students visible and blocks publication', async () => {
+        const wrapper = await prepareFolderImport()
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { ...preview, valid: false, rows: [{ status: 'error' }], errors: ['Schülerkonto nicht eindeutig.'] } })
+
+        await selectDirectoryFiles(wrapper, [directoryFile()])
+
+        expect(wrapper.text()).toContain('Schülerkonto nicht eindeutig.')
+        expect(wrapper.findAll('button').find(item => item.text() === 'Test freigeben').element.disabled).toBe(true)
+    })
+
+    it('does not restore an import after cancelling the draft while its preview is pending', async () => {
+        const wrapper = await prepareFolderImport()
+        let completePreview
+        vi.mocked(axios.post).mockImplementationOnce(() => new Promise(resolve => { completePreview = resolve }))
+        await selectDirectoryFiles(wrapper, [directoryFile()])
+        await clickText(wrapper, 'Abbrechen')
+        await clickText(wrapper, 'Neuen Test anlegen')
+        completePreview({ data: preview })
+        await flushPromises()
+
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Katalog – Test')
+        expect(wrapper.find('textarea').element.value).toBe('')
+        expect(wrapper.text()).not.toContain('Übernommen aus')
+    })
+
+    it('shows server validation errors without replacing the existing draft', async () => {
+        const wrapper = await prepareFolderImport()
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { errors: { 'work_export.school.id': ['Export gehört zu einer anderen Schule.'] } } } })
+
+        await selectDirectoryFiles(wrapper, [directoryFile()])
+
+        expect(wrapper.text()).toContain('Export gehört zu einer anderen Schule.')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Katalog – Test')
+        expect(wrapper.find('textarea').element.value).toBe('')
+    })
+})
+
 describe('Multiple Choice URL navigation', () => {
     const catalogs = [
         { id: 4, title: 'Netzwerke', questions: [validQuestion()] },
@@ -956,7 +1077,7 @@ describe('Multiple Choice teacher workflow', () => {
         const test = { id: 7, catalog_id: 4, title: 'Test A', question_count: 3, total_points: 10, duration_seconds: 600, lead_seconds: 30, results_released_at: '2026-10-16T08:11:00Z', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z' }
         const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, server_now: '2026-10-16T08:11:00Z', attempts: [
             { id: 1, student_name: 'Nicht begonnen', status: 'not_started', started_at: null, score: 0, percentage: 0 },
-            { id: 2, student_name: 'Null Punkte', status: 'submitted', started_at: '2026-10-16T08:01:00Z', score: 0, percentage: 0 },
+            { id: 2, student_name: 'Null Punkte', status: 'submitted', started_at: '2026-10-16T08:01:00Z', completed_at: '2026-10-16T08:09:00Z', score: 0, percentage: 0 },
         ] })
         await flushPromises()
         await openExistingTest(wrapper)
@@ -1477,7 +1598,7 @@ it('grants an individual extra time only for the deliberately selected person af
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 })
 
-it('shows independently running extra time and blocks release while one person still works', async () => {
+it('shows independently running extra time and disables release when no completed attempt exists', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-16T08:11:00Z'))
     const test = { id: 7, catalog_id: 4, title: 'Test A', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z' }
@@ -1732,6 +1853,139 @@ it('downloads the selected test export without sending invitations or starting t
     }
 })
 
+it('writes all personal links into the selected local folder without replacing an existing export', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published', start_mode: 'individual', starts_at: null, ends_at: null, closes_at: '2027-01-15T12:00:00Z' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    const packageData = { schema_version: 1, kind: 'schooltool.multiple_choice_links', test: { id: 7 }, participants: [
+        { participant_id: 'user:1', access_url: 'https://example.invalid/multiple-choice#access=first' },
+        { participant_id: 'user:2', access_url: 'https://example.invalid/multiple-choice#access=second' },
+    ] }
+    const writable = { write: vi.fn().mockResolvedValue(undefined), close: vi.fn().mockResolvedValue(undefined), abort: vi.fn() }
+    const originalFile = { createWritable: vi.fn() }
+    const file = { createWritable: vi.fn().mockResolvedValue(writable) }
+    const directory = { name: 'Testordner', getFileHandle: vi.fn()
+        .mockResolvedValueOnce(originalFile)
+        .mockRejectedValueOnce(new DOMException('Missing', 'NotFoundError'))
+        .mockResolvedValueOnce(file) }
+    const picker = vi.fn().mockImplementation(() => {
+        expect(axios.get).not.toHaveBeenCalled()
+        return Promise.resolve(directory)
+    })
+    vi.stubGlobal('showDirectoryPicker', picker)
+    vi.mocked(axios.get).mockClear().mockResolvedValueOnce({ data: packageData, headers: { 'content-disposition': 'attachment; filename="MC-Test_Test-A_Nr-7.json"' } })
+    try {
+        await clickText(wrapper, 'Im Testordner speichern')
+
+        expect(picker).toHaveBeenCalledWith({ id: 'schooltool-mc-test-export', mode: 'readwrite' })
+        expect(directory.getFileHandle).toHaveBeenLastCalledWith('MC-Test_Test-A_Nr-7_2.json', { create: true })
+        expect(originalFile.createWritable).not.toHaveBeenCalled()
+        expect(JSON.parse(writable.write.mock.calls[0][0])).toEqual(packageData)
+        expect(writable.close).toHaveBeenCalledOnce()
+        expect(wrapper.text()).toContain('Testlinks für 2 Schüler im Testordner „Testordner“ gespeichert')
+        expect(wrapper.text()).toContain('schon vor dem Teststart')
+        expect(axios.post).not.toHaveBeenCalled()
+        expect(axios.patch).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+})
+
+it.each(['AbortError', 'NotAllowedError'])('does not fetch or write personal links when folder selection fails with %s', async name => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    vi.mocked(axios.get).mockClear()
+    vi.stubGlobal('showDirectoryPicker', vi.fn().mockRejectedValue(new DOMException('Denied', name)))
+    try {
+        await clickText(wrapper, 'Im Testordner speichern')
+
+        expect(axios.get).not.toHaveBeenCalled()
+        expect(wrapper.text().includes('nicht zum Schreiben freigegeben')).toBe(name === 'NotAllowedError')
+        expect(wrapper.text()).not.toContain('Testlinks für')
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+})
+
+it('offers the existing download when folder selection is unsupported', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    vi.mocked(axios.get).mockClear()
+    vi.stubGlobal('showDirectoryPicker', undefined)
+    try {
+        await clickText(wrapper, 'Im Testordner speichern')
+
+        expect(wrapper.text()).toContain('Browser unterstützt die Ordnerauswahl nicht')
+        expect(wrapper.findAll('button').some(button => button.text() === 'Für Leistungsfeststellung exportieren')).toBe(true)
+        expect(axios.get).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+})
+
+it.each(['request', 'identity', 'write'])('does not claim a saved folder export after a %s failure', async failure => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    const writable = { write: vi.fn().mockRejectedValue(new Error('Disk full')), close: vi.fn(), abort: vi.fn().mockResolvedValue(undefined) }
+    const directory = { name: 'Testordner', getFileHandle: vi.fn().mockRejectedValueOnce(new DOMException('Missing', 'NotFoundError')).mockResolvedValue({ createWritable: vi.fn().mockResolvedValue(writable) }), removeEntry: vi.fn().mockResolvedValue(undefined) }
+    vi.stubGlobal('showDirectoryPicker', vi.fn().mockResolvedValue(directory))
+    if (failure === 'request') vi.mocked(axios.get).mockRejectedValueOnce({ response: { data: { message: 'Zugangslinks sind deaktiviert.' } } })
+    else vi.mocked(axios.get).mockResolvedValueOnce({ data: { schema_version: 1, kind: 'schooltool.multiple_choice_links', test: { id: failure === 'identity' ? 8 : 7 }, participants: [] }, headers: {} })
+    try {
+        await clickText(wrapper, 'Im Testordner speichern')
+
+        expect(wrapper.text()).not.toContain('im Testordner „Testordner“ gespeichert')
+        expect(axios.post).not.toHaveBeenCalled()
+        if (failure === 'write') {
+            expect(writable.abort).toHaveBeenCalledOnce()
+            expect(directory.removeEntry).toHaveBeenCalledWith('MC-Test_7.json')
+            expect(writable.close).not.toHaveBeenCalled()
+            expect(wrapper.text()).toContain('nicht vollständig gespeichert')
+        } else {
+            expect(directory.getFileHandle).not.toHaveBeenCalled()
+        }
+    } finally { vi.unstubAllGlobals() }
+})
+
+it.each([false, true])('allows explicit results and solutions release with completed work while other people remain open, solutions=%s', async solutions => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: 'individual', closes_at: '2027-01-15T12:00:00Z',
+        results_released_at: solutions ? '2026-10-19T10:00:00Z' : null }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, server_now: '2026-10-19T10:00:00Z', attempts: [
+        { id: 1, student_name: 'Fertig', status: 'submitted', completed_at: '2026-10-19T09:59:00Z' },
+        { id: 2, student_name: 'Abwesend', status: 'not_started', started_at: null, completed_at: null, effective_ends_at: '2027-01-15T12:00:00Z' },
+        { id: 3, student_name: 'Bearbeitet noch', status: 'in_progress', started_at: '2026-10-19T09:58:00Z', completed_at: null, effective_ends_at: '2026-10-19T10:03:00Z' },
+    ] })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    const buttonText = solutions ? 'Lösungen freigeben' : 'Ergebnisse freigeben'
+
+    expect(wrapper.find('[aria-label="Ergebnisse und Lösungen"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').find(button => button.text() === buttonText).element.disabled).toBe(false)
+    await clickText(wrapper, buttonText)
+    expect(wrapper.find('[role="dialog"]').text()).toContain('erst nach der eigenen Abgabe')
+    expect(axios.post).not.toHaveBeenCalled()
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: {} })
+    await clickText(wrapper, 'Freigeben')
+    expect(axios.post).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/release-results', { solutions })
+})
+
+it('keeps results controls visible before any personal test starts', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: 'individual', starts_at: null, ends_at: null }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, attempts: [
+        { id: 1, student_name: 'Noch nicht begonnen', status: 'not_started', started_at: null, completed_at: null },
+    ] })
+    await flushPromises()
+    await openExistingTest(wrapper)
+
+    expect(wrapper.find('[aria-label="Ergebnisse und Lösungen"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('sobald eine Abgabe abgeschlossen ist')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Ergebnisse freigeben').element.disabled).toBe(true)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Im Testordner speichern').element.disabled).toBe(false)
+    expect(axios.post).not.toHaveBeenCalled()
+})
+
 it('reports export failures without creating a download or sending mail', async () => {
     const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published' }
     const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test })
@@ -1753,6 +2007,7 @@ it.each([false, true])('switches personal links explicitly and blocks invitation
     await openExistingTest(wrapper)
     expect(wrapper.findAll('button').find(button => button.text() === 'Einladungen vorbereiten').element.disabled).toBe(disabled)
     expect(wrapper.findAll('button').find(button => button.text() === 'Für Leistungsfeststellung exportieren').element.disabled).toBe(disabled)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Im Testordner speichern').element.disabled).toBe(disabled)
     vi.mocked(axios.patch).mockResolvedValueOnce({ data: { test } })
     await clickText(wrapper, disabled ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren')
     expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/access-links', { enabled: disabled })

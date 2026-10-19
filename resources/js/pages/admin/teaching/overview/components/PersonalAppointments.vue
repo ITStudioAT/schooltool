@@ -47,7 +47,7 @@
                 </div>
             </v-card-text>
             <v-card-actions>
-                <v-btn v-if="form.id && editScope !== 'occurrence'" color="error" variant="text" :disabled="saving" @click="confirmDelete = true">Löschen</v-btn>
+                <v-btn v-if="form.id" color="error" variant="text" :disabled="saving" @click="confirmDelete = true">{{ originalWeekly ? 'Gesamte Terminserie löschen' : 'Löschen' }}</v-btn>
                 <v-spacer />
                 <v-btn variant="text" :disabled="saving" @click="dialog = false">Abbrechen</v-btn>
                 <v-btn color="primary" :loading="saving" :disabled="!canSave || !!loadError || loading" @click="save()">Speichern</v-btn>
@@ -183,7 +183,7 @@ export default {
             } finally { this.saving = false }
         },
         async remove() {
-            if (this.editScope === 'occurrence' || !this.confirmDelete || !this.form.id || this.saving) return
+            if (!this.confirmDelete || !this.form.id || this.saving) return
             const context = this.contextKey
             this.saving = true
             this.saveError = ''

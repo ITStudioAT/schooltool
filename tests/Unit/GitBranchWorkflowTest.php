@@ -524,6 +524,8 @@ it('updates and prepares existing main from origin on every gitmain call', funct
     runBranchWorkflowGit($this->workflowLaptop, 'push', 'origin', 'main');
     $command = <<<'POWERSHELL'
 function Invoke-SchooltoolLocalPreparation {
+    param([switch]$FullUpdate)
+    if (-not $FullUpdate) { throw 'MAIN_UPDATE_NOT_REQUESTED' }
     if (-not (Test-Path -LiteralPath 'received.txt')) { throw 'PREPARATION_BEFORE_UPDATE' }
     Write-Host 'UPDATED_MAIN_PREPARED'
 }
@@ -549,6 +551,49 @@ POWERSHELL;
     expect(runBranchWorkflowGit($main, 'rev-parse', 'HEAD'))->toBe($nextHead);
     expect(file_get_contents($main.'/received.txt'))->toBe('Next main');
 })->with(['powershell', 'pwsh'])->with([false, true]);
+
+it('runs the full local updater only for main and propagates its failure', function (string $shell, int $exitCode): void {
+    $command = <<<'POWERSHELL'
+. $env:SCHOOLTOOL_TEST_HELPERS
+$script:deployCalls = 0
+function composer {
+    if (($args -join ' ') -ne 'deploy --target=local') { throw 'UNEXPECTED_COMPOSER_COMMAND' }
+    $script:deployCalls++
+    $global:LASTEXITCODE = EXIT_CODE
+}
+function php { throw 'UNEXPECTED_PREPARATION' }
+function npm { throw 'UNEXPECTED_BUILD' }
+try {
+    Invoke-SchooltoolLocalPreparation -FullUpdate
+    if (EXIT_CODE -ne 0) { throw 'UPDATE_FAILURE_IGNORED' }
+    Write-Host 'FULL_UPDATE_SUCCEEDED'
+} catch {
+    if (EXIT_CODE -eq 0 -or $_.Exception.Message -notlike '*failed with exit code EXIT_CODE*') { throw }
+    Write-Host 'FULL_UPDATE_FAILED'
+}
+if ($script:deployCalls -ne 1) { throw 'UPDATE_NOT_CALLED_ONCE' }
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, str_replace('EXIT_CODE', (string) $exitCode, $command), $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain($exitCode === 0 ? 'FULL_UPDATE_SUCCEEDED' : 'FULL_UPDATE_FAILED');
+    expect($result->getOutput())->not->toContain('No migrations or seeders were run.');
+})->with(['powershell', 'pwsh'])->with([0, 7]);
+
+it('keeps feature preparation separate from the full local update', function (string $shell): void {
+    $command = <<<'POWERSHELL'
+function Invoke-SchooltoolLocalPreparation {
+    param([switch]$FullUpdate)
+    if ($FullUpdate) { throw 'FEATURE_DATABASE_UPDATE_REQUESTED' }
+    Write-Host 'FEATURE_PREPARED_WITHOUT_DATABASE_UPDATE'
+}
+gitstart preparation-only
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('FEATURE_PREPARED_WITHOUT_DATABASE_UPDATE');
+})->with(['powershell', 'pwsh']);
 
 it('selects main with unsaved work and refuses updating unpublished commits while preserving files', function (string $state, bool $fromFeature, string $shell): void {
     $main = $this->workflowPc;

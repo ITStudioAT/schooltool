@@ -65,6 +65,103 @@ function mcAdminRoster(User $student): string
     return "Vorname;Nachname;Geschlecht;E-Mail;Kurs;Klasse\n{$student->first_name};{$student->last_name};x;{$student->email};INF;\n";
 }
 
+function mcAdminWorkExport(array $context): array
+{
+    $student = $context['student'];
+
+    return ['schema_version' => 1, 'kind' => 'schooltool.ai-work-export',
+        'school' => ['id' => $context['school']->id], 'schoolyear' => ['id' => $context['teacher']->schoolyear_id],
+        'work' => ['id' => 81, 'title' => 'Dateimanagement', 'scheduled_date' => '2026-10-19'],
+        'course' => ['id' => 21, 'title' => 'INF - 5A - 1'],
+        'course_roster' => ['complete' => true, 'participants' => [[
+            'schooltool_person_id' => (string) $student->id, 'first_name' => $student->first_name,
+            'last_name' => $student->last_name, 'class_name' => $student->schoolclass, 'active' => true,
+        ]]]];
+}
+
+test('test folder roster uses current school account emails and can be reviewed before creating a test', function () {
+    $context = mcAdminContext();
+    $export = mcAdminWorkExport($context);
+    $export['course_roster']['participants'][0]['email'] = 'obsolete@example.test';
+    $preview = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertOk()->assertJsonPath('valid', true)->assertJsonPath('rows.0.user_id', $context['student']->id)
+        ->assertJsonPath('rows.0.email', $context['student']->email)->assertJsonPath('source.work_title', 'Dateimanagement');
+    expect(McTest::query()->count())->toBe(0);
+    $input = mcAdminTestInput(mcAdminCatalog($context['teacher']), $context['student']);
+    $input['roster_csv'] = $preview->json('csv');
+    $this->postJson('/api/admin/multiple-choice/tests', $input)->assertCreated();
+    expect(McTest::query()->sole()->attempts()->sole()->student_id)->toBe($context['student']->id);
+});
+
+test('test folder roster shows updated email and the deactivated account instead of a missing email', function (bool $hasStudentRole) {
+    $context = mcAdminContext();
+    $export = mcAdminWorkExport($context);
+    $context['student']->forceFill(['email' => 'updated@example.test', 'is_active' => false])->save();
+    if (! $hasStudentRole) {
+        $context['student']->removeRole('student');
+    }
+
+    $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertOk()->assertJsonPath('valid', false)->assertJsonPath('rows.0.email', 'updated@example.test')
+        ->assertJsonPath('rows.0.user_id', null)->assertJsonPath('rows.0.status', 'error');
+    expect($response->json('rows.0.errors'))->toBe([
+        'Die E-Mail-Adresse ist vorhanden, aber das Konto ist deaktiviert. Bitte das Schülerkonto in der Schülerverwaltung einrichten bzw. aktivieren.',
+    ]);
+
+    $input = mcAdminTestInput(mcAdminCatalog($context['teacher']), $context['student']);
+    $input['roster_csv'] = $response->json('csv');
+    $this->postJson('/api/admin/multiple-choice/tests', $input)->assertUnprocessable()->assertJsonValidationErrors('roster_csv');
+    expect(McTest::query()->count())->toBe(0);
+    expect((bool) $context['student']->fresh()->is_active)->toBeFalse();
+
+    $context['student']->forceFill(['is_active' => true])->save();
+    $context['student']->assignRole('student');
+    $this->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertOk()->assertJsonPath('valid', true)->assertJsonPath('rows.0.email', 'updated@example.test')
+        ->assertJsonPath('rows.0.user_id', $context['student']->id)->assertJsonPath('rows.0.errors', []);
+})->with(['deactivated student' => true, 'imported account without role' => false]);
+
+test('test folder import rejects a wrong school year incomplete roster or incompatible schema', function (string $field, mixed $value) {
+    $context = mcAdminContext();
+    $export = mcAdminWorkExport($context);
+    data_set($export, $field, $value);
+    $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertUnprocessable()->assertJsonValidationErrors('work_export.'.$field)->assertJsonMissingPath('csv');
+})->with([
+    'foreign school' => ['school.id', 999999999], 'foreign schoolyear' => ['schoolyear.id', 999999999],
+    'incomplete roster' => ['course_roster.complete', false], 'schema' => ['schema_version', 2],
+]);
+
+test('test folder roster never resolves foreign missing mismatched or duplicated student identities', function (string $identity) {
+    $context = mcAdminContext();
+    $export = mcAdminWorkExport($context);
+    if ($identity === 'foreign') {
+        $foreign = mcAdminContext();
+        $export['course_roster']['participants'][0]['schooltool_person_id'] = (string) $foreign['student']->id;
+    } elseif ($identity === 'missing') {
+        $export['course_roster']['participants'][0]['schooltool_person_id'] = null;
+    } elseif ($identity === 'mismatched') {
+        $export['course_roster']['participants'][0]['last_name'] = 'Wrong identity';
+    } else {
+        $export['course_roster']['participants'][] = $export['course_roster']['participants'][0];
+    }
+    $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertOk()->assertJsonPath('valid', false)->assertJsonPath('rows.0.status', 'error');
+    expect($response->json('rows'))->toHaveCount($identity === 'duplicate' ? 2 : 1);
+    if ($identity === 'foreign') {
+        expect($response->getContent())->not->toContain($foreign['student']->email);
+    }
+})->with(['foreign', 'missing', 'mismatched', 'duplicate']);
+
+test('test folder roster reports excluded former course members explicitly', function () {
+    $context = mcAdminContext();
+    $export = mcAdminWorkExport($context);
+    $export['course_roster']['participants'][] = [...$export['course_roster']['participants'][0], 'active' => false];
+    $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/roster-preview', ['work_export' => $export])
+        ->assertOk()->assertJsonPath('valid', true)->assertJsonCount(1, 'rows');
+    expect($response->json('warnings'))->toContain('1 abgemeldete Kursmitglied(er) wurden nicht übernommen.');
+});
+
 /** @return array<string, mixed> */
 function mcAdminTestInput(McCatalog $catalog, User $student): array
 {
@@ -181,11 +278,13 @@ test('countdown is server stored and schedules automatic completion without chan
     Queue::assertPushed(FinalizeMultipleChoiceTest::class, fn ($job): bool => $job->delay->equalTo($test->fresh()->ends_at));
 });
 
-test('exercise export contains personal links without questions answers or side effects', function () {
+test('exercise export contains personal links before test start without questions answers or side effects', function (string $startMode) {
     $this->travelTo(CarbonImmutable::parse('2026-10-19T08:00:00Z'));
     $context = mcAdminContext();
     $student = $context['student'];
     $test = mcAdminPublished($context['teacher'], $student);
+    DB::table('mc_tests')->where('id', $test->id)->update(['start_mode' => $startMode, 'closes_at' => now()->addDay()]);
+    $test->refresh();
     $attempt = $test->attempts()->sole();
     $beforeTest = $test->fresh()->getAttributes();
     $beforeAttempt = $attempt->getAttributes();
@@ -202,7 +301,8 @@ test('exercise export contains personal links without questions answers or side 
         ->assertJsonPath('source.teacher_id', $context['teacher']->id)
         ->assertJsonPath('source.environment', 'testing')->assertJsonPath('source.is_preview', false)
         ->assertJsonPath('test.id', $test->id)->assertJsonPath('test.title', $test->title)
-        ->assertJsonPath('test.duration_seconds', 600)->assertJsonCount(1, 'participants');
+        ->assertJsonPath('test.duration_seconds', 600)->assertJsonPath('test.start_mode', $startMode)
+        ->assertJsonPath('test.starts_at', null)->assertJsonPath('test.ends_at', null)->assertJsonCount(1, 'participants');
 
     expect(array_keys($response->json()))->toBe(['schema_version', 'kind', 'exported_at', 'timezone', 'source', 'test', 'participants']);
     expect(array_keys($response->json('test')))->toBe(['id', 'title', 'catalog_id', 'status', 'question_count', 'total_points',
@@ -211,15 +311,16 @@ test('exercise export contains personal links without questions answers or side 
         'participant_id' => 'user:'.$student->id, 'schooltool_person_id' => (string) $student->id,
         'first_name' => $student->first_name, 'last_name' => $student->last_name, 'email' => $student->email,
         'attempt_id' => $attempt->id, 'access_url' => url('/multiple-choice').'#access='.$attempt->access_token,
-        'closes_at' => null,
+        'closes_at' => $test->closes_at->utc()->toIso8601String(),
     ]);
     $again = $this->getJson("/api/admin/multiple-choice/tests/{$test->id}/exercise-export")->assertOk();
     expect($again->json('participants'))->toBe($response->json('participants'));
     expect($test->fresh()->getAttributes())->toBe($beforeTest);
     expect($attempt->fresh()->getAttributes())->toBe($beforeAttempt);
+    expect($attempt->fresh()->started_at)->toBeNull();
     Mail::assertNothingSent();
     Queue::assertNothingPushed();
-});
+})->with(['common', 'individual']);
 
 test('exercise export protects personal links by authentication ownership school and selected schoolyear', function () {
     $context = mcAdminContext();
@@ -710,7 +811,7 @@ test('individual invitation preview includes the correct timing and each persona
     expect($body)->toContain('Du startest den Test einmal selbst')->toContain('10 Minuten')->toContain($closing->format('d.m.Y H:i'))->not->toContain('Countdown');
 });
 
-test('individual results and solutions stay locked while an unstarted personal exception remains open', function () {
+test('individual results and solutions need at least one completed attempt', function () {
     $context = mcAdminContext();
     $test = mcAdminPublished($context['teacher'], $context['student']);
     DB::table('mc_tests')->where('id', $test->id)->update(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
@@ -720,6 +821,59 @@ test('individual results and solutions stay locked while an unstarted personal e
     $this->postJson("/api/admin/multiple-choice/tests/{$test->id}/release-results", ['solutions' => false])->assertOk();
     $this->postJson("/api/admin/multiple-choice/tests/{$test->id}/release-results", ['solutions' => true])->assertOk();
 });
+
+test('completed work can be released while absent and active classmates retain private unfinished attempts', function (string $startMode) {
+    $this->freezeSecond();
+    $context = mcAdminContext();
+    $absent = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id, 'is_active' => true]);
+    $active = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id, 'is_active' => true]);
+    $absent->assignRole('student');
+    $active->assignRole('student');
+    $catalog = mcAdminCatalog($context['teacher']);
+    $input = mcAdminTestInput($catalog, $context['student']);
+    unset($input['roster_csv']);
+    $test = McTest::query()->create([...$input, 'school_id' => $context['school']->id, 'owner_id' => $context['teacher']->id,
+        'status' => 'draft', 'start_mode' => $startMode, 'closes_at' => now()->addDay()]);
+    $service = app(McTestService::class);
+    $test = $service->publish($test, [$context['student']->id, $absent->id, $active->id]);
+    if ($startMode === 'common') {
+        $test = $service->startCountdown($test);
+        $this->travel(31)->seconds();
+    }
+    $finishedAttempt = $test->attempts()->where('student_id', $context['student']->id)->sole();
+    $activeAttempt = $test->attempts()->where('student_id', $active->id)->sole();
+    if ($startMode === 'individual') {
+        $service->startIndividual($finishedAttempt);
+        $service->startIndividual($activeAttempt);
+    } else {
+        $service->openAttempt($activeAttempt);
+    }
+    $service->saveAnswers($finishedAttempt, ['q1' => ['a'], 'q2' => ['a', 'b']]);
+    $service->submit($finishedAttempt);
+    $absentAttempt = $test->attempts()->where('student_id', $absent->id)->sole();
+    $beforeAbsent = $absentAttempt->getAttributes();
+    $beforeActive = $activeAttempt->fresh()->getAttributes();
+    $url = "/api/admin/multiple-choice/tests/{$test->id}/release-results";
+
+    $this->actingAs($context['teacher'], 'web')->postJson($url, ['solutions' => false])->assertOk();
+    $this->postJson($url, ['solutions' => true])->assertOk();
+    expect($absentAttempt->fresh()->getAttributes())->toBe($beforeAbsent);
+    expect($activeAttempt->fresh()->getAttributes())->toBe($beforeActive);
+
+    $this->actingAs($context['student'], 'web')->getJson('/api/multiple-choice/attempts/'.$finishedAttempt->id)
+        ->assertOk()->assertJsonPath('attempt.result.score', '10.00')->assertJsonPath('attempt.result.solutions_released', true)
+        ->assertJsonStructure(['attempt' => ['result' => ['question_results' => [['correct_option_ids']]]]]);
+    $this->actingAs($absent, 'web')->getJson('/api/multiple-choice/attempts/'.$absentAttempt->id)
+        ->assertOk()->assertJsonPath('attempt.result', null)->assertJsonMissingPath('attempt.questions.0.correct_option_ids');
+    $this->actingAs($active, 'web')->getJson('/api/multiple-choice/attempts/'.$activeAttempt->id)
+        ->assertOk()->assertJsonPath('attempt.result', null)->assertJsonMissingPath('attempt.questions.0.correct_option_ids');
+    expect($test->fresh()->results_released_at)->not->toBeNull();
+    expect($test->fresh()->solutions_released_at)->not->toBeNull();
+    $service->saveAnswers($activeAttempt, ['q1' => ['a'], 'q2' => ['a', 'b']]);
+    $service->submit($activeAttempt);
+    $this->getJson('/api/multiple-choice/attempts/'.$activeAttempt->id)
+        ->assertOk()->assertJsonPath('attempt.result.score', '10.00')->assertJsonPath('attempt.result.solutions_released', true);
+})->with(['common', 'individual']);
 
 test('owning teachers control full pause and exam mode while foreign teachers cannot', function () {
     $context = mcAdminContext();

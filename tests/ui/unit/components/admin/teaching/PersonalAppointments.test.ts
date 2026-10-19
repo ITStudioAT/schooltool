@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import axios from 'axios'
 import PersonalAppointments from '@/pages/admin/teaching/overview/components/PersonalAppointments.vue'
 import { nextPersonalAppointmentDate, personalAppointmentDateShortcuts, personalAppointmentDuration, personalAppointmentHeight, personalAppointmentKinds, personalAppointmentLabel, personalAppointmentOccurrences, personalAppointmentTimeline } from '@/helpers/teachingPersonalAppointments'
@@ -116,6 +116,45 @@ describe('Personal appointment dates and forms', () => {
         state.confirmDelete = true
         await methods.remove.call(state)
         expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/personal_appointments/2'))
+    })
+
+    it.each([
+        [single, 'Löschen', 'Diesen Einzeltermin löschen?'],
+        [series, 'Gesamte Terminserie löschen', 'Gesamte Terminserie löschen?'],
+    ])('deletes an appointment opened from the timetable after explicit confirmation: %s', async (appointment, label, confirmation) => {
+        const wrapper = mount(PersonalAppointments, { props: { contextKey: '7:2:3' }, global: { stubs: { 'v-checkbox': true } } })
+        try {
+            const vm = wrapper.vm as any
+            const reload = vi.spyOn(vm, 'load').mockResolvedValue(undefined)
+            vm.open({ ...appointment, occurrenceDate: '2026-10-12' })
+            await wrapper.vm.$nextTick()
+            expect(vm.editScope).toBe('occurrence')
+            const button = (text) => wrapper.findAll('v-btn').find((item) => item.text() === text)!
+            await button(label).trigger('click')
+            expect(wrapper.text()).toContain(confirmation)
+            expect(axios.delete).not.toHaveBeenCalled()
+            await button('Behalten').trigger('click')
+            expect(vm.confirmDelete).toBe(false)
+            expect(axios.delete).not.toHaveBeenCalled()
+            await button(label).trigger('click')
+            vi.mocked(axios.delete).mockResolvedValueOnce({})
+            await button('Löschen bestätigen').trigger('click')
+            await flushPromises()
+            expect(axios.delete).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(`/personal_appointments/${appointment.id}`))
+            expect(vm.dialog).toBe(false)
+            expect(reload).toHaveBeenCalledOnce()
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps a clicked appointment open when its confirmed deletion fails', async () => {
+        vi.mocked(axios.delete).mockRejectedValueOnce(new Error('Unavailable'))
+        const state = context()
+        methods.open.call(state, { ...single, occurrenceDate: single.date })
+        state.confirmDelete = true
+        await methods.remove.call(state)
+        expect(state.dialog).toBe(true)
+        expect(state.saveError).toBe('Termin konnte nicht gelöscht werden.')
+        expect(state.load).not.toHaveBeenCalled()
     })
 
     it('keeps validation errors visible and does not close an unsaved form', async () => {

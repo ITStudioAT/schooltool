@@ -345,6 +345,12 @@ function Assert-SchooltoolSaved {
 }
 
 function Invoke-SchooltoolLocalPreparation {
+    param([switch]$FullUpdate)
+    if ($FullUpdate) {
+        Invoke-SchooltoolCommand 'Updating the local main application, including database migrations...' { composer deploy -- --target=local }
+        Write-Host 'Local main application is ready. Restart running development servers/workers.' -ForegroundColor Green
+        return
+    }
     Invoke-SchooltoolCommand 'Preparing dependencies for the selected branch...' {
         php scripts/update.php --target=local --prepare
     }
@@ -486,7 +492,7 @@ function Switch-SchooltoolBranch {
         throw "Branch $Branch does not exist on origin."
     }
     Enter-SchooltoolWorkspace $Branch
-    Invoke-SchooltoolLocalPreparation
+    Invoke-SchooltoolLocalPreparation -FullUpdate:($Branch -ceq 'main')
     if ($Branch -ceq 'main') {
         Invoke-SchooltoolCommand 'Clearing cached admin environment versions...' {
             php artisan cache:forget admin.environment_versions.v13 --no-interaction

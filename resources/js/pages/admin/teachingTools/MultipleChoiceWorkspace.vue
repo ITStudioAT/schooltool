@@ -204,6 +204,17 @@
                     <v-card-title class="px-4 pt-3 pb-1 text-subtitle-1 font-weight-bold">Neuen Test vorbereiten</v-card-title>
                     <v-card-text class="pt-2">
                         <p class="text-body-2 mb-3">Fragenkatalog: <strong>{{ catalog.title }}</strong></p>
+                        <div class="mb-4">
+                            <v-btn variant="outlined" prepend-icon="mdi-folder-open-outline" :loading="testFolderReading"
+                                :disabled="!!busy || testFolderReading" @click="chooseTestFolder">Aus Testordner übernehmen</v-btn>
+                            <input ref="testFolderInput" type="file" webkitdirectory multiple hidden aria-label="Testordner auswählen" @change="readTestFolderFiles">
+                            <p class="text-caption text-medium-emphasis mt-2">Optional: Testname aus dem Ordnernamen und Schüler aus den gespeicherten Schooltool-Arbeitsdaten übernehmen. Alle Angaben bleiben bearbeitbar.</p>
+                            <v-alert v-if="testFolderError" type="error" variant="tonal" class="mt-2">{{ testFolderError }}</v-alert>
+                            <v-alert v-if="testFolderInfo" type="info" variant="tonal" class="mt-2">
+                                Übernommen aus „{{ testFolderInfo.directory }}“: {{ testFolderInfo.work_title }} · {{ testFolderInfo.course_title }}<span v-if="testFolderInfo.scheduled_date"> · {{ testFolderInfo.scheduled_date }}</span>.
+                                Bitte prüfe die Testeinstellungen und die Schülerzuordnung unten.
+                            </v-alert>
+                        </div>
                         <div class="mc-form-grid">
                             <v-text-field v-model="testDraft.title" label="Testbezeichnung" variant="outlined" density="compact" class="mc-test-title"
                                 hide-details />
@@ -387,9 +398,11 @@
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
                                 <div class="mc-toolbar mt-3">
                                     <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
+                                    <v-btn variant="outlined" prepend-icon="mdi-folder-download-outline" :loading="busy === 'exercise-folder-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="saveExerciseExportToDirectory">Im Testordner speichern</v-btn>
                                     <v-btn variant="outlined" prepend-icon="mdi-download-outline" :loading="busy === 'exercise-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="downloadExerciseExport">Für Leistungsfeststellung exportieren</v-btn>
                                     <v-btn variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
                                 </div>
+                                <p class="text-caption text-medium-emphasis mt-2">Die persönlichen Testlinks können schon vor dem Teststart im lokalen Testordner gespeichert und für die Aufgaben-Mails verwendet werden. Der Export startet den Test nicht.</p>
                                 <p v-if="selectedTest.access_links_disabled_at" class="text-caption mt-2">Die Sperre gilt auch für bereits geöffnete persönliche Links.</p>
                             </section>
                         </div>
@@ -397,25 +410,24 @@
                         <p v-if="selectedTest.exam_mode" class="text-caption text-medium-emphasis mt-3">Das Prüfungsprotokoll zeigt Browsermeldungen, keine automatische Bewertung. Bei fehlender Verbindung wird der Status als unklar angezeigt.</p>
                         <v-alert v-if="monitorError" type="warning" variant="tonal" class="mt-4">{{ monitorError }}
                             Angezeigte Daten können veraltet sein.</v-alert>
-                        <section v-if="testEnded" class="mc-results-section mt-5" aria-label="Ergebnisse und Lösungen">
+                        <section class="mc-results-section mt-5" aria-label="Ergebnisse und Lösungen">
                             <h3 class="mb-3">Ergebnisse und Lösungen</h3>
                             <v-alert :type="selectedTest.results_released_at ? 'success' : 'info'" variant="tonal"
-                                class="mb-3">{{ selectedTest.results_released_at ? 'Ergebnisse sind für Schüler freigegeben.' : 'Ergebnisse sind für Schüler noch verborgen.' }}
+                                class="mb-3">{{ selectedTest.results_released_at ? 'Ergebnisse sind für abgeschlossene Abgaben freigegeben.' : 'Ergebnisse sind für Schüler noch verborgen.' }}
                                 {{ selectedTest.solutions_released_at ? 'Auch Lösungen sind freigegeben.' : 'Lösungen sind noch verborgen.' }}</v-alert>
                             <div class="mc-toolbar mb-4">
                                 <v-btn v-if="!selectedTest.results_released_at" variant="outlined"
-                                    :disabled="!testEnded || hasPersonalRunningAttempts || !!busy" @click="releaseMode = 'results'">Ergebnisse
+                                    :disabled="!hasCompletedAttempts || !!busy" @click="releaseMode = 'results'">Ergebnisse
                                     freigeben</v-btn>
                                 <v-btn v-if="!selectedTest.solutions_released_at" variant="outlined"
-                                    :disabled="!testEnded || hasPersonalRunningAttempts || !selectedTest.results_released_at || !!busy" @click="releaseMode = 'solutions'">Lösungen freigeben</v-btn>
+                                    :disabled="!hasCompletedAttempts || !selectedTest.results_released_at || !!busy" @click="releaseMode = 'solutions'">Lösungen freigeben</v-btn>
                                 <v-btn v-if="selectedTest.solutions_released_at" variant="text" prepend-icon="mdi-eye-off-outline"
                                     :disabled="!!busy" @click="revokeMode = 'solutions'">Lösungen verbergen</v-btn>
                                 <v-btn v-if="selectedTest.results_released_at" variant="text" prepend-icon="mdi-eye-off-outline"
                                     :disabled="!!busy" @click="revokeMode = 'results'">Ergebnisse verbergen</v-btn>
-                                <span v-if="hasPersonalRunningAttempts" class="text-caption text-medium-emphasis">Eine persönliche Zusatzzeit läuft noch.</span>
-                                <span v-if="!testEnded" class="text-caption text-medium-emphasis">Freigabe nach Ende der
-                                    Bearbeitungszeit möglich.</span>
+                                <span v-if="!hasCompletedAttempts" class="text-caption text-medium-emphasis">Freigabe möglich, sobald eine Abgabe abgeschlossen ist.</span>
                             </div>
+                            <p class="text-body-2 text-medium-emphasis">Jeder sieht freigegebene Ergebnisse und Lösungen erst nach der eigenen Abgabe. Noch offene Tests bleiben bearbeitbar; abwesende Personen blockieren die Freigabe nicht.</p>
                         </section>
                         <h3 class="mt-5">Schülerübersicht</h3>
                         <div v-if="reopenSelectionEnabled" class="mc-toolbar mt-4">
@@ -790,6 +802,7 @@
                 <v-card-text>{{ releaseMode === 'solutions'
                     ? 'Schüler können danach die richtigen Antworten und ihre Frageauswertung ansehen.'
                     : 'Schüler können danach ihre Punkte und Prozente sehen. Die Musterlösungen bleiben verborgen.' }}
+                    Die Anzeige erfolgt jeweils erst nach der eigenen Abgabe, auch bei später abschließenden Personen.
                     Es erfolgt keine Übernahme in andere Leistungsbeurteilungen.</v-card-text>
                 <v-card-actions>
                     <v-btn @click="releaseMode = null">Zurück</v-btn>
@@ -920,6 +933,11 @@ const rosterFileError = ref('')
 let rosterSourceFile = null
 let rosterReadSequence = 0
 const roster = ref(null)
+const testFolderInput = ref(null)
+const testFolderReading = ref(false)
+const testFolderError = ref('')
+const testFolderInfo = ref(null)
+let testFolderReadSequence = 0
 const startModes = [
     { value: 'common', title: 'Gemeinsam starten', description: 'Die Lehrkraft startet den Countdown.' },
     { value: 'individual', title: 'Selbstständig starten', description: 'Jede Person startet ihre eigene Bearbeitungszeit.' },
@@ -986,6 +1004,7 @@ const reopenSeconds = ref(0)
 const reopenTimeValue = computed(() => Number(reopenMinutes.value) * 60 + Number(reopenSeconds.value))
 const validReopenTime = computed(() => Number.isInteger(Number(reopenMinutes.value)) && Number(reopenMinutes.value) >= 0 && Number.isInteger(Number(reopenSeconds.value)) && Number(reopenSeconds.value) >= 0 && Number(reopenSeconds.value) < 60 && reopenTimeValue.value > 0 && reopenTimeValue.value <= 86400)
 const hasPersonalRunningAttempts = computed(() => attempts.value.some(personalAttemptRunning))
+const hasCompletedAttempts = computed(() => attempts.value.some(attempt => Boolean(attempt.completed_at)))
 const deadlineTarget = ref(null)
 const deadlineDraft = ref('')
 const copyFallback = ref(null)
@@ -1073,7 +1092,7 @@ const nextStepHint = computed(() => {
 const selectedCatalogReadyCount = computed(() => readyQuestions(catalogs.value.find((item) => item.id === testDraft
     .catalog_id)?.questions ?? []).length)
 const rosterMatchedCount = computed(() => (roster.value?.rows ?? []).filter((row) => row.status === 'matched').length)
-const canPublish = computed(() => Boolean(testDraft.title.trim() && testDraft.catalog_id && Number.isInteger(Number(
+const canPublish = computed(() => Boolean(!testFolderReading.value && testDraft.title.trim() && testDraft.catalog_id && Number.isInteger(Number(
         testDraft.question_count)) && testDraft.question_count > 0 && testDraft.question_count <=
     selectedCatalogReadyCount.value && Number(testDraft.total_points) > 0 && Number(testDraft
     .duration_minutes) >= 1 && Number.isInteger(Number(testDraft.lead_seconds)) && Number(testDraft
@@ -1130,6 +1149,8 @@ onMounted(() => {
     }, 500)
 })
 watch(() => route.fullPath, () => {
+    testFolderReadSequence++
+    testFolderReading.value = false
     if (indexLoaded && route.path === workspacePath) {
         restoreLocation()
     }
@@ -1138,6 +1159,7 @@ onBeforeRouteUpdate(guardCatalogNavigation)
 onBeforeRouteLeave(guardCatalogNavigation)
 onBeforeUnmount(() => {
     importReadSequence++
+    testFolderReadSequence++
     disposed = true
     window.clearInterval(pollInterval)
     window.clearInterval(tickInterval)
@@ -1410,6 +1432,10 @@ function cancelNewTest() {
         return
     }
     Object.assign(testDraft, defaultTestDraft)
+    testFolderReadSequence++
+    testFolderReading.value = false
+    testFolderError.value = ''
+    testFolderInfo.value = null
     editRosterCsv()
     rosterCsv.value = ''
     publishDialog.value = false
@@ -1615,7 +1641,91 @@ async function adoptImport() {
     })
 }
 
+async function chooseTestFolder() {
+    if (typeof window.showDirectoryPicker !== 'function') {
+        testFolderInput.value?.click()
+        return
+    }
+    const sequence = ++testFolderReadSequence
+    testFolderReading.value = true
+    testFolderError.value = ''
+    try {
+        const directory = await window.showDirectoryPicker({ id: 'schooltool-mc-test-folder', mode: 'read' })
+        const handle = await directory.getFileHandle('Schooltool_Arbeitsdaten.json')
+        await importTestFolder(await handle.getFile(), directory.name, sequence)
+    } catch (failure) {
+        if (sequence === testFolderReadSequence && failure.name !== 'AbortError') {
+            testFolderError.value = failure.name === 'NotFoundError'
+                ? 'Im Testordner fehlt Schooltool_Arbeitsdaten.json. Bitte speichere dort zuerst den Arbeitsdatenexport aus Schooltool.'
+                : failure.name === 'NotAllowedError'
+                    ? 'Der Testordner wurde nicht zum Lesen freigegeben. Bitte wähle ihn erneut aus.'
+                    : failure.message || 'Der Testordner konnte nicht gelesen werden.'
+        }
+    } finally {
+        if (sequence === testFolderReadSequence) testFolderReading.value = false
+    }
+}
+
+async function readTestFolderFiles(event) {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!files.length) return
+    const sequence = ++testFolderReadSequence
+    testFolderReading.value = true
+    testFolderError.value = ''
+    try {
+        const file = files.find(item => /^[^/]+\/Schooltool_Arbeitsdaten\.json$/.test(item.webkitRelativePath))
+        if (!file) throw new Error('Im Testordner fehlt Schooltool_Arbeitsdaten.json. Bitte speichere dort zuerst den Arbeitsdatenexport aus Schooltool.')
+        await importTestFolder(file, file.webkitRelativePath.split('/')[0], sequence)
+    } catch (failure) {
+        if (sequence === testFolderReadSequence) testFolderError.value = failure.message || 'Der Testordner konnte nicht gelesen werden.'
+    } finally {
+        if (sequence === testFolderReadSequence) testFolderReading.value = false
+    }
+}
+
+async function importTestFolder(file, directory, sequence) {
+    if (file.size > 1048576) throw new Error('Die Arbeitsdaten-Datei ist zu groß (maximal 1 MB).')
+    let source
+    try {
+        source = JSON.parse((await file.text()).replace(/^\uFEFF/, ''))
+    } catch {
+        throw new Error('Schooltool_Arbeitsdaten.json enthält keine lesbaren JSON-Arbeitsdaten.')
+    }
+    if (!source || source.kind !== 'schooltool.ai-work-export' || source.schema_version !== 1
+        || !Array.isArray(source.course_roster?.participants)) {
+        throw new Error('Bitte verwende einen Schooltool-Arbeitsdatenexport (Schooltool_Arbeitsdaten.json).')
+    }
+    if (sequence !== testFolderReadSequence || disposed || !preparingTest.value) return
+    const participants = source.course_roster.participants.map(person => ({
+        schooltool_person_id: person?.schooltool_person_id,
+        first_name: person?.first_name, last_name: person?.last_name, class_name: person?.class_name, active: person?.active,
+    }))
+    let data
+    try {
+        const response = await axios.post(rosterPreview.url(), { work_export: {
+            schema_version: source.schema_version, kind: source.kind,
+            school: { id: source.school?.id }, schoolyear: { id: source.schoolyear?.id },
+            work: { id: source.work?.id, title: source.work?.title, scheduled_date: source.work?.scheduled_date },
+            course: { id: source.course?.id, title: source.course?.title },
+            course_roster: { complete: source.course_roster.complete, participants },
+        } })
+        data = response.data
+    } catch (failure) {
+        throw new Error(requestError(failure))
+    }
+    if (sequence !== testFolderReadSequence || disposed || !preparingTest.value) return
+    editRosterCsv()
+    testDraft.title = directory
+    rosterCsv.value = data.csv
+    rosterFileName.value = 'Schooltool_Arbeitsdaten.json'
+    roster.value = data
+    testFolderInfo.value = { directory, ...data.source }
+}
+
 function editRosterCsv() {
+    testFolderReadSequence++
+    testFolderReading.value = false
     rosterReadSequence++
     rosterSourceFile = null
     rosterReading.value = false
@@ -2037,6 +2147,61 @@ async function downloadExerciseExport() {
             setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
         }
         notice.value = 'Export mit persönlichen Testlinks heruntergeladen. Die Datei bei der Leistungsfeststellung für den E-Mail-Versand bereitstellen.'
+    })
+}
+
+async function saveExerciseExportToDirectory() {
+    if (typeof window.showDirectoryPicker !== 'function') {
+        error.value = 'Dein Browser unterstützt die Ordnerauswahl nicht. Verwende Chrome oder Edge, oder lade den Export herunter und speichere ihn im Testordner.'
+        return
+    }
+    const testId = selectedTestId.value
+    await task('exercise-folder-export', async () => {
+        let directory
+        try {
+            directory = await window.showDirectoryPicker({ id: 'schooltool-mc-test-export', mode: 'readwrite' })
+        } catch (failure) {
+            if (failure.name === 'AbortError') return
+            error.value = 'Der Testordner wurde nicht zum Schreiben freigegeben. Bitte wähle ihn erneut aus.'
+            return
+        }
+        if (disposed || selectedTestId.value !== testId) return
+        const { data, headers } = await axios.get(exportExercise.url(testId))
+        if (disposed || selectedTestId.value !== testId) return
+        if (data?.kind !== 'schooltool.multiple_choice_links' || data.schema_version !== 1
+            || data.test?.id !== testId || !Array.isArray(data.participants)) {
+            error.value = 'Die Testlinks konnten diesem Test nicht eindeutig zugeordnet werden. Bitte aktualisiere die Testansicht.'
+            return
+        }
+        const suggestedName = headers?.['content-disposition']?.match(/filename="([^"]+)"/)?.[1]
+        const baseName = /^MC-Test_[\p{L}\p{N}._-]+\.json$/u.test(suggestedName || '')
+            ? suggestedName : `MC-Test_${testId}.json`
+        let filename = baseName
+        for (let suffix = 2; ; suffix += 1) {
+            try {
+                await directory.getFileHandle(filename)
+                filename = baseName.replace(/\.json$/, `_${suffix}.json`)
+            } catch (failure) {
+                if (failure.name === 'NotFoundError') break
+                error.value = 'Der Testordner ist nicht mehr zugänglich. Bitte wähle ihn erneut aus.'
+                return
+            }
+        }
+        if (disposed || selectedTestId.value !== testId) return
+        let file
+        let writable
+        try {
+            file = await directory.getFileHandle(filename, { create: true })
+            writable = await file.createWritable()
+            await writable.write(JSON.stringify(data, null, 2) + '\n')
+            await writable.close()
+        } catch (failure) {
+            if (writable) await writable.abort().catch(() => {})
+            if (file) await directory.removeEntry(filename).catch(() => {})
+            error.value = 'Die Testlinks konnten nicht vollständig gespeichert werden. Bitte prüfe den Testordner und versuche es erneut.'
+            return
+        }
+        notice.value = `Persönliche Testlinks für ${data.participants.length} Schüler im Testordner „${directory.name}“ gespeichert: ${filename}`
     })
 }
 

@@ -15,7 +15,7 @@ Die Anleitung beschreibt den implementierten Ablauf und seine Einrichtung. Sie i
 | `composer setup:powershell` | Windows, Projektordner | Installiert oder aktualisiert die Helfer in den eigenen PowerShell-Profilen. Danach ein neues Terminal öffnen. |
 | `gitstart "neue-funktion"` | Windows | Reserviert ein weiteres unabhängiges Feature, erstellt `feature/neue-funktion` aus GitHub-`main`, pusht und wechselt dorthin. Andere offene Features bleiben erhalten. |
 | `gitwork "neue-funktion"` | Windows | Wählt das benannte Feature, holt es und bereitet Abhängigkeiten und Frontend vor. Ältere Branches ohne Reservierung werden gezielt registriert. Ohne Namen nur bei genau einem offenen Feature. |
-| `gitmain` | Windows | Wechselt sicher zu `main`, holt dessen GitHub-Stand und bereitet Abhängigkeiten und Frontend vor. Keine Migrationen oder Seeder. |
+| `gitmain` | Windows | Wechselt sicher zu `main`, holt dessen GitHub-Stand und führt automatisch `composer deploy` für das vollständige lokale Update einschließlich Migrationen aus. Ungesicherte Änderungen verhindern das Update. |
 | `gitsave "Beschreibung"` | Windows, Feature | Committet und pusht ausschließlich das aktuelle Feature. Keine Version, kein Deployment; Zwischenstände sind erlaubt. |
 | `gitsave "Beschreibung"` | Windows, `main` | Bereitet Abhängigkeiten vor, prüft Format und Encoding, baut das Frontend, committet und pusht den gebundenen Release. GitHub führt die erforderlichen Prüfungen im Hintergrund aus. Kein Live-Deployment. |
 | `gitsave "Beschreibung" "3.49.0"` | Windows, `main` | Zusätzlich Versionsnummer, Changelog und Dokumentation aktualisieren sowie `v3.49.0` veröffentlichen. Auf dem Feature ist diese Variante gesperrt. |
@@ -30,7 +30,7 @@ Die Anleitung beschreibt den implementierten Ablauf und seine Einrichtung. Sie i
 | `gitrelease "Beschreibung" "3.49.0"` | Windows, gespeichertes Feature | Zusätzlich Version, Changelog, Dokumentation und Versions-Tag veröffentlichen. |
 | `gitdiscard "testfunktion"` | Windows, sauberer aktueller `main` | Verwirft `feature/testfunktion` ohne Merge. Nach `DISCARD feature/testfunktion` den exakt geprüften Remote-Branch und seine Reservierung atomar schließen und den passenden lokalen Branch entfernen. Wiederherstellungsreferenzen bleiben erhalten. |
 | `gitdeploy` | Windows, sauberes Projekt | Prüft das exakte Release-Paket und einen kurzen isolierten Laufzeit-Smoke. Nach `LIVE` Quellstand erneut prüfen und über SSH installieren, einschließlich vorgesehener Live-Datenbankschritte. Wartet nicht auf umfangreiche GitHub-Tests. |
-| `composer deploy` | Windows, sauberer aktueller `main` | Vollständiges lokales Anwendungsupdate einschließlich lokaler Datenbankschritte. Vorher `gitmain`; auf dem Feature gesperrt. |
+| `composer deploy` | Windows, sauberer aktueller `main` | Vollständiges lokales Anwendungsupdate einschließlich lokaler Datenbankschritte. Wird von `gitmain` automatisch ausgeführt; auf dem Feature gesperrt. |
 | `composer pdeploy` | Cloudways, intern durch `gitdeploy` | Benötigt die vom bestätigten SSH-Aufruf übergebenen Release-Identitäten und die Kennung `background-ci-v1`. Ein bloßer manueller Aufruf ist gesperrt; im Alltag `gitdeploy` am PC verwenden. |
 
 `gitpush "Beschreibung" ["Version"]` bleibt als Kompatibilitätsbefehl für `main` mit denselben Hintergrundprüfungen erhalten; `-Full` ergänzt lokale Vollprüfungen. Im Alltag genügt `gitsave`. Ein `gitget`, `gitcommit` oder `gitmerge` ist für diesen Ablauf nicht erforderlich. `gitcheck` listet die offenen Features. Bei mehreren Features verlangt `gitpreview` ausdrücklich `-Feature NAME`; zuerst mit `gitwork NAME` zum passenden gespeicherten Branch wechseln.
@@ -347,9 +347,9 @@ Dieser Befehl stellt die zuvor gesicherte Vorschau-Datenbank, Vorschau-Dateien u
 | Korrektur im Feature weiterverwenden | `gitwork` → `gitupdate` → testen → `gitsave "main übernommen"` |
 | Online testen | `gitwork NAME` → `gitsave "Vorschau vorbereitet"` → `gitpreview -Feature NAME` |
 | Feature freigeben | `gitsave "Funktion fertig"` → `gitrelease "Neue Funktion"` → `gitdeploy` → Smoke und `LIVE` |
-| Lokal den vollständigen Hauptstand installieren | `gitmain` → `composer deploy` |
+| Lokal den vollständigen Hauptstand installieren | `gitmain` (führt `composer deploy` automatisch aus) |
 
-Git wechselt keine lokalen Datenbanken. Vor experimentellen Feature-Migrationen eine eigene lokale Feature-Datenbank verwenden. Bereits ausgeführte Migrationen werden durch `gitmain` oder `gitwork` nicht rückgängig gemacht.
+Git wechselt keine lokalen Datenbanken. `gitmain` aktualisiert die konfigurierte lokale Datenbank durch `composer deploy`. Vor experimentellen Feature-Migrationen eine eigene lokale Feature-Datenbank verwenden. Bereits ausgeführte Migrationen werden durch `gitmain` oder `gitwork` nicht rückgängig gemacht.
 
 # Code simplifying with Claude
 
