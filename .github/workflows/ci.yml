@@ -501,12 +501,16 @@ jobs:
           php scripts/release-policy.php assets --base "$release_sha" --head "$release_sha"
           php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"
 
-  windows-workflow:
-    name: Windows PowerShell workflow tests
+  windows-workflow-shards:
+    name: Windows PowerShell workflow shard ${{ matrix.shard }}/8
     needs: classify
     if: needs.classify.outputs.lane == 'full'
     runs-on: windows-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       APP_ENV: testing
       APP_DEBUG: false
@@ -547,14 +551,26 @@ jobs:
       - name: Install locked frontend tools required by native workflow fixtures
         run: npm ci
       - name: Run Windows workflow tests without connecting to a database or server
-        run: php scripts/ci-php-tests.php windows
+        run: php scripts/ci-php-tests.php windows ${{ matrix.shard }} 8
       - name: Preserve Windows workflow test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-workflow-${{ github.run_id }}-${{ github.run_attempt }}
+          name: windows-workflow-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: storage/logs/ci-php-*
           retention-days: 14
+
+  windows-workflow:
+    name: Windows PowerShell workflow tests
+    needs: [classify, windows-workflow-shards]
+    if: always() && needs.classify.outputs.lane == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every native Windows shard
+        env:
+          SHARDS_RESULT: ${{ needs.windows-workflow-shards.result }}
+        run: test "$SHARDS_RESULT" = success
 
   release-approval:
     name: Release approval (policy v3)

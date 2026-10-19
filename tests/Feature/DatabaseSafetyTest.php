@@ -3,25 +3,22 @@
 namespace Tests\Feature;
 
 use App\Providers\DatabaseSafetyServiceProvider;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class DatabaseSafetyTest extends TestCase
 {
-    use RefreshDatabase;
-
     /**
      * Test that database safety system is active.
      */
     public function test_database_safety_system_is_active(): void
     {
-        // This test should only run in testing environment with pest_test database
+        // Inspect configuration without opening or refreshing a database.
         $status = DatabaseSafetyServiceProvider::getSafetyStatus();
 
         $this->assertEquals('testing', $status['environment']);
         $this->assertEquals('mysql', $status['current_connection']);
         $this->assertMatchesRegularExpression('/^pest_test(?:_test_\d+)?$/', $status['current_database']);
-        $this->assertEquals('pest_test', $status['expected_testing_database']);
+        $this->assertSame(config('database-safety.rules.testing_database'), $status['expected_testing_database']);
         $this->assertTrue($status['is_safe_for_testing']);
     }
 

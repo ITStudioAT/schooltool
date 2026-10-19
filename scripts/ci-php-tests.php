@@ -113,6 +113,17 @@ class CiPhpTests
         return [PHP_BINARY, 'vendor/bin/pest', '--compact', '--display-warnings', '--exclude-group=integration'];
     }
 
+    public static function windowsShardFilter(int $shard, int $total): string
+    {
+        if ($total < 1 || $shard < 1 || $shard > $total) {
+            throw new InvalidArgumentException('Invalid Windows test shard.');
+        }
+
+        // Partition the complete printable test name, including its dataset, by byte length.
+        // Each name has exactly one remainder; Pest's generated PHP method names are not filter names.
+        return '/^(?:[\s\S]{'.$total.'})*[\s\S]{'.($shard - 1).'}$/D';
+    }
+
     /** @param callable(array<string, string>): mixed $execute */
     public static function withOwnedDatabase(string $receiptPath, callable $execute): mixed
     {
@@ -145,13 +156,30 @@ class CiPhpTests
             $directory = $root.'/storage/logs/ci-php-'.bin2hex(random_bytes(8));
             mkdir($directory, 0700, true);
             $coverage = null;
+            $windowsFilter = null;
 
-            $run = function (array $databaseEnvironment) use ($batches, $root, $directory, $mode, &$coverage): void {
-                self::executeBatches($batches, function (array $files, int $number) use ($root, $directory, $mode, $databaseEnvironment, &$coverage): int {
+            if ($mode === 'windows' && isset($arguments[2])) {
+                if (count($arguments) !== 4 || ! ctype_digit($arguments[2]) || ! ctype_digit($arguments[3])) {
+                    throw new InvalidArgumentException('Windows shards require an index and total.');
+                }
+                $windowsFilter = self::windowsShardFilter((int) $arguments[2], (int) $arguments[3]);
+                file_put_contents($directory.'/windows-filter.txt', $windowsFilter);
+            }
+
+            $run = function (array $databaseEnvironment) use ($batches, $root, $directory, $mode, $windowsFilter, &$coverage): void {
+                self::executeBatches($batches, function (array $files, int $number) use ($root, $directory, $mode, $databaseEnvironment, $windowsFilter, &$coverage): int {
                     $prefix = $directory.'/batch-'.$number;
                     file_put_contents($prefix.'.json', json_encode($files, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
                     $command = self::testCommand();
                     $environment = ['TEST_TOKEN' => 'ci-batch-'.$number, ...$databaseEnvironment];
+
+                    if ($mode === 'windows') {
+                        $command[] = '--log-events-text='.$prefix.'.events.log';
+                        if ($windowsFilter !== null) {
+                            $command[] = '--filter='.$windowsFilter;
+                            $command[] = '--fail-on-empty-test-suite';
+                        }
+                    }
 
                     if ($mode === 'coverage') {
                         $command[] = '--coverage-php='.$prefix.'.coverage.php';
