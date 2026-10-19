@@ -48,6 +48,53 @@ beforeEach(function () {
     $this->actingAs($this->teacher, 'sanctum');
 });
 
+test('folder initialization prompt requests only create exercise part one and retains the structured work data', function (): void {
+    Http::preventStrayRequests();
+    $this->course->update(['title' => 'DGB - 3B - 1', 'classes' => ['3B']]);
+    $this->student->update(['schoolclass' => '3B']);
+    $this->work->update(['title' => 'E-Mails', 'date_for_all_groups' => '2026-11-10']);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url)->assertOk()->json('data');
+
+    $instructions = explode('## Schooltool-Daten', $data['text'], 2)[0];
+    expect($instructions)->toStartWith('# Auftrag an Codex: Create Exercise – Teil 1: Ordner und Schülerliste')
+        ->toContain('ausschließlich Teil 1', 'VOR jeglicher Anlage', 'check_existing_exercise.py',
+            'Schooltool_Arbeit_ID '.$this->work->id, 'Schooltool_Kurs_ID '.$this->course->id,
+            'auch unvollständig: ABBRECHEN', 'nichts anlegen, ergänzen oder verändern',
+            'ANDEREM Durchführungstermin und einer anderen belegten Schooltool-Arbeitsidentität',
+            'kein identischer Auftrag und kein automatischer Duplikat-Abbruch', 'Abbruch oder neue Anlage mit neuem Datum?',
+            'Erst nach expliziter Fortsetzungsfreigabe', 'für genau diese Arbeitsidentität und den neuen Durchführungstermin',
+            'nicht erneut dieselbe Zustimmung verlangen', 'Der gesamte Altbestand einschließlich Ordnern, Dateien, Metadaten und History bleibt unberührt',
+            'weder einen zweiten Ordner für dieselbe belegte Schooltool-Arbeitsidentität', 'echter Ziel- oder ID-Konflikte',
+            'Lerninhalt-Quellordner', 'Leistungsfeststellung', 'work.scheduled_date', 'work.groups[].date',
+            'technical_created_at, exported_at und ein ungeprüftes heutiges Datum sind keine Durchführungstermine',
+            'course.folder_group', 'fehlende Kursgruppen nicht aus Arbeitsgruppen erfinden',
+            'exakt diese fünf Unterordner: Schülerlisten, Angaben, Abgaben, Auswertungen, Transaktionen',
+            'Schüler als JSON im Unterordner Schülerlisten', 'Die vollständige Kursliste', 'keine pauschale Teilnehmerfreigabe',
+            'schooltool_person_id, import116_id und course_assignments', 'Belegen Sie in der JSON-Liste die Quelle',
+            'sämtliche tatsächlich ausgeführten Aktionen chronologisch in Transaktionen/History.json',
+            'Testordneranlage, jede Unterordneranlage und das Schreiben der Schülerlisten-JSON',
+            'echten Zeitpunkt der Aktion mit Zeitzone', 'betroffenen tatsächlichen Pfade',
+            'Ereignisse nicht auf den Durchführungstermin zurückdatieren',
+            'tatsächliche Ergebnis einschließlich aufgetretener Fehler', 'keine Prüfzeiten oder Erfolge erfinden',
+            'Bei Duplikat-Abbruch darf im vorhandenen Ordner auch keine History angelegt, ergänzt oder verändert werden',
+            'keine weiteren Stufen von create-exercise')
+        ->not->toContain('Markdown', 'PDF', 'Bewertungskriterien', 'MC-Fragen', 'Zugangslinks', 'Versandvorbereitung',
+            'Schooltool-Import', 'setzen Sie nur die fehlenden Schritte', '5L2_Gruppe-1', 'IT_Grundlagen/emails');
+    expect($data['context']['work']['scheduled_date'])->toBe('2026-11-10')
+        ->and($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15'])
+        ->and($data['context']['course']['classes'])->toBe(['3B'])
+        ->and($data['context']['course']['group_number'])->toBe(1)
+        ->and($data['context']['course']['folder_group'])->toBe('3B_Gruppe-1')
+        ->and($data['context']['course_roster']['participants'][0]['schooltool_person_id'])->toBe((string) $this->student->id)
+        ->and($data['context']['course_roster']['participants'][0]['course_assignments'][0]['id'])->toBe($this->membership->id);
+    preg_match('/```json\n(.*?)\n```/s', $data['text'], $matches);
+    expect(json_decode($matches[1], true, flags: JSON_THROW_ON_ERROR))->toBe($data['context'])
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+});
+
 test('AI export includes student email addresses without personal assessment or family contact data', function () {
     Http::preventStrayRequests();
     $second = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'first_name' => 'Béa', 'last_name' => 'Beta', 'schoolclass' => 'Abend']);

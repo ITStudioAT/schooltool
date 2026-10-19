@@ -177,9 +177,9 @@
                 <v-sheet v-if="!catalogTests.length" border rounded="lg" class="pa-6 text-medium-emphasis">
                     <p>Zu diesem Fragenkatalog gibt es noch keine Tests.</p>
                 </v-sheet>
-                <ul v-else class="mc-catalog-list" aria-label="Tests dieses Katalogs">
+                <ul v-else class="mc-catalog-list mc-test-list" aria-label="Tests dieses Katalogs">
                     <li v-for="item in catalogTests" :key="item.id">
-                        <v-card border rounded="lg">
+                        <v-card border rounded="lg" class="mc-catalog-card">
                             <v-card-text>
                                 <div class="mc-test-heading-title">
                                     <h3>{{ item.title }}</h3>
@@ -353,8 +353,12 @@
                             </div>
                             <v-spacer />
                             <v-chip :color="testPhase.color" variant="tonal">{{ testPhase.label }}</v-chip>
-                            <v-btn variant="outlined" prepend-icon="mdi-cog-outline" :disabled="!!busy" @click="openTestSettings">Einstellungen bearbeiten</v-btn>
                         </div>
+                        <nav class="mc-test-subnav mt-4" aria-label="Testbereiche">
+                            <v-btn v-for="pane in testPanes" :key="pane.key" :variant="testPane === pane.key ? 'flat' : 'outlined'"
+                                color="primary" :aria-current="testPane === pane.key ? 'page' : undefined" :disabled="!!busy"
+                                @click="selectTestPane(pane.key)">{{ pane.label }}</v-btn>
+                        </nav>
                         <div class="mc-monitor mt-4" role="status">
                             <div>
                                 <strong>{{ attempts.filter((attempt) => attempt.status === 'ready').length }}</strong>
@@ -376,8 +380,8 @@
                         <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">Selbstständiger Start · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
                         <p v-else-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
                             {{ dateLabel(selectedTest.starts_at) }} · Ende: {{ dateLabel(selectedTest.ends_at) }}</p>
-                        <div v-if="section === 'tests'" class="mc-control-grid mt-5">
-                            <section class="mc-control-section" aria-label="Prüfung steuern">
+                        <div v-if="section === 'tests'" v-show="['control', 'access'].includes(testPane)" class="mc-control-grid mc-control-grid--single mt-5">
+                            <section v-show="testPane === 'control'" class="mc-control-section" aria-label="Prüfung steuern">
                                 <h3>Prüfung steuern</h3>
                                 <div class="mc-toolbar mt-3">
                                     <v-btn v-if="selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
@@ -385,20 +389,25 @@
                                     <v-btn v-if="selectedTest.paused_at" color="primary" variant="flat" prepend-icon="mdi-play" :disabled="!!busy" @click="setTestPause(false)">Test fortsetzen</v-btn>
                                     <v-btn v-else-if="canPauseTest" variant="outlined" prepend-icon="mdi-pause" :disabled="!!busy" @click="setTestPause(true)">Alle pausieren</v-btn>
                                     <v-btn v-if="testRunning" variant="outlined" :disabled="!!busy" @click="openRemainingTime">Restzeit ändern</v-btn>
-                                    <v-btn v-if="testRunning" color="error" variant="text" :disabled="!!busy" @click="closeTestDialog = true">Test vorzeitig schließen</v-btn>
+                                    <v-btn v-if="canCloseTest" color="error" variant="text" :disabled="!!busy" @click="closeTestDialog = true">Test vorzeitig schließen</v-btn>
+                                    <v-btn v-if="canReopenAttempts" variant="outlined" prepend-icon="mdi-lock-open-outline"
+                                        :disabled="!!busy || !reopenSelectionEnabled || !attempts.length" @click="openReopenSelection">Wieder öffnen</v-btn>
                                 </div>
-                                <p v-if="testEnded && !hasPersonalRunningAttempts" class="text-body-2 mt-3">Die Bearbeitung ist abgeschlossen. Einzelne Abgaben kannst du unten wieder öffnen.</p>
+                                <p v-if="allAttemptsCompleted" class="text-body-2 mt-3">Alle Bearbeitungen sind abgeschlossen. Zum Wiederöffnen wählst du hier alle geeigneten oder einzelne Schüler und ihre Zusatzzeit aus.</p>
+                                <p v-else-if="testEnded && hasPersonalRunningAttempts" class="text-body-2 mt-3">Persönliche Zusatzzeit läuft. Abgeschlossene Bearbeitungen kannst du hier wieder öffnen.</p>
+                                <p v-if="hasCompletedAttempts && selectedTest.start_mode !== 'individual' && !testEnded" class="text-body-2 mt-2">Wiederöffnen ist nach Ende der gemeinsamen Bearbeitungszeit möglich. Du kannst den laufenden Test dafür vorzeitig schließen.</p>
                                 <div class="mc-toolbar mt-3">
-                                    <v-btn variant="text" :disabled="!!busy" :prepend-icon="selectedTest.exam_mode ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click="toggleExamMode">{{ selectedTest.exam_mode ? 'Prüfungsmodus deaktivieren' : 'Prüfungsmodus aktivieren' }}</v-btn>
+                                    <v-btn variant="text" :disabled="!!busy || allAttemptsCompleted" :prepend-icon="selectedTest.exam_mode ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click="toggleExamMode">{{ selectedTest.exam_mode ? 'Prüfungsmodus deaktivieren' : 'Prüfungsmodus aktivieren' }}</v-btn>
                                 </div>
                                 <p class="text-caption text-medium-emphasis mt-2">Status wird automatisch aktualisiert.</p>
                             </section>
-                            <section class="mc-control-section" aria-label="Zugang und Einladungen">
+                            <section v-show="testPane === 'access'" class="mc-control-section" aria-label="Zugang und Einladungen">
                                 <h3>Zugang und Einladungen</h3>
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
                                 <div class="mc-toolbar mt-3">
                                     <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
-                                    <v-btn variant="outlined" prepend-icon="mdi-folder-download-outline" :loading="busy === 'exercise-folder-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="saveExerciseExportToDirectory">Im Testordner speichern</v-btn>
+                                    <v-btn variant="outlined" prepend-icon="mdi-folder-sync-outline" :disabled="!!busy" @click="folderDialog = true">Im Testordner speichern</v-btn>
+                                    <v-btn variant="text" :loading="busy === 'exercise-folder-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="saveExerciseExportToDirectory">Einmalig lokal speichern</v-btn>
                                     <v-btn variant="outlined" prepend-icon="mdi-download-outline" :loading="busy === 'exercise-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="downloadExerciseExport">Für Leistungsfeststellung exportieren</v-btn>
                                     <v-btn variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
                                 </div>
@@ -410,7 +419,7 @@
                         <p v-if="selectedTest.exam_mode" class="text-caption text-medium-emphasis mt-3">Das Prüfungsprotokoll zeigt Browsermeldungen, keine automatische Bewertung. Bei fehlender Verbindung wird der Status als unklar angezeigt.</p>
                         <v-alert v-if="monitorError" type="warning" variant="tonal" class="mt-4">{{ monitorError }}
                             Angezeigte Daten können veraltet sein.</v-alert>
-                        <section class="mc-results-section mt-5" aria-label="Ergebnisse und Lösungen">
+                        <section v-show="testPane === 'results'" class="mc-results-section mt-5" aria-label="Ergebnisse und Lösungen">
                             <h3 class="mb-3">Ergebnisse und Lösungen</h3>
                             <v-alert :type="selectedTest.results_released_at ? 'success' : 'info'" variant="tonal"
                                 class="mb-3">{{ selectedTest.results_released_at ? 'Ergebnisse sind für abgeschlossene Abgaben freigegeben.' : 'Ergebnisse sind für Schüler noch verborgen.' }}
@@ -429,19 +438,12 @@
                             </div>
                             <p class="text-body-2 text-medium-emphasis">Jeder sieht freigegebene Ergebnisse und Lösungen erst nach der eigenen Abgabe. Noch offene Tests bleiben bearbeitbar; abwesende Personen blockieren die Freigabe nicht.</p>
                         </section>
+                        <section v-show="testPane === 'students'" aria-label="Schülerübersicht">
                         <h3 class="mt-5">Schülerübersicht</h3>
-                        <div v-if="reopenSelectionEnabled" class="mc-toolbar mt-4">
-                            <span class="text-body-2">{{ selectedReopenAttempts.length }} ausgewählt</span>
-                            <v-btn color="primary" variant="flat" prepend-icon="mdi-lock-open-outline"
-                                :disabled="!selectedReopenAttempts.length || !!busy" @click="openSelectedReopen">Wieder öffnen</v-btn>
-                        </div>
                         <div class="mc-table-wrap mt-4">
                             <table class="mc-table">
                                 <thead>
                                     <tr>
-                                        <th v-if="reopenSelectionEnabled"><label class="d-inline-flex align-center ga-2"><input type="checkbox" aria-label="Alle Schüler zum Wiederöffnen auswählen"
-                                            :checked="allReopenSelected" :indeterminate="selectedReopenAttempts.length > 0 && !allReopenSelected"
-                                            :disabled="!!busy || !eligibleReopenAttempts.length" @change="selectAllReopen($event.target.checked)"><span>Alle auswählen</span></label></th>
                                         <th>Schüler</th>
                                         <th>Zugang</th>
                                         <th>Status</th>
@@ -455,9 +457,6 @@
                                 <tbody>
                                     <template v-for="attempt in attempts" :key="attempt.id">
                                         <tr>
-                                            <td v-if="reopenSelectionEnabled"><input type="checkbox" :aria-label="`Test zum Wiederöffnen auswählen: ${attempt.student_name}`"
-                                                :checked="selectedReopenIds.includes(attempt.id)" :disabled="!!busy || !canSelectReopen(attempt)"
-                                                @change="selectReopen(attempt.id, $event.target.checked)"></td>
                                             <td>
                                                 <strong>{{ attempt.student_name }}</strong>
                                                 <div class="text-caption text-medium-emphasis">{{ attempt.email }}</div>
@@ -508,12 +507,23 @@
                                 </tbody>
                             </table>
                         </div>
-                        <details class="mc-test-maintenance mt-5"><summary>Test verwalten</summary><p class="text-body-2 my-3">Das Löschen entfernt auch Abgaben, Ergebnisse und persönliche Links dieses Tests.</p><v-btn variant="outlined" color="error" :disabled="!!busy" @click="openDeletion('test', selectedTest)">Test löschen</v-btn></details>
+                        </section>
+                        <section v-show="testPane === 'settings'" class="mt-5" aria-label="Testeinstellungen">
+                            <h3>Testeinstellungen</h3>
+                            <p class="text-body-2 my-3">{{ selectedTest.question_count }} Fragen · {{ selectedTest.total_points }} Punkte · {{ Math.round(selectedTest.duration_seconds / 60) }} Minuten</p>
+                            <p v-if="!canEditTestSettings" class="text-body-2 mb-3">Die geschützten Einstellungen können nach Beginn einer Bearbeitung nicht mehr geändert werden.</p>
+                            <v-btn variant="outlined" prepend-icon="mdi-cog-outline" :disabled="!!busy" @click="openTestSettings">Einstellungen bearbeiten</v-btn>
+                            <details class="mc-test-maintenance mt-5"><summary>Test verwalten</summary><p class="text-body-2 my-3">Das Löschen entfernt auch Abgaben, Ergebnisse und persönliche Links dieses Tests.</p><v-btn variant="outlined" color="error" :disabled="!!busy" @click="openDeletion('test', selectedTest)">Test löschen</v-btn></details>
+                        </section>
                     </v-card-text>
                 </v-card>
             </section>
         </template>
 
+        <v-dialog v-model="folderDialog" max-width="860" scrollable>
+            <MultipleChoiceTestFolder v-if="folderDialog && selectedTest" :key="selectedTest.id" :test="selectedTest"
+                :user="folderUser" @close="folderDialog = false" @changed="refreshMonitor" />
+        </v-dialog>
         <v-dialog v-model="invitationDialog" persistent max-width="1000" scrollable>
             <v-card>
                 <v-card-title>Einladungen vorbereiten</v-card-title>
@@ -674,14 +684,24 @@
         <v-dialog :model-value="!!copyFallback" max-width="620" @update:model-value="copyFallback = null">
             <v-card v-if="copyFallback"><v-card-title>Zugangslink kopieren</v-card-title><v-card-text><p class="mb-3">Der Browser erlaubt kein automatisches Kopieren. Markiere den Link und kopiere ihn.</p><v-text-field :model-value="copyFallback.access_url" readonly label="Persönlicher Zugangslink" @focus="$event.target.select()" /></v-card-text><v-card-actions><v-btn @click="copyFallback = null">Schließen</v-btn></v-card-actions></v-card>
         </v-dialog>
-        <v-dialog :model-value="reopenTargets.length > 0" persistent max-width="560" @update:model-value="reopenTargets = []">
+        <v-dialog v-model="reopenDialog" persistent max-width="560">
             <v-card><form @submit.prevent="savePersonalReopen">
                 <v-card-title>Ausgewählte Tests wieder öffnen?</v-card-title>
                 <v-card-text>
-                    <p class="mb-2">{{ reopenTargets.length }} ausgewählte Person{{ reopenTargets.length === 1 ? '' : 'en' }}:</p>
-                    <ul class="mb-3 ml-5" style="max-height: 180px; overflow-y: auto;"><li v-for="person in reopenTargets" :key="person.id">{{ person.student_name }}</li></ul>
+                    <p class="mb-2">{{ selectedReopenAttempts.length }} von {{ eligibleReopenAttempts.length }} geeigneten Personen ausgewählt.</p>
+                    <label class="d-flex align-center ga-2 mb-2"><input type="checkbox" aria-label="Alle Schüler zum Wiederöffnen auswählen"
+                        :checked="allReopenSelected" :indeterminate="selectedReopenAttempts.length > 0 && !allReopenSelected"
+                        :disabled="!!busy || !eligibleReopenAttempts.length" @change="selectAllReopen($event.target.checked)">Alle geeigneten Schüler auswählen</label>
+                    <div class="mb-3" style="max-height: 220px; overflow-y: auto;" role="group" aria-label="Schüler zum Wiederöffnen">
+                        <div v-for="person in attempts" :key="person.id" class="mb-2">
+                            <label class="d-flex align-center ga-2"><input type="checkbox" :aria-label="`Test zum Wiederöffnen auswählen: ${person.student_name}`"
+                                :checked="selectedReopenAttempts.some(attempt => attempt.id === person.id)" :disabled="!!busy || !canSelectReopen(person)"
+                                @change="selectReopen(person.id, $event.target.checked)">{{ person.student_name }}</label>
+                            <p class="text-caption text-medium-emphasis">{{ reopenUnavailableReason(person) || statusLabel(person.status) }}</p>
+                        </div>
+                    </div>
                     <p class="mb-3">Die Zusatzzeit gilt ab dem Bestätigen ausschließlich für die markierten Personen. Die bisherigen Fragen und gespeicherten Antworten bleiben erhalten. Nicht ausgewählte Abgaben werden nicht verändert.</p>
-                    <p class="mb-3">Bei bereits laufender Zusatzzeit wird die verbleibende Zeit neu gesetzt. Nach erneuter Abgabe oder Zeitablauf wird die Bewertung neu berechnet; der bisherige Stand bleibt im Verlauf gespeichert.</p>
+                    <p class="mb-3">Laufende Bearbeitungen werden nicht wieder geöffnet. Nach erneuter Abgabe oder Zeitablauf wird die Bewertung neu berechnet; der bisherige Stand bleibt im Verlauf gespeichert.</p>
                     <v-alert v-if="selectedTest?.solutions_released_at" type="warning" variant="tonal" class="mb-3">Die Musterlösungen waren bereits freigegeben. Die ausgewählten Personen könnten sie schon gesehen haben.</v-alert>
                     <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mb-3">Die persönliche Schlussfrist bleibt verbindlich. Falls nötig, verlängere sie vor dem Wiederöffnen mit dem Stift in der Schülerliste.</p>
                     <v-text-field v-model="reopenMinutes" type="number" min="0" max="1440" step="1" label="Persönliche Zusatzzeit in Minuten" :disabled="!!busy" />
@@ -689,7 +709,7 @@
                     <p v-if="!validReopenTime" role="alert">Bitte eine Zusatzzeit zwischen einer Sekunde und 24 Stunden eingeben.</p>
                     <v-alert v-if="error" type="error" role="alert">{{ error }}</v-alert>
                 </v-card-text>
-                <v-card-actions><v-btn :disabled="!!busy" @click="reopenTargets = []">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" :disabled="!!busy || !validReopenTime" :loading="busy === 'reopen-attempt'">Zusatzzeit freigeben</v-btn></v-card-actions>
+                <v-card-actions><v-btn :disabled="!!busy" @click="reopenDialog = false">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" :disabled="!!busy || !validReopenTime || !selectedReopenAttempts.length" :loading="busy === 'reopen-attempt'">Zusatzzeit freigeben</v-btn></v-card-actions>
             </form></v-card>
         </v-dialog>
         <v-dialog v-model="closeTestDialog" persistent max-width="500">
@@ -856,6 +876,7 @@ import {
     revokeRelease
 } from '@/actions/App/Http/Controllers/Admin/MultipleChoiceController'
 import QuestionEditor from './QuestionEditor.vue'
+import MultipleChoiceTestFolder from './MultipleChoiceTestFolder.vue'
 import McQuestionReview from '@/components/McQuestionReview.vue'
 import {
     messageText,
@@ -870,9 +891,18 @@ import {
 const FilePond = vueFilePond()
 const route = useRoute()
 const router = useRouter()
+const folderDialog = ref(route.query.folder === '1')
+const folderUser = computed(() => ({ id: selectedTest.value?.owner_id, school_id: selectedTest.value?.school_id }))
 const workspacePath = route.path
 
 const section = ref('catalogs')
+const testPanes = [
+    { key: 'control', label: 'Prüfung steuern' }, { key: 'access', label: 'Zugang und Einladungen' },
+    { key: 'results', label: 'Ergebnisse und Lösungen' }, { key: 'students', label: 'Schülerübersicht' },
+    { key: 'settings', label: 'Einstellungen' },
+]
+const testPane = computed(() => testPanes.some(pane => pane.key === route.query.pane) ? route.query.pane
+    : route.query.attempt ? 'students' : route.query.view === 'results' ? 'results' : 'control')
 const catalogs = ref([])
 const tests = ref([])
 const unassignedTests = ref([])
@@ -963,7 +993,7 @@ const selectedTest = ref(null)
 const attempts = ref([])
 const expandedAttempt = ref(null)
 const activityExpandedAttempt = ref(null)
-const tableColumnCount = computed(() => 7 + (reopenSelectionEnabled.value ? 1 : 0) + (showActivity.value ? 1 : 0))
+const tableColumnCount = computed(() => 7 + (showActivity.value ? 1 : 0))
 const invitationAddressForm = ref('sie')
 const invitationPreview = ref(null)
 const selectedInvitationIds = ref([])
@@ -993,10 +1023,10 @@ const showActivity = computed(() => Boolean(selectedTest.value?.exam_mode || att
 const closeTestDialog = ref(false)
 const remainingTimeDialog = ref(false)
 const canReopenAttempts = ref(false)
-const reopenTargets = ref([])
+const reopenDialog = ref(false)
 const selectedReopenIds = ref([])
-const reopenSelectionEnabled = computed(() => (testEnded.value || selectedTest.value?.start_mode === 'individual') && canReopenAttempts.value)
-const selectedReopenAttempts = computed(() => attempts.value.filter(attempt => selectedReopenIds.value.includes(attempt.id)))
+const reopenSelectionEnabled = computed(() => !selectedTest.value?.paused_at && (testEnded.value || selectedTest.value?.start_mode === 'individual') && canReopenAttempts.value)
+const selectedReopenAttempts = computed(() => eligibleReopenAttempts.value.filter(attempt => selectedReopenIds.value.includes(attempt.id)))
 const eligibleReopenAttempts = computed(() => attempts.value.filter(canSelectReopen))
 const allReopenSelected = computed(() => eligibleReopenAttempts.value.length > 0 && eligibleReopenAttempts.value.every(person => selectedReopenIds.value.includes(person.id)))
 const reopenMinutes = ref(5)
@@ -1005,6 +1035,7 @@ const reopenTimeValue = computed(() => Number(reopenMinutes.value) * 60 + Number
 const validReopenTime = computed(() => Number.isInteger(Number(reopenMinutes.value)) && Number(reopenMinutes.value) >= 0 && Number.isInteger(Number(reopenSeconds.value)) && Number(reopenSeconds.value) >= 0 && Number(reopenSeconds.value) < 60 && reopenTimeValue.value > 0 && reopenTimeValue.value <= 86400)
 const hasPersonalRunningAttempts = computed(() => attempts.value.some(personalAttemptRunning))
 const hasCompletedAttempts = computed(() => attempts.value.some(attempt => Boolean(attempt.completed_at)))
+const allAttemptsCompleted = computed(() => attempts.value.length > 0 && attempts.value.every(attemptCompleted))
 const deadlineTarget = ref(null)
 const deadlineDraft = ref('')
 const copyFallback = ref(null)
@@ -1024,8 +1055,9 @@ const remainingMinutes = ref(0)
 const remainingSeconds = ref(0)
 const remainingTimeValue = computed(() => Number(remainingMinutes.value) * 60 + Number(remainingSeconds.value))
 const validRemainingTime = computed(() => Number.isInteger(Number(remainingMinutes.value)) && Number(remainingMinutes.value) >= 0 && Number.isInteger(Number(remainingSeconds.value)) && Number(remainingSeconds.value) >= 0 && Number(remainingSeconds.value) < 60 && remainingTimeValue.value > 0 && remainingTimeValue.value <= 86400)
-const canPauseTest = computed(() => Boolean(selectedTest.value && !selectedTest.value.paused_at && (!testEnded.value || hasPersonalRunningAttempts.value) && (selectedTest.value.start_mode === 'individual' || selectedTest.value.starts_at)))
+const canPauseTest = computed(() => Boolean(selectedTest.value && !selectedTest.value.paused_at && attempts.value.some(attempt => !attemptCompleted(attempt)) && (!testEnded.value || hasPersonalRunningAttempts.value) && (selectedTest.value.start_mode === 'individual' || selectedTest.value.starts_at)))
 const testRunning = computed(() => Boolean(!selectedTest.value?.paused_at && selectedTest.value?.start_mode !== 'individual' && selectedTest.value?.starts_at && Date.parse(selectedTest.value.starts_at) <= serverNow.value && !testEnded.value))
+const canCloseTest = computed(() => !selectedTest.value?.paused_at && (testRunning.value || hasPersonalRunningAttempts.value))
 const monitorError = ref('')
 const publishDialog = ref(false)
 const startDialog = ref(false)
@@ -1077,10 +1109,10 @@ const nextStepHint = computed(() => {
         return 'Der gewählte Test wird geladen.'
     }
     if (selectedTest.value.start_mode === 'individual') {
-        return 'Die Personen starten selbst. Die Zeit läuft ab dem einmaligen Start ohne Pause. Persönliche Schlussfristen passt du mit dem Stift in der Schülerliste an.'
+        return 'Die Personen starten selbst. Die Zeit läuft ab dem persönlichen Start. Pause und Wiederöffnung steuerst du unter „Prüfung steuern“, persönliche Schlussfristen mit dem Stift in der Schülerliste.'
     }
     if (hasPersonalRunningAttempts.value) {
-        return 'Die gemeinsame Bearbeitungszeit ist beendet. Einzelne Personen arbeiten mit ihrer persönlichen Zusatzzeit weiter; du steuerst diese direkt in der jeweiligen Schülerzeile.'
+        return 'Die gemeinsame Bearbeitungszeit ist beendet. Einzelne Personen arbeiten mit ihrer persönlichen Zusatzzeit weiter. Pause, Beenden und Wiederöffnung findest du unter „Prüfung steuern“.'
     }
     if (testEnded.value) {
         return 'Die Bearbeitungszeit ist beendet. Punkte und die Auswertung jeder Frage findest du direkt in der Schülerliste.'
@@ -1249,7 +1281,7 @@ function queryId(value) {
 
 function navigationLocation(view, catalogId = catalog.value.id, testId = selectedTestId.value, attemptId = null) {
     const query = { ...route.query }
-    for (const key of ['catalog', 'view', 'test', 'attempt']) {
+    for (const key of ['catalog', 'view', 'test', 'attempt', 'pane']) {
         delete query[key]
     }
     if (view !== 'catalogs') {
@@ -1262,6 +1294,7 @@ function navigationLocation(view, catalogId = catalog.value.id, testId = selecte
         }
         if (['test', 'results'].includes(view) && attemptId) {
             query.attempt = String(attemptId)
+            query.pane = 'students'
         }
     }
     return { path: workspacePath, query }
@@ -1271,6 +1304,12 @@ function navigateTo(view, catalogId = catalog.value.id, testId = selectedTestId.
     error.value = ''
     notice.value = ''
     return router.push(navigationLocation(view, catalogId, testId, attemptId))
+}
+
+function selectTestPane(pane) {
+    const location = navigationLocation(pane === 'results' ? 'results' : 'test')
+    location.query.pane = pane
+    return router.push(location)
 }
 
 async function unavailableLocation(view, catalogId, message) {
@@ -1301,7 +1340,7 @@ async function restoreLocation() {
     if (!catalogEditing.value || catalog.value.id !== saved.id) {
         loadCatalog(saved.id)
     }
-    const view = route.query.view ?? 'catalog'
+    const view = route.query.view === 'tests' && queryId(route.query.test) ? 'test' : route.query.view ?? 'catalog'
     if (!['catalog', 'import', 'tests', 'new-test', 'test', 'results'].includes(view)) {
         await unavailableLocation('catalog', catalogId, 'Diese Ansicht ist nicht verfügbar.')
         return
@@ -1394,7 +1433,7 @@ function clearSelectedTest() {
     testSettingsDialog.value = false
     invitationDialog.value = false
     canReopenAttempts.value = false
-    reopenTargets.value = []
+    reopenDialog.value = false
     selectedReopenIds.value = []
     attempts.value = []
     invitationPreview.value = null
@@ -1445,7 +1484,9 @@ function cancelNewTest() {
 }
 
 function toggleAttempt(id) {
-    return navigateTo('test', catalog.value.id, selectedTestId.value, expandedAttempt.value === id ? null : id)
+    const location = navigationLocation('test', catalog.value.id, selectedTestId.value, expandedAttempt.value === id ? null : id)
+    location.query.pane = 'students'
+    return router.push(location)
 }
 
 function startCatalogRename() {
@@ -1827,7 +1868,7 @@ async function loadSelectedTest(id) {
     testSettingsDialog.value = false
     invitationDialog.value = false
     canReopenAttempts.value = false
-    reopenTargets.value = []
+    reopenDialog.value = false
     selectedReopenIds.value = []
     monitorError.value = ''
     attempts.value = []
@@ -2223,11 +2264,28 @@ function personalTimeLabel(attempt) {
     return seconds ? `Zusatzzeit: ${Math.floor(seconds / 60)} Min. ${String(seconds % 60).padStart(2, '0')} Sek.` : 'Zusatzzeit abgelaufen'
 }
 
+function attemptCompleted(attempt) {
+    return Boolean(attempt.completed_at || ['submitted', 'timeout'].includes(attempt.status))
+}
+
+function reopenUnavailableReason(attempt) {
+    if (selectedTest.value?.paused_at) return 'Bitte den Test zuerst fortsetzen.'
+    if (selectedTest.value?.start_mode !== 'individual' && !testEnded.value) return 'Erst nach Ende der gemeinsamen Bearbeitungszeit möglich.'
+    if (!attemptCompleted(attempt) || personalAttemptRunning(attempt)) return 'Die Bearbeitung ist noch nicht abgeschlossen.'
+    if (selectedTest.value?.start_mode === 'individual') {
+        if (!attempt.started_at) return 'Die Bearbeitung wurde noch nicht gestartet.'
+        const closing = attempt.closing_deadline || attempt.closes_at || selectedTest.value.closes_at
+        if (!Number.isFinite(Date.parse(closing)) || Date.parse(closing) <= serverNow.value) return 'Bitte zuerst die persönliche Schlussfrist in der Schülerübersicht verlängern.'
+    }
+    return ''
+}
+
 function canSelectReopen(attempt) {
-    return selectedTest.value?.start_mode !== 'individual' || Boolean(attempt.started_at && (attempt.completed_at || (attempt.effective_ends_at && Date.parse(attempt.effective_ends_at) <= serverNow.value)))
+    return reopenSelectionEnabled.value && reopenUnavailableReason(attempt) === ''
 }
 
 function selectReopen(id, checked) {
+    if (checked && !eligibleReopenAttempts.value.some(attempt => attempt.id === id)) return
     selectedReopenIds.value = checked ? [...new Set([...selectedReopenIds.value, id])] : selectedReopenIds.value.filter(value => value !== id)
 }
 
@@ -2235,22 +2293,21 @@ function selectAllReopen(checked) {
     selectedReopenIds.value = checked ? eligibleReopenAttempts.value.map(attempt => attempt.id) : []
 }
 
-function openSelectedReopen() {
-    if (!selectedReopenAttempts.value.length) return
-    reopenTargets.value = selectedReopenAttempts.value.map(attempt => ({ ...attempt }))
-    const single = reopenTargets.value.length === 1 ? reopenTargets.value[0] : null
-    const seconds = personalAttemptRunning(single) ? Math.max(1, Math.ceil((Date.parse(single.effective_ends_at || single.reopened_until) - serverNow.value) / 1000)) : 300
-    reopenMinutes.value = Math.floor(seconds / 60)
-    reopenSeconds.value = seconds % 60
+function openReopenSelection() {
+    if (!reopenSelectionEnabled.value || !attempts.value.length) return
+    selectedReopenIds.value = []
+    reopenMinutes.value = 5
+    reopenSeconds.value = 0
+    reopenDialog.value = true
     error.value = ''
 }
 
 async function savePersonalReopen() {
-    if (!validReopenTime.value || !reopenTargets.value.length) return
-    const targets = reopenTargets.value.map(person => person.id)
+    if (!validReopenTime.value || !selectedReopenAttempts.value.length) return
+    const targets = selectedReopenAttempts.value.map(person => person.id)
     await task('reopen-attempt', async () => {
         await axios.post(reopenAttempts.url(selectedTestId.value), { attempt_ids: targets, remaining_seconds: reopenTimeValue.value })
-        reopenTargets.value = []
+        reopenDialog.value = false
         selectedReopenIds.value = selectedReopenIds.value.filter(id => !targets.includes(id))
         await refreshMonitor()
         notice.value = `Zusatzzeit für ${targets.length} ausgewählte Person${targets.length === 1 ? '' : 'en'} freigegeben.`
@@ -2414,6 +2471,7 @@ h3 {
     padding: 0;
 }
 .mc-catalog-list li, .mc-catalog-card { min-width: 0; height: 100%; }
+.mc-test-list { grid-auto-rows: 1fr; }
 .mc-catalog-card { display: flex; flex-direction: column; }
 .mc-catalog-card :deep(.v-card-text) { flex: 1; }
 .mc-catalog-card h3 { font-size: 1.08rem; overflow-wrap: anywhere; }
@@ -2423,6 +2481,10 @@ h3 {
 .mc-test-heading-title h2, .mc-test-heading-title h3 { min-width: 0; overflow-wrap: anywhere; }
 .mc-test-heading-title :deep(.v-btn) { flex: 0 0 auto; }
 .mc-test-card-actions { flex-wrap: wrap; gap: 4px; }
+.mc-test-subnav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+.mc-test-subnav :deep(.v-btn) { text-transform: none; letter-spacing: normal; }
+.mc-control-grid--single { grid-template-columns: minmax(0, 1fr); }
+.mc-control-grid--single .mc-control-section { border-left: 0; border-top: 0; padding-left: 0; padding-top: 0; }
 
 .mc-steps {
     display: flex;

@@ -230,6 +230,8 @@
                     </v-card>
                 </div>
 
+                <ConnectionStatusCard v-if="config?.is_auth && isAllowed(['super_admin'])" :key="config?.user?.id" />
+
                 <section class="admin-dashboard-page__licences" aria-labelledby="licences-heading">
                 <div class="admin-dashboard-page__licence-heading">
                     <div>
@@ -476,9 +478,10 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useHealthStore } from '@/stores/admin/HealthStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import ConnectionStatusCard from '@/pages/admin/components/ConnectionStatusCard.vue'
 
 export default {
-    components: {},
+    components: { ConnectionStatusCard },
 
     async beforeMount() {
         if (typeof window.ensureCsrfCookie === 'function') {

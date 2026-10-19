@@ -10,13 +10,17 @@ use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\DropboxWorkImport;
 use App\Services\FeaturePreviewService;
 use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McImportService;
 use App\Services\MultipleChoice\McQuestionValidator;
+use App\Services\MultipleChoice\McTestExchange;
+use App\Services\MultipleChoice\McTestFolder;
 use App\Services\MultipleChoice\McTestService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +32,108 @@ use Illuminate\Validation\ValidationException;
 
 class MultipleChoiceController extends Controller
 {
+    public function folderStatus(McTest $test, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+
+        return response()->json($folders->status($test, $this->teacher()));
+    }
+
+    public function folderStore(Request $request, McTest $test, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate(['provider' => ['required', 'in:dropbox,local'],
+            'folder_id' => ['required_if:provider,dropbox', 'nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
+            'name' => ['required_if:provider,local', 'nullable', 'string', 'max:255', 'not_regex:/[\x00-\x1f]/']]);
+
+        return response()->json($folders->bind($test, $this->teacher(), $data));
+    }
+
+    public function folderConnect(Request $request, McTest $test, DropboxWorkImport $dropbox): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $state = bin2hex(random_bytes(32));
+        $request->session()->put('teaching_dropbox_oauth', ['state' => $state, 'user_id' => $this->teacher()->id,
+            'mc_test_id' => $test->id, 'expires_at' => now()->addMinutes(10)->timestamp]);
+
+        return response()->json(['url' => $dropbox->authorizationUrl($state, true)]);
+    }
+
+    public function completeFolderConnection(Request $request, DropboxWorkImport $dropbox, array $pending): RedirectResponse
+    {
+        $test = McTest::findOrFail($pending['mc_test_id']);
+        $this->authorizeOwned($test);
+        $status = 'cancelled';
+        if (! $request->query('error')) {
+            $data = $request->validate(['code' => ['required', 'string', 'max:2048']]);
+            $dropbox->connect($this->teacher(), $data['code'], true);
+            $status = 'connected';
+        }
+
+        return redirect('/admin/teaching-tools/multiple-choice?'.http_build_query([
+            'catalog' => $test->catalog_id, 'view' => 'test', 'test' => $test->id, 'folder' => '1', 'dropbox' => $status]));
+    }
+
+    public function folderList(Request $request, McTest $test, DropboxWorkImport $dropbox, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate(['folder_id' => ['nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
+            'cursor' => ['nullable', 'string', 'max:4096'], 'suggest' => ['sometimes', 'boolean']]);
+        if ($request->boolean('suggest')) {
+            return response()->json($folders->suggestions($test, $this->teacher()));
+        }
+
+        return response()->json($dropbox->folders($dropbox->connection($this->teacher()), $data['folder_id'] ?? '', $data['cursor'] ?? null));
+    }
+
+    public function folderExport(Request $request, McTest $test, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate(['previous' => ['nullable', 'array'], 'dropbox' => ['sometimes', 'boolean']]);
+        $links = $test->status === 'published' && $test->access_links_disabled_at === null
+            ? $this->exportExercise($request, $test)->getData(true) : [];
+
+        return response()->json($folders->export($test, $this->teacher(), $links, $data['previous'] ?? null, $request->boolean('dropbox')));
+    }
+
+    public function folderImport(Request $request, McTest $test, McTestFolder $folders, McTestExchange $exchange): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate(['package' => ['nullable', 'array'], 'apply' => ['sometimes', 'boolean'],
+            'hash' => ['required_if:apply,1', 'nullable', 'string', 'size:64']]);
+        $package = $data['package'] ?? $folders->read($test, $this->teacher());
+        if (strlen(json_encode($package, JSON_THROW_ON_ERROR)) > 6 * 1024 * 1024) {
+            throw ValidationException::withMessages(['package' => 'Die Testdatei ist größer als 6 MiB.']);
+        }
+        if (! $request->boolean('apply')) {
+            return response()->json($exchange->preview($test, $package));
+        }
+        $result = DB::transaction(function () use ($exchange, $test, $package, $data, $folders): array {
+            $result = $exchange->apply($test, $this->teacher(), $package, $data['hash']);
+            $folders->acknowledge($test, $this->teacher(), $package);
+
+            return $result;
+        });
+
+        return response()->json($result);
+    }
+
+    public function folderAcknowledge(Request $request, McTest $test, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate(['package' => ['required', 'array']]);
+        $folders->acknowledge($test, $this->teacher(), $data['package']);
+
+        return response()->json(['remembered' => true]);
+    }
+
+    public function folderCheckWrite(McTest $test, McTestFolder $folders): JsonResponse
+    {
+        $this->authorizeOwned($test);
+
+        return response()->json($folders->verifyWrite($test, $this->teacher()));
+    }
+
     public function __construct(
         private McImportService $imports,
         private McQuestionValidator $questions,

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Admin\Teaching;
 
+use App\Http\Controllers\Admin\ConnectionStatusController;
+use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Controller;
 use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
@@ -72,6 +74,12 @@ class WorkDropboxController extends Controller
         abort_unless(is_array($pending) && is_string($request->query('state'))
             && hash_equals($pending['state'], $request->query('state'))
             && $pending['user_id'] === $request->user()?->id && $pending['expires_at'] >= now()->timestamp, 403, 'Dropbox-Verbindungsanfrage ist ungültig oder abgelaufen.');
+        if (isset($pending['mc_test_id'])) {
+            return app(MultipleChoiceController::class)->completeFolderConnection($request, $dropbox, $pending);
+        }
+        if (! empty($pending['connection_status'])) {
+            return app(ConnectionStatusController::class)->complete($request, $dropbox);
+        }
         $work = TeachingCourseWork::query()->findOrFail($pending['work_id']);
         $actor = $this->actor($work);
         abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');

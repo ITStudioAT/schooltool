@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminShellColorPreferenceController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
+use App\Http\Controllers\Admin\ConnectionStatusController;
 use App\Http\Controllers\Admin\FeaturePreviewController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
@@ -259,6 +260,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
         Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
         Route::get('/tests/{test}/exercise-export', [MultipleChoiceController::class, 'exportExercise'])->name('tests.exercise-export');
+        Route::get('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStatus'])->name('tests.folder.status');
+        Route::put('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStore'])->name('tests.folder.store');
+        Route::post('/tests/{test}/folder/connect', [MultipleChoiceController::class, 'folderConnect'])->middleware(StartSession::class)->name('tests.folder.connect');
+        Route::get('/tests/{test}/folder/folders', [MultipleChoiceController::class, 'folderList'])->name('tests.folder.folders');
+        Route::post('/tests/{test}/folder/export', [MultipleChoiceController::class, 'folderExport'])->name('tests.folder.save');
+        Route::post('/tests/{test}/folder/import', [MultipleChoiceController::class, 'folderImport'])->name('tests.folder.read');
+        Route::post('/tests/{test}/folder/remember', [MultipleChoiceController::class, 'folderAcknowledge'])->name('tests.folder.remember');
+        Route::post('/tests/{test}/folder/check-write', [MultipleChoiceController::class, 'folderCheckWrite'])->middleware('throttle:5,1')->name('tests.folder.check-write');
         Route::patch('/tests/{test}', [MultipleChoiceController::class, 'renameTest'])->name('tests.rename');
         Route::delete('/tests/{test}', [MultipleChoiceController::class, 'deleteTest'])->name('tests.delete');
         Route::patch('/tests/{test}/attempts/{attempt}/closing-deadline', [MultipleChoiceController::class, 'changeClosingDeadline'])->name('attempts.closing-deadline');
@@ -450,6 +459,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         Route::get('/admin/health/status', [HealthController::class, 'status'])
             ->middleware('api-allowed:scope:admin_shell_access');
+        Route::get('/admin/connections', [ConnectionStatusController::class, '__invoke'])
+            ->middleware('api-allowed:super_admin')->name('admin.connections.status');
+        Route::post('/admin/connections/check', [ConnectionStatusController::class, '__invoke'])
+            ->middleware(['api-allowed:super_admin', 'throttle:10,1'])->name('admin.connections.check');
+        Route::post('/admin/connections/dropbox/connect', [ConnectionStatusController::class, 'connect'])
+            ->middleware(['api-allowed:super_admin', StartSession::class])->name('admin.connections.connect');
         Route::post('/admin/health/test-queue', [HealthController::class, 'testQueue'])
             ->middleware(['api-allowed:scope:admin_or_super_admin_access', 'throttle:health-queue-tests']);
         Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest'])

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\DropboxConnection;
+use App\Models\McTest;
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
@@ -11,6 +13,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -61,7 +64,7 @@ class DropboxWorkImport
         return $connection;
     }
 
-    public function authorizationUrl(string $state): string
+    public function authorizationUrl(string $state, bool $write = false): string
     {
         $this->requireReady();
 
@@ -69,11 +72,11 @@ class DropboxWorkImport
             'client_id' => config('services.dropbox.client_id'),
             'redirect_uri' => config('services.dropbox.redirect_uri'),
             'response_type' => 'code', 'token_access_type' => 'offline',
-            'scope' => implode(' ', self::SCOPES), 'state' => $state,
+            'scope' => implode(' ', $write ? [...self::SCOPES, 'files.content.write'] : self::SCOPES), 'state' => $state,
         ], '', '&', PHP_QUERY_RFC3986);
     }
 
-    public function connect(User $user, string $code): void
+    public function connect(User $user, string $code, bool $write = false): void
     {
         $this->requireReady();
         $data = $this->token(['grant_type' => 'authorization_code', 'code' => $code,
@@ -82,18 +85,168 @@ class DropboxWorkImport
             $this->fail('Dropbox hat keine dauerhafte Benutzerfreigabe geliefert. Bitte erneut verbinden.');
         }
         $scopes = preg_split('/\s+/', trim((string) ($data['scope'] ?? '')));
-        if (array_diff(self::SCOPES, $scopes) !== [] || array_diff($scopes, self::SCOPES) !== []) {
-            $this->fail('Die Dropbox-Freigabe muss ausschließlich die beiden benötigten Leserechte enthalten.');
+        $required = $write ? [...self::SCOPES, 'files.content.write'] : self::SCOPES;
+        if (array_diff($required, $scopes) !== [] || array_diff($scopes, $required) !== []) {
+            $this->fail('Die Dropbox-Freigabe enthält nicht die für diesen Vorgang benötigten Dateirechte.');
         }
-        DB::transaction(function () use ($user, $data): void {
+        DB::transaction(function () use ($user, $data, $scopes): void {
             $connection = DropboxConnection::query()->where('user_id', $user->id)->lockForUpdate()->first();
             if ($connection && $connection->account_id !== $data['account_id']) {
                 TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)->delete();
             }
             DropboxConnection::query()->updateOrCreate(['user_id' => $user->id], [
-                'account_id' => $data['account_id'], 'credentials' => ['refresh_token' => $data['refresh_token']], 'revoked_at' => null,
+                'account_id' => $data['account_id'], 'credentials' => ['refresh_token' => $data['refresh_token'], 'scopes' => $scopes], 'revoked_at' => null,
             ]);
         });
+    }
+
+    public function canWrite(DropboxConnection $connection): bool
+    {
+        return in_array('files.content.write', $connection->credentials['scopes'] ?? [], true);
+    }
+
+    public function connectionStatus(User $user, bool $verify = false): array
+    {
+        $installed = $this->installed();
+        $connection = $installed ? DropboxConnection::where('user_id', $user->id)->first() : null;
+        $cacheKey = $connection ? $this->statusCacheKey($connection) : null;
+        $checks = $cacheKey ? Cache::store('file')->get($cacheKey, []) : [];
+        if ($verify && $connection && ! $connection->revoked_at && $this->configured()) {
+            try {
+                $this->api($connection, 'files/list_folder', ['path' => '', 'recursive' => false, 'limit' => 1]);
+                $checks['read_checked_at'] = now()->toISOString();
+                unset($checks['error']);
+            } catch (ValidationException) {
+                $checks['error'] = 'Die Dropbox-Verbindung konnte nicht bestätigt werden. Bitte erneut freigeben oder später prüfen.';
+            }
+            Cache::store('file')->put($cacheKey, $checks, now()->addDays(30));
+        }
+
+        return ['configured' => $this->configured(), 'installed' => $installed,
+            'connected' => $connection !== null && $connection->revoked_at === null,
+            'read_granted' => $connection && in_array('files.content.read', $connection->credentials['scopes'] ?? [], true),
+            'write_granted' => $connection && $this->canWrite($connection),
+            'read_checked_at' => $checks['read_checked_at'] ?? null, 'write_checked_at' => $checks['write_checked_at'] ?? null,
+            'cleanup_complete' => $checks['cleanup_complete'] ?? null, 'error' => $checks['error'] ?? null];
+    }
+
+    public function verifyWrite(DropboxConnection $connection, string $folderId, bool $temporaryFolder = false): array
+    {
+        $filename = 'Schooltool-Schreibtest-'.bin2hex(random_bytes(16)).'.txt';
+        $contents = "Schooltool Dropbox-Schreibtest\n".bin2hex(random_bytes(16))."\n";
+        $revision = $this->writeDocument($connection, $folderId, $filename, $contents, null);
+        try {
+            $file = $this->readDocument($connection, $folderId, $filename);
+            if ($file === null || $file['rev'] !== $revision || ! hash_equals($contents, $file['contents'])) {
+                $this->fail('Die eigene Prüfdatei konnte nicht unverändert zurückgelesen werden.');
+            }
+        } finally {
+            $this->api($connection, 'files/delete_v2', ['path' => $this->documentPath($folderId, $filename), 'parent_rev' => $revision]);
+        }
+        $key = $this->statusCacheKey($connection);
+        $checks = Cache::store('file')->get($key, []);
+        $checks['write_checked_at'] = now()->toISOString();
+        $checks['read_checked_at'] = $checks['write_checked_at'];
+        $checks['cleanup_complete'] = ! $temporaryFolder;
+        Cache::store('file')->put($key, $checks, now()->addDays(30));
+
+        return ['checked_at' => $checks['write_checked_at'], 'created_read_removed' => true];
+    }
+
+    public function verifyTemporaryWrite(User $user): array
+    {
+        $connection = $this->connection($user);
+        if (! $this->canWrite($connection)) {
+            $this->fail('Die zusätzliche Dropbox-Schreibfreigabe fehlt noch.');
+        }
+        $name = 'Schooltool-Schreibtest-'.bin2hex(random_bytes(16));
+        $created = $this->api($connection, 'files/create_folder_v2', ['path' => '/'.$name, 'autorename' => false])->json('metadata');
+        if (! is_array($created) || ($created['name'] ?? null) !== $name || ! is_string($created['id'] ?? null)) {
+            $this->fail('Dropbox hat den eigenen temporären Testordner nicht eindeutig bestätigt.');
+        }
+        try {
+            $result = $this->verifyWrite($connection, $created['id'], true);
+        } finally {
+            $listing = $this->api($connection, 'files/list_folder', ['path' => $created['id'], 'recursive' => false, 'limit' => 1])->json();
+            if (($listing['entries'] ?? null) !== [] || ($listing['has_more'] ?? true)) {
+                $this->fail('Der eigene Testordner ist nicht leer und wurde deshalb nicht entfernt: '.$name);
+            }
+            $this->api($connection, 'files/delete_v2', ['path' => $created['id']]);
+        }
+
+        $key = $this->statusCacheKey($connection);
+        $checks = Cache::store('file')->get($key, []);
+        $checks['cleanup_complete'] = true;
+        Cache::store('file')->put($key, $checks, now()->addDays(30));
+
+        return $result + ['temporary_folder_removed' => true];
+    }
+
+    private function statusCacheKey(DropboxConnection $connection): string
+    {
+        return 'dropbox-check:'.$connection->user_id.':'.hash('sha256', $connection->account_id.':'.$connection->credentials['refresh_token']);
+    }
+
+    /** @return array{contents: string, rev: string}|null */
+    public function readDocument(DropboxConnection $connection, string $folderId, string $filename): ?array
+    {
+        $this->metadata($connection, $folderId);
+        $path = $this->documentPath($folderId, $filename);
+        try {
+            $metadata = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
+        } catch (ConnectionException) {
+            $this->fail('Die Dropbox-Datei konnte nicht gelesen werden.');
+        }
+        if ($metadata->status() === 409 && str_starts_with((string) $metadata->json('error_summary'), 'path/not_found/')) {
+            return null;
+        }
+        $entry = $this->checkResponse($connection, $metadata)->json();
+        if (($entry['.tag'] ?? null) !== 'file') {
+            $this->fail('Das Dropbox-Ziel ist keine Datei.');
+        }
+        $this->checkDownloadSize($entry, self::MAX_BYTES, 0);
+        $response = $this->api($connection, 'files/download', ['path' => 'rev:'.$entry['rev']], true);
+        $contents = $response->body();
+        if (strlen($contents) !== $entry['size']) {
+            $this->fail('Die Dropbox-Datei wurde nicht vollständig gelesen.');
+        }
+
+        return ['contents' => $contents, 'rev' => $entry['rev']];
+    }
+
+    public function writeDocument(DropboxConnection $connection, string $folderId, string $filename, string $contents, ?string $revision): string
+    {
+        if (! $this->canWrite($connection) || strlen($contents) > self::MAX_BYTES) {
+            $this->fail('Bitte Dropbox für das Lesen und Schreiben dieses Testordners erneut verbinden.');
+        }
+        $this->metadata($connection, $folderId);
+        $parameters = ['path' => $this->documentPath($folderId, $filename),
+            'mode' => $revision === null ? 'add' : ['.tag' => 'update', 'update' => $revision],
+            'autorename' => false, 'strict_conflict' => true];
+        try {
+            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->withHeaders(['Dropbox-API-Arg' => json_encode($parameters, JSON_THROW_ON_ERROR)])
+                ->withBody($contents, 'application/octet-stream')->post('https://content.dropboxapi.com/2/files/upload');
+        } catch (ConnectionException) {
+            $this->fail('Dropbox hat das Speichern nicht bestätigt. Bitte den Ordner neu lesen, bevor Sie erneut speichern.');
+        }
+        $data = $this->checkResponse($connection, $response)->json();
+        if (! is_string($data['rev'] ?? null) || ($data['size'] ?? null) !== strlen($contents)) {
+            $this->fail('Dropbox hat die gespeicherte Datei nicht vollständig bestätigt.');
+        }
+
+        return $data['rev'];
+    }
+
+    private function documentPath(string $folderId, string $filename): string
+    {
+        if (! preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId)
+            || ! preg_match('/\A(?:MC-Test_(?:[0-9]+|[a-f0-9]{24})\.json|Schooltool-Schreibtest-[a-f0-9]{32}\.txt)\z/', $filename)) {
+            $this->fail('Der Testordner oder Dateiname ist ungültig.');
+        }
+
+        return $folderId.'/'.$filename;
     }
 
     /** @return array<string, mixed> */
@@ -143,10 +296,61 @@ class DropboxWorkImport
     /** @return array{status: string, message: string} */
     public function folderPlausibility(TeachingCourseWork $work, string $name): array
     {
-        $course = $work->teachingCourse;
-        $classes = array_map(fn (string $class): string => mb_strtoupper(trim($class)), $course->classes ?? []);
+        return $this->checkFolderContext($this->workFolderContext($work), $name);
+    }
+
+    public function testFolderPlausibility(McTest $test, string $name): array
+    {
+        return $this->checkFolderContext($this->testFolderContext($test), $name);
+    }
+
+    private function workFolderContext(TeachingCourseWork $work): array
+    {
+        return ['title' => (string) $work->title, 'classes' => $work->teachingCourse->classes ?? [],
+            'course_title' => (string) $work->teachingCourse->title, 'course_ids' => [$work->teaching_course_id], 'work_id' => $work->id,
+            'dates' => array_filter([$work->date_for_all_groups?->format('Y-m-d'), ...array_column($work->groups ?? [], 'date')])];
+    }
+
+    private function testFolderContext(McTest $test): array
+    {
+        $ids = $test->attempts()->pluck('student_id')->map(fn ($id): int => (int) $id)->unique()->sort()->values()->all();
+        $students = User::where('school_id', $test->school_id)->whereIn('id', $ids)->get(['id', 'schoolclass', 'schoolyear_id']);
+        if ($students->count() !== count($ids)) {
+            $this->fail('Die Testteilnahmen gehören nicht eindeutig zur aktuellen Schule.');
+        }
+        $courses = $ids === [] || $test->schoolyear_id === null ? collect() : TeachingCourse::where('school_id', $test->school_id)
+            ->where('user_id', $test->owner_id)->where('schoolyear_id', $test->schoolyear_id)
+            ->whereHas('teachingCourseStudents', fn ($query) => $query->whereIn('user_id', $ids)->whereNull('canceled_at'))
+            ->with(['teachingCourseStudents' => fn ($query) => $query->whereNull('canceled_at')->select('id', 'teaching_course_id', 'user_id')])
+            ->get(['id', 'title', 'classes'])->filter(fn (TeachingCourse $course): bool => $course->teachingCourseStudents
+            ->pluck('user_id')->map(fn ($id): int => (int) $id)->sort()->values()->all() === $ids);
+        $course = $courses->count() === 1 ? $courses->first() : null;
+        $knownClasses = $students->every(fn (User $student): bool => $test->schoolyear_id !== null
+            && (int) $student->schoolyear_id === (int) $test->schoolyear_id && trim((string) $student->schoolclass) !== '');
+        $classes = $course?->classes ?? ($knownClasses ? $students->pluck('schoolclass')->unique()->values()->all() : []);
+        $catalog = $test->catalog;
+        $catalogTitle = $catalog && (int) $catalog->school_id === (int) $test->school_id && (int) $catalog->owner_id === (int) $test->owner_id
+            ? $this->folderWords($catalog->title) : '';
+        $excluded = ['test', 'tests', 'katalog', 'fragenkatalog', ...array_map($this->folderWords(...), $classes)];
+        if ($course && preg_match('/\s+-\s+([1-9][0-9]*)\z/u', $course->title, $match)) {
+            foreach ($classes as $class) {
+                $excluded[] = $this->folderWords($class.$match[1]);
+            }
+        }
+        $testWords = array_values(array_diff(explode(' ', $this->folderWords($test->title)), $excluded));
+        $catalogWords = array_values(array_diff(explode(' ', $catalogTitle), $excluded));
+        $common = array_values(array_intersect($testWords, $catalogWords));
+
+        return ['title' => implode(' ', $common ?: ($testWords ?: $catalogWords)), 'classes' => $classes,
+            'course_title' => $course?->title ?? '', 'course_ids' => $courses->pluck('id')->all(), 'work_id' => null,
+            'dates' => array_filter([$test->starts_at?->format('Y-m-d')])];
+    }
+
+    private function checkFolderContext(array $context, string $name): array
+    {
+        $classes = array_map(fn (string $class): string => mb_strtoupper(trim($class)), $context['classes']);
         $group = null;
-        if (count($classes) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course->title), $parts) === 1
+        if (count($classes) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($context['course_title']), $parts) === 1
             && mb_strtoupper(trim($parts[1])) === $classes[0]) {
             $group = (int) $parts[2];
         }
@@ -164,7 +368,9 @@ class DropboxWorkImport
             return ['status' => 'unknown', 'message' => 'Der Ordner nennt zusätzliche Klassen. Die genaue Arbeits- und Personenzuordnung wird anhand der Importdateien geprüft.'];
         }
         if (array_diff($folderClasses, $classes) !== [] || ($group !== null && $folderGroup !== null && $folderGroup !== $group)) {
-            return ['status' => 'mismatch', 'message' => "Ordner passt nicht zum Kurs {$course->title}: {$name}. Bitte den passenden Dropbox-Ordner wählen!"];
+            $target = $context['work_id'] !== null ? 'zum Kurs '.$context['course_title'] : 'zur aktuellen Kurs-/Teilnehmergruppe';
+
+            return ['status' => 'mismatch', 'message' => "Ordner passt nicht {$target}: {$name}. Bitte den passenden Dropbox-Ordner wählen!"];
         }
         if ($group !== null && $folderGroup === null) {
             return ['status' => 'unknown', 'message' => "Die Kursgruppe {$group} fehlt im Ordnernamen. Bitte den Inhalt beim Import prüfen."];
@@ -177,6 +383,16 @@ class DropboxWorkImport
 
     /** @return array{suggested_folder: ?array, suggestions: list<array>, start_folder: ?array, message: string} */
     public function suggestFolders(DropboxConnection $connection, TeachingCourseWork $work): array
+    {
+        return $this->suggestFolderContext($connection, $this->workFolderContext($work));
+    }
+
+    public function suggestTestFolders(DropboxConnection $connection, McTest $test): array
+    {
+        return $this->suggestFolderContext($connection, $this->testFolderContext($test));
+    }
+
+    private function suggestFolderContext(DropboxConnection $connection, array $context): array
     {
         $budget = 16;
         $partial = false;
@@ -223,7 +439,7 @@ class DropboxWorkImport
                 && ! preg_match('#/(?:archiv|archive|papierkorb)/#u', $entry['path_lower'])));
         usort($roots, fn (array $first, array $second): int => strcmp($first['path_lower'], $second['path_lower']));
         $start = isset($roots[0]) ? $this->suggestionFolder($roots[0]) : null;
-        $tokens = array_values(array_filter(explode(' ', $this->folderWords((string) $work->title)), fn (string $word): bool => strlen($word) >= 3
+        $tokens = array_values(array_filter(explode(' ', $this->folderWords($context['title'])), fn (string $word): bool => strlen($word) >= 3
             && ! in_array($word, ['leistungsfeststellung', 'uebung', 'ubung', 'arbeit', 'teil', 'praktische', 'pruefung', 'prufung'], true)));
         $candidates = [];
         if ($tokens !== []) {
@@ -286,7 +502,7 @@ class DropboxWorkImport
         }
         $ranked = [];
         foreach ($candidates as $candidate) {
-            $score = $this->scoreFolderSuggestion($work, $candidate);
+            $score = $this->scoreFolderSuggestion($context, $candidate);
             if ($score !== null) {
                 $ranked[] = $candidate + $score;
             }
@@ -305,10 +521,11 @@ class DropboxWorkImport
                         $metadata = json_decode(str_starts_with($text, "\xEF\xBB\xBF") ? substr($text, 3) : $text, true, 32, JSON_THROW_ON_ERROR);
                         $workId = $metadata['Schooltool_Arbeit_ID'] ?? null;
                         $courseId = $metadata['Schooltool_Kurs_ID'] ?? null;
-                        if (($workId !== null && $workId !== $work->id) || ($courseId !== null && $courseId !== $work->teaching_course_id)) {
+                        if (($context['work_id'] !== null && $workId !== null && $workId !== $context['work_id'])
+                            || ($courseId !== null && ! in_array($courseId, $context['course_ids'], true))) {
                             continue;
                         }
-                        if ($workId === $work->id && $courseId === $work->teaching_course_id) {
+                        if ($context['work_id'] !== null && $workId === $context['work_id'] && in_array($courseId, $context['course_ids'], true)) {
                             $candidate['score'] += 200;
                             $candidate['strong'] = true;
                             $candidate['reason'] = 'Arbeits- und Kurskennung stimmen mit dieser Arbeit überein.';
@@ -362,19 +579,19 @@ class DropboxWorkImport
     /** @param array<string, mixed> $folder
      * @return ?array{score: int, strong: bool, reason: string}
      */
-    private function scoreFolderSuggestion(TeachingCourseWork $work, array $folder): ?array
+    private function scoreFolderSuggestion(array $context, array $folder): ?array
     {
-        $plausibility = $this->folderPlausibility($work, $folder['name']);
+        $plausibility = $this->checkFolderContext($context, $folder['name']);
         if ($plausibility['status'] === 'mismatch') {
             return null;
         }
         $words = explode(' ', $this->folderWords($folder['name']));
-        $classes = array_map($this->folderWords(...), $work->teachingCourse->classes ?? []);
+        $classes = array_map($this->folderWords(...), $context['classes']);
         $folderClasses = array_filter($words, fn (string $word): bool => preg_match('/\A[0-9]+[a-z][a-z0-9]*\z/', $word) === 1);
         $classMatch = $classes !== [] && array_diff($classes, $folderClasses) === [] && array_diff($folderClasses, $classes) === [];
-        $dates = array_filter([$work->date_for_all_groups?->format('Y-m-d'), ...array_column($work->groups ?? [], 'date')]);
+        $dates = $context['dates'];
         $dateMatch = count(array_filter($dates, fn (string $date): bool => str_starts_with($folder['name'], $date.'_'))) > 0;
-        $subject = explode(' ', $this->folderWords((string) $work->teachingCourse->title))[0];
+        $subject = explode(' ', $this->folderWords($context['course_title']))[0];
         $subject = ['inf' => 'informatik', 'dgb' => 'digitale', 'winf' => 'wirtschaftsinformatik', 'medi' => 'medieninformatik'][$subject] ?? $subject;
         $courseMatch = in_array($subject, $words, true);
         if (preg_match('/\A(?:\.|pdfs?(?:_|\z)|assets\z|images\z|archiv\z|archive\z|papierkorb\z)/iu', $folder['name'])) {
@@ -383,7 +600,8 @@ class DropboxWorkImport
 
         return ['score' => 40 + ($classMatch ? 40 : 0) + ($dateMatch ? 60 : 0) + ($courseMatch ? 15 : 0)
                 + ($plausibility['status'] === 'match' ? 20 : 0),
-            'strong' => $classMatch && $dateMatch && $plausibility['status'] === 'match',
+            'strong' => $classMatch && $dateMatch && $plausibility['status'] === 'match'
+                && ($context['work_id'] !== null || count($context['course_ids']) === 1),
             'reason' => 'Thema passt'.($classMatch ? ', Klassen passen' : '').($courseMatch ? ', Kurs passt' : '').($dateMatch ? ', Termin passt' : '').'. Bitte bestätigen.'
                 .($plausibility['status'] === 'unknown' ? ' '.$plausibility['message'] : '')];
     }
@@ -398,8 +616,8 @@ class DropboxWorkImport
         if ($id !== '') {
             $current = $this->metadata($connection, $id);
             $currentFolder = $this->suggestionFolder($current);
-            $parentPath = dirname($current['path_lower']);
-            if ($parentPath !== '/' && $parentPath !== '.') {
+            $parentPath = Str::beforeLast($current['path_lower'], '/');
+            if ($parentPath !== '') {
                 $parentFolder = $this->metadata($connection, $parentPath);
                 $parent = $this->suggestionFolder($parentFolder);
             }

@@ -7,6 +7,7 @@ use Egulias\EmailValidator\EmailValidator;
 use Egulias\EmailValidator\Validation\RFCValidation;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Encryption\Encrypter;
 use RuntimeException;
 
 class TeachingSynchronisationGraph
@@ -43,6 +44,12 @@ class TeachingSynchronisationGraph
         'import116_run_changes' => ['import116_runs', 'import116_run_id'],
         'user_groups' => ['teaching_courses', 'teaching_course_id'],
         'user_group_members' => ['user_groups', 'user_group_id'],
+        'mc_catalogs' => 'school_id',
+        'mc_tests' => 'school_id',
+        'mc_attempts' => ['mc_tests', 'test_id'],
+        'number_system_game_sessions' => 'school_id',
+        'number_system_game_runs' => ['number_system_game_sessions', 'session_id'],
+        'number_system_game_members' => ['number_system_game_sessions', 'session_id'],
     ];
 
     public const array REFERENCES = [
@@ -50,6 +57,7 @@ class TeachingSynchronisationGraph
         'user_id' => 'users', 'created_by_user_id' => 'users', 'added_by_user_id' => 'users',
         'linked_user_id' => 'users', 'confirmed_by_user_id' => 'users', 'undone_by_user_id' => 'users',
         'import_user_id' => 'users', 'import116_id' => 'import116',
+        'teacher_id' => 'users',
         'teaching_curriculum_id' => 'teaching_curricula', 'adopted_curriculum_id' => 'teaching_curricula',
         'teaching_entry_area_id' => 'teaching_entry_areas', 'teaching_entry_grading_part_id' => 'teaching_entry_grading_parts',
         'teaching_course_id' => 'teaching_courses', 'teaching_course_date_id' => 'teaching_course_dates',
@@ -59,6 +67,39 @@ class TeachingSynchronisationGraph
         'source_teaching_curriculum_document_id' => 'teaching_curriculum_documents',
         'import116_run_id' => 'import116_runs', 'user_group_id' => 'user_groups',
     ];
+
+    private const array TOOL_REFERENCES = [
+        'mc_catalogs' => ['owner_id' => 'users'],
+        'mc_tests' => ['owner_id' => 'users', 'catalog_id' => 'mc_catalogs'],
+        'mc_attempts' => ['test_id' => 'mc_tests', 'student_id' => 'users'],
+        'number_system_game_sessions' => [],
+        'number_system_game_runs' => ['session_id' => 'number_system_game_sessions'],
+        'number_system_game_members' => ['session_id' => 'number_system_game_sessions', 'run_id' => 'number_system_game_runs'],
+    ];
+
+    public static function references(string $table): array
+    {
+        return [...self::REFERENCES, ...(self::TOOL_REFERENCES[$table] ?? [])];
+    }
+
+    /** Decode only participant links, never account credentials, for the protected SSH transfer. */
+    public function accessTokens(array $state, Encrypter $encrypter): array
+    {
+        $tokens = [];
+        foreach ($state['tables']['mc_attempts'] ?? [] as $attempt) {
+            try {
+                $token = $encrypter->decryptString($attempt['access_token']);
+                if ($token === '' || ! hash_equals($attempt['access_token_hash'], hash('sha256', $token))) {
+                    throw new RuntimeException('Ungültiger Zugangslink.');
+                }
+                $tokens[$attempt['id']] = $token;
+            } catch (\Throwable) {
+                throw new RuntimeException('Ein Multiple-Choice-Zugangslink konnte nicht sicher übertragen werden.');
+            }
+        }
+
+        return $tokens;
+    }
 
     public const array USER_SETTINGS = [
         'teaching_active_semester', 'teaching_count_for_semester_2_date', 'teaching_behaviour',
@@ -80,7 +121,7 @@ class TeachingSynchronisationGraph
         $schema = $connection->getSchemaBuilder();
         $state = ['tables' => [], 'columns' => [], 'foreign_keys' => [], 'max_ids' => []];
         foreach (array_column($schema->getTables(), 'name') as $name) {
-            if (str_starts_with($name, 'teaching_') && ! isset(self::TABLES[$name])
+            if ((str_starts_with($name, 'teaching_') || str_starts_with($name, 'mc_') || str_starts_with($name, 'number_system_game_')) && ! isset(self::TABLES[$name])
                 && ! in_array($name, [...self::LOCAL_TABLES, 'teaching_backups', 'teaching_backup_restore_runs'], true)) {
                 throw new RuntimeException("Unbekannte Unterrichtstabelle {$name}; Umfang zuerst prüfen.");
             }
@@ -93,6 +134,10 @@ class TeachingSynchronisationGraph
             $state['tables'][$table] = $query->get()->map(fn (object $row): array => (array) $row)->all();
             $state['columns'][$table] = $schema->getColumns($table);
             $state['foreign_keys'][$table] = $schema->getForeignKeys($table);
+            if (isset(self::TOOL_REFERENCES[$table])) {
+                $state['unique_indexes'][$table] = array_values(array_map(fn (array $index): array => $index['columns'],
+                    array_filter($schema->getIndexes($table), fn (array $index): bool => $index['unique'] && ! $index['primary'])));
+            }
         }
         foreach (['schoolyears', 'import116', 'users', 'school_tools', 'teachers'] as $table) {
             $query = $connection->table($table)->where('school_id', $schoolId)->orderBy('id');
@@ -356,7 +401,7 @@ class TeachingSynchronisationGraph
                                 ? ($maps['users'][$student['user_id']] ?? null) : ($maps['import116'][$student['id']] ?? null);
                         }
                     }
-                    foreach (self::REFERENCES as $column => $parent) {
+                    foreach (self::references($table) as $column => $parent) {
                         if (isset($row[$column])) {
                             $row[$column] = $this->mappedId($row[$column], $parent, $maps);
                         }
@@ -370,7 +415,8 @@ class TeachingSynchronisationGraph
                             'before_snapshot', 'after_snapshot', 'summary', 'meta', 'counts', 'report_summary', 'report_paths',
                             'fixed_properties', 'notification_recipients', 'property_evaluations', 'enabled_special_properties',
                             'maximum_plus_grade_thresholds', 'free_deficit_grade_thresholds', 'free_points_grade_thresholds',
-                            'points_grade_thresholds', 'overall_points_grade_thresholds', 'grading_part_groups', 'grading_level_weights'], true)
+                            'points_grade_thresholds', 'overall_points_grade_thresholds', 'grading_part_groups', 'grading_level_weights',
+                            'pause_history', 'reopen_history'], true)
                             && in_array(substr(ltrim($value), 0, 1), ['[', '{'], true)) {
                             $historicalStudentSnapshot = $table === 'import116_run_changes' && in_array($column, ['before_snapshot', 'after_snapshot'], true);
                             $row[$column] = json_encode($this->remapJson(json_decode($value, true, 512, JSON_THROW_ON_ERROR), $maps, $column, $studentMap, $historicalStudentSnapshot), JSON_THROW_ON_ERROR);

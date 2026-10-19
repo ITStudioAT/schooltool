@@ -86,7 +86,7 @@ function validQuestion(overrides = {}) {
     return { id: 'question-a', prompt: 'Welche Antwort ist richtig?', type: 'single', options: [{ id: 'a', text: 'Richtig' }, { id: 'b', text: 'Falsch' }], correct_option_ids: ['a'], active: true, reviewed: true, ...overrides }
 }
 
-function renderWorkspace(data = {}, monitor = {}, initialLocation = '/admin/teaching-tools/multiple-choice') {
+function renderWorkspace(data = {}, monitor = {}, initialLocation = '/admin/teaching-tools/multiple-choice', attach = false) {
     vi.mocked(axios.get).mockImplementation(async (url) => {
         if (String(url).endsWith('/multiple-choice')) {
             return { data: { available: true, catalogs: [], tests: [], ...data } }
@@ -99,7 +99,7 @@ function renderWorkspace(data = {}, monitor = {}, initialLocation = '/admin/teac
     const history = createMemoryHistory()
     history.replace(initialLocation)
     const router = createRouter({ history, routes: [{ path: '/admin/teaching-tools/multiple-choice', component: MultipleChoiceWorkspace }] })
-    const wrapper = mount(RouterView, { global: { plugins: [router], stubs: { FilePond: filePond, 'v-btn': button, 'v-text-field': field, 'v-textarea': textarea, 'v-select': select, 'v-dialog': dialog, 'v-date-picker': datePicker, 'v-sheet': { template: '<div><slot /></div>' } } } })
+    const wrapper = mount(RouterView, { ...(attach ? { attachTo: document.body } : {}), global: { plugins: [router], stubs: { FilePond: filePond, 'v-btn': button, 'v-text-field': field, 'v-textarea': textarea, 'v-select': select, 'v-dialog': dialog, 'v-date-picker': datePicker, 'v-sheet': { template: '<div><slot /></div>' } } } })
     wrapper.router = router
     wrappers.push(wrapper)
     return wrapper
@@ -111,6 +111,69 @@ async function clickText(wrapper, text) {
     await target.trigger('click')
     await flushPromises()
 }
+
+describe('Test-specific navigation', () => {
+    const base = '/admin/teaching-tools/multiple-choice'
+    const data = { catalogs: [{ id: 4, title: 'E-Mails', questions: [validQuestion()] }], tests: [{ id: 7, catalog_id: 4, title: 'E-Mails – 3B1', status: 'published' }] }
+    const panels = ['Prüfung steuern', 'Zugang und Einladungen', 'Ergebnisse und Lösungen', 'Schülerübersicht', 'Testeinstellungen']
+
+    function assertOnlyPanel(wrapper, label) {
+        for (const panel of panels) expect(wrapper.find(`section[aria-label="${panel}"]`).isVisible(), panel).toBe(panel === label)
+    }
+
+    it('shows one area at a time and restores the selected submenu through back forward and a fresh URL', async () => {
+        const wrapper = renderWorkspace(data, {}, `${base}?catalog=4&view=test&test=7`, true)
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Prüfung steuern')
+        const submenu = () => wrapper.find('nav[aria-label="Testbereiche"]')
+        await submenu().findAll('button')[1].trigger('click')
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Zugang und Einladungen')
+        expect(wrapper.router.currentRoute.value.query.pane).toBe('access')
+        await submenu().findAll('button')[3].trigger('click')
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Schülerübersicht')
+        await submenu().findAll('button')[4].trigger('click')
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Testeinstellungen')
+        const settingsUrl = wrapper.router.currentRoute.value.fullPath
+        wrapper.router.back()
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Schülerübersicht')
+        wrapper.router.forward()
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Testeinstellungen')
+        const reloaded = renderWorkspace(data, {}, settingsUrl, true)
+        await flushPromises()
+        assertOnlyPanel(reloaded, 'Testeinstellungen')
+        expect(axios.post).not.toHaveBeenCalled()
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
+
+    it('preserves legacy result and attempt links and does not offer a test submenu in the overview', async () => {
+        const results = renderWorkspace(data, {}, `${base}?catalog=4&view=results&test=7`, true)
+        await flushPromises()
+        assertOnlyPanel(results, 'Ergebnisse und Lösungen')
+        const attempt = renderWorkspace(data, { attempts: [{ id: 12, status: 'submitted', started_at: '2026-10-19T08:00:00Z', student_name: 'Fixture', score: 10 }] }, `${base}?catalog=4&view=results&test=7&attempt=12`, true)
+        await flushPromises()
+        assertOnlyPanel(attempt, 'Schülerübersicht')
+        await clickText(attempt, 'Schließen')
+        assertOnlyPanel(attempt, 'Schülerübersicht')
+        expect(attempt.router.currentRoute.value.query.pane).toBe('students')
+        const overview = renderWorkspace(data, {}, `${base}?catalog=4&view=tests`)
+        await flushPromises()
+        expect(overview.find('nav[aria-label="Testbereiche"]').exists()).toBe(false)
+    })
+
+    it('retains read-only settings after a started test in the settings area', async () => {
+        const wrapper = renderWorkspace(data, { can_edit_settings: false }, `${base}?catalog=4&view=test&test=7&pane=settings`, true)
+        await flushPromises()
+        assertOnlyPanel(wrapper, 'Testeinstellungen')
+        await clickText(wrapper, 'Einstellungen bearbeiten')
+        expect(wrapper.find('fieldset.mc-settings-fields').attributes('disabled')).toBeDefined()
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
+})
 
 async function submitCatalogTitle(wrapper) {
     await wrapper.find('form').trigger('submit')
@@ -1579,14 +1642,16 @@ it('grants an individual extra time only for the deliberately selected person af
     const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' })
     await flushPromises()
     await openExistingTest(wrapper)
-    await wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]').setValue(true)
+    expect(wrapper.find('section[aria-label="Schülerübersicht"]').find('input[type="checkbox"]').exists()).toBe(false)
     await clickText(wrapper, 'Wieder öffnen')
+    await wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]').setValue(true)
     expect(wrapper.find('[role="dialog"]').text()).toContain('Alex')
     expect(wrapper.find('[role="dialog"]').text()).toContain('Nicht ausgewählte Abgaben werden nicht verändert')
     expect(axios.post).not.toHaveBeenCalled()
     await clickText(wrapper, 'Abbrechen')
     expect(axios.post).not.toHaveBeenCalled()
     await clickText(wrapper, 'Wieder öffnen')
+    await wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]').setValue(true)
     await wrapper.find('[aria-label="Persönliche Zusatzzeit in Minuten"]').setValue('2')
     await wrapper.find('[aria-label="Persönliche zusätzliche Sekunden"]').setValue('15')
     vi.mocked(axios.post).mockResolvedValueOnce({ data: {} })
@@ -1616,17 +1681,22 @@ it('shows independently running extra time and disables release when no complete
 
 it('selects none by default, supports select-all and sends only the visibly confirmed selection for reopening', async () => {
     const test = { id: 7, catalog_id: 4, title: 'Test A', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z' }
-    const attempts = [{ id: 1, student_name: 'Alex', status: 'submitted' }, { id: 2, student_name: 'Sam', status: 'timeout' }]
+    const attempts = [{ id: 1, student_name: 'Alex', status: 'submitted' }, { id: 2, student_name: 'Sam', status: 'timeout' },
+        { id: 3, student_name: 'Kim', status: 'in_progress', reopened_until: '2026-10-16T08:15:00Z', effective_ends_at: '2026-10-16T08:15:00Z' },
+        { id: 4, student_name: 'Robin', status: 'not_started' }]
     const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' })
     await flushPromises()
     await openExistingTest(wrapper)
+    await clickText(wrapper, 'Wieder öffnen')
     const all = () => wrapper.find('[aria-label="Alle Schüler zum Wiederöffnen auswählen"]')
     const alex = () => wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]')
     const sam = () => wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Sam"]')
     expect(all().element.checked).toBe(false)
     expect(alex().element.checked).toBe(false)
     expect(sam().element.checked).toBe(false)
-    expect(wrapper.findAll('button').find(button => button.text() === 'Wieder öffnen').element.disabled).toBe(true)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Zusatzzeit freigeben').element.disabled).toBe(true)
+    expect(wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Kim"]').element.disabled).toBe(true)
+    expect(wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Robin"]').element.disabled).toBe(true)
     await alex().setValue(true)
     expect(all().element.indeterminate).toBe(true)
     await all().setValue(true)
@@ -1636,14 +1706,12 @@ it('selects none by default, supports select-all and sends only the visibly conf
     expect(alex().element.checked).toBe(false)
     expect(sam().element.checked).toBe(false)
     await sam().setValue(true)
-    await clickText(wrapper, 'Wieder öffnen')
-    expect(wrapper.find('[role="dialog"]').text()).toContain('Sam')
-    expect(wrapper.find('[role="dialog"]').text()).not.toContain('Alex')
+    expect(wrapper.find('[role="dialog"]').text()).toContain('1 von 2 geeigneten Personen ausgewählt')
     expect(axios.post).not.toHaveBeenCalled()
     await clickText(wrapper, 'Abbrechen')
-    expect(sam().element.checked).toBe(true)
-    await all().setValue(true)
     await clickText(wrapper, 'Wieder öffnen')
+    expect(sam().element.checked).toBe(false)
+    await all().setValue(true)
     expect(wrapper.find('[role="dialog"]').text()).toContain('Alex')
     expect(wrapper.find('[role="dialog"]').text()).toContain('Sam')
     vi.mocked(axios.post).mockResolvedValueOnce({ data: { reopened: 2 } })
@@ -1651,9 +1719,7 @@ it('selects none by default, supports select-all and sends only the visibly conf
     await flushPromises()
     expect(axios.post).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/attempts/reopen', { attempt_ids: [1, 2], remaining_seconds: 300 })
     expect(axios.post).toHaveBeenCalledTimes(1)
-    expect(all().element.checked).toBe(false)
-    expect(alex().element.checked).toBe(false)
-    expect(sam().element.checked).toBe(false)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 })
 
 
@@ -1730,20 +1796,139 @@ it('shows frequency, current absence, total duration and each interval in the te
     expect(wrapper.text()).toContain('Testseite ausgeblendet')
 })
 
-it('pauses all participants and offers an explicit resume action from the teacher overview', async () => {
-    const test = { id: 7, catalog_id: 4, title: 'Test A', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z' }
-    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, server_now: '2026-10-16T08:01:00Z' })
+it.each(['common', 'individual', 'extra-time'])('pauses resumes and confirms early closing in the control area for %s timing', async timing => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: timing === 'individual' ? 'individual' : 'common',
+        starts_at: timing === 'individual' ? null : '2026-10-16T08:00:00Z',
+        ends_at: timing === 'extra-time' ? '2026-10-16T07:59:00Z' : '2026-10-16T08:10:00Z', closes_at: '2026-10-16T09:00:00Z' }
+    const attempts = [{ id: 1, student_name: 'Alex', status: 'in_progress', started_at: '2026-10-16T08:00:00Z',
+        effective_ends_at: '2026-10-16T08:10:00Z', reopened_until: timing === 'extra-time' ? '2026-10-16T08:10:00Z' : null }]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] }, { test, attempts, server_now: '2026-10-16T08:01:00Z' }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7&pane=control', true)
     await flushPromises()
-    await openExistingTest(wrapper)
+    const control = () => wrapper.find('section[aria-label="Prüfung steuern"]')
+    expect(control().isVisible()).toBe(true)
+    expect(control().text()).toContain('Alle pausieren')
+    expect(control().text()).toContain('Test vorzeitig schließen')
     const get = vi.mocked(axios.get).getMockImplementation()
     let paused = false
-    vi.mocked(axios.get).mockImplementation(async (url, config) => String(url).endsWith('/tests/7') ? { data: { test: { ...test, paused_at: paused ? '2026-10-16T08:01:00Z' : null }, attempts: [], server_now: '2026-10-16T08:01:00Z' } } : get(url, config))
-    vi.mocked(axios.post).mockImplementation(async () => { paused = !paused; return { data: {} } })
+    vi.mocked(axios.get).mockImplementation(async (url, config) => String(url).endsWith('/tests/7') ? { data: { test: { ...test, paused_at: paused ? '2026-10-16T08:01:00Z' : null }, attempts, server_now: '2026-10-16T08:01:00Z' } } : get(url, config))
+    vi.mocked(axios.post).mockImplementation(async url => { paused = String(url).endsWith('/pause'); return { data: {} } })
     await clickText(wrapper, 'Alle pausieren')
     expect(axios.post).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/pause')
     expect(wrapper.text()).toContain('Test pausiert')
+    expect(control().text()).not.toContain('Test vorzeitig schließen')
     await clickText(wrapper, 'Test fortsetzen')
     expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests/7/resume')
+    await clickText(wrapper, 'Test vorzeitig schließen')
+    expect(axios.post).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="dialog"]').text()).toContain('bisher gespeicherten Antworten')
+    await clickText(wrapper, 'Jetzt schließen')
+    expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests/7/close')
+    expect(axios.post).toHaveBeenCalledTimes(3)
+})
+
+it('selects only finished individual attempts with an open closing deadline and preserves the time confirmation', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: 'individual', closes_at: '2026-10-16T09:00:00Z', exam_mode: false }
+    const attempts = [
+        { id: 1, student_name: 'Alex', status: 'submitted', started_at: '2026-10-16T08:00:00Z', completed_at: '2026-10-16T08:09:00Z' },
+        { id: 2, student_name: 'Sam', status: 'in_progress', started_at: '2026-10-16T08:05:00Z', effective_ends_at: '2026-10-16T08:15:00Z' },
+        { id: 3, student_name: 'Kim', status: 'not_started' },
+        { id: 4, student_name: 'Robin', status: 'timeout', started_at: '2026-10-16T08:00:00Z', completed_at: '2026-10-16T08:10:00Z', closing_deadline: '2026-10-16T08:10:00Z' },
+    ]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] },
+        { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7&pane=control', true)
+    await flushPromises()
+    expect(wrapper.find('section[aria-label="Prüfung steuern"]').isVisible()).toBe(true)
+
+    await clickText(wrapper, 'Wieder öffnen')
+
+    expect(wrapper.find('[role="dialog"]').text()).toContain('persönliche Schlussfrist')
+    for (const name of ['Sam', 'Kim', 'Robin']) expect(wrapper.find(`[aria-label="Test zum Wiederöffnen auswählen: ${name}"]`).element.disabled).toBe(true)
+    await wrapper.find('[aria-label="Alle Schüler zum Wiederöffnen auswählen"]').setValue(true)
+    expect(wrapper.find('[role="dialog"]').text()).toContain('1 von 1 geeigneten Personen ausgewählt')
+    await wrapper.find('[aria-label="Persönliche Zusatzzeit in Minuten"]').setValue('0')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Zusatzzeit freigeben').element.disabled).toBe(true)
+    await wrapper.find('[aria-label="Persönliche zusätzliche Sekunden"]').setValue('30')
+    expect(axios.post).not.toHaveBeenCalled()
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: {} })
+    await wrapper.find('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(axios.post).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/attempts/reopen', { attempt_ids: [1], remaining_seconds: 30 })
+    expect(axios.patch).not.toHaveBeenCalled()
+})
+
+it('keeps exam mode unchanged after completion and makes it available again after a confirmed reopening', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z', exam_mode: true }
+    const attempts = [{ id: 1, student_name: 'Alex', status: 'submitted', completed_at: '2026-10-16T08:09:00Z' }]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] },
+        { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    const examMode = () => wrapper.findAll('button').find(button => button.text() === 'Prüfungsmodus deaktivieren')
+    expect(examMode().element.disabled).toBe(true)
+    expect(wrapper.findAll('button').some(button => button.text() === 'Alle pausieren' || button.text() === 'Test vorzeitig schließen')).toBe(false)
+    await clickText(wrapper, 'Wieder öffnen')
+    await wrapper.find('[aria-label="Alle Schüler zum Wiederöffnen auswählen"]').setValue(true)
+    const get = vi.mocked(axios.get).getMockImplementation()
+    vi.mocked(axios.get).mockImplementation(async (url, config) => String(url).endsWith('/tests/7') ? { data: { test, attempts: [{ ...attempts[0], status: 'in_progress', completed_at: null, reopened_until: '2026-10-16T08:16:00Z' }], can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' } } : get(url, config))
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: {} })
+
+    await wrapper.find('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(examMode().element.disabled).toBe(false)
+    expect(axios.patch).not.toHaveBeenCalled()
+    expect(axios.post).toHaveBeenCalledTimes(1)
+})
+
+it.each([false, true])('prevents reopening during the common working period or a pause (paused=%s)', async paused => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', starts_at: '2026-10-16T08:00:00Z', ends_at: '2026-10-16T08:10:00Z', paused_at: paused ? '2026-10-16T08:11:00Z' : null }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] },
+        { test, attempts: [{ id: 1, student_name: 'Alex', status: 'submitted', completed_at: '2026-10-16T08:01:00Z' }], can_reopen_attempts: true, server_now: '2026-10-16T08:02:00Z' })
+    await flushPromises()
+    await openExistingTest(wrapper)
+
+    expect(wrapper.findAll('button').find(button => button.text() === 'Wieder öffnen').element.disabled).toBe(true)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    if (!paused) expect(wrapper.find('section[aria-label="Prüfung steuern"]').text()).toContain('Test vorzeitig schließen')
+    expect(axios.post).not.toHaveBeenCalled()
+})
+
+it('explains an expired individual closing deadline even when no participant can currently be reopened', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: 'individual', closes_at: '2026-10-16T08:10:00Z' }
+    const attempts = [{ id: 1, student_name: 'Alex', status: 'submitted', started_at: '2026-10-16T08:00:00Z', completed_at: '2026-10-16T08:09:00Z' }]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] },
+        { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' })
+    await flushPromises()
+    await openExistingTest(wrapper)
+
+    await clickText(wrapper, 'Wieder öffnen')
+
+    expect(wrapper.find('[role="dialog"]').text()).toContain('Bitte zuerst die persönliche Schlussfrist in der Schülerübersicht verlängern.')
+    expect(wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]').element.disabled).toBe(true)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Zusatzzeit freigeben').element.disabled).toBe(true)
+    expect(axios.post).not.toHaveBeenCalled()
+})
+
+it('does not submit a reopening selection after its individual closing deadline has elapsed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-16T08:11:00Z'))
+    const test = { id: 7, catalog_id: 4, title: 'Test A', start_mode: 'individual', closes_at: '2026-10-16T08:11:01Z' }
+    const attempts = [{ id: 1, student_name: 'Alex', status: 'submitted', started_at: '2026-10-16T08:00:00Z', completed_at: '2026-10-16T08:09:00Z' }]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }], tests: [test] },
+        { test, attempts, can_reopen_attempts: true, server_now: '2026-10-16T08:11:00Z' })
+    await flushPromises()
+    await openExistingTest(wrapper)
+    await clickText(wrapper, 'Wieder öffnen')
+    await wrapper.find('[aria-label="Alle Schüler zum Wiederöffnen auswählen"]').setValue(true)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await wrapper.find('[role="dialog"] form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.findAll('button').find(button => button.text() === 'Zusatzzeit freigeben').element.disabled).toBe(true)
+    expect(wrapper.find('[aria-label="Test zum Wiederöffnen auswählen: Alex"]').element.checked).toBe(false)
+    expect(axios.post).not.toHaveBeenCalled()
 })
 
 
@@ -1876,7 +2061,7 @@ it('writes all personal links into the selected local folder without replacing a
     vi.stubGlobal('showDirectoryPicker', picker)
     vi.mocked(axios.get).mockClear().mockResolvedValueOnce({ data: packageData, headers: { 'content-disposition': 'attachment; filename="MC-Test_Test-A_Nr-7.json"' } })
     try {
-        await clickText(wrapper, 'Im Testordner speichern')
+        await clickText(wrapper, 'Einmalig lokal speichern')
 
         expect(picker).toHaveBeenCalledWith({ id: 'schooltool-mc-test-export', mode: 'readwrite' })
         expect(directory.getFileHandle).toHaveBeenLastCalledWith('MC-Test_Test-A_Nr-7_2.json', { create: true })
@@ -1898,7 +2083,7 @@ it.each(['AbortError', 'NotAllowedError'])('does not fetch or write personal lin
     vi.mocked(axios.get).mockClear()
     vi.stubGlobal('showDirectoryPicker', vi.fn().mockRejectedValue(new DOMException('Denied', name)))
     try {
-        await clickText(wrapper, 'Im Testordner speichern')
+        await clickText(wrapper, 'Einmalig lokal speichern')
 
         expect(axios.get).not.toHaveBeenCalled()
         expect(wrapper.text().includes('nicht zum Schreiben freigegeben')).toBe(name === 'NotAllowedError')
@@ -1915,7 +2100,7 @@ it('offers the existing download when folder selection is unsupported', async ()
     vi.mocked(axios.get).mockClear()
     vi.stubGlobal('showDirectoryPicker', undefined)
     try {
-        await clickText(wrapper, 'Im Testordner speichern')
+        await clickText(wrapper, 'Einmalig lokal speichern')
 
         expect(wrapper.text()).toContain('Browser unterstützt die Ordnerauswahl nicht')
         expect(wrapper.findAll('button').some(button => button.text() === 'Für Leistungsfeststellung exportieren')).toBe(true)
@@ -1934,7 +2119,7 @@ it.each(['request', 'identity', 'write'])('does not claim a saved folder export 
     if (failure === 'request') vi.mocked(axios.get).mockRejectedValueOnce({ response: { data: { message: 'Zugangslinks sind deaktiviert.' } } })
     else vi.mocked(axios.get).mockResolvedValueOnce({ data: { schema_version: 1, kind: 'schooltool.multiple_choice_links', test: { id: failure === 'identity' ? 8 : 7 }, participants: [] }, headers: {} })
     try {
-        await clickText(wrapper, 'Im Testordner speichern')
+        await clickText(wrapper, 'Einmalig lokal speichern')
 
         expect(wrapper.text()).not.toContain('im Testordner „Testordner“ gespeichert')
         expect(axios.post).not.toHaveBeenCalled()
@@ -1982,7 +2167,7 @@ it('keeps results controls visible before any personal test starts', async () =>
     expect(wrapper.find('[aria-label="Ergebnisse und Lösungen"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('sobald eine Abgabe abgeschlossen ist')
     expect(wrapper.findAll('button').find(button => button.text() === 'Ergebnisse freigeben').element.disabled).toBe(true)
-    expect(wrapper.findAll('button').find(button => button.text() === 'Im Testordner speichern').element.disabled).toBe(false)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Einmalig lokal speichern').element.disabled).toBe(false)
     expect(axios.post).not.toHaveBeenCalled()
 })
 
@@ -2007,7 +2192,7 @@ it.each([false, true])('switches personal links explicitly and blocks invitation
     await openExistingTest(wrapper)
     expect(wrapper.findAll('button').find(button => button.text() === 'Einladungen vorbereiten').element.disabled).toBe(disabled)
     expect(wrapper.findAll('button').find(button => button.text() === 'Für Leistungsfeststellung exportieren').element.disabled).toBe(disabled)
-    expect(wrapper.findAll('button').find(button => button.text() === 'Im Testordner speichern').element.disabled).toBe(disabled)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Einmalig lokal speichern').element.disabled).toBe(disabled)
     vi.mocked(axios.patch).mockResolvedValueOnce({ data: { test } })
     await clickText(wrapper, disabled ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren')
     expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/access-links', { enabled: disabled })

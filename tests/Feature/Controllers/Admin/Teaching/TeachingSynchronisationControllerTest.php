@@ -4,6 +4,11 @@ use App\Models\DropboxConnection;
 use App\Models\Import116;
 use App\Models\Import116Run;
 use App\Models\Import116RunChange;
+use App\Models\McAttempt;
+use App\Models\McCatalog;
+use App\Models\McTest;
+use App\Models\NumberSystemGameRun;
+use App\Models\NumberSystemGameSession;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
@@ -18,6 +23,7 @@ use App\Services\TeachingSynchronisationBackup;
 use App\Services\TeachingSynchronisationGraph;
 use App\Services\TeachingSynchronisationService;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -74,6 +80,134 @@ function teachingSyncApplyPayload(string $token): array
 {
     return ['token' => $token, 'replace_confirmed' => true, 'contacts_confirmed' => true];
 }
+
+function teachingSyncToolsFixture(User $teacher, TeachingCourse $course): array
+{
+    $student = User::factory()->create(['school_id' => $teacher->school_id, 'schoolyear_id' => $course->schoolyear_id]);
+    $course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $catalog = McCatalog::query()->create(['school_id' => $teacher->school_id, 'owner_id' => $teacher->id,
+        'title' => 'Fixture catalog', 'questions' => [['id' => 'q1', 'text' => 'Fixture question']]]);
+    $test = McTest::query()->create(['school_id' => $teacher->school_id, 'schoolyear_id' => $course->schoolyear_id,
+        'owner_id' => $teacher->id, 'catalog_id' => $catalog->id, 'title' => 'Fixture test', 'status' => 'draft',
+        'question_count' => 1, 'total_points' => 2, 'duration_seconds' => 60, 'snapshot' => ['questions' => $catalog->questions]]);
+    $token = bin2hex(random_bytes(32));
+    $attempt = McAttempt::query()->create(['test_id' => $test->id, 'student_id' => $student->id,
+        'student_name' => $student->first_name, 'email' => $student->email, 'questions' => $catalog->questions,
+        'answers' => ['q1' => ['a1']], 'score' => 2, 'correct_count' => 1, 'percentage' => 100,
+        'access_token' => $token, 'access_token_hash' => hash('sha256', $token)]);
+    $session = NumberSystemGameSession::factory()->create(['teaching_course_id' => $course->id]);
+    $run = NumberSystemGameRun::factory()->create(['session_id' => $session->id, 'user_id' => $student->id,
+        'puzzles' => [['answer' => 42]], 'history' => [['solved' => true]], 'team_name' => 'Fixture team',
+        'team_code' => strtoupper(bin2hex(random_bytes(4)))]);
+    DB::table('number_system_game_members')->insert(['session_id' => $session->id, 'run_id' => $run->id, 'user_id' => $student->id]);
+
+    return compact('catalog', 'test', 'attempt', 'session', 'run', 'student', 'token');
+}
+
+function teachingSyncOtherToolsFixture(): array
+{
+    $school = School::factory()->create();
+    $year = Schoolyear::factory()->create(['school_id' => $school->id]);
+    $teacher = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id]);
+    $course = TeachingCourse::factory()->forSchool($school)->forSchoolyear($year)->forTeacher($teacher)->create();
+
+    return teachingSyncToolsFixture($teacher, $course);
+}
+
+test('teaching tools preview and apply include complete results and games and recover the replaced local state', function (): void {
+    $tools = teachingSyncToolsFixture($this->actor, $this->course);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $remoteEncrypter = new Encrypter(str_repeat('r', 32), 'AES-256-CBC');
+    $this->snapshot['tables']['mc_attempts'][0]['access_token'] = $remoteEncrypter->encryptString($tools['token']);
+    $this->snapshot['mc_access_tokens'] = app(TeachingSynchronisationGraph::class)->accessTokens($this->snapshot, $remoteEncrypter);
+    $this->snapshot['tables']['mc_tests'][0]['title'] = 'Cloud test with results';
+    $this->snapshot['tables']['number_system_game_runs'][0]['attempts'] = 3;
+    $localOnly = teachingSyncToolsFixture($this->actor, $this->course);
+    $other = teachingSyncOtherToolsFixture();
+    $otherAttempt = $other['attempt']->fresh()->getAttributes();
+    $originalTokenCiphertext = $tools['attempt']->fresh()->getRawOriginal('access_token');
+    $this->actingAs($this->actor, 'sanctum');
+
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+    $preview->assertJsonPath('data.conflicts', []);
+    $summary = array_column($preview->json('data.summary'), null, 'table');
+    foreach (['mc_catalogs', 'mc_tests', 'mc_attempts', 'number_system_game_sessions', 'number_system_game_runs', 'number_system_game_members'] as $table) {
+        expect($summary[$table])->toMatchArray(['live' => 1, 'local' => 2, 'replaced' => 2]);
+    }
+    expect($tools['test']->fresh()->title)->toBe('Fixture test');
+    $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertSuccessful();
+
+    expect($tools['test']->fresh()->title)->toBe('Cloud test with results');
+    expect($tools['attempt']->fresh()->answers)->toBe(['q1' => ['a1']]);
+    expect($tools['attempt']->fresh()->score)->toBe('2.00');
+    expect($tools['attempt']->fresh()->access_token)->toBe($tools['token']);
+    expect($tools['attempt']->fresh()->getRawOriginal('access_token'))->not->toBe($this->snapshot['tables']['mc_attempts'][0]['access_token']);
+    expect($tools['run']->fresh()->attempts)->toBe(3);
+    expect($tools['run']->fresh()->history)->toBe([['solved' => true]]);
+    expect($localOnly['catalog']->fresh())->toBeNull();
+    expect($localOnly['session']->fresh())->toBeNull();
+    expect($other['attempt']->fresh()->getAttributes())->toBe($otherAttempt);
+    expect($other['run']->fresh()->team_code)->toBe($other['run']->team_code);
+    $backup = app(TeachingSynchronisationBackup::class)->read("teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc");
+    expect($backup['state']['tables']['mc_tests'])->toHaveCount(2);
+    expect($backup['state']['tables']['mc_attempts'][0]['access_token'])->toBe($originalTokenCiphertext);
+    expect($backup['state']['tables']['number_system_game_members'])->toHaveCount(2);
+    expect($backup['state']['tables']['number_system_game_runs'][0]['attempts'])->toBe(0);
+});
+
+test('tool access code collisions with other schools block preview before any replacement', function (string $kind): void {
+    $tools = teachingSyncToolsFixture($this->actor, $this->course);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $this->snapshot['mc_access_tokens'] = [$tools['attempt']->id => $tools['token']];
+    $other = teachingSyncOtherToolsFixture();
+    if ($kind === 'mc') {
+        $this->snapshot['tables']['mc_attempts'][0]['access_token_hash'] = $other['attempt']->access_token_hash;
+        $this->snapshot['mc_access_tokens'][$tools['attempt']->id] = $other['token'];
+    } elseif ($kind === 'round') {
+        $this->snapshot['tables']['number_system_game_sessions'][0]['join_code'] = $other['session']->join_code;
+    } else {
+        $this->snapshot['tables']['number_system_game_runs'][0]['team_code'] = $other['run']->team_code;
+    }
+
+    $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    $preview->assertJsonPath('data.token', null);
+    expect(implode(' ', $preview->json('data.conflicts')))->toContain('kollidiert mit fremden Daten');
+    expect($tools['attempt']->fresh()->access_token)->toBe($tools['token']);
+    expect($tools['session']->fresh()->join_code)->toBe($tools['session']->join_code);
+    expect(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toBe([]);
+})->with(['mc', 'round', 'team']);
+
+test('missing tool links and foreign owners block preview without silently omitting attempts', function (): void {
+    $tools = teachingSyncToolsFixture($this->actor, $this->course);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $this->snapshot['tables']['mc_catalogs'][0]['owner_id'] = 999999;
+
+    $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    $preview->assertJsonPath('data.token', null);
+    expect(implode(' ', $preview->json('data.conflicts')))->toContain('Beziehung', 'Multiple-Choice-Zugangslink fehlt');
+    expect($tools['catalog']->fresh()->owner_id)->toBe($this->actor->id);
+    expect($tools['attempt']->fresh()->access_token)->toBe($tools['token']);
+});
+
+test('changed tool answers after preview reject an outdated apply token', function (bool $cloudChanged): void {
+    $tools = teachingSyncToolsFixture($this->actor, $this->course);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $this->snapshot['mc_access_tokens'] = [$tools['attempt']->id => $tools['token']];
+    $this->actingAs($this->actor, 'sanctum');
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+    if ($cloudChanged) {
+        $this->snapshot['tables']['mc_attempts'][0]['answers'] = '{"q1":["a2"]}';
+    } else {
+        McAttempt::query()->whereKey($tools['attempt']->id)->update(['answers' => '{"q1":["a2"]}']);
+    }
+
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertUnprocessable();
+
+    expect($tools['attempt']->fresh()->answers)->toBe(['q1' => [$cloudChanged ? 'a1' : 'a2']]);
+    expect(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toBe([]);
+})->with([false, true]);
 
 test('a rejected safety archive leaves all data and files untouched', function (): void {
     $backups = Mockery::mock(TeachingSynchronisationBackup::class)->makePartial();

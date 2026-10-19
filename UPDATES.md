@@ -4,10 +4,18 @@
 
 ### Multiple-Choice-Tests
 
-- Export für Test
+- Export für Testgitmain
+- UI-Adpationen
+- Dropbox-Verbindung
 
-### Stundenplan
-- Sondertermine löschbar
+### Unterricht
+
+- Synchronisation: Button geänder
+- Test: KI-Export neu aufgestellt
+
+### System
+
+- Verbidnungs-Übersicht
 
 ## 3.52.0
 

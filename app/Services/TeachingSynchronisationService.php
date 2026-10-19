@@ -190,7 +190,7 @@ class TeachingSynchronisationService
             Cache::store('file')->forget('teaching-sync:'.$token);
 
             return ['backup' => $backup, 'dropbox_warnings' => $dropboxWarnings,
-                'message' => 'Der geprüfte Cloud-Unterrichtsstand wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
+                'message' => 'Der geprüfte Cloud-Unterrichtsstand einschließlich Unterricht Tools wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
         });
     }
 
@@ -231,7 +231,7 @@ class TeachingSynchronisationService
                 if (isset($row['school_id']) && (int) $row['school_id'] !== $schoolId) {
                     $state['conflicts'][] = "Lokale Daten aus einer anderen Schule sind in {$table} mit dem Unterricht verknüpft.";
                 }
-                foreach (TeachingSynchronisationGraph::REFERENCES as $column => $parent) {
+                foreach (TeachingSynchronisationGraph::references($table) as $column => $parent) {
                     if (! isset($row[$column])) {
                         continue;
                     }
@@ -299,6 +299,28 @@ class TeachingSynchronisationService
             if (DB::table($table)->whereIn('id', $mappedIds)->whereNotIn('id', $owned)->exists()) {
                 $plan['conflicts'][] = "ID-Kollision mit fremden Daten in {$table}.";
             }
+            $sourceIndexes = $source['unique_indexes'][$table] ?? [];
+            $localIndexes = $local['unique_indexes'][$table] ?? [];
+            sort($sourceIndexes);
+            sort($localIndexes);
+            if ($sourceIndexes !== $localIndexes) {
+                $plan['conflicts'][] = "Eindeutigkeitsschema unterscheidet sich: {$table}.";
+            }
+            foreach ($localIndexes as $columns) {
+                $rows = array_values(array_filter($plan['tables'][$table],
+                    fn (array $row): bool => ! in_array(null, array_map(fn (string $column): mixed => $row[$column] ?? null, $columns), true)));
+                foreach (array_chunk($rows, 100) as $chunk) {
+                    $collision = DB::table($table)->whereNotIn('id', $owned)->where(function ($query) use ($chunk, $columns): void {
+                        foreach ($chunk as $row) {
+                            $query->orWhere(fn ($query) => $query->where(array_intersect_key($row, array_flip($columns))));
+                        }
+                    })->exists();
+                    if ($collision) {
+                        $plan['conflicts'][] = "Eindeutiger Wert kollidiert mit fremden Daten in {$table}: ".implode(', ', $columns).'.';
+                        break;
+                    }
+                }
+            }
             $normalize = function (array $keys): array {
                 $keys = array_map(function (array $key): array {
                     $key = array_diff_key($key, array_flip(['foreign_schema', 'name']));
@@ -343,6 +365,24 @@ class TeachingSynchronisationService
                         $plan['conflicts'][] = "Fehlende Pflichtangabe in {$table}.{$column['name']}.";
                     }
                 }
+            }
+        }
+        $attemptSourceIds = array_flip($plan['maps']['mc_attempts'] ?? []);
+        foreach ($plan['tables']['mc_attempts'] as &$attempt) {
+            $sourceId = $attemptSourceIds[$attempt['id']];
+            $token = $source['mc_access_tokens'][$sourceId] ?? null;
+            if (! is_string($token) || $token === '' || ! hash_equals($attempt['access_token_hash'], hash('sha256', $token))) {
+                $plan['conflicts'][] = 'Ein Multiple-Choice-Zugangslink fehlt oder stimmt nicht mit dem geprüften Versuch überein.';
+
+                continue;
+            }
+            $attempt['access_token'] = Crypt::encryptString($token);
+        }
+        unset($attempt);
+        $runs = array_column($source['tables']['number_system_game_runs'], null, 'id');
+        foreach ($source['tables']['number_system_game_members'] as $member) {
+            if (($runs[$member['run_id']]['session_id'] ?? null) !== $member['session_id']) {
+                $plan['conflicts'][] = 'Eine Zahlensystem-Teamteilnahme verweist auf eine andere Spielrunde.';
             }
         }
         foreach ($source['external'] ?? [] as $table => $rows) {

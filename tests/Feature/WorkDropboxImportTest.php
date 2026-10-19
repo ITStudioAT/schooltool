@@ -428,7 +428,7 @@ test('OAuth stores encrypted refresh credentials and reconnecting a different ac
     parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
     $callback = '/admin/teaching/dropbox/callback?'.http_build_query(['state' => $parameters['state'], 'code' => 'test-code']);
     $this->get($callback)->assertRedirectContains('dropbox=connected');
-    expect($connection->fresh()->credentials)->toBe(['refresh_token' => 'new-refresh'])
+    expect($connection->fresh()->credentials)->toBe(['refresh_token' => 'new-refresh', 'scopes' => DropboxWorkImport::SCOPES])
         ->and(DB::table('dropbox_connections')->value('credentials'))->not->toContain('new-refresh')
         ->and($connection->fresh()->toArray())->not->toHaveKey('credentials');
     $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
@@ -469,12 +469,29 @@ test('folder picker resolves the actual parent of a restored Dropbox folder', fu
     Http::fake(['api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
         'api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [], 'has_more' => false]),
         'api.dropboxapi.com/2/files/get_metadata' => function (Request $request) {
+            expect($request['path'])->toBeIn(['id:last', '/materialien']);
+
             return Http::response($request['path'] === 'id:last' ? ['.tag' => 'folder', 'id' => 'id:last', 'name' => 'Arbeit', 'path_lower' => '/materialien/arbeit', 'path_display' => '/Materialien/Arbeit']
                 : ['.tag' => 'folder', 'id' => 'id:parent', 'name' => 'Materialien', 'path_lower' => '/materialien']);
         }]);
 
     $this->getJson($this->url.'/folders?folder_id=id:last')->assertOk()->assertJsonPath('parent.id', 'id:parent')
         ->assertJsonPath('current.path', '/Materialien/Arbeit')->assertJsonPath('parent.path', '/materialien');
+});
+
+test('folder picker opens a Dropbox top level folder without requesting metadata for a filesystem root', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    Http::fake(['api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [], 'has_more' => false]),
+        'api.dropboxapi.com/2/files/get_metadata' => function (Request $request) {
+            expect($request['path'])->toBe('id:school');
+
+            return Http::response(['.tag' => 'folder', 'id' => 'id:school', 'name' => 'Schule', 'path_lower' => '/schule', 'path_display' => '/Schule']);
+        }]);
+
+    $this->getJson($this->url.'/folders?folder_id=id:school')->assertOk()->assertJsonPath('parent', null)
+        ->assertJsonPath('current.path', '/Schule');
+    Http::assertSentCount(3);
 });
 
 /** @param list<array<string, mixed>> $candidates

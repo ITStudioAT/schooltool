@@ -48,6 +48,31 @@ function reviewedPreview(conflicts: string[] = []) {
 }
 
 describe('Teaching synchronisation', () => {
+    it('includes teaching tools in the reviewed replacement scope with readable counts and conflicts', async () => {
+        const { post } = await mountSynchronisation()
+        const preview = reviewedPreview(['Eindeutiger Wert kollidiert in mc_tests.'])
+        preview.data.data.summary = [
+            { table: 'mc_catalogs', live: 2, replaced: 1, bytes: 100 },
+            { table: 'mc_tests', live: 3, replaced: 2, bytes: 100 },
+            { table: 'mc_attempts', live: 20, replaced: 10, bytes: 100 },
+            { table: 'number_system_game_sessions', live: 4, replaced: 2, bytes: 100 },
+            { table: 'number_system_game_runs', live: 8, replaced: 4, bytes: 100 },
+            { table: 'number_system_game_members', live: 16, replaced: 8, bytes: 100 },
+        ]
+        post.mockResolvedValueOnce(preview)
+
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Unterricht Tools werden ebenfalls übernommen')
+        expect(wrapper.text()).toContain('Multiple-Choice-Fragenkataloge')
+        expect(wrapper.text()).toContain('Multiple-Choice-Teilnahmen, Antworten und Ergebnisse')
+        expect(wrapper.text()).toContain('Zahlensystem-Spielstände und Teams')
+        expect(wrapper.text()).toContain('Zahlensystem-Teilnahmen')
+        expect(wrapper.text()).not.toContain('mc_tests')
+        expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+    })
+
     it('shows safe Dropbox remapping and recoverable unmatched folders without blocking a reviewed import', async () => {
         const { post } = await mountSynchronisation()
         const preview = reviewedPreview()

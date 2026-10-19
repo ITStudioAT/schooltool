@@ -534,29 +534,37 @@ class McTestService
     {
         app(McAttemptActivityService::class)->finish($attempt, CarbonImmutable::instance($reason === 'timeout' ? $attempt->effectiveDeadline($test) : now()));
         $neverStarted = $reason === 'timeout' && $attempt->started_at === null;
+        $evaluation = $this->evaluate($test, $attempt->questions, $attempt->answers ?? []);
+        $attempt->forceFill([
+            'completed_at' => $reason === 'timeout' ? ($attempt->effectiveDeadline($test)) : now(),
+            'submitted_at' => $reason === 'submitted' ? now() : null,
+            'completion_reason' => $reason,
+            'correct_count' => $neverStarted ? null : $evaluation['correct_count'],
+            'score' => $neverStarted ? null : $evaluation['score'],
+            'percentage' => $neverStarted ? null : $evaluation['percentage'],
+        ])->save();
+
+        return $attempt;
+    }
+
+    /** @return array{correct_count: int, score: float, percentage: float} */
+    public function evaluate(McTest $test, array $questions, array $answers): array
+    {
         $correct = 0;
-        foreach ($attempt->questions as $question) {
+        foreach ($questions as $question) {
             $expected = $question['correct_option_ids'];
-            $actual = ($attempt->answers ?? [])[$question['id']] ?? [];
+            $actual = $answers[$question['id']] ?? [];
             sort($expected);
             sort($actual);
             if ($expected === $actual) {
                 $correct++;
             }
         }
-        $count = count($attempt->questions);
+        $count = count($questions);
         $totalCents = (int) round((float) $test->total_points * 100);
         $earnedCents = intdiv(2 * $totalCents * $correct + $count, 2 * $count);
-        $attempt->forceFill([
-            'completed_at' => $reason === 'timeout' ? ($attempt->effectiveDeadline($test)) : now(),
-            'submitted_at' => $reason === 'submitted' ? now() : null,
-            'completion_reason' => $reason,
-            'correct_count' => $neverStarted ? null : $correct,
-            'score' => $neverStarted ? null : $earnedCents / 100,
-            'percentage' => $neverStarted ? null : round(100 * $correct / $count, 2),
-        ])->save();
 
-        return $attempt;
+        return ['correct_count' => $correct, 'score' => $earnedCents / 100, 'percentage' => round(100 * $correct / $count, 2)];
     }
 
     /** @param list<array<string, mixed>> $questions */
