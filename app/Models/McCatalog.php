@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class McCatalog extends Model
 {
-    protected $fillable = ['school_id', 'owner_id', 'title', 'questions'];
+    protected $fillable = ['school_id', 'owner_id', 'title', 'questions', 'module_sources'];
 
-    protected $casts = ['questions' => 'array'];
+    protected $casts = ['questions' => 'array', 'module_sources' => 'array'];
 
     public function owner(): BelongsTo
     {

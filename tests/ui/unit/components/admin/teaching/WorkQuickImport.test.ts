@@ -121,7 +121,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             try {
                 await flushPromises()
                 expect(actions.find('.work-quick-import').exists()).toBe(false)
-                expect(actions.get('button').text()).toBe('Importieren')
+                expect(actions.get('button').text()).toBe('Verknüpfen')
             } finally { actions.unmount() }
         } finally { wrapper.unmount() }
     })
@@ -202,7 +202,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             expect(post).not.toHaveBeenCalled()
             expect(actions.find('.work-quick-import').exists()).toBe(false)
             expect(actions.find('[role="status"]').exists()).toBe(false)
-            const normal = actions.findAll('button').find(button => button.text().includes('Importieren'))!
+            const normal = actions.findAll('button').find(button => button.text().includes('Verknüpfen'))!
             expect(normal.attributes('disabled')).toBeUndefined()
         } finally { wrapper.unmount(); actions.unmount() }
     })

@@ -1,12 +1,13 @@
 # UPDATES
 
-## 3.51.1 !!!!
+## 3.52.1
 
 ### Multiple-Choice-Tests
 
 - Export für Testgitmain
 - UI-Adpationen
 - Dropbox-Verbindung
+- Synchronisations-Verbesserungen
 
 ### Unterricht
 
@@ -16,6 +17,10 @@
 ### System
 
 - Verbidnungs-Übersicht
+
+### Anmeldesystem
+
+- Löschen von gebuchten Anmeldesystemen
 
 ## 3.52.0
 

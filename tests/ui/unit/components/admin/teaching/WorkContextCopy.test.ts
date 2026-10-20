@@ -9,6 +9,8 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispielarbeit', date_for_all_groups: '2026-10-01',
     description: 'Nicht kopieren', groups: [{ student_ids: [12], grades: [{ student_id: 12, grade: '1' }] }] }
 const course = { id: 2, title: 'INF – 5L2 – 1', classes: ['5L2'], students_info: [{ first_name: 'Privater Name' }] }
+const moduleLink = { module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa',
+    folder: { id: 'id:module', name: 'E-Mails  Kopie', path: '/Materialien/Lerninhalte/E-Mails  Kopie' } }
 
 function mountCopy(props = {}) {
     return mount(WorkContextCopy, { props: { work, course, date: '2026-10-15', ...props }, attachTo: document.body,
@@ -37,7 +39,7 @@ it('copies only four context lines with work and course identities and the click
         await wrapper.get('button').trigger('click')
         await flushPromises()
 
-        expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF – 5L2 – 1 (ID: 2)\nDatum: 15.10.2026\nOrdner: Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)')
+        expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF – 5L2 – 1 (ID: 2)\nDatum: 15.10.2026\nOrdner: verknüpft – Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)')
         expect(wrapper.get('[role="status"]').text()).toBe('Arbeitskontext kopiert.')
     } finally { wrapper.unmount() }
 })
@@ -53,6 +55,95 @@ it('marks a missing assignment honestly and ignores another suggested folder', a
         await flushPromises()
 
         expect(writeText).toHaveBeenCalledExactlyOnceWith('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF (5L2) (ID: 2)\nDatum: 15.10.2026\nOrdner: nicht verknüpft')
+    } finally { wrapper.unmount() }
+})
+
+it('updates the copied context immediately after a saved module link and prefers it to an older import folder', async () => {
+    workDropboxStates.set('7:2:65', { folder: null, suggested_folder: moduleLink.folder, candidate: moduleLink.folder })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(writeText.mock.calls[0][0]).toContain('Ordner: nicht verknüpft')
+        expect(writeText.mock.calls[0][0]).not.toContain('Modul-ID:')
+
+        workDropboxStates.set('7:2:65', { folder: { id: 'id:old', name: 'Alter Importordner' }, module_link: moduleLink })
+        await flushPromises()
+        expect(writeText).toHaveBeenCalledTimes(1)
+        expect(wrapper.find('[role="status"]').exists()).toBe(false)
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(writeText.mock.calls[1][0]).toBe('Arbeit: A5 – Beispielarbeit (ID: 65)\nKurs: INF – 5L2 – 1 (ID: 2)\nDatum: 15.10.2026\nOrdner: verknüpft – Dropbox: /Materialien/Lerninhalte/E-Mails  Kopie (Dropbox-ID: id:module)\nModul-ID: a263b873-4f27-4167-90f0-7d94ea0f67fa')
+    } finally { wrapper.unmount() }
+})
+
+it('restores the persisted module link from the authorized endpoint on a fresh mount without querying the legacy import path', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { folder: { id: 'id:old', name: 'Alter Importordner' }, module_link: moduleLink } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('axios', { get })
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000 })
+        expect(writeText.mock.calls[0][0]).toContain('Ordner: verknüpft – Dropbox: /Materialien/Lerninhalte/E-Mails  Kopie')
+        expect(writeText.mock.calls[0][0]).toContain(`Modul-ID: ${moduleLink.module_id}`)
+        expect(writeText.mock.calls[0][0]).not.toContain('Alter Importordner')
+    } finally { wrapper.unmount() }
+})
+
+it('does not overwrite a newly saved module link with a delayed legacy path response', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const get = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    workDropboxStates.set('7:2:65', { folder: { id: 'id:old', name: 'Alter Importordner' } })
+    vi.stubGlobal('axios', { get })
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        workDropboxStates.set('7:2:65', { folder: null, module_link: moduleLink })
+        finish({ data: { folder: { id: 'id:old', name: 'Alter Importordner', path: '/Veraltet' } } })
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(workDropboxStates.get('7:2:65')?.module_link).toBe(moduleLink)
+        expect(writeText.mock.calls[0][0]).toContain('Ordner: verknüpft – Dropbox: /Materialien/Lerninhalte/E-Mails  Kopie')
+        expect(writeText.mock.calls[0][0]).not.toContain('/Veraltet')
+    } finally { wrapper.unmount() }
+})
+
+it('also refreshes manually selectable text only after a saved link and keeps cancellation or failed linking unlinked', async () => {
+    workDropboxStates.set('7:2:65', { folder: null })
+    const writeText = vi.fn().mockRejectedValue(new Error('Denied'))
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('textarea').element.value).toContain('Ordner: nicht verknüpft')
+
+        workDropboxStates.set('7:2:65', { folder: null, candidate: moduleLink.folder, conflict: true })
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('textarea').element.value).toContain('Ordner: nicht verknüpft')
+
+        workDropboxStates.set('7:2:65', { folder: null, module_link: moduleLink })
+        await flushPromises()
+        expect(wrapper.find('textarea').exists()).toBe(false)
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('textarea').element.value).toContain('Ordner: verknüpft – Dropbox: /Materialien/Lerninhalte/E-Mails  Kopie')
     } finally { wrapper.unmount() }
 })
 
@@ -72,8 +163,8 @@ it.each([true, false])('reads an existing folder path when available (%s) and ot
 
         expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { params: { include_folder_path: 1 } })
         expect(writeText.mock.calls[0][0].split('\n')[3]).toBe(available
-            ? 'Ordner: Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)'
-            : 'Ordner: Beispielordner (Dropbox-ID: id:example)')
+            ? 'Ordner: verknüpft – Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)'
+            : 'Ordner: verknüpft – Beispielordner (Dropbox-ID: id:example)')
     } finally { wrapper.unmount() }
 })
 

@@ -9,6 +9,7 @@ use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
@@ -34,6 +35,15 @@ class WorkDropboxController extends Controller
         $hasImport = filled($course_work->status['folder_imported_at'] ?? null);
         $canPreview = $course_work->automationEnabled() && $connected && $folder && $plausibility['status'] !== 'mismatch';
         $folderData = $folder ? ['id' => $folder->folder_id, 'name' => $folder->folder_name] : null;
+        $modules = app(DropboxModuleLinks::class);
+        $module = $connected ? $modules->current($course_work) : null;
+        $ownModule = $module && $module->dropbox_connection_id === $connection->id && $module->account_id === $connection->account_id;
+        $exercise = null;
+        if (request()->boolean('include_exercise')) {
+            $data = request()->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+            $exercise = $ownModule ? $modules->exercise($connection, $course_work, $module, $data['date'] ?? null)
+                : ['status' => 'missing', 'folder' => null];
+        }
         if ($folder && request()->boolean('include_folder_path')) {
             $metadata = $dropbox->metadata($connection, $folder->folder_id);
             $path = $metadata['path_display'] ?? $metadata['path_lower'];
@@ -43,6 +53,12 @@ class WorkDropboxController extends Controller
         }
 
         return response()->json(['configured' => $configured, 'installed' => $installed, 'connected' => (bool) $connected,
+            'module_linking_available' => $modules->installed(),
+            'link_version' => $connected ? $modules->assignmentVersion($connection, $course_work, $module, $folder) : null,
+            'module_link' => $ownModule ? ['module_id' => $module->module_id, 'folder' => ['id' => $module->folder_id,
+                'name' => $module->folder_name, 'path' => $module->folder_path]] : null,
+            'module_conflict' => (bool) ($module && ! $ownModule),
+            'exercise' => $exercise,
             'folder' => $folderData,
             'suggested_folder' => $suggested ? ['id' => $suggested->folder_id, 'name' => $suggested->folder_name] : null,
             'folder_plausibility' => $plausibility,
@@ -53,7 +69,7 @@ class WorkDropboxController extends Controller
                 : (! $connected ? 'Dropbox verbinden, um Quick-Import zu verwenden.'
                     : (! $folder ? 'Für diese Arbeit einen Dropbox-Ordner zuordnen.'
                         : ($plausibility['status'] === 'mismatch' ? $plausibility['message']
-                            : (! $hasImport ? 'Quick-Import erst nach dem ersten erfolgreich übernommenen Import dieser Arbeit.' : 'Dropbox-Ordner erneut lesen und Vorschau öffnen.'))))]);
+                            : (! $hasImport ? 'Quick-Import erst nach dem ersten erfolgreich übernommenen Import dieser Arbeit.' : 'Dropbox-Ordner erneut lesen und Vorschau öffnen.'))))])->header('Cache-Control', 'private, no-store');
     }
 
     public function connect(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
@@ -114,6 +130,37 @@ class WorkDropboxController extends Controller
     {
         $actor = $this->actor($course_work);
         abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+        if ($request->has('unlink')) {
+            $data = $request->validate(['unlink' => ['required', 'boolean', 'accepted'],
+                'link_version' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/']], [
+                    'link_version.required' => 'Bitte die aktuelle Verbindung vor dem Trennen erneut laden.',
+                    'link_version.regex' => 'Die Bestätigung der aktuellen Verbindung ist ungültig.',
+                ]);
+            app(DropboxModuleLinks::class)->unlink($dropbox->connection($actor), $course_work, $data['link_version']);
+
+            return $this->show($course_work, $dropbox);
+        }
+        if ($request->has('handshake')) {
+            $data = $request->validate(['handshake' => ['required', 'string', 'max:4096'],
+                'filename' => ['required', 'string', 'regex:/\Ahandshake\.json\z/i'],
+                'resolve' => ['sometimes', 'boolean'], 'proof' => [$request->boolean('resolve') ? 'nullable' : 'required', 'string', 'max:8192']], [
+                    'filename.required' => 'Bitte die Datei handshake.json auswählen.',
+                    'filename.regex' => 'Zulässig ist ausschließlich die Datei handshake.json.',
+                    'handshake.required' => 'Die handshake.json ist leer. Bitte eine gültige Handshake-Datei auswählen.',
+                    'handshake.string' => 'Die handshake.json konnte nicht als Text gelesen werden.',
+                    'handshake.max' => 'Die handshake.json darf höchstens 4 KB groß sein.',
+                    'resolve.boolean' => 'Die Anfrage zur Online-Prüfung ist ungültig.',
+                    'proof.required' => 'Bitte die Online-Datei vor dem Verknüpfen erneut prüfen.',
+                ]);
+            $connection = $dropbox->connection($actor);
+            $modules = app(DropboxModuleLinks::class);
+            if ($request->boolean('resolve')) {
+                return response()->json($modules->resolve($connection, $course_work, $data['handshake']));
+            }
+            $modules->store($connection, $course_work, $data['handshake'], $data['proof']);
+
+            return $this->show($course_work, $dropbox);
+        }
         $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/']]);
         $connection = $dropbox->connection($actor);
         $folder = $dropbox->metadata($connection, $data['folder_id']);

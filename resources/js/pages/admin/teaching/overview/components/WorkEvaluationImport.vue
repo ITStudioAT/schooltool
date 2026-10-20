@@ -1,7 +1,7 @@
 <template>
     <v-dialog v-model="import_open" persistent scrollable max-width="850">
         <v-card>
-            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">Importieren · {{ import_work?.title }}</v-card-title>
+            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">Beurteilungen importieren · {{ import_work?.title }}</v-card-title>
             <v-card-text class="px-4 pt-0 pb-3">
                 <p class="text-caption mb-2">Ordner prüfen, Vorschau ansehen, Änderungen übernehmen.</p>
                 <p class="text-caption mb-2">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>

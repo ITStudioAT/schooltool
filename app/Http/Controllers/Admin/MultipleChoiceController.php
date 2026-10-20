@@ -14,6 +14,7 @@ use App\Services\DropboxWorkImport;
 use App\Services\FeaturePreviewService;
 use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McImportService;
+use App\Services\MultipleChoice\McModuleTemplateSource;
 use App\Services\MultipleChoice\McQuestionValidator;
 use App\Services\MultipleChoice\McTestExchange;
 use App\Services\MultipleChoice\McTestFolder;
@@ -178,7 +179,21 @@ class MultipleChoiceController extends Controller
 
     public function previewImport(Request $request): JsonResponse
     {
-        $this->teacher();
+        $actor = $this->teacher();
+        if ($request->has('handshake')) {
+            $data = $request->validate(['filename' => ['required', 'string', 'regex:/\Ahandshake\.json\z/i'],
+                'handshake' => ['required', 'string', 'max:4096'], 'catalog_id' => ['nullable', 'integer', 'min:1'],
+                'source_id' => ['nullable', 'string', 'regex:/\Aid:[A-Za-z0-9_-]+\z/']], [
+                    'filename.regex' => 'Zulässig ist ausschließlich die Datei handshake.json.',
+                    'handshake.required' => 'Bitte eine gültige handshake.json auswählen.',
+                ]);
+            if (isset($data['catalog_id'])) {
+                $this->authorizeOwned(McCatalog::query()->findOrFail($data['catalog_id']));
+            }
+
+            return response()->json(app(McModuleTemplateSource::class)->preview($actor, $data['catalog_id'] ?? null,
+                $data['handshake'], $data['source_id'] ?? null))->header('Cache-Control', 'private, no-store');
+        }
         $data = $request->validate([
             'text' => ['required', 'string', 'max:1048576'],
             'format' => ['sometimes', Rule::in(['markdown', 'json'])],
@@ -713,8 +728,18 @@ class MultipleChoiceController extends Controller
             'questions.*.correct_option_ids.*' => ['string', 'max:100'],
             'questions.*.active' => ['required', 'boolean'],
             'questions.*.reviewed' => ['required', 'boolean'],
+            'module_source_proofs' => ['sometimes', 'array', 'max:20'],
+            'module_source_proofs.*' => ['required', 'string', 'max:8192'],
         ]);
         $created = ! $catalog->exists;
+        if (($data['module_source_proofs'] ?? []) !== []) {
+            abort_unless(Schema::hasColumn('mc_catalogs', 'module_sources'), 409, 'Die lokale Migration für Modulquellen wurde noch nicht ausgeführt.');
+            $sources = $catalog->module_sources ?? [];
+            foreach ($data['module_source_proofs'] as $proof) {
+                $sources[] = app(McModuleTemplateSource::class)->verify($this->teacher(), $created ? null : (int) $catalog->id, $proof);
+            }
+            $catalog->module_sources = collect($sources)->unique(fn (array $source): string => $source['source_file_id'].':'.$source['source_revision'])->values()->all();
+        }
         $catalog->fill(['title' => trim($data['title']), 'questions' => $data['questions']])->save();
 
         return response()->json(['catalog' => $catalog, 'errors' => $this->questions->errors($data['questions']), 'warnings' => []], $created ? 201 : 200);

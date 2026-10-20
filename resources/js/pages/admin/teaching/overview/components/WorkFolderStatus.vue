@@ -1,7 +1,7 @@
 <template>
     <v-icon
         v-if="workAutomationEnabled(work)"
-        size="13"
+        :size="size"
         :color="color"
         :title="tooltip"
         :aria-label="tooltip"
@@ -17,15 +17,16 @@ import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 
-const props = defineProps({ work: { type: Object, required: true } })
+const props = defineProps({ work: { type: Object, required: true }, size: { type: [Number, String], default: 13 } })
 const admin = useAdminStore()
 const loadError = ref(false)
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const state = computed(() => workDropboxStates.get(key.value))
-const linked = computed(() => Boolean(state.value?.folder?.id))
+const linkedFolder = computed(() => state.value?.module_link?.folder || state.value?.folder)
+const linked = computed(() => Boolean(linkedFolder.value?.id))
 const color = computed(() => state.value ? (linked.value ? 'success' : 'error') : 'grey')
 const tooltip = computed(() => {
-    if (linked.value) return `Ordner verknüpft: ${state.value.folder.name}`
+    if (linked.value) return `Ordner verknüpft: ${linkedFolder.value.path || linkedFolder.value.name}`
     if (state.value) return 'Kein Ordner mit dieser Arbeit verknüpft'
     return loadError.value ? 'Ordnerverknüpfung konnte nicht geprüft werden' : 'Ordnerverknüpfung wird geprüft …'
 })

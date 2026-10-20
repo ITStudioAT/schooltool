@@ -120,16 +120,30 @@
                             <FilePond name="mc-template" :allow-multiple="false" :max-files="1"
                                 :instant-upload="false" :allow-process="false" :allow-revert="false"
                                 :allow-replace="true" :allow-paste="false" :server="null" :credits="false" :disabled="!!busy"
+                                :accepted-file-types="['text/markdown', 'text/plain', 'application/json']" :file-validate-type-detect-type="templateFileType"
                                 label-idle="<strong>Vorlage hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span></strong>"
                                 label-file-loading="Datei wird gelesen" label-file-load-error="Datei konnte nicht gelesen werden"
                                 label-tap-to-retry="Erneut versuchen" label-tap-to-cancel="Abbrechen"
                                 label-button-remove-item="Datei entfernen" @updatefiles="readSourceFiles" />
-                            <p class="text-caption text-medium-emphasis mt-2">Markdown (.md), Text (.txt) oder JSON (.json) in UTF-8. Das Format wird automatisch erkannt.</p>
+                            <p class="text-caption text-medium-emphasis mt-2">Markdown (.md), Text (.txt), JSON (.json) oder handshake.json des Lernmoduls. Mit handshake.json werden vorhandene Vorlagen aus „Multiple Choice Fragen“ in Dropbox gelesen.</p>
+                            <div v-if="importReading" role="status" aria-live="polite" class="mt-3" data-testid="template-loading">
+                                <v-progress-linear indeterminate color="primary" class="mb-2" aria-label="Fragenvorlage wird geladen" />
+                                <p class="text-body-2">{{ moduleHandshake ? 'Lernmodul wird in Dropbox gesucht und Fragenvorlage wird geladen …' : 'Datei wird gelesen …' }}</p>
+                            </div>
+                            <div v-if="moduleImport" class="mt-3 text-caption">
+                                <div class="mc-source-path">{{ moduleImport.module.folder_path }}</div>
+                                <div>Modul-ID: {{ moduleImport.module.module_id }}</div>
+                                <p>Online-Quelle geprüft. Noch nicht im Katalog gespeichert.</p>
+                                <v-select v-if="moduleImport.sources.length > 1" :model-value="moduleSourceId" :items="moduleImport.sources"
+                                    item-title="name" item-value="id" label="Fragenvorlage auswählen" :disabled="importReading || !!busy"
+                                    @update:model-value="loadModuleSource($event)" />
+                                <p v-if="moduleImport.module_source" class="mc-source-path">{{ moduleImport.module_source.source_path }}</p>
+                            </div>
                             <v-alert v-if="importError" type="error" variant="tonal" class="mt-3" role="alert">{{ importError }}</v-alert>
                             <p v-else-if="importDetection.format" class="text-caption mt-2" role="status">
                                 Erkanntes Format: {{ importDetection.format === 'json' ? 'JSON' : 'Markdown / Text' }}
                             </p>
-                            <v-btn class="mt-3" variant="outlined" :loading="busy === 'import'"
+                            <v-btn v-if="!moduleHandshake" class="mt-3" variant="outlined" :loading="busy === 'import'"
                                 :disabled="!importText.trim() || !!importError || importReading || !!busy"
                                 @click="previewSource">Import prüfen</v-btn>
                             <div v-if="importPreview" class="mt-4">
@@ -142,16 +156,17 @@
                                 <p class="text-body-2 mb-2">Vorschau: {{ importPreview.questions?.length ?? 0 }} Fragen.
                                     Die Übernahme ergänzt den geöffneten Katalog.</p>
                                 <QuestionEditor v-model:questions="importPreview.questions" id-prefix="import" />
-                                <v-btn class="mt-3" color="primary" :disabled="!importPreview.questions?.length || !!busy"
-                                    :loading="busy === 'import-adopt'"
-                                    @click="adoptImport">Entwurf in Katalog übernehmen</v-btn>
+                                <v-btn class="mt-3" color="primary" variant="flat" :disabled="!importPreview.questions?.length || !catalog.title.trim() || !!busy"
+                                    :loading="busy === 'import-save'" @click="adoptImport">Fragen importieren</v-btn>
                             </div>
                         </div>
                         <QuestionEditor v-model:questions="catalog.questions" :readonly="!editingQuestions" />
+                        <div v-for="source in catalog.module_sources ?? []" :key="`${source.source_file_id}:${source.source_revision}`"
+                            class="text-caption text-medium-emphasis mt-2 mc-source-path">Modulquelle: {{ source.source_path }} · Modul-ID: {{ source.module_id }}</div>
                     </v-card-text>
                     <v-card-actions class="mc-catalog-actions pa-4 pt-0 justify-end flex-wrap ga-2">
                         <v-btn v-if="editingQuestions" variant="text" :disabled="!!busy" @click="cancelQuestionEditing">Bearbeitung abbrechen</v-btn>
-                        <v-btn v-if="editingQuestions && catalogQuestionsChanged" color="primary" variant="flat" prepend-icon="mdi-content-save-outline"
+                        <v-btn v-if="editingQuestions && catalogQuestionsChanged && !showImport" color="primary" variant="flat" prepend-icon="mdi-content-save-outline"
                             :loading="busy === 'catalog'" :disabled="!catalog.title.trim() || !!busy"
                             @click="saveCatalog">Fragen speichern</v-btn>
                     </v-card-actions>
@@ -847,6 +862,8 @@ import {
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+import { readModuleHandshake } from '@/helpers/moduleHandshake'
 import 'filepond/dist/filepond.min.css'
 import {
     index,
@@ -888,7 +905,7 @@ import {
     statusLabel
 } from './multipleChoiceTeacher'
 
-const FilePond = vueFilePond()
+const FilePond = vueFilePond(FilePondPluginFileValidateType)
 const route = useRoute()
 const router = useRouter()
 const folderDialog = ref(route.query.folder === '1')
@@ -943,6 +960,10 @@ const newCatalogTitleError = computed(() => {
 })
 const showImport = ref(false)
 const importText = ref('')
+const moduleImport = ref(null)
+const moduleHandshake = ref(null)
+const moduleSourceId = ref(null)
+const moduleSourceProof = ref('')
 const importReading = ref(false)
 const importFileError = ref('')
 let importSourceFile = null
@@ -1537,31 +1558,38 @@ async function saveCatalogTitle() {
     })
 }
 
+async function persistCatalog(questions = catalog.value.questions, sourceProofs = []) {
+    const savedQuestions = catalogs.value.find((item) => item.id === catalog.value.id)?.questions ?? []
+    const payload = {
+        title: catalog.value.title,
+        questions: questions.map((question) => {
+            const saved = savedQuestions.find((item) => item.id === question.id)
+            const changed = !saved || JSON.stringify(saved) !== JSON.stringify(question)
+            return {
+                ...question,
+                reviewed: changed ? Boolean(question.active && !questionProblems(question).length) : question.reviewed,
+            }
+        })
+    }
+    if (sourceProofs.length) payload.module_source_proofs = [...sourceProofs]
+    const {
+        data
+    } = catalog.value.id ? await axios.patch(updateCatalog.url(catalog.value.id), payload) :
+        await axios.post(createCatalog.url(), payload)
+    if (!data.catalog || !Array.isArray(data.catalog.questions) || data.catalog.questions.length !== payload.questions.length
+        || (catalog.value.id && String(data.catalog.id) !== String(catalog.value.id))) {
+        throw new Error('Das Speichern des vollständigen Katalogs wurde nicht bestätigt. Vorschau und bisheriger Inhalt bleiben erhalten.')
+    }
+    if (data.catalog) {
+        catalog.value = JSON.parse(JSON.stringify(data.catalog))
+        rememberCatalog(data.catalog)
+        editingQuestions.value = false
+    }
+    notice.value = 'Fragen gespeichert. Vollständige bearbeitete Fragen sind für neue Tests bestätigt.'
+}
+
 async function saveCatalog() {
-    await task('catalog', async () => {
-        const savedQuestions = catalogs.value.find((item) => item.id === catalog.value.id)?.questions ?? []
-        const payload = {
-            title: catalog.value.title,
-            questions: catalog.value.questions.map((question) => {
-                const saved = savedQuestions.find((item) => item.id === question.id)
-                const changed = !saved || JSON.stringify(saved) !== JSON.stringify(question)
-                return {
-                    ...question,
-                    reviewed: changed ? Boolean(question.active && !questionProblems(question).length) : question.reviewed,
-                }
-            })
-        }
-        const {
-            data
-        } = catalog.value.id ? await axios.patch(updateCatalog.url(catalog.value.id), payload) :
-            await axios.post(createCatalog.url(), payload)
-        if (data.catalog) {
-            catalog.value = JSON.parse(JSON.stringify(data.catalog))
-            rememberCatalog(data.catalog)
-            editingQuestions.value = false
-        }
-        notice.value = 'Fragen gespeichert. Vollständige bearbeitete Fragen sind für neue Tests bestätigt.'
-    })
+    await task('catalog', () => persistCatalog())
 }
 
 function resetImportSource() {
@@ -1570,6 +1598,60 @@ function resetImportSource() {
     importText.value = ''
     importFileError.value = ''
     importReading.value = false
+    moduleImport.value = null
+    moduleHandshake.value = null
+    moduleSourceId.value = null
+    moduleSourceProof.value = ''
+}
+
+function templateFileType(file, type) {
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    return Promise.resolve({ md: 'text/markdown', txt: 'text/plain', json: 'application/json' }[extension] || type)
+}
+
+async function readModuleFiles(items) {
+    const file = items[0]?.file || null
+    if (file === importSourceFile) return
+    resetImportSource()
+    importPreview.value = null
+    if (items.length !== 1) return
+    importSourceFile = file
+    const sequence = importReadSequence
+    importReading.value = true
+    try {
+        const selected = await readModuleHandshake(items[0].file)
+        if (sequence !== importReadSequence) return
+        moduleHandshake.value = selected
+        await loadModuleSource()
+    } catch (failure) {
+        if (sequence === importReadSequence) importFileError.value = failure.message || 'Die Handshake-Datei konnte nicht gelesen werden.'
+    } finally {
+        if (sequence === importReadSequence) importReading.value = false
+    }
+}
+
+async function loadModuleSource(sourceId = null) {
+    if (!moduleHandshake.value) return
+    const sequence = ++importReadSequence
+    const catalogId = catalog.value.id
+    importReading.value = true
+    importFileError.value = ''
+    importPreview.value = null
+    moduleSourceProof.value = ''
+    try {
+        const { data } = await axios.post(previewImport.url(), { filename: moduleHandshake.value.filename,
+            handshake: moduleHandshake.value.contents, catalog_id: catalogId || null, source_id: sourceId, generate: false })
+        if (sequence !== importReadSequence || catalog.value.id !== catalogId || !showImport.value) return
+        moduleImport.value = data
+        moduleSourceId.value = data.module_source?.source_file_id || null
+        importText.value = data.text || ''
+        moduleSourceProof.value = data.source_proof || ''
+        if (data.preview) importPreview.value = { ...data.preview, questions: (data.preview.questions || []).map(question => ({ ...question, reviewed: false })) }
+    } catch (failure) {
+        if (sequence === importReadSequence) importFileError.value = requestError(failure)
+    } finally {
+        if (sequence === importReadSequence) importReading.value = false
+    }
 }
 
 function cancelImport() {
@@ -1585,6 +1667,7 @@ function cancelImport() {
 
 async function readSourceFiles(items) {
     const file = items[0]?.file ?? null
+    if (/^handshake\.json$/i.test(file?.name || '')) return readModuleFiles(items)
     if (file === importSourceFile) {
         return
     }
@@ -1654,7 +1737,7 @@ async function adoptImport() {
     if (!importPreview.value?.questions?.length) {
         return
     }
-    await task('import-adopt', async () => {
+    await task('import-save', async () => {
         const { data } = await axios.post(previewImport.url(), {
             text: JSON.stringify({ questions: importPreview.value.questions }),
             format: 'json',
@@ -1672,13 +1755,13 @@ async function adoptImport() {
             ids.add(question.id)
             return { ...question, active: true, reviewed: true }
         })
-        catalog.value.questions = [...catalog.value.questions, ...imported]
-        editingQuestions.value = true
+        const combinedQuestions = [...catalog.value.questions, ...imported]
+        await persistCatalog(combinedQuestions, moduleSourceProof.value ? [moduleSourceProof.value] : [])
         resetImportSource()
         importPreview.value = null
         showImport.value = false
         await navigateTo('catalog')
-        notice.value = 'Fragen in den Katalog übernommen und für neue Tests bestätigt. Speichere jetzt deine Änderungen.'
+        notice.value = 'Fragen importiert und gespeichert.'
     })
 }
 
@@ -2372,6 +2455,10 @@ function scoreLabel(attempt) {
 </script>
 
 <style scoped>
+.mc-source-path {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
 .mc-deadline-trigger { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 18px; width: 100%; min-width: 0; text-align: left; padding: 14px 16px; border: 1px solid #aebfce; border-radius: 6px; background: #fff; color: #243c52; cursor: pointer; }
 .mc-deadline-label { grid-column: 1 / -1; font-size: .85rem; color: #52697e; }
 .mc-deadline-trigger strong { font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }

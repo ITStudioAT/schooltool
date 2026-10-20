@@ -629,6 +629,15 @@ class DropboxWorkImport
             'cursor' => ($data['has_more'] ?? false) ? ($data['cursor'] ?? null) : null, 'parent' => $parent, 'current' => $currentFolder];
     }
 
+    /** @param array<string, mixed> $parameters */
+    public function readModuleApi(DropboxConnection $connection, string $endpoint, array $parameters): Response
+    {
+        abort_unless(in_array($endpoint, ['files/search_v2', 'files/search/continue_v2', 'files/get_metadata',
+            'files/download', 'files/list_folder', 'files/list_folder/continue'], true), 422);
+
+        return $this->api($connection, $endpoint, $parameters, $endpoint === 'files/download');
+    }
+
     private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false): Response
     {
         try {

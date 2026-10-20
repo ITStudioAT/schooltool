@@ -28,19 +28,24 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
-    public function aiExport(TeachingCourseWork $course_work, TeachingWorkAiExport $export): JsonResponse
+    public function aiExport(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor, 403);
+        $data = $request->validate(['purpose' => ['sometimes', 'in:exercise'],
+            'include_mc' => ['required_if:purpose,exercise', 'nullable', 'boolean'],
+            'date' => ['nullable', 'date_format:Y-m-d']]);
 
-        return DB::transaction(function () use ($course_work, $actor, $export): JsonResponse {
+        return DB::transaction(function () use ($course_work, $actor, $export, $data): JsonResponse {
             $work = TeachingCourseWork::query()->with('teachingCourse')->findOrFail($course_work->id);
             abort_unless($work->teachingCourse, 403);
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
 
-            abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+            $exercise = ($data['purpose'] ?? null) === 'exercise';
+            abort_unless($exercise || $work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
 
-            return response()->json(['data' => $export->build($work, $actor)])
+            return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, (bool) $data['include_mc'], $data['date'] ?? null)
+                : $export->build($work, $actor)])
                 ->header('Cache-Control', 'private, no-store');
         });
     }

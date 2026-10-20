@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
-import { VAlert, VBtn, VFileInput } from 'vuetify/components'
+import { VAlert, VBtn, VFileInput, VMenu, VList, VListItem } from 'vuetify/components'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkImportActions from '@/pages/admin/teaching/overview/components/WorkImportActions.vue'
 import WorkDropboxSource from '@/pages/admin/teaching/overview/components/WorkDropboxSource.vue'
@@ -19,10 +19,11 @@ const deadlineConflict = { ...preview, can_import: false, deadline_context: {
 } }
 
 function mountComponent(component: any, props = {}, stubs = {}) {
+    vi.stubGlobal('visualViewport', { width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, addEventListener: vi.fn(), removeEventListener: vi.fn() })
     return mount(component, { props, global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
         AdminCourseStore: { selected_course: { id: 2 } }, AdminAdminStore: { config: { user: { id: 7 } } },
-    } }), createVuetify({ components: { VAlert, VBtn, VFileInput } })],
-    components: { 'v-alert': VAlert, 'v-btn': VBtn, 'v-file-input': VFileInput }, stubs: { 'v-alert': false, VAlert: false, 'v-btn': false, VBtn: false, 'v-file-input': false, VFileInput: false, ...stubs } } })
+    } }), createVuetify({ components: { VAlert, VBtn, VFileInput, VMenu, VList, VListItem } })],
+    components: { 'v-alert': VAlert, 'v-btn': VBtn, 'v-file-input': VFileInput, 'v-menu': VMenu, 'v-list': VList, 'v-list-item': VListItem }, stubs: { 'v-alert': false, VAlert: false, 'v-btn': false, VBtn: false, 'v-file-input': false, VFileInput: false, 'v-menu': false, VMenu: false, 'v-list': false, VList: false, 'v-list-item': false, VListItem: false, ...stubs } } })
 }
 
 function mountImportFlow() {
@@ -50,9 +51,12 @@ describe('Dropbox Quick-Import', () => {
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             expect(wrapper.find('[role="status"]').exists()).toBe(false)
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Importieren'])
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual([
+                ({ ...connected, ...state }.folder?.id) ? 'Verbindung' : 'Verknüpfen',
+            ])
             await wrapper.get('button').trigger('click')
-            expect(wrapper.emitted('open')).toEqual([[work, false]])
+            expect(wrapper.emitted('link')).toEqual(({ ...connected, ...state }.folder?.id) ? undefined : [[work]])
+            expect(wrapper.emitted('open')).toBeUndefined()
         } finally { wrapper.unmount() }
     })
 
@@ -65,7 +69,7 @@ describe('Dropbox Quick-Import', () => {
         try {
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             await flushPromises()
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Importieren'])
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Verknüpfen'])
             resolveStatus({ data: connected })
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(true)
@@ -73,7 +77,7 @@ describe('Dropbox Quick-Import', () => {
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Importieren'])
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Verbindung'])
         } finally { wrapper.unmount() }
     })
 

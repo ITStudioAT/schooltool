@@ -15,6 +15,7 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\TeachingSchoolHour;
 use App\Models\TeachingWorkDropboxFolder;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -46,6 +47,61 @@ beforeEach(function () {
     $this->membership = TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $this->student->id, 'import116_id' => null, 'canceled_at' => null]);
     $this->url = '/api/admin/teaching/course_works/'.$this->work->id.'/ai-export';
     $this->actingAs($this->teacher, 'sanctum');
+});
+
+test('exercise handoff respects explicit MC selection and exports only active saved work candidates without changing work data', function (bool $mc): void {
+    Http::preventStrayRequests();
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
+        'first_name' => 'Andere', 'last_name' => 'Person', 'schoolclass' => 'Abend']);
+    TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $other->id, 'canceled_at' => null]);
+    $this->work->update(['groups' => [['name' => 'Prüfungsgruppe', 'date' => '2026-10-20', 'student_ids' => [$this->student->id]]]]);
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc='.(int) $mc.'&date=2026-10-20')
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
+
+    expect($data['context']['include_multiple_choice'])->toBe($mc);
+    expect($data['context']['course_roster']['participants'])->toHaveCount(1);
+    expect($data['context']['course_roster']['participants'][0]['schooltool_person_id'])->toBe((string) $this->student->id);
+    expect($data['context']['work']['groups'][0]['name'])->toBe('Prüfungsgruppe');
+    expect($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15']);
+    expect($data['text'])->toContain('Skill create-exercise', 'keine zweite Schooltool-Arbeit', 'Modul: nicht verknüpft',
+        $mc ? 'Multiple-Choice-Fragen einbeziehen: Ja.' : 'Multiple-Choice-Fragen einbeziehen: Nein.');
+    expect($data['text'])->not->toContain('Andere');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNothingSent();
+})->with([false, true]);
+
+test('exercise handoff excludes cancelled memberships and does not revive a cancelled assigned candidate', function (): void {
+    $this->membership->update(['canceled_at' => now()]);
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id]);
+    TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $other->id, 'canceled_at' => null]);
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id]]]]);
+    $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertUnprocessable()->assertJsonValidationErrors('roster');
+});
+
+test('exercise handoff includes a real saved module path and identity without treating an import directory as the module', function (): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Modul',
+        'folder_path' => '/Materialien/Lerninhalte/Modul', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=1')->assertOk()->json('data');
+
+    expect($data['context']['module_binding']['module_id'])->toBe('A263B873-4f27-4167-90f0-7d94ea0f67fa');
+    expect($data['text'])->toContain('Modul: verknüpft – Dropbox: /Materialien/Lerninhalte/Modul', 'Assessment Template', 'Multiple Choice Fragen');
+    expect($data['text'])->not->toContain('Keine Arbeitsordnerbindung');
+    Http::assertNothingSent();
+});
+
+test('exercise handoff requires a conscious MC choice and a real saved date and permits authorized manual work text export', function (): void {
+    $this->getJson($this->url.'?purpose=exercise')->assertUnprocessable()->assertJsonValidationErrors('include_mc');
+    $this->getJson($this->url.'?purpose=exercise&include_mc=0&date=2026-11-25')->assertUnprocessable()->assertJsonValidationErrors('date');
+    $this->work->update(['status' => ['automation_enabled' => false]]);
+    $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertOk();
+    $this->getJson($this->url)->assertUnprocessable();
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    $this->actingAs($foreign, 'sanctum')->getJson($this->url.'?purpose=exercise&include_mc=0')->assertForbidden();
 });
 
 test('folder initialization prompt requests only create exercise part one and retains the structured work data', function (): void {

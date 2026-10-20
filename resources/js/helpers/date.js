@@ -58,6 +58,16 @@ export function workDeadlineExpired(work, now = Date.now()) {
     return candidates.length > 0 && now > Math.max(...candidates)
 }
 
+export function workDeadlineColor(work, now = Date.now()) {
+    const date = work?.finish_until_date
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !Number.isFinite(now)) return 'medium-emphasis'
+    const [year, month, day] = date.split('-').map(Number)
+    if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== date) return 'medium-emphasis'
+    const today = applicationDate(new Date(now))
+    if (date < today || workDeadlineExpired(work, now)) return 'error'
+    return date > today ? 'success' : 'warning'
+}
+
 export function formatViennaDateTime(timestamp) {
     if (!timestamp || !Number.isFinite(Date.parse(timestamp))) return ''
 

@@ -44,6 +44,17 @@ it('does not infer a link from an import or a suggested folder', () => {
     wrapper.unmount()
 })
 
+it('displays a saved handshake module link without import evidence and has no action', () => {
+    workDropboxStates.set('7:2:65', { folder: null, module_link: { module_id: 'module', folder: { id: 'id:module', name: 'Modul', path: '/Materialien/Modul' } } })
+    const wrapper = mountStatus()
+
+    expect(wrapper.attributes('color')).toBe('success')
+    expect(wrapper.attributes('title')).toBe('Ordner verknüpft: /Materialien/Modul')
+    expect(wrapper.attributes('tabindex')).toBeUndefined()
+    expect(wrapper.find('button').exists()).toBe(false)
+    wrapper.unmount()
+})
+
 it('loads the saved assignment and keeps another user or work separate', async () => {
     const get = vi.fn().mockResolvedValue({ data: { folder: { id: 'id:folder', name: 'Gespeicherter Ordner' } } })
     vi.stubGlobal('axios', { get })

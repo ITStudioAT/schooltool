@@ -831,14 +831,15 @@ describe('Multiple Choice teacher workflow', () => {
         expect(wrapper.text()).not.toContain('Inhalt und Lösungen geprüft')
         expect(wrapper.text()).not.toContain('Vorlage importieren')
         expect(wrapper.text()).not.toContain('Frage hinzufügen')
-        await clickText(wrapper, 'Entwurf in Katalog übernehmen')
+        vi.mocked(axios.patch).mockResolvedValueOnce({ data: { catalog: { id: 4, title: 'Katalog', questions: [validQuestion()] } } })
+        await clickText(wrapper, 'Fragen importieren')
         expect(axios.post).toHaveBeenCalledTimes(2)
         expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/import-preview', {
             text: JSON.stringify({ questions: [validQuestion({ reviewed: false })] }), format: 'json', generate: false,
         })
         expect(wrapper.text()).toContain('1 Fragen · 1 aktiv und geprüft')
-        expect(wrapper.text()).toContain('Vorlage importieren')
-        expect(wrapper.text()).toContain('Frage hinzufügen')
+        expect(wrapper.text()).toContain('Bearbeiten')
+        expect(wrapper.text()).not.toContain('Fragen speichern')
         expect(wrapper.find('.mc-import').exists()).toBe(false)
         expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
     })
@@ -901,7 +902,7 @@ describe('Multiple Choice teacher workflow', () => {
             questions: invalidQuestions, errors: { questions: ['Antworten oder Lösungen sind ungültig.'] }, warnings: [], valid: false,
         } })
 
-        await clickText(wrapper, 'Entwurf in Katalog übernehmen')
+        await clickText(wrapper, 'Fragen importieren')
 
         expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/import-preview', {
             text: JSON.stringify({ questions: invalidQuestions }), format: 'json', generate: false,
@@ -1084,11 +1085,10 @@ describe('Multiple Choice teacher workflow', () => {
         vi.mocked(axios.post).mockResolvedValue({ data: { questions: [validQuestion({ active: false, reviewed: false })], errors: [], warnings: [], valid: true } })
         await chooseTemplate(wrapper, 'Isolierte Importvorlage')
         await clickText(wrapper, 'Import prüfen')
-        await clickText(wrapper, 'Entwurf in Katalog übernehmen')
         const questions = [validQuestion()]
         vi.mocked(axios.patch).mockResolvedValueOnce({ data: { catalog: { id: 4, title: 'Katalog', questions } } })
 
-        await clickText(wrapper, 'Fragen speichern')
+        await clickText(wrapper, 'Fragen importieren')
 
         expect(axios.patch).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4', { title: 'Katalog', questions })
         expect(wrapper.find('h2').text()).toBe('Katalog')
@@ -1316,6 +1316,105 @@ describe('FilePond template selection', () => {
         await clickText(wrapper, 'Vorlage importieren')
         return wrapper
     }
+
+    const handshake = '{"schema_version":1,"module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa"}'
+    const source = { module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa', source_file_id: 'id:source', source_revision: 'r1',
+        source_path: '/Materialien/Lerninhalte/Modul/Multiple Choice Fragen/Fragen.md' }
+    const sourceResult = { module: { module_id: source.module_id, folder_path: '/Materialien/Lerninhalte/Modul' },
+        sources: [{ id: 'id:source', name: 'Fragen.md' }], module_source: source, source_proof: 'verified-source', text: '### 1. Vorhandene Frage', format: 'markdown',
+        preview: { valid: true, questions: [validQuestion()], errors: [], warnings: [] } }
+
+    it.each(['success', 'failure', 'cancel'])('shows ongoing Dropbox work immediately and clears it on %s', async outcome => {
+        const wrapper = await openImport()
+        let finish
+        let fail
+        vi.mocked(axios.post).mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+        await chooseFile(wrapper, new File([handshake], 'handshake.json'))
+        expect(wrapper.get('[data-testid="template-loading"]').text()).toContain('Lernmodul wird in Dropbox gesucht')
+        expect(axios.patch).not.toHaveBeenCalled()
+        if (outcome === 'cancel') {
+            await clickText(wrapper, 'Import abbrechen')
+            finish({ data: sourceResult })
+        } else if (outcome === 'failure') {
+            fail({ response: { data: { message: 'Quelle fehlt' } } })
+        } else {
+            finish({ data: sourceResult })
+        }
+        await flushPromises()
+        expect(wrapper.find('[data-testid="template-loading"]').exists()).toBe(false)
+        if (outcome === 'failure') expect(wrapper.text()).toContain('Quelle fehlt')
+        if (outcome === 'cancel') expect(wrapper.text()).not.toContain('Noch nicht im Katalog gespeichert')
+        if (outcome === 'success') expect(wrapper.text()).toContain('Noch nicht im Katalog gespeichert')
+    })
+
+    it('accepts handshake.json in the existing template dropzone and stages existing questions without generation or automatic catalog saving', async () => {
+        const wrapper = await openImport()
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: sourceResult })
+
+        await chooseFile(wrapper, new File([handshake], 'handshake.json', { type: '' }))
+
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/import-preview', {
+            filename: 'handshake.json', handshake, catalog_id: 4, source_id: null, generate: false,
+        })
+        expect(wrapper.text()).toContain(source.source_path)
+        expect(wrapper.text()).toContain('Noch nicht im Katalog gespeichert')
+        expect(wrapper.findAllComponents(QuestionEditor)[0].props('questions')[0].correct_option_ids).toEqual(['a'])
+        expect(wrapper.findAllComponents(QuestionEditor)[1].props('questions')).toEqual([])
+        expect(axios.patch).not.toHaveBeenCalled()
+
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: sourceResult.preview })
+        vi.mocked(axios.patch).mockResolvedValueOnce({ data: { catalog: { id: 4, title: 'Katalog', questions: [validQuestion()], module_sources: [source] } } })
+        expect(wrapper.text()).not.toContain('Entwurf in Katalog übernehmen')
+        expect(wrapper.text()).not.toContain('Übernehmen und speichern')
+        await clickText(wrapper, 'Fragen importieren')
+        expect(axios.patch).toHaveBeenCalledTimes(1)
+        expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/catalogs/4', expect.objectContaining({ module_source_proofs: ['verified-source'] }))
+        expect(wrapper.text()).toContain(source.source_path)
+        expect(wrapper.text()).not.toContain('Fragen speichern')
+    })
+
+    it('keeps the source preview and current catalog unchanged after a failed direct import save', async () => {
+        const wrapper = await openImport()
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: sourceResult })
+        await chooseFile(wrapper, new File([handshake], 'handshake.json'))
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: sourceResult.preview })
+        vi.mocked(axios.patch).mockRejectedValueOnce({ response: { data: { message: 'Speichern fehlgeschlagen' } } })
+        await clickText(wrapper, 'Fragen importieren')
+
+        expect(axios.patch).toHaveBeenCalledTimes(1)
+        expect(wrapper.text()).toContain('Speichern fehlgeschlagen')
+        expect(wrapper.text()).toContain('Vorschau: 1 Fragen')
+        expect(wrapper.findAllComponents(QuestionEditor)[1].props('questions')).toEqual([])
+        expect(wrapper.text()).toContain('Fragen importieren')
+        expect(wrapper.text()).not.toContain('Fragen importiert und gespeichert')
+    })
+
+    it('rejects invalid handshake contents locally and retains existing catalog questions after a failed or cancelled source lookup', async () => {
+        const wrapper = await openImport()
+        await chooseFile(wrapper, new File(['{"schema_version":2,"module_id":"invalid"}'], 'Handshake.json'))
+        expect(axios.post).not.toHaveBeenCalled()
+        expect(wrapper.text()).toContain('schema_version: 1')
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { message: 'Quelle fehlt' } } })
+        await chooseFile(wrapper, new File([handshake], 'handshake.json'))
+        expect(wrapper.text()).toContain('Quelle fehlt')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([])
+        expect(axios.patch).not.toHaveBeenCalled()
+        await clickText(wrapper, 'Import abbrechen')
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
+
+    it('offers a choice for multiple real templates instead of selecting the first file', async () => {
+        const wrapper = await openImport()
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { module: sourceResult.module,
+            sources: [{ id: 'id:first', name: 'Erste.md' }, { id: 'id:second', name: 'Zweite.md' }] } })
+        await chooseFile(wrapper, new File([handshake], 'handshake.json'))
+        expect(wrapper.text()).not.toContain('Vorschau:')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { ...sourceResult, module_source: { ...source, source_file_id: 'id:second' } } })
+        await wrapper.get('select[aria-label="Fragenvorlage auswählen"]').setValue('id:second')
+        await flushPromises()
+        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/import-preview', expect.objectContaining({ source_id: 'id:second', generate: false }))
+        expect(axios.patch).not.toHaveBeenCalled()
+    })
 
     it.each([
         ['questions.md', 'text/markdown', '# 1. Frage\n- [x] Richtig\n- [ ] Falsch', 'markdown'],

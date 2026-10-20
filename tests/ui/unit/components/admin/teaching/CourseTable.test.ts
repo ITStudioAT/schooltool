@@ -10,6 +10,7 @@ import { createTestingPinia } from '@pinia/testing'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components/VBtn'
+import { VBtnToggle } from 'vuetify/components/VBtnToggle'
 import { VIcon } from 'vuetify/components/VIcon'
 import { VDialog } from 'vuetify/components/VDialog'
 import { VAutocomplete } from 'vuetify/components/VAutocomplete'
@@ -27,30 +28,152 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
 
+const { openModuleLink } = vi.hoisted(() => ({ openModuleLink: vi.fn() }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkDropboxLink.vue', () => ({ default: {
+    name: 'WorkDropboxLink', props: ['courseId'], template: '<div />', methods: { openLink: openModuleLink },
+} }))
+
 describe('CourseTable manual work completion', () => {
     function mountCompletionTable() {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-12' }
         const courses = useCourseStore(pinia)
-        courses.selected_course = { id: 18, students_info: [], course_dates: [date] } as never
+        courses.selected_course = { id: 18, students_info: [], course_dates: [date],
+            teaching_entry_area: { id: 1, entry_definitions: [{ category: 'Benotung', short_name: 'A5', name: 'Auftrag', properties_mode: 'points', maximum_points: 5 }] } } as never
         const works = useCourseWorkStore(pinia)
         const first = { id: 65, teaching_course_id: 18, title: 'Erste Arbeit', type: 'A5',
             date_for_all_groups: date.date, groups: [], status: { dispatch_logs: [{ sha256: 'a'.repeat(64) }], custom: 'bewahren' } }
         const second = { ...first, id: 66, title: 'Zweite Arbeit', status: { custom: 'zweite' } }
         works.courseWorks = [first, second] as never
         const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
-            plugins: [pinia, createVuetify({ components: { VBtn } })],
-            components: { 'v-btn': VBtn }, stubs: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle } })],
+            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle }, stubs: {
                 ItsGridBox: { template: '<div><slot /></div>' }, WorkEvaluationImport: true,
                 WorkImportActions: true, WorkAiExport: true, WorkEvaluationPdf: true, WorkDropboxSource: true,
                 CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
-                'v-btn': false, VBtn: false, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+                'v-btn': false, VBtn: false, 'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
                 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true, 'v-switch': true,
                 'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
             },
         } })
         return { wrapper, works, courses, date, first, second }
     }
+
+    it('opens the clicked work directly and keeps the plus action separate for mouse and keyboard', async () => {
+        const { wrapper, date, first, second } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        const creating = vi.spyOn(vm, 'startCreatingDateWork')
+        const opening = vi.spyOn(vm, 'openWorkDialog')
+        try {
+            await flushPromises()
+            const cards = wrapper.findAll('.course-table-work-summary')
+            await cards[1].get('.course-table-work-summary-title').trigger('click')
+            expect(vm.workDialogForm.id).toBe(second.id)
+            expect(vm.workDialog.courseDate.id).toBe(date.id)
+            expect(vm.workDialogFormOpen).toBe(true)
+            expect(vm.savedWorkDialogWork?.id).toBe(second.id)
+            expect(wrapper.findComponent({ name: 'WorkContextCopy' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkExerciseStatus' }).exists()).toBe(true)
+            expect(opening).toHaveBeenCalledTimes(1)
+            expect(creating).not.toHaveBeenCalled()
+
+            vm.cancelDateWorkForm(true)
+            expect(vm.workDialog.open).toBe(false)
+            await cards[0].trigger('keydown', { key: 'Enter' })
+            expect(vm.workDialogForm.id).toBe(first.id)
+            expect(opening).toHaveBeenCalledTimes(2)
+            expect(creating).not.toHaveBeenCalled()
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('click')
+            expect(vm.workDialogForm.id).toBeNull()
+            expect(vm.workDialogForm.title).toBe('')
+            expect(vm.workDialogForm.date_for_all_groups).toBe(date.date)
+            expect(vm.workDialogForm.teaching_course_id).toBe(18)
+            expect(creating).toHaveBeenCalledTimes(1)
+            expect(opening).toHaveBeenCalledTimes(2)
+
+            const modes = wrapper.get('.work-assessment-mode').findAll('button')
+            await modes[0].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(false)
+            await modes[0].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(false)
+            await modes[1].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(true)
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('keydown', { key: ' ' })
+            expect(creating).toHaveBeenCalledTimes(2)
+            expect(opening).toHaveBeenCalledTimes(2)
+            expect(first.title).toBe('Erste Arbeit')
+            expect(second.title).toBe('Zweite Arbeit')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('returns to the calling table only after a successful save: %s', async saved => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue(saved ? { data: { id: 65 } } : null)
+        const context: any = {
+            ...methods,
+            selected_course: { id: 18 },
+            canSaveDateWork: true,
+            workDialog: { courseDate: { id: 1, date: '2026-10-12' }, open: true },
+            workDialogForm: { id: 65, type: 'A5', title: 'Arbeit', groups: [], finish_until_date: '2026-10-14', finish_until_time: '16:45' },
+            workDialogDirect: true, workDialogFormOpen: true,
+            courseWorkStore: { update }, courseWorkGradeInputModeForType: () => 'grade',
+            courseWorkGroupsForGradeInputMode: groups => groups,
+            closeRandomGroupsDialog: vi.fn(), applySavedCourseWork: vi.fn(), loadCourseTableData: vi.fn(),
+        }
+
+        await methods.saveDateWork.call(context)
+
+        expect(context.workDialog.open).toBe(!saved)
+        expect(context.workDialogFormOpen).toBe(!saved)
+        expect(update.mock.calls[0][0].finish_until_date).toBe('2026-10-14')
+        expect(update.mock.calls[0][0].finish_until_time).toBe('16:45')
+        if (!saved) expect(context.workDialogForm.id).toBe(65)
+    })
+
+    it.each([
+        { enabled: true, icon: 'mdi-brain', label: 'Automatische Beurteilung', nextIcon: 'mdi-account-check-outline', nextLabel: 'Manuelle Beurteilung' },
+        { enabled: false, icon: 'mdi-account-check-outline', label: 'Manuelle Beurteilung', nextIcon: 'mdi-brain', nextLabel: 'Automatische Beurteilung' },
+    ])('shows one mode icon, follows saved mode changes and keeps direct opening: $label', async ({ enabled, icon, label, nextIcon, nextLabel }) => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            workDropboxStates.set('7:18:65', { folder: null, suggested_folder: { id: 'id:suggestion' } })
+            works.courseWorks = [{ ...first, status: { automation_enabled: enabled }, groups: [{ student_ids: [12], grade: '', grades: [], points: [], comments: [] }] }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain('Erste Arbeit')
+            expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
+            expect(card.findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
+            if (enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('error')
+            expect(card.get('v-icon').attributes('icon')).toBe(icon)
+            expect(card.get('v-icon').attributes('aria-label')).toBe(label)
+            expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
+
+            ;(works.courseWorks[0] as any).status.automation_enabled = !enabled
+            await flushPromises()
+            expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
+            expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
+            expect(card.text()).not.toContain(nextLabel)
+            expect(card.findAll('v-icon')).toHaveLength(enabled ? 2 : 3)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
+
+            await card.get('v-icon').trigger('click')
+            expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
+            ;(wrapper.vm as any).closeWorkDialog()
+
+            workDropboxStates.set('7:18:65', { folder: { id: 'id:saved', name: 'Ordner' } })
+            await flushPromises()
+            expect(card.text()).not.toContain('Noch kein Ordner verbunden.')
+            expect(card.findAll('[data-work-status]')).toHaveLength(0)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
+            if (!enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('success')
+        } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
 
     it('toggles only the chosen work from its dialog brain, preserves returned evidence and updates the overview', async () => {
         const { wrapper, works, date, first, second } = mountCompletionTable()
@@ -531,6 +654,8 @@ describe('CourseTable evaluation PDF links', () => {
         }))
         works[4].status.dispatch_attempts = [{ ...notice('tasks'), mode: 'test' }]
         works[5].status.dispatch_notifications = [notice('results', null)]
+        useAdminStore(pinia).config = { user: { id: 7 } } as never
+        works.forEach(work => workDropboxStates.set(`7:18:${work.id}`, { folder: { id: `id:folder-${work.id}`, name: work.title } }))
         const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: { WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true } } })
         try {
             await flushPromises()
@@ -645,10 +770,11 @@ describe('CourseTable evaluation PDF links', () => {
             expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
-            const imports = card.findAll('v-btn').filter(button => button.text() === 'Importieren')
+            const imports = card.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')
             expect(imports).toHaveLength(1)
             await imports[0].trigger('click')
-            expect(openImport).toHaveBeenLastCalledWith(work)
+            expect(openModuleLink).toHaveBeenLastCalledWith(work)
+            expect(openImport).not.toHaveBeenCalled()
             expect(vm.workDialogFormOpen).toBe(false)
             expect(card.findAll('[href]').some(link => link.attributes('href').includes('/dispatch/'))).toBe(false)
             expect(card.text()).not.toContain('Download Aufgabenversand')
@@ -658,12 +784,11 @@ describe('CourseTable evaluation PDF links', () => {
             vm.startEditingDateWork(work)
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
-            expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
-            expect(form.findAll('v-btn').filter(button => button.text() === 'Importieren')).toHaveLength(1)
-            const overallLink = form.findAll('[href]').find(link => link.text() === 'Gesamtauswertung (PDF)')!
-            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Aufgabenversand')
-            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Ergebnisbenachrichtigung')
-            expect(overallLink.attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${overall.sha256}?inline=1`)
+            expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
+            expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(1)
+            const actions = form.get('[aria-label="Weitere Aktionen"]')
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Verknüpfen', 'Kontext kopieren', 'Leistungsfeststellung erstellen'])
+            expect(actions.findAll('[href]')).toHaveLength(0)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 
             vm.closeWorkDialog()
@@ -764,13 +889,15 @@ describe('CourseTable evaluation import', () => {
             await flushPromises()
             workStore.courseWorks = [work] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-count span').text()).toBe('0/12')
+            expect(wrapper.get('.course-table-work-summary-count').text()).toBe('12')
             vi.mocked(courseStore.loadCourseDetails).mockImplementation(async () => {
                 courseStore.selected_course = { ...courseStore.selected_course, students_info: students } as never
                 return courseStore.selected_course
             })
             ;(wrapper.vm as any).loadCourseTableData = vi.fn().mockResolvedValue(true)
-            await (wrapper.vm as any).evaluationImported({ ...work, groups: students.map(student => ({ student_ids: [student.user_id] })) })
+            await (wrapper.vm as any).evaluationImported({ ...work,
+                status: { folder_imported_at: '2026-10-13T08:00:00Z' },
+                groups: students.map(student => ({ student_ids: [student.user_id] })) })
             await flushPromises()
             expect(wrapper.get('.course-table-work-summary-count span').text()).toBe('0/13')
             expect(courseStore.selected_course?.students_info).toHaveLength(13)
@@ -3978,7 +4105,7 @@ describe('CourseTable', () => {
             teaching_course_work_id: 16,
         })).toEqual({
             durationLabel: '',
-            finishDateTitle: '2026-10-05 · ohne Uhrzeit',
+            finishDateTitle: '2026-10-05',
             isSameDate: true,
             startDateTitle: '2026-10-05',
         })

@@ -147,7 +147,7 @@
                             <tr v-if="tableView === 'entries'" class="course-table-work-row">
                                 <th scope="row" class="course-table-work-label">
                                     <div class="course-table-work-label-content">
-                                        <v-icon color="error" size="18">mdi-brain</v-icon>
+                                        <v-icon color="#1e3a8a" size="18">mdi-brain</v-icon>
                                         <span>Arbeiten</span>
                                     </div>
                                 </th>
@@ -220,11 +220,38 @@
                                             :key="work.key"
                                             class="course-table-work-summary"
                                             :class="{
+                                                'course-table-work-summary--initial': workIsInitial(work.work),
                                                 'course-table-work-summary--group': work.isGroupWork,
                                                 'course-table-work-summary--import': workImportLabel(work.work),
                                                 'course-table-work-summary--deadline': work.work.finish_until_date,
                                             }"
-                                            :title="work.title">
+                                            :title="work.title"
+                                            role="button"
+                                            tabindex="0"
+                                            :aria-label="`${work.work.title || work.label}: Arbeit öffnen`"
+                                            @click.stop="openExistingWorkDialog(courseDate, work.work)"
+                                            @keydown.enter.stop.prevent="openExistingWorkDialog(courseDate, work.work)"
+                                            @keydown.space.stop.prevent="openExistingWorkDialog(courseDate, work.work)">
+                                            <template v-if="workIsInitial(work.work)">
+                                                <div class="course-table-work-summary-meta">
+                                                    <v-icon :icon="workAutomationEnabled(work.work) ? 'mdi-brain' : 'mdi-account-check-outline'" color="#1e3a8a" size="15"
+                                                        :title="workAutomationEnabled(work.work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung'"
+                                                        :aria-label="workAutomationEnabled(work.work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung'"
+                                                        role="img" :aria-hidden="false" />
+                                                    <span class="work-initial-type text-primary">{{ work.work.type || 'Arbeit' }}</span>
+                                                    <span class="course-table-work-summary-count ml-auto work-initial-type" :class="work.completion.completed > 0 && work.completion.open === 0 ? 'text-success' : 'text-error'" :aria-label="`${work.completion.completed + work.completion.open} Schüler:innen`">
+                                                        <v-icon icon="mdi-account-multiple" size="15" aria-hidden="true" />
+                                                        {{ work.completion.completed + work.completion.open }}
+                                                    </span>
+                                                    <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" />
+                                                </div>
+                                                <span class="course-table-work-summary-title text-primary">{{ work.work.title || work.label }}</span>
+                                                <span v-if="work.work.finish_until_date" class="course-table-work-summary-deadline" :class="`text-${workDeadlineColor(work.work, deadlineNow)}`">
+                                                    <v-icon icon="mdi-calendar-clock-outline" size="12" title="Abgabefrist" aria-label="Abgabefrist" role="img" :aria-hidden="false" />
+                                                    {{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template>
+                                                </span>
+                                            </template>
+                                            <template v-else>
                                             <div class="course-table-work-summary-meta">
                                                 <v-icon :color="workMarkedComplete(work.work) ? 'success' : work.work.status?.completion_override === false ? 'error' : scheduledWorkIconColor(courseDate.date)"
                                                     :title="workCompletionLabel(work.work)"
@@ -244,11 +271,11 @@
                                                 {{ work.work.title || work.label }}
                                             </span>
                                             <span class="course-table-work-summary-deadline" data-work-deadline="first">
-                                                <span class="d-inline-flex align-center ga-1" role="img" aria-label="1. Frist" title="1. Frist"><span aria-hidden="true">1.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.communicated_deadline?.date">{{ formatDateShort(work.work.communicated_deadline.date) }} {{ work.work.communicated_deadline.time || 'ohne Uhrzeit' }}</template><template v-else>—</template>
+                                                <span class="d-inline-flex align-center ga-1" role="img" aria-label="1. Frist" title="1. Frist"><span aria-hidden="true">1.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.communicated_deadline?.date">{{ formatDateShort(work.work.communicated_deadline.date) }}<template v-if="work.work.communicated_deadline.time"> {{ work.work.communicated_deadline.time }}</template></template><template v-else>—</template>
                                             </span>
                                             <span class="course-table-work-summary-deadline" data-work-deadline="second"
                                                 :class="work.deadlineExpired ? 'text-error' : 'text-primary'">
-                                                <span class="d-inline-flex align-center ga-1" role="img" aria-label="2. Frist" title="2. Frist"><span aria-hidden="true">2.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.finish_until_date">{{ formatDateShort(work.work.finish_until_date) }} {{ work.work.finish_until_time || 'ohne Uhrzeit' }}</template><template v-else>—</template>
+                                                <span class="d-inline-flex align-center ga-1" role="img" aria-label="2. Frist" title="2. Frist"><span aria-hidden="true">2.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.finish_until_date">{{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template></template><template v-else>—</template>
                                             </span>
                                             <span v-if="work.submissionCheckComplete" class="course-table-work-summary-lifecycle course-table-work-summary-complete"
                                                 :title="`Prüfstand: ${formatImportDate(work.work.submission_check_status.checked_at)}`">Abgabeprüfung abgeschlossen</span>
@@ -260,6 +287,7 @@
                                             <div v-if="workAutomationEnabled(work.work)" class="course-table-work-summary-status d-flex align-center ga-2 mt-1">
                                                 <WorkCellStatus class="w-100" :work="work.work" :students="selected_course?.students_info || []" :now="deadlineNow" aggregate native-title />
                                             </div>
+                                            </template>
                                         </div>
                                     </div>
                                     <v-tooltip
@@ -929,6 +957,7 @@
         </v-dialog>
 
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
+        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" />
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
@@ -994,38 +1023,35 @@
                             clearable
                             class="course-table-date-work-date-input"
                             data-testid="course-table-date-work-finish-until-input"
-                            density="compact"
+                            density="default"
                             hide-details
                             label="Fertig bis"
                             variant="outlined"
+                            :hide-header="false"
+                            :picker-props="{ width: 360 }"
                             :disabled="workSaving"
                             @update:model-value="applyWorkDialogFinishDate" />
                         <v-chip
                             v-else-if="workDialogFormOpen"
                             data-testid="course-table-date-edit-work-finish-until"
-                            color="warning"
+                            :color="workDeadlineColor(workDialogForm, deadlineNow)"
                             prepend-icon="mdi-calendar-check"
-                            size="x-small"
+                            size="large"
                             variant="tonal"
+                            class="course-table-deadline-date"
                             :class="{ 'cursor-pointer': !workSaving }"
                             role="button"
                             :tabindex="workSaving ? undefined : 0"
                             @click="beginWorkDialogFinishDateEditing"
                             @keydown.enter.prevent="beginWorkDialogFinishDateEditing"
                             @keydown.space.prevent="beginWorkDialogFinishDateEditing">
-                            Abgabefrist {{ workDialogFinishDateTitle }} · {{ workDialogForm.finish_until_time || 'ohne Uhrzeit' }}
+                            Abgabefrist {{ workDialogFinishDateTitle }}<template v-if="workDialogForm.finish_until_time"> · {{ workDialogForm.finish_until_time }}</template>
                         </v-chip>
-                        <v-text-field
+                        <WorkTimeInput
                             v-if="workDialogFormOpen"
                             v-model="workDialogForm.finish_until_time"
-                            style="width: 150px; flex: 0 0 150px"
-                            type="time"
-                            label="Fertig bis (Uhrzeit)"
-                            clearable
-                            :disabled="workSaving"
-                            density="compact"
-                            variant="outlined"
-                            hide-details />
+                            class="course-table-work-time-input"
+                            :disabled="workSaving" />
                     </div>
                 </v-card-title>
                 <v-divider />
@@ -1097,7 +1123,7 @@
                                             size="x-small"
                                             color="warning"
                                             variant="tonal">
-                                            Abgabefrist {{ compactCourseDateTitle({ date: assignment.work.finish_until_date }) }} · {{ assignment.work.finish_until_time || 'ohne Uhrzeit' }}
+                                            Abgabefrist {{ compactCourseDateTitle({ date: assignment.work.finish_until_date }) }}<template v-if="assignment.work.finish_until_time"> · {{ assignment.work.finish_until_time }}</template>
                                         </v-chip>
                                         <v-chip
                                             v-if="courseWorkDurationLabel(assignment.work)"
@@ -1119,9 +1145,9 @@
                                         <template v-else>{{ assignment.completion.completed }} beurteilt</template>
                                     </div>
                                     <div class="work-import-actions d-flex flex-wrap align-start ga-2 mt-2">
-                                        <WorkContextCopy :work="assignment.work" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
                                         <WorkAiExport :work="assignment.work" />
-                                        <WorkImportActions :work="assignment.work" @open="openImport" />
+                                        <WorkImportActions :work="assignment.work" @open="openImport" @link="openLink" />
+                                        <WorkExerciseExport :work="assignment.work" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" />
                                         <WorkEvaluationPdf :work="assignment.work" />
                                     </div>
                                 </div>
@@ -1238,8 +1264,15 @@
                                             </div>
                                         </div>
                                     </div>
-                                        <v-checkbox v-model="workDialogForm.automation_enabled" label="Automatik" :disabled="workSaving" hide-details />
-                                        <div class="text-caption text-medium-emphasis mb-2">Mit Automatik: Ordner, Import und Versand-/Abgabestatus. Ohne Automatik: manuell beurteilen.</div>
+                                        <div class="text-caption text-medium-emphasis mb-2" id="date-work-assessment-mode-label">Beurteilung</div>
+                                        <v-btn-toggle v-model="workDialogForm.automation_enabled" mandatory color="primary" variant="outlined"
+                                            :disabled="workSaving" aria-labelledby="date-work-assessment-mode-label" class="work-assessment-mode">
+                                            <v-btn :value="false" prepend-icon="mdi-account-check-outline">Manuelle Beurteilung</v-btn>
+                                            <v-btn :value="true" prepend-icon="mdi-brain">Automatische Beurteilung</v-btn>
+                                        </v-btn-toggle>
+                                        <div class="text-caption text-medium-emphasis mt-2 mb-3">
+                                            {{ workDialogForm.automation_enabled ? 'Beurteilungen importieren; Ordner, Abgaben und Versand verfolgen.' : 'Beurteilungen direkt in Schooltool eintragen.' }}
+                                        </div>
                                         <v-text-field
                                             v-model="workDialogForm.title"
                                         label="Titel"
@@ -1323,6 +1356,7 @@
                                                 <div v-if="specialGradeItemsForType(workDialogForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
                                                     <v-chip
                                                         v-for="item in specialGradeItemsForType(workDialogForm.type)"
+                                                        class="course-table-special-grade-chip"
                                                         :key="item.value"
                                                         size="small"
                                                         :variant="row.grade === item.value ? 'flat' : 'outlined'"
@@ -1541,19 +1575,24 @@
                             <div v-if="workDialogForm.id" class="mt-2"><WorkDispatchStatus :work="savedWorkDialogWork" aggregate /></div>
                             <div v-if="savedWorkDialogWork" class="d-flex align-center ga-1 mt-2 text-caption" data-testid="work-detail-progress">
                                 <v-icon size="14">mdi-check</v-icon>
-                                <template v-if="workAutomationEnabled(savedWorkDialogWork)">{{ savedWorkDialogCompletion.completed }} erledigt · {{ savedWorkDialogCompletion.open }} offen</template>
-                                <template v-else>{{ savedWorkDialogCompletion.completed }} beurteilt</template>
+                                {{ savedWorkDialogCompletion.completed }} von {{ savedWorkDialogCompletion.completed + savedWorkDialogCompletion.open }} beurteilt
                             </div>
-                            <div v-if="workDialogForm.id" class="work-import-actions d-flex flex-wrap align-center ga-2 mt-4">
-                                <WorkImportActions :work="savedWorkDialogWork" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" />
-                                <WorkEvaluationPdf :work="savedWorkDialogWork" />
-                                <WorkDispatchLog :work="savedWorkDialogWork" />
-                            </div>
+                            <section class="mt-4 pt-3 border-t" aria-label="Weitere Aktionen">
+                                <div class="work-import-actions d-flex flex-wrap align-center ga-2">
+                                    <WorkImportActions v-if="savedWorkDialogWork" :work="savedWorkDialogWork" link-only :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" @link="openLink" />
+                                    <WorkContextCopy v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
+                                    <WorkExerciseExport :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @exercise-status="workDialogExerciseStatus = $event" />
+                                </div>
+                            </section>
                             <div class="d-flex flex-wrap justify-end ga-2 mt-4">
+                                <span v-if="savedWorkDialogWork" class="work-dialog-status-icons d-flex align-center ga-2 mr-auto align-self-center">
+                                    <WorkFolderStatus :work="savedWorkDialogWork" :size="30" />
+                                    <WorkExerciseStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
+                                </span>
                                 <v-btn
                                     variant="text"
                                     :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
-                                    @click="cancelDateWorkForm">
+                                    @click="cancelDateWorkForm(true)">
                                     Abbrechen
                                 </v-btn>
                                 <v-btn
@@ -1663,6 +1702,7 @@
                                     <div v-if="specialGradeItemsForType(workDialogForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
                                         <v-chip
                                             v-for="item in specialGradeItemsForType(workDialogForm.type)"
+                                            class="course-table-special-grade-chip"
                                             :key="item.value"
                                             size="small"
                                             :variant="row.grade === item.value ? 'flat' : 'outlined'"
@@ -2010,7 +2050,7 @@
                                     <v-divider class="my-3" />
                                     <div class="course-table-cell-work-heading d-flex align-center flex-wrap ga-2 mb-2">
                                         <div class="text-subtitle-2 font-weight-bold">Bewertung für diese:n Schüler:in</div>
-                                        <WorkImportActions :work="courseWorkForCellEntry(entry)" :disabled="Boolean(courseWorkEntrySavingUid)" @open="openImport" />
+                                        <WorkImportActions :work="courseWorkForCellEntry(entry)" :disabled="Boolean(courseWorkEntrySavingUid)" @open="openImport" @link="openLink" />
                                     </div>
                                     <div class="course-table-cell-work-entry-fields">
                                         <v-textarea
@@ -2071,6 +2111,7 @@
                                         <div v-if="specialGradeItemsForType(courseWorkForCellEntry(entry)?.type).length" class="d-flex flex-wrap ga-1 mt-2">
                                             <v-chip
                                                 v-for="item in specialGradeItemsForType(courseWorkForCellEntry(entry)?.type)"
+                                                class="course-table-special-grade-chip"
                                                 :key="item.value"
                                                 size="small"
                                                 :variant="courseWorkEntryDraft(entry).grade === item.value ? 'flat' : 'outlined'"
@@ -2150,6 +2191,7 @@
                                 <div v-if="specialGradeItemsForType(entryForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
                                     <v-chip
                                         v-for="item in specialGradeItemsForType(entryForm.type)"
+                                        class="course-table-special-grade-chip"
                                         :key="item.value"
                                         size="small"
                                         :variant="entryForm.grade === item.value ? 'flat' : 'outlined'"
@@ -2161,6 +2203,7 @@
                                         <div v-if="specialGradeItemsForType(entryForm.type).length" class="d-flex flex-wrap ga-1 mt-2">
                                             <v-chip
                                                 v-for="item in specialGradeItemsForType(entryForm.type)"
+                                                class="course-table-special-grade-chip"
                                                 :key="item.value"
                                                 size="small"
                                                 :variant="entryForm.grade === item.value ? 'flat' : 'outlined'"
@@ -2526,7 +2569,7 @@ import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
-import { parseLocalDate, formatViennaDateTime, scheduledWorkIconColor, workDeadlineExpired } from '@/helpers/date'
+import { parseLocalDate, formatViennaDateTime, scheduledWorkIconColor, workDeadlineExpired, workDeadlineColor } from '@/helpers/date'
 import { currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
@@ -2542,15 +2585,21 @@ import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkAiExport from './WorkAiExport.vue'
 import WorkImportActions from './WorkImportActions.vue'
+import WorkExerciseExport from './WorkExerciseExport.vue'
+import WorkDropboxLink from './WorkDropboxLink.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
+import WorkExerciseStatus from './WorkExerciseStatus.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 import WorkCellStatus from './WorkCellStatus.vue'
+import WorkTimeInput from './WorkTimeInput.vue'
 import { workCellDeviationStatuses, workMarkedComplete } from '@/helpers/workCellStatus'
 import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { isInitialWork, workConnectionLabel } from '@/helpers/workOverview'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -2566,7 +2615,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkFolderStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkFolderStatus, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2593,6 +2642,7 @@ export default {
             deadlineClockInterval: null,
             assessmentQuestionDetails: {},
             assessmentQuestionRequests: {},
+            work_folder_errors: {},
             bulkAttendanceDialog: {
                 courseDate: null,
                 open: false,
@@ -2682,6 +2732,7 @@ export default {
                 courseDate: null,
                 open: false,
             },
+            workDialogExerciseStatus: null,
             workDialogDateEditing: false,
             workDialogFinishDateEditing: false,
             workDialogForm: {
@@ -2701,6 +2752,7 @@ export default {
                 type: '',
             },
             workDialogFormOpen: false,
+            workDialogDirect: false,
             workDialogGroupDetails: {
                 groupIndex: null,
                 open: false,
@@ -2752,6 +2804,19 @@ export default {
     },
 
     watch: {
+        workFolderRequests: {
+            immediate: true,
+            handler(requests) {
+                for (const { key, work } of requests) {
+                    if (!key) continue
+                    loadWorkDropbox(key, work.id).then(() => {
+                        delete this.work_folder_errors[key]
+                    }).catch(() => {
+                        this.work_folder_errors[key] = true
+                    })
+                }
+            },
+        },
         async view(view) {
             this.entryTransfer = null
             this.restoreTableView(view)
@@ -2798,6 +2863,13 @@ export default {
     },
 
     computed: {
+        workFolderRequests() {
+            if (this.tableView !== 'entries') return []
+            return (this.courseWorks || []).map(work => ({
+                work,
+                key: workDropboxKey(useAdminStore().config?.user?.id, work),
+            }))
+        },
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode', 'uses_entry_areas_for_grading_schema']),
@@ -3257,6 +3329,18 @@ export default {
 
     methods: {
         workAutomationEnabled,
+        workDeadlineColor,
+        workFolderState(work) {
+            return workDropboxStates.get(workDropboxKey(useAdminStore().config?.user?.id, work))
+        },
+        workIsInitial(work) {
+            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+            return isInitialWork(work, workDropboxStates.get(key))
+        },
+        workConnectionLabel(work) {
+            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+            return workConnectionLabel(workDropboxStates.get(key), !key || this.work_folder_errors[key])
+        },
         scheduledWorkIconColor,
         cancellationHours: courseDateHours,
         isHourCancelled: isCourseDateHourCancelled,
@@ -3649,6 +3733,11 @@ export default {
                 open: false,
                 student: null,
             }
+        },
+        openLink(work) {
+            const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
+            if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
+            this.$refs.moduleLink.openLink(savedWork)
         },
         openImport(work, quick = false) {
             if (!workAutomationEnabled(work)) return
@@ -4177,6 +4266,7 @@ export default {
             return this.courseDateScrollKey(this.contentDialog.courseDate) === this.courseDateScrollKey(courseDate)
         },
         openWorkDialog(courseDate) {
+            this.workDialogDirect = false
             const shouldStartCreating = this.courseWorksForDate(courseDate).length === 0
 
             this.cancelDateWorkForm()
@@ -4195,11 +4285,20 @@ export default {
                 open: true,
             }
             this.startCreatingDateWork()
+            this.workDialogDirect = true
+        },
+        openExistingWorkDialog(courseDate, work) {
+            if (!work?.id) return
+
+            this.openWorkDialog(courseDate)
+            this.startEditingDateWork(work)
+            this.workDialogDirect = true
         },
         closeWorkDialog() {
             if (this.workSaving || this.workDeleting) return
 
             this.cancelDateWorkForm()
+            this.workDialogDirect = false
             this.closeDeleteWorkDialog()
             this.workDialog = {
                 courseDate: null,
@@ -4461,7 +4560,7 @@ export default {
 
             return groupSizes
         },
-        cancelDateWorkForm() {
+        cancelDateWorkForm(closeDirect = false) {
             this.closeRandomGroupsDialog()
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogDateEditing = false
@@ -4478,6 +4577,10 @@ export default {
             this.workDialogTypeDraft = ''
             this.workDialogTypeEditing = false
             this.workDialogFormOpen = false
+            if (closeDirect && this.workDialogDirect) {
+                this.workDialogDirect = false
+                this.workDialog = { courseDate: null, open: false }
+            }
         },
         async saveDateWork() {
             if (!this.canSaveDateWork) return
@@ -4518,7 +4621,7 @@ export default {
 
                 this.applySavedCourseWork(response)
                 await this.loadCourseTableData(this.selected_course?.id, true)
-                this.cancelDateWorkForm()
+                this.cancelDateWorkForm(true)
             } finally {
                 this.workSaving = false
             }
@@ -5479,7 +5582,7 @@ export default {
                     })
                     : '',
                 finishDateTitle: finishDate
-                    ? `${this.compactCourseDateTitle({ date: finishDate })} · ${work.finish_until_time || 'ohne Uhrzeit'}`
+                    ? `${this.compactCourseDateTitle({ date: finishDate })}${work.finish_until_time ? ` · ${work.finish_until_time}` : ''}`
                     : '',
                 isSameDate,
                 startDateTitle: startDate ? this.compactCourseDateTitle({ date: startDate }) : 'Ohne Datum',
@@ -7326,6 +7429,29 @@ export default {
     color: #166534;
 }
 
+.course-table-work-summary--initial {
+    background: rgb(var(--v-theme-on-surface), 0.035);
+    border-color: rgb(var(--v-theme-on-surface), 0.12);
+    color: rgb(var(--v-theme-on-surface));
+}
+
+.work-initial-type {
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.work-assessment-mode {
+    height: auto;
+    flex-wrap: wrap;
+}
+
+.work-assessment-mode :deep(.v-btn) {
+    min-height: 44px;
+    height: auto;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
 .course-table-work-summary-meta {
     align-items: center;
     display: flex;
@@ -7448,13 +7574,37 @@ export default {
 }
 
 .course-table-work-deadline-fields {
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
     max-width: 100%;
+    margin-top: 12px;
+    width: 100%;
 }
 
-.course-table-work-deadline-fields .course-table-date-work-date-input {
-    flex: 0 0 180px;
+.course-table-work-deadline-fields .course-table-date-work-date-input,
+.course-table-deadline-date {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.course-table-deadline-date {
+    min-height: 64px;
+    font-size: 1rem;
+    padding-inline: 16px;
+    border-radius: 8px;
+}
+
+.course-table-work-time-input {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.course-table-work-deadline-fields :deep(.v-field) {
+    min-height: 64px;
+}
+
+.course-table-work-deadline-fields :deep(input) {
+    font-size: 1.125rem;
 }
 
 @media (max-width: 480px) {
@@ -7513,6 +7663,21 @@ export default {
 
 .course-table-work-group-student-chip {
     cursor: grab;
+}
+.course-table-special-grade-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    padding-block: 3px;
+    white-space: normal;
+}
+.course-table-special-grade-chip :deep(.v-chip__content) {
+    min-width: 0;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    line-height: 1.3;
 }
 
 .course-table-work-group-student-chip:active {

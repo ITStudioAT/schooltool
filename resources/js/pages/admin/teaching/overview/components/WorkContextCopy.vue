@@ -61,12 +61,14 @@ const contextText = computed(() => {
     const missingClasses = classes.map(singleLine).filter(value => value && !title.includes(value))
     const courseTitle = [title, missingClasses.length ? `(${missingClasses.join(', ')})` : ''].filter(Boolean).join(' ')
     const date = /^\d{4}-\d{2}-\d{2}$/.test(props.date) ? props.date.split('-').reverse().join('.') : 'nicht angegeben'
-    const folder = folderState.value.folder
+    const module = folderState.value.module_link
+    const folder = module?.folder?.id ? module.folder : folderState.value.folder
     const folderText = folder?.id
-        ? `${folder.path ? `Dropbox: ${singleLine(folder.path)}` : singleLine(folder.name)} (Dropbox-ID: ${singleLine(folder.id)})`
+        ? `verknüpft – ${folder.path ? `Dropbox: ${folder.path}` : singleLine(folder.name)} (Dropbox-ID: ${singleLine(folder.id)})`
         : 'nicht verknüpft'
+    const moduleText = module?.folder?.id && module.module_id ? `\nModul-ID: ${singleLine(module.module_id)}` : ''
 
-    return `Arbeit: ${workTitle || 'Ohne Titel'} (ID: ${props.work.id})\nKurs: ${courseTitle || 'Ohne Bezeichnung'} (ID: ${props.course.id})\nDatum: ${date}\nOrdner: ${folderText}`
+    return `Arbeit: ${workTitle || 'Ohne Titel'} (ID: ${props.work.id})\nKurs: ${courseTitle || 'Ohne Bezeichnung'} (ID: ${props.course.id})\nDatum: ${date}\nOrdner: ${folderText}${moduleText}`
 })
 
 async function loadFolder() {
@@ -81,14 +83,14 @@ async function loadFolder() {
         const currentKey = key.value
         const state = await loadWorkDropbox(currentKey, props.work.id)
         if (sequence !== current) return
-        if (state?.folder?.id && !state.folder.path) {
+        if (!state?.module_link?.folder?.id && state?.folder?.id && !state.folder.path) {
             try {
                 const response = await axios.get(show.url(props.work.id), { params: { include_folder_path: 1 } })
-                if (sequence === current && response.data.folder?.id === state.folder.id) {
+                if (sequence === current && folderState.value === state && response.data.folder?.id === state.folder.id) {
                     workDropboxStates.set(currentKey, response.data)
                 }
             } catch {
-                if (sequence === current) message.value = 'Ordnerpfad nicht verfügbar; Ordnername und Dropbox-ID werden kopiert.'
+                if (sequence === current && folderState.value === state) message.value = 'Ordnerpfad nicht verfügbar; Ordnername und Dropbox-ID werden kopiert.'
             }
         }
     } catch {
@@ -122,6 +124,11 @@ async function copyContext() {
 }
 
 watch(() => [key.value, props.course?.id, props.date], loadFolder, { immediate: true })
+watch(folderState, state => {
+    message.value = ''
+    manualCopy.value = false
+    if (state && isCurrentWork.value) loadError.value = false
+})
 </script>
 
 <style scoped>

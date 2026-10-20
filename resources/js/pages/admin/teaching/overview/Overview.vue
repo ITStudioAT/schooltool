@@ -1088,10 +1088,6 @@ export default {
     height: auto !important;
 }
 
-[data-testid="teaching-overview-panel-works"] :deep(.mdi-brain) {
-    color: rgb(var(--v-theme-error));
-}
-
 .teaching-overview-toolbar-btn {
     text-transform: none;
     letter-spacing: 0;
