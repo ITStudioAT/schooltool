@@ -6779,7 +6779,7 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    max-width: 74px;
+    max-width: 100%;
     min-width: 0;
 }
 

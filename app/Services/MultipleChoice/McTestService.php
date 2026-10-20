@@ -359,8 +359,9 @@ class McTestService
             if ($test->start_mode !== 'individual') {
                 throw ValidationException::withMessages(['test' => 'Persönliche Schlussfristen sind nur beim selbstständigen Start möglich.']);
             }
-            $values = ['closes_at' => $closing];
-            $until = $closing === null ? $test->closes_at : CarbonImmutable::parse($closing);
+            $deadline = $closing === null ? null : CarbonImmutable::parse($closing)->setTimezone(config('app.timezone'));
+            $values = ['closes_at' => $deadline];
+            $until = $deadline ?? $test->closes_at;
             if ($locked->started_at === null && $locked->completion_reason === 'timeout' && $until?->isFuture()) {
                 $values += ['completed_at' => null, 'completion_reason' => null];
             }

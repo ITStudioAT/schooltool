@@ -9,6 +9,7 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McTestService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -490,6 +491,31 @@ test('personal closing exceptions leave other students and already elapsed durat
     expect($reopened->started_at->equalTo($originalStart))->toBeTrue();
     expect($reopened->effectiveDeadline($test)->equalTo(now()->addSeconds(120)))->toBeTrue();
 });
+
+test('personal closing exceptions preserve their instant with a UTC database session', function (string $closing, string $expected): void {
+    $this->travelTo(CarbonImmutable::parse('2026-01-15T08:00:00+01:00'));
+    $timezone = DB::selectOne('SELECT @@session.time_zone AS timezone')->timezone;
+
+    try {
+        DB::statement("SET SESSION time_zone = '+00:00'");
+        [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+        $test = $service->publish($test, [$student->id]);
+        $attempt = $test->attempts()->sole();
+        $changed = $service->changeClosingDeadline($attempt, $closing);
+
+        expect($changed->closes_at->format('Y-m-d H:i:s'))->toBe($expected);
+        expect($changed->closes_at->equalTo($closing))->toBeTrue();
+        expect($changed->completed_at)->toBeNull();
+        expect($test->fresh()->closes_at->equalTo($test->closes_at))->toBeTrue();
+    } finally {
+        DB::statement('SET SESSION time_zone = ?', [$timezone]);
+    }
+})->with([
+    'Vienna winter' => ['2026-01-15T11:00:00+01:00', '2026-01-15 11:00:00'],
+    'UTC winter' => ['2026-01-15T10:00:00Z', '2026-01-15 11:00:00'],
+    'Vienna summer' => ['2026-07-15T11:00:00+02:00', '2026-07-15 11:00:00'],
+    'UTC summer' => ['2026-07-15T09:00:00Z', '2026-07-15 11:00:00'],
+]);
 
 test('unstarted individual assignments expire at closing and a teacher exception can allow their first start', function () {
     $this->freezeSecond();
