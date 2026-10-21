@@ -13,11 +13,14 @@ use App\Models\User;
 use App\Services\DropboxWorkImport;
 use App\Services\FeaturePreviewService;
 use App\Services\MultipleChoice\McAttemptActivityService;
+use App\Services\MultipleChoice\McCatalogTemplateSync;
 use App\Services\MultipleChoice\McImportService;
 use App\Services\MultipleChoice\McModuleTemplateSource;
+use App\Services\MultipleChoice\McQuestionSummary;
 use App\Services\MultipleChoice\McQuestionValidator;
 use App\Services\MultipleChoice\McTestExchange;
 use App\Services\MultipleChoice\McTestFolder;
+use App\Services\MultipleChoice\McTestFolderImport;
 use App\Services\MultipleChoice\McTestService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -37,7 +40,7 @@ class MultipleChoiceController extends Controller
     {
         $this->authorizeOwned($test);
 
-        return response()->json($folders->status($test, $this->teacher()));
+        return response()->json($folders->status($test, $this->teacher(), true))->header('Cache-Control', 'private, no-store');
     }
 
     public function folderStore(Request $request, McTest $test, McTestFolder $folders): JsonResponse
@@ -155,7 +158,7 @@ class MultipleChoiceController extends Controller
 
         return response()->json([
             'available' => true,
-            'catalogs' => McCatalog::query()->where('school_id', $user->school_id)->where('owner_id', $user->id)->with('tests:id,catalog_id')->orderBy('title')->get()->map(fn (McCatalog $catalog): array => [...$catalog->withoutRelations()->toArray(), 'test_ids' => $catalog->tests->modelKeys()]),
+            'catalogs' => McCatalog::query()->where('school_id', $user->school_id)->where('owner_id', $user->id)->with('tests:id,catalog_id')->orderBy('title')->get()->map(fn (McCatalog $catalog): array => [...app(McCatalogTemplateSync::class)->payload($catalog), 'test_ids' => $catalog->tests->modelKeys()]),
             'tests' => McTest::query()->where('school_id', $user->school_id)->where('owner_id', $user->id)->whereNotNull('schoolyear_id')->where('schoolyear_id', $user->schoolyear_id)->withCount('attempts')->latest('id')->get(),
             'unassigned_tests' => McTest::query()->where('school_id', $user->school_id)->where('owner_id', $user->id)->whereNull('schoolyear_id')->withCount('attempts')->latest('id')->get(),
             'schoolyear' => Schoolyear::query()->where('school_id', $user->school_id)->find($user->schoolyear_id, ['id', 'name', 'from', 'until']),
@@ -206,6 +209,50 @@ class MultipleChoiceController extends Controller
         return response()->json($preview);
     }
 
+    public function templateSyncPreview(Request $request, McCatalog $catalog, McCatalogTemplateSync $sync): JsonResponse
+    {
+        $this->authorizeOwned($catalog);
+        $data = $request->validate(['title' => ['sometimes', 'string', 'max:255'], 'questions' => ['sometimes', 'array', 'max:2000'],
+            'expected_version' => ['required_with:title,questions', 'string', 'size:64']]);
+
+        return response()->json($sync->serialize($catalog, function () use ($sync, $catalog, $data): array {
+            $catalog->refresh();
+
+            return $sync->preview($this->teacher(), $catalog, $data);
+        }))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function templateSyncApply(Request $request, McCatalog $catalog, McCatalogTemplateSync $sync): JsonResponse
+    {
+        $this->authorizeOwned($catalog);
+        $data = $request->validate(['token' => ['required', 'string', 'max:8192']]);
+
+        return response()->json($sync->apply($this->teacher(), $catalog, $data['token']))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function disconnectTemplate(Request $request, McCatalog $catalog, McCatalogTemplateSync $sync): JsonResponse
+    {
+        $this->authorizeOwned($catalog);
+        $data = $request->validate(['recovery_token' => ['sometimes', 'string', 'max:8192']]);
+
+        return response()->json($sync->disconnect($this->teacher(), $catalog, $data['recovery_token'] ?? null))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function questionSummaryPreview(McCatalog $catalog, McQuestionSummary $summaries): JsonResponse
+    {
+        $this->authorizeOwned($catalog);
+
+        return response()->json($summaries->preview($this->teacher(), $catalog))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function questionSummaryApply(Request $request, McCatalog $catalog, McQuestionSummary $summaries): JsonResponse
+    {
+        $this->authorizeOwned($catalog);
+        $data = $request->validate(['token' => ['required', 'string', 'max:8192']]);
+
+        return response()->json($summaries->apply($this->teacher(), $catalog, $data['token']))->header('Cache-Control', 'private, no-store');
+    }
+
     public function rosterPreview(Request $request): JsonResponse
     {
         $user = $this->teacher();
@@ -237,13 +284,40 @@ class MultipleChoiceController extends Controller
         return response()->json($this->imports->rosterPreview($data['csv'], (int) $user->school_id));
     }
 
+    public function testFolderFolders(Request $request, McTestFolderImport $folders): JsonResponse
+    {
+        $user = $this->teacher();
+        $data = $request->validate(['folder_id' => ['nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
+            'cursor' => ['nullable', 'string', 'max:16384']]);
+
+        return response()->json($folders->folders($user, $data['folder_id'] ?? '', $data['cursor'] ?? null))
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function testFolderPreview(Request $request, McTestFolderImport $folders): JsonResponse
+    {
+        $user = $this->teacher();
+        $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/']]);
+
+        return response()->json($folders->preview($user, $data['folder_id']))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function testFolderResolve(Request $request, McTestFolderImport $folders): JsonResponse
+    {
+        $user = $this->teacher();
+        $data = $request->validate(['filename' => ['required', 'string', 'in:handshake.json'],
+            'handshake' => ['required', 'string', 'max:4096']]);
+
+        return response()->json($folders->resolve($user, $data['handshake']))->header('Cache-Control', 'private, no-store');
+    }
+
     public function createTest(Request $request): JsonResponse
     {
         $user = $this->teacher();
         $data = $request->validate([
             'catalog_id' => ['required', 'integer'],
             'title' => ['required', 'string', 'max:255'],
-            'question_count' => ['required', 'integer', 'min:1', 'max:2000'],
+            'question_count' => ['required', 'integer', 'in:10'],
             'total_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'exam_mode' => ['sometimes', 'boolean'],
             'start_mode' => ['sometimes', 'in:common,individual'],
@@ -254,6 +328,7 @@ class MultipleChoiceController extends Controller
             'shuffle_questions' => ['required', 'boolean'],
             'shuffle_options' => ['required', 'boolean'],
             'roster_csv' => ['required', 'string', 'max:1048576'],
+            'test_folder_proof' => ['sometimes', 'nullable', 'string', 'max:8192'],
         ]);
         $catalog = McCatalog::query()->findOrFail($data['catalog_id']);
         $this->authorizeOwned($catalog);
@@ -275,7 +350,11 @@ class MultipleChoiceController extends Controller
             $studentIds[] = (int) $row['user_id'];
         }
 
-        $test = DB::transaction(function () use ($data, $catalog, $user, $studentIds, $schoolyear): McTest {
+        $folderImporter = app(McTestFolderImport::class);
+        $folderProof = isset($data['test_folder_proof'])
+            ? $folderImporter->verify($user, $data['test_folder_proof'], $data['roster_csv']) : null;
+        $folderBinding = null;
+        $test = DB::transaction(function () use ($data, $catalog, $user, $studentIds, $schoolyear, $folderImporter, $folderProof, &$folderBinding): McTest {
             $test = McTest::query()->create([
                 'school_id' => $user->school_id,
                 'schoolyear_id' => $schoolyear->id,
@@ -287,7 +366,8 @@ class MultipleChoiceController extends Controller
                 'total_points' => $data['total_points'],
                 'exam_mode' => $data['exam_mode'] ?? false,
                 'start_mode' => $data['start_mode'] ?? 'common',
-                'closes_at' => ($data['start_mode'] ?? 'common') === 'individual' ? $data['closes_at'] : null,
+                'closes_at' => ($data['start_mode'] ?? 'common') === 'individual'
+                    ? CarbonImmutable::parse($data['closes_at'])->setTimezone(config('app.timezone')) : null,
                 'duration_seconds' => $data['duration_seconds'],
                 'lead_seconds' => $data['lead_seconds'],
                 'balance_types' => $data['balance_types'],
@@ -295,35 +375,53 @@ class MultipleChoiceController extends Controller
                 'shuffle_options' => $data['shuffle_options'],
             ]);
 
-            return $this->tests->publish($test, $studentIds);
+            $test = $this->tests->prepare($test, $studentIds);
+            if ($folderProof !== null) {
+                $folderBinding = $folderImporter->bind($test, $user, $folderProof);
+            }
+
+            return $test;
         });
 
+        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test), 'folder_binding' => $folderBinding], 201);
+    }
+
+    public function publishTest(McTest $test): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        abort_unless($test->snapshot !== null && $test->attempts()->exists(), 422, 'Bitte zuerst den Test mit Teilnehmern erstellen.');
+        $test = $this->tests->publish($test, []);
         if ($test->start_mode === 'individual') {
             FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->closes_at)->afterCommit();
         }
 
-        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test)], 201);
+        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test)]);
     }
 
     public function deleteCatalog(Request $request, McCatalog $catalog): JsonResponse
     {
         $this->authorizeOwned($catalog);
         $data = $request->validate(['test_ids' => ['present', 'array'], 'test_ids.*' => ['required', 'integer', 'distinct']]);
-        DB::transaction(function () use ($catalog, $data): void {
-            $locked = McCatalog::query()->lockForUpdate()->findOrFail($catalog->id);
-            $tests = $locked->tests()->orderBy('id')->lockForUpdate()->get();
-            $expected = array_map('intval', $data['test_ids']);
-            sort($expected);
-            if ($tests->modelKeys() !== $expected) {
-                throw ValidationException::withMessages(['catalog' => ['Die Testliste hat sich geändert. Bitte schließen Sie den Dialog, aktualisieren Sie die Übersicht und prüfen Sie die Löschung erneut.']]);
-            }
-            foreach ($tests as $test) {
-                $this->authorizeOwned($test);
-                $test->attempts()->delete();
-                $test->delete();
-            }
-            $locked->delete();
-        }, 3);
+        $sync = app(McCatalogTemplateSync::class);
+        $sync->serialize($catalog, function () use ($catalog, $data, $sync): void {
+            $catalog->refresh();
+            $sync->assertEditable($catalog, $sync->version($catalog));
+            DB::transaction(function () use ($catalog, $data): void {
+                $locked = McCatalog::query()->lockForUpdate()->findOrFail($catalog->id);
+                $tests = $locked->tests()->orderBy('id')->lockForUpdate()->get();
+                $expected = array_map('intval', $data['test_ids']);
+                sort($expected);
+                if ($tests->modelKeys() !== $expected) {
+                    throw ValidationException::withMessages(['catalog' => ['Die Testliste hat sich geändert. Bitte schließen Sie den Dialog, aktualisieren Sie die Übersicht und prüfen Sie die Löschung erneut.']]);
+                }
+                foreach ($tests as $test) {
+                    $this->authorizeOwned($test);
+                    $test->attempts()->delete();
+                    $test->delete();
+                }
+                $locked->delete();
+            }, 3);
+        });
 
         return response()->json(['deleted' => true]);
     }
@@ -501,7 +599,7 @@ class MultipleChoiceController extends Controller
     {
         $this->authorizeOwned($test);
 
-        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test), 'can_edit_settings' => $test->paused_at === null && $test->starts_at === null && ! $test->attempts()->where(fn ($query) => $query->whereNotNull('started_at')->orWhereNotNull('completed_at'))->exists(), 'question_pool_count' => count($test->snapshot['questions'] ?? []), 'can_reopen_attempts' => Schema::hasColumns('mc_attempts', ['reopened_until', 'reopen_history']), 'server_now' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
+        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test), 'can_edit_settings' => $test->status === 'published' && $test->paused_at === null && $test->starts_at === null && ! $test->attempts()->where(fn ($query) => $query->whereNotNull('started_at')->orWhereNotNull('completed_at'))->exists(), 'question_pool_count' => count($test->snapshot['questions'] ?? []), 'can_reopen_attempts' => Schema::hasColumns('mc_attempts', ['reopened_until', 'reopen_history']), 'server_now' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
     }
 
     public function countdown(Request $request, McTest $test): JsonResponse
@@ -713,6 +811,21 @@ class MultipleChoiceController extends Controller
 
     private function saveCatalog(Request $request, McCatalog $catalog): JsonResponse
     {
+        $sync = app(McCatalogTemplateSync::class);
+        $request->validate(['expected_version' => ['sometimes', 'nullable', 'string', 'size:64']]);
+
+        return $sync->serialize($catalog, function () use ($request, $catalog, $sync): JsonResponse {
+            if ($catalog->exists) {
+                $catalog->refresh();
+                $sync->assertEditable($catalog, $request->input('expected_version'));
+            }
+
+            return $this->saveCatalogContents($request, $catalog);
+        });
+    }
+
+    private function saveCatalogContents(Request $request, McCatalog $catalog): JsonResponse
+    {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'questions' => ['present', 'array', 'max:2000'],
@@ -733,6 +846,7 @@ class MultipleChoiceController extends Controller
         ]);
         $created = ! $catalog->exists;
         if (($data['module_source_proofs'] ?? []) !== []) {
+            app(McCatalogTemplateSync::class)->assertCanImport($catalog);
             abort_unless(Schema::hasColumn('mc_catalogs', 'module_sources'), 409, 'Die lokale Migration für Modulquellen wurde noch nicht ausgeführt.');
             $sources = $catalog->module_sources ?? [];
             foreach ($data['module_source_proofs'] as $proof) {
@@ -742,7 +856,7 @@ class MultipleChoiceController extends Controller
         }
         $catalog->fill(['title' => trim($data['title']), 'questions' => $data['questions']])->save();
 
-        return response()->json(['catalog' => $catalog, 'errors' => $this->questions->errors($data['questions']), 'warnings' => []], $created ? 201 : 200);
+        return response()->json(['catalog' => app(McCatalogTemplateSync::class)->payload($catalog), 'errors' => $this->questions->errors($data['questions']), 'warnings' => []], $created ? 201 : 200);
     }
 
     private function teacher(): User
@@ -817,7 +931,7 @@ class MultipleChoiceController extends Controller
                 ];
             }, $questions);
 
-            return [...$attempt->toArray(), 'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null, 'effective_ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(), 'access_url' => $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null, 'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
+            return [...$attempt->toArray(), 'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null, 'effective_ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(), 'access_url' => $test->status === 'published' && $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null, 'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
         })->all();
     }
 }

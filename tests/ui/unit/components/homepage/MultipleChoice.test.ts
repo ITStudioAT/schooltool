@@ -420,6 +420,7 @@ it('shows an explicit individual start without starting on load or refresh and t
     await flushPromises()
     expect(wrapper.text()).toContain('Du bestimmst den Start.')
     expect(wrapper.text()).toContain('Spätestes Testende:')
+    expect(wrapper.text()).toContain('11:00')
     expect(wrapper.find('input').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(2100)
     expect(axios.post).not.toHaveBeenCalled()

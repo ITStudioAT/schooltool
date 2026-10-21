@@ -16,19 +16,21 @@
                     <div
                         class="admin-dashboard-page__health-icon"
                         :class="{
-                            'admin-dashboard-page__health-icon--healthy': health_loaded && healthStore.is_healthy,
-                            'admin-dashboard-page__health-icon--error': health_loaded && !healthStore.is_healthy,
+                            'admin-dashboard-page__health-icon--healthy': dashboardStatus.state === 'healthy',
+                            'admin-dashboard-page__health-icon--error': dashboardStatus.state === 'error',
                         }">
+                        <v-progress-circular v-if="dashboardStatus.state === 'loading'" indeterminate :size="18" :width="2" aria-label="Status wird geprüft" />
                         <v-icon
-                            :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-check' : 'mdi-alert-outline') : 'mdi-progress-clock'"
+                            v-else
+                            :icon="dashboardStatus.state === 'healthy' ? 'mdi-check' : 'mdi-alert-outline'"
                             size="18" />
                     </div>
                     <div>
                         <div class="admin-dashboard-page__health-title">
-                            {{ !health_loaded ? 'Status wird geprüft' : healthStore.is_healthy ? 'Alles in Ordnung' : 'Prüfung erforderlich' }}
+                            {{ dashboardStatus.title }}
                         </div>
                         <div class="admin-dashboard-page__health-detail">
-                            {{ !health_loaded ? 'Scheduler und Worker werden geprüft' : healthStore.is_healthy ? 'Scheduler und Worker laufen' : 'Mindestens ein Dienst antwortet nicht' }}
+                            {{ dashboardStatus.detail }}
                         </div>
                     </div>
                 </div>
@@ -230,7 +232,7 @@
                     </v-card>
                 </div>
 
-                <ConnectionStatusCard v-if="config?.is_auth && isAllowed(['super_admin'])" :key="config?.user?.id" />
+                <ConnectionStatusCard v-if="config?.is_auth && isAllowed(['super_admin'])" :key="config?.user?.id" @status-change="connections_status = $event" />
 
                 <section class="admin-dashboard-page__licences" aria-labelledby="licences-heading">
                 <div class="admin-dashboard-page__licence-heading">
@@ -539,6 +541,7 @@ export default {
             health_loaded: false,
             health_loading: false,
             health_poll_interval: null,
+            connections_status: { loading: true, hasError: false },
             queue_test_running: false,
             queue_test_visible: false,
             diagnostics_visible: false,
@@ -572,6 +575,22 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'health']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
+        dashboardStatus() {
+            const includesConnections = this.config?.is_auth && this.config?.user?.roles?.includes('super_admin')
+            if (!this.health_loaded || this.health_loading || (includesConnections && this.connections_status.loading)) {
+                return { state: 'loading', title: 'Status wird geprüft', detail: includesConnections
+                    ? 'System und Verbindungen werden geprüft' : 'Scheduler und Worker werden geprüft' }
+            }
+            if (this.healthStore?.is_healthy !== true) {
+                return { state: 'error', title: 'Prüfung erforderlich', detail: this.healthStore?.is_healthy === false
+                    ? 'Scheduler oder Worker antwortet nicht · Diagnose verfügbar' : 'Systemstatus konnte nicht geladen werden' }
+            }
+            if (includesConnections && this.connections_status.hasError) {
+                return { state: 'error', title: 'Prüfung erforderlich', detail: 'Verbindungsprüfung fehlgeschlagen · Details unten' }
+            }
+            return { state: 'healthy', title: includesConnections ? 'Prüfung abgeschlossen' : 'Alles in Ordnung',
+                detail: includesConnections ? 'System geprüft · Verbindungsdetails unten' : 'Scheduler und Worker laufen' }
+        },
         appVersion() {
             return this.config?.version || this.config?.environment_versions?.app || 'x.x.x'
         },

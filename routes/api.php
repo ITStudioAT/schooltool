@@ -255,9 +255,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/catalogs', [MultipleChoiceController::class, 'createCatalog'])->name('catalogs.create');
         Route::patch('/catalogs/{catalog}', [MultipleChoiceController::class, 'updateCatalog'])->name('catalogs.update');
         Route::delete('/catalogs/{catalog}', [MultipleChoiceController::class, 'deleteCatalog'])->name('catalogs.delete');
+        Route::post('/catalogs/{catalog}/sync-preview', [MultipleChoiceController::class, 'templateSyncPreview'])->middleware('throttle:10,1')->name('catalogs.sync-preview');
+        Route::post('/catalogs/{catalog}/sync-apply', [MultipleChoiceController::class, 'templateSyncApply'])->name('catalogs.sync-apply');
+        Route::delete('/catalogs/{catalog}/template-connection', [MultipleChoiceController::class, 'disconnectTemplate'])->name('catalogs.template-disconnect');
+        Route::post('/catalogs/{catalog}/question-summary-preview', [MultipleChoiceController::class, 'questionSummaryPreview'])->middleware('throttle:10,1')->name('catalogs.question-summary-preview');
+        Route::post('/catalogs/{catalog}/question-summary-apply', [MultipleChoiceController::class, 'questionSummaryApply'])->name('catalogs.question-summary-apply');
         Route::post('/import-preview', [MultipleChoiceController::class, 'previewImport'])->middleware('throttle:10,1')->name('import-preview');
         Route::post('/roster-preview', [MultipleChoiceController::class, 'rosterPreview'])->name('roster-preview');
+        Route::get('/test-folder/folders', [MultipleChoiceController::class, 'testFolderFolders'])->middleware('throttle:60,1')->name('test-folder.folders');
+        Route::post('/test-folder/preview', [MultipleChoiceController::class, 'testFolderPreview'])->middleware('throttle:10,1')->name('test-folder.preview');
+        Route::post('/test-folder/resolve', [MultipleChoiceController::class, 'testFolderResolve'])->middleware('throttle:10,1')->name('test-folder.resolve');
         Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
+        Route::post('/tests/{test}/publish', [MultipleChoiceController::class, 'publishTest'])->name('tests.publish');
         Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
         Route::get('/tests/{test}/exercise-export', [MultipleChoiceController::class, 'exportExercise'])->name('tests.exercise-export');
         Route::get('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStatus'])->name('tests.folder.status');

@@ -9,6 +9,9 @@
         </section>
         <v-alert v-if="error" type="error" variant="tonal" class="mb-3" role="alert">{{ error }}</v-alert>
         <v-alert v-if="notice" type="success" variant="tonal" class="mb-3" role="status">{{ notice }}</v-alert>
+        <v-alert v-if="templateSyncWarnings.length" type="warning" variant="tonal" class="mb-3" role="status">
+            <ul><li v-for="(warning, index) in templateSyncWarnings" :key="index">{{ warning }}</li></ul>
+        </v-alert>
         <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3"
             aria-label="Multiple Choice wird geladen" />
         <v-alert v-if="!available" type="info" variant="tonal"
@@ -93,17 +96,41 @@
                             <v-spacer />
                             <v-btn v-if="!editingQuestions" color="primary" variant="outlined" prepend-icon="mdi-pencil-outline"
                                 :disabled="!!busy" @click="editingQuestions = true">Bearbeiten</v-btn>
+                            <v-btn v-if="catalog.template_connection && !showImport" color="primary" variant="outlined"
+                                prepend-icon="mdi-sync" :loading="busy === 'sync-preview'"
+                                :disabled="!!busy || catalog.template_connection.status === 'ambiguous'"
+                                @click="previewTemplateSync">Vorlage synchronisieren</v-btn>
                             <v-btn v-if="catalog.id" variant="text" color="error" :disabled="!!busy" @click="openDeletion('catalog', catalog)">Katalog löschen</v-btn>
                         </div>
                         <div class="mc-toolbar mt-4">
                             <p class="text-body-2">{{ catalog.questions.length }} Fragen · {{ catalogReadyCount }} aktiv
                                 und geprüft</p>
                             <v-spacer />
-                            <v-btn v-if="editingQuestions && !showImport" :variant="!catalog.questions.length ? 'flat' : 'text'"
+                            <v-btn v-if="editingQuestions && !showImport && !catalog.template_connection" :variant="!catalog.questions.length ? 'flat' : 'text'"
                                 :color="!catalog.questions.length ? 'primary' : undefined" prepend-icon="mdi-file-import-outline"
                                 @click="navigateTo('import')">Vorlage importieren</v-btn>
                             <v-btn v-if="editingQuestions && !showImport" variant="outlined" prepend-icon="mdi-plus"
                                 @click="catalog.questions.push(newQuestion())">Frage hinzufügen</v-btn>
+                        </div>
+                        <div v-if="catalog.template_connection" class="mc-template-connection mt-4" aria-label="Verbundene Fragenvorlage">
+                            <div class="mc-toolbar">
+                                <div>
+                                    <strong>{{ catalog.template_connection.status === 'connected' ? 'Vorlage verbunden' : 'Vorlage noch nicht bestätigt' }}</strong>
+                                    <p class="text-caption text-medium-emphasis">{{ catalog.template_connection.status === 'connected'
+                                        ? 'Schooltool und Dropbox verwenden diese Vorlage beim manuellen Abgleich.'
+                                        : catalog.template_connection.status === 'ambiguous'
+                                            ? 'Mehrere frühere Vorlagen kommen infrage. Bitte die Verbindung lösen und die gewünschte Vorlage erneut importieren.'
+                                            : 'Die frühere Importquelle wird beim ersten Abgleich online geprüft und bestätigt.' }}</p>
+                                </div>
+                                <v-spacer />
+                                <v-btn v-if="catalog.template_connection.status === 'connected'" size="small" variant="outlined"
+                                    prepend-icon="mdi-text-box-check-outline" :loading="busy === 'summary-preview'"
+                                    :disabled="!!busy || editingQuestions" @click="previewQuestionSummary">Question Summary</v-btn>
+                                <v-btn size="small" variant="text" :disabled="!!busy" @click="disconnectRecoveryToken = null; disconnectTemplateDialog = true">Verbindung auflösen</v-btn>
+                            </div>
+                            <p class="text-body-2 mt-2">Pfad der Fragenvorlage:</p>
+                            <p class="mc-source-path text-caption">{{ catalog.template_connection.source_path || 'Pfad nicht eindeutig' }}</p>
+                            <p v-if="catalog.template_connection.message" class="text-caption mt-2">{{ catalog.template_connection.message }}</p>
                         </div>
                         <p v-if="editingQuestions || showImport" class="text-caption text-medium-emphasis mt-2">Mit dem Übernehmen oder Speichern bestätigst du deine
                             importierten oder bearbeiteten vollständigen Fragen für neue Tests. Unvollständige Fragen bleiben Entwürfe.</p>
@@ -161,8 +188,8 @@
                             </div>
                         </div>
                         <QuestionEditor v-model:questions="catalog.questions" :readonly="!editingQuestions" />
-                        <div v-for="source in catalog.module_sources ?? []" :key="`${source.source_file_id}:${source.source_revision}`"
-                            class="text-caption text-medium-emphasis mt-2 mc-source-path">Modulquelle: {{ source.source_path }} · Modul-ID: {{ source.module_id }}</div>
+                        <div v-if="!catalog.template_connection" v-for="source in catalog.module_sources ?? []" :key="`${source.source_file_id}:${source.source_revision}`"
+                            class="text-caption text-medium-emphasis mt-2 mc-source-path">Früher importiert aus: {{ source.source_path }} · Modul-ID: {{ source.module_id }}</div>
                     </v-card-text>
                     <v-card-actions class="mc-catalog-actions pa-4 pt-0 justify-end flex-wrap ga-2">
                         <v-btn v-if="editingQuestions" variant="text" :disabled="!!busy" @click="cancelQuestionEditing">Bearbeitung abbrechen</v-btn>
@@ -202,7 +229,7 @@
                                         :aria-label="`Test umbenennen: ${item.title}`" title="Test umbenennen" @click="openTestRename(item)" />
                                 </div>
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ item.question_count }} Fragen · {{ item.total_points }} Punkte · {{ Math.round(item.duration_seconds / 60) }} Minuten</p>
-                                <p class="text-caption text-medium-emphasis mt-1">{{ item.start_mode === 'individual' ? `Selbstständiger Start · Schlussfrist: ${dateLabel(item.closes_at)}` : item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
+                                <p class="text-caption text-medium-emphasis mt-1">{{ item.status === 'draft' ? 'Erstellt · noch nicht freigegeben' : item.start_mode === 'individual' ? `Selbstständiger Start · Schlussfrist: ${dateLabel(item.closes_at)}` : item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
                             </v-card-text>
                             <v-card-actions class="mc-test-card-actions pa-4 pt-0">
                                 <v-btn color="primary" variant="text" append-icon="mdi-arrow-right" :disabled="!!busy"
@@ -220,21 +247,22 @@
                     <v-card-text class="pt-2">
                         <p class="text-body-2 mb-3">Fragenkatalog: <strong>{{ catalog.title }}</strong></p>
                         <div class="mb-4">
-                            <v-btn variant="outlined" prepend-icon="mdi-folder-open-outline" :loading="testFolderReading"
-                                :disabled="!!busy || testFolderReading" @click="chooseTestFolder">Aus Testordner übernehmen</v-btn>
-                            <input ref="testFolderInput" type="file" webkitdirectory multiple hidden aria-label="Testordner auswählen" @change="readTestFolderFiles">
-                            <p class="text-caption text-medium-emphasis mt-2">Optional: Testname aus dem Ordnernamen und Schüler aus den gespeicherten Schooltool-Arbeitsdaten übernehmen. Alle Angaben bleiben bearbeitbar.</p>
+                            <template v-if="!testFolderProof">
+                            <v-btn variant="outlined" prepend-icon="mdi-file-link-outline" :loading="testFolderReading"
+                                :disabled="!!busy || testFolderReading" @click="chooseTestFolder">Test mit Dropbox-Ordner verknüpfen</v-btn>
+                            <p class="text-caption text-medium-emphasis mt-2">Wähle die handshake.json aus dem Testordner. Schooltool übernimmt die online geprüften Teilnehmer und speichert die Verbindung beim Erstellen.</p>
+                            </template>
                             <v-alert v-if="testFolderError" type="error" variant="tonal" class="mt-2">{{ testFolderError }}</v-alert>
-                            <v-alert v-if="testFolderInfo" type="info" variant="tonal" class="mt-2">
-                                Übernommen aus „{{ testFolderInfo.directory }}“: {{ testFolderInfo.work_title }} · {{ testFolderInfo.course_title }}<span v-if="testFolderInfo.scheduled_date"> · {{ testFolderInfo.scheduled_date }}</span>.
-                                Bitte prüfe die Testeinstellungen und die Schülerzuordnung unten.
-                            </v-alert>
+                            <v-alert v-if="testFolderWarning" type="warning" variant="tonal" class="mt-2">{{ testFolderWarning }}</v-alert>
+                            <div v-if="testFolderProof && testFolderInfo" class="mt-2">
+                                <span class="mc-source-path d-block">{{ testFolderInfo.path }}</span>
+                                <v-btn variant="text" :disabled="!!busy" @click="disconnectDraftFolder">Verknüpfung aufheben</v-btn>
+                            </div>
                         </div>
                         <div class="mc-form-grid">
                             <v-text-field v-model="testDraft.title" label="Testbezeichnung" variant="outlined" density="compact" class="mc-test-title"
                                 hide-details />
-                            <v-text-field v-model.number="testDraft.question_count" type="number" min="1"
-                                :max="selectedCatalogReadyCount || undefined" label="Fragen pro Schüler"
+                            <v-text-field :model-value="10" readonly label="Fragen pro Schüler"
                                 variant="outlined" density="compact" hide-details />
                             <v-text-field v-model.number="testDraft.total_points" type="number" min="0.01" step="0.01"
                                 label="Erreichbare Gesamtpunkte" variant="outlined" density="compact" hide-details />
@@ -278,6 +306,8 @@
                             Gesamtpunktzahl.<span v-if="testDraft.balance_types"> Der Anteil beider Antworttypen folgt
                                 dem Katalog und bleibt pro Person möglichst gleich.</span>
                         </v-alert>
+                        <v-alert v-if="selectedCatalogReadyCount < 10" type="warning" variant="tonal" class="mt-3">Für die Erstellung sind mindestens zehn aktive, geprüfte Fragen erforderlich. Im Katalog sind {{ selectedCatalogReadyCount }} vorhanden.</v-alert>
+                        <template v-if="!testFolderProof">
                         <h3 class="mt-4 mb-1">Schülerliste prüfen</h3>
                         <p class="text-body-2 mb-2">CSV mit Vorname, Nachname, E-Mail, Kurs und Klasse. Die gesamte
                             Liste wird mit bestehenden Schülerkonten abgeglichen. Unklare Zuordnungen müssen zuerst
@@ -290,7 +320,7 @@
                             label-tap-to-retry="Erneut versuchen" label-tap-to-cancel="Abbrechen"
                             label-button-remove-item="Datei entfernen" @updatefiles="readRosterFiles" />
                         <v-alert v-if="rosterFileError" type="error" variant="tonal" class="mt-3" role="alert">{{ rosterFileError }}</v-alert>
-                        <p v-if="rosterFileName" class="text-caption text-medium-emphasis mt-2">Ausgewählt: {{ rosterFileName }}</p>
+                        <p v-if="rosterFileName" class="text-caption text-medium-emphasis mt-2">{{ testFolderProof ? 'Online geprüft: ' : 'Ausgewählt: ' }}{{ rosterFileName }}</p>
                         <details class="mc-more mt-2">
                             <summary>CSV als Text einfügen oder bearbeiten</summary>
                             <label class="mc-native-field mt-3">
@@ -334,15 +364,14 @@
                                 </table>
                             </div>
                         </div>
-                        <p class="text-caption text-medium-emphasis mt-3">Mit der Freigabe werden Fragen, Lösungen und
-                            persönliche Zuteilungen fest gespeichert. Der Test wartet danach auf deinen gemeinsamen
-                            Start. Es wird noch keine E-Mail versandt.</p>
+                        </template>
+                        <p class="text-caption text-medium-emphasis mt-3">Beim Erstellen werden jeder Person zehn zufällig ausgewählte Fragen dauerhaft zugeordnet. Die Freigabe erfolgt anschließend separat. Es wird keine E-Mail versandt.</p>
                     </v-card-text>
                     <v-card-actions class="pa-4 pt-0">
                         <v-btn variant="text" :disabled="!!busy" @click="cancelNewTest">Abbrechen</v-btn>
                         <v-spacer />
                         <v-btn color="primary" variant="flat" :disabled="!canPublish || !!busy"
-                            :loading="busy === 'publish'" @click="publishDialog = true">Test freigeben</v-btn>
+                            :loading="busy === 'publish'" @click="publishDialog = true">Test erstellen</v-btn>
                     </v-card-actions>
                 </v-card>
             </section>
@@ -392,14 +421,19 @@
                                 <span>zugewiesen</span>
                             </div>
                         </div>
-                        <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">Selbstständiger Start · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
+                        <v-alert v-if="selectedTest.status === 'draft'" type="warning" variant="tonal" class="mt-4" role="status">
+                            <strong>Noch nicht freigegeben</strong>
+                            <p>Die Fragen sind pro Person gespeichert. Schüler können diesen Test erst nach der separaten Freigabe öffnen.</p>
+                        </v-alert>
+                        <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">{{ selectedTest.status === 'draft' ? 'Nach Freigabe: selbstständiger Start' : 'Selbstständiger Start' }} · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
                         <p v-else-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
                             {{ dateLabel(selectedTest.starts_at) }} · Ende: {{ dateLabel(selectedTest.ends_at) }}</p>
                         <div v-if="section === 'tests'" v-show="['control', 'access'].includes(testPane)" class="mc-control-grid mc-control-grid--single mt-5">
                             <section v-show="testPane === 'control'" class="mc-control-section" aria-label="Prüfung steuern">
                                 <h3>Prüfung steuern</h3>
                                 <div class="mc-toolbar mt-3">
-                                    <v-btn v-if="selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
+                                    <v-btn v-if="selectedTest.status === 'draft'" color="primary" variant="flat" :loading="busy === 'publish'" :disabled="!!busy" @click="releaseTestDialog = true">Test freigeben</v-btn>
+                                    <v-btn v-if="selectedTest.status !== 'draft' && selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
                                         :loading="busy === 'countdown'" :disabled="!!busy" @click="startDialog = true">Countdown starten ({{ selectedTest.lead_seconds }} s)</v-btn>
                                     <v-btn v-if="selectedTest.paused_at" color="primary" variant="flat" prepend-icon="mdi-play" :disabled="!!busy" @click="setTestPause(false)">Test fortsetzen</v-btn>
                                     <v-btn v-else-if="canPauseTest" variant="outlined" prepend-icon="mdi-pause" :disabled="!!busy" @click="setTestPause(true)">Alle pausieren</v-btn>
@@ -477,11 +511,12 @@
                                                 <div class="text-caption text-medium-emphasis">{{ attempt.email }}</div>
                                             </td>
                                             <td class="mc-access-cell">
+                                                <v-btn variant="text" size="small" prepend-icon="mdi-eye-outline" :aria-label="`Gespeicherte Fragen von ${attempt.student_name} ansehen`" @click="questionPreviewId = attempt.id">Fragenvorschau</v-btn>
                                                 <v-btn v-if="attempt.access_url" :href="attempt.access_url" target="_blank" rel="noopener noreferrer"
                                                     icon="mdi-open-in-new" size="small" variant="tonal" color="primary"
                                                     :aria-label="`Persönlichen Test von ${attempt.student_name} öffnen`" title="Persönlichen Testzugang öffnen" />
                                                 <v-btn v-if="attempt.access_url" icon="mdi-content-copy" size="small" variant="text" color="primary" :aria-label="`Zugangslink von ${attempt.student_name} kopieren`" title="Zugangslink kopieren" @click="copyAccessLink(attempt)" />
-                                                <span v-else>—</span>
+                                                <span v-else class="text-caption">{{ selectedTest.status === 'draft' ? 'Schülerzugang noch gesperrt' : '—' }}</span>
                                             </td>
                                             <td>{{ statusLabel(attempt.status) }}
                                                 <div v-if="selectedTest.start_mode === 'individual'" class="text-caption text-medium-emphasis">
@@ -535,6 +570,163 @@
             </section>
         </template>
 
+        <v-dialog v-model="templateSyncDialog" persistent max-width="760" scrollable>
+            <v-card v-if="templateSyncPreview" aria-label="Vorschau der Vorlagensynchronisierung">
+                <v-card-title>Vorlage synchronisieren</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 mb-2">Vorlage: <span class="mc-source-path">{{ templateSyncPreview.source_path }}</span></p>
+                    <p class="text-body-2 mb-4">Der Abgleich startet erst mit deiner Bestätigung. Änderungen in beiden Richtungen sind hier aufgeführt.</p>
+                    <v-alert v-if="templateSyncPreview.resuming" type="warning" variant="tonal" class="mb-3">
+                        Ein unterbrochener Abgleich wird fortgesetzt. Prüfe diese Vorschau erneut, bevor du ihn abschließt.
+                    </v-alert>
+                    <v-alert v-if="templateSyncPreview.initial_connection" type="info" variant="tonal" class="mb-3">
+                        Beim ersten Abgleich wird die bisherige Importquelle fest verbunden. Die Markdown-Datei wird dafür mit technischen Fragenkennungen neu gespeichert.
+                    </v-alert>
+                    <div v-for="direction in templateSyncDirections" :key="direction.title" class="mc-sync-direction mb-4">
+                        <h3>{{ direction.title }}</h3>
+                        <p v-if="!syncChangeCount(direction.changes)" class="text-body-2 text-medium-emphasis mt-1">Keine Änderungen.</p>
+                        <ul v-else class="mc-sync-changes mt-2">
+                            <li v-for="change in direction.changes.added ?? []" :key="`add-${change.id}`">
+                                <strong>Neu: {{ change.prompt }}</strong>
+                                <div v-if="change.after" class="mc-sync-answer-detail">
+                                    <p>{{ syncQuestionType(change.after) }}</p>
+                                    <ul><li v-for="option in change.after.options ?? []" :key="option.id">
+                                        <strong>{{ change.after.correct_option_ids?.includes(option.id) ? 'Richtig' : 'Falsch' }}:</strong> {{ option.text }}
+                                    </li></ul>
+                                </div>
+                            </li>
+                            <li v-for="change in direction.changes.modified ?? []" :key="`modify-${change.id}`">
+                                <strong>Geändert: {{ change.prompt }}</strong>
+                                <div v-if="change.before && change.after" class="mc-sync-compare">
+                                    <div v-for="version in [{ label: 'Bisher', question: change.before }, { label: 'Nach dem Abgleich', question: change.after }]" :key="version.label" class="mc-sync-answer-detail">
+                                        <h4>{{ version.label }}</h4>
+                                        <p>{{ version.question.prompt }} · {{ syncQuestionType(version.question) }}</p>
+                                        <ul><li v-for="option in version.question.options ?? []" :key="option.id">
+                                            <strong>{{ version.question.correct_option_ids?.includes(option.id) ? 'Richtig' : 'Falsch' }}:</strong> {{ option.text }}
+                                        </li></ul>
+                                    </div>
+                                </div>
+                            </li>
+                            <li v-for="change in direction.changes.removed ?? []" :key="`remove-${change.id}`">
+                                <strong>Entfernt: {{ change.prompt }}</strong>
+                                <div v-if="change.before" class="mc-sync-answer-detail">
+                                    <p>{{ syncQuestionType(change.before) }}</p>
+                                    <ul><li v-for="option in change.before.options ?? []" :key="option.id">
+                                        <strong>{{ change.before.correct_option_ids?.includes(option.id) ? 'Richtig' : 'Falsch' }}:</strong> {{ option.text }}
+                                    </li></ul>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                    <v-alert v-for="(warning, index) in templateSyncPreview.warnings ?? []" :key="`sync-warning-${index}`"
+                        type="warning" variant="tonal" class="mb-3">{{ warning }}</v-alert>
+                    <v-alert v-if="templateSyncPreview.conflicts?.length" type="warning" variant="tonal" role="alert">
+                        <strong>Konflikte verhindern den Abgleich:</strong>
+                        <ul class="mt-2"><li v-for="(conflict, index) in templateSyncPreview.conflicts" :key="index">{{ conflict }}</li></ul>
+                    </v-alert>
+                    <p v-else-if="!templateSyncPreview.can_apply" class="text-body-2 text-medium-emphasis">Derzeit ist keine Übernahme nötig.</p>
+                    <v-alert v-if="error" type="error" variant="tonal" role="alert" class="mt-3">{{ error }}</v-alert>
+                </v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="!!busy" @click="closeTemplateSync">Schließen</v-btn>
+                    <v-spacer />
+                    <v-btn v-if="templateSyncPreview.can_disconnect && templateSyncPreview.recovery_token" color="error" variant="outlined"
+                        :disabled="!!busy" @click="openRecoveryDisconnect">Abgleich beenden und Verbindung lösen</v-btn>
+                    <v-btn v-if="templateSyncPreview.can_apply && templateSyncPreview.token" color="primary" variant="flat"
+                        :loading="busy === 'sync-apply'" :disabled="!!busy || !!error" @click="applyTemplateSync">Abgleich bestätigen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="questionSummaryDialog" persistent max-width="760" scrollable>
+            <v-card v-if="questionSummaryPreview" aria-label="Vorschau der Question Summary">
+                <v-card-title>Question Summary</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 mb-3">Dropbox-Datei: <span class="mc-source-path">{{ questionSummaryPreview.path }}</span></p>
+                    <v-alert type="info" variant="tonal" class="mb-3">
+                        {{ questionSummaryPreview.action === 'create' ? 'Die Zusammenfassung wird neu angelegt.'
+                            : questionSummaryPreview.action === 'update' ? 'Die vorhandene Zusammenfassung wird aktualisiert.'
+                                : 'Die Zusammenfassung ist bereits aktuell.' }}
+                    </v-alert>
+                    <p class="text-body-2 mb-3">{{ questionSummaryPreview.question_count }} Fragen · {{ questionSummaryPreview.incomplete_count }} unvollständig</p>
+                    <v-alert v-if="questionSummaryPreview.incomplete_count" type="warning" variant="tonal" class="mb-3">
+                        Unvollständige Fragen sind in der Datei ausdrücklich gekennzeichnet.
+                    </v-alert>
+                    <v-alert v-if="questionSummaryPreview.warning" type="warning" variant="tonal" class="mb-3">{{ questionSummaryPreview.warning }}</v-alert>
+                    <div v-if="questionSummaryStructured" class="mc-summary-preview" role="list" aria-label="Fragen und richtige Antworten">
+                        <div v-for="row in questionSummaryPreview.rows" :key="row.number" class="mc-summary-question" role="listitem">
+                            <div class="text-caption text-medium-emphasis">{{ row.number }} · {{ row.type }}<span v-if="!row.active"> · Inaktiv</span></div>
+                            <div class="font-weight-bold mc-summary-text">{{ row.prompt }}</div>
+                            <p v-if="row.incomplete" class="text-warning mt-1">Unvollständige Frage</p>
+                            <div class="text-caption mt-2">Richtige Antworten</div>
+                            <ul v-if="row.answers?.length" class="mt-1">
+                                <li v-for="(answer, position) in row.answers" :key="position" class="mc-summary-text">{{ answer }}</li>
+                            </ul>
+                            <p v-else class="text-body-2 text-medium-emphasis mt-1">Keine richtige Antwort hinterlegt.</p>
+                        </div>
+                        <p v-if="!questionSummaryPreview.rows.length" class="text-body-2">Keine Fragen im Katalog.</p>
+                    </div>
+                    <v-alert v-else type="error" variant="tonal">Die lesbare Vorschau fehlt. Bitte die Question Summary erneut öffnen.</v-alert>
+                    <v-alert v-if="error" type="error" variant="tonal" role="alert" class="mt-3">{{ error }}</v-alert>
+                </v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="!!busy" @click="closeQuestionSummary">Schließen</v-btn>
+                    <v-spacer />
+                    <v-btn v-if="questionSummaryPreview.can_apply && questionSummaryPreview.token" color="primary" variant="flat"
+                        :loading="busy === 'summary-apply'" :disabled="!!busy || !!error || !questionSummaryStructured" @click="applyQuestionSummary">In Dropbox speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="disconnectTemplateDialog" persistent max-width="520">
+            <v-card>
+                <v-card-title>Vorlagenverbindung auflösen?</v-card-title>
+                <v-card-text>
+                    <p v-if="disconnectRecoveryToken">Der unterbrochene Abgleich wird beendet und nur die lokale Verbindung gelöst. Katalogfragen und Dropbox-Datei bleiben erhalten, können aber unterschiedliche Stände haben. Prüfe beide, bevor du erneut importierst.</p>
+                    <p v-else>Der Fragenkatalog und die Dropbox-Vorlage bleiben erhalten. Danach kannst du eine Vorlage erneut importieren.</p>
+                    <p class="mc-source-path text-body-2 mt-3">{{ catalog.template_connection?.source_path }}</p>
+                    <v-alert v-if="error" type="error" variant="tonal" role="alert" class="mt-3">{{ error }}</v-alert>
+                </v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="!!busy" @click="cancelTemplateDisconnect">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="error" variant="outlined" :loading="busy === 'sync-disconnect'" :disabled="!!busy"
+                        @click="disconnectTemplate">{{ disconnectRecoveryToken ? 'Abgleich beenden und Verbindung lösen' : 'Verbindung auflösen' }}</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="testFolderDialog" persistent max-width="720" scrollable>
+            <v-card aria-label="Dropbox-Testordner zuordnen">
+                <v-card-title>Testordner zuordnen</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 mb-3">Ziehe die handshake.json des Testordners hierher oder wähle die Datei mit einem Klick aus.</p>
+                    <FilePond v-if="testFolderDialog" :key="testFolderPondKey" name="mc-test-handshake" :allow-multiple="false" :max-files="1"
+                        :instant-upload="false" :allow-process="false" :allow-revert="false" :allow-replace="true"
+                        :allow-paste="false" :server="null" :credits="false" :disabled="testFolderReading"
+                        :before-add-file="acceptTestFolderFile" :accepted-file-types="['application/json']"
+                        :file-validate-type-detect-type="detectTestFolderFileType"
+                        label-file-type-not-allowed="Zulässig ist ausschließlich die Datei handshake.json."
+                        label-idle="handshake.json hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span>"
+                        label-button-remove-item="Datei entfernen" @updatefiles="selectTestFolderFiles" />
+                    <p class="text-caption text-medium-emphasis">Nur die kleine Handshake-Datei wird gelesen. Schooltool prüft den Testordner und die Schülerdaten im verbundenen Dropbox-Konto.</p>
+                    <v-progress-linear v-if="testFolderReading" indeterminate color="primary" class="mt-3" aria-label="Dropbox-Testordner wird geprüft" />
+                    <v-alert v-if="testFolderError" type="error" variant="tonal" role="alert" class="mt-3">{{ testFolderError }}</v-alert>
+                    <div v-if="testFolderPreview" class="mt-4">
+                        <v-alert type="info" variant="tonal">Testordner online bestätigt. Prüfe die Angaben, bevor du sie übernimmst.</v-alert>
+                        <div class="text-subtitle-2 mt-3">Gefundener Dropbox-Testordner</div>
+                        <div class="mc-source-path" data-testid="test-folder-path">{{ testFolderPreview.path }}</div>
+                        <div class="text-body-2 mt-2">Testname: <strong>{{ testFolderPreview.directory }}</strong></div>
+                        <div class="text-body-2">{{ testFolderPreview.source?.work_title }} · {{ testFolderPreview.source?.course_title }}</div>
+                        <div class="text-body-2">{{ testFolderPreview.rows?.length ?? 0 }} Schüler in der Vorschau</div>
+                        <v-alert v-for="(item, position) in testFolderPreview.errors ?? []" :key="position" type="error" variant="tonal" class="mt-2">{{ messageText(item) }}</v-alert>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="testFolderReading" @click="closeTestFolderDialog">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" :disabled="!testFolderPreview?.folder_proof || testFolderReading"
+                        @click="useTestFolder">Für diesen Test vormerken</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog v-model="folderDialog" max-width="860" scrollable>
             <MultipleChoiceTestFolder v-if="folderDialog && selectedTest" :key="selectedTest.id" :test="selectedTest"
                 :user="folderUser" @close="folderDialog = false" @changed="refreshMonitor" />
@@ -601,7 +793,7 @@
                     <fieldset class="mc-settings-fields" :disabled="!canEditTestSettings || !!busy">
                         <v-text-field v-model="settingsDraft.title" label="Testbezeichnung" variant="outlined" :disabled="!canEditTestSettings || !!busy" maxlength="255" />
                         <div class="mc-form-grid">
-                            <v-text-field v-model.number="settingsDraft.question_count" type="number" label="Anzahl der Fragen" :min="1" :max="settingsPoolCount" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
+                            <v-text-field v-model.number="settingsDraft.question_count" type="number" label="Anzahl der Fragen" :min="1" :max="settingsPoolCount" variant="outlined" :disabled="!canEditTestSettings || !!busy || selectedTest?.snapshot?.assignments_locked" />
                             <v-text-field v-model.number="settingsDraft.total_points" type="number" label="Gesamtpunkte" min="0.01" step="0.01" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
                             <v-text-field v-model.number="settingsDraft.duration_minutes" type="number" label="Bearbeitungszeit in Minuten" min="1" max="1440" step="0.1" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
                         </div>
@@ -621,9 +813,9 @@
                         </button>
                         <v-text-field v-else v-model.number="settingsDraft.lead_seconds" type="number" label="Countdown in Sekunden" min="0" max="86400" variant="outlined" :disabled="!canEditTestSettings || !!busy" />
                         <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.exam_mode"> Prüfungsmodus mit Vollbild und Protokoll</label>
-                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.balance_types"> Fragentypen ausgewogen verteilen</label>
-                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_questions"> Fragen mischen</label>
-                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_options"> Antwortmöglichkeiten mischen</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.balance_types" :disabled="selectedTest?.snapshot?.assignments_locked"> Fragentypen ausgewogen verteilen</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_questions" :disabled="selectedTest?.snapshot?.assignments_locked"> Fragen mischen</label>
+                        <label class="mc-setting-check"><input type="checkbox" v-model="settingsDraft.shuffle_options" :disabled="selectedTest?.snapshot?.assignments_locked"> Antwortmöglichkeiten mischen</label>
                     </fieldset>
                     <v-alert v-if="settingsError" type="error" class="mt-3">{{ settingsError }}</v-alert>
                 </v-card-text>
@@ -638,7 +830,9 @@
                         <v-date-picker v-model="deadlinePickerDate" :min="deadlinePickerMinimum" color="primary" hide-header :first-day-of-week="1" aria-label="Datum der Schlussfrist" />
                         <v-text-field v-model="deadlinePickerTime" type="time" step="60" label="Uhrzeit der Schlussfrist" variant="outlined" hide-details class="mt-3" />
                         <p class="text-body-2 mt-3" aria-live="polite">{{ deadlinePickerValue ? dateLabel(deadlinePickerValue) : 'Bitte Datum und Uhrzeit wählen.' }}</p>
-                        <p v-if="deadlinePickerValue && !deadlinePickerValid" class="text-body-2 text-error mt-2">Die Schlussfrist muss in der Zukunft liegen.</p>
+                        <p class="text-caption mt-2">Alle Uhrzeiten gelten für Wien.</p>
+                        <p v-if="deadlinePickerValue && !viennaDateTimeIso(deadlinePickerValue)" class="text-body-2 text-error mt-2">Diese Uhrzeit gibt es in Wien wegen der Zeitumstellung nicht. Bitte wähle eine gültige Uhrzeit.</p>
+                        <p v-else-if="deadlinePickerValue && !deadlinePickerValid" class="text-body-2 text-error mt-2">Die Schlussfrist muss in der Zukunft liegen.</p>
                     </v-card-text>
                     <v-card-actions><v-btn type="button" @click="deadlinePickerTarget = null">Abbrechen</v-btn><v-spacer /><v-btn type="submit" color="primary" variant="flat" :disabled="!deadlinePickerValid">OK</v-btn></v-card-actions>
                 </form>
@@ -765,9 +959,23 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+        <v-dialog :model-value="!!questionPreview" max-width="850" scrollable @update:model-value="questionPreviewId = null">
+            <v-card v-if="questionPreview">
+                <v-card-title>Gespeicherte Fragen · {{ questionPreview.student_name }}</v-card-title>
+                <v-card-text>
+                    <p class="mb-4">Schreibgeschützte Lehrervorschau · {{ questionPreview.questions?.length ?? 0 }} fest zugeordnete Fragen. Der Versuch wird weder gestartet noch verändert.</p>
+                    <article v-for="(question, position) in questionPreview.questions ?? []" :key="question.id" class="mb-4 pa-4 border rounded-lg" aria-label="Gespeicherte Frage">
+                        <h3 class="text-subtitle-1 font-weight-bold">{{ position + 1 }}. {{ question.prompt }}</h3>
+                        <p class="text-caption mt-1">{{ question.type === 'multiple' ? 'Mehrfachauswahl' : 'Einfachauswahl' }}</p>
+                        <ul class="mt-2 ml-5"><li v-for="option in question.options ?? []" :key="option.id">{{ option.text }}</li></ul>
+                    </article>
+                </v-card-text>
+                <v-card-actions><v-spacer /><v-btn @click="questionPreviewId = null">Schließen</v-btn></v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog v-model="publishDialog" max-width="560">
             <v-card>
-                <v-card-title>Test freigeben?</v-card-title>
+                <v-card-title>Test erstellen?</v-card-title>
                 <v-card-text>
                     <h3 class="mb-3">{{ testDraft.title }}</h3>
                     <dl class="mc-publish-summary">
@@ -778,13 +986,24 @@
                         <dt>Start</dt><dd>{{ testDraft.start_mode === 'individual' ? 'Selbstständig, einmal pro Person' : `Countdown: ${testDraft.lead_seconds} Sekunden` }}</dd>
                         <template v-if="testDraft.start_mode === 'individual'"><dt>Schlussfrist für alle</dt><dd>{{ dateLabel(testDraft.closes_at) }}</dd></template>
                     </dl>
-                    <p class="mt-4">Die persönliche Zuteilung bleibt danach unverändert. {{ testDraft.start_mode === 'individual' ? 'Die Personen können bis zur Schlussfrist selbst starten.' : 'Den Countdown startest du separat.' }} E-Mails werden noch nicht versandt.</p>
+                    <p class="mt-4">Die zehn Fragen pro Person werden jetzt zufällig ausgewählt und gespeichert. Der Test bleibt bis zur separaten Freigabe für Schüler gesperrt. E-Mails werden nicht versandt.</p>
                 </v-card-text>
                 <v-card-actions>
                     <v-btn @click="publishDialog = false">Zurück</v-btn>
                     <v-spacer />
                     <v-btn color="primary" :loading="busy === 'publish'" :disabled="!!busy || !canPublish"
-                        @click="publishTest">Test freigeben</v-btn>
+                        @click="publishTest">Test erstellen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="releaseTestDialog" max-width="520">
+            <v-card>
+                <v-card-title>Test freigeben?</v-card-title>
+                <v-card-text>Die gespeicherten Fragen bleiben erhalten. {{ selectedTest?.start_mode === 'individual' ? 'Danach können die Teilnehmer selbst starten.' : 'Danach öffnet sich der Warteraum. Den Countdown startest du separat.' }}</v-card-text>
+                <v-card-actions>
+                    <v-btn @click="releaseTestDialog = false">Zurück</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" :disabled="!!busy" :loading="busy === 'publish'" @click="releaseCreatedTest">Test freigeben</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -871,7 +1090,9 @@ import {
     updateCatalog,
     previewImport,
     rosterPreview,
+    testFolderResolve,
     createTest,
+    publishTest as publishCreatedTest,
     showTest,
     exportExercise,
     renameTest,
@@ -902,7 +1123,9 @@ import {
     questionProblems,
     readyQuestions,
     requestError,
-    statusLabel
+    statusLabel,
+    viennaDateTime,
+    viennaDateTimeIso
 } from './multipleChoiceTeacher'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
@@ -959,6 +1182,18 @@ const newCatalogTitleError = computed(() => {
     return newCatalogTitle.value.trim().length > 255 ? 'Die Bezeichnung darf höchstens 255 Zeichen lang sein.' : ''
 })
 const showImport = ref(false)
+const templateSyncDialog = ref(false)
+const templateSyncPreview = ref(null)
+const templateSyncWarnings = ref([])
+const questionSummaryDialog = ref(false)
+const questionSummaryPreview = ref(null)
+const questionSummaryStructured = computed(() => Array.isArray(questionSummaryPreview.value?.rows))
+const disconnectTemplateDialog = ref(false)
+const disconnectRecoveryToken = ref(null)
+const templateSyncDirections = computed(() => templateSyncPreview.value ? [
+    { title: 'In Schooltool übernehmen', changes: templateSyncPreview.value.catalog_changes ?? {} },
+    { title: 'In Dropbox übernehmen', changes: templateSyncPreview.value.source_changes ?? {} },
+] : [])
 const importText = ref('')
 const moduleImport = ref(null)
 const moduleHandshake = ref(null)
@@ -984,11 +1219,16 @@ const rosterFileError = ref('')
 let rosterSourceFile = null
 let rosterReadSequence = 0
 const roster = ref(null)
-const testFolderInput = ref(null)
+const testFolderDialog = ref(false)
+const testFolderPondKey = ref(0)
+const testFolderPreview = ref(null)
 const testFolderReading = ref(false)
 const testFolderError = ref('')
+const testFolderWarning = ref('')
 const testFolderInfo = ref(null)
+const testFolderProof = ref('')
 let testFolderReadSequence = 0
+let testFolderAbortController = null
 const startModes = [
     { value: 'common', title: 'Gemeinsam starten', description: 'Die Lehrkraft startet den Countdown.' },
     { value: 'individual', title: 'Selbstständig starten', description: 'Jede Person startet ihre eigene Bearbeitungszeit.' },
@@ -1070,8 +1310,8 @@ const deadlinePickerValue = computed(() => {
     const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return `${day}T${deadlinePickerTime.value}`
 })
-const deadlinePickerValid = computed(() => Boolean(deadlinePickerValue.value && Date.parse(deadlinePickerValue.value) > serverNow.value))
-const validDeadline = computed(() => Number.isFinite(Date.parse(deadlineDraft.value)) && Date.parse(deadlineDraft.value) > serverNow.value)
+const deadlinePickerValid = computed(() => Date.parse(viennaDateTimeIso(deadlinePickerValue.value)) > serverNow.value)
+const validDeadline = computed(() => Date.parse(viennaDateTimeIso(deadlineDraft.value)) > serverNow.value)
 const remainingMinutes = ref(0)
 const remainingSeconds = ref(0)
 const remainingTimeValue = computed(() => Number(remainingMinutes.value) * 60 + Number(remainingSeconds.value))
@@ -1084,6 +1324,9 @@ const publishDialog = ref(false)
 const startDialog = ref(false)
 const mailDialog = ref(false)
 const releaseMode = ref(null)
+const releaseTestDialog = ref(false)
+const questionPreviewId = ref(null)
+const questionPreview = computed(() => attempts.value.find(attempt => attempt.id === questionPreviewId.value) ?? null)
 const revokeMode = ref(null)
 const serverOffset = ref(0)
 const now = ref(Date.now())
@@ -1121,7 +1364,7 @@ const nextStepHint = computed(() => {
         return 'Sieh dir die Ergebnisse dieses Tests an und gib Punkte oder Lösungen bewusst für die Schüler frei.'
     }
     if (preparingTest.value) {
-        return testDraft.start_mode === 'individual' ? 'Lege Bearbeitungsdauer und Schlussfrist fest und prüfe die Schülerliste. Nach der Freigabe kann jede Person selbst starten.' : 'Lege Umfang und Zeit für diesen Katalog fest und prüfe die Schülerliste. Mit der Freigabe öffnet sich der Warteraum.'
+        return 'Lege die Testeinstellungen fest. Beim Erstellen werden zehn Fragen pro Person gespeichert. Die Freigabe erfolgt separat.'
     }
     if (!selectedTestId.value) {
         return 'Öffne einen Test dieses Katalogs oder bereite einen neuen Test vor. Die Ergebnisse findest du im jeweiligen Test.'
@@ -1145,11 +1388,11 @@ const nextStepHint = computed(() => {
 const selectedCatalogReadyCount = computed(() => readyQuestions(catalogs.value.find((item) => item.id === testDraft
     .catalog_id)?.questions ?? []).length)
 const rosterMatchedCount = computed(() => (roster.value?.rows ?? []).filter((row) => row.status === 'matched').length)
-const canPublish = computed(() => Boolean(!testFolderReading.value && testDraft.title.trim() && testDraft.catalog_id && Number.isInteger(Number(
-        testDraft.question_count)) && testDraft.question_count > 0 && testDraft.question_count <=
+const canPublish = computed(() => Boolean(!testFolderReading.value && (!testFolderInfo.value || testFolderProof.value) && testDraft.title.trim() && testDraft.catalog_id && Number.isInteger(Number(
+        testDraft.question_count)) && testDraft.question_count === 10 && testDraft.question_count <=
     selectedCatalogReadyCount.value && Number(testDraft.total_points) > 0 && Number(testDraft
     .duration_minutes) >= 1 && Number.isInteger(Number(testDraft.lead_seconds)) && Number(testDraft
-        .lead_seconds) >= 0 && (testDraft.start_mode !== 'individual' || (Number.isFinite(Date.parse(testDraft.closes_at)) && Date.parse(testDraft.closes_at) > serverNow.value)) && roster.value?.valid && rosterMatchedCount.value > 0))
+        .lead_seconds) >= 0 && (testDraft.start_mode !== 'individual' || Date.parse(viennaDateTimeIso(testDraft.closes_at)) > serverNow.value) && roster.value?.valid && rosterMatchedCount.value > 0))
 const unsentInvitationCount = computed(() => availableInvitationRecipients.value.filter((recipient) => selectedInvitationIds.value.includes(recipient.attempt_id)).length)
 const serverNow = computed(() => selectedTest.value?.paused_at ? Date.parse(selectedTest.value.paused_at) : now.value + serverOffset.value)
 const testEnded = computed(() => selectedTest.value?.start_mode === 'individual'
@@ -1157,6 +1400,7 @@ const testEnded = computed(() => selectedTest.value?.start_mode === 'individual'
     : Boolean(selectedTest.value?.ends_at && Date.parse(selectedTest.value.ends_at) <= serverNow.value))
 const testPhase = computed(() => {
     const test = selectedTest.value
+    if (test?.status === 'draft') return { label: 'Erstellt · noch nicht freigegeben', color: 'info' }
     if (test?.paused_at) return { label: 'Test pausiert', color: 'warning' }
     if (test?.start_mode === 'individual') {
         return { label: testEnded.value ? 'Bearbeitungszeit beendet' : 'Selbstständiger Start möglich', color: testEnded.value ? 'secondary' : 'success' }
@@ -1203,7 +1447,10 @@ onMounted(() => {
 })
 watch(() => route.fullPath, () => {
     testFolderReadSequence++
+    testFolderAbortController?.abort()
     testFolderReading.value = false
+    testFolderDialog.value = false
+    testFolderPreview.value = null
     if (indexLoaded && route.path === workspacePath) {
         restoreLocation()
     }
@@ -1213,6 +1460,7 @@ onBeforeRouteLeave(guardCatalogNavigation)
 onBeforeUnmount(() => {
     importReadSequence++
     testFolderReadSequence++
+    testFolderAbortController?.abort()
     disposed = true
     window.clearInterval(pollInterval)
     window.clearInterval(tickInterval)
@@ -1324,6 +1572,7 @@ function navigationLocation(view, catalogId = catalog.value.id, testId = selecte
 function navigateTo(view, catalogId = catalog.value.id, testId = selectedTestId.value, attemptId = null) {
     error.value = ''
     notice.value = ''
+    templateSyncWarnings.value = []
     return router.push(navigationLocation(view, catalogId, testId, attemptId))
 }
 
@@ -1429,6 +1678,13 @@ function loadCatalog(id) {
         catalogEditing.value = true
         showImport.value = false
         importPreview.value = null
+        templateSyncDialog.value = false
+        templateSyncPreview.value = null
+        templateSyncWarnings.value = []
+        questionSummaryDialog.value = false
+        questionSummaryPreview.value = null
+        disconnectTemplateDialog.value = false
+        disconnectRecoveryToken.value = null
         resetImportSource()
         error.value = ''
         notice.value = ''
@@ -1448,6 +1704,7 @@ function leaveCatalog() {
 }
 
 function clearSelectedTest() {
+    questionPreviewId.value = null
     selectedTestId.value = null
     selectedTest.value = null
     canEditTestSettings.value = false
@@ -1481,7 +1738,7 @@ function prepareCatalogTest() {
 function initializeTestDraft() {
     const previousCatalogId = testDraft.catalog_id
     testDraft.catalog_id = catalog.value.id
-    testDraft.question_count = Math.min(Number(testDraft.question_count) || 10, catalogReadyCount.value)
+    testDraft.question_count = 10
     if (previousCatalogId !== catalog.value.id || !testDraft.title.trim()) {
         testDraft.title = `${catalog.value.title} – Test`
     }
@@ -1493,9 +1750,14 @@ function cancelNewTest() {
     }
     Object.assign(testDraft, defaultTestDraft)
     testFolderReadSequence++
+    testFolderAbortController?.abort()
+    testFolderDialog.value = false
+    testFolderPreview.value = null
     testFolderReading.value = false
     testFolderError.value = ''
+    testFolderWarning.value = ''
     testFolderInfo.value = null
+    testFolderProof.value = ''
     editRosterCsv()
     rosterCsv.value = ''
     publishDialog.value = false
@@ -1550,6 +1812,7 @@ async function saveCatalogTitle() {
         const { data } = await axios.patch(updateCatalog.url(saved.id), {
             title: catalogTitleDraft.value.trim(),
             questions: saved.questions,
+            ...(saved.template_version != null ? { expected_version: saved.template_version } : {}),
         })
         rememberCatalog(data.catalog)
         catalog.value.title = data.catalog.title
@@ -1559,9 +1822,11 @@ async function saveCatalogTitle() {
 }
 
 async function persistCatalog(questions = catalog.value.questions, sourceProofs = []) {
-    const savedQuestions = catalogs.value.find((item) => item.id === catalog.value.id)?.questions ?? []
+    const savedCatalog = catalogs.value.find((item) => item.id === catalog.value.id)
+    const savedQuestions = savedCatalog?.questions ?? []
     const payload = {
         title: catalog.value.title,
+        ...(savedCatalog?.template_version != null ? { expected_version: savedCatalog.template_version } : {}),
         questions: questions.map((question) => {
             const saved = savedQuestions.find((item) => item.id === question.id)
             const changed = !saved || JSON.stringify(saved) !== JSON.stringify(question)
@@ -1590,6 +1855,129 @@ async function persistCatalog(questions = catalog.value.questions, sourceProofs 
 
 async function saveCatalog() {
     await task('catalog', () => persistCatalog())
+}
+
+function catalogTemplateUrl(action) {
+    return `${index.url().replace(/\/$/, '')}/catalogs/${encodeURIComponent(String(catalog.value.id))}/${action}`
+}
+
+function syncChangeCount(changes) {
+    return ['added', 'modified', 'removed'].reduce((total, key) => total + (changes?.[key]?.length ?? 0), 0)
+}
+
+function syncQuestionType(question) {
+    return question?.type === 'multiple' ? 'Mehrfachauswahl' : 'Einfachauswahl'
+}
+
+async function previewTemplateSync() {
+    if (!catalog.value.id || !catalog.value.template_connection || catalog.value.template_connection.status === 'ambiguous') return
+    const catalogId = catalog.value.id
+    templateSyncWarnings.value = []
+    const expectedVersion = catalogs.value.find((item) => item.id === catalogId)?.template_version
+    if (!expectedVersion) {
+        error.value = 'Der Katalogstand ist nicht verfügbar. Bitte die Seite aktualisieren und erneut vergleichen.'
+        return
+    }
+    templateSyncPreview.value = null
+    templateSyncDialog.value = false
+    await task('sync-preview', async () => {
+        const { data } = await axios.post(catalogTemplateUrl('sync-preview'), {
+            expected_version: expectedVersion,
+            title: catalog.value.title,
+            questions: catalog.value.questions,
+        })
+        if (String(catalog.value.id) !== String(catalogId)) return
+        templateSyncPreview.value = data
+        templateSyncDialog.value = true
+    })
+}
+
+function closeTemplateSync() {
+    if (busy.value) return
+    templateSyncDialog.value = false
+    templateSyncPreview.value = null
+}
+
+async function applyTemplateSync() {
+    const token = templateSyncPreview.value?.token
+    if (!templateSyncPreview.value?.can_apply || !token || !catalog.value.id) return
+    await task('sync-apply', async () => {
+        const { data } = await axios.post(catalogTemplateUrl('sync-apply'), { token })
+        if (!data.catalog || !Array.isArray(data.catalog.questions)) {
+            throw new Error('Der Abgleich wurde nicht bestätigt. Bitte den Katalog neu laden und den Stand prüfen.')
+        }
+        catalog.value = JSON.parse(JSON.stringify(data.catalog))
+        rememberCatalog(data.catalog)
+        editingQuestions.value = false
+        templateSyncDialog.value = false
+        templateSyncPreview.value = null
+        templateSyncWarnings.value = data.warnings ?? []
+        notice.value = data.message || 'Vorlage und Fragenkatalog wurden synchronisiert.'
+    })
+}
+
+async function previewQuestionSummary() {
+    if (!catalog.value.id || catalog.value.template_connection?.status !== 'connected' || editingQuestions.value) return
+    const catalogId = catalog.value.id
+    questionSummaryPreview.value = null
+    questionSummaryDialog.value = false
+    await task('summary-preview', async () => {
+        const { data } = await axios.post(catalogTemplateUrl('question-summary-preview'))
+        if (String(catalog.value.id) !== String(catalogId)) return
+        questionSummaryPreview.value = data
+        questionSummaryDialog.value = true
+    })
+}
+
+function closeQuestionSummary() {
+    if (busy.value) return
+    questionSummaryDialog.value = false
+    questionSummaryPreview.value = null
+}
+
+async function applyQuestionSummary() {
+    const token = questionSummaryPreview.value?.token
+    if (!questionSummaryPreview.value?.can_apply || !token || !catalog.value.id) return
+    await task('summary-apply', async () => {
+        const { data } = await axios.post(catalogTemplateUrl('question-summary-apply'), { token })
+        if (!data.path || !data.revision) {
+            throw new Error('Das Speichern wurde nicht eindeutig bestätigt. Bitte die Dropbox-Datei prüfen und die Vorschau neu öffnen.')
+        }
+        questionSummaryDialog.value = false
+        questionSummaryPreview.value = null
+        notice.value = data.message || 'Die Question Summary wurde in Dropbox gespeichert.'
+    })
+}
+
+function openRecoveryDisconnect() {
+    disconnectRecoveryToken.value = templateSyncPreview.value?.recovery_token ?? null
+    if (!disconnectRecoveryToken.value) return
+    templateSyncDialog.value = false
+    disconnectTemplateDialog.value = true
+}
+
+function cancelTemplateDisconnect() {
+    disconnectTemplateDialog.value = false
+    disconnectRecoveryToken.value = null
+}
+
+async function disconnectTemplate() {
+    if (!catalog.value.id || !catalog.value.template_connection) return
+    await task('sync-disconnect', async () => {
+        const recoveryToken = disconnectRecoveryToken.value
+        const { data } = recoveryToken
+            ? await axios.delete(catalogTemplateUrl('template-connection'), { data: { recovery_token: recoveryToken } })
+            : await axios.delete(catalogTemplateUrl('template-connection'))
+        if (!data.catalog || !Array.isArray(data.catalog.questions)) {
+            throw new Error('Das Auflösen der Verbindung wurde nicht bestätigt. Bitte den Katalog neu laden und den Stand prüfen.')
+        }
+        catalog.value = JSON.parse(JSON.stringify(data.catalog))
+        rememberCatalog(data.catalog)
+        editingQuestions.value = false
+        disconnectTemplateDialog.value = false
+        disconnectRecoveryToken.value = null
+        notice.value = 'Die Vorlagenverbindung wurde aufgelöst. Fragen und Quelldatei sind erhalten.'
+    })
 }
 
 function resetImportSource() {
@@ -1765,97 +2153,124 @@ async function adoptImport() {
     })
 }
 
-async function chooseTestFolder() {
-    if (typeof window.showDirectoryPicker !== 'function') {
-        testFolderInput.value?.click()
-        return
-    }
-    const sequence = ++testFolderReadSequence
-    testFolderReading.value = true
+
+function chooseTestFolder() {
+    if (!catalog.value.id || !preparingTest.value) return
+    testFolderDialog.value = true
+    testFolderPreview.value = null
     testFolderError.value = ''
-    try {
-        const directory = await window.showDirectoryPicker({ id: 'schooltool-mc-test-folder', mode: 'read' })
-        const handle = await directory.getFileHandle('Schooltool_Arbeitsdaten.json')
-        await importTestFolder(await handle.getFile(), directory.name, sequence)
-    } catch (failure) {
-        if (sequence === testFolderReadSequence && failure.name !== 'AbortError') {
-            testFolderError.value = failure.name === 'NotFoundError'
-                ? 'Im Testordner fehlt Schooltool_Arbeitsdaten.json. Bitte speichere dort zuerst den Arbeitsdatenexport aus Schooltool.'
-                : failure.name === 'NotAllowedError'
-                    ? 'Der Testordner wurde nicht zum Lesen freigegeben. Bitte wähle ihn erneut aus.'
-                    : failure.message || 'Der Testordner konnte nicht gelesen werden.'
-        }
-    } finally {
-        if (sequence === testFolderReadSequence) testFolderReading.value = false
-    }
+    testFolderPondKey.value++
 }
 
-async function readTestFolderFiles(event) {
-    const files = Array.from(event.target.files ?? [])
-    event.target.value = ''
-    if (!files.length) return
-    const sequence = ++testFolderReadSequence
-    testFolderReading.value = true
-    testFolderError.value = ''
-    try {
-        const file = files.find(item => /^[^/]+\/Schooltool_Arbeitsdaten\.json$/.test(item.webkitRelativePath))
-        if (!file) throw new Error('Im Testordner fehlt Schooltool_Arbeitsdaten.json. Bitte speichere dort zuerst den Arbeitsdatenexport aus Schooltool.')
-        await importTestFolder(file, file.webkitRelativePath.split('/')[0], sequence)
-    } catch (failure) {
-        if (sequence === testFolderReadSequence) testFolderError.value = failure.message || 'Der Testordner konnte nicht gelesen werden.'
-    } finally {
-        if (sequence === testFolderReadSequence) testFolderReading.value = false
+function acceptTestFolderFile(item) {
+    const file = item.file
+    if (file?.name?.toLowerCase() !== 'handshake.json' || file.size > 4096) {
+        testFolderPreview.value = null
+        testFolderError.value = 'Bitte genau eine handshake.json mit höchstens 4 KB auswählen.'
+        return false
     }
+    return true
 }
 
-async function importTestFolder(file, directory, sequence) {
-    if (file.size > 1048576) throw new Error('Die Arbeitsdaten-Datei ist zu groß (maximal 1 MB).')
-    let source
+function detectTestFolderFileType(file, type) {
+    return Promise.resolve(file.name?.toLowerCase() === 'handshake.json' ? 'application/json' : type)
+}
+
+async function readTestFolderHandshake(file) {
+    let contents
     try {
-        source = JSON.parse((await file.text()).replace(/^\uFEFF/, ''))
+        contents = typeof file.arrayBuffer === 'function'
+            ? new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) : await file.text()
+        if (new TextEncoder().encode(contents).length > 4096) throw new Error()
+        const data = JSON.parse(contents.replace(/^\uFEFF/, ''))
+        const keys = [...contents.matchAll(/"(?:[^"\\]|\\.)*"\s*:/g)]
+            .map(match => JSON.parse(match[0].slice(0, match[0].lastIndexOf(':')).trim()))
+        if (!data || Array.isArray(data) || Object.keys(data).sort().join(',') !== 'exercise_folder_id,kind,schema_version'
+            || keys.length !== 3 || new Set(keys).size !== 3 || data.schema_version !== 1
+            || data.kind !== 'schooltool.exercise_folder' || typeof data.exercise_folder_id !== 'string'
+            || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.exercise_folder_id)) throw new Error()
     } catch {
-        throw new Error('Schooltool_Arbeitsdaten.json enthält keine lesbaren JSON-Arbeitsdaten.')
+        throw new Error('handshake.json muss als UTF-8 den gültigen Testordner-Vertrag enthalten.')
     }
-    if (!source || source.kind !== 'schooltool.ai-work-export' || source.schema_version !== 1
-        || !Array.isArray(source.course_roster?.participants)) {
-        throw new Error('Bitte verwende einen Schooltool-Arbeitsdatenexport (Schooltool_Arbeitsdaten.json).')
-    }
-    if (sequence !== testFolderReadSequence || disposed || !preparingTest.value) return
-    const participants = source.course_roster.participants.map(person => ({
-        schooltool_person_id: person?.schooltool_person_id,
-        first_name: person?.first_name, last_name: person?.last_name, class_name: person?.class_name, active: person?.active,
-    }))
-    let data
+    return contents
+}
+
+async function selectTestFolderFiles(items) {
+    testFolderReadSequence++
+    testFolderAbortController?.abort()
+    testFolderPreview.value = null
+    testFolderError.value = ''
+    testFolderReading.value = false
+    if (items.length !== 1 || !testFolderDialog.value || !preparingTest.value) return
+    if (!acceptTestFolderFile(items[0])) return
+    const sequence = testFolderReadSequence
+    testFolderAbortController = new AbortController()
+    testFolderReading.value = true
     try {
-        const response = await axios.post(rosterPreview.url(), { work_export: {
-            schema_version: source.schema_version, kind: source.kind,
-            school: { id: source.school?.id }, schoolyear: { id: source.schoolyear?.id },
-            work: { id: source.work?.id, title: source.work?.title, scheduled_date: source.work?.scheduled_date },
-            course: { id: source.course?.id, title: source.course?.title },
-            course_roster: { complete: source.course_roster.complete, participants },
-        } })
-        data = response.data
+        const handshake = await readTestFolderHandshake(items[0].file)
+        if (sequence !== testFolderReadSequence || disposed || !testFolderDialog.value) return
+        const { data } = await axios.post(testFolderResolve.url(), {
+            filename: items[0].file.name, handshake,
+        }, { signal: testFolderAbortController.signal, timeout: 120000 })
+        if (sequence !== testFolderReadSequence || disposed || !testFolderDialog.value || !preparingTest.value) return
+        if (!data.folder_proof || !data.path || !data.directory || !Array.isArray(data.rows)) {
+            throw new Error('Der Dropbox-Testordner konnte nicht vollständig bestätigt werden.')
+        }
+        testFolderPreview.value = data
     } catch (failure) {
-        throw new Error(requestError(failure))
+        if (sequence === testFolderReadSequence) testFolderError.value = failure.response ? requestError(failure) : failure.message || requestError(failure)
+    } finally {
+        if (sequence === testFolderReadSequence) testFolderReading.value = false
     }
-    if (sequence !== testFolderReadSequence || disposed || !preparingTest.value) return
+}
+
+function closeTestFolderDialog() {
+    if (testFolderReading.value) return
+    testFolderReadSequence++
+    testFolderAbortController?.abort()
+    testFolderDialog.value = false
+    testFolderPreview.value = null
+    testFolderError.value = ''
+}
+
+function useTestFolder() {
+    const data = testFolderPreview.value
+    if (!data?.valid || !data?.folder_proof || testFolderReading.value || !preparingTest.value) return
     editRosterCsv()
-    testDraft.title = directory
+    testDraft.title = data.directory
     rosterCsv.value = data.csv
-    rosterFileName.value = 'Schooltool_Arbeitsdaten.json'
+    rosterFileName.value = 'Schülerdaten aus Dropbox'
     roster.value = data
-    testFolderInfo.value = { directory, ...data.source }
+    testFolderInfo.value = {
+        directory: data.directory, path: data.path, student_count: data.rows.length, ...data.source,
+    }
+    testFolderProof.value = data.folder_proof
+    testFolderWarning.value = ''
+    testFolderDialog.value = false
+    testFolderPreview.value = null
 }
 
 function editRosterCsv() {
     testFolderReadSequence++
+    testFolderAbortController?.abort()
     testFolderReading.value = false
+    if (testFolderProof.value) {
+        testFolderWarning.value = 'Die Schülerliste wurde geändert. Die vorgemerkte Dropbox-Verknüpfung wurde verworfen. Wähle die handshake.json erneut, wenn dieser Test verknüpft werden soll.'
+    }
+    testFolderProof.value = ''
+    testFolderInfo.value = null
     rosterReadSequence++
     rosterSourceFile = null
     rosterReading.value = false
     rosterFileError.value = ''
     rosterFileName.value = ''
     roster.value = null
+}
+
+function disconnectDraftFolder() {
+    editRosterCsv()
+    rosterCsv.value = ''
+    testFolderWarning.value = ''
 }
 
 async function readRosterFiles(items) {
@@ -1922,17 +2337,27 @@ async function publishTest() {
             data
         } = await axios.post(createTest.url(), {
             ...settings,
-            closes_at: settings.start_mode === 'individual' ? new Date(settings.closes_at).toISOString() : null,
+            closes_at: settings.start_mode === 'individual' ? viennaDateTimeIso(settings.closes_at) : null,
             duration_seconds: Math.round(Number(durationMinutes) * 60),
-            roster_csv: rosterCsv.value
+            roster_csv: rosterCsv.value,
+            ...(testFolderProof.value ? { test_folder_proof: testFolderProof.value } : {})
         })
         publishDialog.value = false
         await loadIndex()
         if (data.test) {
             await selectTest(data.test.id)
         }
-        notice.value =
-            data.test?.start_mode === 'individual' ? 'Test freigegeben. Jede Person kann einmal selbst starten, spätestens bis zu ihrer Schlussfrist.' : 'Test freigegeben. Die Schüler können den Warteraum öffnen; du startest den Countdown.'
+        notice.value = 'Test erstellt. Die Fragen sind pro Person gespeichert. Der Test ist noch nicht freigegeben.'
+    })
+}
+
+async function releaseCreatedTest() {
+    await task('publish', async () => {
+        await axios.post(publishCreatedTest.url(selectedTestId.value))
+        releaseTestDialog.value = false
+        await refreshMonitor()
+        await loadIndex()
+        notice.value = 'Test freigegeben. Die gespeicherten Fragen bleiben erhalten.'
     })
 }
 
@@ -2138,14 +2563,15 @@ function selectAllInvitations(checked) {
 function openDeadlinePicker(target) {
     if (busy.value || (target === 'settings' && !canEditTestSettings.value)) return
     const saved = target === 'settings' ? settingsDraft.closes_at : testDraft.closes_at
-    let date = saved ? new Date(saved) : null
+    let local = saved ? localDateTime(saved) : ''
+    let date = local ? new Date(`${local.slice(0, 10)}T12:00`) : null
     if (!date || !Number.isFinite(date.getTime())) {
-        date = new Date(serverNow.value)
+        date = new Date(`${localDateTime(serverNow.value).slice(0, 10)}T12:00`)
         date.setDate(date.getDate() + 1)
-        date.setHours(18, 0, 0, 0)
+        local = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T18:00`
     }
     deadlinePickerDate.value = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-    deadlinePickerTime.value = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    deadlinePickerTime.value = local.slice(11, 16)
     deadlinePickerTarget.value = target
 }
 
@@ -2157,9 +2583,7 @@ function confirmDeadlinePicker() {
 }
 
 function localDateTime(value) {
-    if (!value) return ''
-    const date = new Date(value)
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    return viennaDateTime(value)
 }
 
 function openClosingDeadline(attempt) {
@@ -2170,7 +2594,7 @@ function openClosingDeadline(attempt) {
 async function saveClosingDeadline(reset) {
     if (!deadlineTarget.value || (!reset && !validDeadline.value)) return
     await task('closing-deadline', async () => {
-        await axios.patch(changeClosingDeadline.url({ test: selectedTestId.value, attempt: deadlineTarget.value.id }), { closes_at: reset ? null : new Date(deadlineDraft.value).toISOString() })
+        await axios.patch(changeClosingDeadline.url({ test: selectedTestId.value, attempt: deadlineTarget.value.id }), { closes_at: reset ? null : viennaDateTimeIso(deadlineDraft.value) })
         deadlineTarget.value = null
         await refreshMonitor()
         notice.value = 'Die persönliche Schlussfrist wurde gespeichert.'
@@ -2212,7 +2636,7 @@ function openTestSettings() {
 async function saveTestSettings() {
     if (!canEditTestSettings.value) return
     settingsError.value = ''
-    const closing = settingsDraft.start_mode === 'individual' ? new Date(settingsDraft.closes_at) : null
+    const closing = settingsDraft.start_mode === 'individual' ? new Date(viennaDateTimeIso(settingsDraft.closes_at)) : null
     if (closing && !Number.isFinite(closing.getTime())) {
         settingsError.value = 'Bitte wähle einen gültigen letzten Abgabezeitpunkt.'
         return
@@ -2439,7 +2863,9 @@ function completionTimeLabel(attempt) {
 }
 
 function dateLabel(value) {
-    return value ? new Date(value).toLocaleString('de-AT', {
+    const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value || '') ? viennaDateTimeIso(value) : value
+    return instant ? new Date(instant).toLocaleString('de-AT', {
+        timeZone: 'Europe/Vienna',
         dateStyle: 'short',
         timeStyle: 'medium'
     }) : '—'
@@ -2459,6 +2885,27 @@ function scoreLabel(attempt) {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+.mc-template-connection {
+    padding: 14px 16px;
+    border: 1px solid #c9d9e8;
+    border-radius: 8px;
+    background: #f5f9fd;
+}
+.mc-template-connection .mc-toolbar { align-items: flex-start; }
+.mc-template-connection strong { color: #204d73; }
+.mc-sync-direction {
+    padding: 12px 14px;
+    border: 1px solid #dce4ec;
+    border-radius: 6px;
+}
+.mc-sync-direction h3 { font-size: .94rem; }
+.mc-sync-changes { padding-left: 20px; }
+.mc-sync-changes li { margin-top: 5px; overflow-wrap: anywhere; }
+.mc-sync-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 8px; margin-top: 8px; }
+.mc-sync-answer-detail { margin-top: 6px; padding: 8px 10px; border-radius: 5px; background: #f4f7fa; font-size: .82rem; }
+.mc-sync-answer-detail h4 { font-size: .82rem; margin-bottom: 5px; }
+.mc-sync-answer-detail ul { padding-left: 17px; }
+.mc-sync-answer-detail li { margin-top: 3px; }
 .mc-deadline-trigger { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 18px; width: 100%; min-width: 0; text-align: left; padding: 14px 16px; border: 1px solid #aebfce; border-radius: 6px; background: #fff; color: #243c52; cursor: pointer; }
 .mc-deadline-label { grid-column: 1 / -1; font-size: .85rem; color: #52697e; }
 .mc-deadline-trigger strong { font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -2739,6 +3186,29 @@ h3 {
 :focus-visible {
     outline: 3px solid #3b82b8;
     outline-offset: 3px;
+}
+
+.mc-summary-preview {
+    max-height: 42vh;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    padding: 16px;
+    border: 1px solid #dce3eb;
+    border-radius: 8px;
+    background: #f7f9fb;
+    font: inherit;
+    font-size: .88rem;
+}
+
+.mc-summary-question + .mc-summary-question {
+    border-top: 1px solid #dce3eb;
+    margin-top: 16px;
+    padding-top: 16px;
+}
+
+.mc-summary-text {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 @media (max-width: 1200px) {

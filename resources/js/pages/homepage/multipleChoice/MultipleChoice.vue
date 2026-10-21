@@ -212,7 +212,7 @@ function formatNumber(value) {
 }
 
 function deadlineLabel(value) {
-    return value ? new Intl.DateTimeFormat('de-AT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
+    return value ? new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
 }
 
 function minutes(seconds) {

@@ -17,8 +17,25 @@ class McTestService
     public function publish(McTest $test, array $students): McTest
     {
         return DB::transaction(function () use ($test, $students): McTest {
-            $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $locked = $this->prepare($test, $students, false);
             if ($locked->status === 'published') {
+                return $locked;
+            }
+            if ($locked->start_mode === 'individual' && ($locked->closes_at === null || ! $locked->closes_at->isFuture())) {
+                throw ValidationException::withMessages(['closes_at' => 'Bitte legen Sie eine zukünftige Schlussfrist fest.']);
+            }
+            $locked->forceFill(['status' => 'published'])->save();
+
+            return $locked;
+        }, 3);
+    }
+
+    /** @param list<int|User> $students */
+    public function prepare(McTest $test, array $students, bool $lockAssignments = true): McTest
+    {
+        return DB::transaction(function () use ($test, $students, $lockAssignments): McTest {
+            $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            if ($locked->status === 'published' || $locked->snapshot !== null) {
                 return $locked;
             }
 
@@ -57,8 +74,9 @@ class McTestService
 
             $locked->forceFill([
                 'schoolyear_id' => $locked->schoolyear_id ?? User::query()->whereKey($locked->owner_id)->where('school_id', $locked->school_id)->value('schoolyear_id'),
-                'status' => 'published',
+                'status' => 'draft',
                 'snapshot' => [
+                    'assignments_locked' => $lockAssignments,
                     'questions' => $questions,
                     'question_count' => $locked->question_count,
                     'total_points' => $locked->total_points,
@@ -115,6 +133,9 @@ class McTestService
             $changed = clone $locked;
             $changed->forceFill($settings);
             if ($changed->isDirty(['question_count', 'balance_types', 'shuffle_questions', 'shuffle_options'])) {
+                if ($locked->snapshot['assignments_locked'] ?? false) {
+                    throw ValidationException::withMessages(['question_count' => 'Die beim Erstellen gespeicherte Fragenzuteilung bleibt unverändert. Bitte erstellen Sie für eine andere Zuteilung einen neuen Test.']);
+                }
                 foreach ($attempts as $attempt) {
                     McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode($this->selectQuestions($pool, $changed), JSON_THROW_ON_ERROR)]);
                 }

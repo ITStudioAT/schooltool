@@ -244,6 +244,9 @@ class McImportService
         $warnings = [];
         $current = null;
         foreach (preg_split('/\R/u', $text) as $line) {
+            if (preg_match('/^\s*<!-- schooltool-mc:[A-Za-z0-9+\/=]+ -->\s*$/', $line)) {
+                continue;
+            }
             if (preg_match('/^\s*#{1,6}\s+(?:Frage\s*)?(\d+)\s*[.:)\-]\s*(.*)$/ui', $line, $heading)
                 || preg_match('/^\s*(\d+)\s*[.)]\s+(.*)$/u', $line, $heading)) {
                 if ($current !== null) {

@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import axios from 'axios'
 import MultipleChoiceWorkspace from '@/pages/admin/teachingTools/MultipleChoiceWorkspace.vue'
 import QuestionEditor from '@/pages/admin/teachingTools/QuestionEditor.vue'
-import { detectImportFormat, questionProblems } from '@/pages/admin/teachingTools/multipleChoiceTeacher'
+import { detectImportFormat, questionProblems, viennaDateTime, viennaDateTimeIso } from '@/pages/admin/teachingTools/multipleChoiceTeacher'
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 
@@ -84,6 +84,10 @@ const filePond = defineComponent({
 
 function validQuestion(overrides = {}) {
     return { id: 'question-a', prompt: 'Welche Antwort ist richtig?', type: 'single', options: [{ id: 'a', text: 'Richtig' }, { id: 'b', text: 'Falsch' }], correct_option_ids: ['a'], active: true, reviewed: true, ...overrides }
+}
+
+function tenQuestions() {
+    return Array.from({ length: 10 }, (_, index) => validQuestion({ id: `question-${index}`, prompt: `Frage ${index}` }))
 }
 
 function renderWorkspace(data = {}, monitor = {}, initialLocation = '/admin/teaching-tools/multiple-choice', attach = false) {
@@ -224,124 +228,222 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
-describe('MC test folder import', () => {
-    const source = { schema_version: 1, kind: 'schooltool.ai-work-export', school: { id: 1 }, schoolyear: { id: 2 },
-        work: { id: 81, title: 'Dateimanagement', scheduled_date: '2026-10-19' }, course: { id: 21, title: 'INF - 5A - 1' },
-        course_roster: { complete: true, participants: [{ schooltool_person_id: '42', first_name: 'Alex', last_name: 'Beispiel', class_name: '5A', active: true }] },
-        materials: ['unrelated private document'],
-    }
-    const preview = { valid: true, csv: 'Vorname;Nachname;E-Mail;Kurs;Klasse\nAlex;Beispiel;alex@example.test;INF;5A',
+it('releases an existing draft only after the separate confirmation', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Erstellter Test', status: 'draft', question_count: 10, lead_seconds: 30 }
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }, { test }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7')
+    await flushPromises()
+    expect(wrapper.text()).toContain('noch nicht freigegeben')
+    expect(wrapper.text()).not.toContain('Countdown starten (30 s)')
+    await clickText(wrapper, 'Test freigeben')
+    expect(axios.post).not.toHaveBeenCalled()
+    await wrapper.find('[role="dialog"]').findAll('button').find(button => button.text() === 'Zurück').trigger('click')
+    expect(axios.post).not.toHaveBeenCalled()
+    await clickText(wrapper, 'Test freigeben')
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { test: { ...test, status: 'published' } } })
+    vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/multiple-choice')
+        ? { available: true, catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [{ ...test, status: 'published' }] }
+        : { test: { ...test, status: 'published' }, attempts: [] } }))
+    await wrapper.find('[role="dialog"]').findAll('button').find(button => button.text() === 'Test freigeben').trigger('click')
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/tests/7/publish')
+    expect(wrapper.text()).toContain('Countdown starten (30 s)')
+})
+
+it.each(['common', 'individual'])('shows the real draft status and previews each saved assignment without requests in %s mode', async startMode => {
+    const test = { id: 7, catalog_id: 4, title: 'Entwurf', status: 'draft', start_mode: startMode, question_count: 10, closes_at: '2026-10-22T19:00:00Z' }
+    const attempts = [{ id: 1, student_name: 'Alex', questions: tenQuestions(), access_url: null },
+        { id: 2, student_name: 'Sam', questions: tenQuestions().map(question => ({ ...question, prompt: `Sam: ${question.prompt}` })), access_url: null }]
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }, { test, attempts }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7&pane=students')
+    await flushPromises()
+    expect(wrapper.findAll('[role="status"]').some(item => item.text().includes('Noch nicht freigegeben'))).toBe(true)
+    if (startMode === 'individual') expect(wrapper.text()).toContain('21:00')
+    expect(wrapper.find('[aria-label="Persönlichen Test von Alex öffnen"]').exists()).toBe(false)
+    vi.mocked(axios.get).mockClear()
+    await wrapper.find('[aria-label="Gespeicherte Fragen von Alex ansehen"]').trigger('click')
+    let preview = wrapper.find('[role="dialog"]')
+    expect(preview.text()).toContain('Schreibgeschützte Lehrervorschau · 10 fest zugeordnete Fragen')
+    expect(preview.findAll('article').map(article => article.find('h3').text())).toEqual(tenQuestions().map((question, index) => `${index + 1}. ${question.prompt}`))
+    expect(preview.findAll('input, textarea')).toHaveLength(0)
+    await preview.findAll('button').find(button => button.text() === 'Schließen').trigger('click')
+    await wrapper.find('[aria-label="Gespeicherte Fragen von Sam ansehen"]').trigger('click')
+    preview = wrapper.find('[role="dialog"]')
+    expect(preview.text()).toContain('Sam: Frage 0')
+    for (const method of ['get', 'post', 'patch', 'delete']) expect(axios[method]).not.toHaveBeenCalled()
+})
+
+it.each([
+    ['2026-10-22T21:00', '2026-10-22T19:00:00.000Z'],
+    ['2027-01-15T21:00', '2027-01-15T20:00:00.000Z'],
+    ['2027-07-15T21:00', '2027-07-15T19:00:00.000Z'],
+    ['2026-10-25T02:30', '2026-10-25T01:30:00.000Z'],
+])('converts Vienna wall time %s independently of the device timezone', (wall, instant) => {
+    expect(viennaDateTimeIso(wall)).toBe(instant)
+    expect(viennaDateTime(instant)).toBe(wall)
+})
+
+it.each(['2026-03-29T02:30', '2026-02-30T21:00', 'invalid'])('rejects a nonexistent Vienna time %s', wall => {
+    expect(viennaDateTimeIso(wall)).toBe('')
+})
+
+it('keeps a selected 21:00 Vienna deadline at 21:00 when reopening and sends its exact UTC instant', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-21T10:00:00Z'))
+    const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }] })
+    await flushPromises()
+    await openCatalogTests(wrapper)
+    await clickText(wrapper, 'Neuen Test anlegen')
+    await chooseFile(wrapper, new File(['Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid'], 'students.csv'))
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: true, rows: [{ status: 'matched' }] } })
+    await clickText(wrapper, 'Zuordnung prüfen')
+    await wrapper.find('input[name="mc-start-mode-new"][value="individual"]').setValue(true)
+    await wrapper.find('[aria-label="Schlussfrist für alle"]').trigger('click')
+    await wrapper.find('[aria-label="Datum der Schlussfrist"]').setValue('2026-10-22')
+    await wrapper.find('[aria-label="Uhrzeit der Schlussfrist"]').setValue('21:00')
+    expect(wrapper.find('[role="dialog"]').text()).toContain('21:00')
+    await wrapper.find('[role="dialog"]').find('form').trigger('submit')
+    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').text()).toContain('21:00')
+    await wrapper.find('[aria-label="Schlussfrist für alle"]').trigger('click')
+    expect(wrapper.find('[aria-label="Datum der Schlussfrist"]').element.value).toBe('2026-10-22')
+    expect(wrapper.find('[aria-label="Uhrzeit der Schlussfrist"]').element.value).toBe('21:00')
+    await wrapper.find('[role="dialog"]').find('form').trigger('submit')
+    await clickText(wrapper, 'Test erstellen')
+    expect(wrapper.find('[role="dialog"]').text()).toContain('21:00')
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: {} })
+    await wrapper.find('[role="dialog"]').findAll('button').find(button => button.text() === 'Test erstellen').trigger('click')
+    await flushPromises()
+    expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests', expect.objectContaining({ closes_at: '2026-10-22T19:00:00.000Z' }))
+})
+
+describe('MC test folder import through Dropbox', () => {
+    const directory = '2026-10-19_Informatik_5A_Gruppe-1'
+    const folderPath = '/Materialien/Lerninhalte/' + directory
+    const handshake = JSON.stringify({
+        schema_version: 1, kind: 'schooltool.exercise_folder',
+        exercise_folder_id: '123e4567-e89b-42d3-a456-426614174000',
+    })
+    const preview = {
+        valid: true, directory, path: folderPath, folder_id: 'id:testfolder', file_id: 'id:workexport',
+        revision: 'r1', exercise_folder_id: '123e4567-e89b-42d3-a456-426614174000',
+        folder_proof: 'verified-folder-proof',
+        csv: 'Vorname;Nachname;E-Mail;Kurs;Klasse\nAlex;Beispiel;alex@example.test;INF;5A',
         rows: [{ first_name: 'Alex', last_name: 'Beispiel', email: 'alex@example.test', status: 'matched' }],
         source: { work_title: 'Dateimanagement', course_title: 'INF - 5A - 1', scheduled_date: '2026-10-19' },
     }
 
     async function prepareFolderImport() {
-        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }] })
+        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }] })
         await flushPromises()
         await openCatalogTests(wrapper)
         await clickText(wrapper, 'Neuen Test anlegen')
+        vi.mocked(axios.get).mockClear()
         return wrapper
     }
 
-    function directoryFile(text = JSON.stringify(source), path = '2026-10-19_Informatik_5A_Gruppe-1/Schooltool_Arbeitsdaten.json') {
-        const file = new File([text], 'Schooltool_Arbeitsdaten.json', { type: 'application/json' })
-        Object.defineProperty(file, 'webkitRelativePath', { value: path })
-        return file
-    }
-
-    async function selectDirectoryFiles(wrapper, files) {
-        const input = wrapper.find('input[webkitdirectory]')
-        Object.defineProperty(input.element, 'files', { configurable: true, value: files })
-        await input.trigger('change')
+    async function chooseFolderHandshake(wrapper, contents = handshake, filename = 'handshake.json') {
+        await clickText(wrapper, 'Test mit Dropbox-Ordner verknüpfen')
+        const ponds = wrapper.findAllComponents({ name: 'FilePond' })
+        ponds.at(-1).vm.$emit('updatefiles', [{ file: new File([contents], filename, { type: 'application/json' }) }])
         await flushPromises()
     }
 
-    afterEach(() => vi.unstubAllGlobals())
-
-    it('copies the folder name and checked roster without creating or starting a test', async () => {
+    it('resolves the local handshake online and binds only when the test is released', async () => {
         const wrapper = await prepareFolderImport()
-        const getFileHandle = vi.fn().mockResolvedValue({ getFile: async () => directoryFile() })
-        const picker = vi.fn().mockResolvedValue({ name: '2026-10-19_Informatik_5A_Gruppe-1', getFileHandle })
-        vi.stubGlobal('showDirectoryPicker', picker)
         vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
 
-        await clickText(wrapper, 'Aus Testordner übernehmen')
+        await chooseFolderHandshake(wrapper)
 
-        expect(picker).toHaveBeenCalledExactlyOnceWith({ id: 'schooltool-mc-test-folder', mode: 'read' })
-        expect(getFileHandle).toHaveBeenCalledExactlyOnceWith('Schooltool_Arbeitsdaten.json')
-        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/roster-preview', { work_export: {
-            schema_version: 1, kind: source.kind, school: source.school, schoolyear: source.schoolyear,
-            work: source.work, course: source.course, course_roster: source.course_roster,
-        } })
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('2026-10-19_Informatik_5A_Gruppe-1')
-        expect(wrapper.find('textarea').element.value).toBe(preview.csv)
-        expect(wrapper.text()).toContain('Dateimanagement · INF - 5A - 1', 'Alex', '1 eindeutig zugeordnet')
-        expect(wrapper.findAll('button').find(item => item.text() === 'Test freigeben').element.disabled).toBe(false)
+        expect(axios.get).not.toHaveBeenCalled()
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/test-folder/resolve',
+            { filename: 'handshake.json', handshake }, expect.objectContaining({ timeout: 120000 }))
+        expect(wrapper.find('[data-testid="test-folder-path"]').text()).toBe(folderPath)
+        expect(wrapper.find('[aria-label="Dropbox-Testordner zuordnen"]').text()).toContain('1 Schüler in der Vorschau')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Katalog – Test')
+        await clickText(wrapper, 'Für diesen Test vormerken')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe(directory)
+        expect(wrapper.find('textarea').exists()).toBe(false)
+        expect(wrapper.findAllComponents({ name: 'FilePond' })).toHaveLength(0)
+        expect(wrapper.text()).not.toContain('Test mit Dropbox-Ordner verknüpfen')
+        expect(wrapper.text()).toContain('Verknüpfung aufheben')
+        expect(wrapper.find('[aria-label="Tests vorbereiten"]').text()).toContain(folderPath)
+        expect(wrapper.find('[aria-label="Tests vorbereiten"]').text()).not.toContain('Schülerliste prüfen')
+        expect(axios.post).toHaveBeenCalledTimes(1)
         await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Eigener Testname')
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Eigener Testname')
+        await clickText(wrapper, 'Test erstellen')
+        const test = { id: 7, catalog_id: 4, title: 'Eigener Testname', start_mode: 'common' }
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { test } })
+        vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/multiple-choice')
+            ? { available: true, catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }
+            : { test, attempts: [] } }))
+        await wrapper.find('[role="dialog"]').findAll('button').find(item => item.text() === 'Test erstellen').trigger('click')
+        await flushPromises()
+
+        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests',
+            expect.objectContaining({ title: 'Eigener Testname', roster_csv: preview.csv, test_folder_proof: 'verified-folder-proof' }))
     })
 
-    it('supports directory uploads in browsers without the directory picker and ignores nested work exports', async () => {
+    it('rejects invalid local handshakes before any online request and keeps the draft', async () => {
         const wrapper = await prepareFolderImport()
-        vi.stubGlobal('showDirectoryPicker', undefined)
-        vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+        await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Mein Test')
 
-        await selectDirectoryFiles(wrapper, [directoryFile('not the export', 'Test/Archiv/Schooltool_Arbeitsdaten.json'), directoryFile()])
+        await chooseFolderHandshake(wrapper, '{"schema_version":2}', 'handshake.json')
 
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('2026-10-19_Informatik_5A_Gruppe-1')
-        expect(axios.post).toHaveBeenCalledOnce()
-    })
-
-    it.each([
-        ['missing file', [], 'Im Testordner fehlt'],
-        ['malformed JSON', [() => directoryFile('{broken')], 'keine lesbaren JSON-Arbeitsdaten'],
-        ['other document', [() => directoryFile('{"kind":"other"}')], 'Bitte verwende einen Schooltool-Arbeitsdatenexport'],
-    ])('preserves the current draft for %s', async (_name, files, message) => {
-        const wrapper = await prepareFolderImport()
-        await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Eigener Test')
-        const selected = files.length ? files.map(create => create()) : [directoryFile('{}', 'Test/Archiv/Schooltool_Arbeitsdaten.json')]
-
-        await selectDirectoryFiles(wrapper, selected)
-
-        expect(wrapper.text()).toContain(message)
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Eigener Test')
+        expect(wrapper.find('[aria-label="Dropbox-Testordner zuordnen"]').text()).toContain('gültigen Testordner-Vertrag')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Mein Test')
         expect(axios.post).not.toHaveBeenCalled()
     })
 
-    it('keeps ambiguous students visible and blocks publication', async () => {
+    it('shows online conflicts without changing the test draft', async () => {
         const wrapper = await prepareFolderImport()
-        vi.mocked(axios.post).mockResolvedValueOnce({ data: { ...preview, valid: false, rows: [{ status: 'error' }], errors: ['Schülerkonto nicht eindeutig.'] } })
+        await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Mein Test')
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { status: 409, data: { message: 'Die Testordner-ID ist mehrfach vorhanden.' } } })
 
-        await selectDirectoryFiles(wrapper, [directoryFile()])
+        await chooseFolderHandshake(wrapper)
+
+        expect(wrapper.find('[aria-label="Dropbox-Testordner zuordnen"]').text()).toContain('mehrfach vorhanden')
+        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Mein Test')
+        expect(wrapper.find('textarea').element.value).toBe('')
+        expect(wrapper.findAll('button').find(item => item.text() === 'Für diesen Test vormerken').element.disabled).toBe(true)
+    })
+
+    it('shows ambiguous students and prevents publication', async () => {
+        const wrapper = await prepareFolderImport()
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { ...preview, valid: false,
+            rows: [{ status: 'error' }], errors: ['Schülerkonto nicht eindeutig.'] } })
+
+        await chooseFolderHandshake(wrapper)
+        await clickText(wrapper, 'Für diesen Test vormerken')
 
         expect(wrapper.text()).toContain('Schülerkonto nicht eindeutig.')
-        expect(wrapper.findAll('button').find(item => item.text() === 'Test freigeben').element.disabled).toBe(true)
+        expect(wrapper.findAll('button').find(item => item.text() === 'Test erstellen').element.disabled).toBe(true)
     })
 
-    it('does not restore an import after cancelling the draft while its preview is pending', async () => {
+    it('removes the folder and its roster only after disconnecting', async () => {
         const wrapper = await prepareFolderImport()
-        let completePreview
-        vi.mocked(axios.post).mockImplementationOnce(() => new Promise(resolve => { completePreview = resolve }))
-        await selectDirectoryFiles(wrapper, [directoryFile()])
-        await clickText(wrapper, 'Abbrechen')
-        await clickText(wrapper, 'Neuen Test anlegen')
-        completePreview({ data: preview })
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+        await chooseFolderHandshake(wrapper)
+        await clickText(wrapper, 'Für diesen Test vormerken')
+        const csv = 'Vorname;Nachname;E-Mail;Kurs;Klasse\nBen;Beispiel;ben@example.test;INF;5A'
+
+        await clickText(wrapper, 'Verknüpfung aufheben')
+        await wrapper.find('textarea').setValue(csv)
+
+        expect(wrapper.text()).toContain('Test mit Dropbox-Ordner verknüpfen')
+        expect(wrapper.find('[aria-label="Tests vorbereiten"]').text()).not.toContain(folderPath)
+        expect(wrapper.findAll('button').find(item => item.text() === 'Test erstellen').element.disabled).toBe(true)
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: true, rows: [{ status: 'matched' }] } })
+        await clickText(wrapper, 'Zuordnung prüfen')
+        await clickText(wrapper, 'Test erstellen')
+        const test = { id: 7, catalog_id: 4, title: directory, start_mode: 'common' }
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: { test } })
+        vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/multiple-choice')
+            ? { available: true, catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }
+            : { test, attempts: [] } }))
+        await wrapper.find('[role="dialog"]').findAll('button').find(item => item.text() === 'Test erstellen').trigger('click')
         await flushPromises()
 
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Katalog – Test')
-        expect(wrapper.find('textarea').element.value).toBe('')
-        expect(wrapper.text()).not.toContain('Übernommen aus')
-    })
-
-    it('shows server validation errors without replacing the existing draft', async () => {
-        const wrapper = await prepareFolderImport()
-        vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { errors: { 'work_export.school.id': ['Export gehört zu einer anderen Schule.'] } } } })
-
-        await selectDirectoryFiles(wrapper, [directoryFile()])
-
-        expect(wrapper.text()).toContain('Export gehört zu einer anderen Schule.')
-        expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Katalog – Test')
-        expect(wrapper.find('textarea').element.value).toBe('')
+        const createPayload = vi.mocked(axios.post).mock.calls.at(-1)[1]
+        expect(createPayload.roster_csv).toBe(csv)
+        expect(createPayload).not.toHaveProperty('test_folder_proof')
     })
 })
 
@@ -381,7 +483,7 @@ describe('Multiple Choice URL navigation', () => {
         expect(axios.patch).not.toHaveBeenCalled()
         await clickText(wrapper, 'Neuen Test anlegen')
         expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Netzwerke – Test')
-        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('3')
+        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
         expect(wrapper.find('[aria-label="Erreichbare Gesamtpunkte"]').element.value).toBe('10')
         expect(wrapper.find('[aria-label="Bearbeitungsdauer in Minuten"]').element.value).toBe('20')
         expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').element.value).toBe('60')
@@ -389,7 +491,7 @@ describe('Multiple Choice URL navigation', () => {
         expect(wrapper.find('[aria-label="Prüfungsmodus aktivieren"]').element.checked).toBe(false)
         expect(wrapper.find('textarea').element.value).toBe('')
         expect(wrapper.text()).not.toContain('Ausgewählt:')
-        expect(wrapper.findAll('button').find((item) => item.text() === 'Test freigeben').attributes('disabled')).toBeDefined()
+        expect(wrapper.findAll('button').find((item) => item.text() === 'Test erstellen').attributes('disabled')).toBeDefined()
         wrapper.router.back()
         await flushPromises()
         expect(wrapper.find('[aria-label="Tests vorbereiten"]').exists()).toBe(false)
@@ -651,8 +753,8 @@ describe('Multiple Choice teacher workflow', () => {
     })
 
     it('publishes a new test for the opened catalog and opens its waiting room only after confirmation', async () => {
-        const catalogs = [{ id: 4, title: 'Netzwerke', questions: [validQuestion()] }]
-        const test = { id: 7, catalog_id: 4, title: 'Netzwerke – Test', question_count: 1, total_points: 10, duration_seconds: 1200, lead_seconds: 60 }
+        const catalogs = [{ id: 4, title: 'Netzwerke', questions: tenQuestions() }]
+        const test = { id: 7, catalog_id: 4, title: 'Netzwerke – Test', question_count: 1, total_points: 10, duration_seconds: 1200, lead_seconds: 60, status: 'draft' }
         const wrapper = renderWorkspace({ catalogs })
         await flushPromises()
         await openCatalogTests(wrapper)
@@ -661,18 +763,20 @@ describe('Multiple Choice teacher workflow', () => {
         await chooseFile(wrapper, new File(['Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid'], 'students.csv'))
         vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: true, rows: [{ status: 'matched' }] } })
         await clickText(wrapper, 'Zuordnung prüfen')
-        await clickText(wrapper, 'Test freigeben')
+        await clickText(wrapper, 'Test erstellen')
         expect(axios.post).toHaveBeenCalledTimes(1)
         vi.mocked(axios.post).mockResolvedValueOnce({ data: { test } })
         vi.mocked(axios.get).mockImplementation(async (url) => ({ data: String(url).endsWith('/multiple-choice')
             ? { available: true, catalogs, tests: [test] } : { test, attempts: [] } }))
 
-        await wrapper.find('[role="dialog"]').findAll('button').find((item) => item.text() === 'Test freigeben').trigger('click')
+        await wrapper.find('[role="dialog"]').findAll('button').find((item) => item.text() === 'Test erstellen').trigger('click')
         await flushPromises()
 
         expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests', expect.objectContaining({ catalog_id: 4, title: 'Netzwerke – Test' }))
         expect(wrapper.find('[aria-label="Tests vorbereiten"]').exists()).toBe(false)
-        expect(wrapper.text()).toContain('Countdown starten (60 s)')
+        expect(wrapper.text()).not.toContain('Countdown starten (60 s)')
+        expect(wrapper.text()).toContain('Test freigeben')
+        expect(wrapper.text()).toContain('noch nicht freigegeben')
         expect(wrapper.text()).toContain('Auswertung')
         expect(wrapper.router.currentRoute.value.query).toEqual({ catalog: '4', view: 'test', test: '7' })
         await clickText(wrapper, 'Zur Testübersicht')
@@ -936,32 +1040,32 @@ describe('Multiple Choice teacher workflow', () => {
     })
 
     it('blocks release for ambiguous roster and invalidates preview after edits', async () => {
-        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }] })
+        const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }] })
         await flushPromises()
         await clickText(wrapper, 'Katalog öffnen')
         await startNewTest(wrapper)
         await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Test A')
-        await wrapper.find('[aria-label="Fragen pro Schüler"]').setValue('1')
+        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
         await wrapper.find('textarea').setValue('Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid')
         vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: false, errors: ['Doppelte E-Mail.'], rows: [{ row: 2, first_name: 'Test', last_name: 'Person', email: 'test@example.invalid', status: 'error', errors: ['Mehrdeutig'] }] } })
 
         await clickText(wrapper, 'Zuordnung prüfen')
 
         expect(wrapper.text()).toContain('Doppelte E-Mail.')
-        expect(wrapper.findAll('button').find((item) => item.text() === 'Test freigeben').attributes('disabled')).toBeDefined()
+        expect(wrapper.findAll('button').find((item) => item.text() === 'Test erstellen').attributes('disabled')).toBeDefined()
         vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: true, rows: [{ row: 2, first_name: 'Test', last_name: 'Person', status: 'matched' }] } })
         await clickText(wrapper, 'Zuordnung prüfen')
-        expect(wrapper.findAll('button').find((item) => item.text() === 'Test freigeben').attributes('disabled')).toBeUndefined()
-        await clickText(wrapper, 'Test freigeben')
+        expect(wrapper.findAll('button').find((item) => item.text() === 'Test erstellen').attributes('disabled')).toBeUndefined()
+        await clickText(wrapper, 'Test erstellen')
         const summary = wrapper.find('[role="dialog"]').text()
         expect(summary).toContain('Test A')
         expect(summary).toContain('Katalog')
         expect(summary).toContain('1 eindeutig zugeordnet')
-        expect(summary).toContain('1 Fragen · 10 Punkte')
+        expect(summary).toContain('10 Fragen · 10 Punkte')
         expect(summary).toContain('20 Minuten')
         expect(summary).toContain('60 Sekunden')
         await wrapper.find('textarea').setValue('Geänderte CSV')
-        expect(wrapper.findAll('button').find((item) => item.text() === 'Test freigeben').attributes('disabled')).toBeDefined()
+        expect(wrapper.findAll('button').find((item) => item.text() === 'Test erstellen').attributes('disabled')).toBeDefined()
     })
 
     it('only sends invitations after preview and the distinct final confirmation', async () => {
@@ -1098,7 +1202,7 @@ describe('Multiple Choice teacher workflow', () => {
         expect(wrapper.text()).toContain('Tests zu diesem Katalog')
         await startNewTest(wrapper)
         expect(wrapper.text()).toContain('Fragenkatalog: Katalog')
-        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('1')
+        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
     })
 
     it('prepares a test from a saved reviewed catalog without publishing or losing unsaved changes', async () => {
@@ -1115,7 +1219,7 @@ describe('Multiple Choice teacher workflow', () => {
         await startNewTest(wrapper)
 
         expect(wrapper.text()).toContain('Fragenkatalog: Netzwerke')
-        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('1')
+        expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
         expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Netzwerke – Test')
         expect(axios.post).not.toHaveBeenCalled()
         expect(axios.patch).not.toHaveBeenCalled()
@@ -1859,7 +1963,7 @@ it('edits only one personal closing deadline and can restore the shared default'
     vi.mocked(axios.patch).mockResolvedValue({ data: {} })
     await wrapper.find('[role="dialog"] form').trigger('submit')
     await flushPromises()
-    expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/attempts/1/closing-deadline', { closes_at: new Date('2026-10-18T12:00').toISOString() })
+    expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/attempts/1/closing-deadline', { closes_at: '2026-10-18T10:00:00.000Z' })
     await wrapper.find('[aria-label="Schlussfrist für Alex ändern"]').trigger('click')
     await clickText(wrapper, 'Frist für alle übernehmen')
     expect(axios.patch).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests/7/attempts/1/closing-deadline', { closes_at: null })
@@ -2078,7 +2182,7 @@ it('edits settings before the first start and submits all timing and selection o
     expect(axios.patch).not.toHaveBeenCalled()
     vi.mocked(axios.patch).mockResolvedValueOnce({ data: { test: { ...test, title: 'Geänderter Test' } } })
     await clickText(wrapper, 'Einstellungen speichern')
-    expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/settings', expect.objectContaining({ title: 'Geänderter Test', duration_seconds: 900, start_mode: 'individual', closes_at: new Date('2027-01-15T12:30').toISOString(), question_count: 1, total_points: 10 }))
+    expect(axios.patch).toHaveBeenCalledWith('/api/admin/multiple-choice/tests/7/settings', expect.objectContaining({ title: 'Geänderter Test', duration_seconds: 900, start_mode: 'individual', closes_at: '2027-01-15T11:30:00.000Z', question_count: 1, total_points: 10 }))
     expect(wrapper.text()).toContain('Testeinstellungen gespeichert.')
 })
 
@@ -2370,4 +2474,238 @@ it('suggests tomorrow at 18:00 and applies the deadline only with OK while cance
     expect(wrapper.findAll('button').find(button => button.text() === 'OK').element.disabled).toBe(true)
     expect(wrapper.text()).toContain('Die Schlussfrist muss in der Zukunft liegen.')
     expect(axios.post).not.toHaveBeenCalled()
+})
+
+describe('Linked questions template sync', () => {
+    const sourcePath = '/Materialien/Lerninhalte/E-Mails/Multiple Choice Fragen/Fragen.md'
+    const connection = {
+        status: 'connected', source_path: sourcePath, source_file_id: 'id:source', source_revision: 'r1',
+    }
+    const linkedCatalog = {
+        id: 4, title: 'E-Mails', questions: [validQuestion()], template_connection: connection,
+        template_version: 'catalog-v1',
+    }
+
+    it('shows a Question Summary preview and writes only after confirmation', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        expect(wrapper.text()).toContain('Question Summary')
+        expect(axios.post).not.toHaveBeenCalled()
+
+        const path = '/Materialien/Lerninhalte/E-Mails/Multiple Choice Fragen/Question Summary/Question Summary_E-Mails.md'
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            path, action: 'create', question_count: 2, incomplete_count: 1,
+            content: '1. Office\\-365\\-Anmeldung\n- [x] Posteingang', can_apply: true, token: 'summary-token',
+            rows: [
+                { number: 1, type: 'Einfachauswahl', prompt: 'Office-365-Anmeldung', answers: ['Posteingang'], active: true, incomplete: false },
+                { number: 2, type: 'Mehrfachauswahl', prompt: 'Zeile eins\nZeile zwei <script>', answers: ['Erste Antwort', 'Zweite\nAntwort'], active: false, incomplete: true },
+            ],
+            warning: 'Die Zusammenfassung wird als Markdown gespeichert.',
+        } })
+        await clickText(wrapper, 'Question Summary')
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4/question-summary-preview')
+        const dialog = wrapper.find('[aria-label="Vorschau der Question Summary"]')
+        expect(dialog.text()).toContain(path)
+        expect(dialog.find('[role="list"]').text()).toContain('Office-365-Anmeldung')
+        expect(dialog.find('[role="list"]').text()).toContain('Posteingang')
+        expect(dialog.find('[role="list"]').text()).toContain('Zweite\nAntwort')
+        expect(dialog.find('[role="list"]').text()).toContain('Unvollständige Frage')
+        expect(dialog.find('[role="list"]').text()).toContain('Inaktiv')
+        expect(dialog.text()).not.toContain('Office\\-365')
+        expect(dialog.find('pre').exists()).toBe(false)
+        expect(dialog.find('script').exists()).toBe(false)
+        expect(dialog.text()).toContain('Die Zusammenfassung wird neu angelegt.')
+
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            path, revision: 'r2', action: 'create', message: 'Die Question Summary wurde in Dropbox gespeichert.',
+        } })
+        await clickText(wrapper, 'In Dropbox speichern')
+        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/catalogs/4/question-summary-apply', { token: 'summary-token' })
+        expect(wrapper.text()).toContain('Die Question Summary wurde in Dropbox gespeichert.')
+    })
+
+    it('shows the verified path and previews both directions before applying the edited catalog', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+
+        expect(wrapper.find('[aria-label="Verbundene Fragenvorlage"]').text()).toContain('Vorlage verbunden')
+        expect(wrapper.find('[aria-label="Verbundene Fragenvorlage"]').text()).toContain(sourcePath)
+        expect(wrapper.text()).toContain('Vorlage synchronisieren')
+        const editButton = wrapper.findAll('button').find(button => button.text() === 'Bearbeiten')
+        const syncButton = wrapper.findAll('button').find(button => button.text() === 'Vorlage synchronisieren')
+        expect(syncButton.element.parentElement).toBe(editButton.element.parentElement)
+        expect(wrapper.text()).not.toContain('Vorlage importieren')
+        expect(axios.post).not.toHaveBeenCalled()
+
+        await clickText(wrapper, 'Bearbeiten')
+        await clickText(wrapper, 'Frage hinzufügen')
+        const draftQuestions = wrapper.findComponent(QuestionEditor).props('questions')
+        expect(draftQuestions).toHaveLength(2)
+        const changedBefore = validQuestion({ prompt: 'Welche Lösung gilt?', options: [
+            { id: 'a', text: 'Erster Weg' }, { id: 'b', text: 'Zweiter Weg' },
+        ], correct_option_ids: ['a'] })
+        const changedAfter = { ...changedBefore, correct_option_ids: ['b'] }
+        const preview = {
+            token: 'review-token', source_path: sourcePath, initial_connection: false, can_apply: true, conflicts: [],
+            warnings: ['Eine vorhandene PDF wird nicht aktualisiert.'],
+            catalog_changes: { added: [{ id: 'new-in-source', prompt: 'Aus Dropbox' }],
+                modified: [{ id: 'changed', prompt: 'Welche Lösung gilt?', before: changedBefore, after: changedAfter }], removed: [] },
+            source_changes: { added: [{ id: 'new-in-schooltool', prompt: 'Aus Schooltool' }], modified: [], removed: [] },
+        }
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+        await clickText(wrapper, 'Vorlage synchronisieren')
+
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4/sync-preview', {
+            expected_version: 'catalog-v1', title: 'E-Mails', questions: draftQuestions,
+        })
+        const dialog = wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]')
+        expect(dialog.text()).toContain('In Schooltool übernehmen')
+        expect(dialog.text()).toContain('Aus Dropbox')
+        expect(dialog.text()).toContain('In Dropbox übernehmen')
+        expect(dialog.text()).toContain('Aus Schooltool')
+        expect(dialog.text()).toContain('Bisher')
+        expect(dialog.text()).toContain('Nach dem Abgleich')
+        expect(dialog.text()).toContain('Richtig: Erster Weg')
+        expect(dialog.text()).toContain('Richtig: Zweiter Weg')
+        expect(dialog.text()).toContain('Eine vorhandene PDF wird nicht aktualisiert.')
+        expect(axios.patch).not.toHaveBeenCalled()
+        expect(axios.delete).not.toHaveBeenCalled()
+
+        const syncedCatalog = { ...linkedCatalog, questions: draftQuestions, template_connection: { ...connection, source_revision: 'r2' } }
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            catalog: syncedCatalog, message: 'Abgleich abgeschlossen.',
+            warnings: ['Eine vorhandene PDF wird nicht aktualisiert.'],
+        } })
+        await clickText(wrapper, 'Abgleich bestätigen')
+
+        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/catalogs/4/sync-apply', { token: 'review-token' })
+        expect(wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Verbundene Fragenvorlage"]').text()).toContain(sourcePath)
+        expect(wrapper.text()).toContain('Abgleich abgeschlossen.')
+        expect(wrapper.text()).toContain('Eine vorhandene PDF wird nicht aktualisiert.')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual(draftQuestions)
+    })
+
+    it('shows conflicts without offering an apply action', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            token: null, source_path: sourcePath, initial_connection: false, can_apply: false,
+            conflicts: ['Die Frage wurde an beiden Orten geändert.'],
+            catalog_changes: { added: [], modified: [], removed: [] },
+            source_changes: { added: [], modified: [], removed: [] },
+        } })
+        await clickText(wrapper, 'Vorlage synchronisieren')
+
+        const dialog = wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]')
+        expect(dialog.text()).toContain('Die Frage wurde an beiden Orten geändert.')
+        expect(dialog.text()).toContain('Keine Änderungen.')
+        expect(dialog.text()).not.toContain('Abgleich bestätigen')
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        await clickText(wrapper, 'Schließen')
+        expect(wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]').exists()).toBe(false)
+    })
+
+    it('requires confirmation to disconnect and preserves the local catalog', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        await clickText(wrapper, 'Verbindung auflösen')
+        expect(axios.delete).not.toHaveBeenCalled()
+        expect(wrapper.find('[role="dialog"]').text()).toContain('Fragenkatalog und die Dropbox-Vorlage bleiben erhalten')
+        vi.mocked(axios.delete).mockResolvedValueOnce({ data: {
+            catalog: { id: 4, title: 'E-Mails', questions: [validQuestion()], template_connection: null },
+        } })
+        await wrapper.find('[role="dialog"]').findAll('button').find(button => button.text() === 'Verbindung auflösen').trigger('click')
+        await flushPromises()
+        expect(axios.delete).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4/template-connection')
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
+        expect(wrapper.find('[aria-label="Verbundene Fragenvorlage"]').exists()).toBe(false)
+        await clickText(wrapper, 'Bearbeiten')
+        expect(wrapper.text()).toContain('Vorlage importieren')
+    })
+
+    it('labels a historical import as unconfirmed until the first reviewed sync', async () => {
+        const wrapper = renderWorkspace({ catalogs: [{
+            ...linkedCatalog,
+            template_connection: { ...connection, status: 'needs_confirmation' },
+        }] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        expect(wrapper.text()).toContain('Vorlage noch nicht bestätigt')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            token: 'initial-token', source_path: sourcePath, initial_connection: true, can_apply: true, conflicts: [],
+            catalog_changes: { added: [], modified: [], removed: [] },
+            source_changes: { added: [], modified: [], removed: [] },
+        } })
+        await clickText(wrapper, 'Vorlage synchronisieren')
+        expect(wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]').text())
+            .toContain('Beim ersten Abgleich')
+    })
+    it('prevents a stale editor from overwriting a synchronized catalog', async () => {
+        const versionedCatalog = { ...linkedCatalog, template_version: 'catalog-v1' }
+        const wrapper = renderWorkspace({ catalogs: [versionedCatalog] })
+        await flushPromises()
+        await editCatalog(wrapper)
+        const changedQuestions = [validQuestion({ prompt: 'Lokal geändert' })]
+        await wrapper.findComponent(QuestionEditor).vm.$emit('update:questions', changedQuestions)
+        vi.mocked(axios.patch).mockResolvedValueOnce({ data: {
+            catalog: { ...versionedCatalog, questions: changedQuestions, template_version: 'catalog-v2' },
+        } })
+        await clickText(wrapper, 'Fragen speichern')
+
+        expect(axios.patch).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4',
+            expect.objectContaining({ expected_version: 'catalog-v1' }))
+    })
+
+    it('keeps a rejected apply visible and disables reuse of its stale confirmation', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            token: 'stale-token', source_path: sourcePath, initial_connection: false, can_apply: true, conflicts: [],
+            catalog_changes: { added: [], modified: [], removed: [] },
+            source_changes: { added: [{ id: 'local', prompt: 'Lokal neu' }], modified: [], removed: [] },
+        } })
+        await clickText(wrapper, 'Vorlage synchronisieren')
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { status: 409, data: { message: 'Die Vorlage wurde inzwischen geändert. Bitte erneut prüfen.' } } })
+        await clickText(wrapper, 'Abgleich bestätigen')
+
+        const dialog = wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]')
+        expect(dialog.text()).toContain('Die Vorlage wurde inzwischen geändert. Bitte erneut prüfen.')
+        expect(dialog.findAll('button').find(button => button.text() === 'Abgleich bestätigen').attributes('disabled')).toBeDefined()
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
+        expect(axios.post).toHaveBeenCalledTimes(2)
+    })
+    it('offers an explicitly confirmed recovery unlink without changing questions', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+            token: null, source_path: sourcePath, initial_connection: false, resuming: true,
+            can_apply: false, can_disconnect: true, recovery_token: 'recovery-token',
+            conflicts: ['Die Vorlage wurde nach dem unterbrochenen Schreiben verändert.'],
+            catalog_changes: { added: [], modified: [], removed: [] },
+            source_changes: { added: [], modified: [], removed: [] },
+        } })
+        await clickText(wrapper, 'Vorlage synchronisieren')
+        expect(wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]').text())
+            .toContain('Ein unterbrochener Abgleich wird fortgesetzt.')
+        await clickText(wrapper, 'Abgleich beenden und Verbindung lösen')
+        expect(axios.delete).not.toHaveBeenCalled()
+        expect(wrapper.find('[role="dialog"]').text()).toContain('Katalogfragen und Dropbox-Datei bleiben erhalten')
+
+        vi.mocked(axios.delete).mockResolvedValueOnce({ data: {
+            catalog: { id: 4, title: 'E-Mails', questions: [validQuestion()], template_connection: null },
+        } })
+        await clickText(wrapper, 'Abgleich beenden und Verbindung lösen')
+        expect(axios.delete).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/catalogs/4/template-connection', {
+            data: { recovery_token: 'recovery-token' },
+        })
+        expect(wrapper.findComponent(QuestionEditor).props('questions')).toEqual([validQuestion()])
+        expect(wrapper.find('[aria-label="Verbundene Fragenvorlage"]').exists()).toBe(false)
+    })
 })

@@ -14,7 +14,7 @@ class McTestFolder
 {
     public function __construct(private DropboxWorkImport $dropbox, private McTestExchange $exchange) {}
 
-    public function status(McTest $test, User $actor): array
+    public function status(McTest $test, User $actor, bool $resolve = false): array
     {
         $ready = $this->dropbox->configured() && $this->dropbox->installed();
         $connection = $ready ? DropboxConnection::where('user_id', $actor->id)->whereNull('revoked_at')->first() : null;
@@ -22,10 +22,19 @@ class McTestFolder
         if (($folder['provider'] ?? null) === 'dropbox' && (! $connection || $folder['account_hash'] !== hash('sha256', $connection->account_id))) {
             $folder = null;
         }
+        if ($resolve && ($folder['provider'] ?? null) === 'dropbox' && $connection) {
+            $current = $this->dropbox->metadata($connection, $folder['folder_id']);
+            abort_unless($current['id'] === $folder['folder_id'], 409, 'Der verknüpfte Dropbox-Ordner wurde nicht bestätigt.');
+            $folder['name'] = $current['name'];
+            $folder['path'] = $current['path_display'] ?? $current['path_lower'];
+            if (isset($folder['exercise_folder_identity'])) {
+                app(McExerciseFolderIdentity::class)->verify($connection, $current, $folder['exercise_folder_identity']);
+            }
+        }
 
         return ['configured' => $ready, 'connected' => $connection !== null,
             'writable' => $connection && $this->dropbox->canWrite($connection),
-            'folder' => $folder ? array_intersect_key($folder, array_flip(['provider', 'folder_id', 'name'])) : null,
+            'folder' => $folder ? array_intersect_key($folder, array_flip(['provider', 'folder_id', 'name', 'path'])) : null,
             'filename' => $this->filename($test), 'identity' => $this->exchange->identity($test)];
     }
 
@@ -40,6 +49,10 @@ class McTestFolder
                 $this->fail($plausibility['message']);
             }
             $binding += ['folder_id' => $folder['id'], 'name' => $folder['name'], 'account_hash' => hash('sha256', $connection->account_id)];
+            if (isset($data['exercise_folder_identity'])) {
+                $binding['exercise_folder_identity'] = app(McExerciseFolderIdentity::class)
+                    ->verify($connection, $folder, $data['exercise_folder_identity'], true);
+            }
         } else {
             $binding['name'] = $data['name'];
         }
@@ -51,6 +64,18 @@ class McTestFolder
         }
 
         return $state;
+    }
+
+    /** Remove only the exact local binding written for a rolled-back new test. */
+    public function forgetProvisionalBinding(McTest $test, User $actor, string $identity): void
+    {
+        abort_unless((int) $test->school_id === (int) $actor->school_id && (int) $test->owner_id === (int) $actor->id, 404);
+        $path = $this->path($test, $actor);
+        $contents = Storage::disk('local')->get($path);
+        $binding = $contents === null ? null : json_decode($contents, true);
+        if (($binding['identity'] ?? null) === $identity && ! Storage::disk('local')->delete($path)) {
+            $this->fail('Die vorläufige Ordnerzuordnung konnte nicht entfernt werden. Der Test wurde nicht angelegt.');
+        }
     }
 
     public function suggestions(McTest $test, User $actor): array
@@ -173,6 +198,10 @@ class McTestFolder
         $connection = $this->dropbox->connection($actor);
         if (($folder['provider'] ?? null) !== 'dropbox' || ($folder['account_hash'] ?? null) !== hash('sha256', $connection->account_id)) {
             $this->fail('Bitte für diesen Test einen eigenen Dropbox-Ordner zuordnen.');
+        }
+        if (isset($folder['exercise_folder_identity'])) {
+            $current = $this->dropbox->metadata($connection, $folder['folder_id']);
+            app(McExerciseFolderIdentity::class)->verify($connection, $current, $folder['exercise_folder_identity']);
         }
 
         return $folder;

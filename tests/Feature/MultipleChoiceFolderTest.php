@@ -348,9 +348,95 @@ test('Postmark checks send only the super admins own testmail after API confirma
         && $request['To'] === $context['teacher']->email && $request['From'] === 'schooltool@example.test');
 });
 
+test('automatic connection probes only read the selected provider and never run write or mail tests', function (): void {
+    $context = mcFolderContext();
+    Role::findOrCreate('super_admin', 'web');
+    $context['teacher']->assignRole('super_admin');
+    config(['services.postmark.token' => 'automatic-read-fixture']);
+    DropboxConnection::factory()->create(['user_id' => $context['teacher']->id, 'credentials' => ['refresh_token' => 'automatic-refresh',
+        'scopes' => [...DropboxWorkImport::SCOPES, 'files.content.write']]]);
+    Http::fake(['https://api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'automatic-access']),
+        'https://api.dropboxapi.com/2/files/list_folder' => Http::response(['entries' => [], 'has_more' => false]),
+        'https://api.postmarkapp.com/server' => Http::response(['ID' => 123, 'ApiTokens' => ['private-provider-token']])]);
+    $this->actingAs($context['teacher']);
+
+    $dropbox = $this->getJson('/api/admin/connections?probe=dropbox')->assertOk()
+        ->assertJsonPath('dropbox.write_checked_at', null)->assertJsonPath('postmark.test_mail', null);
+    expect($dropbox->json('dropbox.read_checked_at'))->not->toBeNull();
+    Http::assertSentCount(2);
+
+    $postmark = $this->getJson('/api/admin/connections?probe=postmark')->assertOk()->assertJsonPath('postmark.test_mail', null);
+    expect($postmark->json('postmark.checked_at'))->not->toBeNull();
+    expect($postmark->getContent())->not->toContain('automatic-read-fixture', 'private-provider-token', 'automatic-refresh');
+    Http::assertSentCount(3);
+    Http::assertNotSent(fn ($request): bool => ! in_array($request->url(), [
+        'https://api.dropboxapi.com/oauth2/token', 'https://api.dropboxapi.com/2/files/list_folder', 'https://api.postmarkapp.com/server',
+    ], true));
+});
+
+test('automatic Postmark probes replace stale success and recover from provider errors', function (string $failure): void {
+    $context = mcFolderContext();
+    Role::findOrCreate('super_admin', 'web');
+    $context['teacher']->assignRole('super_admin');
+    config(['services.postmark.token' => 'automatic-postmark-'.$failure]);
+    $this->actingAs($context['teacher']);
+    Http::fake(['https://api.postmarkapp.com/server' => Http::sequence()->push(['ID' => 123])->pushResponse(match ($failure) {
+        'token' => Http::response(['ErrorCode' => 10], 401),
+        'malformed' => Http::response(['ID' => 'invalid']),
+        'timeout' => Http::failedConnection(),
+    })->push(['ID' => 123])]);
+    $success = $this->getJson('/api/admin/connections?probe=postmark')->assertOk();
+    expect($success->json('postmark.checked_at'))->not->toBeNull();
+
+    $failed = $this->getJson('/api/admin/connections?probe=postmark')->assertOk()
+        ->assertJsonPath('postmark.checked_at', null)->assertJsonPath('postmark.test_mail', null);
+    expect($failed->json('postmark.error'))->not->toBeNull();
+
+    $recovered = $this->getJson('/api/admin/connections?probe=postmark')->assertOk()
+        ->assertJsonPath('postmark.error', null)->assertJsonPath('postmark.http_status', null)->assertJsonPath('postmark.error_code', null);
+    expect($recovered->json('postmark.checked_at'))->not->toBeNull();
+    Http::assertNotSent(fn ($request): bool => $request->method() !== 'GET');
+})->with(['token', 'malformed', 'timeout']);
+
+test('automatic Dropbox probes clear stale read confirmation on rejected or malformed responses', function (string $failure): void {
+    $context = mcFolderContext();
+    Role::findOrCreate('super_admin', 'web');
+    $context['teacher']->assignRole('super_admin');
+    DropboxConnection::factory()->create(['user_id' => $context['teacher']->id]);
+    $this->actingAs($context['teacher']);
+    Http::fake(['https://api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'automatic-access']),
+        'https://api.dropboxapi.com/2/files/list_folder' => Http::sequence()->push(['entries' => [], 'has_more' => false])->pushResponse(match ($failure) {
+            'revoked' => Http::response([], 401),
+            'malformed' => Http::response([]),
+            'timeout' => Http::failedConnection(),
+        })]);
+    $success = $this->getJson('/api/admin/connections?probe=dropbox')->assertOk();
+    expect($success->json('dropbox.read_checked_at'))->not->toBeNull();
+
+    $failed = $this->getJson('/api/admin/connections?probe=dropbox')->assertOk()
+        ->assertJsonPath('dropbox.read_checked_at', null)->assertJsonPath('dropbox.write_checked_at', null);
+    expect($failed->json('dropbox.error'))->not->toBeNull();
+    if ($failure === 'revoked') {
+        $failed->assertJsonPath('dropbox.connected', false);
+    }
+    Http::assertNotSent(fn ($request): bool => ! in_array($request->url(), [
+        'https://api.dropboxapi.com/oauth2/token', 'https://api.dropboxapi.com/2/files/list_folder',
+    ], true));
+})->with(['revoked', 'malformed', 'timeout']);
+
+test('automatic probes reject unsupported providers before making external requests', function (): void {
+    $context = mcFolderContext();
+    Role::findOrCreate('super_admin', 'web');
+    $context['teacher']->assignRole('super_admin');
+    $this->actingAs($context['teacher'])->getJson('/api/admin/connections?probe=write')->assertUnprocessable()->assertJsonValidationErrors('probe');
+    Http::assertNothingSent();
+});
+
 test('the global connections overview and checks are restricted to super admins without blocking owned MC folders', function (): void {
     $context = mcFolderContext();
     $this->actingAs($context['teacher'])->getJson('/api/admin/connections')->assertForbidden();
+    $this->getJson('/api/admin/connections?probe=dropbox')->assertForbidden();
+    $this->getJson('/api/admin/connections?probe=postmark')->assertForbidden();
     $this->postJson('/api/admin/connections/check')->assertForbidden();
     $this->postJson('/api/admin/connections/dropbox/connect')->assertForbidden();
     $this->getJson('/api/admin/multiple-choice/tests/'.$context['test']->id.'/folder')->assertOk();

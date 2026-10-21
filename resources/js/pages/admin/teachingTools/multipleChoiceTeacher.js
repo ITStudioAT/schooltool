@@ -105,6 +105,33 @@ export function requestError(error) {
     return error.response?.data?.message ?? 'Die Verbindung ist fehlgeschlagen. Bitte erneut versuchen.'
 }
 
+const viennaFormatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+
+export function viennaDateTime(value) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return value
+    const date = new Date(value)
+    if (!value || !Number.isFinite(date.getTime())) return ''
+    const parts = Object.fromEntries(viennaFormatter.formatToParts(date).map(part => [part.type, part.value]))
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+export function viennaDateTimeIso(value) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value || '')) return ''
+    const wall = Date.parse(`${value}:00Z`)
+    if (!Number.isFinite(wall) || new Date(wall).toISOString().slice(0, 16) !== value) return ''
+    const offsets = [-86400000, 0, 86400000].map(delta => {
+        const sample = wall + delta
+        return Date.parse(`${viennaDateTime(sample)}:00Z`) - sample
+    })
+    const candidates = [...new Set(offsets)].map(offset => wall - offset)
+        .filter(timestamp => viennaDateTime(timestamp) === value)
+    // Keep the deadline open through the second occurrence of the repeated autumn hour.
+    return candidates.length ? new Date(Math.max(...candidates)).toISOString() : ''
+}
+
 export function statusLabel(status) {
     return {
         not_started: 'Noch nicht begonnen',

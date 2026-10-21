@@ -2,6 +2,7 @@
 
 use App\Jobs\FinalizeMultipleChoiceTest;
 use App\Mail\MultipleChoiceInvitation;
+use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\School;
@@ -55,9 +56,14 @@ function mcAdminQuestions(): array
     ];
 }
 
-function mcAdminCatalog(User $teacher): McCatalog
+function mcAdminCatalog(User $teacher, int $questionCount = 10): McCatalog
 {
-    return McCatalog::query()->create(['school_id' => $teacher->school_id, 'owner_id' => $teacher->id, 'title' => 'Grundlagen', 'questions' => mcAdminQuestions()]);
+    $questions = [];
+    for ($index = 0; $index < $questionCount; $index++) {
+        $questions[] = [...mcAdminQuestions()[$index % 2], 'id' => 'q'.($index + 1), 'prompt' => 'Frage '.($index + 1)];
+    }
+
+    return McCatalog::query()->create(['school_id' => $teacher->school_id, 'owner_id' => $teacher->id, 'title' => 'Grundlagen', 'questions' => $questions]);
 }
 
 function mcAdminRoster(User $student): string
@@ -165,15 +171,16 @@ test('test folder roster reports excluded former course members explicitly', fun
 /** @return array<string, mixed> */
 function mcAdminTestInput(McCatalog $catalog, User $student): array
 {
-    return ['catalog_id' => $catalog->id, 'title' => 'Grundlagen Test', 'question_count' => 2, 'total_points' => 10,
+    return ['catalog_id' => $catalog->id, 'title' => 'Grundlagen Test', 'question_count' => 10, 'total_points' => 10,
         'duration_seconds' => 600, 'lead_seconds' => 30, 'balance_types' => true,
         'shuffle_questions' => true, 'shuffle_options' => true, 'roster_csv' => mcAdminRoster($student)];
 }
 
 function mcAdminPublished(User $teacher, User $student): McTest
 {
-    $catalog = mcAdminCatalog($teacher);
+    $catalog = mcAdminCatalog($teacher, 2);
     $data = mcAdminTestInput($catalog, $student);
+    $data['question_count'] = 2;
     unset($data['roster_csv']);
     $test = McTest::query()->create([...$data, 'school_id' => $teacher->school_id, 'owner_id' => $teacher->id, 'status' => 'draft']);
 
@@ -229,18 +236,120 @@ test('direct import previews marked solutions as unreviewed drafts without persi
     expect(McCatalog::query()->count())->toBe(0);
 });
 
-test('test creation validates the whole roster and publishes one frozen assignment without sending mail', function () {
+test('test creation stores ten questions per person without publishing or sending mail', function () {
     $context = mcAdminContext();
     $catalog = mcAdminCatalog($context['teacher']);
     Mail::fake();
     $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/tests', mcAdminTestInput($catalog, $context['student']))
-        ->assertCreated()->assertJsonPath('test.status', 'published')->assertJsonCount(1, 'attempts')->assertJsonPath('attempts.0.status', 'not_started');
+        ->assertCreated()->assertJsonPath('test.status', 'draft')->assertJsonCount(1, 'attempts')->assertJsonPath('attempts.0.status', 'not_started');
     $test = McTest::query()->findOrFail($response->json('test.id'));
-    expect($test->snapshot['questions'])->toHaveCount(2);
+    expect($test->snapshot['questions'])->toHaveCount(10);
+    expect($test->attempts()->sole()->questions)->toHaveCount(10);
     expect($test->attempts()->first()->student_id)->toBe($context['student']->id);
     expect($response->json('attempts.0'))->not->toHaveKeys(['access_token', 'access_token_hash']);
     Mail::assertNothingSent();
 });
+
+test('creation freezes independent assignments and release and starts preserve them', function (string $mode) {
+    $context = mcAdminContext();
+    $second = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id, 'is_active' => true]);
+    $second->assignRole('student');
+    $catalog = mcAdminCatalog($context['teacher'], 20);
+    $input = mcAdminTestInput($catalog, $context['student']);
+    $input['roster_csv'] .= implode(';', [$second->first_name, $second->last_name, 'x', $second->email, 'INF', ''])."\n";
+    $input['start_mode'] = $mode;
+    $input['closes_at'] = now()->addDay()->toIso8601String();
+    Queue::fake();
+    Mail::fake();
+    $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/tests', $input)->assertCreated()->assertJsonPath('test.status', 'draft');
+    $test = McTest::query()->findOrFail($response->json('test.id'));
+    $attempts = $test->attempts()->orderBy('id')->get();
+    expect($attempts)->toHaveCount(2);
+    $assigned = $attempts->pluck('questions', 'id')->all();
+    foreach ($assigned as $questions) {
+        expect($questions)->toHaveCount(10)->and(array_unique(array_column($questions, 'id')))->toHaveCount(10);
+    }
+    Queue::assertNothingPushed();
+    $this->postJson("/api/admin/multiple-choice/tests/{$test->id}/countdown")->assertUnprocessable();
+    $this->actingAs($context['student'])->getJson('/api/multiple-choice/attempts/'.$attempts->first()->id)->assertNotFound();
+    $catalog->update(['questions' => []]);
+    $this->actingAs($second)->postJson("/api/admin/multiple-choice/tests/{$test->id}/publish")->assertForbidden();
+    $this->actingAs($context['teacher'])->postJson("/api/admin/multiple-choice/tests/{$test->id}/publish")->assertOk()->assertJsonPath('test.status', 'published');
+    $this->postJson("/api/admin/multiple-choice/tests/{$test->id}/publish")->assertOk();
+    $this->patchJson("/api/admin/multiple-choice/tests/{$test->id}/settings", [...$input, 'question_count' => 9, 'exam_mode' => false])
+        ->assertUnprocessable()->assertJsonValidationErrors('question_count');
+    if ($mode === 'common') {
+        app(McTestService::class)->startCountdown($test->fresh());
+        $this->travel(31)->seconds();
+        app(McTestService::class)->openAttempt($attempts->first()->fresh());
+    } else {
+        app(McTestService::class)->startIndividual($attempts->first()->fresh());
+    }
+    expect($test->attempts()->orderBy('id')->get()->pluck('questions', 'id')->all())->toBe($assigned);
+    Mail::assertNothingSent();
+})->with(['common', 'individual']);
+
+test('creation rejects pools smaller than ten and duplicate question identities without partial records', function (bool $duplicate) {
+    $context = mcAdminContext();
+    $catalog = mcAdminCatalog($context['teacher'], $duplicate ? 10 : 9);
+    if ($duplicate) {
+        $questions = $catalog->questions;
+        $questions[9] = $questions[0];
+        $catalog->update(['questions' => $questions]);
+    }
+    $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/tests', mcAdminTestInput($catalog, $context['student']))->assertUnprocessable();
+    expect(McTest::query()->count())->toBe(0)->and(McAttempt::query()->count())->toBe(0);
+})->with([false, true]);
+
+test('owners can read saved draft questions while student access stays locked and all attempt state is preserved', function () {
+    $context = mcAdminContext();
+    $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/tests', mcAdminTestInput(mcAdminCatalog($context['teacher']), $context['student']))->assertCreated();
+    $test = McTest::query()->findOrFail($response->json('test.id'));
+    $attempt = $test->attempts()->sole();
+    $beforeTest = $test->getAttributes();
+    $beforeAttempt = $attempt->getAttributes();
+    $url = "/api/admin/multiple-choice/tests/{$test->id}";
+    $this->getJson($url)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('test.status', 'draft')->assertJsonCount(10, 'attempts.0.questions')
+        ->assertJsonPath('attempts.0.questions', $attempt->questions)->assertJsonPath('attempts.0.access_url', null);
+    $this->actingAs($context['student'])->getJson($url)->assertForbidden();
+    $this->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertNotFound();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertNotFound();
+    $this->flushHeaders();
+    $otherTeacher = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id]);
+    $otherTeacher->assignRole('teacher');
+    $this->actingAs($otherTeacher)->getJson($url)->assertNotFound();
+    $foreign = mcAdminContext();
+    $this->actingAs($foreign['teacher'])->getJson($url)->assertNotFound();
+    expect($test->fresh()->getAttributes())->toBe($beforeTest)->and($attempt->fresh()->getAttributes())->toBe($beforeAttempt);
+});
+
+test('individual test creation preserves Vienna wall time and its UTC instant through storage and reload', function (string $closing, string $expected) {
+    $this->travelTo(CarbonImmutable::parse('2026-01-01T12:00:00+01:00'));
+    $timezone = DB::selectOne('SELECT @@session.time_zone AS zone')->zone;
+    DB::statement('SET SESSION time_zone = ?', ['+00:00']);
+    try {
+        $context = mcAdminContext();
+        $input = mcAdminTestInput(mcAdminCatalog($context['teacher']), $context['student']);
+        $response = $this->actingAs($context['teacher'])->postJson('/api/admin/multiple-choice/tests', [...$input, 'start_mode' => 'individual', 'closes_at' => $closing])->assertCreated();
+        $test = McTest::query()->findOrFail($response->json('test.id'));
+        expect($test->getRawOriginal('closes_at'))->toBe($expected);
+        expect($test->closes_at->equalTo($closing))->toBeTrue();
+        expect(CarbonImmutable::parse($response->json('test.closes_at'))->equalTo($closing))->toBeTrue();
+        expect(CarbonImmutable::parse($test->snapshot['closes_at'])->equalTo($closing))->toBeTrue();
+        $shown = $this->getJson("/api/admin/multiple-choice/tests/{$test->id}")->assertOk()->json('test.closes_at');
+        expect(CarbonImmutable::parse($shown)->equalTo($closing))->toBeTrue();
+    } finally {
+        DB::statement('SET SESSION time_zone = ?', [$timezone]);
+    }
+})->with([
+    'October UTC from 21 Vienna' => ['2026-10-22T19:00:00.000Z', '2026-10-22 21:00:00'],
+    'October Vienna offset' => ['2026-10-22T21:00:00+02:00', '2026-10-22 21:00:00'],
+    'winter UTC from 21 Vienna' => ['2027-01-15T20:00:00Z', '2027-01-15 21:00:00'],
+    'winter Vienna offset' => ['2027-01-15T21:00:00+01:00', '2027-01-15 21:00:00'],
+    'summer UTC from 21 Vienna' => ['2027-07-15T19:00:00Z', '2027-07-15 21:00:00'],
+    'summer Vienna offset' => ['2027-07-15T21:00:00+02:00', '2027-07-15 21:00:00'],
+]);
 
 test('an unmatched trailing CSV row prevents all test creation', function () {
     $context = mcAdminContext();
@@ -848,7 +957,7 @@ test('completed work can be released while absent and active classmates retain p
     } else {
         $service->openAttempt($activeAttempt);
     }
-    $service->saveAnswers($finishedAttempt, ['q1' => ['a'], 'q2' => ['a', 'b']]);
+    $service->saveAnswers($finishedAttempt, collect($finishedAttempt->questions)->mapWithKeys(fn (array $question): array => [$question['id'] => $question['correct_option_ids']])->all());
     $service->submit($finishedAttempt);
     $absentAttempt = $test->attempts()->where('student_id', $absent->id)->sole();
     $beforeAbsent = $absentAttempt->getAttributes();
@@ -869,7 +978,7 @@ test('completed work can be released while absent and active classmates retain p
         ->assertOk()->assertJsonPath('attempt.result', null)->assertJsonMissingPath('attempt.questions.0.correct_option_ids');
     expect($test->fresh()->results_released_at)->not->toBeNull();
     expect($test->fresh()->solutions_released_at)->not->toBeNull();
-    $service->saveAnswers($activeAttempt, ['q1' => ['a'], 'q2' => ['a', 'b']]);
+    $service->saveAnswers($activeAttempt, collect($activeAttempt->questions)->mapWithKeys(fn (array $question): array => [$question['id'] => $question['correct_option_ids']])->all());
     $service->submit($activeAttempt);
     $this->getJson('/api/multiple-choice/attempts/'.$activeAttempt->id)
         ->assertOk()->assertJsonPath('attempt.result.score', '10.00')->assertJsonPath('attempt.result.solutions_released', true);

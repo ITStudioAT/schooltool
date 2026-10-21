@@ -8,6 +8,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
+use App\Services\MultipleChoice\McTemplateWriteRejected;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Pool;
@@ -113,10 +114,14 @@ class DropboxWorkImport
         $checks = $cacheKey ? Cache::store('file')->get($cacheKey, []) : [];
         if ($verify && $connection && ! $connection->revoked_at && $this->configured()) {
             try {
-                $this->api($connection, 'files/list_folder', ['path' => '', 'recursive' => false, 'limit' => 1]);
+                $listing = $this->api($connection, 'files/list_folder', ['path' => '', 'recursive' => false, 'limit' => 1])->json();
+                if (! is_array($listing['entries'] ?? null) || ! is_bool($listing['has_more'] ?? null)) {
+                    $this->fail('Dropbox hat den Ordnerzugriff nicht bestätigt.');
+                }
                 $checks['read_checked_at'] = now()->toISOString();
                 unset($checks['error']);
             } catch (ValidationException) {
+                unset($checks['read_checked_at']);
                 $checks['error'] = 'Die Dropbox-Verbindung konnte nicht bestätigt werden. Bitte erneut freigeben oder später prüfen.';
             }
             Cache::store('file')->put($cacheKey, $checks, now()->addDays(30));
@@ -237,6 +242,135 @@ class DropboxWorkImport
         }
 
         return $data['rev'];
+    }
+
+    public function replaceModuleTemplate(DropboxConnection $connection, string $fileId, string $revision, string $contents, string $expectedPath): array
+    {
+        abort_unless($this->canWrite($connection), 422, 'Für die Synchronisierung fehlt die Dropbox-Schreibfreigabe.');
+        abort_unless(preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $fileId) && $revision !== '' && strlen($contents) <= 1024 * 1024,
+            422, 'Die gebundene Fragenvorlage ist ungültig oder zu groß.');
+        $before = $this->readModuleApi($connection, 'files/get_metadata', ['path' => $fileId])->json();
+        if (($before['.tag'] ?? null) !== 'file' || ($before['id'] ?? null) !== $fileId
+            || ($before['rev'] ?? null) !== $revision || ($before['path_display'] ?? $before['path_lower'] ?? null) !== $expectedPath
+            || ! in_array(strtolower(pathinfo($before['name'] ?? '', PATHINFO_EXTENSION)), ['md', 'txt', 'json'], true)) {
+            throw new McTemplateWriteRejected('Die Fragenvorlage wurde inzwischen geändert. Bitte erneut vergleichen.');
+        }
+        $parameters = ['path' => $fileId, 'mode' => ['.tag' => 'update', 'update' => $revision], 'autorename' => false, 'strict_conflict' => true];
+        try {
+            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->withHeaders(['Dropbox-API-Arg' => json_encode($parameters, JSON_THROW_ON_ERROR)])
+                ->withBody($contents, 'application/octet-stream')->post('https://content.dropboxapi.com/2/files/upload');
+        } catch (ConnectionException) {
+            $this->fail('Dropbox hat die Synchronisierung nicht bestätigt. Der Vorgang bleibt zur sicheren Wiederaufnahme gespeichert.');
+        }
+        if ($response->status() === 409) {
+            throw new McTemplateWriteRejected('Dropbox hat das Schreiben wegen eines Konflikts abgelehnt. Bitte erneut vergleichen.');
+        }
+        $saved = $this->checkResponse($connection, $response)->json();
+        abort_unless(($saved['id'] ?? null) === $fileId && is_string($saved['rev'] ?? null) && ($saved['size'] ?? null) === strlen($contents),
+            409, 'Dropbox hat die geschriebene Vorlage nicht eindeutig bestätigt.');
+        $verified = $this->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$saved['rev']])->body();
+        $after = $this->readModuleApi($connection, 'files/get_metadata', ['path' => $fileId])->json();
+        abort_unless(hash_equals($contents, $verified) && ($after['rev'] ?? null) === $saved['rev']
+            && ($after['path_lower'] ?? null) === ($before['path_lower'] ?? null), 409, 'Die gespeicherte Vorlage konnte nicht unverändert zurückgelesen werden.');
+
+        return $after;
+    }
+
+    /** @return array<string, mixed>|null */
+    public function findModuleEntry(DropboxConnection $connection, string $path): ?array
+    {
+        abort_unless(str_starts_with($path, '/') && strlen($path) <= 4096 && ! str_contains($path, "\0"), 422);
+        try {
+            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
+        } catch (ConnectionException) {
+            $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut prüfen.');
+        }
+        if ($response->status() === 409 && str_starts_with((string) $response->json('error_summary'), 'path/not_found/')) {
+            return null;
+        }
+
+        return $this->checkResponse($connection, $response)->json();
+    }
+
+    /**
+     * @param  array<string, mixed>  $sourceFolder
+     * @return array<string, mixed>
+     */
+    public function ensureQuestionSummaryFolder(DropboxConnection $connection, array $sourceFolder): array
+    {
+        abort_unless($this->canWrite($connection) && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $sourceFolder['id'] ?? '')
+            && in_array(mb_strtolower($sourceFolder['name'] ?? ''), ['multiple choice fragen', 'fragenkatalog'], true), 422);
+        $parent = $this->metadata($connection, $sourceFolder['id']);
+        abort_unless(($parent['path_lower'] ?? null) === ($sourceFolder['path_lower'] ?? null), 409,
+            'Der Fragenordner wurde seit der Vorschau verschoben.');
+        $path = rtrim($parent['path_display'] ?? $parent['path_lower'], '/').'/Question Summary';
+        $entry = $this->findModuleEntry($connection, $path);
+        if ($entry === null) {
+            try {
+                $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                    ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/create_folder_v2',
+                        ['path' => $path, 'autorename' => false]);
+            } catch (ConnectionException) {
+                $response = null;
+            }
+            if ($response !== null && $response->status() !== 409) {
+                $this->checkResponse($connection, $response);
+            }
+            $entry = $this->findModuleEntry($connection, $path);
+        }
+        abort_unless(($entry['.tag'] ?? null) === 'folder' && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $entry['id'] ?? '')
+            && ($entry['path_display'] ?? $entry['path_lower'] ?? null) === $path, 409,
+            'Der Dropbox-Ordner für die Question Summary konnte nicht eindeutig bestätigt werden.');
+
+        return $entry;
+    }
+
+    /** @return array<string, mixed> */
+    public function writeQuestionSummary(DropboxConnection $connection, string $folderId, string $filename,
+        string $contents, ?string $expectedRevision, string $expectedPath): array
+    {
+        abort_unless($this->canWrite($connection) && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId)
+            && preg_match('/\AQuestion Summary_Katalog-[1-9][0-9]*\.md\z/', $filename)
+            && strlen($contents) <= 1024 * 1024, 422, 'Die Question Summary kann so nicht gespeichert werden.');
+        $folder = $this->metadata($connection, $folderId);
+        abort_unless($folder['name'] === 'Question Summary', 409, 'Der Zielordner passt nicht zur Question Summary.');
+        $path = rtrim($folder['path_display'] ?? $folder['path_lower'], '/').'/'.$filename;
+        abort_unless($path === $expectedPath, 409, 'Der Zielordner wurde seit der Vorschau verschoben. Bitte erneut prüfen.');
+        $before = $this->findModuleEntry($connection, $path);
+        abort_unless(($expectedRevision === null && $before === null)
+            || ($expectedRevision !== null && ($before['.tag'] ?? null) === 'file'
+                && ($before['rev'] ?? null) === $expectedRevision), 409,
+            'Die Question Summary wurde inzwischen geändert. Bitte erneut prüfen.');
+        $parameters = ['path' => $path, 'mode' => $expectedRevision === null ? 'add' : ['.tag' => 'update', 'update' => $expectedRevision],
+            'autorename' => false, 'strict_conflict' => true];
+        try {
+            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->withHeaders(['Dropbox-API-Arg' => json_encode($parameters, JSON_THROW_ON_ERROR)])
+                ->withBody($contents, 'application/octet-stream')->post('https://content.dropboxapi.com/2/files/upload');
+        } catch (ConnectionException) {
+            $response = null;
+        }
+        if ($response !== null && $response->status() === 409) {
+            abort(409, 'Dropbox hat das Speichern wegen einer gleichzeitigen Änderung abgelehnt. Bitte erneut prüfen.');
+        }
+        if ($response !== null) {
+            $saved = $this->checkResponse($connection, $response)->json();
+            abort_unless(($saved['path_display'] ?? $saved['path_lower'] ?? null) === $path
+                && is_string($saved['rev'] ?? null) && ($saved['size'] ?? null) === strlen($contents), 409,
+                'Dropbox hat die Question Summary nicht eindeutig bestätigt.');
+        }
+        $after = $this->findModuleEntry($connection, $path);
+        abort_unless(($after['.tag'] ?? null) === 'file' && is_string($after['rev'] ?? null)
+            && ($after['size'] ?? null) === strlen($contents), 409,
+            'Die Speicherung konnte nicht bestätigt werden. Bitte vor einem neuen Versuch den Dropbox-Ordner prüfen.');
+        $verified = $this->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$after['rev']])->body();
+        $latest = $this->findModuleEntry($connection, $path);
+        abort_unless(hash_equals($contents, $verified) && ($latest['rev'] ?? null) === $after['rev'], 409,
+            'Die gespeicherte Question Summary konnte nicht unverändert zurückgelesen werden.');
+
+        return $after;
     }
 
     private function documentPath(string $folderId, string $filename): string

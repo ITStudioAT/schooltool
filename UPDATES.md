@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.52.2 !!!
+
+### Unterricht-Tools: MC-Fragen
+
+- Katalog mit lokaler Version synchronisieren
+
 ## 3.52.1
 
 ### Multiple-Choice-Tests

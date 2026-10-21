@@ -35,12 +35,14 @@ class ConnectionStatusController extends Controller
             return $response ?: response()->json(['message' => 'Eine Verbindungsprüfung läuft bereits.'], 429);
         }
 
-        return response()->json($this->report($actor, $dropbox));
+        $data = $request->validate(['probe' => ['sometimes', 'string', 'in:dropbox,postmark']]);
+
+        return response()->json($this->report($actor, $dropbox, probe: $data['probe'] ?? null));
     }
 
-    private function report(User $actor, DropboxWorkImport $dropbox, bool $verify = false): array
+    private function report(User $actor, DropboxWorkImport $dropbox, bool $verify = false, ?string $probe = null): array
     {
-        $dropboxStatus = $dropbox->connectionStatus($actor, $verify);
+        $dropboxStatus = $dropbox->connectionStatus($actor, $verify || $probe === 'dropbox');
         if ($verify && $dropboxStatus['connected'] && $dropboxStatus['write_granted']) {
             try {
                 $dropbox->verifyTemporaryWrite($actor);
@@ -55,7 +57,8 @@ class ConnectionStatusController extends Controller
         $mailKey = 'postmark-mail-check:'.$actor->id.':'.hash('sha256', $token);
         $mail = Cache::store('file')->get($mailKey);
         $apiConfirmed = false;
-        if ($verify && $token !== '') {
+        if (($verify || $probe === 'postmark') && $token !== '') {
+            $postmark = [];
             try {
                 $response = Http::withHeaders(['X-Postmark-Server-Token' => $token])->acceptJson()->connectTimeout(5)->timeout(12)
                     ->withOptions(['allow_redirects' => false])->get('https://api.postmarkapp.com/server');
