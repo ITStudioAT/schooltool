@@ -16,6 +16,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingPersonalAppointment;
 use App\Models\TeachingWorkDropboxFolder;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\RestaurantSynchronisationService;
 use App\Services\TeachingLiveSource;
@@ -79,6 +80,17 @@ beforeEach(function () {
 function teachingSyncApplyPayload(string $token): array
 {
     return ['token' => $token, 'replace_confirmed' => true, 'contacts_confirmed' => true];
+}
+
+function teachingSyncModuleLink(TeachingCourseWork $work, DropboxConnection $connection): TeachingWorkModuleLink
+{
+    return TeachingWorkModuleLink::query()->create([
+        'teaching_course_work_id' => $work->id, 'dropbox_connection_id' => $connection->id,
+        'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'namespace_id' => 'fixture-namespace',
+        'folder_id' => 'id:local-module', 'folder_name' => 'Local module', 'folder_path' => '/Local module',
+        'handshake_file_id' => 'id:local-handshake', 'handshake_revision' => 'local-revision',
+    ]);
 }
 
 function teachingSyncToolsFixture(User $teacher, TeachingCourse $course): array
@@ -612,7 +624,10 @@ test('Dropbox folder follows E-Mail from local work 66 to cloud work 63 instead 
     ]);
     $attributes = $folder->fresh()->getAttributes();
     $credentials = $connection->fresh()->getRawOriginal('credentials');
+    $moduleLink = teachingSyncModuleLink($work, $connection);
+    $moduleAttributes = $moduleLink->fresh()->getAttributes();
     $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    expect($this->snapshot['tables'])->not->toHaveKey('teaching_work_module_links');
     $this->snapshot['tables']['teaching_course_works'][0]['id'] = 63;
     if ($changedCourseId) {
         $this->snapshot['tables']['teaching_courses'][0]['id'] = 901;
@@ -634,8 +649,63 @@ test('Dropbox folder follows E-Mail from local work 66 to cloud work 63 instead 
     $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertSuccessful();
     expect($folder->fresh()->getAttributes())->toBe([...$attributes, 'teaching_course_work_id' => 63]);
     expect($connection->fresh()->getRawOriginal('credentials'))->toBe($credentials);
+    expect($moduleLink->fresh()->getAttributes())->toBe([...$moduleAttributes, 'teaching_course_work_id' => 63]);
     $this->assertDatabaseMissing('teaching_work_dropbox_folders', ['teaching_course_work_id' => 66]);
 })->with([false, true]);
+
+test('changed local module links invalidate the reviewed synchronisation preview', function (): void {
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->actor->id]);
+    $link = teachingSyncModuleLink($work, $connection);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $this->snapshot['tables']['teaching_course_works'][0]['description'] = 'Incoming description';
+    $this->actingAs($this->actor, 'sanctum');
+    $token = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful()->json('data.token');
+    $link->update(['handshake_revision' => 'changed-after-preview']);
+
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($token))->assertUnprocessable();
+
+    expect($link->fresh()->handshake_revision)->toBe('changed-after-preview');
+    expect($work->fresh()->description)->not->toBe('Incoming description');
+    expect(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toBe([]);
+});
+
+test('ambiguous local module links remain in the encrypted recovery copy instead of being reassigned', function (): void {
+    $first = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id,
+        'title' => 'Same module assignment', 'type' => 'A5', 'date_for_all_groups' => '2026-10-06']);
+    $second = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id,
+        'title' => $first->title, 'type' => $first->type, 'date_for_all_groups' => $first->date_for_all_groups]);
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->actor->id]);
+    $links = collect([$first, $second])->map(fn (TeachingCourseWork $work): array => teachingSyncModuleLink($work, $connection)->fresh()->getAttributes())->all();
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $this->snapshot['tables']['teaching_course_works'] = [$this->snapshot['tables']['teaching_course_works'][0]];
+    $this->actingAs($this->actor, 'sanctum');
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    expect($preview->json('data.conflicts'))->toBe([]);
+    expect($preview->json('data.dropbox_warnings'))->toHaveCount(2);
+    $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertSuccessful();
+
+    expect(DB::table('teaching_work_module_links')->count())->toBe(0);
+    $backup = app(TeachingSynchronisationBackup::class)->read(
+        "teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc"
+    );
+    expect($backup['dropbox_module_recovery'])->toBe($links);
+    expect($backup['state']['dropbox_module_links'])->toBe($links);
+});
+
+test('module links owned by a Dropbox account outside the school block replacement', function (): void {
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    $link = teachingSyncModuleLink($work, DropboxConnection::factory()->create());
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+
+    $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    expect($preview->json('data.token'))->toBeNull();
+    expect(implode(' ', $preview->json('data.conflicts')))->toContain('Konto außerhalb der Schule');
+    $this->assertModelExists($work);
+    $this->assertModelExists($link);
+});
 
 test('changed local Dropbox folder choices invalidate the synchronisation preview before replacement', function () {
     $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);

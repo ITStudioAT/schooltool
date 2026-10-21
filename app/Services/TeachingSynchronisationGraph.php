@@ -12,8 +12,8 @@ use RuntimeException;
 
 class TeachingSynchronisationGraph
 {
-    /** Dropbox folder choices belong to the local OAuth connection, never to the transferred school graph. */
-    private const array LOCAL_TABLES = ['teaching_work_dropbox_folders'];
+    /** Dropbox folder and module choices belong to the local OAuth connection, never to the transferred school graph. */
+    private const array LOCAL_TABLES = ['teaching_work_dropbox_folders', 'teaching_work_module_links'];
 
     // Dependency order; recovery archives/history are separate functions.
     public const array TABLES = [

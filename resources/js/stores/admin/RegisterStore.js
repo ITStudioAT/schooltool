@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { destroy as destroyRegister } from '@/actions/App/Http/Controllers/Admin/RegisterController'
 
 export const useRegisterStore = defineStore('AdminRegisterStore', {
     state: () => ({
@@ -110,15 +111,21 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
             }
         },
 
-        async destroy(data) {
+        async destroy(data, confirmation) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
 
             try {
-                const response = await axios.delete(`/api/admin/registers/${data.id}`)
+                await axios.delete(destroyRegister.url(data.id), { data: { confirmation } })
+                if (this.selected_register?.id === data.id) this.selected_register = null
+                if (adminStore.selected_register?.id === data.id) {
+                    adminStore.selected_register = null
+                    this.register_dates = []
+                }
+                if (adminStore.selected_active_register?.id === data.id) adminStore.selected_active_register = null
                 notification.notify({
-                    message: 'Das Anmeldesystem wurde erfolgreich gelöscht.',
+                    message: 'Das Anmeldetool wurde mit allen zugehörigen Anmeldungen und Terminen gelöscht.',
                     type: 'success',
                     timeout: 3000,
                 })

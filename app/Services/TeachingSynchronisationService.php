@@ -15,6 +15,11 @@ use RuntimeException;
 
 class TeachingSynchronisationService
 {
+    private const array DROPBOX_BINDINGS = [
+        'teaching_work_dropbox_folders' => 'dropbox_folders',
+        'teaching_work_module_links' => 'dropbox_module_links',
+    ];
+
     public function __construct(
         private TeachingLiveSource $source,
         private TeachingSynchronisationGraph $graph,
@@ -131,6 +136,7 @@ class TeachingSynchronisationService
                     $this->backups->write(['format' => 'schooltool-teaching-sync-safety-v2',
                         'school' => $actor->school_id, 'actor' => $actor->id, 'created_at' => now()->toISOString(), 'state' => $local,
                         'dropbox_recovery' => $plan['dropbox_recovery'],
+                        'dropbox_module_recovery' => $plan['dropbox_module_recovery'],
                     ], $backupPath);
                     $this->files->assertCanonicalFile(Storage::disk('local')->path($backupPath), config('filesystems.disks.local.root'));
                     foreach ($plan['files'] as $file) {
@@ -173,8 +179,10 @@ class TeachingSynchronisationService
                             DB::table($table)->insert($chunk);
                         }
                     }
-                    foreach ($plan['dropbox_folders'] as $folder) {
-                        DB::table('teaching_work_dropbox_folders')->insert($folder);
+                    foreach (self::DROPBOX_BINDINGS as $table => $key) {
+                        foreach ($plan[$key] as $binding) {
+                            DB::table($table)->insert($binding);
+                        }
                     }
                     DB::table('school_tools')->where('school_id', $actor->school_id)->update($preview['source']['school_tools'][0]);
                 });
@@ -207,21 +215,24 @@ class TeachingSynchronisationService
     private function localState(int $schoolId, bool $lock = false): array
     {
         $state = $this->graph->capture(DB::connection(), $schoolId, $lock, true);
-        $folders = DB::table('teaching_work_dropbox_folders')
-            ->whereIn('teaching_course_work_id', array_column($state['tables']['teaching_course_works'], 'id'))
-            ->orderBy('id');
-        if ($lock) {
-            $folders->lockForUpdate();
+        foreach (self::DROPBOX_BINDINGS as $table => $key) {
+            $bindings = DB::table($table)
+                ->whereIn('teaching_course_work_id', array_column($state['tables']['teaching_course_works'], 'id'))
+                ->orderBy('id');
+            if ($lock) {
+                $bindings->lockForUpdate();
+            }
+            $state[$key] = $bindings->get()->map(fn (object $row): array => (array) $row)->all();
         }
-        $state['dropbox_folders'] = $folders->get()->map(fn (object $row): array => (array) $row)->all();
+        $localBindings = [...$state['dropbox_folders'], ...$state['dropbox_module_links']];
         $state['files'] = $this->files->capture($state['tables'], config('filesystems'), false, true);
         $state['conflicts'] = [];
         $ownedConnections = DB::table('dropbox_connections')
             ->join('users', 'users.id', '=', 'dropbox_connections.user_id')
             ->where('users.school_id', $schoolId)
-            ->whereIn('dropbox_connections.id', array_column($state['dropbox_folders'], 'dropbox_connection_id'))
+            ->whereIn('dropbox_connections.id', array_column($localBindings, 'dropbox_connection_id'))
             ->pluck('dropbox_connections.id')->all();
-        foreach ($state['dropbox_folders'] as $folder) {
+        foreach ($localBindings as $folder) {
             if (! in_array($folder['dropbox_connection_id'], $ownedConnections, true)) {
                 $state['conflicts'][] = 'Lokale Dropbox-Ordnerzuordnung gehört zu einem Konto außerhalb der Schule.';
             }
@@ -247,7 +258,7 @@ class TeachingSynchronisationService
                 $state['conflicts'][] = 'Lokale Datei '.$file['path'].': '.$file['error'];
             }
         }
-        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), 'teaching_work_dropbox_folders', 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
+        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), ...array_keys(self::DROPBOX_BINDINGS), 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
         $engines = DB::table('information_schema.TABLES')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())->whereIn('TABLE_NAME', $tables)->pluck('ENGINE');
         if ($engines->count() !== count($tables) || $engines->contains(fn ($engine): bool => strcasecmp((string) $engine, 'InnoDB') !== 0)) {
             $state['conflicts'][] = 'Alle betroffenen Tabellen müssen transaktionale InnoDB-Tabellen sein.';
@@ -256,7 +267,10 @@ class TeachingSynchronisationService
             $state['conflicts'][] = 'Datenbank-Trigger könnten fremde Module verändern; Synchronisation gesperrt.';
         }
         // Catch foreign-school, orphan and non-scoped references, including cascades in other modules.
-        $replacementTables = [...$state['tables'], 'teaching_work_dropbox_folders' => $state['dropbox_folders']];
+        $replacementTables = $state['tables'];
+        foreach (self::DROPBOX_BINDINGS as $table => $key) {
+            $replacementTables[$table] = $state[$key];
+        }
         $references = DB::table('information_schema.KEY_COLUMN_USAGE')
             ->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())
             ->whereIn('REFERENCED_TABLE_NAME', array_keys($replacementTables))
@@ -285,6 +299,7 @@ class TeachingSynchronisationService
         $plan = $this->graph->plan($source, $local, $schoolId);
         $plan['conflicts'] = [...$plan['conflicts'], ...($local['conflicts'] ?? [])];
         $plan = $this->planLocalDropboxFolders($plan, $local);
+        $plan = $this->planLocalDropboxFolders($plan, $local, 'dropbox_module_links', 'dropbox_module_recovery');
         foreach ($source['files'] as $file) {
             if (isset($file['error'])) {
                 $plan['conflicts'][] = 'Cloud-Datei '.$file['path'].': '.$file['error'];
@@ -415,14 +430,16 @@ class TeachingSynchronisationService
         return $plan;
     }
 
-    private function planLocalDropboxFolders(array $plan, array $local): array
+    private function planLocalDropboxFolders(array $plan, array $local, string $key = 'dropbox_folders', string $recoveryKey = 'dropbox_recovery'): array
     {
-        $plan['dropbox_folders'] = [];
-        $plan['dropbox_recovery'] = [];
-        $plan['dropbox_notices'] = [];
-        $plan['dropbox_warnings'] = [];
+        $plan[$key] = [];
+        $plan[$recoveryKey] = [];
+        $plan['dropbox_notices'] ??= [];
+        $plan['dropbox_warnings'] ??= [];
+        $moduleLinks = $key === 'dropbox_module_links';
+        $label = $moduleLinks ? 'Modulverknüpfung' : 'Ordnerzuordnung';
         $localWorks = array_column($local['tables']['teaching_course_works'], null, 'id');
-        $localFolders = array_column($local['dropbox_folders'], null, 'id');
+        $localFolders = array_column($local[$key], null, 'id');
         $localCourses = array_column($local['tables']['teaching_courses'], null, 'id');
         $mappedCourses = array_column($plan['tables']['teaching_courses'], null, 'id');
         $candidates = [];
@@ -434,35 +451,36 @@ class TeachingSynchronisationService
             $candidates[$identity][] = $work['id'];
         }
         $targets = [];
-        foreach ($local['dropbox_folders'] as $folder) {
+        foreach ($local[$key] as $folder) {
             $work = $localWorks[$folder['teaching_course_work_id']];
             $identity = $this->dropboxWorkIdentity($work, $localCourses[$work['teaching_course_id']]);
             $matches = $candidates[$identity] ?? [];
             if (count($matches) !== 1) {
-                $plan['dropbox_recovery'][] = $folder;
+                $plan[$recoveryKey][] = $folder;
 
                 continue;
             }
-            $target = $folder['dropbox_connection_id'].'/'.$matches[0];
+            $target = $moduleLinks ? (string) $matches[0] : $folder['dropbox_connection_id'].'/'.$matches[0];
             $targets[$target][] = [...$folder, 'teaching_course_work_id' => $matches[0]];
         }
         foreach ($targets as $folders) {
             if (count($folders) !== 1) {
                 foreach ($folders as $folder) {
-                    $plan['dropbox_recovery'][] = $localFolders[$folder['id']];
+                    $plan[$recoveryKey][] = $localFolders[$folder['id']];
                 }
 
                 continue;
             }
             $folder = $folders[0];
-            $plan['dropbox_folders'][] = $folder;
+            $plan[$key][] = $folder;
             $original = $localFolders[$folder['id']];
             if ($original['teaching_course_work_id'] !== $folder['teaching_course_work_id']) {
-                $plan['dropbox_notices'][] = "Lokale Dropbox-Ordnerzuordnung: Arbeit #{$original['teaching_course_work_id']} → #{$folder['teaching_course_work_id']}. Arbeit, Kurs, Schuljahr und Besitzer stimmen eindeutig überein.";
+                $plan['dropbox_notices'][] = "Lokale Dropbox-{$label}: Arbeit #{$original['teaching_course_work_id']} → #{$folder['teaching_course_work_id']}. Arbeit, Kurs, Schuljahr und Besitzer stimmen eindeutig überein.";
             }
         }
-        foreach ($plan['dropbox_recovery'] as $folder) {
-            $plan['dropbox_warnings'][] = "Lokale Dropbox-Ordnerzuordnung für Arbeit #{$folder['teaching_course_work_id']} hat kein eindeutiges Gegenstück. Sie wird im verschlüsselten Sicherheitsbackup aufbewahrt und keiner anderen Arbeit zugeordnet. Quick-Import erfordert danach eine erneute Ordnerauswahl.";
+        foreach ($plan[$recoveryKey] as $folder) {
+            $followUp = $moduleLinks ? 'Die Modulverknüpfung muss danach erneut hergestellt werden.' : 'Quick-Import erfordert danach eine erneute Ordnerauswahl.';
+            $plan['dropbox_warnings'][] = "Lokale Dropbox-{$label} für Arbeit #{$folder['teaching_course_work_id']} hat kein eindeutiges Gegenstück. Sie wird im verschlüsselten Sicherheitsbackup aufbewahrt und keiner anderen Arbeit zugeordnet. {$followUp}";
         }
 
         return $plan;
