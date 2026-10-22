@@ -1,7 +1,7 @@
 <template>
     <main class="ns-student-page">
-        <StudentNavigationDrawer v-model="drawer" current-route="number-systems" />
-        <div class="ns-student-toolbar"><RouterLink to="/student/overview">Meine Fächer</RouterLink><button class="ns-student-menu" @click="drawer = true">Mein Menü</button></div>
+        <StudentNavigationDrawer v-if="!guest" v-model="drawer" current-route="number-systems" />
+        <div v-if="!guest" class="ns-student-toolbar"><RouterLink to="/student/overview">Meine Fächer</RouterLink><button class="ns-student-menu" @click="drawer = true">Mein Menü</button></div>
         <NumberSystemPlayer v-if="runId" :key="runId" :run-id="runId" @back="back" />
         <div v-else class="ns-game">
             <header><h1>Signal Null</h1><p class="ns-muted" style="margin-top:12px">Das Rechenzentrum wartet auf dich. Finde deinen Kurs, stelle die Verbindung her und rette die Datenwege.</p></header>
@@ -14,15 +14,16 @@
                 </form>
                 <form v-else class="ns-stack" style="margin-top:16px" @submit.prevent="joinSession">
                     <h3>{{ found.title }}</h3>
+                    <template v-if="found.guest"><label class="ns-field"><span>Dein Anzeigename</span><input v-model="displayName" required maxlength="60" autocomplete="nickname" /></label><p class="ns-small">Du spielst als externe Person ohne Schooltool-Konto. Zum Fortsetzen denselben Browser verwenden und die Browser-Sitzung beibehalten. Jede Person im Team braucht einen eigenen Browser oder ein eigenes Gerät.</p></template>
                     <p v-if="found.status === 'ended'" class="ns-muted">Diese Runde ist beendet. Bereits gespeicherte Wege kannst du unten weiter ansehen.</p>
                     <template v-if="found.mode === 'teams'">
-                        <p>Jedes Teammitglied braucht den Kurscode und einen persönlichen Schülerzugang. Eine Person gründet das Team und gibt dessen privaten Teamcode weiter.</p>
+                        <p>{{ found.guest ? 'Jedes Teammitglied tritt mit einem eigenen Gastzugang bei.' : 'Jedes Teammitglied braucht den Kurscode und einen persönlichen Schülerzugang.' }} Eine Person gründet das Team und gibt dessen privaten Teamcode weiter.</p>
                         <div class="ns-form"><label class="ns-choice"><input v-model="teamChoice" type="radio" value="new" />Neues Team gründen</label><label class="ns-choice"><input v-model="teamChoice" type="radio" value="existing" />Zu meinem Team</label></div>
                         <label v-if="teamChoice === 'new'" class="ns-field"><span>Neuer Teamname</span><input v-model="teamName" required maxlength="60" /></label>
                         <label v-else class="ns-field"><span>Privater Teamcode aus deiner Gruppe</span><input v-model="teamCode" required maxlength="12" autocapitalize="characters" autocomplete="off" /></label>
                     </template>
-                    <p v-else>Du spielst mit deinem gespeicherten Weg. An einem gemeinsamen Gerät könnt ihr zusammen überlegen; meldet euch mit dem Konto der spielenden Person an.</p>
-                    <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="found = null">Anderer Kurscode</button><button class="ns-button" :disabled="busy || found.status === 'ended'">{{ busy ? 'Verbindung wird hergestellt …' : 'Abenteuer beitreten' }}</button></div>
+                    <p v-else>Du spielst mit deinem gespeicherten Weg. An einem gemeinsamen Gerät könnt ihr zusammen überlegen.</p>
+                    <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="found = null">Anderer Kurscode</button><button class="ns-button" :disabled="busy || found.status === 'ended' || (found.guest && !displayName.trim())">{{ busy ? 'Verbindung wird hergestellt …' : 'Abenteuer beitreten' }}</button></div>
                 </form>
             </section>
             <section style="margin-top:28px">
@@ -43,13 +44,13 @@ import { index, lookup, join } from '@/actions/App/Http/Controllers/NumberSystem
 import { entry } from '@/routes/number-systems'
 import StudentNavigationDrawer from '../components/StudentNavigationDrawer.vue'
 import NumberSystemPlayer from '@/pages/components/numberSystems/NumberSystemPlayer.vue'
-import { useStudentStore } from '@/stores/student/StudentStore'
 import '@/pages/components/numberSystems/game.css'
 const route = useRoute(), router = useRouter()
 const runId = computed(() => route.params.run || null)
 const drawer = ref(false), runs = ref([]), error = ref(''), loading = ref(false), busy = ref(false), code = ref(String(route.query.code ?? '')), found = ref(null)
 const teamCode = ref(typeof route.query.team_code === 'string' ? route.query.team_code : '')
 const teamChoice = ref(teamCode.value ? 'existing' : 'new'), teamName = ref('')
+const guest = ref(true), displayName = ref('')
 let invitationGeneration = 0
 const loginDestination = computed(() => ({ path: '/student', query: { number_systems_code: code.value, ...(teamCode.value ? { number_systems_team: teamCode.value } : {}) } }))
 function handleFailure(failure) {
@@ -59,14 +60,14 @@ function handleFailure(failure) {
 const failureMessage = failure => failure.response?.status === 404 ? 'Diese Runde oder dieser Teamcode wurde für deinen Kurs nicht gefunden. Prüfe den Code mit deiner Lehrkraft.' : failure.response?.data?.message || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
 async function load() {
     loading.value = true
-    try { const { data } = await axios.get(index.url()); runs.value = data.runs }
+    try { const { data } = await axios.get(index.url()); runs.value = data.runs; guest.value = data.guest === true }
     catch (failure) { handleFailure(failure) } finally { loading.value = false }
 }
 async function findSession() {
     if (busy.value) { return }
     const generation = ++invitationGeneration
     busy.value = true; error.value = ''
-    try { const { data } = await axios.post(lookup.url(), { code: code.value }); if (generation === invitationGeneration) { found.value = data.session } }
+    try { const { data } = await axios.post(lookup.url(), { code: code.value }); if (generation === invitationGeneration) { found.value = data.session; guest.value = data.session.guest === true } }
     catch (failure) { if (generation === invitationGeneration) { handleFailure(failure) } } finally { if (generation === invitationGeneration) { busy.value = false } }
 }
 async function joinSession() {
@@ -74,6 +75,7 @@ async function joinSession() {
     const generation = invitationGeneration
     busy.value = true; error.value = ''
     try { const { data } = await axios.post(join.url(), { code: code.value,
+        ...(found.value.guest ? { display_name: displayName.value.trim() } : {}),
         team_name: found.value.mode === 'teams' && teamChoice.value === 'new' ? teamName.value : null,
         team_code: found.value.mode === 'teams' && teamChoice.value === 'existing' ? teamCode.value : null }); if (generation === invitationGeneration) { await open(data.run.id) } }
     catch (failure) { if (generation === invitationGeneration) { handleFailure(failure) } } finally { if (generation === invitationGeneration) { busy.value = false } }
@@ -89,7 +91,7 @@ watch(() => [route.path, route.query.code, route.query.team_code], () => {
     teamName.value = ''; found.value = null; error.value = ''; busy.value = false
     if (!runId.value && code.value) { void findSession() }
 }, { immediate: true })
-onMounted(() => { const student = useStudentStore(); if (!student.user) { void student.getCurrentUser() } if (!runId.value) { void load() } })
+onMounted(() => { void load() })
 </script>
 
 <style scoped>

@@ -2,6 +2,7 @@
 
 namespace App\Services\NumberSystems;
 
+use App\Models\NumberSystemGameGuest;
 use App\Models\NumberSystemGameRun;
 use App\Models\NumberSystemGameSession;
 use App\Models\TeachingCourse;
@@ -14,18 +15,24 @@ class NumberSystemGameService
 {
     public function __construct(private NumberSystemEngine $engine, private NumberSystemGameResults $results) {}
 
-    public function create(User $teacher, TeachingCourse $course, array $data): NumberSystemGameSession
+    public function create(User $teacher, ?TeachingCourse $course, array $data): NumberSystemGameSession
     {
-        abort_unless((int) $course->user_id === (int) $teacher->id && (int) $course->school_id === (int) $teacher->school_id, 404);
+        $audience = $data['audience'] ?? 'course';
+        abort_unless(in_array($audience, ['course', 'mixed', 'external'], true), 422);
+        abort_unless($audience === 'external' || $course, 422, 'Bitte wähle einen Kurs.');
+        if ($course) {
+            abort_unless((int) $course->user_id === (int) $teacher->id && (int) $course->school_id === (int) $teacher->school_id, 404);
+        }
         $this->engine->count((int) $data['planned_minutes']);
 
         return NumberSystemGameSession::query()->create([
-            'school_id' => $teacher->school_id, 'teacher_id' => $teacher->id, 'teaching_course_id' => $course->id,
+            'school_id' => $teacher->school_id, 'teacher_id' => $teacher->id, 'teaching_course_id' => $audience === 'external' ? null : $course->id,
             'title' => trim($data['title']), 'join_code' => strtoupper(bin2hex(random_bytes(5))),
             'seed' => bin2hex(random_bytes(32)), 'engine_version' => NumberSystemEngine::VERSION,
             'planned_minutes' => $data['planned_minutes'], 'difficulty' => $data['difficulty'], 'mode' => $data['mode'], 'status' => 'waiting',
             'timer_mode' => $data['timer_mode'] ?? 'none', 'ranking_enabled' => $data['ranking_enabled'] ?? false,
             'countdown_seconds' => ($data['timer_mode'] ?? 'none') === 'countdown' ? 60 * ($data['countdown_minutes'] ?? $data['planned_minutes']) : null,
+            ...(array_key_exists('audience', $data) ? ['audience' => $audience] : []),
         ]);
     }
 
@@ -56,14 +63,19 @@ class NumberSystemGameService
         }, 3);
     }
 
-    public function assertEnrolled(User $student, NumberSystemGameSession $session): void
+    public function assertEnrolled(User|NumberSystemGameGuest $student, NumberSystemGameSession $session): void
     {
-        abort_unless((int) $student->school_id === (int) $session->school_id
+        if ($student instanceof NumberSystemGameGuest) {
+            abort_unless(in_array($session->audience, ['mixed', 'external'], true) && (int) $student->session_id === (int) $session->id, 404);
+
+            return;
+        }
+        abort_unless($session->audience !== 'external' && (int) $student->school_id === (int) $session->school_id
             && TeachingCourseStudent::query()->where('teaching_course_id', $session->teaching_course_id)
                 ->where('user_id', $student->id)->whereNull('canceled_at')->exists(), 404, 'Diese Runde gehört nicht zu deinem aktiven Kurs.');
     }
 
-    public function join(User $student, string $code, ?string $teamName, ?string $teamCode): NumberSystemGameRun
+    public function join(User|NumberSystemGameGuest $student, string $code, ?string $teamName, ?string $teamCode): NumberSystemGameRun
     {
         return DB::transaction(function () use ($student, $code, $teamName, $teamCode): NumberSystemGameRun {
             $session = NumberSystemGameSession::query()->where('join_code', strtoupper(trim($code)))->lockForUpdate()->firstOrFail();
@@ -73,7 +85,9 @@ class NumberSystemGameService
                 abort_unless($session->mode === 'teams', 422, 'Diese Runde verwendet keine privaten Teams. Verwende den Kurscode ohne Teamcode.');
                 $invitedRun = NumberSystemGameRun::query()->where('session_id', $session->id)->where('team_code', strtoupper(trim($teamCode)))->lockForUpdate()->firstOrFail();
             }
-            $member = DB::table('number_system_game_members')->where('session_id', $session->id)->where('user_id', $student->id)->first();
+            $member = $student instanceof NumberSystemGameGuest
+                ? NumberSystemGameGuest::query()->whereKey($student->id)->whereNotNull('run_id')->first()
+                : DB::table('number_system_game_members')->where('session_id', $session->id)->where('user_id', $student->id)->first();
             if ($member) {
                 abort_if($invitedRun && (int) $invitedRun->id !== (int) $member->run_id, 409, 'Du gehörst in dieser Runde bereits zu einem anderen Team. Öffne deinen gespeicherten Spielstand.');
 
@@ -82,7 +96,7 @@ class NumberSystemGameService
             abort_if($session->status === 'ended', 422, 'Diese Runde ist bereits beendet. Deine Lehrkraft kann ein neues Abenteuer öffnen.');
             if ($invitedRun) {
                 $run = $invitedRun;
-                abort_if($run->members()->count() >= 4, 422, 'Dieses Team ist vollständig (maximal vier Personen).');
+                abort_if($run->participants()->count() >= 4, 422, 'Dieses Team ist vollständig (maximal vier Personen).');
                 abort_if($run->completed_at, 422, 'Dieses Team hat das Abenteuer bereits abgeschlossen.');
             } else {
                 if ($session->mode === 'teams') {
@@ -94,28 +108,34 @@ class NumberSystemGameService
                 abort_unless($session->engine_version === NumberSystemEngine::VERSION, 409, 'Diese Spielversion kann keine neuen Einstiege mehr erstellen.');
                 $puzzles = [];
                 foreach (range(0, $this->engine->count($session->planned_minutes) - 1) as $position) {
-                    $puzzles[] = $this->engine->mission($session->seed, (int) $student->id, $position, $session->planned_minutes, $session->difficulty);
+                    $puzzles[] = $this->engine->mission($session->seed, $student instanceof User ? (int) $student->id : -(int) $student->id, $position, $session->planned_minutes, $session->difficulty);
                 }
-                $run = NumberSystemGameRun::query()->create(['session_id' => $session->id, 'user_id' => $student->id,
+                $run = NumberSystemGameRun::query()->create(['session_id' => $session->id, 'user_id' => $student instanceof User ? $student->id : null,
                     'team_name' => $session->mode === 'teams' ? trim($teamName) : null,
                     'team_code' => $session->mode === 'teams' ? strtoupper(bin2hex(random_bytes(4))) : null,
                     'puzzles' => $puzzles, 'draft' => $this->initialDraft($puzzles[0]), 'history' => []]);
             }
-            $run->members()->attach($student->id, ['session_id' => $session->id]);
+            if ($student instanceof NumberSystemGameGuest) {
+                $student->update(['run_id' => $run->id]);
+            } else {
+                $run->members()->attach($student->id, ['session_id' => $session->id]);
+            }
 
             return $run->refresh();
         }, 3);
     }
 
-    public function authorizeRun(User $student, NumberSystemGameRun $run): void
+    public function authorizeRun(User|NumberSystemGameGuest $student, NumberSystemGameRun $run): void
     {
         $run->loadMissing('session');
         $this->assertEnrolled($student, $run->session);
-        abort_unless($run->members()->where('users.id', $student->id)->exists(), 404);
+        abort_unless($student instanceof NumberSystemGameGuest
+            ? (int) $student->run_id === (int) $run->id
+            : $run->members()->where('users.id', $student->id)->exists(), 404);
     }
 
     /** @return array<string, mixed> */
-    public function mutate(NumberSystemGameRun $run, User $student, string $action, array $data): array
+    public function mutate(NumberSystemGameRun $run, User|NumberSystemGameGuest $student, string $action, array $data): array
     {
         return DB::transaction(function () use ($run, $student, $action, $data): array {
             $session = NumberSystemGameSession::query()->lockForUpdate()->findOrFail($run->session_id);
@@ -134,7 +154,7 @@ class NumberSystemGameService
                 $locked->draft = $this->cleanDraft($mission, $data['draft']);
             }
             if ($action === 'answer') {
-                abort_if($session->mode === 'teams' && $mission['kind'] === 'vault' && $locked->members()->count() < 2, 422, 'Für die verteilten Hinweise brauchst du mindestens eine weitere Person im Team. Gib deinen Teamcode weiter.');
+                abort_if($session->mode === 'teams' && $mission['kind'] === 'vault' && $locked->participants()->count() < 2, 422, 'Für die verteilten Hinweise brauchst du mindestens eine weitere Person im Team. Gib deinen Teamcode weiter.');
                 $feedback = $this->engine->check($mission, $locked->draft);
                 $locked->attempts = min(65535, $locked->attempts + 1);
                 $locked->feedback = $feedback;
@@ -171,15 +191,15 @@ class NumberSystemGameService
     }
 
     /** @return array<string, mixed> */
-    public function state(NumberSystemGameRun $run, User $student): array
+    public function state(NumberSystemGameRun $run, User|NumberSystemGameGuest $student): array
     {
         $run->loadMissing(['session', 'members:id,first_name,last_name']);
         $session = $run->session;
         $mission = $run->puzzles[$run->position];
         $public = $this->engine->publicMission($mission);
-        $members = $run->members->sortBy('id')->values();
+        $members = $run->participants();
         if ($session->mode === 'teams' && $mission['kind'] === 'vault') {
-            $memberIndex = $members->search(fn (User $member): bool => (int) $member->id === (int) $student->id);
+            $memberIndex = $members->search(fn (User|NumberSystemGameGuest $member): bool => $member::class === $student::class && (int) $member->id === (int) $student->id);
             $public['role_cards'] = array_values(array_filter($mission['private_clues'] ?? [], fn (string $clue, int $index): bool => ($index + $run->position) % max(1, $members->count()) === $memberIndex, ARRAY_FILTER_USE_BOTH));
             $public['prompt'] = 'Vier benötigte Hinweise sind auf eure persönlichen Zugänge verteilt. Erklärt eure Karte mündlich und verbindet die Angaben. Wechselt beim nächsten Tresor die erklärende Person.';
             foreach ($public['fields'] as &$field) {
@@ -197,7 +217,7 @@ class NumberSystemGameService
             'team_name' => $run->team_name, 'team_code' => $run->team_code,
             'invitation' => $run->team_code && ! $run->completed_at && $session->status !== 'ended'
                 ? app(NumberSystemInvitation::class)->make($session->join_code, $run->team_code) : null,
-            'members' => $members->map(fn (User $member): string => trim($member->first_name.' '.$member->last_name))->all(),
+            'members' => $members->map(fn (User|NumberSystemGameGuest $member): string => trim($member->first_name.' '.$member->last_name))->all(),
             'clock' => $this->results->clock($session, $run), 'ranking' => $this->results->ranking($session, (int) $run->id),
             'session' => ['id' => $session->id, 'title' => $session->title, 'status' => $session->status,
                 'planned_minutes' => $session->planned_minutes, 'difficulty' => $session->difficulty, 'mode' => $session->mode]];

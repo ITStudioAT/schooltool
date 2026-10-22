@@ -1,5 +1,10 @@
 # UPDATES
 
+## 3.53.1 !!!
+
+### Zahlensystem-Spiel
+- Für Externe zulassen
+
 ## 3.53.0
 
 ### System

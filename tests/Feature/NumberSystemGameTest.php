@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\NumberSystemGameGuest;
 use App\Models\NumberSystemGameRun;
 use App\Models\NumberSystemGameSession;
 use App\Models\School;
@@ -61,6 +62,84 @@ function nsGameDraft(array $mission): array
 
     return $draft;
 }
+
+test('teachers can choose course mixed or external participation and external rounds need no course', function () {
+    nsGameAs($this, $this->teacher);
+    $data = ['title' => 'Offene Runde', 'planned_minutes' => 30, 'difficulty' => 1, 'mode' => 'solo'];
+    $response = $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'external', 'course_id' => $this->course->id])
+        ->assertCreated()->assertJsonPath('session.audience', 'external')->assertJsonPath('session.teaching_course_id', null);
+    $this->assertDatabaseHas('number_system_game_sessions', ['id' => $response->json('session.id'), 'audience' => 'external', 'teaching_course_id' => null]);
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'mixed'])->assertUnprocessable()->assertJsonValidationErrors('course_id');
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'mixed', 'course_id' => $this->course->id])->assertCreated()->assertJsonPath('session.audience', 'mixed');
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'unknown'])->assertUnprocessable();
+    $otherCourse = TeachingCourse::factory()->create();
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'mixed', 'course_id' => $otherCourse->id])->assertNotFound();
+});
+
+test('guests join only explicitly open rounds without creating user accounts and resume their saved run', function () {
+    $users = User::query()->count();
+    $this->postJson('/api/number-systems/lookup', ['code' => $this->session->join_code])->assertUnauthorized();
+    $this->session->update(['audience' => 'external', 'teaching_course_id' => null]);
+    $this->postJson('/api/number-systems/lookup', ['code' => $this->session->join_code])->assertOk()->assertJsonPath('session.guest', true);
+    $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code])->assertUnprocessable();
+    $run = $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'display_name' => ' Gast Eins '])->assertOk()->json('run');
+    $this->assertDatabaseHas('number_system_game_guests', ['session_id' => $this->session->id, 'run_id' => $run['id'], 'first_name' => 'Gast Eins']);
+    expect(User::query()->count())->toBe($users);
+    $this->getJson('/api/number-systems')->assertOk()->assertJsonCount(1, 'runs');
+    $this->getJson('/api/number-systems/runs/'.$run['id'])->assertOk()->assertJsonPath('run.members.0', 'Gast Eins');
+    $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'display_name' => 'Gast Eins'])->assertOk()->assertJsonPath('run.id', $run['id']);
+    expect(NumberSystemGameRun::query()->count())->toBe(1);
+    $games = app(NumberSystemGameService::class);
+    $games->control($this->session, 'start');
+    $model = NumberSystemGameRun::findOrFail($run['id']);
+    $this->postJson('/api/number-systems/runs/'.$run['id'], nsGameUpdate($model, 'answer', ['draft' => nsGameDraft($model->puzzles[0])]))->assertOk()->assertJsonPath('run.solved', true);
+    $this->withSession(['number_systems' => ['guest_token' => str_repeat('x', 64)]])->getJson('/api/number-systems/runs/'.$run['id'])->assertNotFound();
+    $this->postJson('/api/number-systems/runs/'.$run['id'].'/presence')->assertNotFound();
+    $this->postJson('/api/number-systems/runs/'.$run['id'], nsGameUpdate($model, 'hint'))->assertNotFound();
+    $this->getJson('/api/number-systems')->assertOk()->assertJsonCount(0, 'runs');
+    nsGameAs($this, $this->students[0])->postJson('/api/number-systems/lookup', ['code' => $this->session->join_code])->assertNotFound();
+    $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'display_name' => 'Umgehung'])->assertNotFound();
+});
+
+test('mixed teams include guests in capacity cooperative clues presence and teacher monitoring', function () {
+    $this->session->update(['audience' => 'mixed', 'mode' => 'teams']);
+    $games = app(NumberSystemGameService::class);
+    $team = $games->join($this->students[0], $this->session->join_code, 'Gemischtes Team', null);
+    $payload = ['code' => $this->session->join_code, 'display_name' => 'Gast', 'team_code' => $team->team_code];
+    $guestRun = $this->postJson('/api/number-systems/join', $payload)->assertOk()->assertJsonPath('run.id', $team->id)->json('run');
+    $guest = NumberSystemGameGuest::query()->sole();
+    $this->postJson('/api/number-systems/runs/'.$team->id.'/presence')->assertOk()->assertJsonPath('recorded', true);
+    $vault = collect($team->puzzles)->firstWhere('kind', 'vault');
+    $team->update(['puzzles' => [$vault], 'draft' => []]);
+    $games->control($this->session, 'start');
+    $first = $games->state($team->fresh(), $this->students[0]);
+    $second = $games->state($team->fresh(), $guest);
+    expect(array_intersect($first['mission']['role_cards'], $second['mission']['role_cards']))->toBe([]);
+    expect(count($first['mission']['role_cards']) + count($second['mission']['role_cards']))->toBe(4);
+    $this->postJson('/api/number-systems/runs/'.$team->id, nsGameUpdate($team, 'answer', ['draft' => nsGameDraft($vault)]))->assertOk()->assertJsonPath('run.solved', true);
+    $games->join($this->students[1], $this->session->join_code, null, $team->team_code);
+    $games->join($this->students[2], $this->session->join_code, null, $team->team_code);
+    $this->withSession(['number_systems' => ['guest_token' => str_repeat('z', 64)]])->postJson('/api/number-systems/join', $payload)->assertUnprocessable();
+    expect(NumberSystemGameGuest::query()->count())->toBe(1);
+    nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertOk()
+        ->assertJsonPath('runs.0.course_members', 3)->assertJsonPath('runs.0.external_members', 1);
+    $games->control($this->session, 'end');
+    $this->deleteJson('/api/admin/number-systems/sessions/'.$this->session->id, ['confirmation' => $this->session->title])->assertOk();
+    $this->assertDatabaseMissing('number_system_game_guests', ['id' => $guest->id]);
+});
+
+test('external access still respects school module availability and ended rounds reject new guests', function () {
+    $this->session->update(['audience' => 'external', 'teaching_course_id' => null]);
+    SchoolTool::query()->where('school_id', $this->school->id)->update(['teaching_visible_user' => false]);
+    $payload = ['code' => $this->session->join_code, 'display_name' => 'Besuch'];
+    $this->postJson('/api/number-systems/lookup', $payload)->assertForbidden();
+    $this->postJson('/api/number-systems/join', $payload)->assertForbidden();
+    expect(NumberSystemGameGuest::query()->count())->toBe(0);
+    SchoolTool::query()->where('school_id', $this->school->id)->update(['teaching_visible_user' => true]);
+    app(NumberSystemGameService::class)->control($this->session, 'end');
+    $this->postJson('/api/number-systems/join', $payload)->assertUnprocessable();
+    expect(NumberSystemGameGuest::query()->count())->toBe(0);
+});
 
 function nsGameAs(TestCase $case, User $user): TestCase
 {
@@ -189,7 +268,7 @@ test('round deletion requires ownership exact confirmation and an inactive statu
 
 test('game administration and participation require the matching existing role', function () {
     $this->getJson('/api/admin/number-systems')->assertUnauthorized();
-    $this->getJson('/api/number-systems')->assertUnauthorized();
+    $this->getJson('/api/number-systems')->assertOk()->assertJsonPath('guest', true)->assertJsonCount(0, 'runs');
     nsGameAs($this, $this->students[0])->getJson('/api/admin/number-systems')->assertForbidden();
     nsGameAs($this, $this->teacher)->getJson('/api/number-systems')->assertUnauthorized();
     $parent = User::factory()->create(['school_id' => $this->school->id, 'is_active' => true]);

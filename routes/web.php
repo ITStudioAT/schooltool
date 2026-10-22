@@ -173,7 +173,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     })->where('any', '.*')->middleware('students-timetables-impersonation');
 
-    Route::prefix('/api/number-systems')->middleware(['auth:sanctum', 'students-timetables-impersonation', 'throttle:120,1'])->name('number-systems.')->group(function (): void {
+    Route::prefix('/api/number-systems')->middleware(['students-timetables-impersonation', 'throttle:120,1'])->name('number-systems.')->group(function (): void {
         Route::get('/', [NumberSystemPlayerController::class, 'index'])->name('index');
         Route::post('/join', [NumberSystemPlayerController::class, 'join'])->middleware('throttle:15,1')->name('join');
         Route::post('/lookup', [NumberSystemPlayerController::class, 'lookup'])->middleware('throttle:20,1')->name('lookup');

@@ -1,7 +1,7 @@
 <template>
     <ul class="ns-presence" aria-label="Verbindung je Person">
         <li v-for="(person, index) in people" :key="index" :class="`ns-presence-${person.status}`">
-            <span class="ns-presence-dot" aria-hidden="true" /><div><strong>{{ person.name }}</strong><span>{{ labels[person.status] || labels.unknown }}</span><small v-if="person.last_seen_at">Letzter Kontakt {{ lastContact(person.last_seen_at) }}</small></div>
+            <span class="ns-presence-dot" aria-hidden="true" /><div><strong>{{ person.name }}{{ person.external ? ' (extern)' : '' }}</strong><span>{{ labels[person.status] || labels.unknown }}</span><small v-if="person.last_seen_at">Letzter Kontakt {{ lastContact(person.last_seen_at) }}</small></div>
         </li>
     </ul>
 </template>

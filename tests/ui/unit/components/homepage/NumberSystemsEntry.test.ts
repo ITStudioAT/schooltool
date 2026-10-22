@@ -11,6 +11,21 @@ vi.mock('@/stores/student/StudentStore', () => ({ useStudentStore: () => ({ user
 vi.mock('@/pages/homepage/student/components/StudentNavigationDrawer.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/pages/components/numberSystems/NumberSystemPlayer.vue', () => ({ default: { props: ['runId'], template: '<div data-test="player">Spielstand {{ runId }}</div>' } }))
 const wrappers = []
+
+it('opens external invitations without login and sends the chosen display name on deliberate join', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { guest: true, runs: [] } })
+    vi.mocked(axios.post).mockImplementation(async url => ({ data: String(url).endsWith('/lookup')
+        ? { session: { title: 'Externe Runde', status: 'waiting', mode: 'solo', guest: true } }
+        : { run: { id: 23 } } }))
+    const { wrapper, router } = await render('/student/games/number-systems?code=ABCDEF1234')
+    expect(router.currentRoute.value.path).toBe('/student/games/number-systems')
+    expect(wrapper.text()).toContain('Dein Anzeigename')
+    expect(axios.post).toHaveBeenCalledTimes(1)
+    await wrapper.get('input[autocomplete="nickname"]').setValue('Besucherin')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(vi.mocked(axios.post).mock.lastCall[1]).toMatchObject({ display_name: 'Besucherin', code: 'ABCDEF1234' })
+    expect(router.currentRoute.value.path).toBe('/student/games/number-systems/23')
+})
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(axios.get).mockResolvedValue({ data: { runs: [{ id: 17, title: 'Vorhandenes Abenteuer', total: 12, solved: 5, completed: false, status: 'running' }] } }) })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 async function render(path = '/student/games/number-systems') {

@@ -2,7 +2,7 @@
     <div class="ns-game">
         <header class="ns-toolbar">
             <div><h1>Signal Null</h1><p class="ns-muted" style="margin-top:8px">Das Zahlensystem-Abenteuer für deinen Kurs</p></div>
-            <div class="ns-toolbar"><button v-if="localProbeAvailable" class="ns-button ns-button-secondary" @click="probeDialog = true">Lokal ausprobieren</button><button class="ns-button" :disabled="busy || !available || !timingAvailable || !courses.length" @click="createDialog = true">Neues Abenteuer</button></div>
+            <div class="ns-toolbar"><button v-if="localProbeAvailable" class="ns-button ns-button-secondary" @click="probeDialog = true">Lokal ausprobieren</button><button class="ns-button" :disabled="busy || !available || !timingAvailable || (!courses.length && !externalAvailable)" @click="createDialog = true">Neues Abenteuer</button></div>
         </header>
         <div v-if="error" class="ns-alert ns-alert-error" role="alert">{{ error }} <button class="ns-button ns-button-quiet" @click="load">Erneut laden</button></div>
         <p v-if="loading" role="status" style="margin-top:20px">Die Abenteuer werden geladen …</p>
@@ -21,7 +21,7 @@
             <p v-if="!sessions.length" class="ns-muted" style="margin-top:12px">Noch keine Runde vorbereitet. Beginne mit „Neues Abenteuer“.</p>
             <ul class="ns-session-list">
                 <li v-for="session in sessions" :key="session.id" class="ns-session-row">
-                    <div><h3>{{ session.title }}</h3><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }}</p></div>
+                    <div><h3>{{ session.title }}</h3><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p></div>
                     <div class="ns-toolbar"><button class="ns-button ns-button-secondary" @click="open(session.id)">{{ session.status === 'ended' ? 'Fortschritt ansehen' : 'Runde öffnen / fortsetzen' }}</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(session.status)" :aria-label="`Klassenrunde ${session.title} löschen`" @click="openDelete(session)">Runde löschen</button></div>
                 </li>
             </ul>
@@ -33,17 +33,18 @@
                 <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p></div></div>
                 <NumberSystemClock :clock="selected.clock" />
                 <div v-if="selected.session.status !== 'ended'">
-                    <p class="ns-small ns-muted">Kurscode für den Beitritt</p><p class="ns-code">{{ selected.session.join_code }}</p>
-                    <p class="ns-small" style="margin-top:12px">Im Schülerkonto: Menü → Zahlensysteme → Kurscode eingeben. Oder per QR-Code beitreten:</p>
+                    <p class="ns-small ns-muted">Rundencode für den Beitritt</p><p class="ns-code">{{ selected.session.join_code }}</p>
+                    <p class="ns-small" style="margin-top:12px">{{ audiences[selected.session.audience || 'course'] }}. {{ selected.session.audience === 'external' ? 'Externe treten über den Link oder QR-Code mit Anzeigenamen bei.' : 'Im Schülerkonto: Menü → Zahlensysteme → Rundencode eingeben. Oder per QR-Code beitreten.' }}</p>
+                    <p v-if="selected.session.audience === 'mixed'" class="ns-small">Externe öffnen den Link oder QR-Code ohne Schooltool-Anmeldung und geben einen Anzeigenamen ein.</p>
                     <NumberSystemInvitation v-if="selected.invitation" :invitation="selected.invitation" />
-                    <p class="ns-small ns-muted" style="margin-top:10px">Nur aktive Mitglieder dieses Kurses können beitreten. {{ selected.session.mode === 'teams' ? 'Teams bestehen aus 2–4 Personen mit persönlichen Zugängen. Den privaten Teamcode teilen sie innerhalb der Gruppe; Tresorhinweise werden getrennt angezeigt.' : 'Jede Person speichert ihren eigenen Weg. An einem gemeinsamen Gerät kann ein Paar gemeinsam überlegen und erklären.' }}</p>
+                    <p class="ns-small ns-muted" style="margin-top:10px">{{ selected.session.mode === 'teams' ? 'Teams bestehen aus 2–4 Personen mit persönlichen Zugängen. Den privaten Teamcode teilen sie innerhalb der Gruppe; Tresorhinweise werden getrennt angezeigt.' : 'Jede Person speichert ihren eigenen Weg. An einem gemeinsamen Gerät kann ein Paar gemeinsam überlegen und erklären.' }}</p>
                 </div>
                 <div class="ns-toolbar">
                     <button v-if="selected.session.status === 'waiting'" class="ns-button" :disabled="busy" @click="control('start')">Klassenrunde starten</button>
                     <button v-if="selected.session.status === 'running'" class="ns-button ns-button-secondary" :disabled="busy" @click="control('pause')">Runde pausieren</button>
                     <button v-if="selected.session.status === 'paused'" class="ns-button" :disabled="busy" @click="control('resume')">Runde fortsetzen</button>
                     <button v-if="selected.session.status !== 'ended'" class="ns-button ns-button-quiet" :disabled="busy" @click="endDialog = true">Runde beenden</button>
-                    <span class="ns-small ns-muted">{{ joinedCount }} / {{ selected.enrolled }} Kurskonten beigetreten</span>
+                    <span class="ns-small ns-muted"><template v-if="selected.session.audience !== 'external'">{{ courseJoinedCount }} / {{ selected.enrolled }} Kurskonten beigetreten · </template>{{ externalJoinedCount }} Externe · {{ joinedCount }} insgesamt</span>
                 </div>
             </section>
             <section class="ns-panel" style="margin-top:20px">
@@ -62,8 +63,11 @@
                 <h2>Neues Abenteuer vorbereiten</h2>
                 <p>Die Runde beginnt im Warteraum. Beitreten und gemeinsames Starten sind getrennte Schritte.</p>
                 <label class="ns-field"><span>Bezeichnung</span><input v-model="form.title" required maxlength="120" autofocus /></label>
+                <label class="ns-field"><span>Teilnahme</span><select v-model="form.audience"><option value="course">Nur Kurs</option><option v-if="externalAvailable" value="mixed">Kurs und Externe</option><option v-if="externalAvailable" value="external">Nur Externe</option></select></label>
+                <p v-if="!externalAvailable" class="ns-small">Die Erweiterung für externe Teilnehmende muss noch aktiviert werden.</p>
+                <p v-if="form.audience !== 'course'" class="ns-small">Externe benötigen kein Konto. Ihr Spielstand bleibt in derselben Browser-Sitzung verfügbar. Jede Person nutzt einen eigenen Browser oder ein eigenes Gerät.</p>
                 <div class="ns-form">
-                    <label class="ns-field"><span>Kurs</span><select v-model="form.course_id" required><option value="">Kurs auswählen</option><option v-for="course in courses" :key="course.id" :value="course.id">{{ course.title }}</option></select></label>
+                    <label v-if="form.audience !== 'external'" class="ns-field"><span>Kurs</span><select v-model="form.course_id" required><option value="">Kurs auswählen</option><option v-for="course in courses" :key="course.id" :value="course.id">{{ course.title }}</option></select></label>
                     <label class="ns-field"><span>Geplante Spielzeit</span><select v-model.number="form.planned_minutes"><option v-for="minutes in [30,40,60,75]" :key="minutes" :value="minutes">{{ minutes }} Minuten</option></select></label>
                     <label class="ns-field"><span>Schwierigkeit</span><select v-model.number="form.difficulty"><option v-for="(label, value) in levels" :key="value" :value="Number(value)">{{ label }}</option></select></label>
                     <label class="ns-field"><span>Zusammenarbeit</span><select v-model="form.mode"><option value="solo">Einzeln / gemeinsames Gerät</option><option value="teams">Teams, getrennte Hinweise (2–4)</option></select></label>
@@ -71,7 +75,7 @@
                 <NumberSystemStartOptions :model="form" />
                 <p>Leicht: kleine Zahlen und acht Bits. Mittel: Werte bis 255. Anspruchsvoll: auch bis 4095 und zwölf Bits. Jede Runde enthält alle sechs Umrechnungsrichtungen, Forscheraufträge, ASCII und ein Finale.</p>
                 <p v-if="error" role="alert">{{ error }}</p>
-                <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="createDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !form.title.trim() || !form.course_id">{{ busy ? 'Wird vorbereitet …' : 'Abenteuer vorbereiten' }}</button></div>
+                <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="createDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !form.title.trim() || (form.audience !== 'external' && !form.course_id)">{{ busy ? 'Wird vorbereitet …' : 'Abenteuer vorbereiten' }}</button></div>
             </form></v-card>
         </v-dialog>
         <v-dialog v-model="probeDialog" persistent max-width="600"><v-card class="ns-dialog"><form @submit.prevent="createProbe"><h2>Lokal mit mehreren Fenstern ausprobieren</h2><p>Eine eigene Datei speichert nur synthetische Testpersonen. Du bleibst im Lehrkraftkonto angemeldet. Keine echten Kurse, Konten oder Noten werden geändert.</p><div class="ns-form">
@@ -100,20 +104,24 @@ import '@/pages/components/numberSystems/game.css'
 const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
 const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
+const audiences = { course: 'Nur Kurs', mixed: 'Kurs und Externe', external: 'Nur Externe' }
 const courses = ref([]), sessions = ref([]), selected = ref(null), available = ref(true), loading = ref(false), busy = ref(false), error = ref('')
 const createDialog = ref(false), endDialog = ref(false)
 const timingAvailable = ref(true)
+const externalAvailable = ref(false)
 const deleteTarget = ref(null)
-const form = reactive({ title: 'Signal Null', course_id: '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
+const form = reactive({ title: 'Signal Null', audience: 'course', course_id: '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 const router = useRouter()
 const localProbeAvailable = ref(false), localProbes = ref([]), probeDialog = ref(false)
 const probeForm = reactive({ planned_minutes: 30, difficulty: 2, mode: 'teams', short: true, timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 let poll = null, disposed = false, polling = false, monitorGeneration = 0
 const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + run.members.length, 0))
+const courseJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.course_members ?? run.members.length), 0))
+const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.external_members ?? 0), 0))
 const failureMessage = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
 async function load() {
     loading.value = true; error.value = ''
-    try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; localProbeAvailable.value = data.local_probe_available === true; localProbes.value = data.local_probes ?? [] }
+    try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true; localProbes.value = data.local_probes ?? [] }
     catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
 }
 function closeMonitor() { ++monitorGeneration; selected.value = null }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\NumberSystemGameGuest;
 use App\Models\NumberSystemGameSession;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
@@ -33,12 +34,12 @@ class NumberSystemGameController extends Controller
             ->when($teacher->schoolyear_id, fn ($query) => $query->where('schoolyear_id', $teacher->schoolyear_id))
             ->orderBy('title')->get(['id', 'title']);
         $sessions = NumberSystemGameSession::query()->where('school_id', $teacher->school_id)->where('teacher_id', $teacher->id)
-            ->withCount('runs')->latest('id')->get(['id', 'title', 'status', 'join_code', 'planned_minutes', 'difficulty', 'mode', 'teaching_course_id', 'created_at']);
+            ->withCount('runs')->latest('id')->get();
 
         $probes = app(NumberSystemLocalProbe::class);
         $local = $probes->available($request);
 
-        return response()->json(['available' => true, 'timing_available' => Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 'courses' => $courses, 'sessions' => $sessions,
+        return response()->json(['available' => true, 'external_available' => Schema::hasTable('number_system_game_guests'), 'timing_available' => Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 'courses' => $courses, 'sessions' => $sessions,
             'local_probe_available' => $local, 'local_probes' => $local ? $probes->listing((int) $teacher->id) : []])->header('Cache-Control', 'private, no-store');
     }
 
@@ -47,10 +48,15 @@ class NumberSystemGameController extends Controller
         $teacher = $this->teacher();
         abort_unless(Schema::hasTable('number_system_game_sessions'), 503, 'Das Spiel ist noch nicht aktiviert.');
         abort_unless(Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 503, 'Die Erweiterung für Zeitmessung und Reihung muss noch lokal aktiviert werden. Bestehende Runden bleiben erhalten.');
-        $data = $request->validate(['title' => ['required', 'string', 'max:120'], 'course_id' => ['required', 'integer'],
+        $data = $request->validate(['title' => ['required', 'string', 'max:120'], 'course_id' => ['exclude_if:audience,external', 'required_unless:audience,external', 'integer'],
+            'audience' => ['sometimes', Rule::in(['course', 'mixed', 'external'])],
             'planned_minutes' => ['required', 'integer', Rule::in([30, 40, 60, 75])], 'difficulty' => ['required', 'integer', 'between:1,3'],
             'mode' => ['required', Rule::in(['solo', 'teams'])], ...NumberSystemGameResults::rules()]);
-        $course = TeachingCourse::query()->findOrFail($data['course_id']);
+        abort_if(($data['audience'] ?? 'course') !== 'course' && ! Schema::hasTable('number_system_game_guests'), 503, 'Die Erweiterung für externe Teilnehmende muss noch aktiviert werden.');
+        if (! Schema::hasColumn('number_system_game_sessions', 'audience')) {
+            unset($data['audience']);
+        }
+        $course = ($data['audience'] ?? 'course') === 'external' ? null : TeachingCourse::query()->findOrFail($data['course_id']);
         $session = $this->games->create($teacher, $course, $data);
 
         return response()->json(['session' => $session->makeHidden(['seed'])], 201);
@@ -60,6 +66,9 @@ class NumberSystemGameController extends Controller
     {
         $this->authorizeSession($session);
         $session->load(['runs.members:id,first_name,last_name']);
+        if (Schema::hasTable('number_system_game_guests')) {
+            $session->load('runs.guests');
+        }
         $enrolled = TeachingCourseStudent::query()->where('teaching_course_id', $session->teaching_course_id)
             ->whereNotNull('user_id')->whereNull('canceled_at')->count();
         $results = app(NumberSystemGameResults::class);
@@ -69,7 +78,8 @@ class NumberSystemGameController extends Controller
             $history = $run->history ?? [];
 
             return ['id' => $run->id, 'team_name' => $run->team_name, 'team_code' => $run->team_code,
-                'members' => $run->members->map(fn (User $member): string => trim($member->first_name.' '.$member->last_name))->values()->all(),
+                'members' => $run->participants()->map(fn (User|NumberSystemGameGuest $member): string => trim($member->first_name.' '.$member->last_name))->values()->all(),
+                'course_members' => $run->members->count(), 'external_members' => $run->participants()->count() - $run->members->count(),
                 'presence' => $presence->members($run, $seen),
                 'solved' => count($history), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null, 'clock' => $results->clock($session, $run),
                 'chapter' => $run->puzzles[$run->position]['chapter_title'], 'updated_at' => $run->updated_at->toIso8601String(),

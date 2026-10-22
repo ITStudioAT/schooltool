@@ -7,6 +7,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class NumberSystemGameRun extends Model
 {
@@ -39,5 +42,19 @@ class NumberSystemGameRun extends Model
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'number_system_game_members', 'run_id', 'user_id')->withPivot('session_id');
+    }
+
+    public function guests(): HasMany
+    {
+        return $this->hasMany(NumberSystemGameGuest::class, 'run_id');
+    }
+
+    /** @return Collection<int, User|NumberSystemGameGuest> */
+    public function participants(): Collection
+    {
+        return collect($this->members->all())
+            ->concat(Schema::hasTable('number_system_game_guests') ? $this->guests : [])
+            ->sortBy(fn (User|NumberSystemGameGuest $member): int => $member instanceof User ? (int) $member->id : -(int) $member->id)
+            ->values();
     }
 }
