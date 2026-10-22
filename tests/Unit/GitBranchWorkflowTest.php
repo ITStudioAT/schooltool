@@ -1132,11 +1132,11 @@ it('preserves dirty main files and refuses a feature release before publishing',
     expect(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/protected-main');
 });
 
-it('installs idempotent profile wrappers and dispatches arguments only for a trusted remote', function (): void {
+it('installs idempotent profile wrappers and dispatches arguments only for a trusted remote', function (string $shell): void {
     copy(dirname(__DIR__, 2).'/scripts/install_powershell_helpers.ps1', $this->workflowPc.'/scripts/install_powershell_helpers.ps1');
     file_put_contents($this->workflowPc.'/scripts/git_workflow.ps1', <<<'POWERSHELL'
 param([string]$Command, [string[]]$CommandArguments)
-$entry = @{ command = $Command; arguments = @($CommandArguments) } | ConvertTo-Json -Compress
+$entry = @{ command = $Command; arguments = @($CommandArguments); repository = (git remote get-url origin).Trim() } | ConvertTo-Json -Compress
 [System.IO.File]::AppendAllText((Join-Path (Get-Location) '.git/workflow-dispatch.jsonl'), $entry + [Environment]::NewLine)
 POWERSHELL);
     runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', 'origin', 'https://github.com/ITStudioAT/schooltool.git');
@@ -1185,12 +1185,19 @@ $env:TERM_PROGRAM = 'vscode'
 Show-ProjectGitWorkspace $editorFolder
 Show-ProjectGitWorkspace (Get-Location).Path
 $env:TERM_PROGRAM = $previousTermProgram
+git remote set-url origin https://github.com/ITStudioAT/stocks.git
+gitsave 'System: Sicherheitsupdates' '1.2.0'
+git remote set-url --push origin https://github.com/ITStudioAT/schooltool.git
+try { gitsave 'Must not cross repositories'; throw 'MISMATCHED_DISPATCH_ALLOWED' } catch {
+    if ($_.Exception.Message -eq 'MISMATCHED_DISPATCH_ALLOWED') { throw }
+    Write-Host 'MISMATCHED_REPOSITORY_BLOCKED'
+}
 git remote set-url --push origin https://example.invalid/other.git
 try { gitsave 'Must be blocked'; throw 'UNTRUSTED_DISPATCH_ALLOWED' } catch {
     if ($_.Exception.Message -eq 'UNTRUSTED_DISPATCH_ALLOWED') { throw }
     Write-Host 'UNTRUSTED_REMOTE_BLOCKED'
 }
-POWERSHELL);
+POWERSHELL, $shell);
     assertBranchWorkflowSucceeded($result);
     $editorCalls = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
         file($this->workflowPc.'/.git/editor-calls.jsonl', FILE_IGNORE_NEW_LINES));
@@ -1210,13 +1217,14 @@ POWERSHELL);
     $vscodeProfile = file_get_contents($this->workflowPc.'/.git/test-documents/PowerShell/Microsoft.VSCode_profile.ps1');
     expect($vscodeProfile)->toContain('# Preserve existing VS Code settings', 'function gitwork {');
     expect(substr_count($vscodeProfile, '# >>> project git dispatcher >>>'))->toBe(1);
+    $dispatchLines = file($this->workflowPc.'/.git/workflow-dispatch.jsonl', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     $entries = array_map(
         function (string $line): array {
             $entry = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
 
             return ['command' => $entry['command'], 'arguments' => $entry['arguments']];
         },
-        file($this->workflowPc.'/.git/workflow-dispatch.jsonl', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES),
+        $dispatchLines,
     );
 
     expect(substr_count($profile, '# >>> project git dispatcher >>>'))->toBe(1)
@@ -1235,9 +1243,12 @@ POWERSHELL);
             ['command' => 'gitpreview', 'arguments' => ['-RefreshData']],
             ['command' => 'gitpreview', 'arguments' => ['resume', '0123456789abcdef0123456789abcdef', '-RefreshData']],
             ['command' => 'gitdeploy', 'arguments' => []],
+            ['command' => 'gitsave', 'arguments' => ['System: Sicherheitsupdates', '1.2.0']],
         ])
-        ->and($result->getOutput())->toContain('UNTRUSTED_REMOTE_BLOCKED');
-});
+        ->and($result->getOutput())->toContain('UNTRUSTED_REMOTE_BLOCKED', 'MISMATCHED_REPOSITORY_BLOCKED');
+    $lastDispatch = json_decode($dispatchLines[array_key_last($dispatchLines)], true, flags: JSON_THROW_ON_ERROR);
+    expect($lastDispatch['repository'])->toBe('https://github.com/ITStudioAT/stocks.git');
+})->with(['powershell', 'pwsh']);
 
 it('saves and resumes three independent features and releases only the selected feature', function (): void {
     $heads = [];

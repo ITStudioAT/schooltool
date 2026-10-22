@@ -145,27 +145,30 @@ function Invoke-ProjectGitWorkflow {
     param([string]`$Command, [string[]]`$CommandArguments)
     `$repositoryRoot = git rev-parse --show-toplevel 2>`$null
     if (`$LASTEXITCODE -ne 0 -or -not `$repositoryRoot) {
-        throw 'Run the workflow command inside the schooltool repository.'
+        throw 'Run the workflow command inside the Stocks or Schooltool repository.'
     }
     `$repositoryRoot = `$repositoryRoot.Trim()
-    `$remoteUrls = @(git -C `$repositoryRoot remote get-url origin 2>`$null)
+    `$remoteUrls = @(git -C `$repositoryRoot remote get-url --all origin 2>`$null)
     if (`$LASTEXITCODE -ne 0 -or `$remoteUrls.Count -ne 1) {
-        throw 'The workflow requires an origin remote.'
+        throw 'The workflow requires exactly one origin fetch URL.'
     }
     `$pushUrls = @(git -C `$repositoryRoot remote get-url --all --push origin 2>`$null)
     if (`$LASTEXITCODE -ne 0 -or `$pushUrls.Count -ne 1) {
         throw 'The workflow requires exactly one origin push URL.'
     }
+    `$repository = `$null
     foreach (`$url in @(`$remoteUrls + `$pushUrls)) {
-        if (`$url.Trim() -notmatch '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)ITStudioAT/schooltool(?:\.git)?/?$') {
-            throw 'The branch workflow only trusts ITStudioAT/schooltool on GitHub.'
+        `$remoteMatch = [regex]::Match(`$url.Trim(), '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)(?<repository>ITStudioAT/(?:schooltool|stocks))(?:\.git)?/?$', 'IgnoreCase')
+        if (-not `$remoteMatch.Success -or (`$repository -and `$repository -ine `$remoteMatch.Groups['repository'].Value)) {
+            throw 'The workflow requires matching trusted fetch and push repositories.'
         }
+        `$repository = `$remoteMatch.Groups['repository'].Value
     }
     `$commonDirectory = git -C `$repositoryRoot rev-parse --path-format=absolute --git-common-dir 2>`$null
     if (`$LASTEXITCODE -ne 0 -or -not `$commonDirectory -or [System.IO.Path]::GetFileName(`$commonDirectory.Trim()) -cne '.git') {
         throw 'Cannot identify the shared main workflow helpers.'
     }
-    `$workflowRoot = Split-Path -Parent `$commonDirectory.Trim()
+    `$workflowRoot = if (`$repository -ieq 'ITStudioAT/stocks') { `$repositoryRoot } else { Split-Path -Parent `$commonDirectory.Trim() }
     `$workflow = Join-Path `$workflowRoot 'scripts/git_workflow.ps1'
     `$localWorkflowDirectory = '$workflowOverrideLiteral'
     if (`$localWorkflowDirectory -and `$workflowRoot -ieq '$workflowOverrideRootLiteral') {
