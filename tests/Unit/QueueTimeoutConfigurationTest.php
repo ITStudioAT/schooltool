@@ -119,10 +119,10 @@ it('starts segmented queue workers and the scheduler in the local development wo
         ->not->toContain('queue:listen');
 
     expect($developmentLauncher)
-        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=critical,notifications'")
-        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=default'")
-        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=imports'")
-        ->toContain("['artisan', 'queue:work', 'redis', '--once', '--queue=materials,maintenance'")
+        ->toContain("['artisan', 'queue:work', '--once', '--queue=critical,notifications'")
+        ->toContain("['artisan', 'queue:work', '--once', '--queue=default'")
+        ->toContain("['artisan', 'queue:work', '--once', '--queue=imports'")
+        ->toContain("['artisan', 'queue:work', '--once', '--queue=materials,maintenance'")
         ->toContain("startJob(['artisan', 'schedule:run'])")
         ->not->toContain('queue:listen')
         ->not->toContain('horizon');
@@ -130,8 +130,8 @@ it('starts segmented queue workers and the scheduler in the local development wo
     expect($localQueueCommand)
         ->toContain('--queue=critical,notifications')
         ->toContain('--queue=default')
-        ->toContain('queue:listen redis --queue=imports --sleep=1 --tries=1 --timeout=1830')
-        ->not->toContain('queue:work redis --queue=imports')
+        ->toContain('queue:listen --queue=imports --sleep=1 --tries=1 --timeout=1830')
+        ->not->toContain('queue:work --queue=imports')
         ->toContain('--queue=materials,maintenance');
 });
 

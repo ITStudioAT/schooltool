@@ -1,6 +1,10 @@
 # UPDATES
 
-## 3.52.2 !!!
+## 3.53.0
+
+### System
+
+- Important Security Updates
 
 ### Unterricht-Tools: MC-Fragen
 

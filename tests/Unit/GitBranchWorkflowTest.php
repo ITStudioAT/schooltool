@@ -1783,7 +1783,7 @@ function Invoke-SchooltoolReleaseCheckProcesses {
     param([switch]$Full)
     if (-not $Full) { throw 'Full checks missing.' }
     if ((Get-Location).Path -eq $originalCheckout) { throw 'Tests used the original checkout.' }
-    if ($env:DB_DATABASE -ne 'pest_test_test_123456789012345678901234' -or $env:DB_DATABASE_TEST -ne 'pest_test') { throw 'Tests did not use the owned schema.' }
+    if ($env:DB_DATABASE -ne 'pest_test_test_123456789012345678901234' -or $env:DB_DATABASE_TEST -ne $env:DB_DATABASE) { throw 'Tests did not use the owned schema.' }
     if ($env:DB_URL -ne '(null)' -or $env:DB_PASSWORD -ne '(empty)') { throw 'Dotenv fallback was not neutralized.' }
     if ($env:LOG_CHANNEL -ne 'single' -or $env:LOG_SLACK_WEBHOOK_URL) { throw 'Inherited notification settings remain active.' }
     if ($env:APP_KEY -notlike 'base64:*' -or -not $env:TEST_TOKEN) { throw 'Fresh test identity is missing.' }
@@ -1910,6 +1910,8 @@ Push-Location -LiteralPath $candidate.Path
 try {
     switch ($invalid) {
         'database' { $env:DB_DATABASE = 'pest_test' }
+        'expected-database' { $env:DB_DATABASE_TEST = 'pest_test' }
+        'bound-receipt' { $env:SCHOOLTOOL_MC_TEST_RECEIPT = 'unrelated-receipt.json' }
         'host' { $env:DB_HOST = 'live.example.test' }
         'receipt' { [System.IO.File]::WriteAllText($state.ReceiptPath, '{"state":"pending"}') }
         'worktree' { $state.CandidatePath = $env:TEMP }
@@ -1926,7 +1928,36 @@ POWERSHELL;
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->not->toContain('UNSAFE_PROCESS_STARTED')
         ->and($result->getOutput())->toContain('MOCK_TEST_DATABASE_REMOVED');
-})->with(['database', 'host', 'receipt', 'worktree', 'cached-config']);
+})->with(['database', 'expected-database', 'bound-receipt', 'host', 'receipt', 'worktree', 'cached-config']);
+
+it('binds the candidate database and receipt for the real strict database test guard', function (?string $inheritedReceipt): void {
+    $guardPath = str_replace("'", "''", dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php');
+    $probePath = $this->workflowDirectory.'/strict-ownership-probe.php';
+    file_put_contents($probePath, <<<'PHP'
+<?php
+require $argv[1];
+requireMultipleChoiceTestDatabase();
+echo 'STRICT_OWNERSHIP_ACCEPTED';
+PHP);
+    $probePath = str_replace("'", "''", $probePath);
+    $initialReceipt = $inheritedReceipt === null
+        ? 'Remove-Item -LiteralPath Env:SCHOOLTOOL_MC_TEST_RECEIPT -ErrorAction SilentlyContinue'
+        : '$env:SCHOOLTOOL_MC_TEST_RECEIPT = \''.$inheritedReceipt.'\'';
+    $command = $initialReceipt."\n".'$previousReceipt = [Environment]::GetEnvironmentVariable("SCHOOLTOOL_MC_TEST_RECEIPT", "Process")'."\n"
+        .branchWorkflowBatchEnvironment()."\n".'$guardPath = \''.$guardPath."'\n".'$probePath = \''.$probePath."'\n".<<<'POWERSHELL'
+Push-Location -LiteralPath $candidate.Path
+try {
+    Assert-SchooltoolOwnedTestEnvironment
+    & php $probePath $guardPath
+    if ($LASTEXITCODE -ne 0) { throw 'The strict database test guard rejected the candidate environment.' }
+} finally { Pop-Location; Restore-SchooltoolCandidateEnvironment $state }
+if ([Environment]::GetEnvironmentVariable('SCHOOLTOOL_MC_TEST_RECEIPT', 'Process') -cne $previousReceipt) { throw 'The candidate receipt environment was not restored.' }
+POWERSHELL;
+    $result = runBranchWorkflowCommand($this->workflowPc, $command);
+
+    assertBranchWorkflowSucceeded($result);
+    expect($result->getOutput())->toContain('STRICT_OWNERSHIP_ACCEPTED', 'MOCK_TEST_DATABASE_REMOVED');
+})->with(['missing receipt' => null, 'inherited receipt' => 'original-receipt.json']);
 
 it('starts PHP test processes natively with literal file arguments and preserves their exit status', function (int $exitCode, string $powershell): void {
     file_put_contents($this->workflowPc.'/artisan', <<<'PHP'

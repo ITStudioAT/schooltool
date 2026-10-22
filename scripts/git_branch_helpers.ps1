@@ -246,7 +246,8 @@ function Enter-SchooltoolCandidateEnvironment {
         $settings = [ordered]@{
             APP_ENV = 'testing'; APP_KEY = ('base64:' + [Convert]::ToBase64String($keyBytes)); APP_URL = 'http://localhost'; APP_DEBUG = 'false'
             APP_MAINTENANCE_DRIVER = 'file'; DB_CONNECTION = 'mysql'; DB_HOST = '127.0.0.1'; DB_PORT = '3306'
-            DB_DATABASE = $owned.Database; DB_DATABASE_TEST = 'pest_test'; DB_CONNECTION_TEST = 'mysql'; DB_USERNAME = 'root'; DB_PASSWORD = '(empty)'; DB_URL = '(null)'; DB_SOCKET = '(empty)'
+            DB_DATABASE = $owned.Database; DB_DATABASE_TEST = $owned.Database; DB_CONNECTION_TEST = 'mysql'; DB_USERNAME = 'root'; DB_PASSWORD = '(empty)'; DB_URL = '(null)'; DB_SOCKET = '(empty)'
+            SCHOOLTOOL_MC_TEST_RECEIPT = $owned.ReceiptPath.Replace('\', '/')
             MAIL_MAILER = 'array'; QUEUE_CONNECTION = 'sync'; CACHE_STORE = 'array'; SESSION_DRIVER = 'array'
             BROADCAST_CONNECTION = 'log'; FILESYSTEM_DISK = 'local'; REDIS_HOST = '127.0.0.1'; REDIS_PORT = '6379'; REDIS_DB = '15'; REDIS_CACHE_DB = '15'
             PULSE_ENABLED = 'false'; TELESCOPE_ENABLED = 'false'; NIGHTWATCH_ENABLED = 'false'; SCHOOLTOOL_PREVIEW_INSTANCE = 'false'

@@ -2,6 +2,9 @@
 
 use App\Models\NumberSystemGameRun;
 use App\Models\NumberSystemGameSession;
+use App\Models\School;
+use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Services\NumberSystems\NumberSystemEngine;
 use App\Services\NumberSystems\NumberSystemGameService;
@@ -12,10 +15,30 @@ require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
 requireMultipleChoiceTestDatabase();
 uses(DatabaseTruncation::class);
 
-test('simultaneous connections accept one revision and one answer without losing or duplicating progress', function () {
-    $session = NumberSystemGameSession::factory()->create(['status' => 'running']);
-    $student = User::factory()->create(['school_id' => $session->school_id]);
-    $session->course->teachingCourseStudents()->create(['user_id' => $student->id, 'import116_id' => null, 'canceled_at' => null]);
+afterEach(function (): void {
+    if (! isset($this->concurrencyFixture)) {
+        return;
+    }
+
+    $fixture = $this->concurrencyFixture;
+    $fixture['session']->delete();
+    $fixture['membership']->forceDelete();
+    $fixture['course']->delete();
+    $fixture['student']->delete();
+    $fixture['teacher']->delete();
+    $fixture['year']->delete();
+    $fixture['school']->delete();
+});
+
+test('simultaneous connections accept one revision and one answer without losing or duplicating progress', function (): void {
+    $school = School::factory()->create();
+    $year = Schoolyear::factory()->create(['school_id' => $school->id]);
+    $teacher = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id]);
+    $course = TeachingCourse::factory()->forSchool($school)->forSchoolyear($year)->forTeacher($teacher)->create();
+    $session = NumberSystemGameSession::factory()->create(['teaching_course_id' => $course->id, 'status' => 'running']);
+    $student = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id]);
+    $membership = $course->teachingCourseStudents()->create(['user_id' => $student->id, 'import116_id' => null, 'canceled_at' => null]);
+    $this->concurrencyFixture = compact('session', 'membership', 'course', 'student', 'teacher', 'year', 'school');
     $run = app(NumberSystemGameService::class)->join($student, $session->join_code, null, null);
     $environment = ['APP_ENV' => 'testing', 'DB_CONNECTION' => 'mysql', 'DB_HOST' => '127.0.0.1', 'DB_PORT' => '3306',
         'DB_DATABASE' => config('database.connections.mysql.database'), 'DB_DATABASE_TEST' => config('database.connections.mysql.database'),

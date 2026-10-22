@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { assertLocalEnvironment, existingWorkspaceSession, ownsDevListener, prepareWorkspaceEnvironment, shouldOpenLocalDev,
+import { assertLocalEnvironment, existingWorkspaceSession, localQueueWorkerArguments, ownsDevListener, prepareWorkspaceEnvironment, shouldOpenLocalDev,
     workspacePorts } from '../../scripts/local-dev.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -311,6 +311,31 @@ async function waitForProject(project, main, output) {
     }
     assert.fail(`The matching owned services did not start: ${output().slice(-3000)}`);
 }
+
+test('starts all four worker groups using the configured database connection', () => {
+    const fixture = ownedFixture();
+    try {
+        fs.writeFileSync(path.join(fixture.project, '.env'), 'QUEUE_CONNECTION=database\n');
+        fs.writeFileSync(path.join(fixture.project, 'artisan'), `<?php
+$settings = parse_ini_file(__DIR__.'/.env');
+$connection = isset($argv[2]) && !str_starts_with($argv[2], '--') ? $argv[2] : $settings['QUEUE_CONNECTION'];
+$queue = current(array_filter($argv, fn ($value) => str_starts_with($value, '--queue=')));
+echo json_encode(['connection'=>$connection, 'queue'=>$queue]);`);
+        const workers = localQueueWorkerArguments().map(argumentsList => {
+            const result = spawnSync('php', argumentsList,
+                { cwd: fixture.project, encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            assert.equal(result.status, 0, result.stdout + result.stderr);
+            return JSON.parse(result.stdout);
+        });
+        assert.equal(workers.length, 4);
+        assert.ok(workers.every(worker => worker.connection === 'database'));
+        assert.deepEqual([...new Set(workers.map(worker => worker.queue))].sort(), [
+            '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance',
+        ]);
+    } finally {
+        fixture.cleanup();
+    }
+});
 
 test('a persistent launcher follows gitmain and gitwork without jobs, duplicate controllers or foreign process cleanup', { timeout: 150000, skip: process.platform !== 'win32' }, async () => {
     const fixture = ownedFixture();

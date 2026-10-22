@@ -227,8 +227,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/admin/config', [AdminController::class, 'config']);
 
     Route::prefix('/admin/number-systems')->middleware([
-        'auth:sanctum', 'api-allowed:admin,teaching_admin,teacher',
-        'tool-licensed:Lehrertool,auth,admin,teaching_admin,teacher',
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
     ])->name('admin.number-systems.')->group(function (): void {
         Route::prefix('/local-probes')->name('local-probes.')->group(function (): void {
             Route::post('/', [NumberSystemLocalProbeController::class, 'create'])->middleware('throttle:10,1')->name('create');
@@ -248,8 +248,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     Route::prefix('/admin/multiple-choice')->middleware([
-        'auth:sanctum', 'api-allowed:admin,teaching_admin,teacher',
-        'tool-licensed:Lehrertool,auth,admin,teaching_admin,teacher',
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
     ])->name('admin.multiple-choice.')->group(function (): void {
         Route::get('/', [MultipleChoiceController::class, 'index'])->name('index');
         Route::post('/catalogs', [MultipleChoiceController::class, 'createCatalog'])->name('catalogs.create');
@@ -469,11 +469,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/health/status', [HealthController::class, 'status'])
             ->middleware('api-allowed:scope:admin_shell_access');
         Route::get('/admin/connections', [ConnectionStatusController::class, '__invoke'])
-            ->middleware('api-allowed:super_admin')->name('admin.connections.status');
+            ->middleware('api-allowed:scope:super_admin_access')->name('admin.connections.status');
         Route::post('/admin/connections/check', [ConnectionStatusController::class, '__invoke'])
-            ->middleware(['api-allowed:super_admin', 'throttle:10,1'])->name('admin.connections.check');
+            ->middleware(['api-allowed:scope:super_admin_access', 'throttle:10,1'])->name('admin.connections.check');
         Route::post('/admin/connections/dropbox/connect', [ConnectionStatusController::class, 'connect'])
-            ->middleware(['api-allowed:super_admin', StartSession::class])->name('admin.connections.connect');
+            ->middleware(['api-allowed:scope:super_admin_access', StartSession::class])->name('admin.connections.connect');
         Route::post('/admin/health/test-queue', [HealthController::class, 'testQueue'])
             ->middleware(['api-allowed:scope:admin_or_super_admin_access', 'throttle:health-queue-tests']);
         Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest'])

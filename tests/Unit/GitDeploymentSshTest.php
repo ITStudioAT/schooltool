@@ -29,7 +29,7 @@ POWERSHELL;
         $process = new Process(
             [$shell, '-NoProfile', '-NonInteractive', '-Command', $setup."\n".$code],
             dirname(__DIR__, 2),
-            ['SCHOOLTOOL_SSH_TEST_HELPER' => dirname(__DIR__, 2).'/scripts/git_ssh_helpers.ps1', 'SCHOOLTOOL_SSH_TEST_DIRECTORY' => $directory, 'SCHOOLTOOL_SSH_TEST_PHP' => PHP_BINARY],
+            ['SCHOOLTOOL_SSH_TEST_HELPER' => dirname(__DIR__, 2).'/scripts/git_ssh_helpers.ps1', 'SCHOOLTOOL_SSH_TEST_DIRECTORY' => $directory, 'SCHOOLTOOL_SSH_TEST_PHP' => PHP_BINARY, 'SCHOOLTOOL_IGNORE_USER_SETTINGS' => '1'],
             timeout: 30,
         );
         $process->run();

@@ -15,6 +15,15 @@ export function workspacePorts(project, main, portOffset = 0) {
     return { server: 8000 + portOffset, vite: 5173 + portOffset };
 }
 
+export function localQueueWorkerArguments() {
+    return [
+        ['artisan', 'queue:work', '--once', '--queue=critical,notifications', '--sleep=1', '--tries=3', '--timeout=60'],
+        ['artisan', 'queue:work', '--once', '--queue=default', '--sleep=1', '--tries=2', '--timeout=1830'],
+        ['artisan', 'queue:work', '--once', '--queue=imports', '--sleep=1', '--tries=1', '--timeout=60'],
+        ['artisan', 'queue:work', '--once', '--queue=materials,maintenance', '--sleep=1', '--tries=1', '--timeout=1830'],
+    ];
+}
+
 function assertOrdinaryPath(filename) {
     for (let current = path.resolve(filename); current !== path.dirname(current); current = path.dirname(current)) {
         if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
@@ -286,12 +295,7 @@ export async function startLocalDev(project, { webOnly = false, open = false, ch
     try {
         await waitForWeb(project, ports, [php, vite]);
         if (!webOnly && !stopRequested) {
-            for (const argumentsList of [
-                ['artisan', 'queue:work', 'redis', '--once', '--queue=critical,notifications', '--sleep=1', '--tries=3', '--timeout=60'],
-                ['artisan', 'queue:work', 'redis', '--once', '--queue=default', '--sleep=1', '--tries=2', '--timeout=1830'],
-                ['artisan', 'queue:work', 'redis', '--once', '--queue=imports', '--sleep=1', '--tries=1', '--timeout=60'],
-                ['artisan', 'queue:work', 'redis', '--once', '--queue=materials,maintenance', '--sleep=1', '--tries=1', '--timeout=1830'],
-            ]) {
+            for (const argumentsList of localQueueWorkerArguments()) {
                 const runWorker = () => startJob(argumentsList, runWorker);
                 runWorker();
             }

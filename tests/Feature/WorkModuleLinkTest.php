@@ -20,7 +20,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
-    config(['services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret',
+    config(['app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret',
         'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback', 'schooltool.preview.instance' => false]);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);

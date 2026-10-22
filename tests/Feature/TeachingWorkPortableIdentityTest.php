@@ -29,7 +29,9 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Storage::fake('local');
-    config(['schooltool.preview.instance' => false, 'services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret']);
+    config(['app.url' => 'http://localhost:8000', 'schooltool.preview.instance' => false,
+        'services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret',
+        'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback']);
 });
 
 function portableIdentityFixture(object $test, int $count = 2): array

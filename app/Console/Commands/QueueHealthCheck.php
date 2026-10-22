@@ -3,20 +3,31 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
+use Throwable;
 
 class QueueHealthCheck extends Command
 {
     protected $signature = 'queue:health-check
                             {--exclude-master-pid=* : Horizon master process IDs that must not satisfy this health check}';
 
-    protected $description = 'Zeigt den von Horizon gemeldeten Queue-Status';
+    protected $description = 'Zeigt den Queue-Status von Horizon oder der lokalen Datenbank-Queue';
 
-    public function handle(
-        MasterSupervisorRepository $masterSupervisors,
-        SupervisorRepository $supervisors,
-    ): int {
+    public function handle(): int
+    {
+        $connection = (string) config('queue.default');
+
+        if (app()->environment('local')
+            && config("queue.connections.{$connection}.driver") === 'database') {
+            return $this->localDatabaseStatus($connection);
+        }
+
+        $masterSupervisors = app(MasterSupervisorRepository::class);
+        $supervisors = app(SupervisorRepository::class);
         $excludedMasterProcessIds = collect($this->option('exclude-master-pid'))
             ->filter(fn (mixed $processId): bool => is_string($processId)
                 && ctype_digit($processId)
@@ -79,6 +90,35 @@ class QueueHealthCheck extends Command
         }
 
         $this->info('Horizon laeuft.');
+
+        return self::SUCCESS;
+    }
+
+    private function localDatabaseStatus(string $connection): int
+    {
+        try {
+            $queue = Queue::connection($connection);
+            $rows = collect($this->expectedQueueNames())
+                ->map(fn (string $name): array => [$name, $queue->size($name)])
+                ->all();
+            $heartbeat = Cache::get('health:worker');
+            $workerAt = is_string($heartbeat) && $heartbeat !== '' ? Carbon::parse($heartbeat) : null;
+        } catch (Throwable) {
+            $this->error('Lokaler Datenbank-Queue-Status konnte nicht gelesen werden.');
+
+            return 2;
+        }
+
+        $this->line('Lokale Datenbank-Queue; Horizon-Metriken sind hier nicht verfügbar.');
+        $this->table(['Queue', 'Aufträge'], $rows);
+
+        if (! $workerAt || $workerAt->lessThanOrEqualTo(now()->subMinutes(2)) || $workerAt->greaterThan(now())) {
+            $this->error('Kein aktueller Worker-Heartbeat der critical-Queue.');
+
+            return 2;
+        }
+
+        $this->info('Worker-Heartbeat der critical-Queue ist aktuell.');
 
         return self::SUCCESS;
     }

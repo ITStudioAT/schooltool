@@ -29,6 +29,8 @@ Schedule::job(new HealthJob)
 
 Schedule::command('horizon:snapshot')
     ->everyFiveMinutes()
+    ->when(fn (): bool => ! app()->environment('local')
+        || config('queue.connections.'.config('queue.default').'.driver') === 'redis')
     ->onOneServer()
     ->withoutOverlapping();
 

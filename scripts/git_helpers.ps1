@@ -140,7 +140,8 @@ function Assert-SchooltoolOwnedTestEnvironment {
     }
     if ($snapshot.CreatedDatabase -cnotmatch '^pest_test_test_[0-9]{24}$' -or $env:DB_DATABASE -cne $snapshot.CreatedDatabase -or
         $env:APP_ENV -cne 'testing' -or $env:DB_CONNECTION -cne 'mysql' -or $env:DB_HOST -cne '127.0.0.1' -or $env:DB_PORT -cne '3306' -or
-        $env:DB_USERNAME -cne 'root' -or $env:DB_PASSWORD -cne '(empty)' -or $env:DB_URL -cne '(null)' -or $env:DB_DATABASE_TEST -cne 'pest_test') {
+        $env:DB_USERNAME -cne 'root' -or $env:DB_PASSWORD -cne '(empty)' -or $env:DB_URL -cne '(null)' -or $env:DB_DATABASE_TEST -cne $snapshot.CreatedDatabase -or
+        $env:SCHOOLTOOL_MC_TEST_RECEIPT -cne $snapshot.ReceiptPath.Replace('\', '/')) {
         throw 'PHP release tests require the self-created local database and isolated testing configuration.'
     }
     $expectedCache = 'bootstrap/cache/' + [System.IO.Path]::GetFileNameWithoutExtension($snapshot.ReceiptPath) + '.config.php'
