@@ -6,6 +6,8 @@ use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -35,9 +37,13 @@ class DropboxModuleLinks
         if ($link->dropbox_connection_id !== $connection->id || $link->account_id !== $connection->account_id) {
             return ['status' => 'missing', 'folder' => null];
         }
-        $key = 'teaching:exercise-check:'.hash('sha256', serialize([$connection->id, $connection->account_id,
+        $key = 'teaching:exercise-check:v2:'.hash('sha256', serialize([$connection->id, $connection->account_id,
             $work->id, $work->teaching_course_id, $link->getAttributes()]));
-        $schedule = hash('sha256', serialize([$work->date_for_all_groups?->format('Y-m-d'), array_column($work->groups ?? [], 'date')]));
+        $schedule = hash('sha256', serialize([$work->date_for_all_groups?->format('Y-m-d'),
+            app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work), $work->title,
+            $work->finish_until_date?->format('Y-m-d'), $work->finish_until_time, $work->communicatedDeadline(),
+            $work->teachingCourse->teachingCourseStudents()->with(['user:id,email,updated_at', 'import116:id,email,updated_at'])
+                ->get(['id', 'user_id', 'import116_id', 'canceled_at', 'updated_at'])->toArray()]));
         $record = Cache::get($key);
         if ($refresh || ($record === null && $initial)) {
             $record = Cache::lock($key.':lock', 120)->block(55, function () use ($key, $schedule, $refresh, $connection, $work, $link): array {
@@ -67,7 +73,8 @@ class DropboxModuleLinks
         }
 
         return ($matches === [] ? ['status' => 'missing', 'folder' => null]
-            : ['status' => 'found', 'folder' => $matches[0]['folder']]) + $checked;
+            : ['status' => 'found', 'folder' => $matches[0]['folder'],
+                'email_preparation' => $matches[0]['email_preparation'] ?? ['status' => 'unknown']]) + $checked;
     }
 
     /** @return array<string, mixed> */
@@ -132,7 +139,8 @@ class DropboxModuleLinks
                 $confirmed = $this->dropbox->metadata($connection, $folder['id']);
                 abort_unless(dirname($confirmed['path_lower']) === $root['path_lower'], 409, 'Die Leistungsfeststellung wurde inzwischen verschoben.');
                 $matches[] = ['date' => $scheduled, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
-                    'path' => $confirmed['path_display'] ?? $confirmed['path_lower']]];
+                    'path' => $confirmed['path_display'] ?? $confirmed['path_lower']],
+                    'email_preparation' => $this->emailPreparation($connection, $work, $confirmed, $children, $scheduled)];
             }
             abort_unless($this->current($work)?->getAttributes() === $link->getAttributes()
                 && $connection->fresh()?->account_id === $link->account_id && ! $connection->fresh()?->revoked_at,
@@ -142,6 +150,105 @@ class DropboxModuleLinks
         } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
             return ['status' => 'unknown', 'folder' => null, 'message' => 'Anlagezustand nicht bestätigt. '.($exception instanceof ValidationException
                 ? collect($exception->errors())->flatten()->first() : ($exception instanceof JsonException ? 'Ungültige LF-Metadaten.' : $exception->getMessage()))];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $folder
+     * @param  list<array<string, mixed>>  $children
+     * @return array<string, mixed>
+     */
+    private function emailPreparation(DropboxConnection $connection, TeachingCourseWork $work, array $folder, array $children, string $date): array
+    {
+        try {
+            $package = $this->exerciseJson($connection, $children, 'Schooltool-Versandvorbereitung.json');
+            if ($package === null) {
+                return ['status' => 'missing'];
+            }
+            abort_unless(($package['kind'] ?? null) === 'schooltool.preparation' && ($package['schema_version'] ?? null) === 1
+                && ($package['Versandbereit'] ?? null) === true, 422, 'Kein vollständiger Versandbereitschaftsbeleg.');
+            $importer = app(TeachingWorkDispatchImport::class);
+            $json = json_encode($package, JSON_THROW_ON_ERROR);
+            $report = $importer->parse($json);
+            abort_unless(is_string($package['Leistungsfeststellung'] ?? null)
+                && basename(str_replace('\\', '/', $package['Leistungsfeststellung'])) === $folder['name'],
+                409, 'Die Vorbereitung gehört zu einem anderen Leistungsfeststellungsordner.');
+            $draft = $this->exerciseFile($connection, $children, 'nachricht_entwurf.md');
+            abort_unless($draft !== null && is_string($package['Textquelle_SHA256'] ?? null)
+                && hash_equals($package['Textquelle_SHA256'], hash('sha256', $draft)),
+                409, 'Der Nachrichtentext wurde seit der Vorbereitung geändert.');
+            $sources = $package['Quellen'] ?? null;
+            abort_unless(is_array($sources) && count($sources) >= 2 && count($sources) <= 10, 422, 'Die Quellen der Vorbereitung sind nicht vollständig belegt.');
+            $verifiedSources = [];
+            $metadata = null;
+            foreach ($sources as $source) {
+                abort_unless(is_array($source), 422, 'Ungültige Vorbereitungsquelle.');
+                $relative = $source['Datei'] ?? null;
+                abort_unless(is_string($relative) && preg_match('#\\A[^/\\\\]+(?:/[^/\\\\]+)?\\z#u', $relative)
+                    && ! in_array('..', explode('/', $relative), true) && ! str_contains($relative, ':'), 422, 'Ungültige Vorbereitungsquelle.');
+                $entries = $children;
+                if (str_contains($relative, '/')) {
+                    [$directory] = explode('/', $relative);
+                    $directories = array_values(array_filter($children, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && $entry['name'] === $directory));
+                    abort_unless(count($directories) === 1, 409, 'Die Vorbereitungsquelle ist nicht eindeutig.');
+                    $entries = $this->exerciseChildren($connection, $directories[0]['id']);
+                }
+                $contents = $this->exerciseFile($connection, $entries, basename($relative));
+                abort_unless($contents !== null && is_string($source['SHA256'] ?? null)
+                    && hash_equals($source['SHA256'], hash('sha256', $contents)), 409, 'Eine Quelle wurde seit der E-Mail-Vorbereitung geändert.');
+                $verifiedSources[] = $relative;
+                if ($relative === 'Anlage_und_Quellen.json') {
+                    $metadata = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
+                }
+            }
+            abort_unless(in_array('Anlage_und_Quellen.json', $verifiedSources, true)
+                && collect($verifiedSources)->contains(fn (string $path): bool => str_starts_with($path, 'Schülerlisten/')),
+                422, 'Quellenmetadaten und Schülerliste müssen belegt sein.');
+            foreach (['Abgabeschluss' => $work->finish_until_date && $work->finish_until_time
+                ? $work->finish_until_date->format('Y-m-d').' '.$work->finish_until_time : null,
+                'MitgeteilteAbgabefrist' => ($work->communicatedDeadline()['at'] ?? null)] as $field => $expected) {
+                $source = $metadata[$field] ?? null;
+                if ($source === null && $expected === null) {
+                    continue;
+                }
+                abort_unless(is_string($source) && preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:Z|[+-]\d{2}:\d{2})\z/', $source)
+                    && $expected !== null, 409, 'Die vorbereiteten Fristen passen nicht zum aktuellen Arbeitsstand.');
+                $instant = new DateTimeImmutable($source);
+                $current = new DateTimeImmutable($expected, new DateTimeZone('Europe/Vienna'));
+                abort_unless($instant->getTimestamp() === $current->getTimestamp(), 409, 'Eine Frist wurde seit der E-Mail-Vorbereitung geändert.');
+            }
+            $attachmentHashes = [];
+            foreach ($package['Empfaenger'] ?? [] as $recipient) {
+                foreach ($recipient['VorbereiteteAnhaenge'] ?? [] as $attachment) {
+                    abort_unless(is_string($attachment['Dateiname'] ?? null) && is_string($attachment['SHA256'] ?? null),
+                        422, 'Ungültiger Anhangbeleg.');
+                    $name = $attachment['Dateiname'];
+                    abort_unless(basename(str_replace('\\', '/', $name)) === $name, 422, 'Ungültiger Anhangname.');
+                    if (! isset($attachmentHashes[$name])) {
+                        abort_if(count($attachmentHashes) >= 10, 422, 'Zu viele verschiedene Anhänge für die vollständige Prüfung.');
+                        $sections = array_values(array_filter($children, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && $entry['name'] === 'Angaben'));
+                        abort_unless(count($sections) === 1, 409, 'Der Angabenordner ist nicht eindeutig.');
+                        $file = $this->exerciseFile($connection, $this->exerciseChildren($connection, $sections[0]['id']), $name, 8 * 1024 * 1024);
+                        abort_unless($file !== null, 409, 'Ein vorbereiteter Aufgabenanhang fehlt im Angabenordner.');
+                        $attachmentHashes[$name] = hash('sha256', $file);
+                    }
+                    abort_unless(hash_equals($attachment['SHA256'], $attachmentHashes[$name]), 409, 'Ein Aufgabenanhang wurde seit der E-Mail-Vorbereitung geändert.');
+                }
+            }
+            $datedWork = clone $work;
+            $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
+            $datedWork->groups = $groups === [] && ! $work->is_group_work
+                ? [['student_ids' => $work->teachingCourse->teachingCourseStudents()->whereNull('canceled_at')->whereNotNull('user_id')->pluck('user_id')->all()]]
+                : array_values(array_filter($groups, fn (array $group): bool => ($group['date'] ?? $work->date_for_all_groups?->format('Y-m-d')) === $date));
+            $datedWork->setRelation('teachingCourseWorkGroupStudents', $work->newCollection());
+            $preview = $importer->preview($datedWork, $report, hash('sha256', $json), requireMatchingTitle: false);
+            abort_unless($preview['log_info']['dispatch_ready'] === true, 409, 'Die Vorbereitung passt nicht vollständig zu den aktuellen Prüfungskandidaten.');
+
+            return ['status' => 'ready', 'prepared_at' => $preview['log_info']['prepared_at'],
+                'recipients_count' => count($report['recipients'])];
+        } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
+            return ['status' => 'unknown', 'message' => 'E-Mail-Vorbereitung nicht bestätigt. '.($exception instanceof ValidationException
+                ? collect($exception->errors())->flatten()->first() : ($exception instanceof JsonException ? 'Ungültige Vorbereitungsdaten.' : $exception->getMessage()))];
         }
     }
 
@@ -170,21 +277,32 @@ class DropboxModuleLinks
      */
     private function exerciseJson(DropboxConnection $connection, array $entries, string $name): ?array
     {
+        $contents = $this->exerciseFile($connection, $entries, $name);
+        if ($contents === null) {
+            return null;
+        }
+        $data = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
+        abort_unless(is_array($data), 422, 'Ungültige LF-Metadaten.');
+
+        return $data;
+    }
+
+    /** @param list<array<string, mixed>> $entries */
+    private function exerciseFile(DropboxConnection $connection, array $entries, string $name, int $maxSize = 128 * 1024): ?string
+    {
         $files = array_values(array_filter($entries, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file' && strcasecmp($entry['name'] ?? '', $name) === 0));
         if ($files === []) {
             return null;
         }
         abort_unless(count($files) === 1, 409, 'Mehrdeutige LF-Metadaten.');
         $file = $files[0];
-        abort_unless(is_int($file['size'] ?? null) && $file['size'] <= 128 * 1024 && is_string($file['rev'] ?? null), 422, 'LF-Metadaten sind ungültig oder zu groß.');
+        abort_unless(is_int($file['size'] ?? null) && $file['size'] <= $maxSize && is_string($file['rev'] ?? null), 422, 'LF-Metadaten sind ungültig oder zu groß.');
         $contents = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$file['rev']])->body();
         abort_unless(strlen($contents) === $file['size'], 422, 'LF-Metadaten wurden nicht vollständig gelesen.');
         $after = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $file['id']])->json();
         abort_unless(($after['rev'] ?? null) === $file['rev'] && ($after['path_lower'] ?? null) === ($file['path_lower'] ?? null), 409, 'LF-Metadaten wurden während des Lesens geändert.');
-        $data = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
-        abort_unless(is_array($data), 422, 'Ungültige LF-Metadaten.');
 
-        return $data;
+        return $contents;
     }
 
     public function assignmentVersion(DropboxConnection $connection, TeachingCourseWork $work,

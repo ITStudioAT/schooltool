@@ -1,5 +1,5 @@
 <template>
-    <span class="exercise-action" @click.stop>
+    <span v-if="needsPreparation" class="exercise-action" @click.stop>
         <template v-if="exerciseFolder">
             <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
         </template>
@@ -40,6 +40,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { workNeedsPreparation } from '@/helpers/workOverview'
 
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean })
 const emit = defineEmits(['exercise-status'])
@@ -61,6 +62,7 @@ const checkTime = computed(() => checkedAt.value ? new Intl.DateTimeFormat('de-A
 const moduleLinked = ref(false)
 const exerciseMessage = ref('')
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
+const needsPreparation = computed(() => workNeedsPreparation(props.work, binding.value))
 const bindingVersion = computed(() => JSON.stringify([binding.value?.connected, binding.value?.link_version, binding.value?.module_link]))
 let sequence = 0
 let controller = null
@@ -74,20 +76,21 @@ async function checkExercise(fresh = false) {
     exerciseMessage.value = ''
     checkedAt.value = null
     const key = workDropboxKey(admin.config?.user?.id, props.work)
-    const cached = !fresh && props.active && current.value ? workExerciseCheck(key, props.work, props.date) : null
-    exerciseChecking.value = props.active && current.value && !cached
+    const cached = !fresh && props.active && current.value && needsPreparation.value ? workExerciseCheck(key, props.work, props.date) : null
+    exerciseChecking.value = props.active && current.value && needsPreparation.value && !cached
     const context = { userId: admin.config?.user?.id, workId: props.work?.id, courseId: props.course?.id, date: props.date }
-    const publish = (status, folder = null) => {
+    const publish = (status, folder = null, emailPreparation = null) => {
         checkedStatus.value = status
-        emit('exercise-status', { ...context, status, folder, checkedAt: checkedAt.value })
+        emit('exercise-status', { ...context, status, folder, emailPreparation, checkedAt: checkedAt.value })
     }
     if (cached) {
         checkedAt.value = cached.checkedAt
         moduleLinked.value = Boolean(cached.data.connected && cached.data.module_link?.folder?.id)
         exerciseFolder.value = cached.status === 'found' ? cached.folder : null
     }
-    publish(cached ? cached.status : exerciseChecking.value ? 'checking' : 'unknown', cached?.folder)
-    if (!props.active || !current.value) return
+    publish(cached ? cached.status : exerciseChecking.value ? 'checking' : 'unknown', cached?.folder,
+        cached?.data?.exercise?.email_preparation)
+    if (!props.active || !current.value || !needsPreparation.value) return
     try {
         const data = await loadWorkExercise(key, props.work, props.date, fresh)
         if (operation !== exerciseSequence) return
@@ -96,7 +99,7 @@ async function checkExercise(fresh = false) {
         if (data.connected && data.module_link?.folder?.id && data.exercise?.status === 'found'
             && typeof data.exercise.folder?.name === 'string' && data.exercise.folder.name.trim()) {
             exerciseFolder.value = data.exercise.folder
-            publish('found', data.exercise.folder)
+            publish('found', data.exercise.folder, data.exercise.email_preparation)
             opened.value = false
         } else {
             publish(data.exercise?.status === 'missing' ? 'missing' : 'unknown')
@@ -174,7 +177,7 @@ async function copyExport() {
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); opened.value = false })
 watch(opened, value => { if (!value) clear() })
 watch(includeMc, clear)
-watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value], () => checkExercise(), { immediate: true })
+watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value], () => checkExercise(), { immediate: true })
 onBeforeUnmount(() => { clear(); exerciseSequence++ })
 </script>
 

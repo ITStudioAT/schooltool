@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
+use Tests\Support\TeachingWorkDispatchFixture;
 
 uses(RefreshDatabase::class);
 
@@ -154,6 +155,101 @@ test('the actual externally created exercise folder is read only and confirmed f
     expect($this->work->fresh()->getAttributes())->toEqual($before);
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
+
+function addEmailPreparationFile(object $context, string $path, string $contents): void
+{
+    $revision = hash('sha256', $path.$contents);
+    $context->exerciseDocuments['rev:'.$revision] = $contents;
+    $context->online = array_values(array_filter($context->online, fn (array $entry): bool => $entry['path_lower'] !== strtolower($path)));
+    $context->online[] = ['.tag' => 'file', 'id' => 'id:'.$revision, 'name' => basename($path), 'path_lower' => strtolower($path),
+        'path_display' => $path, 'rev' => $revision, 'size' => strlen($contents)];
+}
+
+function addEmailPreparationFixture(object $context): string
+{
+    $context->course->update(['title' => 'INF 1']);
+    $student = User::factory()->create(['school_id' => $context->course->school_id, 'schoolyear_id' => $context->course->schoolyear_id,
+        'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'schoolclass' => '1A', 'email' => 'ada@example.test']);
+    $context->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $context->work->update(['groups' => [['student_ids' => [$student->id]]], 'finish_until_date' => null, 'finish_until_time' => null]);
+    $metadataFile = collect($context->online)->firstWhere('name', 'Anlage_und_Quellen.json');
+    $root = dirname($metadataFile['path_display']);
+    $roster = json_encode([['id' => $student->id, 'email' => $student->email]], JSON_THROW_ON_ERROR);
+    addEmailPreparationFile($context, $root.'/Schülerlisten/Teilnehmer.json', $roster);
+    addEmailPreparationFile($context, $root.'/nachricht_entwurf.md', 'Persönlicher E-Mail-Entwurf');
+    addEmailPreparationFile($context, $root.'/Angaben/Aufgaben.pdf', '%PDF-Aufgaben');
+    $package = json_decode(TeachingWorkDispatchFixture::readyTasksText(), true, flags: JSON_THROW_ON_ERROR);
+    $package['Leistungsfeststellung'] = $root;
+    $package['Textquelle_SHA256'] = hash('sha256', 'Persönlicher E-Mail-Entwurf');
+    $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0]['SHA256'] = hash('sha256', '%PDF-Aufgaben');
+    $package['Quellen'] = [['Datei' => 'Anlage_und_Quellen.json', 'SHA256' => hash('sha256', $context->exerciseDocuments['rev:'.$metadataFile['rev']])],
+        ['Datei' => 'Schülerlisten/Teilnehmer.json', 'SHA256' => hash('sha256', $roster)]];
+    addEmailPreparationFile($context, $root.'/Schooltool-Versandvorbereitung.json', json_encode($package, JSON_THROW_ON_ERROR));
+
+    return $root;
+}
+
+test('exercise checks include complete email preparation without sending or importing', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $root = addEmailPreparationFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+
+    $response = $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    $this->assertSame('ready', $response->json('exercise.email_preparation.status'), $response->json('exercise.email_preparation.message') ?? '');
+    $response->assertJsonPath('exercise.email_preparation.recipients_count', 1);
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+
+    addEmailPreparationFile($this, $root.'/nachricht_entwurf.md', 'Geänderter E-Mail-Entwurf');
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'found')
+        ->assertJsonPath('exercise.email_preparation.status', 'unknown');
+});
+
+test('email preparation is missing until its separate readiness evidence exists', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found')
+        ->assertJsonPath('exercise.email_preparation.status', 'missing');
+});
+
+test('email preparation matches the actual date group or all active members without saved groups', function (bool $datedGroup): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addEmailPreparationFixture($this);
+    if ($datedGroup) {
+        $student = User::factory()->create(['school_id' => $this->course->school_id, 'schoolclass' => '1A']);
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+        $groups = $this->work->fresh()->groups;
+        $groups[] = ['date' => '2026-10-07', 'student_ids' => [$student->id]];
+        $this->work->update(['groups' => $groups]);
+    } else {
+        $this->work->update(['groups' => []]);
+    }
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.email_preparation.status', 'ready');
+})->with([false, true]);
+
+test('changed or incomplete email preparation never invalidates the created exercise or becomes ready', function (string $changed): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $root = addEmailPreparationFixture($this);
+    if ($changed === 'roster') {
+        addEmailPreparationFile($this, $root.'/Schülerlisten/Teilnehmer.json', '[]');
+    } elseif ($changed === 'attachment') {
+        addEmailPreparationFile($this, $root.'/Angaben/Aufgaben.pdf', '%PDF-Geändert');
+    } elseif ($changed === 'deadline') {
+        $this->work->update(['finish_until_date' => '2026-10-08', 'finish_until_time' => '12:00']);
+    } elseif ($changed === 'recipient') {
+        $student = User::factory()->create(['school_id' => $this->course->school_id, 'schoolclass' => '1A']);
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+        $this->work->update(['groups' => [['student_ids' => [$student->id]]]]);
+    } else {
+        addEmailPreparationFile($this, $root.'/Schooltool-Versandvorbereitung.json', '{invalid');
+    }
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found')
+        ->assertJsonPath('exercise.email_preparation.status', 'unknown');
+})->with(['roster', 'attachment', 'deadline', 'recipient', 'malformed']);
 
 function addContentsRootFixture(object $context): void
 {

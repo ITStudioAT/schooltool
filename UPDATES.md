@@ -1,9 +1,15 @@
 # UPDATES
 
-## 3.53.1 !!!
+## 3.53.1
 
 ### Zahlensystem-Spiel
+
 - Für Externe zulassen
+- Auswertung als pdf
+
+### Unterricht
+
+- Arbeiten-Anlage weiterentwickelt
 
 ## 3.53.0
 

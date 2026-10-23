@@ -17,6 +17,7 @@ use App\Services\NumberSystems\NumberSystemInvitation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
+use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -46,6 +47,65 @@ beforeEach(function () {
     });
     $this->engine = new NumberSystemEngine;
     $this->session = NumberSystemGameSession::factory()->create(['teaching_course_id' => $this->course->id, 'school_id' => $this->school->id, 'teacher_id' => $this->teacher->id]);
+});
+
+test('teachers download a real private PDF of an empty round without changing the round', function () {
+    config(['laravel-pdf.driver' => 'dompdf']);
+    $before = $this->session->fresh()->getAttributes();
+    $response = nsGameAs($this, $this->teacher)->get('/api/admin/number-systems/sessions/'.$this->session->id.'/results/pdf')
+        ->assertOk()->assertHeader('Content-Type', 'application/pdf')
+        ->assertDownload('Signal_Null_Auswertung_'.$this->session->id.'.pdf');
+
+    expect($response->getContent())->toStartWith('%PDF-');
+    expect($response->headers->get('Cache-Control'))->toContain('private')->toContain('no-store');
+    expect($this->session->fresh()->getAttributes())->toBe($before);
+    expect(NumberSystemGameRun::query()->count())->toBe(0);
+});
+
+test('PDF snapshots preserve personal progress helpers and the configured final ranking', function (string $status, string $timer) {
+    Pdf::fake();
+    $this->freezeTime();
+    $this->session->update(['audience' => 'mixed', 'mode' => 'teams', 'timer_mode' => $timer, 'ranking_enabled' => true]);
+    $games = app(NumberSystemGameService::class);
+    $run = $games->join($this->students[0], $this->session->join_code, 'Team <script>Grün</script>', null);
+    $games->join($this->students[1], $this->session->join_code, null, $run->team_code);
+    $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'display_name' => 'Gast Černý', 'team_code' => $run->team_code])->assertOk();
+    $run->update(['history' => [['hints' => 1], ['hints' => 0]], 'position' => 2]);
+    $this->session->update(['status' => $status, 'active_seconds' => 123]);
+    $before = $run->fresh()->getAttributes();
+    $expectedRanking = app(NumberSystemGameResults::class)->ranking($this->session);
+
+    nsGameAs($this, $this->teacher)->get('/api/admin/number-systems/sessions/'.$this->session->id.'/results/pdf')->assertOk();
+
+    Pdf::assertRespondedWithPdf(function ($pdf) use ($status, $timer, $expectedRanking): bool {
+        $report = $pdf->viewData['report'];
+        expect($report['runs'][0])->toMatchArray(['solved' => 2, 'with_help' => 1, 'completed' => false]);
+        expect($report['runs'][0]['members'])->toContain('Gast Černý')
+            ->toContain($this->students[0]->first_name.' '.$this->students[0]->last_name)
+            ->toContain($this->students[1]->first_name.' '.$this->students[1]->last_name);
+        expect($report['ranking'])->toBe($expectedRanking);
+        $html = $pdf->getHtml();
+        expect($html)->toContain('Gast Černý')->toContain('Team &lt;script&gt;Grün&lt;/script&gt;')
+            ->toContain($status === 'ended' ? 'Abschlussauswertung' : 'Zwischenstand')
+            ->not->toContain('<script>')->not->toContain($this->session->join_code)->not->toContain($this->students[0]->email);
+        expect(str_contains($html, '<th>Aktive Zeit</th>'))->toBe($timer !== 'none');
+        expect(str_contains($html, '>Rang</th>'))->toBe($status === 'ended');
+
+        return $pdf->isDownload();
+    });
+    expect($run->fresh()->getAttributes())->toBe($before);
+})->with([['running', 'elapsed'], ['ended', 'none']]);
+
+test('game PDF exports reject students other teachers and other schools', function () {
+    $url = '/api/admin/number-systems/sessions/'.$this->session->id.'/results/pdf';
+    $this->getJson($url)->assertUnauthorized();
+    nsGameAs($this, $this->students[0])->getJson($url)->assertForbidden();
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'is_active' => true]);
+    $other->assignRole('teacher');
+    nsGameAs($this, $other)->getJson($url)->assertNotFound();
+    $this->session->update(['school_id' => School::factory()->create()->id]);
+    nsGameAs($this, $this->teacher)->getJson($url)->assertNotFound();
+    $this->getJson('/api/admin/number-systems/sessions/99999999/results/pdf')->assertNotFound();
 });
 
 function nsGameDraft(array $mission): array

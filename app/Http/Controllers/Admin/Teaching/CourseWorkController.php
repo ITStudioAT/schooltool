@@ -32,8 +32,10 @@ class CourseWorkController extends Controller
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor, 403);
-        $data = $request->validate(['purpose' => ['sometimes', 'in:exercise'],
+        $data = $request->validate(['purpose' => ['sometimes', 'in:exercise,email_preparation,email_dispatch'],
             'include_mc' => ['required_if:purpose,exercise', 'nullable', 'boolean'],
+            'address_form' => ['required_if:purpose,email_preparation', 'nullable', Rule::in(['du', 'sie'])],
+            'delivery_mode' => ['required_if:purpose,email_dispatch', 'nullable', Rule::in(['live', 'test'])],
             'date' => ['nullable', 'date_format:Y-m-d']]);
 
         return DB::transaction(function () use ($course_work, $actor, $export, $data): JsonResponse {
@@ -43,6 +45,16 @@ class CourseWorkController extends Controller
 
             $exercise = ($data['purpose'] ?? null) === 'exercise';
             abort_unless($exercise || $work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+
+            if (($data['purpose'] ?? null) === 'email_preparation') {
+                return response()->json(['data' => $export->buildEmailPreparation($work, $actor, $data['address_form'], $data['date'] ?? null)])
+                    ->header('Cache-Control', 'private, no-store');
+            }
+
+            if (($data['purpose'] ?? null) === 'email_dispatch') {
+                return response()->json(['data' => $export->buildEmailDispatch($work, $actor, $data['delivery_mode'], $data['date'] ?? null)])
+                    ->header('Cache-Control', 'private, no-store');
+            }
 
             return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, (bool) $data['include_mc'], $data['date'] ?? null)
                 : $export->build($work, $actor)])

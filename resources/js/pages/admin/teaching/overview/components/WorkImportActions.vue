@@ -1,5 +1,5 @@
 <template>
-    <span v-if="workAutomationEnabled(work) && !hasLink" class="work-import-action flex-column align-start" @click.stop>
+    <span v-if="workAutomationEnabled(work) && needsPreparation && !hasLink" class="work-import-action flex-column align-start" @click.stop>
         <v-btn size="small" variant="tonal" prepend-icon="mdi-link-variant" :disabled="disabled || statusLoading" @click.stop="$emit('link', work)">Verknüpfen</v-btn>
     </span>
     <span v-if="!linkOnly && workAutomationEnabled(work) && canQuickImport" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
@@ -12,6 +12,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workNeedsPreparation } from '@/helpers/workOverview'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxStates, workDropboxKey } from '@/helpers/workDropbox'
 
@@ -23,6 +24,7 @@ const statusLoading = ref(false)
 let statusRequestVersion = 0
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const state = computed(() => workDropboxStates.get(key.value))
+const needsPreparation = computed(() => workNeedsPreparation(props.work, state.value))
 const hasLink = computed(() => Boolean(state.value?.module_link?.folder?.id || state.value?.folder?.id))
 const canQuickImport = computed(() => !statusLoading.value && confirmedKey.value === key.value
     && workDropboxStates.get(key.value)?.can_quick_import === true)

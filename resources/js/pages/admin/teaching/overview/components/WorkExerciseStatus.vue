@@ -1,5 +1,5 @@
 <template>
-    <span v-if="work?.id" class="d-inline-flex" :class="{ 'cursor-pointer': status === 'found' }"
+    <span v-if="work?.id && needsPreparation" class="d-inline-flex" :class="{ 'cursor-pointer': status === 'found' }"
         :tabindex="status === 'found' ? 0 : undefined" :role="status === 'found' ? 'button' : undefined"
         :aria-label="tooltip" :title="tooltip" @click.stop="openDialog"
         @keydown.enter.stop.prevent="openDialog" @keydown.space.stop.prevent="openDialog">
@@ -42,12 +42,16 @@
 import { computed, ref, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workNeedsPreparation } from '@/helpers/workOverview'
+import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 import { workParticipantIds } from '@/helpers/workCellStatus'
 import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 } })
 const admin = useAdminStore()
+const needsPreparation = computed(() => workNeedsPreparation(props.work,
+    workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work))))
 const opened = ref(false)
 const checkTime = computed(() => props.state?.checkedAt ? new Intl.DateTimeFormat('de-AT', {
     timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short',

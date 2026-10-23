@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkExerciseStatus from '@/pages/admin/teaching/overview/components/WorkExerciseStatus.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2 }
 const state = { userId: 7, workId: 65, courseId: 2, date: '2026-10-20', folder: { id: 'id:exercise', name: 'Bestätigter Ordner', path: '/Materialien/Prüfung' } }
@@ -17,6 +18,20 @@ function render(status = 'checking', props = {}) {
         },
     } })
 }
+
+it('does not show a missing exercise warning for an existing imported work', () => {
+    const wrapper = render('missing', { work: { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } } })
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    wrapper.unmount()
+})
+
+it('does not show a missing exercise warning when only the server confirms an older import', () => {
+    workDropboxStates.set('7:2:65', { has_import: true })
+    const wrapper = render('missing')
+    try {
+        expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65') }
+})
 
 it.each([['found', 'success', 'erstellt: Bestätigter Ordner'], ['missing', 'error', 'noch nicht erstellt'],
     ['checking', 'grey', 'wird geprüft'], ['unknown', 'grey', 'konnte nicht geprüft']])('distinguishes %s without another lookup', (status, color, label) => {

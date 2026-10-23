@@ -6,7 +6,7 @@ const pending = new Map()
 const suggestions = new Map()
 const exerciseChecks = shallowReactive(new Map())
 const exercisePending = new Map()
-const exerciseStoragePrefix = 'schooltool:work-preparation:v1:'
+const exerciseStoragePrefix = 'schooltool:work-preparation:v2:'
 let generation = 0
 
 export function workDropboxKey(userId, work) {
@@ -18,7 +18,8 @@ export function workDropboxBinding(state) {
 }
 
 function exerciseKey(key, work, date) {
-    return JSON.stringify([key, date, work?.date_for_all_groups, (work?.groups || []).map(group => group.date)])
+    return JSON.stringify([key, date, work?.date_for_all_groups, work?.title, work?.finish_until_date,
+        work?.finish_until_time, work?.communicated_deadline, (work?.groups || []).map(group => [group.date, group.student_ids])])
 }
 
 export function workExerciseCheck(key, work, date = '') {

@@ -200,6 +200,52 @@ it('lets a teacher prepare a separate new round and start pause resume and end i
     expect(wrapper.text()).toContain('Beendet')
 })
 
+it('downloads an authenticated PDF of the selected round and keeps the download alive briefly', async () => {
+    const session = { id: 2, title: 'Auswertung', status: 'ended', planned_minutes: 30, difficulty: 1 }
+    const pdf = new Blob(['%PDF-test'], { type: 'application/pdf' })
+    vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/results/pdf') ? pdf : String(url).endsWith('/sessions/2') ? { session, runs: [], enrolled: 0 } : { available: true, courses: [], sessions: [session] } }))
+    const createUrl = vi.fn(() => 'blob:game-results'), revokeUrl = vi.fn(), click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = createUrl; static revokeObjectURL = revokeUrl })
+    try {
+        const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+        await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Fortschritt ansehen').trigger('click'); await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Auswertung herunterladen (PDF)').trigger('click'); await flushPromises()
+        expect(axios.get).toHaveBeenLastCalledWith('/api/admin/number-systems/sessions/2/results/pdf', { responseType: 'blob', signal: expect.any(AbortSignal) })
+        expect(createUrl).toHaveBeenCalledWith(pdf)
+        expect(click).toHaveBeenCalledOnce()
+        expect(click.mock.instances[0].download).toBe('Signal_Null_Auswertung_2.pdf')
+        expect(revokeUrl).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(revokeUrl).toHaveBeenCalledWith('blob:game-results')
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { click.mockRestore(); vi.unstubAllGlobals() }
+})
+
+it('discards a late PDF after closing the round and allows a failed download to be retried', async () => {
+    const session = { id: 2, title: 'Auswertung', status: 'ended', planned_minutes: 30, difficulty: 1 }
+    let resolvePdf
+    vi.mocked(axios.get).mockImplementation(async url => {
+        if (String(url).endsWith('/results/pdf')) { return new Promise(resolve => { resolvePdf = resolve }) }
+        return { data: String(url).endsWith('/sessions/2') ? { session, runs: [], enrolled: 0 } : { available: true, courses: [], sessions: [session] } }
+    })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    const button = text => wrapper.findAll('button').find(button => button.text() === text)
+    await button('Fortschritt ansehen').trigger('click'); await flushPromises()
+    await button('Auswertung herunterladen (PDF)').trigger('click'); await flushPromises()
+    const signal = vi.mocked(axios.get).mock.lastCall[1].signal
+    expect(button('PDF wird erstellt …').attributes('disabled')).toBeDefined()
+    await button('Zur Rundenübersicht').trigger('click')
+    expect(signal.aborted).toBe(true)
+    resolvePdf({ data: new Blob(['%PDF-late']) }); await flushPromises()
+    await button('Fortschritt ansehen').trigger('click'); await flushPromises()
+    vi.mocked(axios.get).mockRejectedValueOnce(new Error('offline'))
+    await button('Auswertung herunterladen (PDF)').trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Die Auswertung konnte nicht heruntergeladen werden.')
+    expect(button('Auswertung herunterladen (PDF)').attributes('disabled')).toBeUndefined()
+})
+
 it('prepares external rounds without a course while requiring a course for mixed rounds', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: { available: true, external_available: true, courses: [], sessions: [] } })
     vi.mocked(axios.post).mockRejectedValue(new Error('stop after payload'))

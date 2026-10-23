@@ -43,7 +43,7 @@ describe('Dropbox Quick-Import', () => {
         ['unmapped folder', { folder: null, can_quick_import: false }],
         ['first import missing', { has_import: false, can_quick_import: false }],
         ['non-boolean permission', { can_quick_import: 'true' }],
-    ])('hides Quick-Import without a hint for %s and keeps normal import available', async (_, state) => {
+    ])('hides Quick-Import without a hint for %s and offers linking only without a saved folder', async (_, state) => {
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...connected, ...state } }) })
         const wrapper = mountComponent(WorkImportActions, { work })
         try {
@@ -51,10 +51,10 @@ describe('Dropbox Quick-Import', () => {
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             expect(wrapper.find('[role="status"]').exists()).toBe(false)
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual([
-                ({ ...connected, ...state }.folder?.id) ? 'Verbindung' : 'Verknüpfen',
-            ])
-            await wrapper.get('button').trigger('click')
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual(
+                ({ ...connected, ...state }.folder?.id) ? [] : ['Verknüpfen'],
+            )
+            if (!({ ...connected, ...state }.folder?.id)) await wrapper.get('button').trigger('click')
             expect(wrapper.emitted('link')).toEqual(({ ...connected, ...state }.folder?.id) ? undefined : [[work]])
             expect(wrapper.emitted('open')).toBeUndefined()
         } finally { wrapper.unmount() }
@@ -77,7 +77,7 @@ describe('Dropbox Quick-Import', () => {
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Verbindung'])
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual([])
         } finally { wrapper.unmount() }
     })
 

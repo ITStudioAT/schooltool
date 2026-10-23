@@ -9,10 +9,10 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
 
-function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })) {
+function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options) : get(url, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
-    return mount(WorkExerciseExport, { attachTo: document.body, props: { work, course, date: '2026-10-20' }, global: {
+    return mount(WorkExerciseExport, { attachTo: document.body, props: { work: currentWork, course, date: '2026-10-20' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
             'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
@@ -27,6 +27,16 @@ function button(wrapper: ReturnType<typeof mountExport>, text: string) {
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+it('does not restart exercise preparation for an existing imported work', async () => {
+    const status = vi.fn()
+    const wrapper = mountExport(vi.fn(), vi.fn(), status, { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } })
+    try {
+        await flushPromises()
+        expect(wrapper.find('.exercise-action').exists()).toBe(false)
+        expect(status).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
 
 it('opens a short MC choice dialog with MC off and cancels without loading or copying a handoff', async () => {
     const get = vi.fn()

@@ -35,12 +35,12 @@ it('shows the assigned folder even before the first import and updates when the 
     wrapper.unmount()
 })
 
-it('does not infer a link from an import or a suggested folder', () => {
+it('does not infer a link or require relinking an older import from a suggested folder', () => {
     workDropboxStates.set('7:2:65', { folder: null, has_import: true, suggested_folder: { id: 'id:other' } })
     const wrapper = mountStatus()
 
-    expect(wrapper.get('[role="img"]').attributes('color')).toBe('error')
-    expect(wrapper.attributes('aria-label')).toBe('Kein Ordner mit dieser Arbeit verknüpft')
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    expect(wrapper.find('[role="button"]').exists()).toBe(false)
     wrapper.unmount()
 })
 

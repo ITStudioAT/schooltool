@@ -17,11 +17,155 @@ use App\Models\TeachingSchoolHour;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+test('email preparation exports a confirmed exercise with the chosen form and a preparation-only instruction', function (string $addressForm): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->andReturn([
+        'status' => 'found', 'folder' => ['id' => 'id:exercise', 'name' => '2026-10-20_Datenschutz', 'path' => '/Materialien/Modul/Leistungsfeststellung/2026-10-20_Datenschutz'],
+    ]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url.'?purpose=email_preparation&date=2026-10-20&address_form='.$addressForm)->assertOk()->json('data');
+    expect($data['context']['purpose'])->toBe('prepare-exercise-emails')
+        ->and($data['context']['delivery']['send_authorized'])->toBeFalse()
+        ->and($data['context']['email_address_form'])->toBe($addressForm)
+        ->and($data['context']['exercise_folder']['id'])->toBe('id:exercise')
+        ->and($data['participants_count'])->toBe(1)
+        ->and($data['text'])->toContain('send-exercise-via-email', 'Nichts senden', 'Schooltool-Versandvorbereitung.json', 'Erneut prüfen')
+        ->and($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNothingSent();
+})->with(['du', 'sie']);
+
+test('email dispatch references the confirmed preparation with the explicitly selected delivery mode', function (string $deliveryMode): void {
+    Http::preventStrayRequests();
+    Mail::fake();
+    $this->teacher->update(['email' => 'admin@example.test']);
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->withArgs(
+        fn ($connection, $work, $link, $date, $refresh, $initial): bool => $date === '2026-10-20' && $refresh === false && $initial === false,
+    )->andReturn(['status' => 'found', 'folder' => ['id' => 'id:exercise', 'name' => '2026-10-20_Datenschutz'],
+        'email_preparation' => ['status' => 'ready', 'recipients_count' => 1, 'prepared_at' => '2026-10-20T10:00:00+02:00']]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode='.$deliveryMode.'&date=2026-10-20&recipient=forged@example.test')
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
+
+    expect($data['context']['purpose'])->toBe('send-exercise-emails')
+        ->and($data['context']['delivery']['selection'])->toBe($deliveryMode)
+        ->and($data['context']['delivery']['mode'])->toBe($deliveryMode === 'test' ? 'test_office_outlook' : 'live_office_outlook')
+        ->and($data['context']['delivery']['send_authorized'])->toBeTrue()
+        ->and($data['context']['delivery']['requires_explicit_send_confirmation'])->toBeFalse()
+        ->and($data['context']['delivery']['record_dispatch'])->toBe($deliveryMode === 'live')
+        ->and($data['context']['email_preparation']['status'])->toBe('ready')
+        ->and($data['context']['exercise_folder']['id'])->toBe('id:exercise')
+        ->and($data['context']['date'])->toBe('2026-10-20')
+        ->and($data['context'])->not->toHaveKeys(['email_address_form', 'course_roster', 'work', 'materials'])
+        ->and($data['participants_count'])->toBe(1)
+        ->and($data['text'])->toContain('# Auftrag: E-Mails versenden', 'send-exercise-via-email', 'E-Mail-Vorbereitung', 'Dieser Auftrag ist die Versandfreigabe', 'ohne erneute Vorschau oder Freigabefrage')
+        ->and($data['text'])->not->toContain('Änne', 'Ćelebić', 'private@example.test', 'course_roster', 'forged@example.test')
+        ->and($this->work->fresh()->getAttributes())->toEqual($before);
+    if ($deliveryMode === 'test') {
+        expect($data['context']['delivery']['recipient'])->toBe('admin@example.test')
+            ->and($data['context']['delivery']['recipient_user_id'])->toBe($this->teacher->id)
+            ->and($data['context']['delivery']['messages_count'])->toBe(1)
+            ->and($data['text'])->toContain('genau eine Testmail', 'CC/BCC', 'Keine Versandaufzeichnung anlegen', 'keinen Versandstatus ändern');
+    } else {
+        expect($data['context']['delivery'])->not->toHaveKey('recipient')
+            ->and($data['text'])->toContain('Tatsächlich versenden', 'Doppelversand', 'protokollieren');
+    }
+    Http::assertNothingSent();
+    Mail::assertNothingOutgoing();
+})->with(['live', 'test']);
+
+test('email dispatch with no cached check asks for an explicit recheck without calling Dropbox', function (): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode=test')->assertUnprocessable()
+        ->assertJsonPath('message', 'Bitte den LF-Status einmal mit „Erneut prüfen“ bestätigen.');
+
+    Http::assertNothingSent();
+});
+
+test('email dispatch requires an explicit valid delivery mode before looking up preparations', function (?string $deliveryMode): void {
+    Http::preventStrayRequests();
+    $this->getJson($this->url.'?purpose=email_dispatch'.($deliveryMode !== null ? '&delivery_mode='.$deliveryMode : ''))
+        ->assertUnprocessable()->assertJsonValidationErrors('delivery_mode');
+    Http::assertNothingSent();
+})->with([null, '', 'mailpit']);
+
+test('test dispatch refuses an invalid logged-in recipient without falling back to any other address', function (string $email): void {
+    Http::preventStrayRequests();
+    Mail::fake();
+    $this->teacher->update(['email' => $email]);
+
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode=test&recipient=forged@example.test')
+        ->assertUnprocessable()->assertJsonPath('message', 'Für das angemeldete Konto ist keine gültige E-Mail-Adresse für den Test hinterlegt.');
+
+    Http::assertNothingSent();
+    Mail::assertNothingOutgoing();
+})->with(['not-an-address', '']);
+
+test('email dispatch rejects missing or changed readiness even when the client claims it is ready', function (?string $status, string $deliveryMode): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->andReturn([
+        'status' => 'found', 'folder' => ['id' => 'id:exercise'], 'email_preparation' => $status ? ['status' => $status] : null,
+    ]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode='.$deliveryMode.'&email_preparation[status]=ready')->assertUnprocessable()
+        ->assertJsonPath('message', 'Die E-Mails sind nicht als versandbereit bestätigt. Bitte die Vorbereitung erneut prüfen.');
+
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNothingSent();
+})->with(['no preparation' => [null], 'missing' => ['missing'], 'changed' => ['unknown']])->with(['live', 'test']);
+
+test('email dispatch preserves course authorization', function (): void {
+    Http::preventStrayRequests();
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+
+    $this->actingAs($foreign, 'sanctum')->getJson($this->url.'?purpose=email_dispatch&delivery_mode=test')->assertForbidden();
+
+    Http::assertNothingSent();
+});
+
+test('email dispatch stays unavailable when automation is disabled', function (): void {
+    Http::preventStrayRequests();
+    $this->work->update(['status' => ['automation_enabled' => false]]);
+
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode=live')->assertUnprocessable()
+        ->assertJsonPath('message', 'Automatik ist für diese Arbeit ausgeschaltet.');
+
+    Http::assertNothingSent();
+});
+
+test('email preparation requires a created exercise and preserves course authorization', function (): void {
+    $this->getJson($this->url.'?purpose=email_preparation')->assertUnprocessable()->assertJsonValidationErrors('address_form');
+    $this->getJson($this->url.'?purpose=email_preparation&address_form=du')->assertUnprocessable();
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    $this->actingAs($foreign, 'sanctum')->getJson($this->url.'?purpose=email_preparation&address_form=sie')->assertForbidden();
+});
 
 beforeEach(function () {
     foreach (['teacher', 'admin', 'student'] as $role) {

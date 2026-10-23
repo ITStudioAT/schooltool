@@ -20,3 +20,18 @@ export function workConnectionLabel(folderState, failed = false) {
     if (folderState) return 'Noch kein Ordner verbunden.'
     return failed ? 'Ordnerverbindung konnte nicht geprüft werden.' : 'Ordnerverbindung wird geprüft …'
 }
+
+export function workNeedsPreparation(work, folderState) {
+    const status = { ...work?.status }
+    delete status.communicated_deadline_at
+    return isInitialWork({ ...work, status }) && folderState?.has_import !== true
+}
+
+export function workPreparationLabel(checked) {
+    if (checked.status === 'found') {
+        const preparation = checked.data?.exercise?.email_preparation
+        return preparation?.status === 'ready' ? 'Versandbereit'
+            : preparation?.status === 'unknown' ? 'Vorbereitung prüfen' : 'E-Mails vorbereiten'
+    }
+    return checked.status === 'missing' ? 'LF erstellen' : 'LF nicht bestätigt'
+}

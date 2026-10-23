@@ -11,10 +11,28 @@ import { formatViennaDateTime } from '@/helpers/date'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
-import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
 
 describe('New work overview and assessment mode', () => {
     afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+
+    it('shows email preparation after creation and refreshes the card to dispatch ready', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
+        const status = { connected: true, module_link: { folder: { id: 'id:module' } },
+            exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' }, email_preparation: { status: 'missing' } } }
+        const get = vi.fn().mockResolvedValue({ data: status })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row').text()).toContain('E-Mails vorbereiten')
+            get.mockResolvedValue({ data: { ...status, exercise: { ...status.exercise, email_preparation: { status: 'ready' } } } })
+            await loadWorkExercise('7:2:65', work, '', true)
+            await flushPromises()
+            expect(wrapper.get('.work-row').text()).toContain('Versandbereit')
+            expect(wrapper.get('.work-row').text()).not.toContain('E-Mails vorbereiten')
+        } finally { wrapper.unmount() }
+    })
 
     function mountOverview(work, folderState = { folder: null }) {
         if (folderState) workDropboxStates.set('7:2:65', folderState)
@@ -30,10 +48,72 @@ describe('New work overview and assessment mode', () => {
             stubs: { ItsGridBox: { template: '<div><slot name="header-actions" /><slot /></div>' },
                 'v-btn': false, VBtn: false, 'v-btn-toggle': false, VBtnToggle: false,
                 'v-divider': true, 'v-switch': true, 'v-checkbox': true, 'v-textarea': true, 'v-date-input': true,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
                 WorkImportActions: true, WorkEvaluationPdf: true, WorkDispatchStatus: true, WorkEvaluationImport: true,
                 WorkAiExport: true, WorkDispatchLog: true },
         } })
     }
+
+    it('confirms deletion of the saved work without losing an edited draft on cancellation', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Gespeicherte Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work)
+        const vm = wrapper.vm as any
+        try {
+            await wrapper.get('.work-row').trigger('click')
+            vm.work_form.title = 'Noch nicht gespeicherter Titel'
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+
+            const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
+            expect(confirmation.text()).toContain(work.title)
+            expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
+            expect(vm.courseWorkStore.destroy).not.toHaveBeenCalled()
+
+            await confirmation.get('[data-testid="work-delete-cancel"]').trigger('click')
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(false)
+            expect(vm.work_form.title).toBe('Noch nicht gespeicherter Titel')
+            expect(vm.action).toBe('edit_course_work')
+            expect(vm.courseWorkStore.destroy).not.toHaveBeenCalled()
+
+            vm.abortEdit()
+            vm.newWork()
+            await flushPromises()
+            expect(wrapper.find('[data-testid="work-dialog-delete"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('deletes an opened work once and keeps its form on failure: %s', async deleted => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Gespeicherte Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work)
+        const vm = wrapper.vm as any
+        let finishDeletion: (value: boolean) => void = () => {}
+        vm.courseWorkStore.destroy.mockReturnValue(new Promise(resolve => { finishDeletion = resolve }))
+        const refresh = vi.spyOn(vm, 'refreshWorks').mockResolvedValue(undefined)
+        try {
+            await wrapper.get('.work-row').trigger('click')
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+
+            expect(vm.courseWorkStore.destroy).toHaveBeenCalledExactlyOnceWith(work.id)
+            expect(wrapper.get('[data-testid="work-delete-cancel"]').attributes('disabled')).toBeDefined()
+
+            finishDeletion(deleted)
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(!deleted)
+            expect(vm.is_deleting_work).toBe(false)
+            if (deleted) {
+                expect(vm.action).toBe('')
+                expect(vm.work_form.id).toBeNull()
+                expect(refresh).toHaveBeenCalledOnce()
+            } else {
+                expect(vm.action).toBe('edit_course_work')
+                expect(vm.work_form.id).toBe(work.id)
+                expect(refresh).not.toHaveBeenCalled()
+            }
+        } finally { wrapper.unmount() }
+    })
 
     it.each([
         { enabled: true, icon: 'mdi-brain', label: 'Automatische Beurteilung', nextIcon: 'mdi-account-check-outline', nextLabel: 'Manuelle Beurteilung' },
@@ -940,7 +1020,7 @@ describe('CourseWorks title rendering', () => {
 
         methods.newWork.call(state)
 
-        expect(source).toContain(':disabled="is_saving || isEditingExistingDetails"')
+        expect(source).toContain(':disabled="is_saving || is_deleting_work || isEditingExistingDetails"')
         expect(source).toContain(':style="isEditingExistingDetails ? \'pointer-events:none; opacity:0.45\' : \'\'"')
         expect(source).toContain('<template v-if="action === \'new_course_work\' || details_editable">')
         expect(source).toContain('isEditingExistingDetails()')

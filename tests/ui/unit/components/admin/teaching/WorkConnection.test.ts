@@ -13,7 +13,7 @@ const saved = { connected: true, folder: null, link_version: 'a'.repeat(64), mod
 } }
 const unlinked = { connected: true, folder: null, module_link: null, link_version: 'b'.repeat(64) }
 
-function mountConnection(post = vi.fn(), state: any = saved) {
+function mountConnection(post = vi.fn(), state: any = saved, currentWork: any = work) {
     vi.stubGlobal('visualViewport', { width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, addEventListener: vi.fn(), removeEventListener: vi.fn() })
     workDropboxStates.set('7:2:65', state)
     const writeText = vi.fn().mockResolvedValue(undefined)
@@ -24,12 +24,12 @@ function mountConnection(post = vi.fn(), state: any = saved) {
         'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
         'v-dialog': { template: '<section role="dialog"><slot /></section>' },
     }
-    const wrapper = mount(WorkImportActions, { props: { work, linkOnly: true }, attachTo: document.body, global: { stubs,
+    const wrapper = mount(WorkImportActions, { props: { work: currentWork, linkOnly: true }, attachTo: document.body, global: { stubs,
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
     } })
     const options = { global: { plugins: [wrapper.vm.$pinia], stubs } }
-    const context = mount(WorkContextCopy, { props: { work, course: { id: 2, title: 'INF' } }, ...options })
-    const status = mount(WorkFolderStatus, { props: { work, size: 30 }, ...options })
+    const context = mount(WorkContextCopy, { props: { work: currentWork, course: { id: 2, title: 'INF' } }, ...options })
+    const status = mount(WorkFolderStatus, { props: { work: currentWork, size: 30 }, ...options })
     const originalUnmount = wrapper.unmount.bind(wrapper)
     wrapper.unmount = () => { context.unmount(); status.unmount(); originalUnmount() }
     return { wrapper, context, status, writeText }
@@ -50,6 +50,32 @@ async function chooseUnlink(wrapper: ReturnType<typeof mountConnection>['wrapper
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+it.each([
+    { status: { folder_imported_at: '2026-10-13T12:54:00Z' } },
+    { status: { dispatch_logs: [{ sha256: 'c'.repeat(64) }] } },
+    { groups: [{ grades: { 101: 0 } }] },
+])('does not require a new link for existing work with progress: %j', async progress => {
+    const { wrapper, status } = mountConnection(vi.fn(), unlinked, { ...work, ...progress })
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(status.find('[role="img"]').exists()).toBe(false)
+        workDropboxStates.set('7:2:65', saved)
+        await flushPromises()
+        expect(status.get('[role="img"]').attributes('color')).toBe('success')
+        expect(status.attributes('role')).toBe('button')
+    } finally { wrapper.unmount() }
+})
+
+it('does not require a new link when the server confirms an older import without local progress metadata', async () => {
+    const { wrapper, status } = mountConnection(vi.fn(), { ...unlinked, has_import: true })
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(status.find('[role="img"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
 
 it('opens the saved folder dialog and unlinks only its work while updating context and status', async () => {
     const post = vi.fn().mockResolvedValue({ data: unlinked })

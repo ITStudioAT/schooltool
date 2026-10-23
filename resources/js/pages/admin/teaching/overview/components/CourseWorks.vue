@@ -11,7 +11,7 @@
         </template>
         <template #header-actions>
             <v-btn v-if="action !== 'new_course_work' && action !== 'edit_course_work'" icon="mdi-plus" size="small" variant="tonal" @click="newWork" :disabled="!hasStudents" />
-            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || isEditingExistingDetails" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || is_deleting_work || isEditingExistingDetails" />
             <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="!canSaveWork" />
         </template>
         <v-card
@@ -66,6 +66,10 @@
                                     <v-icon icon="mdi-calendar-clock-outline" size="12" title="Abgabefrist" aria-label="Abgabefrist" role="img" :aria-hidden="false" />
                                     {{ formatDateShort(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template>
                                 </div>
+                                <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
+                                    :class="workEmailPreparationLabel(work) === 'Versandbereit' ? 'text-success' : 'text-orange-darken-2'">
+                                    {{ workEmailPreparationLabel(work) }}
+                                </div>
                                 <div class="d-flex justify-end mt-auto">
                                     <v-btn v-if="delete_work_id !== work.id" size="x-small" variant="text" @click.stop="delete_work_id = work.id">Löschen</v-btn>
                                     <template v-else>
@@ -110,6 +114,10 @@
                                 </div>
                                 <div v-if="work.description" class="text-caption work-description-line">
                                     {{ work.description }}
+                                </div>
+                                <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
+                                    :class="workEmailPreparationLabel(work) === 'Versandbereit' ? 'text-success' : 'text-orange-darken-2'">
+                                    {{ workEmailPreparationLabel(work) }}
                                 </div>
                                 <div v-if="workAutomationEnabled(work)" class="work-card-status-row d-flex align-center ga-2 mt-1">
                                     <WorkCellStatus class="w-100" :work="work" :students="activeCourseStudents" aggregate native-title />
@@ -820,9 +828,12 @@
                             </div>
                         </div>
 
-                        <div class="d-flex flex-row align-center justify-space-between mt-4">
-                            <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving">Abbruch</v-btn>
-                            <div class="d-flex ga-2">
+                        <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2 mt-4">
+                            <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving || is_deleting_work">Abbruch</v-btn>
+                            <div class="d-flex flex-wrap justify-end ga-2">
+                                <v-btn v-if="work_form.id" data-testid="work-dialog-delete" color="error" variant="text"
+                                    prepend-icon="mdi-delete" :disabled="is_saving || is_deleting_work"
+                                    @click="openDeleteWorkDialog(work_form)">Arbeit löschen</v-btn>
                                 <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="!canSaveWork" :loading="is_saving">Speichern</v-btn>
                                 <v-btn color="success" flat tile @click="saveWork(false)" :disabled="!canSaveWork" prepend-icon="mdi-content-save">Ende</v-btn>
                             </div>
@@ -835,6 +846,20 @@
 
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" @deadline-updated="importDeadlineUpdated" />
         <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" />
+        <v-dialog v-model="delete_work_dialog.open" persistent max-width="460">
+            <v-card data-testid="work-delete-confirmation">
+                <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
+                <v-card-text>
+                    Die Arbeit <strong>{{ delete_work_dialog.work?.title || delete_work_dialog.work?.type || 'Arbeit' }}</strong> und ihre verknüpften Einträge wirklich löschen?
+                    <div class="mt-2 text-caption">Die Dateien in Dropbox bleiben erhalten.</div>
+                </v-card-text>
+                <v-card-actions class="flex-wrap justify-end ga-2">
+                    <v-btn data-testid="work-delete-cancel" :disabled="is_deleting_work" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
+                    <v-btn data-testid="work-delete-confirm" color="error" :loading="is_deleting_work" :disabled="is_deleting_work"
+                        variant="flat" @click="deleteWork(delete_work_dialog.work)">Endgültig löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <v-dialog v-model="comment_dialog_open" persistent max-width="620">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -890,8 +915,8 @@ import WorkTimeInput from './WorkTimeInput.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
-import { isInitialWork, workConnectionLabel } from '@/helpers/workOverview'
+import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
     components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput, WorkContextCopy, WorkFolderStatus },
@@ -926,6 +951,8 @@ export default {
             activeSemester: null,
             is_valid: false,
             delete_work_id: null,
+            delete_work_dialog: { open: false, work: null },
+            is_deleting_work: false,
             work_form: this.emptyWorkForm(),
             is_initializing_form: false,
             pending_group_work: null,
@@ -1053,7 +1080,7 @@ export default {
             return requiresWorkMaximumPlus(this.selected_course, this.work_form.type) ? workMaximumPlusError(this.work_form.maximum_plus) : ''
         },
         canSaveWork() {
-            return !this.is_saving && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
+            return !this.is_saving && !this.is_deleting_work && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
         },
         canChangeGroupWorkMode() {
             return this.action === 'new_course_work' && !this.work_form.id
@@ -1186,7 +1213,9 @@ export default {
             handler(requests) {
                 for (const { key, work } of requests) {
                     if (!key) continue
-                    loadWorkDropbox(key, work.id).then(() => {
+                    const request = workNeedsPreparation(work, workDropboxStates.get(key))
+                        ? loadWorkExercise(key, work, work.date_for_all_groups || '') : loadWorkDropbox(key, work.id)
+                    request.then(() => {
                         delete this.work_folder_errors[key]
                     }).catch(() => {
                         this.work_folder_errors[key] = true
@@ -1875,7 +1904,7 @@ export default {
             }
 
             // Prevent multiple saves while one is in progress
-            if (this.is_saving) return
+            if (this.is_saving || this.is_deleting_work) return
             this.is_saving = true
 
             try {
@@ -1959,12 +1988,29 @@ export default {
                 this.is_saving = false
             }
         },
+        openDeleteWorkDialog(work) {
+            if (!work?.id || this.is_saving || this.is_deleting_work) return
+            const savedWork = this.courseWorks.find(item => String(item.id) === String(work.id))
+            if (!savedWork) return
+            this.delete_work_dialog = { open: true, work: savedWork }
+        },
+        closeDeleteWorkDialog() {
+            if (this.is_deleting_work) return
+            this.delete_work_dialog = { open: false, work: null }
+        },
         async deleteWork(work) {
-            const ok = await this.courseWorkStore.destroy(work.id)
-            if (ok) {
+            if (!work?.id || this.is_saving || this.is_deleting_work) return
+            this.is_deleting_work = true
+            try {
+                const ok = await this.courseWorkStore.destroy(work.id)
+                if (!ok) return
+                this.delete_work_dialog = { open: false, work: null }
+                this.delete_work_id = null
+                if (String(this.work_form.id) === String(work.id)) this.abortEdit()
                 await this.refreshWorks()
+            } finally {
+                this.is_deleting_work = false
             }
-            this.delete_work_id = null
         },
         buildIndividualGroups() {
             const students = this.activeCourseStudents
@@ -2468,6 +2514,11 @@ export default {
         },
         workFolderState(work) {
             return workDropboxStates.get(workDropboxKey(this.config?.user?.id, work))
+        },
+        workEmailPreparationLabel(work) {
+            if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
+            const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
+            return checked?.status === 'found' ? workPreparationLabel(checked) : ''
         },
         workDeadlineColor,
         workIsInitial(work) {

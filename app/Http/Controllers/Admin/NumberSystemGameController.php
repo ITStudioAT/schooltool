@@ -14,11 +14,14 @@ use App\Services\NumberSystems\NumberSystemGameService;
 use App\Services\NumberSystems\NumberSystemInvitation;
 use App\Services\NumberSystems\NumberSystemLocalProbe;
 use App\Services\NumberSystems\NumberSystemPresence;
+use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Spatie\LaravelPdf\Enums\Format;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 class NumberSystemGameController extends Controller
 {
@@ -90,6 +93,20 @@ class NumberSystemGameController extends Controller
             'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
             'total' => $this->engine->count($session->planned_minutes),
             'invitation' => $session->status === 'ended' ? null : app(NumberSystemInvitation::class)->make($session->join_code)])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function resultsPdf(Request $request, NumberSystemGameSession $session): Responsable
+    {
+        $report = $this->show($request, $session)->getData(true);
+        $session->loadMissing('course');
+        $filename = 'Signal_Null_Auswertung_'.$session->id.'.pdf';
+
+        return Pdf::view('pdfs.number-system-results', [
+            'report' => $report,
+            'courseTitle' => $session->course?->title,
+            'exportedAt' => now()->timezone('Europe/Vienna')->format('d.m.Y H:i'),
+        ])->format(Format::A4)->landscape()->name($filename)
+            ->headers(['Cache-Control' => 'private, no-store'])->download($filename);
     }
 
     public function control(Request $request, NumberSystemGameSession $session): JsonResponse

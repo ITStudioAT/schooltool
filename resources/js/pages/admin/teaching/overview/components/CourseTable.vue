@@ -289,7 +289,7 @@
                                             </div>
                                             </template>
                                             <span v-if="workNextAction(work.work, courseDate.date)" class="course-table-work-summary-next-action text-caption font-weight-bold"
-                                                :class="['LF erstellt', 'Ordner verbunden'].includes(workNextAction(work.work, courseDate.date)) ? 'text-success' : 'text-orange-darken-2'"
+                                                :class="['Versandbereit', 'Ordner verbunden'].includes(workNextAction(work.work, courseDate.date)) ? 'text-success' : 'text-orange-darken-2'"
                                                 :aria-label="`Nächste Aktion: ${workNextAction(work.work, courseDate.date)}`">
                                                 <span class="d-flex align-center ga-1"><v-icon icon="mdi-arrow-right-circle-outline" size="14" aria-hidden="true" />{{ workNextAction(work.work, courseDate.date) }}</span>
                                                 <span v-if="workLastCheck(work.work, courseDate.date)" class="work-check-time text-medium-emphasis">Stand: {{ workLastCheck(work.work, courseDate.date) }}</span>
@@ -1588,16 +1588,28 @@
                                     <WorkImportActions v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" link-only :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" @link="openLink" />
                                     <WorkContextCopy v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
                                     <WorkExerciseExport :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" hide-folder-name @exercise-status="workDialogExerciseStatus = $event" />
+                                    <WorkEmailPreparation v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" />
                                 </div>
                             </section>
                             <div class="d-flex flex-wrap justify-end ga-2 mt-4">
                                 <span v-if="savedWorkDialogWork" class="work-dialog-status-icons d-flex align-center ga-2 mr-auto align-self-center">
                                     <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
                                     <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
+                                    <WorkEmailPreparation :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" status-only :size="30" />
                                 </span>
                                 <v-btn
+                                    v-if="savedWorkDialogWork"
+                                    data-testid="work-dialog-delete"
+                                    color="error"
+                                    prepend-icon="mdi-delete"
                                     variant="text"
-                                    :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
+                                    :disabled="workSaving || workDeleting || Boolean(workCompletionSavingId)"
+                                    @click="openDeleteWorkDialog(savedWorkDialogWork)">
+                                    Arbeit löschen
+                                </v-btn>
+                                <v-btn
+                                    variant="text"
+                                    :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing"
                                     @click="cancelDateWorkForm(true)">
                                     Abbrechen
                                 </v-btn>
@@ -1605,7 +1617,7 @@
                                     color="success"
                                     variant="flat"
                                     :loading="workSaving"
-                                    :disabled="!canSaveDateWork"
+                                    :disabled="workDeleting || !canSaveDateWork"
                                     @click="saveDateWork">
                                     Speichern
                                 </v-btn>
@@ -1778,16 +1790,16 @@
         </v-dialog>
 
         <v-dialog v-model="deleteWorkDialog.open" persistent max-width="460">
-            <v-card>
+            <v-card data-testid="work-delete-confirmation">
                 <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
                 <v-card-text>
                     Die Arbeit <strong>{{ deleteWorkLabel }}</strong> und ihre verknüpften Einträge wirklich löschen?
+                    <div class="mt-2 text-caption">Die Dateien in Dropbox bleiben erhalten.</div>
                 </v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn :disabled="workDeleting" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
-                    <v-btn color="error" :loading="workDeleting" variant="flat" @click="confirmDeleteDateWork">
-                        Löschen
+                <v-card-actions class="flex-wrap justify-end ga-2">
+                    <v-btn data-testid="work-delete-cancel" :disabled="workDeleting" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
+                    <v-btn data-testid="work-delete-confirm" color="error" :loading="workDeleting" :disabled="workDeleting" variant="flat" @click="confirmDeleteDateWork">
+                        Endgültig löschen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -2603,6 +2615,7 @@ import WorkDropboxLink from './WorkDropboxLink.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
 import WorkFolderBrowser from './WorkFolderBrowser.vue'
 import WorkExerciseStatus from './WorkExerciseStatus.vue'
+import WorkEmailPreparation from './WorkEmailPreparation.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
@@ -2613,7 +2626,7 @@ import { workCellDeviationStatuses, workMarkedComplete } from '@/helpers/workCel
 import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkExercise, workDropboxBinding, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
-import { isInitialWork, workConnectionLabel } from '@/helpers/workOverview'
+import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -2629,7 +2642,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkFolderStatus, WorkFolderBrowser, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkFolderStatus, WorkFolderBrowser, WorkExerciseStatus, WorkEmailPreparation, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2879,7 +2892,8 @@ export default {
     computed: {
         workFolderRequests() {
             if (this.tableView !== 'entries') return []
-            return (this.courseWorks || []).filter(workAutomationEnabled).flatMap(work => {
+            return (this.courseWorks || []).filter(work => workAutomationEnabled(work)
+                && workNeedsPreparation(work, this.workFolderState(work))).flatMap(work => {
                 const key = workDropboxKey(useAdminStore().config?.user?.id, work)
                 const dates = [...new Set([work.date_for_all_groups, ...(work.groups || []).map(group => group.date)].filter(Boolean))]
                 return (dates.length ? dates : ['']).map(date => ({ work, key, date,
@@ -3361,13 +3375,14 @@ export default {
         workNextAction(work, date = '') {
             if (!workAutomationEnabled(work)) return ''
             const state = this.workFolderState(work)
+            if (!workNeedsPreparation(work, state)) return ''
             const key = workDropboxKey(useAdminStore().config?.user?.id, work)
             const checked = workExerciseCheck(key, work, date || work.date_for_all_groups || '')
             if (checked?.status === 'unknown') return state?.module_link?.folder?.id ? 'LF nicht bestätigt' : 'Prüfung fehlgeschlagen'
             if (!state) return this.work_folder_errors[key] || checked?.status === 'unknown' ? 'Prüfung fehlgeschlagen' : 'Wird geprüft …'
             if (!state.module_link?.folder?.id) return state.folder?.id ? 'Ordner verbunden' : 'Verknüpfen'
             if (!checked) return 'Wird geprüft …'
-            return checked.status === 'found' ? 'LF erstellt' : checked.status === 'missing' ? 'LF erstellen' : 'LF nicht bestätigt'
+            return workPreparationLabel(checked)
         },
         workLastCheck(work, date = '') {
             const checked = workExerciseCheck(workDropboxKey(useAdminStore().config?.user?.id, work), work, date)
@@ -4668,7 +4683,7 @@ export default {
             }
         },
         openDeleteWorkDialog(work) {
-            if (!work?.id) return
+            if (!work?.id || this.workSaving || this.workDeleting || this.workCompletionSavingId) return
 
             this.deleteWorkDialog = {
                 open: true,
@@ -4685,7 +4700,7 @@ export default {
         },
         async confirmDeleteDateWork() {
             const work = this.deleteWorkDialog.work
-            if (!work?.id || this.workDeleting) return
+            if (!work?.id || this.workDeleting || this.workSaving) return
 
             this.workDeleting = true
             try {
@@ -4693,7 +4708,7 @@ export default {
                 if (!deleted) return
 
                 if (String(this.workDialogForm.id) === String(work.id)) {
-                    this.cancelDateWorkForm()
+                    this.cancelDateWorkForm(true)
                 }
                 await this.loadCourseTableData(this.selected_course?.id, true)
                 this.deleteWorkDialog = {

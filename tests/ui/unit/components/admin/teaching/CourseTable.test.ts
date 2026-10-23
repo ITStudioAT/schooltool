@@ -42,7 +42,7 @@ describe('CourseTable manual work completion', () => {
         const { wrapper, works, first } = mountCompletionTable()
         try {
             useAdminStore().config = { user: { id: 7 } } as never
-            works.courseWorks = [first] as never
+            works.courseWorks = [{ ...first, status: {} }] as never
             await flushPromises()
             const card = wrapper.get('.course-table-work-summary')
             expect(card.get('[aria-label="Nächste Aktion: Wird geprüft …"]').text()).toBe('Wird geprüft …')
@@ -53,12 +53,39 @@ describe('CourseTable manual work completion', () => {
                 exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' } } }
             finish({ data: checked })
             await flushPromises()
-            expect(card.get('[aria-label="Nächste Aktion: LF erstellt"]').text()).toContain('LF erstellt')
+            expect(card.get('[aria-label="Nächste Aktion: E-Mails vorbereiten"]').text()).toContain('E-Mails vorbereiten')
             expect(card.text()).toContain('Stand:')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { ...checked.exercise, email_preparation: { status: 'ready' } } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: Versandbereit"]').text()).toContain('Versandbereit')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { ...checked.exercise, email_preparation: { status: 'unknown' } } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: Vorbereitung prüfen"]').text()).toContain('Vorbereitung prüfen')
             status.mockResolvedValueOnce({ data: { ...checked, exercise: { status: 'missing' } } })
             await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
             await flushPromises()
             expect(card.get('[aria-label="Nächste Aktion: LF erstellen"]').text()).toContain('LF erstellen')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it('keeps existing work progress without adding preparation actions or exercise checks', async () => {
+        clearWorkDropboxStates()
+        const get = vi.fn().mockResolvedValue({ data: { connected: true, folder: null, module_link: null } })
+        vi.stubGlobal('axios', { get })
+        const { wrapper, works, first } = mountCompletionTable()
+        const savedStatus = JSON.stringify(first.status)
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [first] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain('Erste Arbeit')
+            expect(card.find('.course-table-work-summary-next-action').exists()).toBe(false)
+            expect(card.find('[aria-label="Kein Ordner mit dieser Arbeit verknüpft"]').exists()).toBe(false)
+            expect(get.mock.calls.some(([, options]) => options?.params?.include_exercise === 1)).toBe(false)
+            expect(JSON.stringify(works.courseWorks[0].status)).toBe(savedStatus)
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
@@ -86,6 +113,65 @@ describe('CourseTable manual work completion', () => {
         } })
         return { wrapper, works, courses, date, first, second }
     }
+
+    it('offers deletion for the saved work and preserves the draft when confirmation is canceled', async () => {
+        const { wrapper, works, first } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        try {
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            vm.workDialogForm.title = 'Noch nicht gespeicherter Titel'
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+
+            const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
+            expect(confirmation.text()).toContain(first.title)
+            expect(confirmation.text()).toContain('Die Dateien in Dropbox bleiben erhalten.')
+            expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
+            expect(works.destroy).not.toHaveBeenCalled()
+
+            await confirmation.get('[data-testid="work-delete-cancel"]').trigger('click')
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(false)
+            expect(vm.workDialog.open).toBe(true)
+            expect(vm.workDialogForm.title).toBe('Noch nicht gespeicherter Titel')
+            expect(works.destroy).not.toHaveBeenCalled()
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('click')
+            expect(wrapper.find('[data-testid="work-dialog-delete"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('deletes once and closes the directly opened work only after success: %s', async deleted => {
+        const { wrapper, works, first, second } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        let finishDeletion: (value: boolean) => void = () => {}
+        vi.mocked(works.destroy).mockReturnValue(new Promise(resolve => { finishDeletion = resolve }))
+        const reload = vi.spyOn(vm, 'loadCourseTableData').mockResolvedValue(true)
+        try {
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+
+            expect(works.destroy).toHaveBeenCalledExactlyOnceWith(first.id)
+            expect(wrapper.get('[data-testid="work-delete-cancel"]').attributes('disabled')).toBeDefined()
+
+            finishDeletion(deleted)
+            await flushPromises()
+
+            expect(vm.workDialog.open).toBe(!deleted)
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(!deleted)
+            expect(vm.workDeleting).toBe(false)
+            if (deleted) {
+                expect(vm.workDialogForm.id).toBeNull()
+                expect(reload).toHaveBeenCalledExactlyOnceWith(18, true)
+            } else {
+                expect(vm.workDialogForm.id).toBe(first.id)
+                expect(reload).not.toHaveBeenCalled()
+            }
+            expect(works.courseWorks.find(work => work.id === second.id)?.title).toBe(second.title)
+        } finally { wrapper.unmount() }
+    })
 
     it('opens the clicked work directly and keeps the plus action separate for mouse and keyboard', async () => {
         const { wrapper, date, first, second } = mountCompletionTable()
@@ -804,9 +890,7 @@ describe('CourseTable evaluation PDF links', () => {
             workDropboxStates.set('7:18:65', { folder: null, can_quick_import: false })
             await flushPromises()
             const imports = card.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')
-            expect(imports).toHaveLength(1)
-            await imports[0].trigger('click')
-            expect(openModuleLink).toHaveBeenLastCalledWith(work)
+            expect(imports).toHaveLength(0)
             expect(openImport).not.toHaveBeenCalled()
             expect(vm.workDialogFormOpen).toBe(false)
             expect(card.findAll('[href]').some(link => link.attributes('href').includes('/dispatch/'))).toBe(false)
@@ -818,9 +902,9 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
             expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
-            expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(1)
+            expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(0)
             const actions = form.get('[aria-label="Weitere Aktionen"]')
-            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Verknüpfen', 'Kontext kopieren', 'Erneut prüfen'])
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Kontext kopieren'])
             expect(actions.findAll('[href]')).toHaveLength(0)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 

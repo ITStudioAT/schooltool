@@ -11,6 +11,19 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const preview = { target_work: { title: 'E-Mails', course_title: 'Kurs' }, exercise: {}, rows: [], maximum_minor: 500, can_import: true, hash: 'a'.repeat(64) }
 
+it('keeps Quick-Import available for existing imported work without a new linking action', async () => {
+    const existingWork = { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } }
+    workDropboxStates.set('7:2:65', { has_import: true, can_quick_import: true,
+        folder: { id: 'id:existing', name: 'Bestehender Prüfungsordner' } })
+    const wrapper = mountImport(WorkImportActions, { work: existingWork })
+    try {
+        await flushPromises()
+        expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Quick-Import'])
+        await wrapper.get('.work-quick-import').trigger('click')
+        expect(wrapper.emitted('open')).toEqual([[existingWork, true]])
+    } finally { wrapper.unmount(); clearWorkDropboxStates() }
+})
+
 function mountImport(component = WorkEvaluationImport, props = {}) {
     return mount(component, { props, global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
         AdminCourseStore: { selected_course: { id: 2 } }, AdminAdminStore: { config: { user: { id: 7 } } },

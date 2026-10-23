@@ -48,7 +48,7 @@
                 </div>
             </section>
             <section class="ns-panel" style="margin-top:20px">
-                <div class="ns-toolbar"><h2>Fortschritt im Kurs</h2><span class="ns-small ns-muted">Automatisch aktualisiert</span></div>
+                <div class="ns-toolbar"><h2>Fortschritt im Kurs</h2><span class="ns-small ns-muted">Automatisch aktualisiert</span><button class="ns-button ns-button-secondary" :disabled="downloading" @click="downloadResults">{{ downloading ? 'PDF wird erstellt …' : 'Auswertung herunterladen (PDF)' }}</button></div>
                 <p v-if="!selected.runs.length" class="ns-muted" style="margin-top:15px">Noch niemand beigetreten. Gib den Kurscode weiter und warte, bis die Gruppe bereit ist.</p>
                 <div v-else class="ns-monitor"><table><thead><tr><th>Person / Team</th><th>Bereich</th><th>Bestätigt</th><th>Mit Hilfe</th><th v-if="selected.clock?.mode !== 'none'">Spielzeit</th></tr></thead><tbody>
                     <tr v-for="run in selected.runs" :key="run.id"><td><strong>{{ run.team_name || run.members[0] }}</strong><NumberSystemPresence :people="run.presence" /></td><td>{{ run.completed ? 'Verbindung wiederhergestellt' : run.chapter }}</td><td>{{ run.solved }} / {{ run.total }}<progress class="ns-progress" :value="run.solved" :max="run.total" :aria-label="`Fortschritt ${run.team_name || run.members[0]}`" /></td><td>{{ run.with_help }}</td><td v-if="selected.clock?.mode !== 'none'"><NumberSystemClock :clock="run.clock" compact /></td></tr>
@@ -92,7 +92,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
-import { index, create as createSession, show, control as controlSession, remove as removeSession } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
+import { index, create as createSession, show, resultsPdf, control as controlSession, remove as removeSession } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
 import NumberSystemInvitation from '@/pages/components/numberSystems/NumberSystemInvitation.vue'
 import NumberSystemStartOptions from '@/pages/components/numberSystems/NumberSystemStartOptions.vue'
 import NumberSystemClock from '@/pages/components/numberSystems/NumberSystemClock.vue'
@@ -107,6 +107,7 @@ const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausier
 const audiences = { course: 'Nur Kurs', mixed: 'Kurs und Externe', external: 'Nur Externe' }
 const courses = ref([]), sessions = ref([]), selected = ref(null), available = ref(true), loading = ref(false), busy = ref(false), error = ref('')
 const createDialog = ref(false), endDialog = ref(false)
+const downloading = ref(false)
 const timingAvailable = ref(true)
 const externalAvailable = ref(false)
 const deleteTarget = ref(null)
@@ -115,6 +116,7 @@ const router = useRouter()
 const localProbeAvailable = ref(false), localProbes = ref([]), probeDialog = ref(false)
 const probeForm = reactive({ planned_minutes: 30, difficulty: 2, mode: 'teams', short: true, timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 let poll = null, disposed = false, polling = false, monitorGeneration = 0
+let downloadController = null
 const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + run.members.length, 0))
 const courseJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.course_members ?? run.members.length), 0))
 const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.external_members ?? 0), 0))
@@ -124,7 +126,26 @@ async function load() {
     try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true; localProbes.value = data.local_probes ?? [] }
     catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
 }
-function closeMonitor() { ++monitorGeneration; selected.value = null }
+function closeMonitor() { ++monitorGeneration; downloadController?.abort(); selected.value = null }
+async function downloadResults() {
+    if (downloading.value || !selected.value) { return }
+    const id = selected.value.session.id
+    const controller = new AbortController()
+    downloadController = controller; downloading.value = true; error.value = ''
+    try {
+        const { data } = await axios.get(resultsPdf.url(id), { responseType: 'blob', signal: controller.signal })
+        if (disposed || controller.signal.aborted || selected.value?.session.id !== id) { return }
+        const url = URL.createObjectURL(data)
+        const link = document.createElement('a')
+        link.href = url; link.download = `Signal_Null_Auswertung_${id}.pdf`
+        document.body.appendChild(link); link.click(); link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (failure) {
+        if (!disposed && !controller.signal.aborted) { error.value = 'Die Auswertung konnte nicht heruntergeladen werden. Bitte versuche es erneut.' }
+    } finally {
+        downloading.value = false; downloadController = null
+    }
+}
 async function open(id, background = false) {
     const ticket = background ? monitorGeneration : ++monitorGeneration
     try { const { data } = await axios.get(show.url(id)); if (!disposed && ticket === monitorGeneration && (!background || selected.value?.session.id === id)) { selected.value = data; error.value = '' } }
@@ -157,7 +178,7 @@ async function control(action) {
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
 onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
-onBeforeUnmount(() => { disposed = true; clearInterval(poll) })
+onBeforeUnmount(() => { disposed = true; downloadController?.abort(); clearInterval(poll) })
 </script>
 <style scoped>
 .ns-dialog .ns-delete-confirm { background: #f2b5a7; border-color: #f2b5a7; color: #381c1b; }

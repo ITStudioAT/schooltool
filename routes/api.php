@@ -243,6 +243,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/', [NumberSystemGameController::class, 'index'])->name('index');
         Route::post('/sessions', [NumberSystemGameController::class, 'create'])->middleware('throttle:10,1')->name('create');
         Route::get('/sessions/{session}', [NumberSystemGameController::class, 'show'])->name('show');
+        Route::get('/sessions/{session}/results/pdf', [NumberSystemGameController::class, 'resultsPdf'])->name('resultsPdf');
         Route::post('/sessions/{session}/control', [NumberSystemGameController::class, 'control'])->name('control');
         Route::delete('/sessions/{session}', [NumberSystemGameController::class, 'remove'])->name('remove');
     });
