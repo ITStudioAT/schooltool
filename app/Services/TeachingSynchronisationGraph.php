@@ -50,6 +50,7 @@ class TeachingSynchronisationGraph
         'number_system_game_sessions' => 'school_id',
         'number_system_game_runs' => ['number_system_game_sessions', 'session_id'],
         'number_system_game_members' => ['number_system_game_sessions', 'session_id'],
+        'number_system_game_guests' => ['number_system_game_sessions', 'session_id'],
     ];
 
     public const array REFERENCES = [
@@ -75,6 +76,7 @@ class TeachingSynchronisationGraph
         'number_system_game_sessions' => [],
         'number_system_game_runs' => ['session_id' => 'number_system_game_sessions'],
         'number_system_game_members' => ['session_id' => 'number_system_game_sessions', 'run_id' => 'number_system_game_runs'],
+        'number_system_game_guests' => ['session_id' => 'number_system_game_sessions', 'run_id' => 'number_system_game_runs'],
     ];
 
     public static function references(string $table): array

@@ -47,7 +47,7 @@ describe('New work overview and assessment mode', () => {
             expect(card.text()).toContain('Neue Arbeit')
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
             expect(card.findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
-            if (enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('error')
+            if (enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
             expect(card.get('v-icon').attributes('icon')).toBe(icon)
             expect(card.get('v-icon').attributes('aria-label')).toBe(label)
             expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
@@ -100,11 +100,11 @@ describe('New work overview and assessment mode', () => {
         const wrapper = mountOverview(work, { folder: null, suggested_folder: { id: 'id:suggestion' } })
         try {
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('error')
+            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
 
             workDropboxStates.set('7:2:65', { folder: { id: 'id:saved', name: 'Ordner' } })
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('success')
+            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('success')
             expect(wrapper.get('.work-row').findAll('[data-work-status]')).toHaveLength(0)
             ;(wrapper.vm as any).courseWorks[0].automation_enabled = false
             await flushPromises()
@@ -118,9 +118,9 @@ describe('New work overview and assessment mode', () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
         const wrapper = mountOverview(work, null)
         try {
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('grey')
+            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('grey')
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('grey')
+            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('grey')
             expect(wrapper.get('.work-row').text()).not.toContain('Noch kein Ordner verbunden.')
             expect(get).toHaveBeenCalledOnce()
         } finally { wrapper.unmount() }

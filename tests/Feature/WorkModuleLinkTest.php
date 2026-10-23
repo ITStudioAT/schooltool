@@ -155,6 +155,181 @@ test('the actual externally created exercise folder is read only and confirmed f
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
+function addContentsRootFixture(object $context): void
+{
+    $link = TeachingWorkModuleLink::query()->where('teaching_course_work_id', $context->work->id)->firstOrFail();
+    $context->online[] = ['.tag' => 'folder', 'id' => $link->folder_id, 'name' => $link->folder_name,
+        'path_lower' => strtolower($link->folder_path), 'path_display' => $link->folder_path];
+}
+
+test('linked folder contents list files and folders without importing or editing', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    addExerciseFixture($this, '2026-10-06_Andere-Pruefung', ['Schooltool_Arbeit_ID' => $this->work->id + 1]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1')->assertOk()
+        ->assertJsonPath('root.name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2')
+        ->assertJsonFragment(['name' => 'Anlage_und_Quellen.json', 'type' => 'file'])
+        ->assertJsonFragment(['name' => 'Angaben', 'type' => 'folder'])
+        ->assertJsonMissing(['name' => '2026-10-06_Andere-Pruefung'])
+        ->assertJsonPath('cursor', null);
+
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('linked folder contents hide other exercises before this exercise exists and reject direct navigation', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this, override: ['Schooltool_Arbeit_ID' => $this->work->id + 1]);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1')->assertOk()
+        ->assertJsonPath('root.name', 'emails - kopie')
+        ->assertJsonFragment(['name' => 'handshake.json', 'type' => 'file'])
+        ->assertJsonMissing(['name' => 'Leistungsfeststellung']);
+    $root = collect($this->online)->firstWhere('name', 'Leistungsfeststellung');
+    $other = collect($this->online)->firstWhere('name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2');
+    foreach ([$root, $other] as $folder) {
+        $this->getJson($this->url.'/folders?contents=1&folder_id='.$folder['id'])->assertForbidden();
+    }
+});
+
+test('linked folder contents select the requested group date and stop on an uncertain exercise', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    $this->work->update(['groups' => [['date' => '2026-10-07']]]);
+    addExerciseFixture($this);
+    addExerciseFixture($this, '2026-10-07_Andere-Gruppe', ['Durchfuehrungsdatum' => '2026-10-07']);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1&date=2026-10-07')->assertOk()
+        ->assertJsonPath('root.name', '2026-10-07_Andere-Gruppe');
+    $this->getJson($this->url.'/folders?contents=1')->assertStatus(409);
+});
+
+test('linked folder contents open only the requested important section and reject sibling navigation', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Angaben&date=2026-10-06')->assertOk()
+        ->assertJsonPath('root.name', 'Angaben')->assertJsonPath('entries', []);
+    $sibling = collect($this->online)->firstWhere('name', 'Abgaben');
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Angaben&folder_id='.$sibling['id'])->assertForbidden();
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Bewertungskriterien')->assertNotFound();
+    $this->getJson($this->url.'/folders?contents=1&section=Angaben')->assertUnprocessable();
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Transaktionen')->assertUnprocessable();
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('linked folder contents return only a PDF from its verified section as private inline content', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $section = collect($this->online)->firstWhere('name', 'Angaben');
+    $pdf = "%PDF-1.7\n%%EOF\n";
+    $this->exerciseDocuments['rev:pdfrevision1'] = $pdf;
+    $this->online[] = ['.tag' => 'file', 'id' => 'id:taskpdf', 'name' => 'Aufgabe.pdf', 'rev' => 'pdfrevision1',
+        'path_lower' => $section['path_lower'].'/aufgabe.pdf', 'path_display' => $section['path_display'].'/Aufgabe.pdf', 'size' => strlen($pdf)];
+    $url = $this->url.'/folders?contents=1&exercise=1&section=Angaben&pdf=1&file_id=id:taskpdf';
+
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->get($url)->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertHeader('Content-Disposition', 'inline')
+        ->assertContent($pdf);
+    $this->getJson(str_replace('id:taskpdf', 'id:handshake', $url))->assertNotFound();
+    $this->getJson(str_replace('exercise=1', 'exercise=0', $url))->assertUnprocessable();
+    $otherTeacher = User::factory()->create(['school_id' => $this->user->school_id, 'schoolyear_id' => $this->user->schoolyear_id])->assignRole('teacher');
+    $this->actingAs($otherTeacher, 'sanctum')->getJson($url)->assertForbidden();
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('linked folder contents open the verified exercise and refuse unrelated child folders', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('root.name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2')
+        ->assertJsonFragment(['name' => 'Anlage_und_Quellen.json', 'type' => 'file']);
+
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:outside', 'name' => 'Private',
+        'path_lower' => '/private', 'path_display' => '/Private'];
+    $this->getJson($this->url.'/folders?contents=1&folder_id=id:outside')->assertForbidden();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder') && $request['path'] === 'id:outside');
+});
+
+test('linked folder contents require a saved connection and support a legacy work folder', function (): void {
+    fakeModuleDropbox($this);
+    $this->getJson($this->url.'/folders?contents=1')->assertStatus(409);
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:legacy', 'name' => 'Altordner',
+        'path_lower' => '/altordner', 'path_display' => '/Altordner'];
+    TeachingWorkDropboxFolder::query()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $this->work->id, 'folder_id' => 'id:legacy', 'folder_name' => 'Altordner']);
+
+    $this->getJson($this->url.'/folders?contents=1')->assertOk()->assertJsonPath('root.id', 'id:legacy');
+});
+
+test('linked folder contents never initiate a full LF check themselves', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $requests = Http::recorded()->count();
+
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Angaben')->assertConflict();
+    expect(Http::recorded()->count())->toBe($requests);
+});
+
+test('linked folder contents reuse one stored LF check across dates and days', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    $this->work->update(['groups' => [['date' => '2026-10-07']]]);
+    addExerciseFixture($this);
+    addExerciseFixture($this, '2026-10-07_Andere-Gruppe', ['Durchfuehrungsdatum' => '2026-10-07']);
+    $checkedAt = $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.status', 'found')->json('exercise.checked_at');
+    $requests = Http::recorded()->count();
+
+    $this->travel(3)->days();
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-07')->assertOk()
+        ->assertJsonPath('exercise.folder.name', '2026-10-07_Andere-Gruppe')->assertJsonPath('exercise.checked_at', $checkedAt);
+    expect(Http::recorded()->count())->toBe($requests);
+    $downloads = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count();
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Angaben&date=2026-10-06')->assertOk();
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count())->toBe($downloads);
+});
+
+test('linked folder contents refresh the LF check only on explicit request and retain failures', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    $requests = Http::recorded()->count();
+    $this->exerciseOffline = true;
+
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    expect(Http::recorded()->count())->toBe($requests);
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'unknown');
+    $afterRefresh = Http::recorded()->count();
+    expect($afterRefresh)->toBeGreaterThan($requests);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'unknown');
+    expect(Http::recorded()->count())->toBe($afterRefresh);
+});
+
+test('linked folder contents require manual confirmation after changing the schedule', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    $requests = Http::recorded()->count();
+    $this->work->update(['date_for_all_groups' => '2026-10-08']);
+
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'unknown');
+    expect(Http::recorded()->count())->toBe($requests);
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'missing');
+});
+
 test('an unrelated exercise never hides creation for this work', function (array $override): void {
     linkExerciseFixture($this);
     addExerciseFixture($this, override: $override);
@@ -301,10 +476,13 @@ test('a missing search match is described as unconfirmed rather than nonexistent
 });
 
 test('technical work copies outside the verified material roots do not compete with the real learning module', function (): void {
-    foreach (['/AI/tmp/emails-pdf-20261020-01a15b48/before', '/AI/tmp/module-handshake-skill-20261020-01a15b12/live/handshake/handshake-I_6yschn'] as $index => $path) {
+    foreach (['/AI/tmp/emails-pdf-20261020-01a15b48/before', '/AI/tmp/module-handshake-skill-20261020-01a15b12/live/handshake/handshake-I_6yschn',
+        '/AI/tmp/exercise64-20261021/snapshot/schule2020_2027/Materialien/Lerninhalte/IT_Grundlagen/emails - Kopie'] as $index => $path) {
         $this->online[] = array_replace($this->online[0], ['id' => 'id:technical'.$index, 'rev' => 'technical'.$index,
             'path_lower' => strtolower($path).'/handshake.json', 'path_display' => $path.'/handshake.json']);
     }
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.basename(dirname($this->online[0]['path_lower'])),
+        'name' => 'emails - Kopie', 'path_lower' => dirname($this->online[0]['path_lower'])];
     fakeModuleDropbox($this);
 
     $this->postJson($this->url.'/folder', ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true])->assertOk()
@@ -312,6 +490,17 @@ test('technical work copies outside the verified material roots do not compete w
         ->assertJsonMissingPath('conflict');
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
         && str_contains($request->header('Dropbox-API-Arg')[0] ?? '', 'technical'));
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+});
+
+test('a module moved into a technical snapshot cannot be confirmed with an older proof', function (): void {
+    fakeModuleDropbox($this);
+    $proof = $this->postJson($this->url.'/folder', ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true])->assertOk()->json('proof');
+    $this->online[0]['path_display'] = '/AI/tmp/exercise64-20261021/snapshot/schule2020_2027/Materialien/Lerninhalte/IT_Grundlagen/emails - Kopie/handshake.json';
+    $this->online[0]['path_lower'] = strtolower($this->online[0]['path_display']);
+
+    $this->postJson($this->url.'/folder', ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'proof' => $proof])
+        ->assertConflict()->assertJsonPath('message', 'Die Online-Datei liegt außerhalb des Lerninhalte-Bestands. Bitte erneut auswählen.');
     expect(TeachingWorkModuleLink::query()->count())->toBe(0);
 });
 

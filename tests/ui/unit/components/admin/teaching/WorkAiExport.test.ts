@@ -24,24 +24,45 @@ function button(wrapper: any, title: string) {
     return wrapper.findAll('button').find((item: any) => item.text() === title)!
 }
 
-beforeEach(() => { clearWorkDropboxStates(); workDropboxStates.set('7:2:65', { folder: null }) })
+beforeEach(() => { clearWorkDropboxStates(); workDropboxStates.set('7:2:65', { module_link: { folder: { id: 'id:module' } }, folder: null }) })
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 describe('Work AI export', () => {
+    it('shows creation only after module linking and closes its stale export after unlinking', async () => {
+        const get = vi.fn().mockResolvedValue({ data: { data } })
+        vi.stubGlobal('axios', { get })
+        workDropboxStates.set('7:2:65', { folder: null, module_link: null, suggested_folder: { id: 'id:suggestion' } })
+        const wrapper = mountExport()
+        try {
+            await flushPromises()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+            workDropboxStates.set('7:2:65', { folder: null, module_link: { folder: { id: 'id:module' } } })
+            await flushPromises()
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+            await flushPromises()
+            expect(wrapper.find('textarea').exists()).toBe(true)
+            workDropboxStates.set('7:2:65', { folder: null, module_link: null })
+            await flushPromises()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+            expect(wrapper.find('textarea').exists()).toBe(false)
+            expect(get).toHaveBeenCalledTimes(1)
+        } finally { wrapper.unmount() }
+    })
+
     it.each([true, false])('uses only a confirmed folder ID to hide the creation action, assigned %s', async assigned => {
-        workDropboxStates.set('7:2:65', { folder: assigned ? { id: 'id:confirmed', name: 'Arbeit' } : { name: 'Noch keine Zuordnung' },
+        workDropboxStates.set('7:2:65', { module_link: { folder: { id: 'id:module' } }, folder: assigned ? { id: 'id:confirmed', name: 'Arbeit' } : { name: 'Noch keine Zuordnung' },
             suggested_folder: { id: 'id:proposal', name: 'Vorschlag' } })
         const get = vi.fn()
         vi.stubGlobal('axios', { get })
         const wrapper = mountExport()
         try {
             await flushPromises()
-            expect(Boolean(button(wrapper, 'Ordner anlegen (KI)'))).toBe(!assigned)
+            expect(Boolean(button(wrapper, 'Leistungsfeststellung erstellen'))).toBe(!assigned)
             expect(get).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
     })
 
-    it.each(['unassigned', 'assigned', 'missing', 'incomplete', 'failed'])('waits for a confirmed status without flashing the action: %s', async state => {
+    it.each(['unassigned', 'linked', 'assigned', 'missing', 'incomplete', 'failed'])('waits for a confirmed status without flashing the action: %s', async state => {
         clearWorkDropboxStates()
         let resolve: (value: any) => void = () => {}
         let reject: (value: any) => void = () => {}
@@ -49,11 +70,11 @@ describe('Work AI export', () => {
         vi.stubGlobal('axios', { get })
         const wrapper = mountExport()
         try {
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
             if (state === 'failed') reject(new Error('Nicht erreichbar'))
-            else resolve({ data: state === 'missing' ? null : (state === 'incomplete' ? {} : { folder: state === 'assigned' ? { id: 'id:confirmed' } : null }) })
+            else resolve({ data: state === 'missing' ? null : (state === 'incomplete' ? {} : { module_link: state === 'linked' || state === 'assigned' ? { folder: { id: 'id:module' } } : null, folder: state === 'assigned' ? { id: 'id:confirmed' } : null }) })
             await flushPromises()
-            expect(Boolean(button(wrapper, 'Ordner anlegen (KI)'))).toBe(state === 'unassigned')
+            expect(Boolean(button(wrapper, 'Leistungsfeststellung erstellen'))).toBe(state === 'linked')
             expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000 })
         } finally { wrapper.unmount() }
     })
@@ -65,22 +86,22 @@ describe('Work AI export', () => {
         workDropboxStates.set('8:2:65', { folder: { id: 'id:other-user' } })
         const wrapper = mountExport()
         try {
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeDefined()
             workDropboxStates.set('7:2:65', { folder: { id: 'id:just-assigned' } })
             await flushPromises()
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
-            workDropboxStates.set('7:2:65', { folder: null })
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+            workDropboxStates.set('7:2:65', { module_link: { folder: { id: 'id:module' } }, folder: null })
             await flushPromises()
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeDefined()
             useAdminStore().config.user.id = 8
             await flushPromises()
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
             useAdminStore().config.user.id = 7
             await flushPromises()
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeDefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeDefined()
             await wrapper.setProps({ work: { ...work, id: 66 } })
             await flushPromises()
-            expect(button(wrapper, 'Ordner anlegen (KI)')).toBeUndefined()
+            expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
             expect(get).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
     })
@@ -93,8 +114,8 @@ describe('Work AI export', () => {
         const wrapper = mountExport()
         try {
             expect(get).not.toHaveBeenCalled()
-            expect(button(wrapper, 'Ordner anlegen (KI)').attributes()).toMatchObject({ title: 'Ordner anlegen (KI) öffnen', 'aria-label': 'Ordner anlegen (KI)' })
-            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
+            expect(button(wrapper, 'Leistungsfeststellung erstellen').attributes()).toMatchObject({ title: 'Leistungsfeststellung erstellen', 'aria-label': 'Leistungsfeststellung erstellen' })
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
             await flushPromises()
             expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export')
             expect(wrapper.text()).toContain('Gespeicherte Datenschutzarbeit')
@@ -118,7 +139,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
             await flushPromises()
             await button(wrapper, 'Auftrag kopieren').trigger('click')
             await flushPromises()
@@ -133,7 +154,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: mode === 'rejected' ? { writeText: vi.fn().mockRejectedValue(new Error('Denied')) } : undefined })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
             await flushPromises()
             await button(wrapper, 'Auftrag kopieren').trigger('click')
             await flushPromises()
@@ -150,7 +171,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('axios', { get: vi.fn().mockImplementation(() => new Promise(done => { resolve = done })) })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
             useCourseStore().selected_course = { id: 3 } as any
             await flushPromises()
             resolve({ data: { data } })
@@ -164,7 +185,7 @@ describe('Work AI export', () => {
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { data: { ...data, ...change } } }) })
         const wrapper = mountExport()
         try {
-            await button(wrapper, 'Ordner anlegen (KI)').trigger('click')
+            await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
             await flushPromises()
             expect(wrapper.find('textarea').exists()).toBe(false)
             expect(button(wrapper, 'Auftrag kopieren').attributes('disabled')).toBeDefined()

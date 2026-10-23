@@ -7,6 +7,7 @@ use App\Models\Import116RunChange;
 use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
+use App\Models\NumberSystemGameGuest;
 use App\Models\NumberSystemGameRun;
 use App\Models\NumberSystemGameSession;
 use App\Models\School;
@@ -165,6 +166,68 @@ test('teaching tools preview and apply include complete results and games and re
     expect($backup['state']['tables']['mc_attempts'][0]['access_token'])->toBe($originalTokenCiphertext);
     expect($backup['state']['tables']['number_system_game_members'])->toHaveCount(2);
     expect($backup['state']['tables']['number_system_game_runs'][0]['attempts'])->toBe(0);
+});
+
+test('external game guests retain lobby or team membership across remapped IDs and have a recovery copy', function (bool $joinedTeam): void {
+    $session = NumberSystemGameSession::factory()->create(['school_id' => $this->school->id,
+        'teacher_id' => $this->actor->id, 'teaching_course_id' => null, 'audience' => 'external']);
+    $run = NumberSystemGameRun::factory()->create(['session_id' => $session->id, 'user_id' => null, 'puzzles' => []]);
+    $guest = NumberSystemGameGuest::query()->create(['session_id' => $session->id,
+        'run_id' => $joinedTeam ? $run->id : null, 'first_name' => 'Source guest', 'token_hash' => hash('sha256', 'source-guest')]);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    $localOnly = NumberSystemGameGuest::query()->create(['session_id' => $session->id,
+        'first_name' => 'Local guest', 'token_hash' => hash('sha256', 'local-guest')]);
+    $otherSession = NumberSystemGameSession::factory()->create();
+    $otherRun = NumberSystemGameRun::factory()->create(['session_id' => $otherSession->id]);
+    $otherGuest = NumberSystemGameGuest::query()->create(['session_id' => $otherSession->id,
+        'run_id' => $otherRun->id, 'first_name' => 'Other school', 'token_hash' => hash('sha256', 'other-guest')]);
+    $otherAttributes = $otherGuest->fresh()->getAttributes();
+    $this->snapshot['tables']['number_system_game_sessions'][0]['id'] = $otherSession->id;
+    $this->snapshot['tables']['number_system_game_runs'][0]['id'] = $otherRun->id;
+    $this->snapshot['tables']['number_system_game_runs'][0]['session_id'] = $otherSession->id;
+    $this->snapshot['tables']['number_system_game_guests'][0]['id'] = $otherGuest->id;
+    $this->snapshot['tables']['number_system_game_guests'][0]['session_id'] = $otherSession->id;
+    $this->snapshot['tables']['number_system_game_guests'][0]['run_id'] = $joinedTeam ? $otherRun->id : null;
+    $this->actingAs($this->actor, 'sanctum');
+
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+    $preview->assertJsonPath('data.conflicts', []);
+    $summary = array_column($preview->json('data.summary'), null, 'table');
+    expect($summary['number_system_game_guests'])->toMatchArray(['live' => 1, 'local' => 2, 'replaced' => 2]);
+    $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))->assertSuccessful();
+
+    $importedSession = NumberSystemGameSession::query()->where('school_id', $this->school->id)->sole();
+    $importedRun = NumberSystemGameRun::query()->where('session_id', $importedSession->id)->sole();
+    $importedGuest = NumberSystemGameGuest::query()->where('session_id', $importedSession->id)->sole();
+    expect($importedSession->id)->not->toBe($otherSession->id);
+    expect($importedSession->teaching_course_id)->toBeNull();
+    expect($importedSession->audience)->toBe('external');
+    expect($importedRun->id)->not->toBe($otherRun->id);
+    expect($importedRun->user_id)->toBeNull();
+    expect($importedGuest->id)->not->toBe($otherGuest->id);
+    $this->assertDatabaseHas('number_system_game_guests', ['id' => $importedGuest->id,
+        'session_id' => $importedSession->id, 'run_id' => $joinedTeam ? $importedRun->id : null,
+        'first_name' => 'Source guest', 'token_hash' => hash('sha256', 'source-guest')]);
+    expect($localOnly->fresh())->toBeNull();
+    expect($otherGuest->fresh()->getAttributes())->toBe($otherAttributes);
+    $backup = app(TeachingSynchronisationBackup::class)->read("teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc");
+    expect(array_column($backup['state']['tables']['number_system_game_guests'], 'id'))->toBe([$guest->id, $localOnly->id]);
+})->with(['lobby' => false, 'team' => true]);
+
+test('guest membership in a different game round blocks preview without replacement', function (): void {
+    $session = NumberSystemGameSession::factory()->create(['teaching_course_id' => $this->course->id]);
+    $otherSession = NumberSystemGameSession::factory()->create(['teaching_course_id' => $this->course->id]);
+    $run = NumberSystemGameRun::factory()->create(['session_id' => $otherSession->id, 'user_id' => $this->actor->id]);
+    $guest = NumberSystemGameGuest::query()->create(['session_id' => $session->id,
+        'run_id' => $run->id, 'first_name' => 'Guest', 'token_hash' => hash('sha256', 'guest')]);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+
+    $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+
+    $preview->assertJsonPath('data.token', null);
+    expect(implode(' ', $preview->json('data.conflicts')))->toContain('Gastteilnahme verweist auf eine andere Spielrunde');
+    expect($guest->fresh()->run_id)->toBe($run->id);
+    expect(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toBe([]);
 });
 
 test('tool access code collisions with other schools block preview before any replacement', function (string $kind): void {

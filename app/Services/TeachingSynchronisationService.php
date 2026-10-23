@@ -400,6 +400,11 @@ class TeachingSynchronisationService
                 $plan['conflicts'][] = 'Eine Zahlensystem-Teamteilnahme verweist auf eine andere Spielrunde.';
             }
         }
+        foreach ($source['tables']['number_system_game_guests'] ?? [] as $guest) {
+            if ($guest['run_id'] !== null && ($runs[$guest['run_id']]['session_id'] ?? null) !== $guest['session_id']) {
+                $plan['conflicts'][] = 'Eine Zahlensystem-Gastteilnahme verweist auf eine andere Spielrunde.';
+            }
+        }
         foreach ($source['external'] ?? [] as $table => $rows) {
             if (! in_array($table, ['material_cards', 'material_card_attachments'], true)) {
                 $plan['conflicts'][] = 'Unbekannte Beziehung zu einem fremden Modul.';

@@ -1,8 +1,8 @@
 <template>
-    <v-btn v-if="canCreateFolder" size="small" variant="tonal" prepend-icon="mdi-robot-outline" title="Ordner anlegen (KI) öffnen" aria-label="Ordner anlegen (KI)" :disabled="loading" @click.stop="openExport">Ordner anlegen (KI)</v-btn>
+    <v-btn v-if="canCreateFolder" size="small" variant="tonal" prepend-icon="mdi-robot-outline" title="Leistungsfeststellung erstellen" aria-label="Leistungsfeststellung erstellen" :disabled="loading" @click.stop="openExport">Leistungsfeststellung erstellen</v-btn>
     <v-dialog v-model="open" scrollable max-width="900">
         <v-card>
-            <v-card-title class="text-wrap text-body-1 font-weight-bold">Ordner anlegen (KI) · {{ result?.context?.work?.title || 'Auftrag laden' }}</v-card-title>
+            <v-card-title class="text-wrap text-body-1 font-weight-bold">Leistungsfeststellung erstellen · {{ result?.context?.work?.title || 'Auftrag laden' }}</v-card-title>
             <v-card-text>
                 <p class="text-caption mb-2">Frisch geladene, gespeicherte Arbeitsdaten und vollständiger Kursbestand. Ungespeicherte Änderungen zuerst speichern.</p>
                 <p v-if="loading" role="status">Arbeitsdaten und Kursliste laden …</p>
@@ -43,7 +43,7 @@ const directoryLoadError = ref(false)
 const directoryKey = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const directoryState = computed(() => workDropboxStates.get(directoryKey.value))
 const canCreateFolder = computed(() => Boolean(isCurrentWork.value && !directoryLoading.value && !directoryLoadError.value
-    && directoryState.value && Object.hasOwn(directoryState.value, 'folder') && !directoryState.value.folder?.id))
+    && directoryState.value?.module_link?.folder?.id && Object.hasOwn(directoryState.value, 'folder') && !directoryState.value.folder?.id))
 const open = ref(false)
 const loading = ref(false)
 const result = ref(null)
@@ -72,7 +72,7 @@ async function openExport() {
 
 async function loadExport() {
     clearExport()
-    if (!open.value || !isCurrentWork.value) return
+    if (!open.value || !canCreateFolder.value) return
     const sequence = requestSequence
     const workId = props.work.id
     const courseId = props.work.teaching_course_id
@@ -90,7 +90,7 @@ async function loadExport() {
     } catch (exception) {
         if (sequence === requestSequence) {
             error.value = Object.values(exception.response?.data?.errors || {}).flat().join(' ')
-                || exception.message || 'Ordner anlegen (KI) konnte nicht geladen werden.'
+                || exception.message || 'Der Auftrag zum Erstellen der Leistungsfeststellung konnte nicht geladen werden.'
         }
     } finally {
         if (sequence === requestSequence) loading.value = false
@@ -98,7 +98,7 @@ async function loadExport() {
 }
 
 async function copyExport() {
-    if (!result.value || loading.value || !isCurrentWork.value) return
+    if (!result.value || loading.value || !canCreateFolder.value) return
     await loadExport()
     if (!result.value || !open.value || !isCurrentWork.value) return
     await nextTick()
@@ -136,6 +136,7 @@ watch(() => [directoryKey.value, props.work?.status?.folder_imported_at, isCurre
     }
 }, { immediate: true })
 watch(open, value => { if (!value) clearExport() })
+watch(canCreateFolder, allowed => { if (!allowed) open.value = false })
 onBeforeUnmount(clearExport)
 </script>
 

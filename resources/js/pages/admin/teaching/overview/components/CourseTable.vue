@@ -243,7 +243,7 @@
                                                         <v-icon icon="mdi-account-multiple" size="15" aria-hidden="true" />
                                                         {{ work.completion.completed + work.completion.open }}
                                                     </span>
-                                                    <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" />
+                                                    <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" :date="courseDate.date" />
                                                 </div>
                                                 <span class="course-table-work-summary-title text-primary">{{ work.work.title || work.label }}</span>
                                                 <span v-if="work.work.finish_until_date" class="course-table-work-summary-deadline" :class="`text-${workDeadlineColor(work.work, deadlineNow)}`">
@@ -265,7 +265,7 @@
                                                     <v-icon size="12">mdi-account-multiple</v-icon>
                                                     <span>{{ work.completion.completed > 0 && work.completion.open === 0 ? work.completion.completed : `${work.completion.completed}/${work.completion.completed + work.completion.open}` }}</span>
                                                 </span>
-                                                <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" />
+                                                <WorkFolderStatus v-if="workAutomationEnabled(work.work)" :work="work.work" :date="courseDate.date" />
                                             </div>
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
@@ -288,6 +288,12 @@
                                                 <WorkCellStatus class="w-100" :work="work.work" :students="selected_course?.students_info || []" :now="deadlineNow" aggregate native-title />
                                             </div>
                                             </template>
+                                            <span v-if="workNextAction(work.work, courseDate.date)" class="course-table-work-summary-next-action text-caption font-weight-bold"
+                                                :class="['LF erstellt', 'Ordner verbunden'].includes(workNextAction(work.work, courseDate.date)) ? 'text-success' : 'text-orange-darken-2'"
+                                                :aria-label="`Nächste Aktion: ${workNextAction(work.work, courseDate.date)}`">
+                                                <span class="d-flex align-center ga-1"><v-icon icon="mdi-arrow-right-circle-outline" size="14" aria-hidden="true" />{{ workNextAction(work.work, courseDate.date) }}</span>
+                                                <span v-if="workLastCheck(work.work, courseDate.date)" class="work-check-time text-medium-emphasis">Stand: {{ workLastCheck(work.work, courseDate.date) }}</span>
+                                            </span>
                                         </div>
                                     </div>
                                     <v-tooltip
@@ -1579,15 +1585,15 @@
                             </div>
                             <section class="mt-4 pt-3 border-t" aria-label="Weitere Aktionen">
                                 <div class="work-import-actions d-flex flex-wrap align-center ga-2">
-                                    <WorkImportActions v-if="savedWorkDialogWork" :work="savedWorkDialogWork" link-only :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" @link="openLink" />
+                                    <WorkImportActions v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" link-only :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @open="openImport" @link="openLink" />
                                     <WorkContextCopy v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
-                                    <WorkExerciseExport :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @exercise-status="workDialogExerciseStatus = $event" />
+                                    <WorkExerciseExport :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" hide-folder-name @exercise-status="workDialogExerciseStatus = $event" />
                                 </div>
                             </section>
                             <div class="d-flex flex-wrap justify-end ga-2 mt-4">
                                 <span v-if="savedWorkDialogWork" class="work-dialog-status-icons d-flex align-center ga-2 mr-auto align-self-center">
-                                    <WorkFolderStatus :work="savedWorkDialogWork" :size="30" />
-                                    <WorkExerciseStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
+                                    <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
+                                    <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
                                 </span>
                                 <v-btn
                                     variant="text"
@@ -1604,6 +1610,13 @@
                                     Speichern
                                 </v-btn>
                             </div>
+                            <WorkFolderBrowser v-if="workDialogExerciseFolderName" :work="savedWorkDialogWork" exercise :date="workDialog.courseDate?.date || ''" :disabled="workSaving">
+                                <template #default="{ open }">
+                                    <button type="button" class="work-dialog-exercise-folder text-body-2 text-primary mt-3" aria-label="Leistungsfeststellungsordner öffnen" @click.stop="open">
+                                        {{ workDialogExerciseFolderName }}
+                                    </button>
+                                </template>
+                            </WorkFolderBrowser>
                         </div>
                     </section>
                 </v-card-text>
@@ -2588,6 +2601,7 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkExerciseExport from './WorkExerciseExport.vue'
 import WorkDropboxLink from './WorkDropboxLink.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
+import WorkFolderBrowser from './WorkFolderBrowser.vue'
 import WorkExerciseStatus from './WorkExerciseStatus.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
@@ -2598,7 +2612,7 @@ import WorkTimeInput from './WorkTimeInput.vue'
 import { workCellDeviationStatuses, workMarkedComplete } from '@/helpers/workCellStatus'
 import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { loadWorkExercise, workDropboxBinding, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel } from '@/helpers/workOverview'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
@@ -2615,7 +2629,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkFolderStatus, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkFolderStatus, WorkFolderBrowser, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2807,9 +2821,9 @@ export default {
         workFolderRequests: {
             immediate: true,
             handler(requests) {
-                for (const { key, work } of requests) {
+                for (const { key, work, date } of requests) {
                     if (!key) continue
-                    loadWorkDropbox(key, work.id).then(() => {
+                    loadWorkExercise(key, work, date).then(() => {
                         delete this.work_folder_errors[key]
                     }).catch(() => {
                         this.work_folder_errors[key] = true
@@ -2865,10 +2879,12 @@ export default {
     computed: {
         workFolderRequests() {
             if (this.tableView !== 'entries') return []
-            return (this.courseWorks || []).map(work => ({
-                work,
-                key: workDropboxKey(useAdminStore().config?.user?.id, work),
-            }))
+            return (this.courseWorks || []).filter(workAutomationEnabled).flatMap(work => {
+                const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+                const dates = [...new Set([work.date_for_all_groups, ...(work.groups || []).map(group => group.date)].filter(Boolean))]
+                return (dates.length ? dates : ['']).map(date => ({ work, key, date,
+                    binding: workDropboxBinding(workDropboxStates.get(key)) }))
+            })
         },
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
@@ -3145,6 +3161,15 @@ export default {
         savedWorkDialogCompletion() {
             return this.savedWorkDialogWork ? this.workCompletionCounts(this.savedWorkDialogWork) : { completed: 0, open: 0 }
         },
+        workDialogExerciseFolderName() {
+            const state = this.workDialogExerciseStatus
+            const work = this.savedWorkDialogWork
+            if (!work || state?.status !== 'found' || state.userId !== useAdminStore().config?.user?.id
+                || String(state.workId) !== String(work.id) || String(state.courseId) !== String(work.teaching_course_id)
+                || state.date !== (this.workDialog.courseDate?.date || '')) return ''
+
+            return state.folder?.name || ''
+        },
         workDialogGroups() {
             return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []
         },
@@ -3332,6 +3357,22 @@ export default {
         workDeadlineColor,
         workFolderState(work) {
             return workDropboxStates.get(workDropboxKey(useAdminStore().config?.user?.id, work))
+        },
+        workNextAction(work, date = '') {
+            if (!workAutomationEnabled(work)) return ''
+            const state = this.workFolderState(work)
+            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+            const checked = workExerciseCheck(key, work, date || work.date_for_all_groups || '')
+            if (checked?.status === 'unknown') return state?.module_link?.folder?.id ? 'LF nicht bestätigt' : 'Prüfung fehlgeschlagen'
+            if (!state) return this.work_folder_errors[key] || checked?.status === 'unknown' ? 'Prüfung fehlgeschlagen' : 'Wird geprüft …'
+            if (!state.module_link?.folder?.id) return state.folder?.id ? 'Ordner verbunden' : 'Verknüpfen'
+            if (!checked) return 'Wird geprüft …'
+            return checked.status === 'found' ? 'LF erstellt' : checked.status === 'missing' ? 'LF erstellen' : 'LF nicht bestätigt'
+        },
+        workLastCheck(work, date = '') {
+            const checked = workExerciseCheck(workDropboxKey(useAdminStore().config?.user?.id, work), work, date)
+            return checked?.checkedAt ? new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna',
+                day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(checked.checkedAt)) : ''
         },
         workIsInitial(work) {
             const key = workDropboxKey(useAdminStore().config?.user?.id, work)
@@ -7406,6 +7447,8 @@ export default {
 }
 
 .course-table-work-summary {
+    display: flex;
+    flex-direction: column;
     background: rgba(37, 99, 235, 0.12);
     border: 1px solid rgba(37, 99, 235, 0.3);
     border-radius: 7px;
@@ -7461,6 +7504,21 @@ export default {
     line-height: 1;
     margin-bottom: 4px;
     text-transform: uppercase;
+}
+
+.course-table-work-summary-next-action {
+    align-items: flex-start;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: auto;
+    padding-top: 4px;
+}
+.work-check-time { font-size: 10px; font-weight: normal; }
+
+.work-dialog-exercise-folder {
+    overflow-wrap: anywhere;
+    text-align: left;
 }
 
 .course-table-work-summary-count {

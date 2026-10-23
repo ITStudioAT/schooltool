@@ -7,6 +7,7 @@ use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,8 +29,49 @@ class DropboxModuleLinks
         return $this->installed() ? TeachingWorkModuleLink::query()->where('teaching_course_work_id', $work->id)->first() : null;
     }
 
-    /** @return array{status: string, folder: ?array<string, string>, message?: string} */
-    public function exercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, ?string $date): array
+    /** @return array{status: string, folder: ?array<string, string>, message?: string, checked_at?: ?string} */
+    public function exercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, ?string $date, bool $refresh = false, bool $initial = true): array
+    {
+        if ($link->dropbox_connection_id !== $connection->id || $link->account_id !== $connection->account_id) {
+            return ['status' => 'missing', 'folder' => null];
+        }
+        $key = 'teaching:exercise-check:'.hash('sha256', serialize([$connection->id, $connection->account_id,
+            $work->id, $work->teaching_course_id, $link->getAttributes()]));
+        $schedule = hash('sha256', serialize([$work->date_for_all_groups?->format('Y-m-d'), array_column($work->groups ?? [], 'date')]));
+        $record = Cache::get($key);
+        if ($refresh || ($record === null && $initial)) {
+            $record = Cache::lock($key.':lock', 120)->block(55, function () use ($key, $schedule, $refresh, $connection, $work, $link): array {
+                $existing = Cache::get($key);
+                if (! $refresh && is_array($existing)) {
+                    return $existing;
+                }
+                $record = ['schedule' => $schedule, 'checked_at' => now()->toIso8601String(),
+                    'result' => $this->inspectExercises($connection, $work, $link)];
+                Cache::forever($key, $record);
+
+                return $record;
+            });
+        }
+        if (! is_array($record) || ($record['schedule'] ?? null) !== $schedule) {
+            return ['status' => 'unknown', 'folder' => null, 'checked_at' => $record['checked_at'] ?? null,
+                'message' => 'Bitte den LF-Status einmal mit „Erneut prüfen“ bestätigen.'];
+        }
+        $result = $record['result'];
+        $checked = ['checked_at' => $record['checked_at']];
+        if ($result['status'] !== 'found') {
+            return $result + $checked;
+        }
+        $matches = array_values(array_filter($result['matches'], fn (array $match): bool => $date === null || $match['date'] === $date));
+        if (count($matches) > 1) {
+            return ['status' => 'unknown', 'folder' => null, 'message' => 'Mehrere Leistungsfeststellungsordner passen. Bitte den konkreten Termin auswählen.'] + $checked;
+        }
+
+        return ($matches === [] ? ['status' => 'missing', 'folder' => null]
+            : ['status' => 'found', 'folder' => $matches[0]['folder']]) + $checked;
+    }
+
+    /** @return array<string, mixed> */
+    private function inspectExercises(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link): array
     {
         $missing = ['status' => 'missing', 'folder' => null];
         if ($link->dropbox_connection_id !== $connection->id || $link->account_id !== $connection->account_id) {
@@ -61,7 +103,7 @@ class DropboxModuleLinks
                     continue;
                 }
                 $scheduled = $record['Durchfuehrungsdatum'] ?? null;
-                if (! in_array($scheduled, $dates, true) || ($date !== null && $scheduled !== $date)) {
+                if (! in_array($scheduled, $dates, true)) {
                     continue;
                 }
                 $binding = $record['Modulbindung'] ?? [];
@@ -89,14 +131,14 @@ class DropboxModuleLinks
                     409, 'Die tatsächliche Anlage dieser Leistungsfeststellung konnte nicht bestätigt werden.');
                 $confirmed = $this->dropbox->metadata($connection, $folder['id']);
                 abort_unless(dirname($confirmed['path_lower']) === $root['path_lower'], 409, 'Die Leistungsfeststellung wurde inzwischen verschoben.');
-                $matches[] = ['id' => $confirmed['id'], 'name' => $confirmed['name'], 'path' => $confirmed['path_display'] ?? $confirmed['path_lower']];
+                $matches[] = ['date' => $scheduled, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
+                    'path' => $confirmed['path_display'] ?? $confirmed['path_lower']]];
             }
             abort_unless($this->current($work)?->getAttributes() === $link->getAttributes()
                 && $connection->fresh()?->account_id === $link->account_id && ! $connection->fresh()?->revoked_at,
                 409, 'Die Modulverbindung wurde während der Prüfung geändert.');
-            abort_if(count($matches) > 1, 409, 'Mehrere Leistungsfeststellungsordner passen zu dieser Arbeit. Eine eindeutige Zuordnung fehlt.');
 
-            return $matches === [] ? $missing : ['status' => 'found', 'folder' => $matches[0]];
+            return $matches === [] ? $missing : ['status' => 'found', 'matches' => $matches];
         } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
             return ['status' => 'unknown', 'folder' => null, 'message' => 'Anlagezustand nicht bestätigt. '.($exception instanceof ValidationException
                 ? collect($exception->errors())->flatten()->first() : ($exception instanceof JsonException ? 'Ungültige LF-Metadaten.' : $exception->getMessage()))];
@@ -347,6 +389,9 @@ class DropboxModuleLinks
 
     private function materialRoot(string $path): ?string
     {
+        if (str_starts_with(mb_strtolower($path), '/ai/tmp/')) {
+            return null;
+        }
         $configured = config('services.dropbox.module_material_roots', []);
         if ($configured !== []) {
             foreach ($configured as $root) {

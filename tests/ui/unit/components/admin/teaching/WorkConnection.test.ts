@@ -1,8 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
-import { createVuetify } from 'vuetify'
-import { VBtn, VIcon, VList, VListItem, VMenu } from 'vuetify/components'
 import WorkImportActions from '@/pages/admin/teaching/overview/components/WorkImportActions.vue'
 import WorkContextCopy from '@/pages/admin/teaching/overview/components/WorkContextCopy.vue'
 import WorkFolderStatus from '@/pages/admin/teaching/overview/components/WorkFolderStatus.vue'
@@ -20,20 +18,16 @@ function mountConnection(post = vi.fn(), state: any = saved) {
     workDropboxStates.set('7:2:65', state)
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
-    vi.stubGlobal('axios', { post, get: vi.fn().mockResolvedValue({ data: state }) })
-    const wrapper = mount(WorkImportActions, { props: { work, linkOnly: true }, attachTo: document.body, global: { components: {
-        'v-menu': VMenu, 'v-list': VList, 'v-list-item': VListItem, 'v-btn': VBtn, 'v-icon': VIcon,
-    }, stubs: {
-        'v-menu': false, VMenu: false, 'v-list': false, VList: false, 'v-list-item': false, VListItem: false,
-        'v-btn': false, VBtn: false, 'v-icon': false, VIcon: false,
-    }, plugins: [
-        createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }),
-        createVuetify({ components: { VBtn, VIcon, VList, VListItem, VMenu } }),
-    ] } })
-    const options = { global: { plugins: [wrapper.vm.$pinia, createVuetify({ components: { VBtn, VMenu, VList, VListItem } })],
-        components: { 'v-btn': VBtn, 'v-menu': VMenu, 'v-list': VList, 'v-list-item': VListItem },
-        stubs: { 'v-btn': false, VBtn: false, 'v-menu': false, VMenu: false, 'v-list': false, VList: false, 'v-list-item': false, VListItem: false },
-    } }
+    vi.stubGlobal('axios', { post, get: vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+        ? { root: state.module_link?.folder || state.folder, current: state.module_link?.folder || state.folder, entries: [], cursor: null, link_version: state.link_version } : state })) })
+    const stubs = {
+        'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+        'v-dialog': { template: '<section role="dialog"><slot /></section>' },
+    }
+    const wrapper = mount(WorkImportActions, { props: { work, linkOnly: true }, attachTo: document.body, global: { stubs,
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+    } })
+    const options = { global: { plugins: [wrapper.vm.$pinia], stubs } }
     const context = mount(WorkContextCopy, { props: { work, course: { id: 2, title: 'INF' } }, ...options })
     const status = mount(WorkFolderStatus, { props: { work, size: 30 }, ...options })
     const originalUnmount = wrapper.unmount.bind(wrapper)
@@ -46,36 +40,37 @@ function button(wrapper: ReturnType<typeof mountConnection>['wrapper'], text: st
 }
 
 async function chooseUnlink(wrapper: ReturnType<typeof mountConnection>['wrapper']) {
-    await button(wrapper, 'Verbindung').trigger('click')
+    await wrapper.get('[role="button"]').trigger('click')
     await flushPromises()
     if (workDropboxStates.get('7:2:65')?.module_link) {
-        expect(wrapper.getComponent(VList).get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe(saved.module_link.folder.path)
+        expect(wrapper.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe(saved.module_link.folder.path)
     }
-    await wrapper.getComponent(VListItem).trigger('click')
+    await button(wrapper, 'Verbindung trennen').trigger('click')
     await flushPromises()
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
-it('replaces Verknüpfen only for a saved link and unlinks through the separate menu while updating context and passive status', async () => {
+it('opens the saved folder dialog and unlinks only its work while updating context and status', async () => {
     const post = vi.fn().mockResolvedValue({ data: unlinked })
     const { wrapper, context, status, writeText } = mountConnection(post)
     try {
         await flushPromises()
         expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
-        expect(button(wrapper, 'Verbindung')).toBeDefined()
-        expect(status.attributes('tabindex')).toBeUndefined()
-        expect(status.attributes('color')).toBe('success')
+        expect(button(wrapper, 'Verbindung')).toBeUndefined()
+        expect(button(wrapper, 'Verbindung trennen')).toBeUndefined()
+        expect(status.attributes('tabindex')).toBe('0')
+        expect(status.get('[role="img"]').attributes('color')).toBe('success')
         await context.get('button').trigger('click')
         await flushPromises()
         expect(writeText.mock.calls[0][0]).toContain('Ordner: verknüpft – Dropbox: /Materialien/Lerninhalte/Modul')
 
-        await chooseUnlink(wrapper)
+        await chooseUnlink(status)
 
         expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: saved.link_version }, { timeout: 45000 })
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
         expect(button(wrapper, 'Verknüpfen')).toBeDefined()
-        expect(status.attributes('color')).toBe('error')
+        expect(status.get('[role="img"]').attributes('color')).toBe('error')
         await context.get('button').trigger('click')
         await flushPromises()
         expect(writeText.mock.calls[1][0]).toContain('Ordner: nicht verknüpft')
@@ -88,26 +83,26 @@ it('keeps a saved assignment and its copied context after a rejected unlink', as
     const { wrapper, context, status, writeText } = mountConnection(post)
     try {
         await flushPromises()
-        await chooseUnlink(wrapper)
+        await chooseUnlink(status)
         expect(workDropboxStates.get('7:2:65')).toBe(saved)
         expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
-        expect(wrapper.get('[role="alert"]').text()).toContain('Zuordnung wurde geändert.')
+        expect(status.get('[role="alert"]').text()).toContain('Zuordnung wurde geändert.')
         await context.get('button').trigger('click')
         await flushPromises()
         expect(writeText.mock.calls[0][0]).toContain('Ordner: verknüpft')
     } finally { wrapper.unmount() }
 })
 
-it('does not unlink by opening or closing the menu and ignores an uncommitted candidate', async () => {
+it('does not unlink merely by opening the dialog and ignores an uncommitted candidate', async () => {
     const post = vi.fn()
-    const { wrapper } = mountConnection(post, { ...unlinked, candidate: saved.module_link.folder })
+    const { wrapper, status } = mountConnection(post, { ...unlinked, candidate: saved.module_link.folder })
     try {
         await flushPromises()
         expect(button(wrapper, 'Verknüpfen')).toBeDefined()
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
         workDropboxStates.set('7:2:65', saved)
         await flushPromises()
-        await button(wrapper, 'Verbindung').trigger('click')
+        await status.get('[role="button"]').trigger('click')
         await flushPromises()
         expect(post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -117,7 +112,7 @@ it('supports legacy folder associations and starts unlinked again after a fresh 
     const { wrapper } = mountConnection(vi.fn(), { ...saved, module_link: null, folder: { id: 'id:old', name: 'Altordner', path: '/Altordner' } })
     try {
         await flushPromises()
-        expect(button(wrapper, 'Verbindung')).toBeDefined()
+        expect(button(wrapper, 'Verbindung')).toBeUndefined()
         expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
         clearWorkDropboxStates()
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: unlinked }) })
@@ -134,10 +129,10 @@ it('supports legacy folder associations and starts unlinked again after a fresh 
 it('does not apply a delayed unlink response to a newly selected user', async () => {
     let finish: (value: unknown) => void = () => {}
     const post = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
-    const { wrapper } = mountConnection(post)
+    const { wrapper, status } = mountConnection(post)
     try {
         await flushPromises()
-        await chooseUnlink(wrapper)
+        await chooseUnlink(status)
         useAdminStore().config.user.id = 8
         await flushPromises()
         finish({ data: unlinked })

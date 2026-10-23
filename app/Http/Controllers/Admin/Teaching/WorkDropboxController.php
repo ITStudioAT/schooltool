@@ -9,6 +9,7 @@ use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
+use App\Services\DropboxFolderContents;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingWorkDispatchImport;
@@ -17,6 +18,7 @@ use App\Services\TeachingWorkJsonImport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
 
 class WorkDropboxController extends Controller
@@ -40,8 +42,8 @@ class WorkDropboxController extends Controller
         $ownModule = $module && $module->dropbox_connection_id === $connection->id && $module->account_id === $connection->account_id;
         $exercise = null;
         if (request()->boolean('include_exercise')) {
-            $data = request()->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
-            $exercise = $ownModule ? $modules->exercise($connection, $course_work, $module, $data['date'] ?? null)
+            $data = request()->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'refresh' => ['sometimes', 'boolean']]);
+            $exercise = $ownModule ? $modules->exercise($connection, $course_work, $module, $data['date'] ?? null, refresh: request()->boolean('refresh'))
                 : ['status' => 'missing', 'folder' => null];
         }
         if ($folder && request()->boolean('include_folder_path')) {
@@ -114,11 +116,77 @@ class WorkDropboxController extends Controller
         return redirect($returnPath);
     }
 
-    public function folders(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
+    public function folders(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse|Response
     {
         $actor = $this->actor($course_work);
         $data = $request->validate(['folder_id' => ['nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
-            'cursor' => ['nullable', 'string', 'max:4096'], 'suggest' => ['sometimes', 'boolean']]);
+            'cursor' => ['nullable', 'string', 'max:4096'], 'suggest' => ['sometimes', 'boolean'],
+            'contents' => ['sometimes', 'boolean'], 'exercise' => ['sometimes', 'boolean'],
+            'section' => ['nullable', 'string', 'in:Angaben,Bewertungskriterien,Abgaben,Auswertungen'],
+            'pdf' => ['sometimes', 'boolean'],
+            'file_id' => ['required_if:pdf,1', 'nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
+            'date' => ['nullable', 'date_format:Y-m-d']]);
+        if ($request->boolean('contents')) {
+            abort_if($request->boolean('pdf') && (! $request->boolean('exercise') || ! filled($data['section'] ?? null)
+                || filled($data['folder_id'] ?? null) || filled($data['cursor'] ?? null)), 422, 'PDFs nur direkt aus einem bestätigten Prüfungsbereich öffnen.');
+            abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+            $connection = $dropbox->connection($actor);
+            $modules = app(DropboxModuleLinks::class);
+            $module = $modules->current($course_work);
+            $linked = TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
+                ->where('teaching_course_work_id', $course_work->id)->first();
+            $version = $modules->assignmentVersion($connection, $course_work, $module, $linked);
+            $excludedFolders = [];
+            if ($module && $module->dropbox_connection_id === $connection->id && $module->account_id === $connection->account_id) {
+                $exercise = $modules->exercise($connection, $course_work, $module, $data['date'] ?? null, initial: false);
+                abort_unless($exercise['status'] !== 'unknown' && (! $request->boolean('exercise') || $exercise['status'] === 'found'),
+                    409, 'Die Leistungsfeststellung konnte nicht eindeutig bestätigt werden.');
+                if ($exercise['status'] === 'found') {
+                    $rootId = $exercise['folder']['id'];
+                } else {
+                    $confirmed = $modules->inspect($connection, $module->handshake_file_id);
+                    abort_unless($confirmed['folder_id'] === $module->folder_id
+                        && strcasecmp($confirmed['module_id'], $module->module_id) === 0, 409, 'Die Modulverbindung hat sich geändert.');
+                    $rootId = $confirmed['folder_id'];
+                    $excludedFolders = ['Leistungsfeststellung'];
+                }
+            } else {
+                abort_unless($linked && ! $request->boolean('exercise'), 409, 'Kein Arbeitsordner verknüpft.');
+                $rootId = $linked->folder_id;
+            }
+            if (filled($data['section'] ?? null)) {
+                abort_unless($request->boolean('exercise'), 422, 'Prüfungsunterlagen erfordern eine bestätigte Leistungsfeststellung.');
+                $rootContents = app(DropboxFolderContents::class)->read($connection, $rootId);
+                $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
+                    && $entry['name'] === $data['section']));
+                abort_unless(count($sections) === 1 && $rootContents['cursor'] === null, 404, 'Dieser Bereich ist im Prüfungsordner noch nicht verfügbar.');
+                $rootId = $sections[0]['id'];
+            }
+            $contents = app(DropboxFolderContents::class)->read($connection, $rootId, $data['folder_id'] ?? null, $data['cursor'] ?? null, $excludedFolders);
+            if ($request->boolean('pdf')) {
+                abort_unless(collect($contents['entries'])->contains(fn (array $entry): bool => $entry['type'] === 'file'
+                    && $entry['id'] === $data['file_id'] && preg_match('/\.pdf\z/i', $entry['name'])), 404, 'Die PDF gehört nicht zu diesem Prüfungsbereich.');
+                $pdf = app(DropboxFolderContents::class)->pdf($connection, $rootId, $data['file_id']);
+            }
+            if (isset($rootContents)) {
+                $scopePath = mb_strtolower($rootContents['root']['path']);
+                abort_unless(dirname($dropbox->metadata($connection, $rootId)['path_lower']) === $scopePath
+                    && $dropbox->metadata($connection, $rootContents['root']['id'])['path_lower'] === $scopePath,
+                    409, 'Der Prüfungsbereich wurde während des Lesens verschoben. Bitte erneut öffnen.');
+            }
+            $currentLinked = TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
+                ->where('teaching_course_work_id', $course_work->id)->first();
+            abort_unless($version === $modules->assignmentVersion($connection, $course_work, $modules->current($course_work), $currentLinked)
+                && $connection->fresh()?->account_id === $connection->account_id && ! $connection->fresh()?->revoked_at,
+                409, 'Die Verbindung wurde während des Lesens geändert. Bitte erneut öffnen.');
+
+            if (isset($pdf)) {
+                return response($pdf['bytes'])->withHeaders(['Content-Type' => 'application/pdf', 'Content-Disposition' => 'inline',
+                    'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+            }
+
+            return response()->json($contents + ['link_version' => $version])->header('Cache-Control', 'private, no-store');
+        }
         if ($request->boolean('suggest')) {
             return response()->json($dropbox->suggestFolders($dropbox->connection($actor), $course_work));
         }

@@ -25,12 +25,12 @@ it('shows the assigned folder even before the first import and updates when the 
     workDropboxStates.set('7:2:65', { folder: { id: 'id:folder', name: 'Dateimanagement' }, can_quick_import: false })
     const wrapper = mountStatus()
 
-    expect(wrapper.attributes('color')).toBe('success')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
     expect(wrapper.attributes('title')).toBe('Ordner verknüpft: Dateimanagement')
 
     workDropboxStates.set('7:2:65', { folder: null })
     await flushPromises()
-    expect(wrapper.attributes('color')).toBe('error')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('error')
     expect(wrapper.attributes('title')).toBe('Kein Ordner mit dieser Arbeit verknüpft')
     wrapper.unmount()
 })
@@ -39,18 +39,19 @@ it('does not infer a link from an import or a suggested folder', () => {
     workDropboxStates.set('7:2:65', { folder: null, has_import: true, suggested_folder: { id: 'id:other' } })
     const wrapper = mountStatus()
 
-    expect(wrapper.attributes('color')).toBe('error')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('error')
     expect(wrapper.attributes('aria-label')).toBe('Kein Ordner mit dieser Arbeit verknüpft')
     wrapper.unmount()
 })
 
-it('displays a saved handshake module link without import evidence and has no action', () => {
+it('displays a saved handshake module link and makes its folder accessible by keyboard', () => {
     workDropboxStates.set('7:2:65', { folder: null, module_link: { module_id: 'module', folder: { id: 'id:module', name: 'Modul', path: '/Materialien/Modul' } } })
     const wrapper = mountStatus()
 
-    expect(wrapper.attributes('color')).toBe('success')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
     expect(wrapper.attributes('title')).toBe('Ordner verknüpft: /Materialien/Modul')
-    expect(wrapper.attributes('tabindex')).toBeUndefined()
+    expect(wrapper.attributes('tabindex')).toBe('0')
+    expect(wrapper.attributes('role')).toBe('button')
     expect(wrapper.find('button').exists()).toBe(false)
     wrapper.unmount()
 })
@@ -62,13 +63,13 @@ it('loads the saved assignment and keeps another user or work separate', async (
     workDropboxStates.set('8:2:65', { folder: null })
     const wrapper = mountStatus()
 
-    expect(wrapper.attributes('color')).toBe('grey')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
     await flushPromises()
     expect(wrapper.attributes('title')).toBe('Ordner verknüpft: Gespeicherter Ordner')
 
     useAdminStore().config.user.id = 8
     await flushPromises()
-    expect(wrapper.attributes('color')).toBe('error')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('error')
     expect(get).toHaveBeenCalledTimes(1)
     wrapper.unmount()
 })
@@ -78,7 +79,7 @@ it('keeps a failed lookup distinct from a missing folder', async () => {
     const wrapper = mountStatus()
 
     await flushPromises()
-    expect(wrapper.attributes('color')).toBe('grey')
+    expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
     expect(wrapper.attributes('title')).toBe('Ordnerverknüpfung konnte nicht geprüft werden')
     wrapper.unmount()
 })

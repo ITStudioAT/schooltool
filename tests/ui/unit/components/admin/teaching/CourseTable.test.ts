@@ -26,7 +26,7 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
 
 const { openModuleLink } = vi.hoisted(() => ({ openModuleLink: vi.fn() }))
 vi.mock('@/pages/admin/teaching/overview/components/WorkDropboxLink.vue', () => ({ default: {
@@ -34,6 +34,34 @@ vi.mock('@/pages/admin/teaching/overview/components/WorkDropboxLink.vue', () => 
 } }))
 
 describe('CourseTable manual work completion', () => {
+    it('checks the overview before offering creation and reuses the confirmed result', async () => {
+        clearWorkDropboxStates()
+        let finish: (value: unknown) => void = () => {}
+        const status = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
+        vi.stubGlobal('axios', { get: status })
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [first] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.get('[aria-label="Nächste Aktion: Wird geprüft …"]').text()).toBe('Wird geprüft …')
+            workDropboxStates.set('7:18:66', { module_link: { folder: { id: 'id:other' } } })
+            await flushPromises()
+            expect(card.text()).not.toContain('LF erstellen')
+            const checked = { connected: true, folder: null, module_link: { folder: { id: 'id:module' } },
+                exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' } } }
+            finish({ data: checked })
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: LF erstellt"]').text()).toContain('LF erstellt')
+            expect(card.text()).toContain('Stand:')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { status: 'missing' } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: LF erstellen"]').text()).toContain('LF erstellen')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
     function mountCompletionTable() {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-12' }
@@ -148,8 +176,11 @@ describe('CourseTable manual work completion', () => {
             const card = wrapper.get('.course-table-work-summary')
             expect(card.text()).toContain('Erste Arbeit')
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
-            expect(card.findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
-            if (enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('error')
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
+            if (enabled) {
+                expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
+                expect(card.getComponent({ name: 'WorkFolderStatus' }).props('date')).toBe('2026-10-12')
+            }
             expect(card.get('v-icon').attributes('icon')).toBe(icon)
             expect(card.get('v-icon').attributes('aria-label')).toBe(label)
             expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
@@ -159,7 +190,7 @@ describe('CourseTable manual work completion', () => {
             expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
             expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
             expect(card.text()).not.toContain(nextLabel)
-            expect(card.findAll('v-icon')).toHaveLength(enabled ? 2 : 3)
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(enabled ? 2 : 3)
             expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
 
             await card.get('v-icon').trigger('click')
@@ -171,7 +202,7 @@ describe('CourseTable manual work completion', () => {
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.')
             expect(card.findAll('[data-work-status]')).toHaveLength(0)
             expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
-            if (!enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).attributes('color')).toBe('success')
+            if (!enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('success')
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
@@ -695,7 +726,7 @@ describe('CourseTable evaluation PDF links', () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         clearWorkDropboxStates()
         useAdminStore(pinia).config = { user: { id: 7 } } as never
-        workDropboxStates.set('7:18:65', { folder: null, can_quick_import: false })
+        workDropboxStates.set('7:18:65', { module_link: { folder: { id: 'id:module' } }, folder: null, can_quick_import: false })
         const courseDate = { id: 1, date: '2026-10-02' }
         const student = { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }
         useCourseStore(pinia).selected_course = {
@@ -758,7 +789,7 @@ describe('CourseTable evaluation PDF links', () => {
             } } })
             globalThis.axios = { get: exportRequest } as never
             try {
-                const exportButton = card.findAll('v-btn').find(button => button.text() === 'Ordner anlegen (KI)')!
+                const exportButton = card.findAll('v-btn').find(button => button.text() === 'Leistungsfeststellung erstellen')!
                 expect(exportButton.attributes('disabled')).toBe('false')
                 exportButton.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
                 await flushPromises()
@@ -770,6 +801,8 @@ describe('CourseTable evaluation PDF links', () => {
             expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
+            workDropboxStates.set('7:18:65', { folder: null, can_quick_import: false })
+            await flushPromises()
             const imports = card.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')
             expect(imports).toHaveLength(1)
             await imports[0].trigger('click')
@@ -787,7 +820,7 @@ describe('CourseTable evaluation PDF links', () => {
             expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
             expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(1)
             const actions = form.get('[aria-label="Weitere Aktionen"]')
-            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Verknüpfen', 'Kontext kopieren', 'Leistungsfeststellung erstellen'])
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Verknüpfen', 'Kontext kopieren', 'Erneut prüfen'])
             expect(actions.findAll('[href]')).toHaveLength(0)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 

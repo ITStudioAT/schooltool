@@ -1,10 +1,15 @@
 <template>
     <span class="exercise-action" @click.stop>
-        <span v-if="exerciseFolder" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
+        <template v-if="exerciseFolder">
+            <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
+        </template>
         <span v-else-if="exerciseChecking" role="status" class="text-body-2">Leistungsfeststellung wird geprüft …</span>
-        <v-btn v-else size="small" variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="disabled || !current" @click="openDialog">Leistungsfeststellung erstellen</v-btn>
+        <v-btn v-else-if="moduleLinked && checkedStatus === 'missing'" size="small" variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="disabled || !current" @click="openDialog">Leistungsfeststellung erstellen</v-btn>
         <span v-if="!work?.id" class="d-block text-caption mt-1">Arbeit zuerst speichern, damit Arbeitskennung und Prüfungskandidaten bestätigt werden können.</span>
         <span v-if="exerciseMessage" role="status" class="d-block text-caption mt-1">{{ exerciseMessage }}</span>
+        <span v-if="checkedAt && !exerciseChecking" class="d-block text-caption mt-1">Letzter Check: {{ checkTime }}</span>
+        <v-btn v-if="active && current && !exerciseChecking" size="small" variant="text" prepend-icon="mdi-refresh"
+            :disabled="disabled" @click="checkExercise(true)">Erneut prüfen</v-btn>
     </span>
     <v-dialog v-if="opened" v-model="opened" max-width="640" :persistent="loading">
         <v-card>
@@ -33,11 +38,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
-import { show } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
-import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true } })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean })
 const emit = defineEmits(['exercise-status'])
 const admin = useAdminStore()
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
@@ -50,31 +54,45 @@ const message = ref('')
 const copyText = ref(null)
 const exerciseFolder = ref(null)
 const exerciseChecking = ref(false)
+const checkedStatus = ref('unknown')
+const checkedAt = ref(null)
+const checkTime = computed(() => checkedAt.value ? new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna',
+    dateStyle: 'short', timeStyle: 'short' }).format(new Date(checkedAt.value)) : '')
+const moduleLinked = ref(false)
 const exerciseMessage = ref('')
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
 const bindingVersion = computed(() => JSON.stringify([binding.value?.connected, binding.value?.link_version, binding.value?.module_link]))
 let sequence = 0
 let controller = null
 let exerciseSequence = 0
-let exerciseController = null
 
-async function checkExercise() {
+async function checkExercise(fresh = false) {
     const operation = ++exerciseSequence
-    exerciseController?.abort()
     exerciseFolder.value = null
+    moduleLinked.value = false
+    opened.value = false
     exerciseMessage.value = ''
-    exerciseChecking.value = props.active && current.value
+    checkedAt.value = null
+    const key = workDropboxKey(admin.config?.user?.id, props.work)
+    const cached = !fresh && props.active && current.value ? workExerciseCheck(key, props.work, props.date) : null
+    exerciseChecking.value = props.active && current.value && !cached
     const context = { userId: admin.config?.user?.id, workId: props.work?.id, courseId: props.course?.id, date: props.date }
-    const publish = (status, folder = null) => emit('exercise-status', { ...context, status, folder })
-    publish(exerciseChecking.value ? 'checking' : 'unknown')
-    if (!exerciseChecking.value) return
-    exerciseController = new AbortController()
+    const publish = (status, folder = null) => {
+        checkedStatus.value = status
+        emit('exercise-status', { ...context, status, folder, checkedAt: checkedAt.value })
+    }
+    if (cached) {
+        checkedAt.value = cached.checkedAt
+        moduleLinked.value = Boolean(cached.data.connected && cached.data.module_link?.folder?.id)
+        exerciseFolder.value = cached.status === 'found' ? cached.folder : null
+    }
+    publish(cached ? cached.status : exerciseChecking.value ? 'checking' : 'unknown', cached?.folder)
+    if (!props.active || !current.value) return
     try {
-        const { data } = await axios.get(show.url(props.work.id), {
-            params: { include_exercise: 1, ...(props.date ? { date: props.date } : {}) }, signal: exerciseController.signal,
-            timeout: 45000,
-        })
+        const data = await loadWorkExercise(key, props.work, props.date, fresh)
         if (operation !== exerciseSequence) return
+        checkedAt.value = workExerciseCheck(key, props.work, props.date)?.checkedAt || null
+        moduleLinked.value = Boolean(data.connected && data.module_link?.folder?.id)
         if (data.connected && data.module_link?.folder?.id && data.exercise?.status === 'found'
             && typeof data.exercise.folder?.name === 'string' && data.exercise.folder.name.trim()) {
             exerciseFolder.value = data.exercise.folder
@@ -88,6 +106,7 @@ async function checkExercise() {
         }
     } catch {
         if (operation === exerciseSequence) {
+            checkedAt.value = workExerciseCheck(workDropboxKey(admin.config?.user?.id, props.work), props.work, props.date)?.checkedAt || null
             publish('unknown')
             exerciseMessage.value = 'Der Anlagezustand konnte nicht geprüft werden. Bitte den Dialog erneut öffnen.'
         }
@@ -106,14 +125,14 @@ function clear() {
 }
 
 function openDialog() {
-    if (!current.value || props.disabled || exerciseChecking.value || exerciseFolder.value) return
+    if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || exerciseFolder.value) return
     clear()
     includeMc.value = false
     opened.value = true
 }
 
 async function copyExport() {
-    if (!opened.value || !current.value || loading.value) return
+    if (!opened.value || !current.value || !moduleLinked.value || loading.value) return
     clear()
     const operation = sequence
     const workId = props.work.id
@@ -155,8 +174,8 @@ async function copyExport() {
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); opened.value = false })
 watch(opened, value => { if (!value) clear() })
 watch(includeMc, clear)
-watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value], checkExercise, { immediate: true })
-onBeforeUnmount(() => { clear(); exerciseSequence++; exerciseController?.abort() })
+watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value], () => checkExercise(), { immediate: true })
+onBeforeUnmount(() => { clear(); exerciseSequence++ })
 </script>
 
 <style scoped>

@@ -4,10 +4,85 @@ import { folders, show } from '@/actions/App/Http/Controllers/Admin/Teaching/Wor
 export const workDropboxStates = shallowReactive(new Map())
 const pending = new Map()
 const suggestions = new Map()
+const exerciseChecks = shallowReactive(new Map())
+const exercisePending = new Map()
+const exerciseStoragePrefix = 'schooltool:work-preparation:v1:'
 let generation = 0
 
 export function workDropboxKey(userId, work) {
     return userId && work?.id && work?.teaching_course_id ? `${userId}:${work.teaching_course_id}:${work.id}` : null
+}
+
+export function workDropboxBinding(state) {
+    return JSON.stringify([state?.connected, state?.link_version, state?.module_link, state?.folder?.id])
+}
+
+function exerciseKey(key, work, date) {
+    return JSON.stringify([key, date, work?.date_for_all_groups, (work?.groups || []).map(group => group.date)])
+}
+
+export function workExerciseCheck(key, work, date = '') {
+    if (!key) return null
+    const cacheKey = exerciseKey(key, work, date)
+    let entry = exerciseChecks.get(cacheKey)
+    if (!entry) {
+        try {
+            const saved = JSON.parse(localStorage.getItem(exerciseStoragePrefix + cacheKey) || 'null')
+            if (saved && ['found', 'missing', 'unknown'].includes(saved.status) && typeof saved.binding === 'string'
+                && Number.isFinite(Date.parse(saved.checkedAt)) && saved.data && saved.binding === workDropboxBinding(saved.data)) {
+                entry = saved
+                exerciseChecks.set(cacheKey, entry)
+            }
+        } catch { /* A blocked browser cache must not prevent checking Dropbox. */ }
+    }
+    return entry && (!workDropboxStates.has(key) || entry.binding === workDropboxBinding(workDropboxStates.get(key))) ? entry : null
+}
+
+function saveExerciseCheck(cacheKey, entry) {
+    exerciseChecks.set(cacheKey, entry)
+    try { localStorage.setItem(exerciseStoragePrefix + cacheKey, JSON.stringify(entry)) } catch { /* Keep the in-memory result. */ }
+}
+
+export async function loadWorkExercise(key, work, date = '', fresh = false) {
+    if (!key) return null
+    const cached = workExerciseCheck(key, work, date)
+    if (cached && !fresh) {
+        if (!workDropboxStates.has(key)) workDropboxStates.set(key, cached.data)
+        return cached.data
+    }
+    const cacheKey = exerciseKey(key, work, date)
+    const binding = workDropboxBinding(workDropboxStates.get(key))
+    const requestKey = JSON.stringify([cacheKey, binding])
+    if (exercisePending.has(requestKey)) return exercisePending.get(requestKey)
+    const requestGeneration = generation
+    const request = axios.get(show.url(work.id), { timeout: 45000,
+        params: { include_exercise: 1, ...(date ? { date } : {}), ...(fresh ? { refresh: 1 } : {}) },
+    }).then(response => {
+        const data = response.data
+        const currentBinding = workDropboxBinding(workDropboxStates.get(key))
+        if (generation !== requestGeneration || (currentBinding !== binding && currentBinding !== workDropboxBinding(data))) {
+            throw new Error('Die Verbindung wurde während der Prüfung geändert.')
+        }
+        const status = data.connected && data.module_link?.folder?.id ? data.exercise?.status : 'missing'
+        saveExerciseCheck(cacheKey, { binding: workDropboxBinding(data), status: ['found', 'missing'].includes(status) ? status : 'unknown',
+            data, folder: status === 'found' ? data.exercise?.folder : null,
+            checkedAt: Number.isFinite(Date.parse(data.exercise?.checked_at)) ? data.exercise.checked_at : new Date().toISOString() })
+        workDropboxStates.set(key, data)
+        return data
+    }).catch(error => {
+        if (generation === requestGeneration && workDropboxBinding(workDropboxStates.get(key)) === binding) {
+            const data = { ...workDropboxStates.get(key), exercise: { status: 'unknown', folder: null,
+                message: 'Der Anlagezustand konnte nicht geprüft werden. Bitte erneut prüfen.' } }
+            saveExerciseCheck(cacheKey, { binding, status: 'unknown', data, folder: null, checkedAt: new Date().toISOString() })
+        }
+        throw error
+    }).finally(() => {
+        if (exercisePending.get(requestKey) === request) exercisePending.delete(requestKey)
+        if (pending.get(key)?.request === request) pending.delete(key)
+    })
+    exercisePending.set(requestKey, request)
+    if (!pending.has(key)) pending.set(key, { request })
+    return request
 }
 
 export async function loadWorkDropbox(key, workId, fresh = false, options = {}) {
@@ -33,9 +108,18 @@ export async function loadWorkDropboxSuggestions(key, work, options = {}) {
     return response.data
 }
 
-export function clearWorkDropboxStates() {
+export function clearWorkDropboxStates(forgetChecks = true) {
     generation++
     pending.clear()
     suggestions.clear()
+    exerciseChecks.clear()
+    exercisePending.clear()
     workDropboxStates.clear()
+    if (forgetChecks) {
+        try {
+            for (const key of Object.keys(localStorage)) {
+                if (key.startsWith(exerciseStoragePrefix)) localStorage.removeItem(key)
+            }
+        } catch { /* Browser storage may be unavailable. */ }
+    }
 }

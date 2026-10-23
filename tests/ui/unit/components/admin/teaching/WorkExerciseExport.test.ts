@@ -9,7 +9,7 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
 
-function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: false } })) {
+function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options) : get(url, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     return mount(WorkExerciseExport, { attachTo: document.body, props: { work, course, date: '2026-10-20' }, global: {
@@ -90,7 +90,7 @@ it('does not export an unsaved work or copy an unconfirmed roster', async () => 
     const wrapper = mountExport(get, writeText)
     try {
         await wrapper.setProps({ work: { ...work, id: null } })
-        expect(button(wrapper, 'Leistungsfeststellung erstellen').attributes('disabled')).toBeDefined()
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
         await wrapper.setProps({ work })
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
@@ -135,34 +135,39 @@ it('shows the complete externally confirmed folder name instead of creation', as
     } finally { wrapper.unmount() }
 })
 
-it.each([false, true])('keeps export usable when no module or no unambiguous folder is confirmed (%s)', async linked => {
+it.each([false, true])('keeps creation unavailable for an unconfirmed exercise (%s)', async linked => {
     const status = vi.fn().mockResolvedValue({ data: linked ? { ...linkedExercise, exercise: { status: 'unknown', folder: null, message: 'Mehrere passende Ordner.' } }
         : { ...linkedExercise, module_link: null } })
     const wrapper = mountExport(undefined, undefined, status)
     try {
         await flushPromises()
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(false)
-        expect(button(wrapper, 'Leistungsfeststellung erstellen').attributes('disabled')).toBeUndefined()
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
         if (linked) expect(wrapper.get('[role="status"]').text()).toContain('Mehrere passende Ordner')
     } finally { wrapper.unmount() }
 })
 
-it('refreshes the external folder on reopening and clears it immediately when unlinked', async () => {
+it('reuses the last check on reopening, refreshes explicitly and clears it immediately when unlinked', async () => {
+    workDropboxStates.set('7:2:65', { connected: true, module_link: linkedExercise.module_link, folder: null })
     const status = vi.fn().mockResolvedValue({ data: linkedExercise })
     const wrapper = mountExport(undefined, undefined, status)
     try {
         await flushPromises()
+        expect(workDropboxStates.get('7:2:65')?.exercise?.folder?.id).toBe('id:exercise')
         await wrapper.setProps({ active: false })
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(false)
         await wrapper.setProps({ active: true })
         await flushPromises()
-        expect(status).toHaveBeenCalledTimes(2)
+        expect(status).toHaveBeenCalledTimes(1)
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(true)
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await flushPromises()
+        expect(status).toHaveBeenCalledTimes(2)
         status.mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing', folder: null } } })
         workDropboxStates.set('7:2:65', { connected: true, module_link: null, link_version: 'unlinked' })
         await flushPromises()
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(false)
-        expect(button(wrapper, 'Leistungsfeststellung erstellen').exists()).toBe(true)
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
@@ -178,7 +183,7 @@ it('ignores an old folder response after changing the module and reports failed 
         await flushPromises()
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(false)
         expect(wrapper.get('[role="status"]').text()).toContain('nicht geprüft')
-        expect(button(wrapper, 'Leistungsfeststellung erstellen').exists()).toBe(true)
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
@@ -194,7 +199,7 @@ it.each([false, true])('hides creation while the initial folder check is pending
         await flushPromises()
         expect(wrapper.text()).not.toContain('wird geprüft')
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(found)
-        expect(Boolean(button(wrapper, 'Leistungsfeststellung erstellen'))).toBe(!found)
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
@@ -212,7 +217,7 @@ it('keeps creation hidden when an old check finishes before the current module c
         expect(wrapper.get('[role="status"]').text()).toContain('wird geprüft')
         finishes[1]({ data: { connected: false } })
         await flushPromises()
-        expect(button(wrapper, 'Leistungsfeststellung erstellen').exists()).toBe(true)
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
         expect(wrapper.text()).not.toContain('wird geprüft')
     } finally { wrapper.unmount() }
 })
