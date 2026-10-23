@@ -4,7 +4,7 @@
         <div v-if="!guest" class="ns-student-toolbar"><RouterLink to="/student/overview">Meine Fächer</RouterLink><button class="ns-student-menu" @click="drawer = true">Mein Menü</button></div>
         <NumberSystemPlayer v-if="runId" :key="runId" :run-id="runId" @back="back" />
         <div v-else class="ns-game">
-            <header><h1>Signal Null</h1><p class="ns-muted" style="margin-top:12px">Das Rechenzentrum wartet auf dich. Finde deinen Kurs, stelle die Verbindung her und rette die Datenwege.</p></header>
+            <header><h1>Signal Null</h1><p class="ns-muted" style="margin-top:12px">Rette das Rechenzentrum: Rechne Zahlen um, finde Fehler und entziffere Nachrichten. Für jeden geschafften Bereich sammelst du ein Abzeichen.</p></header>
             <div v-if="error" class="ns-alert ns-alert-error" role="alert">{{ error }} <RouterLink :to="loginDestination">Zur Schüleranmeldung</RouterLink></div>
             <section class="ns-panel" style="margin-top:24px">
                 <h2>Einer Klassenrunde beitreten</h2>
@@ -15,14 +15,14 @@
                 <form v-else class="ns-stack" style="margin-top:16px" @submit.prevent="joinSession">
                     <h3>{{ found.title }}</h3>
                     <template v-if="found.guest"><label class="ns-field"><span>Dein Anzeigename</span><input v-model="displayName" required maxlength="60" autocomplete="nickname" /></label><p class="ns-small">Du spielst als externe Person ohne Schooltool-Konto. Zum Fortsetzen denselben Browser verwenden und die Browser-Sitzung beibehalten. Jede Person im Team braucht einen eigenen Browser oder ein eigenes Gerät.</p></template>
-                    <p v-if="found.status === 'ended'" class="ns-muted">Diese Runde ist beendet. Bereits gespeicherte Wege kannst du unten weiter ansehen.</p>
+                    <p v-if="found.status === 'ended'" class="ns-muted">Diese Runde ist beendet. Deinen gespeicherten Fortschritt kannst du unten weiter ansehen.</p>
                     <template v-if="found.mode === 'teams'">
                         <p>{{ found.guest ? 'Jedes Teammitglied tritt mit einem eigenen Gastzugang bei.' : 'Jedes Teammitglied braucht den Kurscode und einen persönlichen Schülerzugang.' }} Eine Person gründet das Team und gibt dessen privaten Teamcode weiter.</p>
                         <div class="ns-form"><label class="ns-choice"><input v-model="teamChoice" type="radio" value="new" />Neues Team gründen</label><label class="ns-choice"><input v-model="teamChoice" type="radio" value="existing" />Zu meinem Team</label></div>
                         <label v-if="teamChoice === 'new'" class="ns-field"><span>Neuer Teamname</span><input v-model="teamName" required maxlength="60" /></label>
                         <label v-else class="ns-field"><span>Privater Teamcode aus deiner Gruppe</span><input v-model="teamCode" required maxlength="12" autocapitalize="characters" autocomplete="off" /></label>
                     </template>
-                    <p v-else>Du spielst mit deinem gespeicherten Weg. An einem gemeinsamen Gerät könnt ihr zusammen überlegen.</p>
+                    <p v-else>Du hast einen eigenen Spielstand. Wenn ihr zu zweit an einem Gerät spielt, könnt ihr gemeinsam überlegen.</p>
                     <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="found = null">Anderer Kurscode</button><button class="ns-button" :disabled="busy || found.status === 'ended' || (found.guest && !displayName.trim())">{{ busy ? 'Verbindung wird hergestellt …' : 'Abenteuer beitreten' }}</button></div>
                 </form>
             </section>
@@ -30,7 +30,7 @@
                 <h2>Meine gespeicherten Abenteuer</h2><p class="ns-small ns-muted" style="margin-top:8px">Fortsetzen lädt dieselben Rätsel und deinen gespeicherten Fortschritt. Ein neues Abenteuer startet deine Lehrkraft mit einem neuen Kurscode.</p>
                 <p v-if="loading" style="margin-top:12px" role="status">Abenteuer werden geladen …</p>
                 <p v-else-if="!runs.length" class="ns-muted" style="margin-top:16px">Du bist noch keiner Runde beigetreten.</p>
-                <ul class="ns-session-list"><li v-for="run in runs" :key="run.id" class="ns-session-row"><div><h3>{{ run.title }}</h3><p class="ns-small ns-muted">{{ run.team_name || 'Eigener Weg' }} · {{ run.solved }} / {{ run.total }} bestätigt</p></div><button class="ns-button ns-button-secondary" @click="open(run.id)">{{ run.completed || run.status === 'ended' ? 'Fortschritt ansehen' : 'Fortsetzen' }}</button></li></ul>
+                <ul class="ns-session-list"><li v-for="run in runs" :key="run.id" class="ns-session-row"><div><h3>{{ run.title }}</h3><p class="ns-small ns-muted">{{ run.team_name || 'Dein Spielstand' }} · {{ run.solved }} / {{ run.total }} Aufgaben gelöst</p></div><button class="ns-button ns-button-secondary" @click="open(run.id)">{{ run.completed || run.status === 'ended' ? 'Fortschritt ansehen' : 'Fortsetzen' }}</button></li></ul>
             </section>
         </div>
     </main>

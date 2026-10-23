@@ -187,8 +187,8 @@ class NumberSystemEngine
             $mission['directions'] = ['binary_hex', 'hex_decimal', 'decimal_binary', 'decimal_hex'];
             $mission['explanation'] = implode(' ', array_map(fn (array $spec): string => $this->explain($spec['value']), $mission['solution']));
         }
-        $mission['hints'] = [$this->strategy($mission), 'Nutze das Logbuch: Stellenwerte von rechts, Hex in Vierergruppen. Prüfe Ergebnis und Rechenschritt getrennt.',
-            'Durchgerechnete Hilfe: '.$this->solutionText($mission).' '.$mission['explanation']];
+        $mission = $this->clarifyMission($mission);
+        $mission['hints'] = $this->hintTexts($mission, 3);
 
         return $mission;
     }
@@ -196,7 +196,121 @@ class NumberSystemEngine
     /** @return array<string, mixed> */
     public function publicMission(array $mission): array
     {
+        $mission = $this->clarifyMission($mission);
         unset($mission['solution'], $mission['hints'], $mission['explanation'], $mission['private_clues']);
+
+        return $mission;
+    }
+
+    /** @return list<string> */
+    public function hintTexts(array $mission, int $count): array
+    {
+        $mission = $this->clarifyMission($mission);
+
+        return array_slice([$this->strategy($mission),
+            'Prüfe ein Feld nach dem anderen. Die Rechenhilfe rechts erklärt die Stellenwerte und zeigt eine Tabelle für Dual- und Hexzahlen.',
+            'Lösung mit Rechenweg: '.$this->solutionText($mission).' '.$mission['explanation']], 0, max(0, min(3, $count)));
+    }
+
+    /** Update wording for new and saved rounds without changing their numbers, identities or solutions. */
+    private function clarifyMission(array $mission): array
+    {
+        $kind = $mission['kind'];
+        $mission['instructions'] = match ($kind) {
+            'bits' => ['Klicke auf die Schalter: 1 bedeutet ein, 0 bedeutet aus.', 'Addiere die Zahlen über den eingeschalteten Schaltern. Ihre Summe muss zur vorgegebenen Zahl passen.'],
+            'nibbles' => ['Wähle in jedem Auswahlfeld eine Hexziffer aus.', 'Die linke Ziffer steht für die größere Stelle. Führende Nullen sind erlaubt.'],
+            'convert' => ['Rechne die vorgegebene Zahl in eine Dezimalzahl um.', 'Fülle auch die Felder zum Rechenweg aus.'],
+            'repair' => ['Vergleiche beide Zahlen mit der richtigen Dezimalzahl.', 'Korrigiere die falsche Zahl und wähle aus, welche Darstellung vorher falsch war.'],
+            'discover' => ['Lies die Beispiele.', 'Wähle darunter die Aussage, die zu allen Beispielen passt.'],
+            'message' => ['Öffne bei Bedarf die ASCII-Tabelle in der Rechenhilfe.', 'Ein Zeichencode steht für genau einen Buchstaben oder ein Leerzeichen.'],
+            default => ['Rechne für jedes Schloss die vorgegebene Zahl um.', 'Alle vier Felder müssen richtig sein.'],
+        };
+        if (in_array($kind, ['bits', 'nibbles', 'convert'], true)) {
+            $source = [2 => 'Binärzahl', 10 => 'Dezimalzahl', 16 => 'Hexadezimalzahl'][$mission['source_base']];
+            $target = [2 => 'eine Binärzahl (Dualzahl)', 10 => 'eine Dezimalzahl', 16 => 'eine Hexadezimalzahl'][$mission['target_base']];
+            $mission['title'] = match ($kind) {
+                'bits' => 'Stelle die Binärzahl mit Schaltern ein',
+                'nibbles' => 'Wähle die passenden Hexziffern',
+                default => 'Rechne in eine Dezimalzahl um',
+            };
+            $mission['prompt'] = 'Wandle die '.$source.' '.$mission['source'].' in '.$target.' um.';
+            if ($kind === 'bits' && isset($mission['fields'][0]['initial'])) {
+                $mission['title'] = 'Korrigiere den falschen Schalter';
+                $mission['prompt'] = 'Die Schalter sollen die '.$source.' '.$mission['source'].' darstellen. Genau ein Schalter ist falsch eingestellt. Klicke ihn an.';
+            }
+        } elseif ($kind === 'repair') {
+            $mission['title'] = 'Finde und korrigiere die falsche Zahl';
+            $mission['prompt'] = 'Die Dezimalzahl '.$mission['reference'].' ist richtig. Eine der beiden Zahlen darunter stellt einen anderen Wert dar. Finde den Fehler und korrigiere ihn.';
+        } elseif ($kind === 'discover') {
+            $mission['title'] = 'Entdecke die Regel';
+            $mission['prompt'] = str_replace('Untersuche die Beispiele.', 'Schau dir die Beispiele an.', $mission['prompt']);
+            $wording = [
+                'Warum lässt sich jede Hexziffer durch genau vier Bits ersetzen?' => 'Warum kann man eine Hexziffer immer als vier Bits schreiben?',
+                'Was geschieht beim Ergänzen einer Null ganz links?' => 'Was passiert mit dem Wert einer Binärzahl, wenn du eine zusätzliche Null vor die Zahl schreibst?',
+                'Welche Regel verbindet benachbarte Stellenwerte?' => 'Wie ändern sich die Stellenwerte, wenn du eine Stelle nach links gehst?',
+                'Vier Bits haben 16 Kombinationen mit den Werten 0–15.' => 'Mit vier Bits kann man 16 verschiedene Werte darstellen: 0 bis 15.',
+                'Nach links mal Basis: dual mal 2, hexadezimal mal 16.' => 'Bei Binärzahlen wird der Stellenwert nach links verdoppelt. Bei Hexzahlen wird er mit 16 multipliziert.',
+            ];
+            $mission['prompt'] = strtr($mission['prompt'], $wording);
+            if (isset($mission['explanation'])) {
+                $mission['explanation'] = strtr($mission['explanation'], $wording);
+            }
+            foreach ($mission['fields'] as &$field) {
+                foreach ($field['options'] ?? [] as $index => $option) {
+                    $field['options'][$index]['label'] = strtr($option['label'], $wording);
+                }
+            }
+            unset($field);
+            $mission['note'] = 'Erkläre deine Wahl einer anderen Person. Du kannst die Rechenhilfe verwenden.';
+        } elseif ($kind === 'message') {
+            $encoding = ! empty($mission['word']);
+            $mission['title'] = $encoding ? 'Übersetze Buchstaben in Zahlencodes' : 'Lies die Nachricht aus Zahlencodes';
+            $mission['prompt'] = $encoding
+                ? 'Schreibe für jeden Buchstaben von '.$mission['word'].' den ASCII-Code als '.($mission['message_base'] === 2 ? 'Binärzahl mit genau 8 Stellen' : 'Hexzahl mit genau 2 Ziffern').'. Trenne die Codes durch ein Leerzeichen.'
+                : 'Übersetze die Zahlencodes unten mithilfe der ASCII-Tabelle in Buchstaben. Schreibe die ganze Nachricht auf. Auch ein Leerzeichen kann dabei sein.';
+            $mission['note'] = 'ASCII ist eine Zuordnung von Zahlen zu Zeichen. Beispiel: Die Dezimalzahl 65 steht für A. Die Codes machen einen Text nicht geheim.';
+        } elseif ($kind === 'vault') {
+            $mission['prompt'] = 'Rechne bei jedem der vier Schlösser die vorgegebene Zahl in das gesuchte Zahlensystem um. Wenn alle Felder stimmen, '.(! empty($mission['finale']) ? 'kannst du das Rechenzentrum aktivieren.' : 'öffnet sich die Kammer.');
+        }
+        foreach ($mission['fields'] as &$field) {
+            $field['label'] = strtr($field['label'], ['Dualdarstellung' => 'Binärzahl (Dualzahl)', 'Dezimaldarstellung' => 'Dezimalzahl', 'Hexdarstellung' => 'Hexadezimalzahl']);
+            if ($kind === 'vault' && str_contains($field['label'], ' → ')) {
+                [$given, $target] = explode(' → ', $field['label'], 2);
+                $source = str_starts_with($given, '#') ? 'Hexzahl' : (str_contains($given, '(dual)') ? 'Binärzahl' : 'Dezimalzahl');
+                $field['label'] = 'Schloss '.((int) substr($field['name'], 4) + 1).': '.$source.' '.$given.' in eine '.$target.' umrechnen';
+            }
+            if (isset($field['public_label'])) {
+                $field['public_label'] = strtr($field['public_label'], ['Dualdarstellung' => 'Binärzahl (Dualzahl)', 'Dezimaldarstellung' => 'Dezimalzahl', 'Hexdarstellung' => 'Hexadezimalzahl']);
+            }
+            $field['label'] = match ($field['name']) {
+                'quotient' => 'Erster Rechenschritt: '.$mission['source'].' : '.$mission['target_base'].' – Ergebnis ohne Rest',
+                'remainder' => 'Rest beim ersten Teilen',
+                'weights' => 'Welche Stellenwerte gehören zu den Einsen?',
+                'groups' => 'Schreibe die Binärzahl in Vierergruppen',
+                'changed' => 'Welche Zahl war vor deiner Korrektur falsch?',
+                'first' => 'ASCII-Code des ersten Zeichens als Dezimalzahl',
+                default => $field['label'],
+            };
+            $field['help'] = match ($field['name']) {
+                'quotient' => 'Gemeint ist die ganze Zahl vor dem Rest, ohne Nachkommastellen. '.($mission['target_base'] === 16 ? 'Beispiel: 29 : 16 = 1 Rest 13 → hier wäre 1 einzutragen.' : 'Beispiel: 13 : 2 = 6 Rest 1 → hier wäre 6 einzutragen.'),
+                'remainder' => 'Wie viel bleibt bei dieser ersten Division übrig? Trage den Rest als Dezimalzahl ein.',
+                'weights' => 'Kreuze die Zahlen an, über denen in der vorgegebenen Binärzahl eine 1 steht. Bei 0 bleibt alles leer.',
+                'groups' => 'Beginne rechts und setze nach jeweils 4 Bits ein Leerzeichen. Ergänze nur ganz links Nullen, falls nötig. Beispiel: 11101 → 0001 1101.',
+                'digit' => 'Eine Hexziffer ist ein einzelnes Zeichen: 0–9 oder A–F. Zum Beispiel hat A den Dezimalwert 10.',
+                'first' => 'Nimm nur den ersten Zeichencode der Nachricht und rechne ihn in eine Dezimalzahl um.',
+                default => match ($field['base'] ?? null) {
+                    2 => 'Eine Binärzahl besteht nur aus 0 und 1. „Dual“ bedeutet dasselbe wie „binär“.',
+                    10 => 'Trage eine gewöhnliche Zahl mit den Ziffern 0–9 ein.',
+                    16 => 'Hexadezimal verwendet 0–9 und A–F: A = 10, B = 11, C = 12, D = 13, E = 14, F = 15.',
+                    default => '',
+                },
+            };
+            if ($kind === 'message' && $field['name'] === 'answer') {
+                $field['label'] = ! empty($mission['word']) ? 'ASCII-Codes der Buchstaben' : 'Nachricht als Text';
+                $field['help'] = ! empty($mission['word']) ? 'Ein Code pro Buchstabe, dazwischen jeweils ein Leerzeichen. Verwende die Tabelle in der Rechenhilfe.' : 'Schreibe die Buchstaben in der Reihenfolge der Codes auf. Code 32 steht für ein Leerzeichen.';
+            }
+        }
+        unset($field);
 
         return $mission;
     }
@@ -220,9 +334,14 @@ class NumberSystemEngine
         $step = ! in_array(false, array_diff_key($checks, ['answer' => true]), true);
         $correct = ! in_array(false, $checks, true);
 
+        $fields = $this->publicMission($mission)['fields'];
+        $incorrect = array_map(fn (array $field): string => $field['public_label'] ?? $field['label'],
+            array_values(array_filter($fields, fn (array $field): bool => ! $checks[$field['name']])));
+
         return ['correct' => $correct, 'result_correct' => $result, 'step_correct' => $step,
-            'message' => $correct ? 'Datenweg bestätigt. '.$mission['explanation']
-                : ($result && ! $step ? 'Das Ergebnis passt bereits. Prüfe noch den Rechenschritt; er gehört zu diesem Schloss.' : 'Noch nicht ganz. Prüfe die benannten Zahlensysteme und Stellenwerte. Führende Nullen sind wertgleich; eine feste Bitbreite muss zusätzlich stimmen. Du darfst ohne Punkteverlust korrigieren oder Hilfe holen.')];
+            'message' => $correct ? 'Richtig gelöst! '.$mission['explanation']
+                : ($result && ! $step ? 'Dein Ergebnis stimmt. Prüfe noch: ' : 'Hier passt noch etwas nicht. Prüfe: ')
+                    .implode('; ', $incorrect).'. Du kannst es noch einmal versuchen oder einen Tipp öffnen. Dafür gibt es keinen Punkteabzug.'];
     }
 
     /** @return list<int>|null */
@@ -296,11 +415,11 @@ class NumberSystemEngine
     {
         return match ($mission['kind']) {
             'bits' => 'Von rechts nach links: 1, 2, 4, 8, … . Schalte nur die benötigten Stellenwerte ein. Die Summe muss zur Vorgabe passen.',
-            'nibbles' => '16 = 2⁴: Jede Hexziffer ersetzt genau vier Bits. Gruppiere von rechts und fülle nur links mit Nullen auf. Bei Dezimalzahlen hilft Division durch 16.',
-            'repair' => 'Die ausdrücklich genannte Referenz ist verbindlich. Prüfe jede andere Darstellung durch Rückrechnung, statt die beiden verdächtigen Angaben als Referenz zu nehmen.',
+            'nibbles' => 'Teile eine Binärzahl von rechts in Gruppen mit je vier Bits. Jede Gruppe ergibt eine Hexziffer. Die Tabelle in der Rechenhilfe zeigt die Zuordnung. Eine Dezimalzahl teilst du wiederholt durch 16 und liest die Reste von unten nach oben.',
+            'repair' => 'Die vorgegebene Dezimalzahl ist richtig. Rechne die Binärzahl und die Hexzahl einzeln in Dezimalzahlen um. So erkennst du, welche nicht zur Vorgabe passt.',
             'message' => 'ASCII ist die Zeichentabelle. Ermittle erst den Zahlenwert eines Bytes, dann das Zeichen. A hat die Nummer 65, ein Leerzeichen die Nummer 32.',
             'discover' => 'Vergleiche die Beispiele im Logbuch. Eine Regel muss zu allen Beispielen passen; prüfe sie an einer eigenen kleinen Zahl.',
-            default => 'Dual und Hex: Stellenwerte addieren. Dezimal in eine andere Basis: wiederholt dividieren, Reste von unten nach oben lesen.',
+            default => 'Von Binär oder Hex nach Dezimal: Addiere die Werte der einzelnen Stellen. Von Dezimal nach Binär oder Hex: Teile wiederholt durch 2 oder 16 und lies die Reste von unten nach oben.',
         };
     }
 

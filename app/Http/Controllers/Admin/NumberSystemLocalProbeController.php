@@ -17,7 +17,8 @@ class NumberSystemLocalProbeController extends Controller
     {
         $owner = $this->owner($request);
         $data = $request->validate(['planned_minutes' => ['required', 'integer', Rule::in([30, 40, 60, 75])],
-            'difficulty' => ['required', 'integer', 'between:1,3'], 'mode' => ['required', Rule::in(['solo', 'teams'])], 'short' => ['required', 'boolean'], ...NumberSystemGameResults::rules()]);
+            'difficulty' => ['required', 'integer', 'between:1,3'], 'mode' => ['required', Rule::in(['solo', 'teams'])], 'short' => ['required', 'boolean'],
+            'self_play' => ['sometimes', 'boolean'], 'title' => ['nullable', 'string', 'max:120'], ...NumberSystemGameResults::rules()]);
 
         return $this->respond($this->probes->create($owner, $data), 201);
     }

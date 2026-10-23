@@ -9,10 +9,9 @@
         <div v-else-if="!available" class="ns-alert">Die Spieltabellen müssen noch lokal aktiviert werden.</div>
         <template v-else-if="!selected">
             <p v-if="!timingAvailable" class="ns-alert">Die lokale Datenbank-Erweiterung für neue Runden mit Zeitmessung und Reihung ist vorbereitet und muss noch freigegeben werden. Bestehende Runden und lokale Probeläufe bleiben verfügbar.</p>
-            <section v-if="localProbeAvailable && localProbes.length" class="ns-panel ns-stack" style="margin-top:20px"><h2>Deine lokalen Probeläufe</h2><p class="ns-small ns-muted">Eigene Testdaten, getrennte Testpersonen und gespeicherte Fortschritte. Zum Entfernen den Probelauf öffnen.</p><a v-for="probe in localProbes" :key="probe.id" class="ns-button ns-button-secondary" :href="probe.url">Probelauf {{ probe.id.slice(0, 8) }} fortsetzen</a></section>
             <section class="ns-briefing">
                 <h2>Ein Rechenzentrum ist verstummt.</h2>
-                <p>Dein Kurs stellt die Verbindung wieder her: mit schaltbaren Bits, Hex-Bausteinen, manipulierten Protokollen und codierten Funksignalen. Jede neue Runde bekommt eine neue Variante. Fortsetzen bewahrt das bestehende Abenteuer.</p>
+                <p>Dein Kurs rettet das Rechenzentrum: Binärzahlen mit Schaltern einstellen, Hexzahlen umrechnen, Fehler finden und Nachrichten entziffern. Verständliche Anleitungen und drei Tippstufen helfen dabei. Gelöste Aufgaben lösen einen Signalimpuls aus; für jeden geschafften Bereich gibt es ein Abzeichen.</p>
                 <ol class="ns-path"><li v-for="chapter in chapters" :key="chapter">{{ chapter }}</li></ol>
                 <p class="ns-small">Plane 30, 40, 60 oder 75 Minuten Spielzeit und wähle die Schwierigkeit separat. Die tatsächliche Dauer hängt von Gruppe, Hilfen und Gesprächen ab. Pausen sind jederzeit möglich; es gibt keine Zeitstrafe und keine Benotung.</p>
             </section>
@@ -78,12 +77,12 @@
                 <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="createDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !form.title.trim() || (form.audience !== 'external' && !form.course_id)">{{ busy ? 'Wird vorbereitet …' : 'Abenteuer vorbereiten' }}</button></div>
             </form></v-card>
         </v-dialog>
-        <v-dialog v-model="probeDialog" persistent max-width="600"><v-card class="ns-dialog"><form @submit.prevent="createProbe"><h2>Lokal mit mehreren Fenstern ausprobieren</h2><p>Eine eigene Datei speichert nur synthetische Testpersonen. Du bleibst im Lehrkraftkonto angemeldet. Keine echten Kurse, Konten oder Noten werden geändert.</p><div class="ns-form">
+        <v-dialog v-model="probeDialog" persistent max-width="600"><v-card class="ns-dialog"><form @submit.prevent="createProbe"><h2>Selbst ausprobieren</h2><p>Wähle dein Abenteuer und spiele direkt so, wie es deine Schüler:innen sehen.</p><label class="ns-field"><span>Bezeichnung</span><input v-model="probeForm.title" required maxlength="120" /></label><div class="ns-form">
             <label class="ns-field"><span>Geplante Spielzeit</span><select v-model.number="probeForm.planned_minutes"><option v-for="minutes in [30,40,60,75]" :key="minutes" :value="minutes">{{ minutes }} Minuten</option></select></label>
             <label class="ns-field"><span>Schwierigkeit</span><select v-model.number="probeForm.difficulty"><option v-for="(label, value) in levels" :key="value" :value="Number(value)">{{ label }}</option></select></label>
-            <label class="ns-field"><span>Spielweise</span><select v-model="probeForm.mode"><option value="teams">Gemeinsames Testteam</option><option value="solo">Zwei eigene Spielstände</option></select></label>
-            <label class="ns-field"><span>Umfang des Probelaufs</span><select v-model="probeForm.short"><option :value="true">Kurztest mit 3 echten Aufgaben</option><option :value="false">Vollständiges Abenteuer</option></select></label>
-        </div><NumberSystemStartOptions :model="probeForm" /><p>Der Kurztest enthält Teamtresor, Bit-Schalter und Finale. Er ist kürzer als die gewählte Unterrichtsplanung; die normalen Spieloptionen bleiben unverändert.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="probeDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy">Probelauf anlegen</button></div></form></v-card></v-dialog>
+            <label class="ns-field"><span>Zeitmessung</span><select v-model="probeForm.timer_mode"><option value="none">Ohne Uhr · in Ruhe spielen</option><option value="elapsed">Stoppuhr · verstrichene Zeit</option><option value="countdown">Countdown · verbleibende Zeit</option></select></label>
+            <label v-if="probeForm.timer_mode === 'countdown'" class="ns-field"><span>Countdown in Minuten</span><input :value="probeForm.countdown_minutes ?? probeForm.planned_minutes" type="number" min="1" max="180" required @input="probeForm.countdown_minutes = Number($event.target.value)" /></label>
+        </div><p class="ns-small ns-muted">Du spielst ein vollständiges Abenteuer allein an diesem Computer. Dein Fortschritt wird gespeichert.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="probeDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !probeForm.title.trim()">{{ busy ? 'Abenteuer startet …' : 'Jetzt selbst spielen' }}</button></div></form></v-card></v-dialog>
         <v-dialog v-model="endDialog" persistent max-width="500"><v-card class="ns-dialog"><form @submit.prevent="control('end')"><h2>Klassenrunde beenden?</h2><p>Der Fortschritt bleibt sichtbar. Neue Antworten sind danach gesperrt. Für eine Unterbrechung wähle stattdessen Pause.</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="endDialog = false">Zurück</button><button class="ns-button" :disabled="busy">Runde beenden</button></div></form></v-card></v-dialog>
         <v-dialog :model-value="Boolean(deleteTarget)" persistent max-width="540"><v-card v-if="deleteTarget" class="ns-dialog"><form @submit.prevent="remove"><h2>„{{ deleteTarget.title }}“ löschen?</h2><p>Diese Klassenrunde mit {{ deleteTarget.runs_count ?? 0 }} Spielständen wird endgültig entfernt. Antworten, Teamzuordnungen, Zeitdaten und Reihung gehen verloren. Kurs- und Teamcodes funktionieren danach nicht mehr.</p><p>Andere Runden, Kurse und Schülerkonten bleiben erhalten.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="deleteTarget = null">Abbrechen</button><button class="ns-button ns-delete-confirm" :disabled="busy">{{ busy ? 'Wird gelöscht …' : 'Klassenrunde endgültig löschen' }}</button></div></form></v-card></v-dialog>
     </div>
@@ -113,8 +112,8 @@ const externalAvailable = ref(false)
 const deleteTarget = ref(null)
 const form = reactive({ title: 'Signal Null', audience: 'course', course_id: '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 const router = useRouter()
-const localProbeAvailable = ref(false), localProbes = ref([]), probeDialog = ref(false)
-const probeForm = reactive({ planned_minutes: 30, difficulty: 2, mode: 'teams', short: true, timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
+const localProbeAvailable = ref(false), probeDialog = ref(false)
+const probeForm = reactive({ title: 'Mein Abenteuer', planned_minutes: 30, difficulty: 2, timer_mode: 'none', countdown_minutes: null })
 let poll = null, disposed = false, polling = false, monitorGeneration = 0
 let downloadController = null
 const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + run.members.length, 0))
@@ -123,7 +122,7 @@ const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((
 const failureMessage = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
 async function load() {
     loading.value = true; error.value = ''
-    try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true; localProbes.value = data.local_probes ?? [] }
+    try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true }
     catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
 }
 function closeMonitor() { ++monitorGeneration; downloadController?.abort(); selected.value = null }
@@ -167,7 +166,7 @@ async function remove() {
 async function createProbe() {
     if (busy.value) { return }
     busy.value = true; error.value = ''
-    try { const { data } = await axios.post(createLocalProbe.url(), { ...probeForm }); await router.push(new URL(data.url, window.location.origin).pathname) }
+    try { const { data } = await axios.post(createLocalProbe.url(), { ...probeForm, self_play: true, mode: 'solo', short: false, ranking_enabled: false }); const url = new URL(data.url, window.location.origin); await router.push(url.pathname + url.search) }
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
 async function control(action) {

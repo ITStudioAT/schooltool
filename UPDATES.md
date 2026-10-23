@@ -6,6 +6,7 @@
 
 - Für Externe zulassen
 - Auswertung als pdf
+- Erfolgsanimationen nach jedem Bereich
 
 ### Unterricht
 

@@ -97,6 +97,46 @@ test('a correct number cannot substitute for a wrong structured working step', f
     }
 });
 
+test('saved missions get clear instructions without changing the saved exercise or revealing solutions', function () {
+    $engine = new NumberSystemEngine;
+    $legacy = $engine->mission('wording', 42, 6, 30, 2);
+    $legacy['title'] = 'Repariere das Fehlerarchiv';
+    $legacy['prompt'] = 'Die Dezimalreferenz ist verbindlich.';
+    unset($legacy['instructions']);
+    $before = $legacy;
+
+    $public = $engine->publicMission($legacy);
+
+    expect($public['prompt'])->toContain('Dezimalzahl')->toContain('Finde den Fehler');
+    expect($public['instructions'])->toHaveCount(2);
+    expect($public['fields'][0]['help'])->toContain('0 und 1');
+    expect($public)->not->toHaveKeys(['solution', 'hints', 'explanation', 'private_clues']);
+    expect($public['id'])->toBe($before['id']);
+    expect($legacy)->toBe($before);
+    expect($engine->check($legacy, nsCanonicalDraft($legacy, $engine))['correct'])->toBeTrue();
+    expect($engine->hintTexts($legacy, 1))->toHaveCount(1);
+    expect($engine->hintTexts($legacy, 3)[2])->toStartWith('Lösung mit Rechenweg:');
+});
+
+test('feedback identifies the incorrect working field without revealing private team numbers', function () {
+    $engine = new NumberSystemEngine;
+    foreach (range(0, 5) as $position) {
+        $mission = $engine->mission('steps', 42, $position, 30, 2);
+        if (isset($mission['solution']['quotient'])) {
+            $draft = nsCanonicalDraft($mission, $engine);
+            $draft['quotient'] = '999';
+            $feedback = $engine->check($mission, $draft);
+            expect($feedback['message'])->toContain('Dein Ergebnis stimmt. Prüfe noch: Erster Rechenschritt:')
+                ->not->toContain('diesem Schloss');
+        }
+    }
+    $vault = $engine->mission('private-feedback', 42, 11, 30, 2);
+    $feedback = $engine->check($vault, []);
+    foreach ($vault['fields'] as $field) {
+        expect($feedback['message'])->toContain($field['public_label'])->not->toContain($field['label']);
+    }
+});
+
 test('ASCII bytes distinguish encoding from number bases and enforce seven bit values in eight bit fields', function () {
     $engine = new NumberSystemEngine;
     expect($engine->bytes('01010100 01000101 01000001 01001101', 2))->toBe([84, 69, 65, 77]);

@@ -201,7 +201,12 @@ class NumberSystemGameService
         if ($session->mode === 'teams' && $mission['kind'] === 'vault') {
             $memberIndex = $members->search(fn (User|NumberSystemGameGuest $member): bool => $member::class === $student::class && (int) $member->id === (int) $student->id);
             $public['role_cards'] = array_values(array_filter($mission['private_clues'] ?? [], fn (string $clue, int $index): bool => ($index + $run->position) % max(1, $members->count()) === $memberIndex, ARRAY_FILTER_USE_BOTH));
-            $public['prompt'] = 'Vier benötigte Hinweise sind auf eure persönlichen Zugänge verteilt. Erklärt eure Karte mündlich und verbindet die Angaben. Wechselt beim nächsten Tresor die erklärende Person.';
+            $public['role_cards'] = array_map(fn (string $clue): string => strtr($clue, [
+                'Die Vorgabe lautet' => 'Deine Zahl ist', 'Dualdarstellung' => 'Binärzahl (Dualzahl)',
+                'Dezimaldarstellung' => 'Dezimalzahl', 'Hexdarstellung' => 'Hexadezimalzahl',
+            ]), $public['role_cards']);
+            $public['prompt'] = 'Ihr löst vier Schlösser gemeinsam. Jede Person sieht nur einen Teil der vorgegebenen Zahlen. Lest euch eure Hinweise vor und tragt gemeinsam die vier Ergebnisse ein.';
+            $public['instructions'] = ['Lies deine persönliche Hinweiskarte unten.', 'Frage deine Teammitglieder nach den fehlenden Zahlen. Jede Person darf die Ergebnisse eintragen.'];
             foreach ($public['fields'] as &$field) {
                 $field['label'] = $field['public_label'];
             }
@@ -212,7 +217,7 @@ class NumberSystemGameService
         return ['id' => $run->id, 'revision' => $run->revision, 'position' => $run->position, 'total' => count($run->puzzles),
             'solved' => $run->solved, 'completed' => $run->completed_at !== null, 'feedback' => $run->feedback,
             'draft' => (object) ($run->draft ?? []), 'hints' => $run->hints,
-            'hint_texts' => array_slice($mission['hints'], 0, $run->hints),
+            'hint_texts' => $this->engine->hintTexts($mission, $run->hints),
             'history' => $run->history ?? [], 'mission' => $session->status === 'waiting' ? null : $public,
             'team_name' => $run->team_name, 'team_code' => $run->team_code,
             'invitation' => $run->team_code && ! $run->completed_at && $session->status !== 'ended'

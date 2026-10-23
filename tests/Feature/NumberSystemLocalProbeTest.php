@@ -149,3 +149,33 @@ test('full probe retains the selected real duration difficulty and mission count
     expect($run['total'])->toBe(30)->and($run['invitation'])->toBeNull();
     $this->getJson($this->base.'/'.$id.'/players/3')->assertNotFound();
 });
+
+test('teacher self play opens a running full solo adventure and resumes the same saved student progress', function () {
+    $before = probeNormalCounts();
+    $normalDatabase = DB::connection()->getDatabaseName();
+    $id = $this->postJson($this->base, [...$this->payload, 'self_play' => true, 'title' => 'Mein Zahlentraining',
+        'planned_minutes' => 40, 'difficulty' => 3, 'timer_mode' => 'countdown', 'countdown_minutes' => 45,
+        'ranking_enabled' => true])->assertCreated()->json('id');
+    $root = $this->base.'/'.$id;
+    $view = $this->getJson($root)->assertOk()->assertJsonPath('short', false)
+        ->assertJsonPath('session.title', 'Mein Zahlentraining')->assertJsonPath('session.mode', 'solo')
+        ->assertJsonPath('session.status', 'running')->assertJsonPath('session.planned_minutes', 40)
+        ->assertJsonPath('session.difficulty', 3)->assertJsonPath('session.timer_mode', 'countdown')
+        ->assertJsonPath('session.countdown_seconds', 2700)->assertJsonPath('session.ranking_enabled', false)
+        ->assertJsonCount(1, 'runs')->assertJsonCount(1, 'players')->assertJsonPath('players.0.label', 'Du')->json();
+    $run = $this->getJson($root.'/players/1')->assertOk()->json('run');
+    expect($run['total'])->toBe(18)->and($run['mission'])->not->toBeNull()
+        ->and($run['invitation'])->toBeNull()->and($run['team_code'])->toBeNull()
+        ->and($run['members'])->toBe(['Du'])->and($run['session']['status'])->toBe('running');
+    $field = $run['mission']['fields'][0]['name'];
+    $saved = $this->postJson($root.'/players/1/run', ['action' => 'draft', 'revision' => $run['revision'],
+        'mission_id' => $run['mission']['id'], 'draft' => [$field => '123']])->assertOk()->json('run');
+    $reopened = $this->getJson($root.'/players/1')->assertOk()->json('run');
+    expect($reopened['id'])->toBe($run['id'])->and($reopened['mission']['id'])->toBe($run['mission']['id'])
+        ->and($reopened['revision'])->toBe($saved['revision'])->and($reopened['draft'][$field])->toBe('123');
+    $this->getJson($root.'/players/2')->assertNotFound();
+    $this->postJson($root.'/players/2/join', ['code' => $view['session']['join_code']])->assertNotFound();
+    expect(app(NumberSystemLocalProbe::class)->listing($this->teacher->id)[0]['title'])->toBe('Mein Zahlentraining')
+        ->and(probeNormalCounts())->toBe($before)->and(DB::connection()->getDatabaseName())->toBe($normalDatabase)
+        ->and(auth('web')->id())->toBe($this->teacher->id);
+});

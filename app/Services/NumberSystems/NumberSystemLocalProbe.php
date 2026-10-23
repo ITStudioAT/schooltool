@@ -31,7 +31,8 @@ class NumberSystemLocalProbe
         foreach (glob($this->root($owner).DIRECTORY_SEPARATOR.'*'.DIRECTORY_SEPARATOR.'probe.json') ?: [] as $file) {
             $receipt = json_decode((string) @file_get_contents($file), true);
             if (($receipt['format'] ?? '') === 'number-system-local-probe-v1' && ($receipt['owner'] ?? null) === $owner && ($receipt['state'] ?? '') === 'ready') {
-                $items[] = ['id' => $receipt['id'], 'created_at' => $receipt['created_at'], 'url' => $this->url($receipt['id'])];
+                $items[] = ['id' => $receipt['id'], 'title' => $receipt['title'] ?? 'Gespeicherte Proberunde',
+                    'created_at' => $receipt['created_at'], 'url' => $this->url($receipt['id'])];
             }
         }
         usort($items, fn (array $a, array $b): int => strcmp($b['created_at'], $a['created_at']));
@@ -41,18 +42,23 @@ class NumberSystemLocalProbe
 
     public function create(int $owner, array $data): array
     {
+        $selfPlay = (bool) ($data['self_play'] ?? false);
+        if ($selfPlay) {
+            $data = [...$data, 'mode' => 'solo', 'short' => false, 'ranking_enabled' => false];
+        }
+        $title = trim($data['title'] ?? '') ?: ($selfPlay ? 'Mein Abenteuer' : 'Lokaler Probelauf');
         $id = (string) Str::uuid();
         $directory = $this->root($owner).DIRECTORY_SEPARATOR.$id;
         if (! mkdir($directory, 0700, true)) {
             throw new RuntimeException('Der lokale Probelauf konnte nicht angelegt werden.');
         }
         $receipt = ['format' => 'number-system-local-probe-v1', 'owner' => $owner, 'id' => $id,
-            'created_at' => now()->toIso8601String(), 'short' => $data['short'], 'state' => 'creating'];
+            'created_at' => now()->toIso8601String(), 'title' => $title, 'self_play' => $selfPlay, 'short' => $data['short'], 'state' => 'creating'];
         $this->writeReceipt($directory, $receipt);
         touch($directory.DIRECTORY_SEPARATOR.'game.sqlite');
         touch($directory.DIRECTORY_SEPARATOR.'probe.lock');
         try {
-            $this->connection($directory, function () use ($data): void {
+            $this->connection($directory, function () use ($data, $selfPlay, $title): void {
                 Schema::create('schools', fn (Blueprint $table) => $table->id());
                 Schema::create('users', function (Blueprint $table): void {
                     $table->id();
@@ -79,16 +85,23 @@ class NumberSystemLocalProbe
                 (require database_path('migrations/2026_10_16_225024_create_number_system_game_tables.php'))->up();
                 $this->upgradeTiming();
                 DB::table('schools')->insert(['id' => 1]);
-                foreach ([1 => 'Test-Lehrkraft', 2 => 'Testperson A', 3 => 'Testperson B'] as $id => $name) {
+                $people = $selfPlay ? [1 => 'Test-Lehrkraft', 2 => 'Du'] : [1 => 'Test-Lehrkraft', 2 => 'Testperson A', 3 => 'Testperson B'];
+                foreach ($people as $id => $name) {
                     DB::table('users')->insert(['id' => $id, 'school_id' => 1, 'first_name' => $name, 'last_name' => '']);
                 }
                 DB::table('teaching_courses')->insert(['id' => 1, 'school_id' => 1, 'user_id' => 1, 'title' => 'Lokaler Probekurs']);
-                foreach ([2, 3] as $student) {
+                foreach ($selfPlay ? [2] : [2, 3] as $student) {
                     DB::table('teaching_course_students')->insert(['teaching_course_id' => 1, 'user_id' => $student]);
                 }
                 $session = $this->games->create(User::findOrFail(1), TeachingCourse::findOrFail(1), [
-                    ...$data, 'title' => 'Lokaler Probelauf']);
+                    ...$data, 'title' => $title]);
                 $session->update(['join_code' => 'P-'.strtoupper(bin2hex(random_bytes(4)))]);
+                if ($selfPlay) {
+                    $student = User::findOrFail(2);
+                    $run = $this->games->join($student, $session->join_code, null, null);
+                    $this->games->control($session, 'start');
+                    app(NumberSystemPresence::class)->record($run, $student);
+                }
             });
             $receipt['state'] = 'ready';
             $this->writeReceipt($directory, $receipt);
@@ -112,8 +125,8 @@ class NumberSystemLocalProbe
 
             return ['id' => $probe, 'short' => $receipt['short'], 'session' => $session->toArray(),
                 'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
-                'players' => array_map(fn (int $participant): array => ['participant' => $participant, 'label' => $participant === 1 ? 'Testperson A' : 'Testperson B',
-                    'url' => $this->url($probe, ['participant' => $participant, 'code' => $session->join_code, ...($participant === 2 && $teamCode ? ['team_code' => $teamCode] : [])])], [1, 2]),
+                'players' => array_map(fn (int $participant): array => ['participant' => $participant, 'label' => ($receipt['self_play'] ?? false) ? 'Du' : ($participant === 1 ? 'Testperson A' : 'Testperson B'),
+                    'url' => ($receipt['self_play'] ?? false) ? $this->url($probe) : $this->url($probe, ['participant' => $participant, 'code' => $session->join_code, ...($participant === 2 && $teamCode ? ['team_code' => $teamCode] : [])])], ($receipt['self_play'] ?? false) ? [1] : [1, 2]),
                 'runs' => $runs->map(fn ($run): array => ['name' => $run->team_name ?: $run->members->first()?->first_name,
                     'members' => $run->members->pluck('first_name')->all(), 'solved' => count($run->history ?? []), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null, 'clock' => $results->clock($session, $run), 'presence' => $presence->members($run, $seen)])->all()];
         });

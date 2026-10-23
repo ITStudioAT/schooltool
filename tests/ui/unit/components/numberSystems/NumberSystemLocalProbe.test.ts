@@ -8,6 +8,7 @@ vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn(
 vi.mock('@/pages/components/numberSystems/NumberSystemPlayer.vue', () => ({ default: { props: ['runId', 'probeId', 'participant'], template: '<div data-test="probe-player">{{ probeId }} · {{ participant }} · {{ runId }}</div>' } }))
 const wrappers = []
 const id = '00000000-0000-4000-8000-000000000001'
+const response = (changes = {}) => ({ data: { session: { title: 'Mein Zahlentraining', mode: 'solo', status: 'running' }, run: { id: 12 }, ...changes } })
 beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks() })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
 async function render(query = '') {
@@ -17,49 +18,54 @@ async function render(query = '') {
     const wrapper = mount(LocalProbe, { global: { plugins: [router], stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper); await flushPromises()
     return { wrapper, router }
 }
-it('joins with the identity from its own URL and clears old team codes when another invitation is opened', async () => {
-    vi.mocked(axios.get).mockResolvedValue({ data: { label: 'Testperson B', short: true, session: { mode: 'teams', status: 'waiting' }, run: null } })
-    vi.mocked(axios.post).mockResolvedValue({ data: { run: { id: 12 } } })
-    const { wrapper, router } = await render('?participant=2&code=P-11111111&team_code=P1234567')
-    expect(wrapper.get('input[maxlength="12"]').element.value).toBe('P1234567')
-    await router.push(`/admin/teaching-tools/games/number-systems/local/${id}?participant=2&code=P-22222222`); await flushPromises()
-    expect(wrapper.find('input[maxlength="12"]').exists()).toBe(false)
-    await wrapper.get('input[value="existing"]').setValue(true)
-    expect(wrapper.get('input[maxlength="12"]').element.value).toBe('')
-    await wrapper.get('input[maxlength="12"]').setValue('P7654321')
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(vi.mocked(axios.post).mock.lastCall).toEqual([`/api/admin/number-systems/local-probes/${id}/players/2/join`, { code: 'P-22222222', team_name: null, team_code: 'P7654321' }])
-    expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${id} · 2 · 12`)
-})
-it('teacher controls do not let an older polling response undo a pause', async () => {
-    const response = status => ({ data: { short: true, session: { status, join_code: 'P-11111111' }, players: [], runs: [] } })
-    let resolvePoll
-    vi.mocked(axios.get).mockResolvedValueOnce(response('running')).mockImplementationOnce(() => new Promise(resolve => { resolvePoll = resolve }))
-    vi.mocked(axios.post).mockResolvedValue(response('paused'))
+it('opens the saved self play directly and lets the student view own its refreshes', async () => {
+    vi.mocked(axios.get).mockResolvedValue(response())
     const { wrapper } = await render()
-    await vi.advanceTimersByTimeAsync(3000)
-    await wrapper.findAll('button').find(button => button.text() === 'Proberunde pausieren').trigger('click'); await flushPromises()
-    resolvePoll(response('running')); await flushPromises()
-    expect(wrapper.text()).toContain('Pausiert')
-    expect(wrapper.findAll('button').some(button => button.text() === 'Proberunde fortsetzen')).toBe(true)
-})
-
-it('lets the active player own refreshes instead of polling the same participant twice', async () => {
-    vi.mocked(axios.get).mockResolvedValue({ data: { label: 'Testperson A', short: true, session: { mode: 'solo', status: 'running' }, run: { id: 12 } } })
-    const { wrapper } = await render('?participant=1')
+    expect(axios.get).toHaveBeenCalledExactlyOnceWith(`/api/admin/number-systems/local-probes/${id}/players/1`)
     expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${id} · 1 · 12`)
+    expect(wrapper.text()).not.toMatch(/Testpersonen|Kurscode|Teamcode|Fenster für|SQLite|Kennung/)
+    expect(axios.post).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(30000)
     expect(axios.get).toHaveBeenCalledTimes(1)
 })
-
-it('names the saved probe and deletes its own file only after confirmation', async () => {
-    vi.mocked(axios.get).mockResolvedValue({ data: { short: true, session: { status: 'ended' }, players: [], runs: [] } })
+it('offers one self play action for an older unjoined probe without identity or code forms', async () => {
+    const session = { title: 'Alte Proberunde', mode: 'teams', status: 'waiting', join_code: 'P-11111111' }
+    vi.mocked(axios.get).mockResolvedValueOnce(response({ session, run: null })).mockResolvedValue(response())
+    vi.mocked(axios.post).mockResolvedValue({ data: {} })
+    const { wrapper } = await render('?participant=2&code=IGNORED&team_code=IGNORED')
+    expect(wrapper.find('input').exists()).toBe(false)
+    await wrapper.findAll('button').find(button => button.text() === 'Jetzt selbst spielen').trigger('click'); await flushPromises()
+    expect(vi.mocked(axios.post).mock.calls).toEqual([
+        [`/api/admin/number-systems/local-probes/${id}/players/1/join`, { code: 'P-11111111', team_name: 'Mein Probespiel' }],
+        [`/api/admin/number-systems/local-probes/${id}/control`, { action: 'start' }],
+    ])
+    expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${id} · 1 · 12`)
+})
+it('resumes an older paused saved round without creating or joining another game', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce(response({ session: { title: 'Pausierte Runde', status: 'paused' } })).mockResolvedValue(response())
+    vi.mocked(axios.post).mockResolvedValue({ data: {} })
+    const { wrapper } = await render()
+    await wrapper.findAll('button').find(button => button.text() === 'Weiterspielen').trigger('click'); await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(`/api/admin/number-systems/local-probes/${id}/control`, { action: 'resume' })
+    expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${id} · 1 · 12`)
+})
+it('ignores a late response from a different saved adventure', async () => {
+    let resolveOld
+    vi.mocked(axios.get).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValue(response({ run: { id: 21 } }))
+    const { wrapper, router } = await render()
+    const next = '00000000-0000-4000-8000-000000000002'
+    await router.push(`/admin/teaching-tools/games/number-systems/local/${next}`); await flushPromises()
+    resolveOld(response()); await flushPromises()
+    expect(wrapper.get('[data-test="probe-player"]').text()).toBe(`${next} · 1 · 21`)
+})
+it('names the saved adventure and deletes its progress only after confirmation', async () => {
+    vi.mocked(axios.get).mockResolvedValue(response())
     vi.mocked(axios.delete).mockResolvedValue({ data: { removed: true } })
     const { wrapper, router } = await render()
-    const open = () => wrapper.findAll('button').find(button => button.text() === 'Probelauf löschen').trigger('click')
+    const open = () => wrapper.findAll('button').find(button => button.text() === 'Proberunde löschen').trigger('click')
     await open()
-    expect(wrapper.get('[role="dialog"]').text()).toContain('Probelauf 00000000 löschen?')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('eigene lokale Datei')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('„Mein Zahlentraining“ löschen?')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Fortschritt')
     expect(axios.delete).not.toHaveBeenCalled()
     await wrapper.get('[role="dialog"] button[type="button"]').trigger('click')
     expect(axios.delete).not.toHaveBeenCalled()

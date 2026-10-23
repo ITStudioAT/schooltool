@@ -6,16 +6,17 @@
         <div v-if="mission.role_cards" class="ns-panel ns-private">
             <h3>Deine persönliche Hinweiskarte</h3>
             <p v-for="clue in mission.role_cards" :key="clue">{{ clue }}</p>
-            <p v-if="!mission.role_cards.length">Warte auf die Hinweiskarte und prüfe inzwischen die Ergebnisse deiner Gruppe.</p>
-            <p class="ns-small ns-muted" style="margin-top:10px">Andere Teammitglieder sehen andere Hinweise. Erklärt sie euch, statt nur Ergebnisse vorzulesen.</p>
+            <p v-if="!mission.role_cards.length">Du hast bei dieser Aufgabe keinen eigenen Zahlenhinweis. Frage dein Team nach den Zahlen und rechne mit.</p>
+            <p class="ns-small ns-muted" style="margin-top:10px">Dein Team sieht andere Zahlenhinweise. Lest sie euch vor und erklärt, wie ihr die Zahlen umrechnet.</p>
         </div>
         <div v-if="mission.tokens?.length" class="ns-token-row" aria-label="Empfangene Zeichencodes">
             <span v-for="(token, index) in mission.tokens" :key="index" class="ns-token">{{ token }}</span>
         </div>
         <p v-if="mission.note" class="ns-small ns-muted">{{ mission.note }}</p>
         <template v-for="field in mission.fields" :key="field.name">
-            <fieldset v-if="field.widget === 'bits'" :disabled="disabled">
-                <legend>{{ field.label }} · {{ field.width }} Schalter, links der größte Stellenwert</legend>
+            <fieldset v-if="field.widget === 'bits'" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
+                <legend>{{ field.label }} · {{ field.width }} Schalter</legend>
+                <p class="ns-small ns-muted">Klicke auf einen Schalter: 1 = ein, 0 = aus. Die Zahl darüber zeigt seinen Wert.</p>
                 <div class="ns-bit-grid" :class="{ 'ns-bit-grid-wide': field.width > 8 }">
                     <button v-for="(bit, index) in bits(field)" :key="index" type="button" class="ns-bit"
                         :aria-label="`Stellenwert ${2 ** (field.width - index - 1)}`" :aria-pressed="bit === '1'"
@@ -23,11 +24,12 @@
                         <span>{{ 2 ** (field.width - index - 1) }}</span><strong>{{ bit }}</strong>
                     </button>
                 </div>
-                <p class="ns-small ns-muted" aria-live="polite">Eingeschaltet: {{ bitSum(field) }}</p>
+                <p class="ns-small ns-muted" aria-live="polite">Summe der eingeschalteten Schalter: {{ bitSum(field) }}</p>
                 <p class="ns-number">{{ bits(field).join('') }} (dual)</p>
             </fieldset>
-            <fieldset v-else-if="field.widget === 'nibbles'" :disabled="disabled">
-                <legend>{{ field.label }} · eine Ziffer je Vierbitgruppe</legend>
+            <fieldset v-else-if="field.widget === 'nibbles'" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
+                <legend>{{ field.label }}</legend>
+                <p class="ns-small ns-muted">Wähle pro Feld eine Hexziffer. Jede Hexziffer steht für 4 Bits.</p>
                 <div class="ns-nibbles">
                     <label v-for="position in field.width" :key="position" class="ns-field ns-nibble">
                         <span>Stellenwert {{ 16 ** (field.width - position) }}</span>
@@ -39,7 +41,7 @@
                 </div>
                 <p class="ns-number" style="margin-top:10px">#{{ String(modelValue[field.name] ?? '').replace(/^#/, '') || '…' }}</p>
             </fieldset>
-            <fieldset v-else-if="field.widget === 'weights'" :disabled="disabled">
+            <fieldset v-else-if="field.widget === 'weights'" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
                 <legend>{{ field.label }}</legend>
                 <div class="ns-weights">
                     <label v-for="weight in weights(field.width)" :key="weight" class="ns-choice">
@@ -48,7 +50,7 @@
                     </label>
                 </div>
             </fieldset>
-            <fieldset v-else-if="field.widget === 'choice'" class="ns-stack" :disabled="disabled">
+            <fieldset v-else-if="field.widget === 'choice'" class="ns-stack" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
                 <legend>{{ field.label }}</legend>
                 <label v-for="option in field.options" :key="option.id" class="ns-choice">
                     <input type="radio" :name="`${mission.id}-${field.name}`" :value="option.id"
@@ -58,10 +60,12 @@
             </fieldset>
             <label v-else class="ns-field">
                 <span>{{ field.label }}</span>
-                <input :value="modelValue[field.name] ?? ''" :placeholder="field.placeholder ?? (field.base === 16 ? '#2A' : '')"
+                <input :id="`${mission.id}-${field.name}`" :value="modelValue[field.name] ?? ''" :placeholder="field.placeholder ?? (field.base === 16 ? 'z. B. #2A' : '')"
                     :inputmode="field.base === 10 ? 'numeric' : 'text'" :disabled="disabled" :aria-label="field.label"
+                    :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined"
                     autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" @input="set(field.name, $event.target.value)" />
             </label>
+            <p v-if="field.help" :id="`${mission.id}-${field.name}-help`" class="ns-small ns-field-help">{{ field.help }}</p>
         </template>
     </div>
 </template>

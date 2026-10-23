@@ -5,6 +5,7 @@ import axios from 'axios'
 import NumberSystemPuzzle from '@/pages/components/numberSystems/NumberSystemPuzzle.vue'
 import NumberSystemsGame from '@/pages/admin/teachingTools/NumberSystemsGame.vue'
 import { useNumberSystemPlayer } from '@/pages/components/numberSystems/useNumberSystemPlayer'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 const wrappers = []
@@ -263,4 +264,31 @@ it('prepares external rounds without a course while requiring a course for mixed
     expect(vi.mocked(axios.post).mock.lastCall[1]).toMatchObject({ audience: 'external' })
     await wrapper.get('select').setValue('mixed')
     expect(submit().attributes('disabled')).toBeDefined()
+})
+
+it('starts a full teacher self play directly from the local adventure settings without a course or extra players', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { available: true, timing_available: false, local_probe_available: true, courses: [], sessions: [], local_probes: [{ id: 'old-probe', title: 'Alter Probelauf', url: '/old-probe' }] } })
+    const path = '/admin/teaching-tools/games/number-systems/local/00000000-0000-4000-8000-000000000001'
+    vi.mocked(axios.post).mockResolvedValue({ data: { url: `http://localhost:8000${path}` } })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+    await router.push('/admin/teaching-tools/games/number-systems'); await router.isReady()
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { global: { plugins: [router], stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Deine Proberunden')
+    expect(wrapper.text()).not.toContain('Alter Probelauf')
+    await wrapper.findAll('button').find(button => button.text() === 'Lokal ausprobieren').trigger('click')
+    const form = wrapper.get('[role="dialog"] form')
+    expect(form.text()).not.toMatch(/mehrere Fenster|Testteam|Testpersonen|Kurztest|Reihung|Kurs auswählen/)
+    await form.get('input[maxlength="120"]').setValue('Mein Zahlentraining')
+    await form.findAll('select')[0].setValue('40')
+    await form.findAll('select')[1].setValue('3')
+    await form.findAll('select')[2].setValue('countdown')
+    await form.get('input[type="number"]').setValue('45')
+    await form.trigger('submit'); await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/local-probes', {
+        title: 'Mein Zahlentraining', planned_minutes: 40, difficulty: 3, timer_mode: 'countdown', countdown_minutes: 45,
+        self_play: true, mode: 'solo', short: false, ranking_enabled: false,
+    })
+    expect(router.currentRoute.value.path).toBe(path)
 })
