@@ -2,19 +2,21 @@
 
 namespace App\Services;
 
+use App\Models\DropboxConnection;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class TeachingWorkMultipleChoice
 {
     public function __construct(private McTestService $tests) {}
 
     /** @return array<string, mixed> */
-    public function options(TeachingCourseWork $work, User $actor, ?string $date): array
+    public function options(TeachingCourseWork $work, User $actor, ?string $date, array $workContext = []): array
     {
         if (! Schema::hasTable('mc_tests') || ! Schema::hasTable('mc_catalogs') || ! Schema::hasTable('mc_attempts')) {
             return ['available' => false, 'tests' => [], 'catalogs' => [], 'linked_test_id' => null];
@@ -31,12 +33,13 @@ class TeachingWorkMultipleChoice
             });
         $binding = $work->status['multiple_choice_tests'][$this->slot($work, $date)] ?? null;
 
-        return ['available' => true,
+        return ['available' => true, 'configuration' => $this->configuration($work, $actor, $date, $workContext),
             'tests' => $tests->map(fn (McTest $test): array => [...$test->toArray(),
                 'catalog_title' => $catalogs->firstWhere('id', $test->catalog_id)['title'] ?? null]),
             'catalogs' => $catalogs->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] >= 10)->values(),
             'linked_test_id' => ($binding['work_id'] ?? null) === $work->id && $tests->contains('id', $binding['test_id'] ?? null)
-                ? $binding['test_id'] : null];
+                ? $binding['test_id'] : null,
+            'linked_mc_points' => $binding['points_plan']['mc_points'] ?? null];
     }
 
     /**
@@ -44,8 +47,21 @@ class TeachingWorkMultipleChoice
      * @param  list<array<string, mixed>>  $participants
      * @return array<string, mixed>
      */
-    public function prepare(TeachingCourseWork $work, User $actor, array $data, array $participants): array
+    public function prepare(TeachingCourseWork $work, User $actor, array $data, array $participants, array $workContext = []): array
     {
+        $configuration = $this->configuration($work, $actor, $data['date'] ?? null, $workContext, true);
+        if ($configuration['locked']) {
+            throw ValidationException::withMessages(['mc_mode' => $configuration['message']]);
+        }
+        $maximum = $configuration['maximum_points'];
+        abort_unless($maximum !== null && round((float) ($data['expected_maximum_points'] ?? 0), 2) === $maximum,
+            409, 'Die LF-Gesamtpunktzahl ist nicht bestätigt oder wurde inzwischen geändert. Bitte die MC-Auswahl erneut öffnen.');
+        $mcPoints = $data['mc_points'] ?? null;
+        if ($maximum === null || ! is_numeric($mcPoints) || (float) $mcPoints <= 0 || (float) $mcPoints > $maximum) {
+            throw ValidationException::withMessages(['mc_points' => 'Bitte den MC-Anteil innerhalb der gespeicherten LF-Gesamtpunkte festlegen. Die Gesamtpunktzahl muss positiv und bekannt sein.']);
+        }
+        $pointsPlan = ['maximum_points' => $maximum, 'mc_points' => round((float) $mcPoints, 2),
+            'other_points' => round($maximum - (float) $mcPoints, 2), 'requires_criteria_reconciliation' => true];
         $slot = $this->slot($work, $data['date'] ?? null);
         $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
         $requestHash = hash('sha256', json_encode([$data, array_column($participants, 'schooltool_person_id')], JSON_THROW_ON_ERROR));
@@ -79,19 +95,53 @@ class TeachingWorkMultipleChoice
             ]);
             $test = $this->tests->prepare($test, $studentIds);
         }
+        abort_unless(is_numeric($test->total_points) && (float) $test->total_points > 0, 422,
+            'Der MC-Test benötigt eine positive Gesamtpunktzahl. Bitte den Test zuerst prüfen.');
+        $pointsPlan['test_maximum_points'] = round((float) $test->total_points, 2);
         $status = $work->status ?? [];
         $status['multiple_choice_tests'][$slot] = ['work_id' => $work->id, 'test_id' => $test->id,
-            'request_id' => $data['request_id'], 'request_hash' => $requestHash];
+            'request_id' => $data['request_id'], 'request_hash' => $requestHash, 'points_plan' => $pointsPlan];
         $work->status = $status;
         $work->save();
 
-        return ['test_id' => $test->id, 'catalog_id' => $test->catalog_id, 'title' => $test->title,
+        return ['test_id' => $test->id, 'catalog_id' => $test->catalog_id, 'title' => $test->title, 'points_plan' => $pointsPlan,
             'status' => $test->status, 'question_count' => $test->question_count,
             'total_points' => $test->total_points, 'duration_seconds' => $test->duration_seconds,
             'question_pool' => $test->snapshot['questions'] ?? [],
             'access_links_ready' => $test->status === 'published' && $test->access_links_disabled_at === null,
             'exercise_export_url' => $test->status === 'published' && $test->access_links_disabled_at === null
                 ? route('admin.multiple-choice.tests.exercise-export', ['test' => $test->id]) : null];
+    }
+
+    /** @return array{locked: bool, message: ?string, maximum_points: ?float} */
+    public function configuration(TeachingCourseWork $work, User $actor, ?string $date, array $workContext, bool $refresh = false): array
+    {
+        $locked = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
+        $message = $locked ? 'Die Leistungsfeststellung wurde bereits versendet oder bereitgestellt. MC-Fragen können nicht mehr ergänzt oder geändert werden.' : null;
+        $modules = app(DropboxModuleLinks::class);
+        $link = $modules->current($work);
+        if (! $locked && $link) {
+            $connection = DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->find($link->dropbox_connection_id);
+            if (! $connection) {
+                $locked = true;
+                $message = 'Der Aufgabenversand kann nicht geprüft werden. Bitte die Ordnerverbindung und den LF-Status erneut prüfen.';
+            } else {
+                $exercise = $modules->exercise($connection, $work, $link, $date, refresh: $refresh, initial: false);
+                $dispatch = $exercise['email_dispatch'] ?? [];
+                if (in_array($dispatch['status'] ?? null, ['sent', 'partial'], true) || ($dispatch['confirmed_count'] ?? 0) > 0) {
+                    $locked = true;
+                    $message = 'Der Aufgabenversand hat bereits begonnen. MC-Fragen können nicht mehr ergänzt oder geändert werden.';
+                } elseif (($exercise['status'] ?? 'unknown') === 'unknown'
+                    || (($exercise['status'] ?? null) === 'found' && ($dispatch['status'] ?? 'unknown') === 'unknown')) {
+                    $locked = true;
+                    $message = 'Der Versandstand ist unklar. Bitte zuerst „Erneut prüfen“ ausführen; MC-Fragen werden bis dahin nicht geändert.';
+                }
+            }
+        }
+        $maximum = $workContext['maximum_points'] ?? null;
+
+        return ['locked' => $locked, 'message' => $message,
+            'maximum_points' => is_numeric($maximum) && (float) $maximum > 0 ? round((float) $maximum, 2) : null];
     }
 
     private function slot(TeachingCourseWork $work, ?string $date): string

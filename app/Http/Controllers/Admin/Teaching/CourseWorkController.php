@@ -36,9 +36,9 @@ class CourseWorkController extends Controller
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
         $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
-        $export->buildExercise($course_work, $actor, false, $data['date'] ?? null);
+        $preview = $export->buildExercise($course_work, $actor, false, $data['date'] ?? null);
 
-        return response()->json($multipleChoice->options($course_work, $actor, $data['date'] ?? null))->header('Cache-Control', 'private, no-store');
+        return response()->json($multipleChoice->options($course_work, $actor, $data['date'] ?? null, $preview['context']['work']))->header('Cache-Control', 'private, no-store');
     }
 
     public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice): JsonResponse
@@ -52,6 +52,8 @@ class CourseWorkController extends Controller
             'catalog_id' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1'],
             'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'duration_minutes' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1', 'max:1440'],
+            'mc_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'expected_maximum_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'request_id' => ['required', 'uuid'], 'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
         ]);
 
@@ -59,7 +61,7 @@ class CourseWorkController extends Controller
             $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
             $preview = $export->buildExercise($work, $actor, false, $data['date'] ?? null);
-            $test = $multipleChoice->prepare($work, $actor, $data, $preview['context']['course_roster']['participants']);
+            $test = $multipleChoice->prepare($work, $actor, $data, $preview['context']['course_roster']['participants'], $preview['context']['work']);
 
             return response()->json(['data' => $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test)])
                 ->header('Cache-Control', 'private, no-store');

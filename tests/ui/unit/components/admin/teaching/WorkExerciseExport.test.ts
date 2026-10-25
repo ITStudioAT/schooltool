@@ -12,12 +12,15 @@ const course = { id: 2, title: 'INF' }
 function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work,
     mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 }) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options)
-        : url.endsWith('/exercise-options') ? Promise.resolve({ data: mcOptions }) : get(url, options)),
+        : url.endsWith('/exercise-options') ? Promise.resolve({ data: { configuration: { locked: false, maximum_points: 5 },
+            linked_mc_points: mcOptions.linked_test_id ? 2 : null, ...mcOptions } }) : get(url, options)),
         post: vi.fn((url, payload, options) => url.endsWith('/prepare-exercise') ? get(url, payload, options) : status(url, payload, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     return mount(WorkExerciseExport, { attachTo: document.body, props: { work: currentWork, course, date: '2026-10-20' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
+            'v-text-field': { props: ['modelValue', 'label', 'disabled', 'type'], emits: ['update:modelValue'],
+                template: '<label>{{ label }}<input :aria-label="label" :type="type" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : Number($event.target.value))" /></label>' },
             'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
             'v-checkbox': { props: ['modelValue', 'label', 'disabled'], emits: ['update:modelValue'],
                 template: '<label><input type="checkbox" :checked="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.checked)" />{{ label }}</label>' },
@@ -34,6 +37,53 @@ function button(wrapper: ReturnType<typeof mountExport>, text: string) {
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+it.each(['sent', 'partial'])('blocks adding MC after a confirmed %s participant dispatch', async (dispatchStatus) => {
+    const status = vi.fn().mockResolvedValue({ data: { ...linkedExercise,
+        exercise: { ...linkedExercise.exercise, email_dispatch: { status: dispatchStatus, confirmed_count: 1 } } } })
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'MC-Fragen einbeziehen').attributes('disabled')).toBeDefined()
+        await button(wrapper, 'MC-Fragen einbeziehen').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('can reopen MC configuration for an existing unsent LF and always reloads its point allocation', async () => {
+    const status = vi.fn().mockResolvedValue({ data: { ...linkedExercise,
+        exercise: { ...linkedExercise.exercise, email_dispatch: { status: 'missing', confirmed_count: 0 } } } })
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        for (let opening = 0; opening < 2; opening++) {
+            await button(wrapper, 'MC-Fragen einbeziehen').trigger('click')
+            await flushPromises()
+            expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
+            expect(wrapper.text()).toContain('2 Punkte MC + 3 Punkte übrige Aufgaben = 5 Punkte gesamt')
+            expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
+            await button(wrapper, 'Abbrechen').trigger('click')
+            await flushPromises()
+        }
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('blocks MC copying when the server detects a dispatch after the displayed folder check', async () => {
+    const wrapper = mountExport(undefined, undefined, undefined, work, { available: true,
+        tests: [{ id: 9, title: 'Test', catalog_id: 3 }], catalogs: [], linked_test_id: 9,
+        configuration: { locked: true, maximum_points: 5, message: 'Aufgabenversand bereits begonnen.' } })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        expect(wrapper.text()).toContain('Aufgabenversand bereits begonnen.')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
 
 it('shows question catalogs and filters existing tests without silently changing the selected test', async () => {
     const get = vi.fn()
@@ -188,10 +238,14 @@ it('requires an explicit MC selection and creates a draft only on the handoff ac
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         expect(axios.post).not.toHaveBeenCalled()
         await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
+        await wrapper.get('input[aria-label="MC-Anteil an den LF-Gesamtpunkten"]').setValue('6')
+        expect(button(wrapper, action).attributes('disabled')).toBeDefined()
+        await wrapper.get('input[aria-label="MC-Anteil an den LF-Gesamtpunkten"]').setValue('2')
+        expect(wrapper.text()).toContain('2 Punkte MC + 3 Punkte übrige Aufgaben = 5 Punkte gesamt')
         expect(button(wrapper, action).attributes('disabled')).toBeUndefined()
         await button(wrapper, action).trigger('click'); await flushPromises()
         const payload = (axios.post as any).mock.calls[0][1]
-        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 10, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
+        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 10, mc_points: 2, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
         await button(wrapper, 'Kopiert').trigger('click'); await flushPromises()
         expect((axios.post as any).mock.calls[1][1]).toEqual(payload)
     } finally { wrapper.unmount() }
@@ -222,13 +276,13 @@ it.each([false, true])('loads a fresh candidate export and copies only the chose
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         if (mc) expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/prepare-exercise', {
-            mc_mode: 'existing', test_id: 9, expected_test_id: 9, date: '2026-10-20', request_id: expect.any(String),
+            mc_mode: 'existing', test_id: 9, expected_test_id: 9, mc_points: 2, expected_maximum_points: 5, date: '2026-10-20', request_id: expect.any(String),
         }, { signal: expect.any(AbortSignal) })
         else expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/ai-export', {
             params: { purpose: 'exercise', include_mc: 0, date: '2026-10-20' }, signal: expect.any(AbortSignal),
         })
         expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
-        expect(wrapper.get('[role="status"]').text()).toContain('Übergabetext kopiert')
+        expect(wrapper.findAll('[role="status"]').some(status => status.text().includes('Übergabetext kopiert'))).toBe(true)
         expect(wrapper.findAllComponents(VBtn).find(item => item.text() === 'Kopiert')?.props()).toMatchObject({ prependIcon: 'mdi-check', color: 'success' })
         expect(button(wrapper, 'Schließen')).toBeDefined()
         expect(button(wrapper, 'Abbrechen')).toBeUndefined()

@@ -285,6 +285,9 @@ test('exercise handoff respects explicit MC selection and exports only active sa
         ->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
 
     expect($data['context']['include_multiple_choice'])->toBe($mc);
+    expect($data['context']['grading_policy'])->toMatchArray(['email_form_decision_required' => true,
+        'email_form_components' => ['Betreff', 'Anrede', 'Inhalt', 'Signatur'], 'recheck_points_when_mc_changes' => true,
+        'mc_changes_after_task_delivery_allowed' => false]);
     expect($data['context']['course_roster']['participants'])->toHaveCount(1);
     expect($data['context']['course_roster']['participants'][0]['schooltool_person_id'])->toBe((string) $this->student->id);
     expect($data['context']['work']['groups'][0]['name'])->toBe('Prüfungsgruppe');
@@ -306,6 +309,8 @@ test('exercise handoff excludes cancelled memberships and does not revive a canc
 
 test('exercise handoff includes a real saved module path and identity without treating an import directory as the module', function (): void {
     Http::preventStrayRequests();
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()
+        ->andReturn(['status' => 'missing', 'folder' => null]);
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
     TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
         'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,

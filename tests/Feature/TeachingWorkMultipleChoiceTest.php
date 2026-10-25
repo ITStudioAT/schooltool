@@ -1,12 +1,17 @@
 <?php
 
+use App\Models\DropboxConnection;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -22,12 +27,16 @@ function workMcFixture(object $context): void
         Role::findOrCreate($role, 'web');
     }
     $school = School::factory()->create();
-    $year = Schoolyear::factory()->create(['school_id' => $school->id]);
+    $year = Schoolyear::factory()->create(['school_id' => $school->id, 'name' => '2026/27', 'from' => '2026-09-01', 'until' => '2027-07-10']);
     enableSchoolToolModuleForTests($school, 'teaching');
     grantSchoolToolLicenceForTests($school, 'Lehrertool');
     $context->teacher = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id])->assignRole('teacher');
     $context->student = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id])->assignRole('student');
-    $context->course = TeachingCourse::factory()->forSchool($school)->forSchoolyear($year)->forTeacher($context->teacher)->create();
+    $area = TeachingEntryArea::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id, 'user_id' => $context->teacher->id]);
+    TeachingEntryDefinition::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $year->id, 'user_id' => $context->teacher->id,
+        'teaching_entry_area_id' => $area->id, 'short_name' => 'MA', 'name' => 'Leistungsfeststellung', 'category' => 'Benotung',
+        'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 5]);
+    $context->course = TeachingCourse::factory()->forSchool($school)->forSchoolyear($year)->forTeacher($context->teacher)->create(['teaching_entry_area_id' => $area->id]);
     $context->course->teachingCourseStudents()->create(['user_id' => $context->student->id]);
     $context->work = TeachingCourseWork::factory()->create(['teaching_course_id' => $context->course->id,
         'date_for_all_groups' => '2026-10-20', 'groups' => [], 'is_group_work' => false, 'status' => ['automation_enabled' => true]]);
@@ -40,6 +49,7 @@ function workMcFixture(object $context): void
         'title' => 'Geprüfte Grundlagen', 'questions' => $questions]);
     $context->base = '/api/admin/teaching/course_works/'.$context->work->id;
     $context->payload = ['mc_mode' => 'new', 'catalog_id' => $context->catalog->id, 'total_points' => 5,
+        'mc_points' => 2, 'expected_maximum_points' => 5,
         'duration_minutes' => 15, 'request_id' => 'b10ca8e3-181f-48b7-b842-01a16c855ae8',
         'expected_test_id' => null, 'date' => '2026-10-20'];
     $context->actingAs($context->teacher, 'sanctum');
@@ -74,7 +84,7 @@ test('an existing MC test is reused without a second test or changing its attemp
     workMcFixture($this);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $attempts = McTest::query()->findOrFail($id)->attempts()->get()->toArray();
-    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'test_id' => $id, 'expected_test_id' => $id,
+    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'mc_points' => 2, 'expected_maximum_points' => 5, 'test_id' => $id, 'expected_test_id' => $id,
         'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertOk()
         ->assertJsonPath('data.context.multiple_choice_test.test_id', $id);
     expect(McTest::query()->count())->toBe(1)->and(McTest::query()->findOrFail($id)->attempts()->get()->toArray())->toBe($attempts);
@@ -125,7 +135,7 @@ test('an existing test cannot be bound to candidates missing from its saved atte
     $this->course->teachingCourseStudents()->create(['user_id' => $other->id]);
     $this->work->update(['groups' => [['date' => '2026-10-20', 'student_ids' => [$other->id]]]]);
     $before = $this->work->fresh()->getAttributes();
-    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'test_id' => $id, 'expected_test_id' => $id,
+    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'mc_points' => 2, 'expected_maximum_points' => 5, 'test_id' => $id, 'expected_test_id' => $id,
         'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertUnprocessable();
     expect($this->work->fresh()->getAttributes())->toBe($before)
         ->and(McTest::query()->findOrFail($id)->attempts()->pluck('student_id')->all())->toBe([$this->student->id]);
@@ -138,6 +148,63 @@ test('MC test selection rejects other owners and schoolyears even when an ID is 
     $test->update($changed === 'owner' ? ['owner_id' => $this->student->id]
         : ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->teacher->school_id])->id]);
     $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonCount(0, 'tests')->assertJsonPath('linked_test_id', null);
-    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'test_id' => $id, 'expected_test_id' => $id,
+    $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'mc_points' => 2, 'expected_maximum_points' => 5, 'test_id' => $id, 'expected_test_id' => $id,
         'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertNotFound();
 })->with(['owner', 'year']);
+
+test('MC allocation must fit the saved LF points and never creates an orphan test on failure', function (mixed $points): void {
+    workMcFixture($this);
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_points' => $points])->assertUnprocessable()
+        ->assertJsonValidationErrors('mc_points');
+    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+})->with([null, 0, -1, 5.01]);
+
+test('MC creation records an explicit conversion budget without increasing the LF maximum', function (): void {
+    workMcFixture($this);
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'total_points' => 10])->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.mc_points', 2)
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.other_points', 3)
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.test_maximum_points', 10);
+    expect($this->work->fresh()->status['multiple_choice_tests']['2026-10-20']['points_plan']['maximum_points'])->toEqual(5);
+});
+
+test('changed LF totals invalidate an open MC allocation before creating a test', function (): void {
+    workMcFixture($this);
+    TeachingEntryDefinition::query()->where('teaching_entry_area_id', $this->course->teaching_entry_area_id)->update(['maximum_points' => 4]);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertConflict();
+    expect(McTest::query()->count())->toBe(0);
+});
+
+test('a confirmed participant dispatch blocks MC additions even after an earlier unlocked preview', function (string $mode): void {
+    workMcFixture($this);
+    app()->instance('env', 'local');
+    $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonPath('configuration.locked', false);
+    $hash = str_repeat('a', 64);
+    $record = ['student_id' => $this->student->id, 'purpose' => 'tasks', 'origin' => 'dispatch_import',
+        'log_sha256' => $hash, 'sent_at' => '2026-10-19T10:00:00Z', 'provider_id' => 'confirmed-1', 'mode' => $mode];
+    $status = ['automation_enabled' => true, 'dispatch_logs' => [['origin' => 'dispatch_import', 'purpose' => 'tasks', 'sha256' => $hash]],
+        ($mode === 'live' ? 'dispatch_notifications' : 'dispatch_attempts') => [$record]];
+    $this->work->update(['status' => $status]);
+    $status = $this->work->fresh()->status;
+    $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonPath('configuration.locked', true);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->toBe($status);
+    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=1&date=2026-10-20')->assertUnprocessable();
+})->with(['live', 'mailpit']);
+
+test('MC mutation rechecks Dropbox dispatch and fails closed for partial or unclear delivery', function (string $dispatchStatus): void {
+    workMcFixture($this);
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Modul',
+        'folder_path' => '/Materialien/Lerninhalte/Modul', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()
+        ->withArgs(fn ($checkedConnection, $checkedWork, $link, $date, $refresh, $initial): bool => $checkedConnection->id === $connection->id && $checkedWork->id === $this->work->id
+            && $date === '2026-10-20' && $refresh === true && $initial === false)
+        ->andReturn(['status' => 'found', 'folder' => ['id' => 'id:lf'],
+            'email_dispatch' => ['status' => $dispatchStatus, 'confirmed_count' => $dispatchStatus === 'partial' ? 1 : 0]]);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+    Http::assertNothingSent();
+})->with(['partial', 'unknown']);

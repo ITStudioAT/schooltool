@@ -2,6 +2,8 @@
     <span v-if="needsPreparation" class="exercise-action" @click.stop>
         <template v-if="exerciseFolder">
             <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
+            <v-btn size="small" variant="tonal" prepend-icon="mdi-format-list-checks" :disabled="disabled || !current || mcDispatchLocked"
+                :title="mcDispatchLocked ? 'Nach dem Aufgabenversand können keine MC-Fragen mehr einbezogen werden.' : undefined" @click="openDialog(true)">MC-Fragen einbeziehen</v-btn>
         </template>
         <span v-else-if="exerciseChecking" role="status" class="text-body-2">Leistungsfeststellung wird geprüft …</span>
         <v-btn v-else-if="moduleLinked && checkedStatus === 'missing'" size="small" variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="disabled || !current" @click="openDialog">Leistungsfeststellung erstellen</v-btn>
@@ -22,11 +24,12 @@
             <v-card-title class="text-wrap">Leistungsfeststellung erstellen</v-card-title>
             <v-card-text>
                 <p class="text-body-2 mb-3">Den Auftrag mit den gespeicherten Arbeitsdaten und Prüfungskandidaten kopieren und anschließend an die KI übergeben.</p>
-                <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading" hide-details />
+                <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || addingMc || mcDispatchLocked" hide-details />
                 <div v-if="includeMc" class="mt-4">
                     <p v-if="mcLoading" role="status">MC-Tests und Fragenkataloge laden …</p>
                     <template v-else-if="mcOptions?.available">
-                        <v-radio-group v-model="mcMode" :disabled="loading" hide-details>
+                        <v-alert v-if="mcOptions.configuration?.locked" type="warning" variant="tonal" class="mb-3">{{ mcOptions.configuration.message }}</v-alert>
+                        <v-radio-group v-model="mcMode" :disabled="loading || mcOptions.configuration?.locked" hide-details>
                             <v-radio value="existing" label="Bestehenden MC-Test verwenden" />
                             <v-radio value="new" label="Neuen MC-Test erstellen" />
                         </v-radio-group>
@@ -47,6 +50,11 @@
                             <p class="text-caption mt-2">Der neue Test wird als Entwurf erstellt und mit dieser Leistungsfeststellung verknüpft. Die Freigabe erfolgt später im MC-Bereich.</p>
                             <p v-if="!mcOptions.catalogs.length" class="text-caption mt-2">Bitte zuerst unter Unterricht-Tools · Multiple Choice einen Fragenkatalog vorbereiten.</p>
                         </template>
+                        <p class="text-body-2 mt-4">LF gesamt: {{ mcMaximumPoints ?? 'nicht festgelegt' }} Punkte.</p>
+                        <v-text-field v-model.number="mcPoints" label="MC-Anteil an den LF-Gesamtpunkten" type="number" min="0.01" :max="mcMaximumPoints"
+                            step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
+                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ mcMaximumPoints }} Punkte gesamt. Die Rohpunkte des MC-Tests werden auf diesen Anteil umgerechnet.</p>
+                        <p v-else class="text-caption mt-2" role="status">Bitte einen positiven MC-Anteil bis zur LF-Gesamtpunktzahl angeben. Die übrigen Aufgaben und Bewertungskriterien werden anschließend erneut abgestimmt.</p>
                     </template>
                     <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
                 </div>
@@ -83,6 +91,7 @@ const admin = useAdminStore()
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
 const opened = ref(false)
 const includeMc = ref(false)
+const addingMc = ref(false)
 const mcOptions = ref(null)
 const mcLoading = ref(false)
 const mcMode = ref('existing')
@@ -97,7 +106,14 @@ const filteredMcTests = computed(() => (mcOptions.value?.tests || []).filter(tes
 const selectedMcTest = computed(() => filteredMcTests.value.find(test => String(test.id) === String(mcTestId.value)))
 const mcTotalPoints = ref(10)
 const mcDuration = ref(20)
-const mcReady = computed(() => !includeMc.value || (!mcLoading.value && mcOptions.value?.available && (mcMode.value === 'existing'
+const mcPoints = ref(null)
+const mcMaximumPoints = computed(() => mcOptions.value?.configuration?.maximum_points ?? null)
+const mcOtherPoints = computed(() => Math.round((Number(mcMaximumPoints.value) - Number(mcPoints.value)) * 100) / 100)
+const mcPointsValid = computed(() => Number(mcMaximumPoints.value) > 0 && Number(mcPoints.value) > 0
+    && Number(mcPoints.value) <= Number(mcMaximumPoints.value) && /^\d+(?:\.\d{1,2})?$/.test(String(mcPoints.value)))
+const mcDispatchLocked = ref(false)
+const mcReady = computed(() => !includeMc.value || (!mcLoading.value && !mcDispatchLocked.value && !mcOptions.value?.configuration?.locked
+    && mcPointsValid.value && mcOptions.value?.available && (mcMode.value === 'existing'
     ? Boolean(selectedMcTest.value) : Boolean(mcCatalogId.value) && Number(mcTotalPoints.value) > 0 && Number(mcTotalPoints.value) <= 100000
         && Number.isInteger(Number(mcDuration.value)) && Number(mcDuration.value) >= 1 && Number(mcDuration.value) <= 1440)))
 let mcSequence = 0
@@ -130,6 +146,7 @@ async function checkExercise(fresh = false) {
     moduleLinked.value = false
     opened.value = false
     exerciseMessage.value = ''
+    mcDispatchLocked.value = false
     checkedAt.value = null
     const key = workDropboxKey(admin.config?.user?.id, props.work)
     const previous = fresh && props.active && current.value && needsPreparation.value ? workExerciseCheck(key, props.work, props.date) : null
@@ -144,6 +161,8 @@ async function checkExercise(fresh = false) {
         checkedAt.value = cached.checkedAt
         moduleLinked.value = Boolean(cached.data.connected && cached.data.module_link?.folder?.id)
         exerciseFolder.value = cached.status === 'found' ? cached.folder : null
+        mcDispatchLocked.value = Number(cached.data.exercise?.email_dispatch?.confirmed_count || 0) > 0
+            || ['sent', 'partial'].includes(cached.data.exercise?.email_dispatch?.status)
     }
     const displayed = cached || (previous?.status === 'found' ? previous : null)
     if (displayed) checkedAt.value = displayed.checkedAt
@@ -154,6 +173,8 @@ async function checkExercise(fresh = false) {
     try {
         const data = await loadWorkExercise(key, props.work, props.date, fresh, fresh ? props.deadlineDraft : null)
         if (operation !== exerciseSequence) return
+        mcDispatchLocked.value = Number(data.exercise?.email_dispatch?.confirmed_count || 0) > 0
+            || ['sent', 'partial'].includes(data.exercise?.email_dispatch?.status)
         let savedWork = data.saved_work
         if (fresh && props.checkProgress) {
             try {
@@ -205,18 +226,22 @@ function clear() {
     copied.value = false
 }
 
-function openDialog() {
-    if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || exerciseFolder.value) return
+function openDialog(mcOnly = false) {
+    mcOnly = mcOnly === true
+    if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || (exerciseFolder.value && !mcOnly) || (mcOnly && mcDispatchLocked.value)) return
     clear()
-    includeMc.value = false
+    addingMc.value = mcOnly
+    includeMc.value = mcOnly
     mcOptions.value = null
     mcTestId.value = null
     mcCatalogId.value = null
     mcExistingCatalogId.value = null
+    mcPoints.value = null
     mcMode.value = 'existing'
     mcPayload = null
     expectedTestId = null
     opened.value = true
+    if (mcOnly) loadMcOptions()
 }
 
 async function loadMcOptions() {
@@ -237,6 +262,7 @@ async function loadMcOptions() {
         mcTestId.value = expectedTestId
         const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(expectedTestId))
         mcExistingCatalogId.value = linkedTest ? Number(linkedTest.catalog_id || 0) : null
+        mcPoints.value = data.linked_mc_points ?? null
         mcMode.value = expectedTestId || data.tests.length ? 'existing' : 'new'
     } catch (failure) {
         if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
@@ -256,7 +282,7 @@ async function copyExport() {
     loading.value = true
     try {
         if (mc && !mcPayload) {
-            mcPayload = { mc_mode: mcMode.value, expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
+            mcPayload = { mc_mode: mcMode.value, mc_points: Number(mcPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
                 ...(props.date ? { date: props.date } : {}), ...(mcMode.value === 'existing' ? { test_id: mcTestId.value }
                     : { catalog_id: mcCatalogId.value, total_points: mcTotalPoints.value, duration_minutes: mcDuration.value }) }
         }
@@ -298,11 +324,16 @@ async function copyExport() {
 
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); mcSequence++; opened.value = false })
 watch(opened, value => { if (!value) { clear(); mcSequence++ } })
-watch(includeMc, value => { clear(); mcPayload = null; mcOptions.value = null; if (value && opened.value) loadMcOptions(); else mcSequence++ })
+watch(includeMc, value => {
+    clear(); mcPayload = null; mcOptions.value = null
+    if (value && opened.value) {
+        if (!addingMc.value) loadMcOptions()
+    } else mcSequence++
+})
 watch(mcExistingCatalogId, () => {
     if (!selectedMcTest.value) mcTestId.value = null
 })
-watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcTotalPoints.value, mcDuration.value], () => { clear(); mcPayload = null })
+watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcTotalPoints.value, mcDuration.value, mcPoints.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
 onBeforeUnmount(() => { clear(); exerciseSequence++; mcSequence++ })
