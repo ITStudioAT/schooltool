@@ -10,7 +10,7 @@ const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
 
 function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work,
-    mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 }) {
+    mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 }) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options)
         : url.endsWith('/exercise-options') ? Promise.resolve({ data: mcOptions }) : get(url, options)),
         post: vi.fn((url, payload, options) => url.endsWith('/prepare-exercise') ? get(url, payload, options) : status(url, payload, options)) })
@@ -23,8 +23,8 @@ function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefi
                 template: '<label><input type="checkbox" :checked="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.checked)" />{{ label }}</label>' },
             'v-radio-group': { props: ['modelValue', 'disabled'], emits: ['update:modelValue'],
                 template: '<div><label><input type="radio" name="mode" value="existing" :checked="modelValue === \'existing\'" :disabled="disabled" @change="$emit(\'update:modelValue\', \'existing\')" />Bestehenden MC-Test verwenden</label><label><input type="radio" name="mode" value="new" :checked="modelValue === \'new\'" :disabled="disabled" @change="$emit(\'update:modelValue\', \'new\')" />Neuen MC-Test erstellen</label></div>' },
-            'v-select': { props: ['modelValue', 'items', 'label', 'disabled'], emits: ['update:modelValue'],
-                template: '<label>{{ label }}<select :aria-label="label" :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', Number($event.target.value))"><option value="">Bitte auswählen</option><option v-for="item in items" :key="item.id" :value="item.id">{{ item.title }}</option></select></label>' },
+            'v-select': { props: ['modelValue', 'items', 'label', 'disabled', 'itemTitle'], emits: ['update:modelValue'],
+                template: '<label>{{ label }}<select :aria-label="label" :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : Number($event.target.value))"><option value="">Bitte auswählen</option><option v-for="item in items" :key="item.id" :value="item.id">{{ item[itemTitle || \'title\'] }}</option></select></label>' },
         },
     } })
 }
@@ -34,6 +34,41 @@ function button(wrapper: ReturnType<typeof mountExport>, text: string) {
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+it('shows question catalogs and filters existing tests without silently changing the selected test', async () => {
+    const get = vi.fn()
+    const wrapper = mountExport(get, undefined, undefined, work, { available: true,
+        tests: [
+            { id: 9, title: 'Test A', status: 'draft', catalog_id: 3, catalog_title: 'Grundlagen' },
+            { id: 10, title: 'Test B', status: 'published', catalog_id: 4, catalog_title: 'Netzwerke' },
+        ], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        const catalogs = wrapper.get('select[aria-label="Fragenkatalog filtern"]')
+        const tests = wrapper.get('select[aria-label="MC-Test auswählen"]')
+        expect(catalogs.findAll('option').map(option => option.text())).toContain('Netzwerke')
+        expect((catalogs.element as HTMLSelectElement).value).toBe('3')
+        expect(tests.text()).toContain('Test A · Grundlagen')
+        expect(tests.text()).not.toContain('Test B')
+        expect(wrapper.text()).toContain('Fragenkatalog: Grundlagen')
+        await catalogs.setValue('4')
+        expect(tests.text()).toContain('Test B · Netzwerke')
+        expect(tests.text()).not.toContain('Test A')
+        expect((tests.element as HTMLSelectElement).value).toBe('')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        await tests.setValue('10')
+        expect(wrapper.text()).toContain('Fragenkatalog: Netzwerke')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
+        await catalogs.setValue('')
+        expect(tests.text()).toContain('Test A · Grundlagen')
+        expect(tests.text()).toContain('Test B · Netzwerke')
+        expect((tests.element as HTMLSelectElement).value).toBe('10')
+        expect(get).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
 
 it('uses one explicit recheck for both folder and workflow status without refreshing status on mount', async () => {
     const saved = { ...work, simulation_collection: { simulation: true, complete: true } }

@@ -11,6 +11,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
+import { useHolidayStore } from '@/stores/admin/teaching/HolidayStore'
 
 vi.mock('@/pages/admin/teaching/overview/components/PersonalAppointments.vue', () => ({ default: { template: '<div />', methods: { open: vi.fn() } } }))
 
@@ -90,6 +91,79 @@ describe('MyTimetable automatic week selection', () => {
         })
         return { courseStore, route, mountTimetable }
     }
+
+    it('distinguishes recorded school holidays from other free days regardless of lessons and personal appointments', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        useAdminStore().config.selected_school = { id: 1 } as any
+        const holidayStore = useHolidayStore()
+        let finishHolidays: () => void
+        const loadHolidays = vi.spyOn(holidayStore, 'indexMine').mockImplementation(() => new Promise<boolean>((resolve) => {
+            finishHolidays = () => {
+                holidayStore.my_holidays = [
+                    ...['02', '03', '04', '05', '06'].map(day => ({ date: `2026-03-${day}`, scope: 'school', reason: 'Ferien' })),
+                    { date: '2026-03-11', scope: 'teacher', reason: 'Persönlicher freier Tag' },
+                ] as any
+                resolve(true)
+            }
+        }))
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ range: 'week', offset: 0 })
+            const holidayDays = () => wrapper.findAll('th[title^="Ferien/Feiertag:"]')
+                .map((header) => header.attributes('title'))
+            expect(loadHolidays).toHaveBeenCalledOnce()
+            expect(holidayDays()).toEqual([])
+            finishHolidays!()
+            await flushPromises()
+            await wrapper.setData({ appointmentDefinitions: [
+                { id: 7, kind: 'special_assignment', title: 'Abendgymnasium', date: '2026-03-05', starts_at: '18:00', ends_at: '19:00', repeat_until: null },
+                { id: 8, kind: 'supplier_standby', title: 'Bereitschaft', date: '2026-03-03', starts_at: '12:00', ends_at: '13:00', repeat_until: null },
+                { id: 9, kind: 'consultation', title: 'Sprechstunde', date: '2026-03-06', starts_at: '12:00', ends_at: '13:00', repeat_until: null },
+                { id: 10, kind: 'break_supervision', title: 'Aufsicht', date: '2026-03-04', starts_at: '12:20', ends_at: '12:25', repeat_until: null },
+            ] })
+            expect(holidayDays()).toEqual(['Ferien/Feiertag: 02.03.', 'Ferien/Feiertag: 03.03.', 'Ferien/Feiertag: 04.03.', 'Ferien/Feiertag: 05.03.', 'Ferien/Feiertag: 06.03.'])
+            expect(wrapper.text()).toContain('Abendgymnasium')
+            await wrapper.setData({ offset: 1 })
+            expect(holidayDays()).toEqual([])
+            await wrapper.setData({ offset: 0 })
+            holidayStore.my_holidays = []
+            await nextTick()
+            expect(holidayDays()).toEqual([])
+        } finally {
+            loadHolidays.mockRestore()
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it('marks a completely free non-holiday day without treating partly cancelled lessons or standby as free', async () => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        ;(courseStore.courses[0] as any).course_dates = [
+            { id: 1, date: '2026-03-02', hours: [5, 6], cancelled_hours: [5, 6] },
+            { id: 2, date: '2026-03-03', hours: [5, 6], cancelled_hours: [5] },
+            { id: 3, date: '2026-03-04', hours: [5, 6], status: ['free'] },
+            { id: 4, date: '2026-03-06', hours: [5, 6] },
+        ]
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ range: 'week', offset: 0, appointmentDefinitions: [
+                { id: 7, kind: 'special_assignment', title: 'Abendgymnasium', date: '2026-03-05', starts_at: '18:00', ends_at: '19:00', repeat_until: null },
+            ] })
+            const freeDays = () => wrapper.findAll('th[title^="Freier Tag:"]').map(header => header.attributes('title'))
+            expect(freeDays()).toEqual(['Freier Tag: 02.03.', 'Freier Tag: 04.03.', 'Freier Tag: 05.03.'])
+            expect(wrapper.find('th[title^="Ferien/Feiertag:"]').exists()).toBe(false)
+            expect(wrapper.text()).toContain('Abendgymnasium')
+            await wrapper.setData({ appointmentDefinitions: [
+                { id: 8, kind: 'supplier_standby', date: '2026-03-05', starts_at: '12:00', ends_at: '13:00', repeat_until: null },
+            ] })
+            expect(freeDays()).toEqual(['Freier Tag: 02.03.', 'Freier Tag: 04.03.'])
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
 
     it.each([[5, 6], [5, 6, 7]])('shows consecutive hours %j as one course block', async (...hours) => {
         const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')

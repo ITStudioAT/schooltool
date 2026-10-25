@@ -83,6 +83,22 @@ test('an existing MC test is reused without a second test or changing its attemp
     expect(McTest::query()->count())->toBe(1);
 });
 
+test('existing test choices identify their catalog even when it can no longer create a new test', function (): void {
+    workMcFixture($this);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $this->catalog->update(['questions' => []]);
+    $this->getJson($this->base.'/exercise-options')->assertOk()
+        ->assertJsonCount(0, 'catalogs')
+        ->assertJsonPath('tests.0.id', $id)
+        ->assertJsonPath('tests.0.catalog_id', $this->catalog->id)
+        ->assertJsonPath('tests.0.catalog_title', 'Geprüfte Grundlagen')
+        ->assertJsonMissingPath('tests.0.questions')
+        ->assertJsonMissingPath('tests.0.snapshot');
+    $other = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id]);
+    $this->catalog->update(['owner_id' => $other->id]);
+    $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonPath('tests.0.catalog_title', null);
+});
+
 test('MC choices and creation enforce course and catalog ownership without creating orphan tests', function (): void {
     workMcFixture($this);
     $other = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id])->assignRole('teacher');

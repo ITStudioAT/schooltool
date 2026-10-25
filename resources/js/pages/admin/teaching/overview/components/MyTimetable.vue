@@ -137,7 +137,8 @@
                                         <th
                                             v-for="day in tableWeekDays"
                                             :key="normalizeDateToString(day)"
-                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day) }]"
+                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]"
+                                            :title="isSchoolHoliday(day) ? `Ferien/Feiertag: ${formatDayDate(day)}` : isFreeTeachingDay(day) ? `Freier Tag: ${formatDayDate(day)}` : undefined"
                                             :aria-label="isHighlightedTeachingDay(day) ? `${isDayToday(day) ? 'Heutiger Unterrichtstag' : 'Nächster Unterrichtstag'}: ${formatDayDate(day)}` : undefined">
                                             <div>{{ formatDayOfWeek(day) }}</div>
                                             <div class="timetable-day-date">{{ formatDayDate(day) }}</div>
@@ -147,7 +148,7 @@
                                 <tbody>
                                     <tr v-if="outsideAppointmentPlacements.length">
                                         <td class="timetable-hour-cell"><span class="text-caption">Vor Unterricht</span></td>
-                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day) }">
+                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }">
                                             <div class="personal-appointment-cell">
                                                 <PersonalAppointmentCard v-for="placement in outsideAppointmentsOnDay(day)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
                                                     class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
@@ -166,7 +167,7 @@
                                         <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
                                         <td v-if="!isTableCellContinuation(day, hour)" v-fill-cell :rowspan="tableRowSpan(day, hour)"
                                             :data-date="normalizeDateToString(day)" :data-hour="hour"
-                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day) }]">
+                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]">
                                             <div class="timetable-cell-content">
                                             <div v-if="getTableCellItems(day, hour).length" class="timetable-cell-courses">
                                             <div
@@ -229,7 +230,7 @@
                                     <tr v-if="hasAppointmentGapAfter(hour)" class="timetable-gap-row" :data-gap-after="hour">
                                         <td class="timetable-hour-cell"><span class="text-caption">{{ school_hours.some((entry) => Number(entry.hour) > Number(hour)) ? 'Pause' : '' }}</span></td>
                                         <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
-                                            <td v-if="!tableCellsConnect(day, hour, Number(hour) + 1)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day) }" :data-date="normalizeDateToString(day)">
+                                            <td v-if="!tableCellsConnect(day, hour, Number(hour) + 1)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }" :data-date="normalizeDateToString(day)">
                                                 <div class="personal-appointment-cell">
                                                     <PersonalAppointmentCard v-for="placement in gapAppointmentsOnDay(day, hour)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
                                                         class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
@@ -262,6 +263,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { useHolidayStore } from '@/stores/admin/teaching/HolidayStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import PersonalAppointments from './PersonalAppointments.vue'
 import PersonalAppointmentCard from './PersonalAppointmentCard.vue'
@@ -331,6 +333,9 @@ export default {
 
     beforeMount() {
         const courseStore = useCourseStore()
+        if (this.config?.user?.id && this.config?.selected_school?.id && this.config?.selected_schoolyear?.id) {
+            useHolidayStore().indexMine()
+        }
         const returnState = courseStore.getTimetableReturn(this.$route?.path)
             || courseStore.getTimetableView(this.$route?.path, this.$route?.query)
         this.pendingTimetableRestore = returnState
@@ -449,6 +454,7 @@ export default {
         ]),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapState(useCourseWorkStore, { loadedWorkCourseId: 'loadedCourseId', loadedCourseWorks: 'courseWorks' }),
+        ...mapState(useHolidayStore, ['my_holidays']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
@@ -535,6 +541,17 @@ export default {
         highlightedTeachingDate() {
             const today = parseLocalDate(this.viennaNow.date)
             return this.timetableItems.find((item) => !this.hasFreeStatus(item) && item.dateObj >= today)?.date || null
+        },
+        schoolHolidayDates() {
+            return new Set((this.my_holidays || []).filter((holiday) => holiday.scope === 'school')
+                .map((holiday) => String(holiday.date || '').slice(0, 10)))
+        },
+        occupiedTeachingDates() {
+            return new Set([
+                ...this.timetableItems.filter((item) => !this.hasFreeStatus(item)).map((item) => item.date),
+                ...this.personalAppointmentOccurrences.filter((appointment) => appointment.kind !== 'special_assignment')
+                    .map((appointment) => appointment.occurrenceDate),
+            ])
         },
         filteredItems() {
             const [from, until] = this.currentRangeBounds()
@@ -971,6 +988,12 @@ export default {
         isHighlightedTeachingDay(day) {
             return this.normalizeDateToString(day) === this.highlightedTeachingDate
         },
+        isFreeTeachingDay(day) {
+            return this.isSchoolHoliday(day) || !this.occupiedTeachingDates.has(this.normalizeDateToString(day))
+        },
+        isSchoolHoliday(day) {
+            return this.schoolHolidayDates.has(this.normalizeDateToString(day))
+        },
         formatDayOfWeek(day) {
             return day.toLocaleDateString('de-DE', { weekday: 'short' })
         },
@@ -1296,6 +1319,18 @@ export default {
 .timetable-day-header-cell.day-today {
     background-color: #fff3e0;
     color: #e65100;
+}
+
+.timetable-grid-table .day-free {
+    background-color: #e8f5e9;
+}
+
+.timetable-grid-table th.day-free {
+    color: #1b5e20;
+}
+
+.timetable-grid-table .day-holiday {
+    background-color: #c8e6c9;
 }
 
 .timetable-grid-table .day-highlighted {

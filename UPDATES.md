@@ -1,5 +1,9 @@
 # UPDATES
 
+## 3.53.3 !!!
+
+- Stundenplan: grün bei freien Tagen
+
 ## 3.53.2
 
 ### Unterricht

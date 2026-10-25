@@ -21,17 +21,20 @@ class TeachingWorkMultipleChoice
         }
         $tests = McTest::query()->where('school_id', $work->teachingCourse->school_id)->where('owner_id', $actor->id)
             ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->orderBy('title')
-            ->get(['id', 'title', 'status', 'question_count', 'total_points', 'duration_seconds']);
+            ->get(['id', 'catalog_id', 'title', 'status', 'question_count', 'total_points', 'duration_seconds']);
         $catalogs = McCatalog::query()->where('school_id', $work->teachingCourse->school_id)->where('owner_id', $actor->id)
             ->orderBy('title')->get(['id', 'title', 'questions'])->map(function (McCatalog $catalog): array {
                 $count = count(array_filter($catalog->questions ?? [], fn (mixed $question): bool => is_array($question)
                     && ($question['active'] ?? false) === true && ($question['reviewed'] ?? false) === true));
 
                 return ['id' => $catalog->id, 'title' => $catalog->title, 'reviewed_question_count' => $count];
-            })->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] >= 10)->values();
+            });
         $binding = $work->status['multiple_choice_tests'][$this->slot($work, $date)] ?? null;
 
-        return ['available' => true, 'tests' => $tests, 'catalogs' => $catalogs,
+        return ['available' => true,
+            'tests' => $tests->map(fn (McTest $test): array => [...$test->toArray(),
+                'catalog_title' => $catalogs->firstWhere('id', $test->catalog_id)['title'] ?? null]),
+            'catalogs' => $catalogs->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] >= 10)->values(),
             'linked_test_id' => ($binding['work_id'] ?? null) === $work->id && $tests->contains('id', $binding['test_id'] ?? null)
                 ? $binding['test_id'] : null];
     }

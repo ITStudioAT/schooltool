@@ -30,8 +30,14 @@
                             <v-radio value="existing" label="Bestehenden MC-Test verwenden" />
                             <v-radio value="new" label="Neuen MC-Test erstellen" />
                         </v-radio-group>
-                        <v-select v-if="mcMode === 'existing'" v-model="mcTestId" :items="mcOptions.tests" item-title="selection_label" item-value="id"
-                            label="MC-Test auswählen" :disabled="loading" class="mt-3" hide-details />
+                        <template v-if="mcMode === 'existing'">
+                            <v-select v-model="mcExistingCatalogId" :items="mcTestCatalogs" item-title="title" item-value="id"
+                                label="Fragenkatalog filtern" placeholder="Alle Fragenkataloge" clearable :disabled="loading" class="mt-3" hide-details />
+                            <v-select v-model="mcTestId" :items="filteredMcTests" item-title="selection_label" item-value="id"
+                                label="MC-Test auswählen" :disabled="loading" class="mt-3" hide-details />
+                            <p v-if="selectedMcTest" class="text-caption mt-2">Fragenkatalog: {{ selectedMcTest.catalog_label }}</p>
+                            <p v-if="!filteredMcTests.length" class="text-caption mt-2">Keine bestehenden MC-Tests für diese Auswahl vorhanden.</p>
+                        </template>
                         <template v-else>
                             <v-select v-model="mcCatalogId" :items="mcOptions.catalogs" item-title="title" item-value="id"
                                 label="Fragenkatalog auswählen" :disabled="loading" class="mt-3" hide-details />
@@ -82,10 +88,17 @@ const mcLoading = ref(false)
 const mcMode = ref('existing')
 const mcTestId = ref(null)
 const mcCatalogId = ref(null)
+const mcExistingCatalogId = ref(null)
+const mcTestCatalogs = computed(() => [...new Map((mcOptions.value?.tests || []).map(test => [Number(test.catalog_id || 0),
+    { id: Number(test.catalog_id || 0), title: test.catalog_label }])).values()]
+    .sort((first, second) => first.title.localeCompare(second.title, 'de', { sensitivity: 'base' })))
+const filteredMcTests = computed(() => (mcOptions.value?.tests || []).filter(test => mcExistingCatalogId.value === null
+    || Number(test.catalog_id || 0) === Number(mcExistingCatalogId.value)))
+const selectedMcTest = computed(() => filteredMcTests.value.find(test => String(test.id) === String(mcTestId.value)))
 const mcTotalPoints = ref(10)
 const mcDuration = ref(20)
 const mcReady = computed(() => !includeMc.value || (!mcLoading.value && mcOptions.value?.available && (mcMode.value === 'existing'
-    ? Boolean(mcTestId.value) : Boolean(mcCatalogId.value) && Number(mcTotalPoints.value) > 0 && Number(mcTotalPoints.value) <= 100000
+    ? Boolean(selectedMcTest.value) : Boolean(mcCatalogId.value) && Number(mcTotalPoints.value) > 0 && Number(mcTotalPoints.value) <= 100000
         && Number.isInteger(Number(mcDuration.value)) && Number(mcDuration.value) >= 1 && Number(mcDuration.value) <= 1440)))
 let mcSequence = 0
 let mcPayload = null
@@ -199,6 +212,7 @@ function openDialog() {
     mcOptions.value = null
     mcTestId.value = null
     mcCatalogId.value = null
+    mcExistingCatalogId.value = null
     mcMode.value = 'existing'
     mcPayload = null
     expectedTestId = null
@@ -212,10 +226,17 @@ async function loadMcOptions() {
         const { data } = await axios.get(exerciseOptions.url(props.work.id), { params: props.date ? { date: props.date } : {} })
         if (operation !== mcSequence || !opened.value || !includeMc.value || !current.value) return
         if (!Array.isArray(data.tests) || !Array.isArray(data.catalogs)) throw new Error('Die MC-Auswahl konnte nicht geladen werden.')
-        mcOptions.value = { ...data, tests: data.tests.map(test => ({ ...test,
-            selection_label: `${test.title} · Nr. ${test.id} · ${test.status === 'published' ? 'freigegeben' : 'Entwurf'}` })) }
+        mcOptions.value = { ...data, tests: data.tests.map(test => {
+            const catalogLabel = test.catalog_title?.trim()
+                || data.catalogs.find(catalog => String(catalog.id) === String(test.catalog_id))?.title
+                || 'Fragenkatalog nicht verfügbar'
+            return { ...test, catalog_label: catalogLabel,
+                selection_label: `${test.title} · ${catalogLabel} · Nr. ${test.id} · ${test.status === 'published' ? 'freigegeben' : 'Entwurf'}` }
+        }) }
         expectedTestId = data.linked_test_id ?? null
         mcTestId.value = expectedTestId
+        const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(expectedTestId))
+        mcExistingCatalogId.value = linkedTest ? Number(linkedTest.catalog_id || 0) : null
         mcMode.value = expectedTestId || data.tests.length ? 'existing' : 'new'
     } catch (failure) {
         if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
@@ -278,6 +299,9 @@ async function copyExport() {
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); mcSequence++; opened.value = false })
 watch(opened, value => { if (!value) { clear(); mcSequence++ } })
 watch(includeMc, value => { clear(); mcPayload = null; mcOptions.value = null; if (value && opened.value) loadMcOptions(); else mcSequence++ })
+watch(mcExistingCatalogId, () => {
+    if (!selectedMcTest.value) mcTestId.value = null
+})
 watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcTotalPoints.value, mcDuration.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
