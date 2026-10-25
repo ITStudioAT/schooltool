@@ -8,6 +8,7 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
+const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
 
 function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work,
     mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 }) {
@@ -36,7 +37,11 @@ function button(wrapper: ReturnType<typeof mountExport>, text: string) {
     return wrapper.findAll('button').find(item => item.text() === text || (text === 'Erneut prüfen' && item.text().startsWith(text)))!
 }
 
-afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(() => {
+    clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
+    if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+    else delete (document as any).execCommand
+})
 
 it.each(['sent', 'partial'])('blocks adding MC after a confirmed %s participant dispatch', async (dispatchStatus) => {
     const status = vi.fn().mockResolvedValue({ data: { ...linkedExercise,
@@ -225,7 +230,7 @@ it('opens the same MC dialog immediately after linking without saving the work f
     } finally { wrapper.unmount() }
 })
 
-it('requires an explicit MC selection and creates a draft only on the handoff action, reusing its request after a retry', async () => {
+it('requires an explicit MC selection and creates a draft only once while repeated copying reuses the prepared text', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
         text: 'Auftrag mit neuem MC-Test', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 10 } } } } })
     const wrapper = mountExport(get, undefined, undefined, work, { available: true, tests: [], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: null })
@@ -249,7 +254,8 @@ it('requires an explicit MC selection and creates a draft only on the handoff ac
         const payload = (axios.post as any).mock.calls[0][1]
         expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 2, mc_points: 2, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
         await button(wrapper, 'Kopiert').trigger('click'); await flushPromises()
-        expect((axios.post as any).mock.calls[1][1]).toEqual(payload)
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2)
     } finally { wrapper.unmount() }
 })
 
@@ -306,7 +312,7 @@ it.each([false, true])('loads a fresh candidate export and copies only the chose
         expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
         expect(wrapper.findAll('[role="status"]').some(status => status.text().includes('Übergabetext kopiert'))).toBe(true)
         expect(wrapper.findAllComponents(VBtn).find(item => item.text() === 'Kopiert')?.props()).toMatchObject({ prependIcon: 'mdi-check', color: 'success' })
-        expect(button(wrapper, 'Schließen')).toBeDefined()
+        expect(button(wrapper, 'Ende')).toBeDefined()
         expect(button(wrapper, 'Abbrechen')).toBeUndefined()
         expect(wrapper.text()).toContain('3 bestätigte Prüfungskandidaten')
         await wrapper.get('input[type="checkbox"]').setValue(!mc)
@@ -315,10 +321,15 @@ it.each([false, true])('loads a fresh candidate export and copies only the chose
     } finally { wrapper.unmount() }
 })
 
-it('provides fully selected plain text when clipboard access fails', async () => {
+it.each([false, 'throws'])('keeps a completed handoff and selected text when both clipboard methods fail: %s', async legacyResult => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
         participants_count: 1, text: 'Vollständiger Übergabetext', context: { include_multiple_choice: false } } } })
     const wrapper = mountExport(get, vi.fn().mockRejectedValue(new Error('Denied')))
+    const legacyCopy = vi.fn(() => {
+        if (legacyResult === 'throws') throw new Error('Denied')
+        return false
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: legacyCopy })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
@@ -330,7 +341,43 @@ it('provides fully selected plain text when clipboard access fails', async () =>
         expect(field.selectionStart).toBe(0)
         expect(field.selectionEnd).toBe(field.value.length)
         expect(button(wrapper, 'Kopiert')).toBeUndefined()
-        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
+        expect(button(wrapper, 'Text kopieren')).toBeDefined()
+        expect(button(wrapper, 'Ende')).toBeDefined()
+        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
+        expect(wrapper.text()).toContain('Der Browser blockiert das Kopieren')
+        expect(legacyCopy).toHaveBeenCalledWith('copy')
+        legacyCopy.mockImplementation(() => true)
+        await button(wrapper, 'Text kopieren').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="status"][type="success"]').text()).toContain('in der Zwischenablage')
+        expect(get).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+})
+
+it('copies automatically through the legacy method and allows a copy retry without creating another MC test', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Vollständiger MC-Auftrag', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 9 } } } } })
+    const wrapper = mountExport(get, vi.fn().mockRejectedValue(new Error('Denied')))
+    const legacyCopy = vi.fn(() => {
+        expect((document.activeElement as HTMLTextAreaElement).value).toBe('Vollständiger MC-Auftrag')
+        return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: legacyCopy })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="status"][type="success"]').text()).toContain('in der Zwischenablage')
+        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
+        await button(wrapper, 'Kopiert').trigger('click')
+        await flushPromises()
+        expect(legacyCopy).toHaveBeenCalledTimes(2)
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        await button(wrapper, 'Ende').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
 

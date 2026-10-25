@@ -58,7 +58,7 @@
                     <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
                 </div>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
-                <p v-if="message" role="status" class="text-body-2 mt-3">{{ message }}</p>
+                <v-alert v-if="message" :type="copied ? 'success' : 'warning'" variant="tonal" role="status" aria-live="polite" class="mt-3">{{ message }}</v-alert>
                 <template v-if="result">
                     <p class="text-caption mt-3">{{ result.participants_count }} bestätigte Prüfungskandidaten.</p>
                     <details class="mt-2"><summary>Übergabetext anzeigen</summary>
@@ -68,8 +68,8 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="loading" @click="opened = false">{{ copied ? 'Schließen' : 'Abbrechen' }}</v-btn>
-                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current || !mcReady" @click="copyExport">{{ copied ? 'Kopiert' : includeMc && mcOptions?.available && mcMode === 'new' ? 'MC-Test erstellen und Übergabetext kopieren' : 'Übergabetext kopieren' }}</v-btn>
+                <v-btn :disabled="loading" @click="opened = false">{{ result ? 'Ende' : 'Abbrechen' }}</v-btn>
+                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current || !mcReady" @click="copyExport">{{ copied ? 'Kopiert' : result ? 'Text kopieren' : includeMc && mcOptions?.available && mcMode === 'new' ? 'MC-Test erstellen und Übergabetext kopieren' : 'Übergabetext kopieren' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -271,6 +271,16 @@ async function loadMcOptions() {
 
 async function copyExport() {
     if (!opened.value || !current.value || !moduleLinked.value || loading.value || !mcReady.value) return
+    if (result.value) {
+        const operation = sequence
+        loading.value = true
+        try {
+            await copyResult(operation)
+        } finally {
+            if (operation === sequence) loading.value = false
+        }
+        return
+    }
     clear()
     const operation = sequence
     const workId = props.work.id
@@ -298,26 +308,39 @@ async function copyExport() {
         result.value = exported
         if (mc) expectedTestId = exported.context.multiple_choice_test.test_id
         await nextTick()
-        try {
-            await navigator.clipboard.writeText(exported.text)
-            if (operation === sequence) {
-                copied.value = true
-                message.value = 'Übergabetext kopiert. Sie können ihn jetzt an die KI übergeben.'
-            }
-        } catch {
-            if (operation !== sequence) return
-            const details = copyText.value?.closest('details')
-            if (details) details.open = true
-            copyText.value?.focus()
-            copyText.value?.select()
-            message.value = 'Automatisches Kopieren ist nicht verfügbar. Der vollständige Text ist markiert; mit Strg+C kopieren.'
-        }
+        await copyResult(operation)
     } catch (failure) {
         if (operation === sequence) error.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
             || failure.response?.data?.message || failure.message || 'Der Übergabetext konnte nicht geladen werden.'
     } finally {
         if (operation === sequence) loading.value = false
     }
+}
+
+async function copyResult(operation) {
+    copied.value = false
+    message.value = ''
+    let success = false
+    try {
+        await navigator.clipboard.writeText(result.value.text)
+        success = true
+    } catch {
+        if (operation !== sequence) return
+        const details = copyText.value?.closest('details')
+        if (details) details.open = true
+        copyText.value?.focus()
+        copyText.value?.select()
+        try {
+            success = document.execCommand?.('copy') === true
+        } catch {
+            success = false
+        }
+    }
+    if (operation !== sequence) return
+    copied.value = success
+    message.value = success
+        ? 'Übergabetext kopiert. Der vollständige Text ist jetzt in der Zwischenablage und kann an die KI übergeben werden.'
+        : 'Der Browser blockiert das Kopieren. Bitte „Text kopieren“ anklicken oder den markierten Text mit Strg+C kopieren.'
 }
 
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); mcSequence++; opened.value = false })
