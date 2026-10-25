@@ -280,6 +280,26 @@ it.each([
     } finally { wrapper.unmount() }
 })
 
+it.each([null, 'missing', 'checking', 'unknown'])('keeps the preparation icon visible and inactive without a confirmed exercise: %s', async status => {
+    const { wrapper, get, writeText } = render({ statusOnly: true,
+        state: status === null ? null : { ...state, status, emailPreparation: { status: 'ready' } } })
+    try {
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
+        expect(wrapper.get('[role="img"]').attributes('aria-label')).toContain('E-Mails vorbereiten')
+        expect(wrapper.find('[role="button"]').exists()).toBe(false)
+
+        await wrapper.get('span[aria-disabled="true"]').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(get).not.toHaveBeenCalled()
+        expect(writeText).not.toHaveBeenCalled()
+
+        await wrapper.setProps({ state: { ...state, emailPreparation: { status: 'ready' } } })
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Versandbereitschaft')
+    } finally { wrapper.unmount() }
+})
+
 it.each(['click', 'keydown.enter', 'keydown.space'])('opens preparation information through %s without fetching or copying an instruction', async event => {
     const { wrapper, get, writeText } = render({ statusOnly: true, state: { ...state,
         checkedAt: '2026-10-23T05:36:00Z', folder: { ...state.folder, path: '/Materialien/Modul/Leistungsfeststellung/LF' },

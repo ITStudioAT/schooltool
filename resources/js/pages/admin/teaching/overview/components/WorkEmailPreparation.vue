@@ -3,9 +3,9 @@
         :disabled="disabled" @click.stop="openDialog('prepare')">E-Mails vorbereiten</v-btn>
     <v-btn v-if="available && ready && !sent && !statusOnly" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
         :disabled="disabled" @click.stop="openDialog('send')">E-Mails versenden</v-btn>
-    <span v-if="available && statusOnly" class="d-inline-flex" :class="{ 'cursor-pointer': ready }"
-        :tabindex="ready ? 0 : undefined" :role="ready ? 'button' : undefined"
-        :aria-haspopup="ready ? 'dialog' : undefined" :aria-expanded="ready ? infoOpened : undefined"
+    <span v-if="statusOnly && (workAutomationEnabled(work) || workHasProgress(work))" class="d-inline-flex" :class="{ 'cursor-pointer': canInspect }"
+        :tabindex="canInspect ? 0 : undefined" :role="canInspect ? 'button' : undefined"
+        :aria-disabled="!canInspect" :aria-haspopup="canInspect ? 'dialog' : undefined" :aria-expanded="canInspect ? infoOpened : undefined"
         :aria-label="tooltip" :title="tooltip" @click.stop="openInfo"
         @keydown.enter.stop.prevent="openInfo" @keydown.space.stop.prevent="openInfo">
         <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">mdi-email-edit-outline</v-icon>
@@ -80,6 +80,7 @@ import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWo
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workNeedsPreparation } from '@/helpers/workOverview'
+import { workHasProgress } from '@/helpers/workProgress'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
 const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, size: { type: [Number, String], default: 30 } })
@@ -105,6 +106,7 @@ const available = computed(() => workAutomationEnabled(props.work) && workNeedsP
     && Boolean(props.state.folder?.id))
 const preparation = computed(() => props.state?.emailPreparation)
 const ready = computed(() => preparation.value?.status === 'ready')
+const canInspect = computed(() => available.value && ready.value && !props.disabled)
 const sent = computed(() => {
     const key = workDropboxKey(admin.config?.user?.id, props.work)
     return (props.state?.emailDispatch || workExerciseCheck(key, props.work, props.date)?.data?.exercise?.email_dispatch
@@ -114,8 +116,9 @@ const sending = computed(() => mode.value === 'send')
 const deliveryTransport = computed(() => admin.config?.teaching_email_delivery || { mode: 'office_outlook', available: true })
 const localMailpit = computed(() => deliveryTransport.value.mode === 'mailpit')
 const requestLabel = computed(() => sending.value ? 'Versandauftrag' : 'Vorbereitungsauftrag')
-const color = computed(() => ready.value ? 'success' : preparation.value?.status === 'unknown' ? 'grey' : 'error')
-const tooltip = computed(() => ready.value ? (sent.value ? 'E-Mail-Vorbereitung abgeschlossen' : 'Versandbereit – noch nicht versandt')
+const color = computed(() => !available.value ? 'grey' : ready.value ? 'success' : preparation.value?.status === 'unknown' ? 'grey' : 'error')
+const tooltip = computed(() => !available.value ? 'E-Mails vorbereiten: zuerst Leistungsfeststellung bestätigen'
+    : ready.value ? (sent.value ? 'E-Mail-Vorbereitung abgeschlossen' : 'Versandbereit – noch nicht versandt')
     : preparation.value?.status === 'unknown' ? 'E-Mail-Vorbereitung konnte nicht bestätigt werden' : 'E-Mails vorbereiten')
 const preparedTime = computed(() => formatTime(preparation.value?.prepared_at))
 const checkTime = computed(() => formatTime(props.state?.checkedAt))
@@ -129,7 +132,7 @@ function formatTime(value) {
 }
 
 function openInfo() {
-    if (available.value && ready.value && props.statusOnly) infoOpened.value = true
+    if (canInspect.value && props.statusOnly) infoOpened.value = true
 }
 
 function clear() {
